@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use omgbase_format::hash::hex;
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::delta::{explicit_entries, parse_node_text};
 use crate::error::Result;
-use crate::tree::{from_hex, parse_tree_entries};
+use crate::tree::from_hex;
 
 // ---- sections (§4.5) ------------------------------------------------------------
 
@@ -254,9 +255,53 @@ pub fn count_same_dispositions(conn: &Connection) -> Result<usize> {
     Ok(usize::try_from(n).unwrap_or(0))
 }
 
+/// The EXPLICIT walk (§7, 16.0) from the nodes on `stack`: a node marks the
+/// objects its own text names — every entry of a `[`-node, the `+`/`~`
+/// entries of a `{`-node — recursing into the child hashes those entries
+/// carry. What a delta keeps "as the base" is the base revision's to mark,
+/// and the base-liveness rule (§4.4) keeps that revision live while the
+/// delta is. `on_node` sees every node row visited (its hex hash and text).
+/// Hex sets.
+pub(crate) fn walk_explicit(
+    conn: &Connection,
+    mut stack: Vec<String>,
+    trees: &mut HashSet<String>,
+    blobs: &mut HashSet<String>,
+    mut on_node: impl FnMut(&str, &str),
+) -> Result<()> {
+    let mut node = conn.prepare_cached("SELECT entries FROM tree_nodes WHERE hash = ?1")?;
+    while let Some(h) = stack.pop() {
+        if !trees.insert(h.clone()) {
+            continue;
+        }
+        let entries: Option<String> = node
+            .query_row(params![from_hex(&h)?], |r| r.get(0))
+            .optional()?;
+        let Some(text) = entries else {
+            continue;
+        };
+        on_node(&h, &text);
+        let Some(parsed) = parse_node_text(&text) else {
+            continue;
+        };
+        for e in explicit_entries(&parsed) {
+            blobs.insert(e.raw_hash_hex);
+            if let Some(t) = e.trivia_hash_hex {
+                blobs.insert(t);
+            }
+            if let Some(c) = e.child_tree_hash_hex {
+                stack.push(c);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The mark phase (§7): tree nodes reachable from every **live** revision's
-/// `root_tree` (walking `child_tree_hash_hex`) and the blobs they name (raw,
-/// trivia) plus every non-NULL `frontmatter_blob`. An archived revision
+/// `root_tree` and the blobs they name (raw, trivia) plus every non-NULL
+/// `frontmatter_blob` (raw or delta). The mark is **explicit** (16.0): a
+/// `{`-node contributes only the entries it carries; the kept ones are the
+/// base revision's, which is live whenever the delta is. An archived revision
 /// (`root_tree IS NULL`, 15.0) contributes nothing — its bodies live in its
 /// segment. Hex sets.
 pub fn mark_reachable(conn: &Connection) -> Result<(HashSet<String>, HashSet<String>)> {
@@ -270,36 +315,13 @@ pub fn mark_reachable(conn: &Connection) -> Result<(HashSet<String>, HashSet<Str
             blobs.insert(hex(&row?));
         }
     }
-    let roots: Vec<Vec<u8>> = {
+    let roots: Vec<String> = {
         let mut stmt =
             conn.prepare("SELECT DISTINCT root_tree FROM revisions WHERE root_tree IS NOT NULL")?;
-        let it = stmt.query_map([], |r| r.get(0))?;
+        let it = stmt.query_map([], |r| Ok(hex(&r.get::<_, Vec<u8>>(0)?)))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
-    let mut node = conn.prepare("SELECT entries FROM tree_nodes WHERE hash = ?1")?;
-    let mut stack: Vec<String> = roots.iter().map(|h| hex(h)).collect();
-    while let Some(h) = stack.pop() {
-        if !trees.insert(h.clone()) {
-            continue;
-        }
-        let entries: Option<String> = {
-            use rusqlite::OptionalExtension;
-            node.query_row(params![from_hex(&h)?], |r| r.get(0))
-                .optional()?
-        };
-        let Some(text) = entries else {
-            continue;
-        };
-        for e in parse_tree_entries(&text)? {
-            blobs.insert(e.raw_hash_hex);
-            if let Some(t) = e.trivia_hash_hex {
-                blobs.insert(t);
-            }
-            if let Some(c) = e.child_tree_hash_hex {
-                stack.push(c);
-            }
-        }
-    }
+    walk_explicit(conn, roots, &mut trees, &mut blobs, |_, _| {})?;
     Ok((trees, blobs))
 }
 

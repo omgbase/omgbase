@@ -269,25 +269,25 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
 }
 
 /// Spec §1 step 3 — the mixed-version guarantee of a major cut: an opener
-/// that meets a database one major ahead (a v14 engine opening the v15 file
-/// this build writes; simulated here as this build meeting v16) refuses with
+/// that meets a database one major ahead (a v15 engine opening the v16 file
+/// this build writes; simulated here as this build meeting v17) refuses with
 /// the exact message, and neither migrates nor touches it.
 #[test]
 fn refuses_a_newer_database_with_the_exact_message() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch("PRAGMA user_version = 16").unwrap();
+    conn.execute_batch("PRAGMA user_version = 17").unwrap();
     let err = Store::from_connection(conn, Box::new(RandomMinter))
         .err()
         .unwrap();
     assert_eq!(
         err.to_string(),
-        "database schema (v16) is newer than this build (v15); upgrade omgbase"
+        "database schema (v17) is newer than this build (v16); upgrade omgbase"
     );
     assert!(matches!(
         err,
         Error::SchemaTooNew {
-            found: 16,
-            supported: 15
+            found: 17,
+            supported: 16
         }
     ));
 }
@@ -359,7 +359,7 @@ fn migrates_v14_to_v15_rebuilding_revisions() {
     )
     .unwrap();
     let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
-    assert_eq!(store.user_version().unwrap(), 15);
+    assert_eq!(store.user_version().unwrap(), SCHEMA_VERSION);
     let cols: Vec<(String, i64)> = {
         let mut stmt = store
             .conn()
@@ -790,6 +790,7 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
                 rendered_hash: sha256(b"# A\n"),
                 path: "a.md",
                 commit_id: commit,
+                seq: None,
             })
             .unwrap()
     };

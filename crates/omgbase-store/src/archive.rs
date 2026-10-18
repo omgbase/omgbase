@@ -26,23 +26,25 @@
 //! aliases are the connection's own state (`PRAGMA database_list`), so every
 //! read over a `&Connection` finds them; past eight the oldest is detached.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use omgbase_format::hash::hex;
+use omgbase_format::hash::{hex, sha256};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::{Map, Value as Json};
 
+use crate::delta::{TreeResolver, entry_blobs};
 use crate::derived::sweep_unreachable;
 use crate::error::{Error, Result};
 use crate::mint::Mint;
 use crate::retention::{
-    LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY, ReachMarker, RetentionOptions,
-    RetentionPlan, RevBodies, evaluate_retention, repo_settings,
+    LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY, RetentionOptions, RetentionPlan,
+    evaluate_retention, repo_settings,
 };
 pub use crate::schema::ARCHIVE_SQL;
 use crate::schema::SCHEMA_VERSION;
 use crate::tree::from_hex;
+use crate::writers::{put_blob, put_node_text};
 
 /// The file suffix every segment carries.
 pub const ARCHIVE_SUFFIX: &str = ".omgarchive.db";
@@ -642,6 +644,9 @@ pub fn archive_prefix(conn: &Connection, rev_id: &str, archive: Option<&str>) ->
 pub struct RevisionBody {
     pub rev_id: String,
     pub doc_id: String,
+    /// The per-document seq — the context a `{`-form node is resolved in
+    /// (spec §6, 16.0).
+    pub seq: i64,
     pub path: String,
     pub rendered_hash: Vec<u8>,
     pub root_tree: Vec<u8>,
@@ -663,6 +668,7 @@ pub fn revision_body(
     type Row = (
         String,
         String,
+        i64,
         String,
         Vec<u8>,
         Option<Vec<u8>>,
@@ -678,9 +684,11 @@ pub fn revision_body(
             r.get(4)?,
             r.get(5)?,
             r.get(6)?,
+            r.get(7)?,
         ))
     };
-    const COLS: &str = "rev_id, doc_id, path, rendered_hash, root_tree, frontmatter_blob, archive";
+    const COLS: &str =
+        "rev_id, doc_id, seq, path, rendered_hash, root_tree, frontmatter_blob, archive";
     let row: Option<Row> = match doc_id {
         Some(d) => conn
             .query_row(
@@ -697,7 +705,8 @@ pub fn revision_body(
             )
             .optional()?,
     };
-    let Some((rev_id, doc_id, path, rendered_hash, root_tree, frontmatter_blob, archive)) = row
+    let Some((rev_id, doc_id, seq, path, rendered_hash, root_tree, frontmatter_blob, archive)) =
+        row
     else {
         return Ok(None);
     };
@@ -705,6 +714,7 @@ pub fn revision_body(
         return Ok(Some(RevisionBody {
             rev_id,
             doc_id,
+            seq,
             path,
             rendered_hash,
             root_tree: root_tree.unwrap_or_default(),
@@ -731,6 +741,7 @@ pub fn revision_body(
     Ok(Some(RevisionBody {
         rev_id,
         doc_id,
+        seq,
         path,
         rendered_hash,
         root_tree,
@@ -738,6 +749,54 @@ pub fn revision_body(
         prefix,
         archived: true,
     }))
+}
+
+/// A live revision's bodies in CHECKPOINT form (spec §7.1, 16.0): every list
+/// a self-contained `[`-node, the frontmatter its raw — what a segment holds
+/// (a segment never walks back) and what the squash re-checkpoints a kept
+/// revision to when it archives the revision's base.
+pub struct CheckpointBodies {
+    /// The root's full-form hash (hex).
+    pub root_hex: String,
+    /// Every full node by hex hash → text.
+    pub nodes: BTreeMap<String, String>,
+    /// The raw/trivia blob hashes the tree names (every one a row of the
+    /// store while the bases are live).
+    pub blobs: BTreeSet<String>,
+    /// The resolved frontmatter raw and its hash, or `None`.
+    pub frontmatter: Option<(String, String)>,
+}
+
+/// [`CheckpointBodies`] of the revision `(doc_id, seq)` whose columns are
+/// `root_tree` / `frontmatter_blob`, resolved through `resolver`.
+pub fn checkpoint_bodies(
+    resolver: &mut TreeResolver<'_>,
+    doc_id: &str,
+    seq: i64,
+    root_tree: &[u8],
+    frontmatter_blob: Option<&[u8]>,
+) -> Result<CheckpointBodies> {
+    let tree = resolver.tree(doc_id, seq, &hex(root_tree))?;
+    let (root_hex, nodes) = TreeResolver::checkpoint_form(&tree)?;
+    let mut blobs = HashSet::new();
+    entry_blobs(&tree.root.entries, &mut blobs);
+    for list in tree.by_block.values() {
+        entry_blobs(&list.entries, &mut blobs);
+    }
+    let frontmatter = match frontmatter_blob {
+        Some(fm) => {
+            let raw = resolver.frontmatter(doc_id, seq, &hex(fm))?;
+            let h = hex(&sha256(raw.as_bytes()));
+            Some((raw, h))
+        }
+        None => None,
+    };
+    Ok(CheckpointBodies {
+        root_hex,
+        nodes,
+        blobs: blobs.into_iter().collect(),
+        frontmatter,
+    })
 }
 
 // ---- export: write a segment, then squash -------------------------------------------------
@@ -782,6 +841,9 @@ pub struct SquashResult {
     pub dispositions: usize,
     /// The `block_changes` rows deleted.
     pub block_changes: usize,
+    /// Kept revisions re-written in checkpoint form because the squash
+    /// archived their base (spec §4.4 "Base liveness", §7.1 step 0, 16.0).
+    pub checkpointed: usize,
 }
 
 /// What the squash's sweep reclaimed.
@@ -973,18 +1035,30 @@ fn write_segment(
     let created_at = plan.now.clone();
     let previous = last_segment(conn, repo_id)?;
 
-    let mut marker = ReachMarker::new(conn);
-    let mut trees = HashSet::new();
-    let mut blobs = HashSet::new();
-    let bodies: Vec<RevBodies> = revisions
-        .iter()
-        .map(|r| (Some(r.3.clone()), r.4.clone()))
-        .collect();
-    marker.mark(&bodies, &mut trees, &mut blobs)?;
-    let mut trees: Vec<String> = trees.into_iter().collect();
-    trees.sort();
-    let mut blobs: Vec<String> = blobs.into_iter().collect();
-    blobs.sort();
+    // spec §7.1 (16.0): a segment holds CHECKPOINT forms — every list a
+    // self-contained node, the frontmatter its raw — so a reader of the
+    // segment never walks back into revisions that are not in it. The forms
+    // are computed from the resolved trees (a delta revision's full nodes and
+    // resolved raw were never rows of the store); the raw/trivia blobs they
+    // name are.
+    let mut resolver = TreeResolver::new(conn);
+    let mut nodes: BTreeMap<String, String> = BTreeMap::new();
+    let mut blobs: BTreeSet<String> = BTreeSet::new();
+    let mut fm_blobs: BTreeMap<String, String> = BTreeMap::new();
+    let mut bodies: Vec<(Vec<u8>, Option<Vec<u8>>)> = Vec::with_capacity(revisions.len());
+    for r in &revisions {
+        let cp = checkpoint_bodies(&mut resolver, &r.1, r.2, &r.3, r.4.as_deref())?;
+        nodes.extend(cp.nodes);
+        blobs.extend(cp.blobs);
+        let fm_hex = cp.frontmatter.as_ref().map(|(_, h)| h.clone());
+        if let Some((raw, h)) = cp.frontmatter {
+            fm_blobs.insert(h, raw);
+        }
+        bodies.push((
+            from_hex(&cp.root_hex)?,
+            fm_hex.map(|h| from_hex(&h)).transpose()?,
+        ));
+    }
 
     let wholly = wholly_archived_commits(conn, &rev_ids.iter().cloned().collect())?;
 
@@ -1027,8 +1101,8 @@ fn write_segment(
             let mut ins = tx.prepare(
                 "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
-            for r in &revisions {
-                ins.execute(params![r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7])?;
+            for (r, (root, fm)) in revisions.iter().zip(&bodies) {
+                ins.execute(params![r.0, r.1, r.2, root, fm, r.5, r.6, r.7])?;
             }
             let mut ins = tx.prepare(
                 "INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -1036,21 +1110,14 @@ fn write_segment(
             for c in &commits {
                 ins.execute(params![c.0, c.1, c.2, c.3, c.4, c.5, c.6, c.7, c.8])?;
             }
-            let mut tree_row =
-                conn.prepare("SELECT hash, entries FROM tree_nodes WHERE hash = ?1")?;
             let mut ins = tx.prepare("INSERT INTO tree_nodes (hash, entries) VALUES (?1, ?2)")?;
-            for t in &trees {
-                let row: Option<(Vec<u8>, String)> = tree_row
-                    .query_row(params![from_hex(t)?], |r| Ok((r.get(0)?, r.get(1)?)))
-                    .optional()?;
-                if let Some((hash, entries)) = row {
-                    ins.execute(params![hash, entries])?;
-                }
+            for (h, text) in &nodes {
+                ins.execute(params![from_hex(h)?, text])?;
             }
             let mut blob_row =
                 conn.prepare("SELECT hash, bytes, size FROM blobs WHERE hash = ?1")?;
             let mut ins =
-                tx.prepare("INSERT INTO blobs (hash, bytes, size) VALUES (?1, ?2, ?3)")?;
+                tx.prepare("INSERT OR IGNORE INTO blobs (hash, bytes, size) VALUES (?1, ?2, ?3)")?;
             for b in &blobs {
                 let row: Option<(Vec<u8>, Vec<u8>, i64)> = blob_row
                     .query_row(params![from_hex(b)?], |r| {
@@ -1060,6 +1127,10 @@ fn write_segment(
                 if let Some((hash, bytes, size)) = row {
                     ins.execute(params![hash, bytes, size])?;
                 }
+            }
+            for (h, raw) in &fm_blobs {
+                let bytes = raw.as_bytes();
+                ins.execute(params![from_hex(h)?, bytes, bytes.len() as i64])?;
             }
             let mut disp_rows = conn.prepare(
                 "SELECT commit_id, block_id, kind, confidence, reason, matcher_v, detail FROM dispositions WHERE commit_id = ?1 ORDER BY block_id, kind",
@@ -1154,7 +1225,16 @@ fn squash(
     rev_ids: &[String],
 ) -> Result<(SquashResult, SweptBodies)> {
     let tx = conn.unchecked_transaction()?;
-    let wholly = wholly_archived_commits(&tx, &rev_ids.iter().cloned().collect())?;
+    let archiving: HashSet<String> = rev_ids.iter().cloned().collect();
+    let wholly = wholly_archived_commits(&tx, &archiving)?;
+    // spec §4.4 "Base liveness" (16.0): a kept revision whose previous
+    // revision this squash archives is re-written in checkpoint form FIRST,
+    // while its bases are still readable — its delta nodes and delta
+    // frontmatter resolve, the self-contained forms are put, the row
+    // repointed. Its own successors are untouched: a delta is over the
+    // resolved content, which re-encoding does not change, and only
+    // self-contained nodes are ever reused across revisions.
+    let checkpointed = checkpoint_dependents(&tx, &archiving)?;
     {
         let mut upd = tx.prepare(
             "UPDATE revisions SET root_tree = NULL, frontmatter_blob = NULL, archive = ?1 WHERE rev_id = ?2",
@@ -1202,9 +1282,78 @@ fn squash(
             commits: wholly.len(),
             dispositions,
             block_changes,
+            checkpointed,
         },
         SweptBodies { blobs, tree_nodes },
     ))
+}
+
+/// §7.1 step 0 (16.0): re-checkpoint every live revision that stays and
+/// whose predecessor (`seq − 1`, same document) is in `archiving` — resolve
+/// its tree and frontmatter, put the checkpoint forms, repoint the row. In
+/// `rev_id` order, each dependent once. Returns how many rows changed (a
+/// revision already in checkpoint form changes nothing). Runs inside the
+/// squash transaction, before the bases lose their bodies.
+fn checkpoint_dependents(conn: &Connection, archiving: &HashSet<String>) -> Result<usize> {
+    /// `(rev_id, root_tree, frontmatter_blob)` of the dependent revision.
+    type NextRow = (String, Option<Vec<u8>>, Option<Vec<u8>>);
+    let mut rev_row = conn.prepare("SELECT doc_id, seq FROM revisions WHERE rev_id = ?1")?;
+    let mut next_row = conn.prepare(
+        "SELECT rev_id, root_tree, frontmatter_blob FROM revisions WHERE doc_id = ?1 AND seq = ?2 AND archive IS NULL",
+    )?;
+    let mut upd = conn
+        .prepare("UPDATE revisions SET root_tree = ?1, frontmatter_blob = ?2 WHERE rev_id = ?3")?;
+    let mut resolver = TreeResolver::new(conn);
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut changed = 0usize;
+    let mut ids: Vec<&String> = archiving.iter().collect();
+    ids.sort();
+    for id in ids {
+        let Some((doc_id, seq)) = rev_row
+            .query_row(params![id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .optional()?
+        else {
+            continue;
+        };
+        let next: Option<NextRow> = next_row
+            .query_row(params![doc_id, seq + 1], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .optional()?;
+        let Some((next_id, Some(root_tree), frontmatter_blob)) = next else {
+            continue;
+        };
+        if archiving.contains(&next_id) || !seen.insert(next_id.clone()) {
+            continue;
+        }
+        let cp = checkpoint_bodies(
+            &mut resolver,
+            &doc_id,
+            seq + 1,
+            &root_tree,
+            frontmatter_blob.as_deref(),
+        )?;
+        let fm_hex = cp.frontmatter.as_ref().map(|(_, h)| h.clone());
+        let old_fm = frontmatter_blob.as_deref().map(hex);
+        if cp.root_hex == hex(&root_tree) && fm_hex == old_fm {
+            continue;
+        }
+        for text in cp.nodes.values() {
+            put_node_text(conn, text)?;
+        }
+        if let Some((raw, _)) = &cp.frontmatter {
+            put_blob(conn, raw)?;
+        }
+        upd.execute(params![
+            from_hex(&cp.root_hex)?,
+            fm_hex.map(|h| from_hex(&h)).transpose()?,
+            next_id
+        ])?;
+        changed += 1;
+    }
+    Ok(changed)
 }
 
 /// `omg history export [--prune]` (§7.1): evaluate the policy, write ONE new

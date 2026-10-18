@@ -33,7 +33,10 @@
 //! ## Layering
 //!
 //! [`schema`] (§1, §3: the opener and migrations), [`ids`] (§2.1–2.2),
-//! [`time`] (§2.4), [`tree`] (§4.1 encodings), [`order_key`] (§4.3),
+//! [`time`] (§2.4), [`tree`] (§4.1 encodings), [`delta`] (§4.1 "Delta
+//! nodes", §4.4, §6: the 16.0 delta forms, their encoding over
+//! [`edit_script`]'s Myers script, and the resolver that walks a delta back
+//! to its checkpoint), [`order_key`] (§4.3),
 //! [`writers`] (blobs, tree nodes, commits, revisions), [`observe`] (§5),
 //! [`properties`] (the `properties` rows of `spec/properties`, written in
 //! §5.4), [`history`] (the `changes_since` feed of `spec/sync` §6), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
@@ -67,9 +70,11 @@
 #![forbid(unsafe_code)]
 
 pub mod archive;
+pub mod delta;
 pub mod derived;
 pub mod doc_store;
 pub mod docs_ops;
+pub mod edit_script;
 mod effects;
 pub mod effects_plan;
 pub mod error;
@@ -108,9 +113,14 @@ pub use archive::{
     SquashResult, SweptBodies, parse_segment_file_name, read_manifest, segment_basename,
     segment_file_name,
 };
+pub use delta::{
+    CHECKPOINT_EVERY, DeltaOp, Form, FrontmatterBlob, Node, ResolvedList, ResolvedTree,
+    TreeResolver, is_checkpoint_seq,
+};
 pub use derived::{ARCHIVED_COMMITS_SQL, GcResult, LIVE_LEAF_SQL, RebuildTarget};
 pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
+pub use edit_script::{EditOp, myers_script};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
 pub use graph::ResolvedEdge;
@@ -153,12 +163,17 @@ pub use size::{
     TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of, size_advice,
 };
 pub use sugar::Sugar;
-pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
-pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
+pub use tree::{
+    TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, serialize_tree_entry,
+    tree_hash,
+};
+pub use writers::{
+    NewCommit, NewRevision, Origin, PreviousRevision, TreeInputBlock, TreeWriteContext,
+};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "15.0";
+pub const SPEC_VERSION: &str = "16.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

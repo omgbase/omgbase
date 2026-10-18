@@ -81,28 +81,42 @@ pub fn serialize_tree_entries(entries: &[TreeEntry]) -> String {
         if i > 0 {
             out.push(',');
         }
-        out.push('[');
-        out.push_str(&Value::String(e.block_id.clone()).to_string());
-        out.push(',');
-        out.push_str(&Value::String(e.raw_hash_hex.clone()).to_string());
-        out.push(',');
-        match &e.child_tree_hash_hex {
-            Some(h) => out.push_str(&Value::String(h.clone()).to_string()),
-            None => out.push_str("null"),
-        }
-        out.push(',');
-        out.push_str(&Value::String(e.kind.clone()).to_string());
-        out.push(',');
-        out.push_str(&canonical_json(&e.attrs));
-        out.push(',');
-        match &e.trivia_hash_hex {
-            Some(h) => out.push_str(&Value::String(h.clone()).to_string()),
-            None => out.push_str("null"),
-        }
-        out.push(']');
+        write_entry(e, &mut out);
     }
     out.push(']');
     out
+}
+
+/// One entry's canonical text — the six-element array exactly as
+/// [`serialize_tree_entries`] spells it (the item a delta node is over,
+/// §4.1 "Delta nodes").
+#[must_use]
+pub fn serialize_tree_entry(e: &TreeEntry) -> String {
+    let mut out = String::new();
+    write_entry(e, &mut out);
+    out
+}
+
+fn write_entry(e: &TreeEntry, out: &mut String) {
+    out.push('[');
+    out.push_str(&Value::String(e.block_id.clone()).to_string());
+    out.push(',');
+    out.push_str(&Value::String(e.raw_hash_hex.clone()).to_string());
+    out.push(',');
+    match &e.child_tree_hash_hex {
+        Some(h) => out.push_str(&Value::String(h.clone()).to_string()),
+        None => out.push_str("null"),
+    }
+    out.push(',');
+    out.push_str(&Value::String(e.kind.clone()).to_string());
+    out.push(',');
+    out.push_str(&canonical_json(&e.attrs));
+    out.push(',');
+    match &e.trivia_hash_hex {
+        Some(h) => out.push_str(&Value::String(h.clone()).to_string()),
+        None => out.push_str("null"),
+    }
+    out.push(']');
 }
 
 /// `sha256(serialize_tree_entries(entries))`.

@@ -26,7 +26,7 @@ use crate::effects::{CommitHead, DocBase, Effect, Guard, Outcome, doc_base, touc
 use crate::error::{Error, Result};
 use crate::ids::ALPHABET;
 use crate::observe::{DispositionRow, IngestPlan};
-use crate::read::blob_text;
+use crate::read::{blob_text, current_frontmatter_raw};
 use crate::writers::{Origin, TreeInputBlock};
 
 /// `^[a-z]+_[alphabet]{1,7}$` with the given prefix: a minted id **or** a
@@ -179,27 +179,14 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
         .map(|id| build(id, &mut nodes, &children_of))
         .collect();
 
+    // The current revision's frontmatter, resolved when stored as a delta
+    // (spec/store §6.1, 16.0), with the exact stored separator appended so
+    // the write path round-trips byte for byte.
     let mut frontmatter_raw = None;
     if let Some(rev) = current_rev {
-        let fm: Option<Option<Vec<u8>>> = conn
-            .query_row(
-                "SELECT frontmatter_blob FROM revisions WHERE rev_id = ?1",
-                params![rev],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(Some(hash)) = fm {
-            let exists: bool = conn
-                .query_row("SELECT 1 FROM blobs WHERE hash = ?1", params![hash], |_| {
-                    Ok(())
-                })
-                .optional()?
-                .is_some();
-            if exists {
-                let mut raw = blob_text(conn, &hash)?;
-                raw.push_str(frontmatter_trivia.as_deref().unwrap_or(""));
-                frontmatter_raw = Some(raw);
-            }
+        if let Some(mut raw) = current_frontmatter_raw(conn, &rev)? {
+            raw.push_str(frontmatter_trivia.as_deref().unwrap_or(""));
+            frontmatter_raw = Some(raw);
         }
     }
     Ok(Some(MutDoc {

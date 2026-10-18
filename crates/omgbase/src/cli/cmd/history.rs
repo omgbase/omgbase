@@ -223,6 +223,7 @@ fn export_json(r: &ExportResult) -> Json {
             "commits": q.commits,
             "dispositions": q.dispositions,
             "block_changes": q.block_changes,
+            "checkpointed": q.checkpointed,
         })),
         "gc": r.gc.map(|g| json!({ "blobs": g.blobs, "tree_nodes": g.tree_nodes })),
         "totals": r.plan.to_json()["totals"],

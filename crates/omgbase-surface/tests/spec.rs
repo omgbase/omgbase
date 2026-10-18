@@ -949,6 +949,7 @@ fn run_history_step(
                 "squashed": r.squashed.map(|q| json!({
                     "revisions": q.revisions, "commits": q.commits,
                     "dispositions": q.dispositions, "block_changes": q.block_changes,
+                    "checkpointed": q.checkpointed,
                 })),
                 "gc": r.gc.map(|g| json!({ "blobs": g.blobs, "tree_nodes": g.tree_nodes })),
             } }))

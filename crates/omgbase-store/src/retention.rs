@@ -14,7 +14,7 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::error::{Error, Result};
 use crate::time::{civil_from_days, parse_ms};
-use crate::tree::{from_hex, parse_tree_entries};
+use crate::tree::from_hex;
 
 /// `one per <period>`: a ladder rung's thinning grain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -609,8 +609,9 @@ impl<'c> ReachMarker<'c> {
             .optional()?)
     }
 
-    /// Mark every tree node and blob reachable from the given roots and
-    /// frontmatter blobs into `trees`/`blobs` (hex).
+    /// Mark every tree node and blob the given revisions name EXPLICITLY
+    /// (§7, 16.0: a `{`-node's own entries, not its base's) into
+    /// `trees`/`blobs` (hex).
     pub fn mark(
         &mut self,
         revs: &[RevBodies],
@@ -626,26 +627,10 @@ impl<'c> ReachMarker<'c> {
                 blobs.insert(hex(f));
             }
         }
-        while let Some(h) = stack.pop() {
-            if !trees.insert(h.clone()) {
-                continue;
-            }
-            let Some(text) = self.entries_of(&h)? else {
-                continue;
-            };
-            self.tree_sizes
-                .insert(h.clone(), u64::try_from(text.len()).unwrap_or(0));
-            for e in parse_tree_entries(&text)? {
-                blobs.insert(e.raw_hash_hex);
-                if let Some(t) = e.trivia_hash_hex {
-                    blobs.insert(t);
-                }
-                if let Some(c) = e.child_tree_hash_hex {
-                    stack.push(c);
-                }
-            }
-        }
-        Ok(())
+        let sizes = &mut self.tree_sizes;
+        crate::derived::walk_explicit(self.conn, stack, trees, blobs, |h, text| {
+            sizes.insert(h.to_owned(), u64::try_from(text.len()).unwrap_or(0));
+        })
     }
 
     /// Bytes of the given tree nodes (their `entries`) and blobs (`size`); a

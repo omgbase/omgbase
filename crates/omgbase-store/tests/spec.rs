@@ -19,10 +19,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
-use omgbase_store::tree::parse_tree_entries;
+use omgbase_store::delta::{
+    Form, Node, ResolvedList, ResolvedTree, TreeResolver, encode_body_delta,
+    encode_frontmatter_delta, entry_text, explicit_entries, full_node_text, is_checkpoint_seq,
+    parse_frontmatter_blob, parse_node_text,
+};
 use omgbase_store::{
     ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, ExportOptions, IdMinter,
     RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION, SequentialMinter, Store,
@@ -1054,6 +1059,7 @@ fn run_history_step(
                 "squashed": r.squashed.map(|q| json!({
                     "revisions": q.revisions, "commits": q.commits,
                     "dispositions": q.dispositions, "block_changes": q.block_changes,
+                    "checkpointed": q.checkpointed,
                 })),
                 "gc": r.gc.map(|g| json!({ "blobs": g.blobs, "tree_nodes": g.tree_nodes })),
             } }))
@@ -1360,7 +1366,7 @@ fn all_rows<T>(
         .collect()
 }
 
-/// README §8 I1–I8. `last_source` is the last observed source per live path.
+/// README §8 I1–I10. `last_source` is the last observed source per live path.
 fn check_invariants(
     store: &Store,
     repo_id: &str,
@@ -1374,12 +1380,21 @@ fn check_invariants(
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         });
     let blob_hashes: HashSet<String> = blob_rows.iter().map(|b| hex(&b.0)).collect();
+    let blob_text: HashMap<String, String> = blob_rows
+        .iter()
+        .map(|b| (hex(&b.0), String::from_utf8_lossy(&b.1).into_owned()))
+        .collect();
     let tree_rows: Vec<(Vec<u8>, String)> =
         all_rows(conn, "SELECT hash, entries FROM tree_nodes", &[], |r| {
             Ok((r.get(0)?, r.get(1)?))
         });
     let tree_hashes: HashSet<String> = tree_rows.iter().map(|t| hex(&t.0)).collect();
-    let mut trees: HashMap<String, Vec<TreeEntry>> = HashMap::new();
+    let node_texts: HashMap<String, &str> = tree_rows
+        .iter()
+        .map(|t| (hex(&t.0), t.1.as_str()))
+        .collect();
+    // 16.0: a node is a `[`-form list or a `{"d":…}` delta (§4.1 "Delta nodes").
+    let mut nodes: HashMap<String, Node> = HashMap::new();
     let commits: Vec<(String, i64, String)> = all_rows(
         conn,
         "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
@@ -1456,10 +1471,14 @@ fn check_invariants(
         if sha256(entries.as_bytes())[..] != hash[..] {
             problems.push(format!("I2: tree_node {h} hash != sha256(entries)"));
         }
-        let Ok(parsed) = parse_tree_entries(entries) else {
-            problems.push(format!("I2: tree_node {h} entries do not parse as §4.1"));
+        let Some(node) = parse_node_text(entries) else {
+            problems.push(format!(
+                "I2: tree_node {h} entries do not parse as §4.1 (full or delta)"
+            ));
             continue;
         };
+        // 16.0: a `{`-node names only its own `+`/`~` entries; the kept ones are the base's.
+        let parsed = explicit_entries(&node);
         for e in &parsed {
             if !blob_hashes.contains(&e.raw_hash_hex) {
                 problems.push(format!(
@@ -1484,7 +1503,7 @@ fn check_invariants(
                 }
             }
         }
-        trees.insert(h, parsed);
+        nodes.insert(h, node);
     }
     for r in &revisions {
         if r.root_tree
@@ -1502,6 +1521,155 @@ fn check_invariants(
                     "I2: revision {} frontmatter_blob not in blobs",
                     r.rev_id
                 ));
+            } else if blob_text
+                .get(fm)
+                .is_none_or(|t| parse_frontmatter_blob(t).is_none())
+            {
+                problems.push(format!(
+                    "I2: revision {} frontmatter blob {fm} is neither a raw nor a §4.1 frontmatter delta",
+                    r.rev_id
+                ));
+            }
+        }
+    }
+
+    // ---- I10 delta nodes (16.0) ----------------------------------------------------------
+    // Every live revision's root and frontmatter resolve in context; a
+    // delta's previous revision exists and is live; a checkpoint revision is
+    // in checkpoint form (a self-contained root, a raw frontmatter); every
+    // delta reachable from a live revision is strictly smaller than its full
+    // form and is the §4.1 encoding against the predecessor's resolved list.
+    let mut resolver = TreeResolver::new(conn);
+    let mut resolved_trees: HashMap<String, Rc<ResolvedTree>> = HashMap::new();
+    for r in &revisions {
+        let Some(root_hex) = &r.root_tree else {
+            continue;
+        };
+        let prev = revisions
+            .iter()
+            .find(|p| p.doc_id == r.doc_id && p.seq == r.seq - 1);
+        let root_text = node_texts.get(root_hex.as_str()).copied();
+        let fm_text = r
+            .frontmatter_blob
+            .as_ref()
+            .and_then(|h| blob_text.get(h.as_str()).map(String::as_str));
+        let root_is_delta = root_text.is_some_and(|t| t.starts_with('{'));
+        let fm_is_delta = fm_text.is_some_and(|t| t.starts_with('{'));
+        let no_live_base = prev.is_none_or(|p| p.archive.is_some());
+        let checkpoint = is_checkpoint_seq(r.seq) || no_live_base;
+        if (root_is_delta || fm_is_delta) && no_live_base {
+            problems.push(format!(
+                "I10: revision {} (seq {}) is a delta but revision {} is {}",
+                r.rev_id,
+                r.seq,
+                r.seq - 1,
+                if prev.is_none() {
+                    "missing"
+                } else {
+                    "archived"
+                }
+            ));
+        }
+        if checkpoint && fm_is_delta {
+            problems.push(format!(
+                "I10: checkpoint revision {} (seq {}) has a delta frontmatter",
+                r.rev_id, r.seq
+            ));
+        }
+        match resolver.tree(&r.doc_id, r.seq, root_hex) {
+            Ok(tree) => {
+                if checkpoint && !tree.root.self_contained {
+                    problems.push(format!(
+                        "I10: checkpoint revision {} (seq {}) root is not self-contained",
+                        r.rev_id, r.seq
+                    ));
+                }
+                // The never-larger rule, over every list of the tree.
+                let check = |list: &ResolvedList, where_: String, problems: &mut Vec<String>| {
+                    if list.form != Form::Delta {
+                        return;
+                    }
+                    let text = node_texts.get(list.hash.as_str()).copied().unwrap_or("");
+                    let texts: Vec<String> = list.entries.iter().map(entry_text).collect();
+                    let full = full_node_text(&texts);
+                    if text.len() >= full.len() {
+                        problems.push(format!(
+                            "I10: delta node {} ({where_}) is not smaller than its full form ({} >= {})",
+                            list.hash,
+                            text.len(),
+                            full.len()
+                        ));
+                    }
+                };
+                check(&tree.root, format!("root of {}", r.rev_id), &mut problems);
+                for (block, list) in &tree.by_block {
+                    check(
+                        list,
+                        format!("children of {block} in {}", r.rev_id),
+                        &mut problems,
+                    );
+                }
+                // A delta at a non-checkpoint is the Myers script against the base, exactly.
+                if let (true, Some(prev_root)) =
+                    (root_is_delta, prev.and_then(|p| p.root_tree.as_ref()))
+                {
+                    match resolver.tree(&r.doc_id, r.seq - 1, prev_root) {
+                        Ok(base) => {
+                            let want = encode_body_delta(&base.root.texts, &tree.root.texts);
+                            if Some(want.as_str()) != root_text {
+                                problems.push(format!(
+                                    "I10: delta root of {} is not the §4.1 encoding against revision {}",
+                                    r.rev_id,
+                                    r.seq - 1
+                                ));
+                            }
+                        }
+                        Err(e) => problems.push(format!(
+                            "I10: base revision {} of {} does not resolve: {e}",
+                            r.seq - 1,
+                            r.rev_id
+                        )),
+                    }
+                }
+                resolved_trees.insert(r.rev_id.clone(), tree);
+            }
+            Err(e) => problems.push(format!("I10: revision {} does not resolve: {e}", r.rev_id)),
+        }
+        if let Some(fm_hex) = &r.frontmatter_blob {
+            match resolver.frontmatter(&r.doc_id, r.seq, fm_hex) {
+                Ok(raw) => {
+                    if fm_is_delta && fm_text.is_some_and(|t| t.len() >= raw.len()) {
+                        problems.push(format!(
+                            "I10: frontmatter delta of {} is not smaller than the raw",
+                            r.rev_id
+                        ));
+                    }
+                    if let (true, Some(prev_fm)) =
+                        (fm_is_delta, prev.and_then(|p| p.frontmatter_blob.as_ref()))
+                    {
+                        match resolver.frontmatter(&r.doc_id, r.seq - 1, prev_fm) {
+                            Ok(base_raw) => {
+                                if Some(encode_frontmatter_delta(&base_raw, &raw).as_str())
+                                    != fm_text
+                                {
+                                    problems.push(format!(
+                                        "I10: frontmatter delta of {} is not the §4.1 encoding against revision {}",
+                                        r.rev_id,
+                                        r.seq - 1
+                                    ));
+                                }
+                            }
+                            Err(e) => problems.push(format!(
+                                "I10: base frontmatter of {} does not resolve: {e}",
+                                r.rev_id
+                            )),
+                        }
+                    }
+                }
+                Err(e) => problems.push(format!(
+                    "I10: frontmatter of {} does not resolve: {e}",
+                    r.rev_id
+                )),
             }
         }
     }
@@ -1600,13 +1768,21 @@ fn check_invariants(
             ancestor_path: &str,
             at: &str,
             children: &BTreeMap<Option<String>, Vec<&Json>>,
-            trees: &HashMap<String, Vec<TreeEntry>>,
+            resolved: &ResolvedTree,
             problems: &mut Vec<String>,
         ) {
             let parent_id = parent.map(|p| str_of(p, "block_id").to_owned());
             let rows = children.get(&parent_id).map_or(&[][..], Vec::as_slice);
-            let empty = Vec::new();
-            let entries = tree_hex.map_or(&empty, |h| trees.get(h).unwrap_or(&empty));
+            // 16.0: the tree compared is the current revision's RESOLVED tree.
+            let empty: Vec<TreeEntry> = Vec::new();
+            let entries: &[TreeEntry] = match (tree_hex, &parent_id) {
+                (None, _) => &empty,
+                (Some(_), None) => &resolved.root.entries,
+                (Some(_), Some(p)) => resolved
+                    .by_block
+                    .get(p)
+                    .map_or(&empty[..], |l| &l.entries[..]),
+            };
             let where_ = match &parent_id {
                 Some(p) => format!("{at} under {p}"),
                 None => format!("{at} top level"),
@@ -1678,11 +1854,18 @@ fn check_invariants(
                     &format!("{ancestor_path}{}/", str_of(r, "block_id")),
                     at,
                     children,
-                    trees,
+                    resolved,
                     problems,
                 );
             }
         }
+        let Some(resolved) = resolved_trees.get(rev.rev_id.as_str()) else {
+            problems.push(format!(
+                "I3: {at} current revision {} did not resolve",
+                rev.rev_id
+            ));
+            continue;
+        };
         compare(
             Some(root_tree),
             None,
@@ -1690,7 +1873,7 @@ fn check_invariants(
             "/",
             &at,
             &children,
-            &trees,
+            resolved,
             &mut problems,
         );
     }
@@ -1752,13 +1935,16 @@ fn check_invariants(
         if !marked_trees.insert(h.clone()) {
             continue;
         }
-        for e in trees.get(&h).map_or(&[][..], Vec::as_slice) {
-            marked_blobs.insert(e.raw_hash_hex.clone());
-            if let Some(t) = &e.trivia_hash_hex {
-                marked_blobs.insert(t.clone());
+        // 16.0: the EXPLICIT mark — a node marks the entries its own text
+        // carries (all of a `[`-node's, the `+`/`~` of a `{`-node); the kept
+        // entries are the base revision's to mark, and I10 says the base is live.
+        for e in nodes.get(&h).map(explicit_entries).unwrap_or_default() {
+            marked_blobs.insert(e.raw_hash_hex);
+            if let Some(t) = e.trivia_hash_hex {
+                marked_blobs.insert(t);
             }
-            if let Some(c) = &e.child_tree_hash_hex {
-                stack.push(c.clone());
+            if let Some(c) = e.child_tree_hash_hex {
+                stack.push(c);
             }
         }
     }

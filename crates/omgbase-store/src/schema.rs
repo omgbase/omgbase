@@ -14,7 +14,7 @@ pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 pub const ARCHIVE_SQL: &str = include_str!("../archive.sql");
 
 /// The `PRAGMA user_version` this crate writes: the spec major.
-pub const SCHEMA_VERSION: i64 = 15;
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// Split the DDL into statements at every `;` outside a `--` comment or a
 /// string literal, keeping each statement's original text (comments included).
@@ -226,6 +226,13 @@ fn migrate_step(conn: &Connection, to: i64, minter: &mut Mint<'_>) -> Result<()>
         12 => conn.execute_batch(&ddl_for(&["doc_embeddings"]))?,
         13 => migrate_v13(conn, minter)?,
         14 => conn.execute_batch(&ddl_for(&["pending_materializations"]))?,
+        // v16 (§3.4 step 16, §4.1 "Delta nodes"): no DDL and no data pass. A
+        // 15.x store holds only full (`[`-form) nodes and raw frontmatter
+        // blobs, which ARE the 16.0 checkpoint forms, so every existing
+        // revision is a checkpoint; deltas appear with the next commit. The
+        // major exists because a 15.x engine cannot read a `{`-form node (§1
+        // step 3 keeps it out). The opener moves `user_version` after the loop.
+        16 => {}
         other => return Err(Error::Other(format!("no migration to schema v{other}"))),
     }
     Ok(())

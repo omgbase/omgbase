@@ -12,8 +12,9 @@ use omgbase_format::text::{
 use omgbase_reconcile::{MatchBlock, PoolEntry};
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::delta::TreeResolver;
 use crate::error::Result;
-use crate::tree::{from_hex, parse_tree_entries};
+use crate::tree::from_hex;
 
 /// A blob's bytes as text; `""` when the hash is unknown (as the reference).
 pub fn blob_text(conn: &Connection, hash: &[u8]) -> Result<String> {
@@ -31,9 +32,33 @@ pub fn blob_text_at(conn: &Connection, prefix: &str, hash: &[u8]) -> Result<Stri
     Ok(bytes.map_or_else(String::new, |b| String::from_utf8_lossy(&b).into_owned()))
 }
 
-/// §6.1: `leading_trivia`, the frontmatter blob + `frontmatter_trivia` when
-/// the current revision has one, then every top-level live block's raw and
-/// trivia in `order_key` order. `None` for a tombstoned or unknown doc.
+/// A live revision's frontmatter raw (§6.1 "Resolving", 16.0): the blob the
+/// row names, resolved when it is a `{"f":…}` delta over the previous
+/// revision's ([`TreeResolver::frontmatter`], at most 15 steps back). `None`
+/// when the revision has no frontmatter (or is not a revision).
+pub fn current_frontmatter_raw(conn: &Connection, rev_id: &str) -> Result<Option<String>> {
+    let row: Option<(String, i64, Option<Vec<u8>>)> = conn
+        .query_row(
+            "SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?1",
+            params![rev_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((doc_id, seq, Some(fm))) = row else {
+        return Ok(None);
+    };
+    Ok(Some(TreeResolver::new(conn).frontmatter(
+        &doc_id,
+        seq,
+        &hex(&fm),
+    )?))
+}
+
+/// §6.1: `leading_trivia`, the frontmatter raw (resolved, 16.0) +
+/// `frontmatter_trivia` when the current revision has one, then every
+/// top-level live block's raw and trivia in `order_key` order. `None` for a
+/// tombstoned or unknown doc. The body comes from `blocks`, so a delta root
+/// costs this read nothing.
 pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
     let doc: Option<(String, Option<String>, Option<String>)> = conn
         .query_row(
@@ -48,15 +73,8 @@ pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
     };
     let mut out = leading;
     if let Some(rev) = current_rev {
-        let fm: Option<Option<Vec<u8>>> = conn
-            .query_row(
-                "SELECT frontmatter_blob FROM revisions WHERE rev_id = ?1",
-                params![rev],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if let Some(Some(hash)) = fm {
-            out.push_str(&blob_text(conn, &hash)?);
+        if let Some(fm) = current_frontmatter_raw(conn, &rev)? {
+            out.push_str(&fm);
             out.push_str(fm_trivia.as_deref().unwrap_or(""));
         }
     }
@@ -93,7 +111,10 @@ pub struct RevisionRead {
 /// doc row. `None` when the doc is not live or `rev_id` is not one of its
 /// revisions. An archived revision (15.0) reads **through its segment**,
 /// attached on demand ([`crate::archive::revision_body`]); a segment that is
-/// not recorded or not on disk is [`crate::Error::RevisionArchived`].
+/// not recorded or not on disk is [`crate::Error::RevisionArchived`]. A
+/// `{`-form root or frontmatter (16.0) resolves through the previous
+/// revisions of the document ([`TreeResolver`]); a segment holds checkpoint
+/// forms only.
 pub fn read_at_revision(
     conn: &Connection,
     doc_id: &str,
@@ -113,23 +134,17 @@ pub fn read_at_revision(
         return Ok(None);
     };
     let prefix = rev.prefix.as_str();
+    let mut resolver = TreeResolver::with_prefix(conn, prefix);
     let mut out = leading;
     if let Some(hash) = &rev.frontmatter_blob {
-        out.push_str(&blob_text_at(conn, prefix, hash)?);
+        out.push_str(&resolver.frontmatter(&rev.doc_id, rev.seq, &hex(hash))?);
         out.push_str(fm_trivia.as_deref().unwrap_or(""));
     }
-    let entries: Option<String> = conn
-        .prepare_cached(&format!(
-            "SELECT entries FROM {prefix}tree_nodes WHERE hash = ?1"
-        ))?
-        .query_row(params![rev.root_tree], |r| r.get(0))
-        .optional()?;
-    if let Some(text) = entries {
-        for e in parse_tree_entries(&text)? {
-            out.push_str(&blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?);
-            if let Some(t) = e.trivia_hash_hex {
-                out.push_str(&blob_text_at(conn, prefix, &from_hex(&t)?)?);
-            }
+    let root = resolver.list(&rev.doc_id, rev.seq, &hex(&rev.root_tree), None)?;
+    for e in &root.entries {
+        out.push_str(&blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?);
+        if let Some(t) = &e.trivia_hash_hex {
+            out.push_str(&blob_text_at(conn, prefix, &from_hex(t)?)?);
         }
     }
     let rendered_hash_match = sha256(out.as_bytes())[..] == rev.rendered_hash[..];

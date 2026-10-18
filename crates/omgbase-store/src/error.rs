@@ -66,6 +66,11 @@ pub enum Error {
     },
     /// A malformed retention policy (spec §7.1 "The policy").
     RetentionPolicy(String),
+    /// A delta node or frontmatter delta that cannot be resolved (spec §4.1
+    /// "Delta nodes", §6, 16.0): a `{`-form with no base revision, ops that
+    /// do not consume the base, a delta inside an archive segment. A corrupt
+    /// store — the read fails rather than guessing.
+    Delta(String),
     /// Anything else, with a message.
     Other(String),
 }
@@ -113,6 +118,7 @@ impl fmt::Display for Error {
                 "{path}: an unrecorded segment naming revision {rev}, which is not a live revision of this store — move the file out of the way"
             ),
             Error::RetentionPolicy(msg) => f.write_str(msg),
+            Error::Delta(msg) => write!(f, "delta: {msg}"),
             Error::Other(msg) => f.write_str(msg),
         }
     }

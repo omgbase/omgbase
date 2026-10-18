@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 
 use omgbase_format::hash::hex;
-use omgbase_store::tree::{from_hex, parse_tree_entries};
+use omgbase_store::delta::TreeResolver;
+use omgbase_store::tree::from_hex;
 use omgbase_store::{Store, is_id_ref};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
@@ -85,36 +86,35 @@ fn blocks_at_known_revision(
     let Some(rev) = omgbase_store::archive::revision_body(conn, rev_id, Some(doc_id))? else {
         return Ok(None);
     };
+    // Every list resolved in the revision's context (`spec/store` §6, 16.0: a
+    // delta node walks back to the previous revisions' same list; a segment
+    // holds checkpoint forms only).
+    let tree = TreeResolver::with_prefix(conn, &rev.prefix).tree(
+        &rev.doc_id,
+        rev.seq,
+        &hex(&rev.root_tree),
+    )?;
     let mut out: Vec<(String, String)> = Vec::new();
     fn walk(
         conn: &Connection,
         prefix: &str,
-        tree: &[u8],
+        entries: &[omgbase_store::TreeEntry],
+        tree: &omgbase_store::ResolvedTree,
         out: &mut Vec<(String, String)>,
     ) -> Result<()> {
-        let entries: Option<String> = conn
-            .query_row(
-                &format!("SELECT entries FROM {prefix}tree_nodes WHERE hash = ?1"),
-                params![tree],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let Some(text) = entries else {
-            return Ok(());
-        };
-        for e in parse_tree_entries(&text)? {
+        for e in entries {
             let raw = omgbase_store::read::blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?;
             match out.iter_mut().find(|(id, _)| *id == e.block_id) {
                 Some(slot) => slot.1 = raw,
                 None => out.push((e.block_id.clone(), raw)),
             }
-            if let Some(child) = &e.child_tree_hash_hex {
-                walk(conn, prefix, &from_hex(child)?, out)?;
+            if let Some(children) = tree.by_block.get(&e.block_id) {
+                walk(conn, prefix, &children.entries, tree, out)?;
             }
         }
         Ok(())
     }
-    walk(conn, &rev.prefix, &rev.root_tree, &mut out)?;
+    walk(conn, &rev.prefix, &tree.root.entries, &tree, &mut out)?;
     Ok(Some(out))
 }
 
@@ -191,87 +191,10 @@ pub fn diff_lines(text: &str) -> Vec<&str> {
 
 const DIFF_CONTEXT: usize = 3;
 
-/// One step of the edit script: `Keep` consumes a line from both sides,
-/// `Delete` one from the old text, `Insert` one from the new text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EditOp<'a> {
-    Keep(&'a str),
-    Delete(&'a str),
-    Insert(&'a str),
-}
-
-/// Myers' O(ND) shortest edit script (forward, with a per-`d` trace for the
-/// backtrack). `V[k]` is the furthest x on diagonal `k = x - y` reachable with
-/// `d` edits. The canonical tie rule, identical in both engines: at each step
-/// take the diagonal from `k+1` (moving down — an insertion of `b[y]`) when
-/// `k == -d || (k != d && V[k-1] < V[k+1])`, else from `k-1` (moving right —
-/// a deletion of `a[x]`). On a tie (`V[k-1] == V[k+1]`) that is the deletion.
-pub fn myers_script<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<EditOp<'a>> {
-    let n = a.len();
-    let m = b.len();
-    let max = n + m;
-    // V is indexed by k ∈ [-max-1, max+1]; `off` maps it onto a plain vector.
-    let off = max + 1;
-    let at = |k: isize| -> usize { (off as isize + k) as usize };
-    let mut v = vec![0usize; 2 * max + 3];
-    let mut trace: Vec<Vec<usize>> = Vec::new();
-    let mut found = false;
-    let mut d: isize = 0;
-    while d <= max as isize && !found {
-        trace.push(v.clone());
-        let mut k = -d;
-        while k <= d {
-            let mut x = if k == -d || (k != d && v[at(k - 1)] < v[at(k + 1)]) {
-                v[at(k + 1)]
-            } else {
-                v[at(k - 1)] + 1
-            };
-            let mut y = (x as isize - k) as usize;
-            while x < n && y < m && a[x] == b[y] {
-                x += 1;
-                y += 1;
-            }
-            v[at(k)] = x;
-            if x >= n && y >= m {
-                found = true;
-                break;
-            }
-            k += 2;
-        }
-        d += 1;
-    }
-    // Backtrack from (n, m) through the trace, emitting ops newest-first.
-    let mut ops: Vec<EditOp<'a>> = Vec::new();
-    let mut x = n;
-    let mut y = m;
-    for (d, vd) in trace.iter().enumerate().rev() {
-        let d = d as isize;
-        let k = x as isize - y as isize;
-        let prev_k = if k == -d || (k != d && vd[at(k - 1)] < vd[at(k + 1)]) {
-            k + 1
-        } else {
-            k - 1
-        };
-        let prev_x = vd[at(prev_k)];
-        let prev_y = prev_x as isize - prev_k;
-        while x > prev_x && y as isize > prev_y {
-            x -= 1;
-            y -= 1;
-            ops.push(EditOp::Keep(a[x]));
-        }
-        if d > 0 {
-            if x == prev_x {
-                ops.push(EditOp::Insert(b[prev_y as usize]));
-            } else {
-                ops.push(EditOp::Delete(a[prev_x]));
-            }
-        }
-        x = prev_x;
-        y = prev_y as usize;
-    }
-    ops.reverse();
-    ops
-}
+// The edit script lives in `omgbase_store::edit_script` (shared with the
+// store's delta nodes, `spec/store` §4.1, 16.0); re-exported here for the
+// surface and its tests, which pin the textbook tie case both crates share.
+pub use omgbase_store::edit_script::{EditOp, myers_script};
 
 /// The unified diff of two texts (spec/surface §3): hunks of `DIFF_CONTEXT`
 /// (3) lines of context; a change group extends to include the next change

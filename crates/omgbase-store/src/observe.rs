@@ -27,6 +27,7 @@ use omgbase_reconcile::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::delta::TreeResolver;
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
@@ -43,8 +44,9 @@ use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
 use crate::tree::canonical_attrs;
 use crate::writers::{
-    NewCommit, NewRevision, Origin, TreeInputBlock, assign_fresh_ids, assign_from_map, new_commit,
-    put_blob, write_block_tree, write_revision,
+    NewCommit, NewRevision, Origin, TreeInputBlock, TreeWriteContext, assign_fresh_ids,
+    assign_from_map, is_checkpoint_revision, new_commit, previous_revision, write_block_tree_in,
+    write_frontmatter_blob, write_revision,
 };
 use crate::{FORMAT_MARKDOWN, Store};
 
@@ -564,7 +566,7 @@ fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
         .collect()
 }
 
-/// §5.4 steps 1–4 and 6–13 for one document against an open transaction
+/// §5.4 steps 0–4 and 6–13 for one document against an open transaction
 /// `tx` and the commit row `commit_id` already written in it (step 5 is the
 /// caller's: [`Store::commit_ingest`] writes one row per document, the `api`
 /// path of [`crate::effects`] one row per request — store 13.7). Mints `d`
@@ -583,13 +585,11 @@ pub(crate) fn ingest_in(
     let source = plan.source;
     let (fm_block, _) = split_frontmatter(tree);
 
-    // 2. Frontmatter blob (the reference puts it before the doc row; blobs
-    //    are content-addressed, so the order is unobservable).
-    let fm_blob_hex = fm_block.map(|b| put_blob(tx, &b.raw)).transpose()?;
     let fm_trivia = fm_block.map(|b| b.trivia.as_str());
 
-    // 1. Doc row (the path's row regardless of tombstone; a re-created
-    //    path is revived — §5.6 "Re-creation").
+    // 2. Doc row (the path's row regardless of tombstone; a re-created
+    //    path is revived — §5.6 "Re-creation"). Steps 0 and 1 follow: they
+    //    need the doc id to find the previous revision.
     let existing: Option<(String, Option<String>)> = tx
         .query_row(
             "SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
@@ -625,9 +625,50 @@ pub(crate) fn ingest_in(
         }
     };
 
+    // 0. The revision's place (§4.4, 16.0): its seq decides whether it is a
+    //    checkpoint; a non-checkpoint revision writes its tree and frontmatter
+    //    as deltas against the previous revision's RESOLVED tree and raw where
+    //    that is smaller. The previous revision is the document's greatest seq
+    //    — on every path the current revision, never archived (retention rule
+    //    1) — but the rule is stated for the general case: no live predecessor
+    //    ⇒ a checkpoint.
+    let previous = previous_revision(tx, &doc_id)?;
+    let seq = previous.as_ref().map_or(1, |p| p.seq + 1);
+    let checkpoint = is_checkpoint_revision(seq, previous.as_ref());
+    let mut resolver = TreeResolver::new(tx);
+    let base = match &previous {
+        Some(p) if !checkpoint => match &p.root_tree {
+            Some(root) => Some(resolver.tree(&doc_id, p.seq, &hex(root))?),
+            None => None,
+        },
+        _ => None,
+    };
+    let tree_ctx = TreeWriteContext { base, checkpoint };
+
+    // 1. Frontmatter blob: the raw at a checkpoint, else the smaller of a line
+    //    delta over the previous revision's frontmatter and the raw (§5.4 step 1).
+    let fm_blob_hex = match fm_block {
+        Some(b) => {
+            let base_raw = match &previous {
+                Some(p) if !checkpoint => match &p.frontmatter_blob {
+                    Some(fm) => Some(resolver.frontmatter(&doc_id, p.seq, &hex(fm))?),
+                    None => None,
+                },
+                _ => None,
+            };
+            Some(write_frontmatter_blob(
+                tx,
+                &b.raw,
+                base_raw.as_deref(),
+                checkpoint,
+            )?)
+        }
+        None => None,
+    };
+
     // 4. Write the tree.
     let assigned = &plan.assigned;
-    let root_tree_hex = write_block_tree(tx, assigned)?;
+    let root_tree_hex = write_block_tree_in(tx, assigned, &tree_ctx)?;
 
     // 6. The revision row (the commit row, step 5, is the caller's).
     let rendered_hash = sha256(source.as_bytes());
@@ -641,6 +682,7 @@ pub(crate) fn ingest_in(
             rendered_hash,
             path: plan.path,
             commit_id,
+            seq: Some(seq),
         },
     )?;
 
