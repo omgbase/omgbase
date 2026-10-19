@@ -97,7 +97,8 @@ export interface OqxOptions {
 
 // Row-scoped domain functions: authored as free calls (`text("x")`) that
 // implicitly reference the current row. `@omgbase/oqx` free functions receive no
-// row, so we rewrite them to `$self.fn(…)` (a method whose receiver is the row)
+// row, so we rewrite them to `$it.fn(…)` (a method whose receiver is the row —
+// `$it` is the language's own name for the scope's row, spec/oqx SEMANTICS §2)
 // — one `transform` over the AST (spec/oqx/AST.md §5), every block included.
 // `refs(x)` is NOT here: it reads no row (its argument is the value), so it stays
 // a free function served by the context's `callFunction`. The planner treats
@@ -193,7 +194,7 @@ export function foldDates(e: Expr): Expr {
 }
 
 function rewriteQuery(q: Query): Query {
-  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : foldDates(rootPathLiterals(e))));
+  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$it") } : foldDates(rootPathLiterals(e))));
 }
 
 // A top-level `limit`/`offset` on the collect path is applied by the runner (see
@@ -297,7 +298,7 @@ const VALUE_KEY = "__oqx_value";
 // Rows as values (spec/surface §1.4, 1.2). The engine hands back store rows
 // wherever the projection made a row a VALUE — a nested `collect { }` /
 // `first { }` / `single { }` with an empty projection ("the row itself",
-// spec/oqx §12), a `values` projection of `$it`/`$self`, a field bound to a
+// spec/oqx §12), a `values` projection of `$it`, a field bound to a
 // row — and a store row is not a wire shape (column names, `attrs` as a JSON
 // string, the `__path` join column, Buffers). Walk the projected value and
 // render every tagged row as `{ id, path }` — the hit envelope's own keys

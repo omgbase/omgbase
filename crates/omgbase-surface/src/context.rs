@@ -7,8 +7,8 @@
 //! Rows are the store's raw column objects (blobs as hex) carrying a hidden
 //! tag column ([`TAG_KEY`]) naming their target; `get` routes field /
 //! attribute / relation resolution per target, lazily querying the store.
-//! Row functions (`text`, `under`, …) arrive as methods on the `$self`
-//! receiver (see the runner's AST rewrite), since a free function sees no row.
+//! Row functions (`text`, `under`, …) arrive as methods on the row — the
+//! runner rewrites them to `$it.fn(…)` — since a free function sees no row.
 //!
 //! The tier-3 planner ([`crate::planner`]) hands the rows its SQL produced
 //! back through [`StoreContext::with_rows_root`]: the context then serves them
@@ -1323,7 +1323,6 @@ impl<'a> StoreContext<'a> {
                     key,
                     "id" | "path"
                         | "updated_at"
-                        | "$self"
                         | "doc_id"
                         | "block"
                         | "doc"
@@ -1493,7 +1492,7 @@ impl<'a> StoreContext<'a> {
         })
     }
 
-    // ---- row functions (methods on `$self`) ----------------------------------------------
+    // ---- row functions (methods on `$it`) ----------------------------------------------
 
     fn filter_invalid(msg: String) -> Option<oqx::Result<Value>> {
         Some(Err(OqxError::eval(msg)))
@@ -1882,13 +1881,11 @@ impl DataContext for StoreContext<'_> {
         if let Some(full) = self.resolve_lazy(row, t, key)? {
             return self.get(&full, key);
         }
-        // `$self` = the current row: the runner rewrites row functions
-        // (text/under/…) to `$self.fn(…)` so they arrive via `call_method` with
-        // the row as receiver. Any other `$` name is OQX's (resolved by the
-        // engine before the row) or unknown — never an omgbase attribute.
-        if key == "$self" {
-            return Ok(row.clone());
-        }
+        // A `$` name is OQX's (`$it`, `$key`, … — resolved by the engine before
+        // the row) or unknown — never an omgbase attribute. Row functions
+        // (text/under/…) never arrive here: the runner rewrites them to
+        // `$it.fn(…)`, so they reach `call_method` with the row as receiver.
+
         // engine attributes win on collision (the name rule above).
         if attributes(t).contains(&key) {
             return self.attribute(row, t, key);

@@ -142,7 +142,7 @@ fn transform_maps_every_expression_bottom_up() {
             args,
             span,
         } if name == "text" => Expr::Call {
-            recv: Some(Box::new(build::ident("$self"))),
+            recv: Some(Box::new(build::ident("$it"))),
             name,
             args,
             span,
@@ -151,7 +151,7 @@ fn transform_maps_every_expression_bottom_up() {
     });
     assert_eq!(
         print_query(&out).unwrap(),
-        "select n: jobs collect { employer: employer where $self.text(\"a\") } from people where $self.text(\"b\") and size(x) > 1 order by $self.text(\"c\")"
+        "select n: jobs collect { employer: employer where $it.text(\"a\") } from people where $it.text(\"b\") and size(x) > 1 order by $it.text(\"c\")"
     );
     // spans survive: the untouched source and the rebuilt root keep theirs
     assert_eq!(out.source.span(), q.source.span());

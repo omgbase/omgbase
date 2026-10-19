@@ -1,5 +1,5 @@
 //! The runner (`spec/surface/README.md` §1.4): parse the source, rewrite the
-//! row functions to `$self` methods, run it through the engine over the
+//! row functions to `$it` methods, run it through the engine over the
 //! store context, and shape the engine's result into the surface's
 //! `OqxResult` (lean `{ id, path, … }` hits, keyset paging, the consumer
 //! scalars). Port of `packages/core/src/oqx-js/run.ts`.
@@ -30,7 +30,8 @@ use crate::planner::{SqlitePlanner, root_target};
 pub const DEFAULT_LIMIT: usize = 50;
 
 /// Row-scoped domain functions: authored as free calls that implicitly
-/// reference the current row; rewritten to `$self.fn(…)`. `refs(x)` is not
+/// reference the current row; rewritten to `$it.fn(…)` (`$it` is the
+/// language's name for the scope's row, `spec/oqx` SEMANTICS §2). `refs(x)` is not
 /// one: it reads no row, so it stays a free function of the context. The
 /// planner treats every call alike (declined by the translator, flagged by
 /// `expr_may_raise`), `has_edge` and `refs` included.
@@ -190,7 +191,7 @@ impl OqxResult {
     }
 }
 
-// ---- the `$self` rewrite -----------------------------------------------------------
+// ---- the `$it` rewrite -----------------------------------------------------------
 
 /// Paths on the surface are the reference form (`spec/surface` §1 "Paths",
 /// 2.0): `path` and the edge field `dst_path` read `/a/b.md`. A string
@@ -383,7 +384,7 @@ pub fn fold_dates(e: Expr, now_ms: i64) -> Expr {
     }
 }
 
-/// Rewrite every row function in a parsed query to a `$self` method call,
+/// Rewrite every row function in a parsed query to a `$it` method call,
 /// root every string literal compared with a path intrinsic, and fold the
 /// dates over literals ([`fold_dates`], at `now_ms`) — one `transform` over
 /// the AST (`spec/oqx/AST.md` §5), every block included.
@@ -396,7 +397,7 @@ pub fn rewrite_query(q: &Query, now_ms: i64) -> Query {
             args,
             span,
         } if ROW_FNS.contains(&name.as_str()) => Expr::Call {
-            recv: Some(Box::new(build::ident("$self"))),
+            recv: Some(Box::new(build::ident("$it"))),
             name,
             args,
             span,
@@ -1678,7 +1679,7 @@ mod tests {
             panic!("scalar")
         };
         assert!(
-            matches!(expr, Expr::Call { recv: Some(r), name, .. } if name == "text" && **r == build::ident("$self"))
+            matches!(expr, Expr::Call { recv: Some(r), name, .. } if name == "text" && **r == build::ident("$it"))
         );
         let Where::Scalar { expr, .. } = &parts[2] else {
             panic!("scalar")

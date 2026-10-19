@@ -254,7 +254,7 @@ const QUERIES: &[(&str, Push)] = &[
         "select doc_id, dst_path from links where predicate == \"references\"",
         Planned,
     ),
-    // row functions rewrite to `$self.fn(…)`, which the translator declines;
+    // row functions rewrite to `$it.fn(…)`, which the translator declines;
     // a pushable sibling still plans
     ("from blocks where text(\"mercury\")", Declined),
     // (a row function in the residual: the whole query declines)

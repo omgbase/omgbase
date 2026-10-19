@@ -846,8 +846,11 @@ child-key table drives both), `print`/`printTemplate` (canonical source, with
 the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.19",
 "kind": "query", … }`) and `build.*`; the Rust crate mirrors them (`walk`,
 `print`, `build`, serde under `json`). omgbase uses them where it used to
-hand-roll walks: the runner's `$self` rewrite is a `transform`, the
-`semantic("…")` phrase scan a `visit`, and the `graph` macro assembles its
+hand-roll walks: the runner's row-function rewrite is a `transform` (a bare
+`text("…")` becomes `$it.text("…")`, a method call on the current row — `$it`
+is the language's own name for the scope's row, `spec/oqx` SEMANTICS §2; omgbase
+adds no receiver token of its own), the `semantic("…")` phrase scan a
+`visit`, and the `graph` macro assembles its
 `follow` walk with builders and `print`s it (the root ids are literals in the
 tree, never spliced text). A tool that wants to show which relationships a
 query references reads the tree the same way.

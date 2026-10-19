@@ -5,8 +5,8 @@
 // store's raw column objects, tagged with their target; `get` routes field /
 // intrinsic / relation resolution per target, lazily querying the store for
 // relations. Domain functions (text/semantic/under_*/…) are row-scoped, so they
-// arrive via `callMethod` on a synthetic `$self` receiver (see run.ts's AST
-// rewrite) rather than as free functions (which see no row).
+// arrive via `callMethod` on the row as receiver — run.ts's AST rewrite turns
+// them into `$it.fn(…)` — rather than as free functions (which see no row).
 //
 // This is the correctness tier: N+1 queries, materialized collections — fine for
 // the corpus and the differential baseline. The tier-3 SQLite planner (planner.ts)
@@ -623,12 +623,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     }
     const r = row as Row;
 
-    // `$self` = the current row: run.ts rewrites row-scoped domain functions
-    // (text/semantic/under_*/…) to `$self.fn(…)` so they arrive via callMethod
-    // with the row as receiver (a free function sees no row). Any other `$`
-    // name is OQX's (resolved by the engine before the row) or unknown — never
-    // an omgbase attribute.
-    if (key === "$self") return r;
+    // A `$` name is OQX's (`$it`, `$key`, … — resolved by the engine before
+    // the row) or unknown — never an omgbase attribute. Row-scoped domain
+    // functions (text/semantic/under_*/…) never arrive here: run.ts rewrites
+    // them to `$it.fn(…)`, so they reach callMethod with the row as receiver.
 
     // engine attributes win on collision (the name rule above).
     if (ATTRIBUTES[t].has(key)) return attribute(r, t, key);
@@ -674,7 +672,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
 
-  // ---- domain functions (row-scoped, via callMethod on $self) ---------------
+  // ---- domain functions (row-scoped, via callMethod on `$it`) ---------------
   const method = (name: string, recv: unknown, args: unknown[]): CallResult => {
     const r = recv as Row;
     const t = r?.[TARGET];

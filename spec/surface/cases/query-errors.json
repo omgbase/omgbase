@@ -350,6 +350,17 @@
       }
     },
     {
+      "name": "dollar-self-is-not-a-name",
+      "notes": "§1.2 (4.11 patch): the runner rewrites a bare row function to a method on `$it` (`text(\"x\")` → `$it.text(\"x\")`), the language's own name for the scope's row; there is no engine-private receiver. A typed `$self` is therefore an unknown OQX identifier like `$id` — absent, matching nothing — where before this patch both engines answered it with the row.",
+      "query": "select x: $self.path from docs where $self.path == \"/plain.md\"",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
       "name": "bracket-list-is-a-tuple",
       "notes": "§4 \"Error data\" (4.11): OQX has no list literal — a tuple is the collection (`spec/oqx` SEMANTICS §3b). The SQL habit `id in [\"a\", \"b\"]` is the parser's error with the tuple hint and a `fix`: the same call with `[…]` rewritten to `(…)`.",
       "query": "select type, text from blocks where path == \"/processes/magnum-opus.md\" and id in [\"b_189\",\"b_190\"]",

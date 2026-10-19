@@ -119,9 +119,9 @@ test("CHILDREN names every node kind and every child slot", () => {
 
 test("transform maps every expression bottom-up and keeps untouched nodes by reference", () => {
   const q = parse("select n: jobs collect { employer where text(\"a\") } from people where text(\"b\") && size(x) > 1 order by text(\"c\")");
-  const self: Expr = build.ident("$self");
+  const self: Expr = build.ident("$it");
   const out = transform(q, (e) => (e.kind === "call" && e.recv === null && e.name === "text" ? { ...e, recv: self } : e));
-  assert.equal(print(out), 'select n: jobs collect { employer: employer where $self.text("a") } from people where $self.text("b") and size(x) > 1 order by $self.text("c")');
+  assert.equal(print(out), 'select n: jobs collect { employer: employer where $it.text("a") } from people where $it.text("b") and size(x) > 1 order by $it.text("c")');
   assert.notEqual(out, q);
   // the source and the select item's `employer` field were not touched
   assert.equal(out.source, q.source);

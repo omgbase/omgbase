@@ -2083,7 +2083,7 @@ mod tests {
         assert_eq!(translate_predicate(&pred("verified"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("doc.verified"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("size(tags) > 1"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("$self.text(\"x\")"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("$it.text(\"x\")"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("$it == \"x\""), &DOCS), None);
         assert_eq!(translate_predicate(&pred("^slug == \"x\""), &DOCS), None);
         // a WHOLE source handle (3.0: `frontmatter.<k>` itself is pushed)

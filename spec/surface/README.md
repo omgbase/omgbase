@@ -249,7 +249,10 @@ relation returns rows of its successor target; a scalar reach-through
 `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the LANGUAGE
 injects into a scope (`spec/oqx` §2), and omgbase adds **no `$` names** — a
 `$id` or `$path` in a query is an unknown OQX identifier, absent
-(`query-errors::dollar-names-are-not-omgbase-names`). **Every engine attribute
+(`query-errors::dollar-names-are-not-omgbase-names`), and so is `$self`: the
+runner spells a bare row function as a method on `$it` (`text("x")` →
+`$it.text("x")`), the language's own name for the scope's row, and keeps no
+receiver token of its own (`query-errors::dollar-self-is-not-a-name`, 4.11). **Every engine attribute
 is bare, snake_case, and wins on collision** — the convention the relations
 (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always followed:
 a bare name that is an engine attribute reads the engine's value, never the
@@ -2082,6 +2085,15 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-18, surface 4.11 patch — the row-function rewrite targets `$it`, not a
+  private `$self`. Both runners turned a bare `text("x")` into a method call on a
+  synthetic `$self` receiver that the store context answered with the row — an
+  undocumented `$` name omgbase had in fact added, reachable by typing it
+  (`$self.path` read the path). `$it` already is the scope's row in both engines
+  (`spec/oqx` SEMANTICS §2), so the rewrite now produces `$it.text("x")`, the
+  context's `$self` branch is gone, and a typed `$self` is an unknown identifier
+  like `$id` (`query-errors::dollar-self-is-not-a-name`). No fixture moved; no
+  version move (the name rule is unchanged — it is now true of the code).
 - 2026-10-17 (no version move — no shape changed), with `spec/properties`
   1.2: YAML and JSON documents' top-level mappings are their frontmatter
   (`source = frontmatter`, §1.2 above), so every existing read applies to them
