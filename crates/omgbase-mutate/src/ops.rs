@@ -375,7 +375,7 @@ pub fn check_content_hash(
             json!({
                 "op_index": op_index,
                 "block": block.id,
-                "current": { "hash": raw_hash_hex(&block.raw), "markdown": block.raw },
+                "current": { "_hash": raw_hash_hex(&block.raw), "markdown": block.raw },
                 "retriable": true,
             }),
         ));
@@ -389,7 +389,7 @@ pub fn check_content_hash(
                 "op_index": op_index,
                 "block": block.id,
                 "expected_content_hash": expected,
-                "current": { "hash": current, "markdown": block.raw },
+                "current": { "_hash": current, "markdown": block.raw },
                 "retriable": true,
             }),
         ));

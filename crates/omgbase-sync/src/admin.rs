@@ -50,11 +50,12 @@ pub struct RepoStatus {
 }
 
 impl RepoStatus {
-    /// The MCP shape (`camelCase`).
+    /// The MCP shape (`camelCase`; `_id` is the root row's id — `spec/surface`
+    /// §1.2, 5.0 — the rest of the keys are the status's own).
     #[must_use]
     pub fn to_json(&self) -> Value {
         serde_json::json!({
-            "id": self.repo_id,
+            "_id": self.repo_id,
             "slug": self.slug,
             "rootPath": self.root_path,
             "docs": self.docs,

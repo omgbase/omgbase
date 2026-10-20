@@ -223,7 +223,7 @@ impl<'a> ShellSession<'a> {
         line(format!(
             "{}      {}",
             style.accent("@name"),
-            style.dim("a named binding (also @name[i], @name.field)")
+            style.dim("a named binding (also @name[i], @name.field — e.g. @1._id, @t[1]._path)")
         ));
         io.out("");
         line(format!(
@@ -461,7 +461,8 @@ impl<'a> ShellSession<'a> {
                 }
             }
             Json::Number(_) | Json::Bool(_) => js_json(&cap.value),
-            Json::Object(o) => ["id", "id", "node", "path", "path", "locator"]
+            // a query hit leads with `_id`/`_path` (surface 5.0: engine names are `_`-prefixed)
+            Json::Object(o) => ["_id", "node", "_path", "locator"]
                 .iter()
                 .find_map(|k| o.get(*k).filter(|v| !v.is_null()))
                 .map_or_else(

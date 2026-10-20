@@ -389,9 +389,10 @@ pub fn hit_cell(v: Option<&Json>) -> String {
     }
 }
 
-/// The hit envelope's keys (`spec/surface` §1.4, 3.0): never columns.
-const HIT_ID: &str = "id";
-const HIT_PATH: &str = "path";
+/// The hit envelope's keys (`spec/surface` §1.4, 5.0: the engine names,
+/// `_`-prefixed): never columns.
+const HIT_ID: &str = "_id";
+const HIT_PATH: &str = "_path";
 
 fn is_envelope_key(k: &str) -> bool {
     k == HIT_ID || k == HIT_PATH
@@ -399,9 +400,9 @@ fn is_envelope_key(k: &str) -> bool {
 
 /// The projected keys: `projected` (the query's `select` names, in order),
 /// then every other key of `hits`, first-seen order. With `envelope` the
-/// hits carry the automatic `id`/`path` and those are never columns (a
-/// `select path` collapses onto the envelope key); a bare hit (`--bare`, cli
-/// 4.1) has no envelope, so a projected `id`/`path` is a column like any.
+/// hits carry the automatic `_id`/`_path` and those are never columns (a
+/// `select _path` collapses onto the envelope key); a bare hit (`--bare`, cli
+/// 4.1) has no envelope, so a projected `_id`/`_path` is a column like any.
 pub fn hit_columns(hits: &[Json], projected: &[String], envelope: bool) -> Vec<String> {
     let skip = |k: &str| envelope && is_envelope_key(k);
     let mut cols: Vec<String> = Vec::new();
@@ -422,8 +423,8 @@ pub fn hit_columns(hits: &[Json], projected: &[String], envelope: bool) -> Vec<S
     cols
 }
 
-/// Human-tier hit list: `<id>  <path>` lines, or an aligned table when
-/// projected (header `id`, `path`, then the projected keys — `spec/cli` §4).
+/// Human-tier hit list: `<_id>  <_path>` lines, or an aligned table when
+/// projected (header `_id`, `_path`, then the projected keys — `spec/cli` §4, 5.0).
 /// Without `envelope` (`--bare`) the table is the projection's columns alone.
 pub fn render_hits(io: Io, style: &Style, hits: &[Json], projected: &[String], envelope: bool) {
     let str_of = |h: &Json, k: &str| -> String {
@@ -510,8 +511,8 @@ mod tests {
         assert_eq!(
             hit_columns(
                 &[
-                    json!({ "id": "a", "path": "p", "x": 1 }),
-                    json!({ "id": "b", "y": 2 })
+                    json!({ "_id": "a", "_path": "p", "x": 1 }),
+                    json!({ "_id": "b", "y": 2 })
                 ],
                 &[],
                 true
@@ -520,20 +521,20 @@ mod tests {
         );
         assert_eq!(
             hit_columns(
-                &[json!({ "id": "a", "path": "p", "x": 1 })],
-                &["path".into(), "x".into(), "nope".into()],
+                &[json!({ "_id": "a", "_path": "p", "x": 1 })],
+                &["_path".into(), "x".into(), "nope".into()],
                 true
             ),
             vec!["x", "nope"]
         );
-        // bare hits (cli 4.1): no envelope, so a projected `path` is a column
+        // bare hits (cli 4.1): no envelope, so a projected `_path` is a column
         assert_eq!(
             hit_columns(
-                &[json!({ "path": "p", "x": 1 })],
-                &["path".into(), "x".into()],
+                &[json!({ "_path": "p", "x": 1 })],
+                &["_path".into(), "x".into()],
                 false
             ),
-            vec!["path", "x"]
+            vec!["_path", "x"]
         );
     }
 }

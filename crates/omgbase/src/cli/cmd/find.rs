@@ -1,4 +1,5 @@
-//! `find` (§6): `blocks_resolve` — ranked `{ id, locator, preview, evidence }`.
+//! `find` (§6): `blocks_resolve` — ranked `{ _id, locator, preview, evidence }`
+//! (`spec/surface` §4, 5.0).
 
 use serde_json::{Value as Json, json};
 
@@ -44,11 +45,11 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
     cli.capture(&hits); // shell: the ranked hits become the addressable frame
     if a.flag("one") {
         if let Some(h) = items.first() {
-            cli.io.out(&str_of(h, "id"));
+            cli.io.out(&str_of(h, "_id"));
         }
         return Ok(EXIT_OK);
     }
-    let ids: Vec<String> = items.iter().map(|h| str_of(h, "id")).collect();
+    let ids: Vec<String> = items.iter().map(|h| str_of(h, "_id")).collect();
     if let Some(code) = machine_out(cli, &hits, Some(&items), Some(&ids)) {
         return code;
     }
@@ -60,7 +61,7 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
     for h in &items {
         cli.io.out(&format!(
             "{}  {}  {}",
-            style.id(&str_of(h, "id")),
+            style.id(&str_of(h, "_id")),
             style.accent(&str_of(h, "locator")),
             str_of(h, "preview")
         ));

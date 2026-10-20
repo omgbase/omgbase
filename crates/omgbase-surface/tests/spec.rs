@@ -685,7 +685,7 @@ fn surface_composed(data: Option<&Json>) -> bool {
         return true;
     }
     [
-        "id", "path", "doc_id", "doc_path", "ref", "section", "provider",
+        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider",
     ]
     .iter()
     .any(|k| o.contains_key(*k))

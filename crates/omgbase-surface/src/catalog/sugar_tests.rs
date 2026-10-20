@@ -221,7 +221,7 @@ fn apply_json(res: &ApplyResult) -> Json {
         Json::Array(
             res.revisions
                 .iter()
-                .map(|r| json!({ "id": r.doc, "path": reference_path(&r.path), "hash": r.hash }))
+                .map(|r| json!({ "_id": r.doc, "_path": reference_path(&r.path), "_hash": r.hash }))
                 .collect(),
         ),
     );
@@ -288,7 +288,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             apply_ops(s, &repo, root.as_deref(), ops, "blocks_insert")?
         }
         "blocks_update" => {
-            let block = s.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+            let block = s.resolve_block_ref(&repo, &arg_string(args, "_id")?)?;
             let expect = match arg_expect(args)? {
                 Some(e) => Some(e),
                 None => pin_hash(s, &block).map(Expect::content),
@@ -349,7 +349,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             apply_ops(s, &repo, root.as_deref(), ops, "blocks_remove")?
         }
         "blocks_split" => {
-            let block = s.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+            let block = s.resolve_block_ref(&repo, &arg_string(args, "_id")?)?;
             let at: Vec<usize> = args["at"]
                 .as_array()
                 .unwrap()
@@ -373,7 +373,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             apply_ops(s, &repo, root.as_deref(), ops, "blocks_merge")?
         }
         "blocks_check" => {
-            let blocks: Vec<String> = arg_strings(args, "ids")?
+            let blocks: Vec<String> = arg_strings(args, "_ids")?
                 .iter()
                 .map(|b| s.resolve_block_ref(&repo, b))
                 .collect::<Result<_, _>>()?;
@@ -399,7 +399,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             apply_ops(s, &repo, root.as_deref(), ops, "blocks_check")?
         }
         "nodes_set" => {
-            let node_id = arg_string(args, "id")?;
+            let node_id = arg_string(args, "_id")?;
             let known: Option<i64> = s
                 .store
                 .conn()
@@ -413,7 +413,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                 return Err(SurfaceError::with_data(
                     "block_missing",
                     format!("no node with id {}", Json::String(node_id.clone())),
-                    json!({ "id": node_id }),
+                    json!({ "_id": node_id }),
                 ));
             }
             let ops = s.store.node_set(
@@ -424,7 +424,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             apply_ops(s, &repo, root.as_deref(), ops, "nodes_set")?
         }
         "blocks_append" => {
-            let given = arg_string(args, "id")?;
+            let given = arg_string(args, "_id")?;
             let block = s.resolve_block_ref(&repo, &given)?;
             let text = arg_string(args, "text")?;
             let row: Option<(String, Option<String>, i64)> = s
@@ -463,7 +463,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                         "block {block} is a {kind}, not a heading or a container; append means into — insert after it with blocks_insert {{ to: <its parent>, at: {{ after: {} }} }}",
                         Json::String(block.clone())
                     ),
-                    json!({ "id": block, "type": kind }),
+                    json!({ "_id": block, "_type": kind }),
                 ));
             };
             apply_ops(s, &repo, root.as_deref(), ops, "blocks_append")?
@@ -479,7 +479,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                         &doc_id,
                         &info.path,
                         section,
-                        (arg_str(args, "id"), arg_str(args, "path"), &text),
+                        (arg_str(args, "_id"), arg_str(args, "_path"), &text),
                     )?;
                     Store::sections_append(&heading, &text)
                 }
@@ -517,7 +517,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
             let mut m = Map::new();
             m.insert(
                 "hits".to_owned(),
-                Json::Array(plan.hits.iter().map(|h| json!({ "id": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
+                Json::Array(plan.hits.iter().map(|h| json!({ "_id": h.block, "_path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
             );
             m.insert(
                 "pairs".to_owned(),
@@ -827,30 +827,33 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     let upd = p.ok(
         "update-markdown",
         "blocks_update",
-        json!({ "id": notes_paras[0], "markdown": "Edited paragraph." }),
+        json!({ "_id": notes_paras[0], "markdown": "Edited paragraph." }),
     );
-    assert!(upd.get("id").is_none() && upd.get("ids").is_none(), "{upd}");
+    assert!(
+        upd.get("_id").is_none() && upd.get("ids").is_none(),
+        "{upd}"
+    );
     p.ok(
         "update-checked",
         "blocks_update",
-        json!({ "id": tasks[4], "checked": true }),
+        json!({ "_id": tasks[4], "checked": true }),
     );
     p.ok(
         "update-markdown-and-checked",
         "blocks_update",
-        json!({ "id": tasks[0], "markdown": "- [ ] rewritten", "checked": true }),
+        json!({ "_id": tasks[0], "markdown": "- [ ] rewritten", "checked": true }),
     );
     assert_eq!(raw(&p.sugar, &tasks[0]), "- [ ] rewritten");
     p.err(
         "update-stale-content",
         "blocks_update",
-        json!({ "id": notes_paras[1], "markdown": "x", "expect": { "content_hash": "00" } }),
+        json!({ "_id": notes_paras[1], "markdown": "x", "expect": { "content_hash": "00" } }),
         "stale_expectation",
     );
     let multi = p.ok(
         "update-multi-block",
         "blocks_update",
-        json!({ "id": notes_paras[1], "markdown": "Two paragraphs.\n\nSecond." }),
+        json!({ "_id": notes_paras[1], "markdown": "Two paragraphs.\n\nSecond." }),
     );
     assert_eq!(
         multi["new_ids"].as_object().map(Map::len),
@@ -861,7 +864,7 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     p.err(
         "update-checked-stale-content",
         "blocks_update",
-        json!({ "id": tasks[5], "checked": true, "expect": { "content_hash": "00" } }),
+        json!({ "_id": tasks[5], "checked": true, "expect": { "content_hash": "00" } }),
         "stale_expectation",
     );
 
@@ -908,7 +911,7 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     let split = p.ok(
         "split",
         "blocks_split",
-        json!({ "id": notes_paras[0], "at": [6] }),
+        json!({ "_id": notes_paras[0], "at": [6] }),
     );
     // The first half keeps its id, the second is the one symbol minted.
     let second = split["new_ids"]["$new.0"]
@@ -919,7 +922,7 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     p.err(
         "split-bad-offset",
         "blocks_split",
-        json!({ "id": notes_paras[2], "at": [9999] }),
+        json!({ "_id": notes_paras[2], "at": [9999] }),
         "type_mismatch",
     );
 
@@ -940,35 +943,35 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     p.ok(
         "check-on",
         "blocks_check",
-        json!({ "ids": [tasks[5], tasks[1]] }),
+        json!({ "_ids": [tasks[5], tasks[1]] }),
     );
     p.ok(
         "check-off",
         "blocks_check",
-        json!({ "ids": [tasks[1]], "checked": false }),
+        json!({ "_ids": [tasks[1]], "checked": false }),
     );
     p.ok(
         "check-paragraph",
         "blocks_check",
-        json!({ "ids": [notes_paras[2]] }),
+        json!({ "_ids": [notes_paras[2]] }),
     );
 
     // nodes_set: a link's destination, an unknown prop, an unknown node.
     p.ok(
         "node-set",
         "nodes_set",
-        json!({ "id": link, "prop": "value", "value": "/processes/dissolution.md" }),
+        json!({ "_id": link, "prop": "value", "value": "/processes/dissolution.md" }),
     );
     p.err(
         "node-set-unknown-prop",
         "nodes_set",
-        json!({ "id": link, "prop": "nope", "value": "x" }),
+        json!({ "_id": link, "prop": "nope", "value": "x" }),
         "node_not_editable",
     );
     p.err(
         "node-set-unknown-node",
         "nodes_set",
-        json!({ "id": "n_000000000000", "prop": "value", "value": "x" }),
+        json!({ "_id": "n_000000000000", "prop": "value", "value": "x" }),
         "block_missing",
     );
 
@@ -976,17 +979,17 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     p.ok(
         "append-section",
         "blocks_append",
-        json!({ "id": notes_headings[1], "text": "Appended to Setup." }),
+        json!({ "_id": notes_headings[1], "text": "Appended to Setup." }),
     );
     p.ok(
         "append-container",
         "blocks_append",
-        json!({ "id": tasks_list, "text": "- [ ] appended\n" }),
+        json!({ "_id": tasks_list, "text": "- [ ] appended\n" }),
     );
     p.err(
         "append-leaf",
         "blocks_append",
-        json!({ "id": notes_paras[2], "text": "x" }),
+        json!({ "_id": notes_paras[2], "text": "x" }),
         "block_not_container",
     );
 
@@ -995,23 +998,23 @@ fn effect_driven_sugar_tools_match_the_kernel_oracle_over_the_alchemy_corpus() {
     p.ok(
         "docs-append-section",
         "docs_append",
-        json!({ "path": NOTES, "section": "## Results", "text": "Appended under Results." }),
+        json!({ "_path": NOTES, "section": "## Results", "text": "Appended under Results." }),
     );
     p.ok(
         "docs-append-end",
         "docs_append",
-        json!({ "id": doc_id(&p.legacy, NOTES), "text": "- a\n- b\n" }),
+        json!({ "_id": doc_id(&p.legacy, NOTES), "text": "- a\n- b\n" }),
     );
     p.err(
         "docs-append-nope",
         "docs_append",
-        json!({ "path": NOTES, "section": "Nope", "text": "x" }),
+        json!({ "_path": NOTES, "section": "Nope", "text": "x" }),
         "parent_missing",
     );
     p.err(
         "docs-append-missing-doc",
         "docs_append",
-        json!({ "path": "nope.md", "text": "x" }),
+        json!({ "_path": "nope.md", "text": "x" }),
         "doc_missing",
     );
 
@@ -1068,7 +1071,7 @@ fn blocks_update_with_an_empty_expect_succeeds_through_the_planner() {
         return;
     };
     let para = top_blocks(&p.legacy, NOTES, "paragraph")[0].clone();
-    let args = json!({ "id": para, "markdown": "Pinned by the planner.", "expect": {} });
+    let args = json!({ "_id": para, "markdown": "Pinned by the planner.", "expect": {} });
     let old = outcome(call_legacy(&mut p.legacy, "blocks_update", &args));
     assert_eq!(old["error"], "stale_expectation", "{old}");
     assert_eq!(old["message"], "expect.content_hash required");
@@ -1079,7 +1082,7 @@ fn blocks_update_with_an_empty_expect_succeeds_through_the_planner() {
     // A wrong hash is still refused, with the kernel's own data.
     let stale = outcome(p.sugar.call_result(
         "blocks_update",
-        &json!({ "id": para, "markdown": "x", "expect": { "content_hash": "00" } }),
+        &json!({ "_id": para, "markdown": "x", "expect": { "content_hash": "00" } }),
     ));
     assert_eq!(stale["error"], "stale_expectation");
     assert_eq!(stale["data"]["op_index"], 0);
@@ -1087,7 +1090,7 @@ fn blocks_update_with_an_empty_expect_succeeds_through_the_planner() {
     assert!(stale["data"].get("effect_index").is_none(), "{stale}");
 }
 
-/// `blocks_check { ids: [t, t] }`: the kernel expansion pinned both ops to
+/// `blocks_check { _ids: [t, t] }`: the kernel expansion pinned both ops to
 /// the pre-write hash, so the second failed `stale_expectation`; the planner
 /// sees one identical scalar write twice and drops the duplicate — one
 /// revision, the task checked.
@@ -1102,7 +1105,7 @@ fn blocks_check_with_a_duplicate_id_dedupes_through_the_planner() {
         raw(&p.legacy, &task).starts_with("- [ ]"),
         "an unchecked task"
     );
-    let args = json!({ "ids": [task, task] });
+    let args = json!({ "_ids": [task, task] });
     let old = outcome(call_legacy(&mut p.legacy, "blocks_check", &args));
     assert_eq!(old["error"], "stale_expectation", "{old}");
     let (new, plan) = p
@@ -1132,7 +1135,7 @@ fn an_empty_block_list_is_an_argument_error() {
         ("blocks_move", "blocks", json!({ "to": NOTES })),
         ("blocks_remove", "blocks", json!({})),
         ("blocks_merge", "blocks", json!({})),
-        ("blocks_check", "ids", json!({})),
+        ("blocks_check", "_ids", json!({})),
     ] {
         let mut args = extra.as_object().unwrap().clone();
         args.insert(arg.to_owned(), json!([]));
@@ -1170,8 +1173,8 @@ fn an_empty_block_list_is_an_argument_error() {
         "`blocks` must name at least one block (blocks_remove takes blocks, repo?)"
     );
     assert_eq!(
-        outcome(p.sugar.call_result("blocks_check", &json!({ "ids": [] })))["message"],
-        "`ids` must name at least one block (blocks_check takes checked?, ids, repo?)"
+        outcome(p.sugar.call_result("blocks_check", &json!({ "_ids": [] })))["message"],
+        "`_ids` must name at least one block (blocks_check takes _ids, checked?, repo?)"
     );
 }
 
@@ -1200,24 +1203,24 @@ fn previews_are_plans_that_burn_nothing() {
         ),
         (
             "blocks_update",
-            json!({ "id": notes_paras[0], "markdown": "Edited." }),
+            json!({ "_id": notes_paras[0], "markdown": "Edited." }),
         ),
         (
             "blocks_move",
             json!({ "blocks": [notes_paras[1]], "to": NOTES, "at": "start" }),
         ),
-        ("blocks_check", json!({ "ids": [tasks[0]] })),
-        ("blocks_split", json!({ "id": notes_paras[2], "at": [4] })),
+        ("blocks_check", json!({ "_ids": [tasks[0]] })),
+        ("blocks_split", json!({ "_id": notes_paras[2], "at": [4] })),
         ("blocks_remove", json!({ "blocks": [tasks[6]] })),
         (
             "nodes_set",
-            json!({ "id": link, "prop": "value", "value": "/x.md" }),
+            json!({ "_id": link, "prop": "value", "value": "/x.md" }),
         ),
         (
             "blocks_append",
-            json!({ "id": tasks_list, "text": "- [ ] appended\n" }),
+            json!({ "_id": tasks_list, "text": "- [ ] appended\n" }),
         ),
-        ("docs_append", json!({ "id": doc, "text": "Appended.\n" })),
+        ("docs_append", json!({ "_id": doc, "text": "Appended.\n" })),
         (
             "links_retarget",
             json!({ "from_target": "mercury", "to_target": "substances/mercury.md" }),
@@ -1228,20 +1231,20 @@ fn previews_are_plans_that_burn_nothing() {
         ),
         (
             "docs_set_meta",
-            json!({ "path": SALT, "set": { "reviewed": "2026-09" }, "unset": ["tradition"] }),
+            json!({ "_path": SALT, "set": { "reviewed": "2026-09" }, "unset": ["tradition"] }),
         ),
         (
             "docs_move",
-            json!({ "path": "texts/mutus-liber.md", "to_path": "texts/silent-book.md" }),
+            json!({ "_path": "texts/mutus-liber.md", "to_path": "texts/silent-book.md" }),
         ),
-        ("docs_delete", json!({ "path": "texts/emerald-tablet.md" })),
+        ("docs_delete", json!({ "_path": "texts/emerald-tablet.md" })),
         (
             "docs_update",
-            json!({ "path": "processes/calcination.md", "content": "# Calcination\n\nOnly this.\n" }),
+            json!({ "_path": "processes/calcination.md", "content": "# Calcination\n\nOnly this.\n" }),
         ),
         (
             "apply",
-            json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "path": NOTES }, "markdown": "Via apply.\n" }] }),
+            json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "_path": NOTES }, "markdown": "Via apply.\n" }] }),
         ),
     ];
     for (tool, args) in cases {
@@ -1314,7 +1317,7 @@ fn previews_are_plans_that_burn_nothing() {
     );
     let patched = s.call(
         "docs_set_meta",
-        json!({ "path": SALT, "set": { "verified": true } }),
+        json!({ "_path": SALT, "set": { "verified": true } }),
     );
     let rows = dispositions_of(&s, patched.body["commit"].as_str().unwrap());
     assert!(rows.is_empty(), "{rows:?}");
@@ -1379,12 +1382,12 @@ fn document_operations_are_the_stores_builders() {
             .map(|r| r.receipt.to_json())
     });
     assert_eq!(
-        created["revisions"][0]["id"],
-        store_created["revisions"][0]["id"]
+        created["revisions"][0]["_id"],
+        store_created["revisions"][0]["_id"]
     );
     assert_eq!(created["new_ids"], store_created["new_ids"]);
     assert_eq!(
-        created["revisions"][0]["path"], "/substances/gold.md",
+        created["revisions"][0]["_path"], "/substances/gold.md",
         "rooted at the surface"
     );
     same("create", &a, &b);
@@ -1412,7 +1415,7 @@ fn document_operations_are_the_stores_builders() {
 
     // set_meta: set two + unset one, a shared key, a document without
     // frontmatter, an absent key, a miss, nothing to do.
-    let patched = outcome(a.call_result("docs_set_meta", &json!({ "path": SALT, "set": { "verified": false, "reviewed": "2026-09" }, "unset": ["tradition"] })));
+    let patched = outcome(a.call_result("docs_set_meta", &json!({ "_path": SALT, "set": { "verified": false, "reviewed": "2026-09" }, "unset": ["tradition"] })));
     assert_eq!(
         patched["revisions"].as_array().map(Vec::len),
         Some(1),
@@ -1429,7 +1432,7 @@ fn document_operations_are_the_stores_builders() {
     let shared: Map<String, Json> = serde_json::from_str(r#"{"status":"x","other":1}"#).unwrap();
     outcome(a.call_result(
         "docs_set_meta",
-        &json!({ "path": SALT, "set": shared, "unset": ["status"] }),
+        &json!({ "_path": SALT, "set": shared, "unset": ["status"] }),
     ));
     via_store(&mut b, &|store, ds, c| {
         store
@@ -1439,20 +1442,20 @@ fn document_operations_are_the_stores_builders() {
     same("set-meta-shared-key", &a, &b);
     let missing = outcome(a.call_result(
         "docs_set_meta",
-        &json!({ "path": "nope.md", "set": { "a": 1 } }),
+        &json!({ "_path": "nope.md", "set": { "a": 1 } }),
     ));
     assert_eq!(missing["error"], "doc_missing");
-    assert_eq!(missing["data"], json!({ "path": "nope.md" }));
+    assert_eq!(missing["data"], json!({ "_path": "nope.md" }));
     let before = footprint(&a);
     for args in [
-        json!({ "path": SALT, "set": {}, "unset": [] }),
-        json!({ "path": SALT }),
+        json!({ "_path": SALT, "set": {}, "unset": [] }),
+        json!({ "_path": SALT }),
     ] {
         let out = outcome(a.call_result("docs_set_meta", &args));
         assert_eq!(out["error"], "filter_invalid", "{out}");
         assert_eq!(
             out["message"],
-            "pass `set` and/or `unset` (docs_set_meta takes id?, path?, repo?, set?, unset?)",
+            "pass `set` and/or `unset` (docs_set_meta takes _id?, _path?, repo?, set?, unset?)",
             "{out}"
         );
     }
@@ -1462,7 +1465,7 @@ fn document_operations_are_the_stores_builders() {
     // link report; a destination taken; a miss; without the retarget.
     let moved = outcome(a.call_result(
         "docs_move",
-        &json!({ "path": MUTUS, "to_path": "texts/silent-book.md" }),
+        &json!({ "_path": MUTUS, "to_path": "texts/silent-book.md" }),
     ));
     assert!(moved.get("error").is_none(), "{moved}");
     let store_moved = via_store(&mut b, &|store, ds, c| {
@@ -1488,7 +1491,7 @@ fn document_operations_are_the_stores_builders() {
         Some(1),
         "the rewritten source: {moved}"
     );
-    assert_eq!(moved["revisions"][0]["path"], "/index.md");
+    assert_eq!(moved["revisions"][0]["_path"], "/index.md");
     assert_eq!(
         moved.as_object().unwrap().keys().collect::<Vec<_>>(),
         [
@@ -1504,15 +1507,16 @@ fn document_operations_are_the_stores_builders() {
     );
     let taken = outcome(a.call_result(
         "docs_move",
-        &json!({ "path": SALT, "to_path": "/index.md" }),
+        &json!({ "_path": SALT, "to_path": "/index.md" }),
     ));
     assert_eq!(taken["message"], "a document already exists at index.md");
     assert_eq!(taken["data"], json!({}));
-    let missing = outcome(a.call_result("docs_move", &json!({ "path": MUTUS, "to_path": "x.md" })));
+    let missing =
+        outcome(a.call_result("docs_move", &json!({ "_path": MUTUS, "to_path": "x.md" })));
     assert_eq!(missing["error"], "doc_missing");
     let plain = outcome(a.call_result(
         "docs_move",
-        &json!({ "path": EMERALD, "to_path": "texts/tablet.md", "retarget_inbound": false }),
+        &json!({ "_path": EMERALD, "to_path": "texts/tablet.md", "retarget_inbound": false }),
     ));
     via_store(&mut b, &|store, ds, c| {
         store
@@ -1526,7 +1530,7 @@ fn document_operations_are_the_stores_builders() {
         "{plain}"
     );
     assert_eq!(
-        plain["dangling"][0]["path"]
+        plain["dangling"][0]["_path"]
             .as_str()
             .map(|p| p.starts_with('/')),
         Some(true),
@@ -1535,7 +1539,7 @@ fn document_operations_are_the_stores_builders() {
     assert_eq!(plain["retargeted"], Json::Null);
 
     // delete: a Receipt without a revision; a repeat is a miss.
-    let deleted = outcome(a.call_result("docs_delete", &json!({ "path": "texts/tablet.md" })));
+    let deleted = outcome(a.call_result("docs_delete", &json!({ "_path": "texts/tablet.md" })));
     via_store(&mut b, &|store, ds, c| {
         store
             .docs_delete(c, ds, "texts/tablet.md")
@@ -1544,7 +1548,7 @@ fn document_operations_are_the_stores_builders() {
     same("delete", &a, &b);
     assert_eq!(deleted["revisions"], json!([]));
     assert!(deleted["commit"].is_string(), "{deleted}");
-    let again = outcome(a.call_result("docs_delete", &json!({ "path": "texts/tablet.md" })));
+    let again = outcome(a.call_result("docs_delete", &json!({ "_path": "texts/tablet.md" })));
     assert_eq!(again["error"], "doc_missing");
 }
 
@@ -1563,18 +1567,18 @@ fn retired_names_are_argument_errors_on_every_write_tool() {
     let writes: Vec<(&str, Json)> = vec![
         ("apply", json!({ "effects": [] })),
         ("blocks_insert", json!({ "to": NOTES, "markdown": "x" })),
-        ("blocks_update", json!({ "id": para, "markdown": "x" })),
+        ("blocks_update", json!({ "_id": para, "markdown": "x" })),
         ("blocks_move", json!({ "blocks": [para], "to": NOTES })),
         ("blocks_remove", json!({ "blocks": [para] })),
-        ("blocks_split", json!({ "id": para, "at": [1] })),
+        ("blocks_split", json!({ "_id": para, "at": [1] })),
         ("blocks_merge", json!({ "blocks": [para] })),
-        ("blocks_check", json!({ "ids": [para] })),
+        ("blocks_check", json!({ "_ids": [para] })),
         (
             "nodes_set",
-            json!({ "id": "n_x", "prop": "value", "value": "x" }),
+            json!({ "_id": "n_x", "prop": "value", "value": "x" }),
         ),
-        ("blocks_append", json!({ "id": para, "text": "x" })),
-        ("docs_append", json!({ "path": NOTES, "text": "x" })),
+        ("blocks_append", json!({ "_id": para, "text": "x" })),
+        ("docs_append", json!({ "_path": NOTES, "text": "x" })),
         (
             "links_retarget",
             json!({ "from_target": "a", "to_target": "b" }),
@@ -1584,10 +1588,13 @@ fn retired_names_are_argument_errors_on_every_write_tool() {
             json!({ "from_target": "a", "to_target": "b" }),
         ),
         ("docs_create", json!({ "path": "n.md", "markdown": "x" })),
-        ("docs_move", json!({ "path": NOTES, "to_path": "x.md" })),
-        ("docs_delete", json!({ "path": NOTES })),
-        ("docs_set_meta", json!({ "path": NOTES, "set": { "a": 1 } })),
-        ("docs_update", json!({ "path": NOTES, "content": "x" })),
+        ("docs_move", json!({ "_path": NOTES, "to_path": "x.md" })),
+        ("docs_delete", json!({ "_path": NOTES })),
+        (
+            "docs_set_meta",
+            json!({ "_path": NOTES, "set": { "a": 1 } }),
+        ),
+        ("docs_update", json!({ "_path": NOTES, "content": "x" })),
     ];
     for (tool, args) in writes {
         let mut with_dry = args.as_object().unwrap().clone();
@@ -1627,11 +1634,11 @@ fn retired_names_are_argument_errors_on_every_write_tool() {
     );
     let attrs = outcome(s.call_result(
         "blocks_update",
-        &json!({ "id": para, "attrs": { "custom": 1 } }),
+        &json!({ "_id": para, "attrs": { "custom": 1 } }),
     ));
     assert_eq!(
         attrs["message"],
-        "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+        "`attrs` is no longer an argument — pass `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
     );
     let applied = outcome(s.call_result(
         "links_retarget",
@@ -1691,14 +1698,14 @@ fn docs_update_is_set_content_sugar_with_the_kernel_footprint() {
     sugar.actor = "agent:test".to_owned();
     let receipt = outcome(sugar.call_result(
         "docs_update",
-        &json!({ "path": MUTUS, "content": content, "reason": "interop" }),
+        &json!({ "_path": MUTUS, "content": content, "reason": "interop" }),
     ));
     assert_eq!(receipt["committed"], json!(true));
     assert_eq!(receipt["plan_id"].as_str().map(str::len), Some(64));
     assert_eq!(receipt["commit"], json!("c_20"));
     assert_eq!(
         receipt["revisions"],
-        json!([{ "id": "d_17", "path": "/texts/mutus-liber.md", "hash": legacy_result.revisions[0].hash }])
+        json!([{ "_id": "d_17", "_path": "/texts/mutus-liber.md", "_hash": legacy_result.revisions[0].hash }])
     );
     assert!(
         receipt["new_ids"].as_object().map(Map::len) >= Some(opset.summary.created),
@@ -1752,8 +1759,10 @@ fn docs_update_is_set_content_sugar_with_the_kernel_footprint() {
 
     // Already current: nothing planned, nothing committed.
     let before = footprint(&sugar);
-    let again =
-        outcome(sugar.call_result("docs_update", &json!({ "path": MUTUS, "content": content })));
+    let again = outcome(sugar.call_result(
+        "docs_update",
+        &json!({ "_path": MUTUS, "content": content }),
+    ));
     assert_eq!(again["commit"], Json::Null);
     assert_eq!(again["revisions"], json!([]));
     assert_eq!(again["new_ids"], json!({}));
@@ -1764,13 +1773,13 @@ fn docs_update_is_set_content_sugar_with_the_kernel_footprint() {
     // plan's `preview.identity` — through `plan` and through the CLI's seam.
     let missing = outcome(sugar.call_result(
         "docs_update",
-        &json!({ "path": "nope.md", "content": "# x\n" }),
+        &json!({ "_path": "nope.md", "content": "# x\n" }),
     ));
     assert_eq!(missing["error"], "doc_missing");
-    assert_eq!(missing["data"], json!({ "path": "nope.md" }));
+    assert_eq!(missing["data"], json!({ "_path": "nope.md" }));
     let plan = outcome(sugar.call_result(
         "plan",
-        &json!({ "effects": [{ "op": "set", "target": { "kind": "document", "path": MUTUS }, "field": "content", "value": "# Mutus Liber\n\nOnly this.\n" }] }),
+        &json!({ "effects": [{ "op": "set", "target": { "kind": "document", "_path": MUTUS }, "field": "content", "value": "# Mutus Liber\n\nOnly this.\n" }] }),
     ));
     let identity = &plan["preview"]["identity"]["d_17"];
     assert_eq!(identity["matcher_v"], json!(opset.matcher_v));
@@ -1780,7 +1789,7 @@ fn docs_update_is_set_content_sugar_with_the_kernel_footprint() {
     let previewed = sugar
         .preview_call(
             "docs_update",
-            &json!({ "path": MUTUS, "content": "# Mutus Liber\n\nOnly this.\n" }),
+            &json!({ "_path": MUTUS, "content": "# Mutus Liber\n\nOnly this.\n" }),
         )
         .unwrap();
     assert_eq!(previewed["plan_id"], plan["plan_id"]);

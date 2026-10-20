@@ -1,7 +1,8 @@
 //! The runner (`spec/surface/README.md` §1.4): parse the source, rewrite the
 //! row functions to `$it` methods, run it through the engine over the
 //! store context, and shape the engine's result into the surface's
-//! `OqxResult` (lean `{ id, path, … }` hits, keyset paging, the consumer
+//! `OqxResult` (lean `{ _id, _path, … }` hits — the envelope keys ARE the
+//! attributes, `spec/surface` §1.4 (5.0) — keyset paging, the consumer
 //! scalars). Port of `packages/core/src/oqx-js/run.ts`.
 //!
 //! By default the tier-3 planner ([`crate::planner`]) pre-filters the scan in
@@ -52,18 +53,18 @@ const ROW_FNS: [&str; 12] = [
 
 const ID_KEY: &str = "__oqx_id";
 const PATH_KEY: &str = "__oqx_path";
-/// The hit envelope's keys (§1.4, 3.0): the row's identity under the same
-/// bare names the expression language reads, so a key copied from a hit is
-/// valid in the next `where` with no translation; `select id, path` is simply
-/// the envelope and any other projection whose output key would be one of
-/// these must be aliased ([`envelope_collision`]).
-pub(crate) const HIT_ID: &str = "id";
-pub(crate) const HIT_PATH: &str = "path";
+/// The hit envelope's keys (§1.4, 5.0): the row's identity under the same
+/// engine names the expression language reads, so a key copied from a hit is
+/// valid in the next `where` with no translation; `select _id, _path` is
+/// simply the envelope and any other projection whose output key would be one
+/// of these must be aliased ([`envelope_collision`]).
+pub(crate) const HIT_ID: &str = "_id";
+pub(crate) const HIT_PATH: &str = "_path";
 /// A hit is a store row (§1.4, 1.5). A bare root scan's rows are store rows by
 /// construction; a `follow` destination (`follow before` over a frontmatter
 /// list of paths), a `from E` re-projection or any other source can reach a
-/// scalar, which the injected `id`/`path` reads would render as the junk hit
-/// `{ id: "undefined", path: "" }`. For those queries the row itself is
+/// scalar, which the injected `_id`/`_path` reads would render as the junk
+/// hit `{ _id: "undefined", _path: "" }`. For those queries the row itself is
 /// projected too (`$it`) under this key and [`to_hit`] fails the query when it
 /// is not a row. Only then: the clone of every projected row is a real cost
 /// here, and a root scan cannot need it. A `values` projection returns no
@@ -88,15 +89,15 @@ pub struct QueryOptions<'a> {
     /// The default plans; the differential gate runs both and compares.
     pub in_memory: bool,
     /// `bare: true` (§1.4, 4.2): every hit is its projection only — the
-    /// automatic `id`/`path` envelope members are stripped when the result is
-    /// shaped, AFTER paging and distinct (identity is kept internally: the
+    /// automatic `_id`/`_path` envelope members are stripped when the result
+    /// is shaped, AFTER paging and distinct (identity is kept internally: the
     /// keyset cursor and the dedup key read the envelope). Needs a `select`
     /// (without a projection a hit is only its envelope) and is refused with
-    /// `values` (already the bare-values form); a projected `id`/`path` is the
-    /// row's intrinsic, kept as any projected key is.
+    /// `values` (already the bare-values form); a projected `_id`/`_path` is
+    /// the attribute's value, kept as any projected key is.
     pub bare: bool,
-    /// What a tier-3 name on an open kind does (`spec/surface` §1.5, 4.6; a
-    /// tier-3 name on `links` is `filter_invalid` either way): `Hint` records
+    /// What an unknown bare name on an open kind does (`spec/surface` §1.5,
+    /// 4.6; a bare name on `links` is `filter_invalid` either way): `Hint` records
     /// it in `hints` and runs the query — the default of the source entry
     /// ([`query`], every read); `Refuse` fails with `filter_invalid` before
     /// any row is read — the default of the AST entry ([`query_ast`]), whose
@@ -131,9 +132,9 @@ pub struct OqxResult {
     pub none: Option<bool>,
     /// A top-level `values` projection's bare values, in place of `hits`.
     pub values: Option<Vec<Json>>,
-    /// Unknown names (`spec/surface` §1.5, 4.6): one line per name the query
-    /// reads that is neither a field of its row kind nor a property any object
-    /// of that kind in the repository carries — the rows are still returned.
+    /// Unknown names (`spec/surface` §1.5, 4.6): one line per bare name the
+    /// query reads that no object of its row kind in the repository carries —
+    /// the rows are still returned.
     /// First-reference order, deduplicated; empty = absent on the wire (never
     /// `[]`). The last member of the result.
     pub hints: Vec<String>,
@@ -194,19 +195,21 @@ impl OqxResult {
 // ---- the `$it` rewrite -----------------------------------------------------------
 
 /// Paths on the surface are the reference form (`spec/surface` §1 "Paths",
-/// 2.0): `path` and the edge field `dst_path` read `/a/b.md`. A string
-/// literal a query compares with one of them — `path == "a.md"`, `"a.md" !=
-/// dst_path`,
-/// `path.startsWith("lab/")` — is rooted first, so both spellings match; a
-/// property or binding compared with a path is never touched (it is the
-/// author's value). The planner sees the rewritten tree too, so the pushed
-/// SQL and the in-memory engine agree by construction.
-const PATH_ATTRIBUTES: [&str; 2] = ["path", "dst_path"];
-/// The handles through which a member read reaches a ROW's `path` (`doc.path`,
-/// `block.path`, a link's `dst.path`, `$it.path`); a member read through a
-/// source handle (`data.path`, `frontmatter.path`) is the author's value and
-/// is never rooted.
-const ROW_HANDLES: [&str; 4] = ["doc", "block", "dst", "$it"];
+/// 2.0): `_path` and the edge field `_dst_path` read `/a/b.md`. A string
+/// literal a query compares with one of them — `_path == "a.md"`, `"a.md" !=
+/// _dst_path`, `_path.startsWith("lab/")`, `_doc._path == "a.md"` — is rooted
+/// first, so both spellings match; a property or binding compared with a path
+/// is never touched (it is the author's value) — so an authored `path:` key,
+/// bare or through a source handle (`path`, `_data.path`,
+/// `_frontmatter.path`), is compared as written. The planner sees the
+/// rewritten tree too, so the pushed SQL and the in-memory engine agree by
+/// construction.
+const PATH_ATTRIBUTES: [&str; 2] = ["_path", "_dst_path"];
+/// The handles through which a member read reaches a ROW's `_path`
+/// (`_doc._path`, `_block._path`, a link's `_dst._path`, `$it._path`); a
+/// member read through a source handle (`_data.path`, `_frontmatter.path`) is
+/// the author's value and is never rooted.
+const ROW_HANDLES: [&str; 4] = ["_doc", "_block", "_dst", "$it"];
 
 fn is_path_read(e: &Expr) -> bool {
     match e {
@@ -220,15 +223,17 @@ fn is_path_read(e: &Expr) -> bool {
     }
 }
 
-/// Result projections may not overwrite the envelope (§1.4, 3.0): a projection
-/// whose output key is `id` or `path` is allowed only when it IS the envelope's
-/// own selection — the bare attribute of the same name, which collapses onto
-/// the envelope key (`select id, path` is simply the envelope) — and is
-/// otherwise a loud error asking for an alias: `select data.path` must be
-/// `select p: data.path`, `select path: doc.layer` likewise. Checked over the
-/// resolved items (an alias is just a name here), before the engine runs, so
-/// the error never depends on the rows. A `values` projection returns no hits,
-/// so the envelope — and the rule — do not apply. Same rule as the reference's
+/// Result projections may not overwrite the envelope (§1.4, 5.0): a projection
+/// whose output key is `_id` or `_path` is allowed only when it IS the
+/// envelope's own selection — the attribute of the same name, which collapses
+/// onto the envelope key (`select _id, _path` is simply the envelope) — and is
+/// otherwise a loud error asking for an alias: `select _path: layer` must pick
+/// another name. (Since 5.0 the author's `path:`/`id:` keys are the bare
+/// `path`/`id`, their own columns — nothing collides by accident; only an
+/// alias spelled `_id:`/`_path:` can.) Checked over the resolved items (an
+/// alias is just a name here), before the engine runs, so the error never
+/// depends on the rows. A `values` projection returns no hits, so the envelope
+/// — and the rule — do not apply. Same rule as the reference's
 /// `envelopeCollision`.
 fn envelope_collision(items: &[SelectItem]) -> Option<SurfaceError> {
     for item in items {
@@ -243,20 +248,16 @@ fn envelope_collision(items: &[SelectItem]) -> Option<SurfaceError> {
         {
             continue;
         }
-        let hint = if name == HIT_PATH {
-            "p: data.path"
-        } else {
-            "i: data.id"
-        };
+        let hint = if name == HIT_PATH { "p" } else { "i" };
         return Some(SurfaceError::filter_invalid(
-            format!("projection `{name}` collides with the hit envelope — alias it (`{hint}`)"),
+            format!("projection `{name}` collides with the hit envelope — alias it (`{hint}: …`)"),
             "OQX",
         ));
     }
     None
 }
 
-/// A `flatten … as id` / `as path` (oqx 0.25) would shadow the envelope's own
+/// A `flatten … as _id` / `as _path` (oqx 0.25) would shadow the envelope's own
 /// reads on the flattened row (the bound name shadows a same-named row
 /// property, SEMANTICS §25): refused, like a projection that collides with the
 /// envelope. Same rule as the reference's `runResolved`.
@@ -343,7 +344,7 @@ pub fn root_path_literals(e: Expr) -> Expr {
 /// days"))`, folded inside-out since `transform` maps children first) become
 /// the string / number / null they evaluate to — by the SAME functions the
 /// context runs, so nothing changes in meaning — before the planner sees the
-/// tree. So `where updated_at < date("today")` is a text-vs-text comparison
+/// tree. So `where _updated_at < date("today")` is a text-vs-text comparison
 /// the translator pushes down (a call is otherwise an unconditional decline),
 /// and a named point is resolved ONCE per query, at `now_ms`. A call with the
 /// wrong arity is left in place: it raises when evaluated, and an empty source
@@ -409,7 +410,7 @@ pub fn rewrite_query(q: &Query, now_ms: i64) -> Query {
 // ---- the root row (spec/surface §1.1, 2.0) ----------------------------------------------
 
 /// The `$repo` error (removed in surface 2.0): the same text in both engines.
-pub const REPO_REMOVED_MESSAGE: &str = "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`";
+pub const REPO_REMOVED_MESSAGE: &str = "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`";
 
 /// The bare-target error. `depth` is the scope depth the name was read at when
 /// known statically (the carets in the hint count it); `None` when raised at
@@ -466,14 +467,14 @@ pub fn past_root_message(t: Target, levels: usize) -> String {
 
 /// The repository is OQX's root row (`spec/oqx` 0.18): from a top-level row
 /// `^docs` reaches the documents (one caret per enclosing block, or the
-/// absolute `0^docs`) and `^id` the repository id. Two spellings are refused
+/// absolute `0^docs`) and `^_id` the repository id. Two spellings are refused
 /// before evaluation, by one walk over the parsed tree, so the error does not
 /// depend on which rows the data holds and the planned and in-memory paths
 /// agree trivially: `$repo` anywhere (bare, as a member head, `^$repo`,
-/// `0^$repo`), and a bare `docs`/`links` at scope depth ≥ 1 — a property read
-/// of a row that has none. `blocks`/`nodes` are relations of some rows
-/// (`docs.blocks`, `docs.nodes`, `blocks.nodes`, `section.blocks`) and are
-/// judged by the context at read time with the same message. A `^<target>`
+/// `0^$repo`), and a bare root name at scope depth ≥ 1 — a property read of a
+/// row that has none (since 5.0 every relation is `_`-prefixed, so a bare
+/// `blocks`/`nodes`/`revisions` is never one either; the context answers the
+/// same message should one reach it). A `^<target>`
 /// with more carets than enclosing scopes (`^docs count { }` at the top level)
 /// would read absent and count 0: refused too, naming the bare spelling. Port
 /// of the reference's `checkRootSpellings`.
@@ -502,9 +503,9 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
                     self.0 = Some(SurfaceError::filter_invalid(REPO_REMOVED_MESSAGE, "OQX"));
                 }
                 Node::Expr(Expr::Ident { name, .. })
-                    if ctx.depth >= 1 && matches!(name.as_str(), "docs" | "links") =>
+                    if ctx.depth >= 1
+                        && let Some(t) = Target::parse(name) =>
                 {
-                    let t = Target::parse(name).expect("a target name");
                     self.0 = Some(SurfaceError::filter_invalid(
                         bare_target_message(t, Some(ctx.depth)),
                         "OQX",
@@ -606,7 +607,8 @@ pub fn embed_phrases(
 /// `__oqx_self`, `__oqx_value`) and the selector compiler's slots
 /// (`__omg_sel_<t>_<slot>`, [`crate::select`]) share two reserved prefixes.
 /// A user alias under either would shadow an injected item (`select
-/// __oqx_id: 1` overwrote the hit's `id` through 4.0) or collide with a
+/// __oqx_id: 1` overwrote the hit's `id` through 4.0; the engine prefix of
+/// 5.0 is a single `_`, two underscores stay the runner's) or collide with a
 /// slot, so it is refused before anything runs (4.1) — over the query's own
 /// top-level items, the only ones the runner injects beside. The reference's
 /// `reservedAlias`.
@@ -706,7 +708,7 @@ fn not_a_store_row(v: &Value) -> SurfaceError {
 /// the hits carry it (`bare`). `id` is JavaScript's `String()` on the injected
 /// id, `path` `""` for an absent path; `proj` is the user projection with its
 /// values rendered per §1.4 "rows as values" (a store row nested in the result
-/// — an empty-projection `collect { }` and friends — becomes `{ id, path }`).
+/// — an empty-projection `collect { }` and friends — becomes `{ _id, _path }`).
 /// When the row itself was projected under [`SELF_KEY`] and is not a store
 /// row, the query fails (§1.4: a hit is a store row).
 #[derive(Debug)]
@@ -767,9 +769,9 @@ fn raw_identity(row: &Value) -> (String, String) {
     (path_string(&get(PATH_KEY)), get(ID_KEY).to_string())
 }
 
-/// A hit: `{ id, path, ...proj }` (§1.4, 3.0: the envelope keys are the
+/// A hit: `{ _id, _path, ...proj }` (§1.4, 5.0: the envelope keys are the
 /// attributes that read them). The envelope keys lead; a user projection of
-/// `id`/`path` collapses onto them in place (the same value, read by the
+/// `_id`/`_path` collapses onto them in place (the same value, read by the
 /// same attribute).
 fn to_hit(s: Shaped) -> Value {
     let mut hit = oqx::Object::with_capacity(s.proj.len() + 2);
@@ -782,9 +784,9 @@ fn to_hit(s: Shaped) -> Value {
 }
 
 /// `bare` (§1.4, 4.2): the projection alone, in the query's own order. A
-/// projected `id`/`path` is an ordinary column here — the intrinsic the
-/// attribute reads, under the key the query gave it — and nothing is injected
-/// beside it.
+/// projected `_id`/`_path` is an ordinary column here — the attribute's
+/// value, under the key the query gave it — and nothing is injected beside
+/// it.
 fn to_bare_hit(s: Shaped) -> Value {
     Value::Object(s.proj)
 }
@@ -799,10 +801,10 @@ fn render_hit(s: Shaped, bare: bool) -> Json {
 }
 
 /// Top-level `select distinct`: dedup by the USER projection — every field but
-/// the envelope's `id`/`path`, which a projection of the attribute collapses
-/// onto (so `select distinct id` dedups on nothing but the empty projection,
+/// the envelope's `_id`/`_path`, which a projection of the attribute collapses
+/// onto (so `select distinct _id` dedups on nothing but the empty projection,
 /// as it always has); under `bare` there is no envelope, so a projected
-/// `id`/`path` IS part of the projection and counts. Keeps the first (so the
+/// `_id`/`_path` IS part of the projection and counts. Keeps the first (so the
 /// retained row carries a real identity), order-preserving. The key is the
 /// canonical JSON of the sorted `[key, value]` pairs (`JSON.stringify` in the
 /// reference).
@@ -1261,12 +1263,12 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
     }
 
     // A grouped query (oqx 0.24, SEMANTICS §24) yields GROUPS, not store rows:
-    // the envelope does not apply — there is no `id`/`path` to inject and no
+    // the envelope does not apply — there is no `_id`/`_path` to inject and no
     // keyset to page by — so a hit is the group's projection as the query
     // wrote it (`{ layer, n }`), exactly what `bare` yields for a row query;
     // `bare` is accepted and changes nothing. Rows that surface as values
-    // (`rows collect { }` with an empty projection, `collect(doc)`) render as
-    // `{ id, path }` refs like every row-as-value. Paging is by position: the
+    // (`rows collect { }` with an empty projection, `collect($it)`) render as
+    // `{ _id, _path }` refs like every row-as-value. Paging is by position: the
     // query's own `limit`/`offset` define the set, the tool's `limit` takes
     // the first page, `truncated` says whether more groups follow, the cursor
     // is always null (as under a custom `order by`). `distinct` cannot occur
@@ -1282,7 +1284,7 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
     // keyset cursor cannot land inside a document's elements: a flattened
     // query pages positionally with a null cursor, as a grouped query and a
     // custom `order by` do (a keyset extended with the flatten ordinal is a
-    // later round). A bound name of `id` or `path` would shadow the envelope's
+    // later round). A bound name of `_id` or `_path` would shadow the envelope's
     // own reads (the name shadows a same-named row property on the flattened
     // row): refused, like a projection that collides with the envelope.
     let flattened = !parsed.flatten.is_empty();
@@ -1290,9 +1292,9 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
         return Err(e);
     }
 
-    // collect / first / single: inject id + path so every hit carries them. A
-    // top-level `select distinct` is applied HERE, not in the engine (the
-    // injected id/path are unique per row and would defeat the engine's
+    // collect / first / single: inject _id + _path so every hit carries them.
+    // A top-level `select distinct` is applied HERE, not in the engine (the
+    // injected _id/_path are unique per row and would defeat the engine's
     // projection dedup). A top-level `values` projection runs as a RECORD
     // projection whose single item is renamed to VALUE_KEY.
     let top_distinct = parsed.distinct;
@@ -1323,15 +1325,15 @@ fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Res
     };
     // `bare` (4.2): the hits are the projection alone — refused without one
     // and with `values`; with no envelope there is no collision to refuse
-    // either, a projected `id`/`path` is simply a column.
+    // either, a projected `_id`/`_path` is simply a column.
     let bare = opts.bare;
     if bare {
         check_bare(&parsed)?;
     } else if !top_values && let Some(e) = envelope_collision(&user_select) {
         return Err(e);
     }
-    let id_item = build::field(ID_KEY, build::ident("id"));
-    let path_item = build::field(PATH_KEY, build::ident("path"));
+    let id_item = build::field(ID_KEY, build::ident(HIT_ID));
+    let path_item = build::field(PATH_KEY, build::ident(HIT_PATH));
     let mut select = vec![id_item, path_item];
     if !top_values && may_reach_non_rows(&parsed) {
         select.push(build::field(SELF_KEY, build::ident("$it")));
@@ -1570,8 +1572,8 @@ mod tests {
                 "from docs where stage in (\"nigredo\", \"albedo\")",
             ),
             (
-                "from blocks where depth in [0, 1] and path == \"/index.md\"",
-                "from blocks where depth in (0, 1) and path == \"/index.md\"",
+                "from blocks where _depth in [0, 1] and _path == \"/index.md\"",
+                "from blocks where _depth in (0, 1) and _path == \"/index.md\"",
             ),
             (
                 "from docs where verified in [ true, 'yes', null ]",
@@ -1583,8 +1585,8 @@ mod tests {
             ),
             // the offset counts code points, as the parser does
             (
-                "from docs where title in [\"é\", \"ü\"] and stage in [\"a\", \"b\"]",
-                "from docs where title in (\"é\", \"ü\") and stage in [\"a\", \"b\"]",
+                "from docs where _title in [\"é\", \"ü\"] and stage in [\"a\", \"b\"]",
+                "from docs where _title in (\"é\", \"ü\") and stage in [\"a\", \"b\"]",
             ),
         ];
         for (src, want) in cases {
@@ -1634,21 +1636,21 @@ mod tests {
 
     #[test]
     fn a_parse_error_carries_the_hint_and_the_corrected_call() {
-        let src = "select path from docs where stage in [\"nigredo\", \"albedo\"]";
+        let src = "select _path from docs where stage in [\"nigredo\", \"albedo\"]";
         let e = oqx::parse_string(src).unwrap_err();
         let request = json!({ "query": src, "limit": 5, "bare": true });
         let err = parse_invalid(src, &e, Some(&request));
         assert_eq!(err.code, "filter_invalid");
         assert_eq!(
             err.message,
-            "unexpected '[' — expected a value (at offset 37); a list is written as a tuple: (…)"
+            "unexpected '[' — expected a value (at offset 38); a list is written as a tuple: (…)"
         );
         let d = err.data.unwrap();
         assert_eq!(d["hint"], "OQX");
         assert_eq!(d["reason"], err.message);
         assert_eq!(
             d["fix"],
-            r#"{"bare":true,"limit":5,"query":"select path from docs where stage in (\"nigredo\", \"albedo\")"}"#
+            r#"{"bare":true,"limit":5,"query":"select _path from docs where stage in (\"nigredo\", \"albedo\")"}"#
         );
         // no request: the hint alone
         let err = parse_invalid(src, &e, None);
@@ -1668,7 +1670,7 @@ mod tests {
     #[test]
     fn row_functions_become_self_methods() {
         let q = oqx::parse_string(
-            "from blocks where text(\"x\") && under_heading(\"h\") && size(attrs) > 0 && doc.path.startsWith(\"a\")",
+            "from blocks where text(\"x\") && under_heading(\"h\") && size(_attrs) > 0 && _doc._path.startsWith(\"a\")",
         )
         .unwrap();
         let r = rewrite_query(&q, 0);
@@ -1772,35 +1774,40 @@ mod tests {
 
     #[test]
     fn the_runner_folds_at_its_clock_so_a_named_point_pushes_down() {
-        let q = oqx::parse_string("from docs where updated_at < date(\"today\") && date(when) < date(\"today\").minus(dur(\"30 days\"))").unwrap();
+        let q = oqx::parse_string("from docs where _updated_at < date(\"today\") && date(when) < date(\"today\").minus(dur(\"30 days\"))").unwrap();
         let printed = oqx::print_query(&rewrite_query(&q, NOW)).unwrap();
-        assert!(printed.contains("updated_at < \"2026-09-27\""), "{printed}");
+        assert!(
+            printed.contains("_updated_at < \"2026-09-27\""),
+            "{printed}"
+        );
         assert!(printed.contains("date(when) < \"2026-08-28\""), "{printed}");
     }
 
     #[test]
     fn path_literals_are_rooted_only_against_path_reads() {
         let q = oqx::parse_string(
-            "select n: ^docs collect { path where path == ^after || \"x.md\" != dst_path } from docs where path.startsWith(\"lab/\") && doc.path == \"a.md\" && type == \"a.md\" && ^path == \"b.md\"",
+            "select n: ^docs collect { _path where _path == ^after || \"x.md\" != _dst_path } from docs where _path.startsWith(\"lab/\") && _doc._path == \"a.md\" && type == \"a.md\" && path == \"c.md\" && ^_path == \"b.md\"",
         )
         .unwrap();
         let printed = oqx::print_query(&rewrite_query(&q, 0)).unwrap();
-        assert!(printed.contains("path.startsWith(\"/lab/\")"), "{printed}");
-        assert!(printed.contains("doc.path == \"/a.md\""), "{printed}");
+        assert!(printed.contains("_path.startsWith(\"/lab/\")"), "{printed}");
+        assert!(printed.contains("_doc._path == \"/a.md\""), "{printed}");
         assert!(printed.contains("type == \"a.md\""), "{printed}");
-        assert!(printed.contains("^path == \"/b.md\""), "{printed}");
-        assert!(printed.contains("\"/x.md\" != dst_path"), "{printed}");
-        // a property compared with a path is the author's value: untouched
-        assert!(printed.contains("path == ^after"), "{printed}");
+        assert!(printed.contains("^_path == \"/b.md\""), "{printed}");
+        assert!(printed.contains("\"/x.md\" != _dst_path"), "{printed}");
+        // a property compared with a path is the author's value: untouched —
+        // and so is the author's bare `path` key (5.0: nothing is reserved)
+        assert!(printed.contains("_path == ^after"), "{printed}");
+        assert!(printed.contains("path == \"c.md\""), "{printed}");
         // `contains`/`endsWith`/`matches` and the empty string are literal
         let q = oqx::parse_string(
-            "from docs where path.contains(\"a/\") && path.endsWith(\".md\") && path == \"\"",
+            "from docs where _path.contains(\"a/\") && _path.endsWith(\".md\") && _path == \"\"",
         )
         .unwrap();
         let printed = oqx::print_query(&rewrite_query(&q, 0)).unwrap();
-        assert!(printed.contains("path.contains(\"a/\")"), "{printed}");
-        assert!(printed.contains("path.endsWith(\".md\")"), "{printed}");
-        assert!(printed.contains("path == \"/\""), "{printed}");
+        assert!(printed.contains("_path.contains(\"a/\")"), "{printed}");
+        assert!(printed.contains("_path.endsWith(\".md\")"), "{printed}");
+        assert!(printed.contains("_path == \"/\""), "{printed}");
     }
 
     #[test]
@@ -1809,16 +1816,17 @@ mod tests {
         for q in [
             "from docs where $repo",
             "select r: size($repo.docs) from docs",
-            "select r: $repo.id from docs",
-            "select r: nodes first { select x: ^$repo.id values } from docs",
-            "select r: nodes first { select x: 0^$repo values } from docs",
+            "select r: $repo._id from docs",
+            "select r: _nodes first { select x: ^$repo._id values } from docs",
+            "select r: _nodes first { select x: 0^$repo values } from docs",
             "$repo.docs count { }",
         ] {
             let e = check_root_spellings(&parse(q)).unwrap_err();
             assert_eq!(e.code, "filter_invalid", "{q}");
             assert_eq!(e.message, REPO_REMOVED_MESSAGE, "{q}");
         }
-        // a bare `docs`/`links` at depth ≥ 1; the hint counts the carets
+        // a bare root name at depth ≥ 1 (every one of the five since 5.0); the
+        // hint counts the carets
         let e = check_root_spellings(&parse("select x: docs collect { } from docs")).unwrap_err();
         assert_eq!(e.message, bare_target_message(Target::Docs, Some(1)));
         assert!(
@@ -1826,7 +1834,7 @@ mod tests {
                 .contains("did you mean `^docs` (the repository's documents)?")
         );
         let e = check_root_spellings(&parse(
-            "select x: nodes collect { select y: size(links) } from docs",
+            "select x: _nodes collect { select y: size(links) } from docs",
         ))
         .unwrap_err();
         assert!(
@@ -1835,13 +1843,22 @@ mod tests {
         );
         let e = check_root_spellings(&parse("docs collect { from docs }")).unwrap_err();
         assert!(e.message.contains("`^docs`"));
+        // `blocks`/`nodes`/`revisions` inside a block are no relation of any
+        // row (5.0: the relations are `_blocks`/`_nodes`/`_revisions`)
+        let e = check_root_spellings(&parse("from docs where nodes exists { }")).unwrap_err();
+        assert_eq!(e.message, bare_target_message(Target::Nodes, Some(1)));
+        let e = check_root_spellings(&parse("from blocks where blocks exists { }")).unwrap_err();
+        assert_eq!(e.message, bare_target_message(Target::Blocks, Some(1)));
+        let e =
+            check_root_spellings(&parse("select r: revisions count { } from docs")).unwrap_err();
+        assert_eq!(e.message, bare_target_message(Target::Revisions, Some(1)));
         // the root scope is depth 0: a bare target there is the scan
         for q in [
             "docs count { }",
-            "from docs where nodes exists { }",
+            "from docs where _nodes exists { }",
             "entries(docs) first { }",
-            "select n: size(^docs), id: ^id, k: size(0^links) from docs",
-            "from blocks where blocks exists { }", // judged by the context at read time
+            "select n: size(^docs), i: ^_id, k: size(0^links) from docs",
+            "from blocks where _nodes exists { where ^blocks exists { } }",
         ] {
             check_root_spellings(&parse(q)).unwrap_or_else(|e| panic!("{q}: {e}"));
         }
@@ -1852,7 +1869,7 @@ mod tests {
             e.message,
             "`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)"
         );
-        let e = check_root_spellings(&parse("select path from docs where ^^links exists { }"))
+        let e = check_root_spellings(&parse("select _path from docs where ^^links exists { }"))
             .unwrap_err();
         assert!(
             e.message.contains("`^^links` reaches past the root"),
@@ -1883,7 +1900,7 @@ mod tests {
         // only the top level: the runner injects beside those items alone
         assert!(
             check_reserved_aliases(&parse(
-                "select __oqx: 1, x: nodes collect { select __oqx_y: 1 } from docs"
+                "select __oqx: 1, x: _nodes collect { select __oqx_y: 1 } from docs"
             ))
             .is_ok()
         );
@@ -1892,7 +1909,7 @@ mod tests {
     #[test]
     fn semantic_phrases_are_collected_distinct() {
         let phrases = collect_semantic_phrases(
-            "select s: semantic(\"alpha\") from docs where semantic(\"alpha\") > 0.5 || nodes exists { where semantic(\"beta\") > 0 } order by semantic(\"gamma\") desc",
+            "select s: semantic(\"alpha\") from docs where semantic(\"alpha\") > 0.5 || _nodes exists { where semantic(\"beta\") > 0 } order by semantic(\"gamma\") desc",
         );
         assert_eq!(phrases, ["alpha", "beta", "gamma"]);
         assert!(collect_semantic_phrases("not a query {{").is_empty());
@@ -1909,18 +1926,28 @@ mod tests {
         assert_eq!((shaped.id.as_str(), shaped.path.as_str()), ("d_1", ""));
         let hit = to_hit(shaped);
         let ho = hit.as_object().unwrap();
-        assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path", "layer"]);
-        assert_eq!(ho.get("path"), Some(&Value::Str(String::new())));
-        // A user projection of `id` collapses onto the envelope key in place
-        // (3.0): same position, the projected value.
+        assert_eq!(ho.keys().collect::<Vec<_>>(), ["_id", "_path", "layer"]);
+        assert_eq!(ho.get("_path"), Some(&Value::Str(String::new())));
+        // A user projection of `_id` collapses onto the envelope key in place
+        // (3.0; 5.0 spelling): same position, the projected value.
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("a.md".into()));
-        o.insert("id", Value::Number(7.0));
+        o.insert("_id", Value::Number(7.0));
         let hit = to_hit(shape_row(Value::Object(o)).unwrap());
         let ho = hit.as_object().unwrap();
-        assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path"]);
-        assert_eq!(ho.get("id"), Some(&Value::Number(7.0)));
+        assert_eq!(ho.keys().collect::<Vec<_>>(), ["_id", "_path"]);
+        assert_eq!(ho.get("_id"), Some(&Value::Number(7.0)));
+        // the author's bare `id`/`path` keys are ordinary columns beside the envelope
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("a.md".into()));
+        o.insert("path", Value::Str("authored".into()));
+        let hit = to_hit(shape_row(Value::Object(o)).unwrap());
+        assert_eq!(
+            hit.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["_id", "_path", "path"]
+        );
         // The unshaped row's identity reads the same strings.
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
@@ -1933,37 +1960,37 @@ mod tests {
 
     #[test]
     fn bare_hits_are_the_projection_in_its_own_order() {
-        // `select title, id`: the projected intrinsic under the query's key, in
-        // the query's order — nothing injected beside it.
+        // `select _title, _id`: the projected attribute under the query's key,
+        // in the query's order — nothing injected beside it.
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("/a.md".into()));
-        o.insert("title", Value::Str("T".into()));
-        o.insert("id", Value::Str("d_1".into()));
+        o.insert("_title", Value::Str("T".into()));
+        o.insert("_id", Value::Str("d_1".into()));
         let shaped = shape_row(Value::Object(o)).unwrap();
         let bare = to_bare_hit(shaped);
         let bo = bare.as_object().unwrap();
-        assert_eq!(bo.keys().collect::<Vec<_>>(), ["title", "id"]);
-        // `select path: layer` is fine bare (no envelope to collide with) and
+        assert_eq!(bo.keys().collect::<Vec<_>>(), ["_title", "_id"]);
+        // `select _path: layer` is fine bare (no envelope to collide with) and
         // the identity the page runs on is still the row's own path.
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("/a.md".into()));
-        o.insert("path", Value::Str("canon".into()));
+        o.insert("_path", Value::Str("canon".into()));
         let shaped = shape_row(Value::Object(o)).unwrap();
         assert_eq!(shaped.path, "/a.md");
         assert_eq!(
             render_hit(shaped, true),
-            serde_json::json!({ "path": "canon" })
+            serde_json::json!({ "_path": "canon" })
         );
         // the same row, enveloped: the user's value collapses onto the key
         let mut o = oqx::Object::new();
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("/a.md".into()));
-        o.insert("path", Value::Str("/a.md".into()));
+        o.insert("_path", Value::Str("/a.md".into()));
         assert_eq!(
             render_hit(shape_row(Value::Object(o)).unwrap(), false),
-            serde_json::json!({ "id": "d_1", "path": "/a.md" })
+            serde_json::json!({ "_id": "d_1", "_path": "/a.md" })
         );
     }
 
@@ -1976,13 +2003,13 @@ mod tests {
             assert_eq!(e.message, BARE_NEEDS_SELECT_MESSAGE, "{q}");
             assert_eq!(e.data.as_ref().unwrap()["hint"], "OQX");
         }
-        let e = check_bare(&parse("select path values from docs")).unwrap_err();
+        let e = check_bare(&parse("select _path values from docs")).unwrap_err();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(e.message, BARE_WITH_VALUES_MESSAGE);
         for q in [
-            "select path from docs",
-            "select id, title from docs",
-            "docs first { select t: title }",
+            "select _path from docs",
+            "select _id, _title from docs",
+            "docs first { select t: _title }",
         ] {
             check_bare(&parse(q)).unwrap_or_else(|e| panic!("{q}: {e}"));
         }
@@ -1992,24 +2019,27 @@ mod tests {
     fn a_projection_onto_the_envelope_must_be_aliased() {
         let items = |src: &str| oqx::parse_string(src).unwrap().select;
         // the attribute itself collapses (allowed)
-        assert!(envelope_collision(&items("select id, path from docs")).is_none());
+        assert!(envelope_collision(&items("select _id, _path from docs")).is_none());
         assert!(
-            envelope_collision(&items("select id: id, path: path, p: path from docs")).is_none()
+            envelope_collision(&items("select _id: _id, _path: _path, p: _path from docs"))
+                .is_none()
         );
-        // anything else landing on `id`/`path` is the error, first offender first
-        let e = envelope_collision(&items("select data.path from docs")).unwrap();
+        // the author's bare `id`/`path` keys are ordinary columns (5.0)
+        assert!(envelope_collision(&items("select id, path, d: _data.path from docs")).is_none());
+        // anything else landing on `_id`/`_path` is the error, first offender first
+        let e = envelope_collision(&items("select _path: path from docs")).unwrap();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
+            "projection `_path` collides with the hit envelope — alias it (`p: …`)"
         );
-        let e = envelope_collision(&items("select id: layer from docs")).unwrap();
+        let e = envelope_collision(&items("select _id: layer from docs")).unwrap();
         assert_eq!(
             e.message,
-            "projection `id` collides with the hit envelope — alias it (`i: data.id`)"
+            "projection `_id` collides with the hit envelope — alias it (`i: …`)"
         );
-        assert!(envelope_collision(&items("select path: doc.path from blocks")).is_some());
-        assert!(envelope_collision(&items("select path: nodes collect { } from docs")).is_some());
+        assert!(envelope_collision(&items("select _path: _doc._path from blocks")).is_some());
+        assert!(envelope_collision(&items("select _path: _nodes collect { } from docs")).is_some());
     }
 
     #[test]
@@ -2017,30 +2047,34 @@ mod tests {
         let flatten = |src: &str| oqx::parse_string(src).unwrap().flatten;
         // a bound name beside the envelope is fine, however many flattens
         assert!(
-            flatten_collision(&flatten("select path, t from docs flatten tags as t")).is_none()
+            flatten_collision(&flatten("select _path, t from docs flatten _tags as t")).is_none()
         );
         assert!(
             flatten_collision(&flatten(
-                "select path, b from docs flatten blocks { where type == \"task\" } as b flatten b.children as c"
+                "select _path, b from docs flatten _blocks { where _type == \"task\" } as b flatten b._children as c"
             ))
             .is_none()
         );
-        assert!(flatten_collision(&flatten("select path from docs")).is_none());
-        // `as id` / `as path` would shadow the envelope's reads
-        let e = flatten_collision(&flatten("select path from docs flatten tags as id")).unwrap();
+        assert!(flatten_collision(&flatten("select _path from docs")).is_none());
+        // the author's names are free (5.0): `as id` / `as path` shadow nothing
+        assert!(
+            flatten_collision(&flatten("select _path from docs flatten _tags as id")).is_none()
+        );
+        // `as _id` / `as _path` would shadow the envelope's reads
+        let e = flatten_collision(&flatten("select _path from docs flatten _tags as _id")).unwrap();
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "flatten `as id` collides with the hit envelope — a flattened row is still the row, whose `id` the envelope reads; bind another name"
+            "flatten `as _id` collides with the hit envelope — a flattened row is still the row, whose `_id` the envelope reads; bind another name"
         );
         assert_eq!(e.data.as_ref().unwrap()["hint"], "OQX");
         let e = flatten_collision(&flatten(
-            "select title from docs flatten tags as t flatten data.paths as path",
+            "select _title from docs flatten _tags as t flatten paths as _path",
         ))
         .unwrap();
         assert_eq!(
             e.message,
-            "flatten `as path` collides with the hit envelope — a flattened row is still the row, whose `path` the envelope reads; bind another name"
+            "flatten `as _path` collides with the hit envelope — a flattened row is still the row, whose `_path` the envelope reads; bind another name"
         );
     }
 
@@ -2054,19 +2088,24 @@ mod tests {
             Expr::Binary { left, .. } => *left,
             other => panic!("{other:?}"),
         };
-        assert!(is_path_read(&left(pred("from docs where path == \"x\""))));
+        assert!(is_path_read(&left(pred("from docs where _path == \"x\""))));
         assert!(is_path_read(&left(pred(
-            "from blocks where doc.path == \"x\""
+            "from blocks where _doc._path == \"x\""
         ))));
-        assert!(is_path_read(&left(pred("from docs where ^path == \"x\""))));
+        assert!(is_path_read(&left(pred("from docs where ^_path == \"x\""))));
         assert!(is_path_read(&left(pred(
-            "from links where dst_path == \"x\""
+            "from links where _dst_path == \"x\""
+        ))));
+        assert!(is_path_read(&left(pred(
+            "from links where _block._path == \"x\""
+        ))));
+        // the author's `path` key, bare or through a source handle, is a value
+        assert!(!is_path_read(&left(pred("from docs where path == \"x\""))));
+        assert!(!is_path_read(&left(pred(
+            "from docs where _data.path == \"x\""
         ))));
         assert!(!is_path_read(&left(pred(
-            "from docs where data.path == \"x\""
-        ))));
-        assert!(!is_path_read(&left(pred(
-            "from docs where frontmatter.path == \"x\""
+            "from docs where _frontmatter.path == \"x\""
         ))));
     }
 
@@ -2096,7 +2135,7 @@ mod tests {
         let hit = to_hit(shape_row(Value::Object(o)).unwrap());
         assert_eq!(
             hit.as_object().unwrap().keys().collect::<Vec<_>>(),
-            ["id", "path"]
+            ["_id", "_path"]
         );
         // Only queries that can reach a non-row project the row itself.
         let parse = |s: &str| oqx::parse_string(s).unwrap();
@@ -2122,12 +2161,12 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].id, "1");
         assert_eq!(out[1].id, "2");
-        // A projected `id` is the envelope's own selection: not part of the key
-        // enveloped (`select distinct id` dedups on the empty projection), part
-        // of it bare (there is no envelope — it is the projection).
+        // A projected `_id` is the envelope's own selection: not part of the
+        // key enveloped (`select distinct _id` dedups on the empty projection),
+        // part of it bare (there is no envelope — it is the projection).
         let with_id = |id: &str| {
             let mut proj = oqx::Object::new();
-            proj.insert("id", Value::Str(id.into()));
+            proj.insert("_id", Value::Str(id.into()));
             Shaped {
                 id: id.to_owned(),
                 path: "p".to_owned(),

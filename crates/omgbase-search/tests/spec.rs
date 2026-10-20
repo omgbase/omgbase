@@ -656,9 +656,10 @@ fn limit_of(body: &Json, default: usize) -> usize {
         .map_or(default, |n| n as usize)
 }
 
-/// §7 `search`: text-only → `text_search` hits; semantic-only →
-/// `vector_search` with the fixture-embedded query; both → `hybrid` hits with
-/// evidence.
+/// §7 `search`: text-only → `text_search` hits (`{ _id, _doc_id, _path,
+/// _type, _text, score }` — the block row's engine names, `spec/surface` §1.2,
+/// 5.0); semantic-only → `vector_search` with the fixture-embedded query;
+/// both → `hybrid` hits with evidence (the layer's internal shapes, bare).
 fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String> {
     let text = body.get("text").and_then(Json::as_str);
     let semantic = body.get("semantic").and_then(Json::as_str);
@@ -674,8 +675,8 @@ fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String
                 .iter()
                 .map(|h| {
                     json!({
-                        "id": h.block_id, "doc_id": h.doc_id, "path": h.path,
-                        "type": h.block_type, "text": h.text, "score": h.score,
+                        "_id": h.block_id, "_doc_id": h.doc_id, "_path": h.path,
+                        "_type": h.block_type, "_text": h.text, "score": h.score,
                     })
                 })
                 .collect();
@@ -719,7 +720,8 @@ fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String
     }
 }
 
-/// §4 `resolve`: `query` (+ the fixture-embedded `semantic`), limit default 10.
+/// §4 `resolve`: `query` (+ the fixture-embedded `semantic`), limit default 10;
+/// a hit is `{ _id, locator, preview, evidence }` (5.0).
 fn resolve_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String> {
     let query = body["query"].as_str().ok_or("resolve.query")?;
     let embedder = FixtureEmbedder;
@@ -736,7 +738,7 @@ fn resolve_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, Strin
         .map_err(|e| e.to_string())?;
     Ok(json!({
         "hits": hits.iter().map(|h| json!({
-            "id": h.id, "locator": h.locator, "preview": h.preview, "evidence": h.evidence.to_json(),
+            "_id": h.id, "locator": h.locator, "preview": h.preview, "evidence": h.evidence.to_json(),
         })).collect::<Vec<_>>()
     }))
 }

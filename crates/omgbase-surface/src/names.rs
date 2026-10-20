@@ -1,29 +1,36 @@
-//! Unknown names (`spec/surface` §1.5, 4.6; port of the reference's
-//! `oqx-js/names.ts`). A query that projects, filters or orders by a name no
-//! row of the scope's kind can carry — `select path, target from links`
-//! (links have `dst_path`), `where preview != ""` on blocks — used to run
-//! silently: an absent column in every row, a predicate true or false of
+//! Unknown names (`spec/surface` §1.5, 4.6; one tier since 5.0; port of the
+//! reference's `oqx-js/names.ts`). A query that projects, filters or orders by
+//! a name no row of the scope's kind can carry — `select _path, target from
+//! links` (links have `_dst_path`), `where preview != ""` on blocks — used to
+//! run silently: an absent column in every row, a predicate true or false of
 //! every row. This pass judges every name the query reads (`oqx`'s
-//! `references`, AST.md §5b) against the VOCABULARY of the row kind it is read
-//! from, statically — before any row is read, so the verdict never depends on
-//! the query's own filter — and either records a hint or refuses the query.
+//! `references`, AST.md §5b) against the row kind it is read from, statically
+//! — before any row is read, so the verdict never depends on the query's own
+//! filter — and either records a hint or refuses the query.
 //!
-//! The three tiers of a name at a scope whose kind is known:
-//!   1. an engine attribute, handle or relation of the kind — known;
-//!   2. an authored property at least one live object of the kind in this
-//!      repository carries (docs: a frontmatter or inline key — `stage` on three
-//!      processes is enough; blocks and nodes: a key of a live row's `attrs`,
-//!      the bare-name read of those kinds) — known, however partial;
-//!   3. a name no object of the kind carries — the complaint.
+//! The name rule (§1.2, 5.0) makes the judgement two-sided:
+//!   * an UNDERSCORE-prefixed name is an engine name — an attribute, a
+//!     reach-through, a source handle or a relation of the kind, a CLOSED set
+//!     — so a `_x` that is none of them is `filter_invalid` naming the kind's
+//!     engine names (the one loud error of this pass; both modes);
+//!   * a BARE name is the author's — on a document a frontmatter or inline
+//!     key, on a block or node a key of its `attrs` — and is judged against
+//!     the VOCABULARY of the kind in this repository: a name at least one live
+//!     object carries is known (however partial: `stage` on three processes
+//!     out of twenty documents is the data model working); a name no object
+//!     carries is the complaint — on a read the result carries one hint per
+//!     offending name and the rows still come back; a write selector (the AST
+//!     entry, [`UnknownNames::Refuse`]) is refused, since a name no row
+//!     carries would select every row. The hint's nearest match is drawn from
+//!     the authored keys AND the engine names, so a bare `title` / `id` /
+//!     `path` / `tags` / `format` that spells an engine attribute without its
+//!     prefix says "did you mean `_title`?". A `links` or `revisions` row
+//!     carries no authored data at all, so a bare name there is
+//!     `filter_invalid` either way (closed row shape).
 //!
-//! Severity: `links` has a closed row shape (no authored data reaches a link
-//! row), so a tier-3 name there is `filter_invalid`; docs, blocks and nodes are
-//! open — on a read the result carries one hint per offending name and the
-//! rows still come back; a write selector (the AST entry,
-//! [`UnknownNames::Refuse`]) is refused, since a name no row carries would
-//! select every row. A repository with no live object of the kind has no
-//! vocabulary: the check is skipped for that kind. The vocabulary is read once
-//! per (repository, kind) and cached on the repository's head commit
+//! A repository with no live object of an open kind has no vocabulary: the
+//! check is skipped for that kind. The vocabulary is read once per
+//! (repository, kind) and cached on the repository's head commit
 //! (`MAX(commits.seq)`), the one thing every property or attrs change moves —
 //! the cache ([`VocabularyCache`]) lives beside the store it describes (the
 //! `Surface` holds one; a bare `query` call judges with a cache of its own).
@@ -36,12 +43,12 @@ use omgbase_store::Store;
 use oqx::{Expr, Follow, FollowDestination, OpNode, Query, ReferenceStep, StepExpr, references};
 use rusqlite::params;
 
-use crate::context::{SOURCE_HANDLES, Target, attributes};
+use crate::context::{SOURCE_HANDLES, Target, attributes, reach_throughs};
 use crate::error::{Result, SurfaceError};
 use crate::planner;
 
-/// What to do with a tier-3 name on an open kind: record it in `hints` (every
-/// read) or refuse the query (a write selector).
+/// What to do with an unknown bare name on an open kind: record it in `hints`
+/// (every read) or refuse the query (a write selector).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnknownNames {
     Hint,
@@ -53,47 +60,58 @@ pub enum UnknownNames {
 pub fn relations(t: Target) -> &'static [(&'static str, Target)] {
     match t {
         Target::Docs => &[
-            ("blocks", Target::Blocks),
-            ("nodes", Target::Nodes),
-            ("out_links", Target::Links),
-            ("in_links", Target::Links),
-            ("revisions", Target::Revisions),
+            ("_blocks", Target::Blocks),
+            ("_nodes", Target::Nodes),
+            ("_out_links", Target::Links),
+            ("_in_links", Target::Links),
+            ("_revisions", Target::Revisions),
         ],
         Target::Blocks => &[
-            ("children", Target::Blocks),
-            ("nodes", Target::Nodes),
-            ("out_links", Target::Links),
-            ("section", Target::Nodes),
+            ("_children", Target::Blocks),
+            ("_nodes", Target::Nodes),
+            ("_out_links", Target::Links),
+            ("_section", Target::Nodes),
         ],
         Target::Nodes => &[
-            ("blocks", Target::Blocks),
-            ("subsections", Target::Nodes),
-            ("children", Target::Nodes),
+            ("_blocks", Target::Blocks),
+            ("_subsections", Target::Nodes),
+            ("_children", Target::Nodes),
         ],
         Target::Links | Target::Revisions => &[],
     }
 }
 
-/// The self and reach-through handles of a kind and the kind of the row each reaches (§1.2).
+/// The reach-through handles of a kind and the kind of the row each reaches
+/// (§1.2; the self aliases are gone in 5.0 — `$it` is the self).
 #[must_use]
 pub fn handles(t: Target) -> &'static [(&'static str, Target)] {
     match t {
-        Target::Docs => &[("doc", Target::Docs)],
-        Target::Blocks => &[("block", Target::Blocks), ("doc", Target::Docs)],
-        Target::Nodes => &[
-            ("section", Target::Nodes),
-            ("doc", Target::Docs),
-            ("block", Target::Blocks),
-        ],
-        // `block` reaches the SOURCE block (4.11), absent for a frontmatter link
+        Target::Docs => &[],
+        Target::Blocks => &[("_doc", Target::Docs)],
+        Target::Nodes => &[("_doc", Target::Docs), ("_block", Target::Blocks)],
+        // `_block` reaches the SOURCE block (4.11), absent for a frontmatter link
         Target::Links => &[
-            ("doc", Target::Docs),
-            ("dst", Target::Docs),
-            ("block", Target::Blocks),
+            ("_doc", Target::Docs),
+            ("_dst", Target::Docs),
+            ("_block", Target::Blocks),
         ],
-        // `doc` reaches the document's current row (4.7)
-        Target::Revisions => &[("doc", Target::Docs)],
+        // `_doc` reaches the document's current row (4.7)
+        Target::Revisions => &[("_doc", Target::Docs)],
     }
+}
+
+/// Every engine name of a kind, in the §1.2 table's order: attributes,
+/// reach-throughs, source handles (docs), relations — the list the messages
+/// carry and the candidates a nearest match is drawn from.
+#[must_use]
+pub fn engine_names(t: Target) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = attributes(t).to_vec();
+    out.extend(reach_throughs(t));
+    if t == Target::Docs {
+        out.extend(SOURCE_HANDLES);
+    }
+    out.extend(relations(t).iter().map(|(n, _)| *n));
+    out
 }
 
 fn lookup(table: &[(&str, Target)], name: &str) -> Option<Target> {
@@ -158,7 +176,7 @@ fn head_seq(store: &Store, repo_id: &str) -> Result<i64> {
 /// The authored vocabulary of a kind: docs — every live frontmatter or inline
 /// key (the merged read a bare name performs); blocks and nodes — every key a
 /// live row's `attrs` holds (the bare-name read of those kinds). Computed keys
-/// (`$title`, `$tags`) are the intrinsics `title`/`tags`, not authored keys.
+/// (`$title`, `$tags`) are the attributes `_title`/`_tags`, not authored keys.
 fn authored_keys(store: &Store, repo_id: &str, target: Target) -> Result<Vec<String>> {
     let sql = match target {
         Target::Docs => "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND deleted_commit IS NULL AND source IN ('frontmatter', 'inline') ORDER BY key".to_owned(),
@@ -192,7 +210,7 @@ fn present(store: &Store, repo_id: &str, target: Target) -> Result<bool> {
 }
 
 /// The vocabulary of a kind in a repository: `(present, keys)` — the authored
-/// keys in `key` order (the SQL runs only when a name is not intrinsic).
+/// keys in `key` order (the SQL runs only when a name is not an engine name).
 pub fn vocabulary(store: &Store, repo_id: &str, target: Target) -> Result<(bool, Vec<String>)> {
     let cache = VocabularyCache::default();
     let v = cache.vocabulary_of(store, repo_id, target)?;
@@ -327,7 +345,8 @@ fn dotted(e: &Expr) -> Option<(&Expr, Vec<&str>)> {
     }
 }
 
-/// Follow a dotted path from a row kind through handles and relations (`doc.blocks` on a link → blocks).
+/// Follow a dotted path from a row kind through reach-throughs and relations
+/// (`_doc._blocks` on a link → blocks).
 fn kind_of_path(on: Option<RowKind>, path: &[&str]) -> Option<Target> {
     let mut cur = on;
     for (i, seg) in path.iter().enumerate() {
@@ -418,12 +437,24 @@ pub fn kind_of_scope(steps: &[ReferenceStep<'_>]) -> Option<Target> {
 
 // ---- judging a name --------------------------------------------------------
 
+/// Why a judged name is unknown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Why {
+    /// An underscore name that is no engine name of the kind.
+    Engine,
+    /// A bare name on a kind that carries no authored data.
+    Closed,
+    /// A bare name no object of the kind carries.
+    Authored,
+}
+
 struct Verdict {
     target: Target,
-    /// The dotted name judged (the path after any handle or relation).
+    /// The dotted name judged (the path after any reach-through or relation).
     name: String,
-    closed: bool,
-    /// The source handle the name was read through (`data`, `frontmatter`, `inline`), when it was.
+    why: Why,
+    /// The source handle the name was read through (`_data`, `_frontmatter`,
+    /// `_inline`), when it was.
     handle: Option<String>,
 }
 
@@ -441,27 +472,39 @@ impl Judge<'_> {
     /// Judge a dotted name read on rows of `target`; `None` = known.
     fn judge(&self, target: Target, path: &[&str]) -> Result<Option<Verdict>> {
         let (head, rest) = path.split_first().expect("a name has a head");
-        // An engine attribute wins on collision; what follows it (`attrs.checked`, `tags.size`) is the value's own navigation.
-        if attributes(target).contains(head) {
-            return Ok(None);
+        if head.starts_with('_') {
+            // An engine attribute: what follows it (`_attrs.checked`,
+            // `_tags.size`) is the value's own navigation.
+            if attributes(target).contains(head) {
+                return Ok(None);
+            }
+            // The source handles reach the authored data under them.
+            if target == Target::Docs && SOURCE_HANDLES.contains(head) {
+                return if rest.is_empty() {
+                    Ok(None)
+                } else {
+                    self.judge_authored(Target::Docs, rest, Some(head))
+                };
+            }
+            if let Some(via) =
+                lookup(handles(target), head).or_else(|| lookup(relations(target), head))
+            {
+                return if rest.is_empty() {
+                    Ok(None)
+                } else {
+                    self.judge(via, rest)
+                };
+            }
+            // Not an engine name of this kind: the closed set is the whole set.
+            return Ok(Some(Verdict {
+                target,
+                name: (*head).to_owned(),
+                why: Why::Engine,
+                handle: None,
+            }));
         }
-        // The source handles reach the authored data under them.
-        if target == Target::Docs && SOURCE_HANDLES.contains(head) {
-            return if rest.is_empty() {
-                Ok(None)
-            } else {
-                self.judge_authored(Target::Docs, rest, Some(head))
-            };
-        }
-        if let Some(via) = lookup(handles(target), head).or_else(|| lookup(relations(target), head))
-        {
-            return if rest.is_empty() {
-                Ok(None)
-            } else {
-                self.judge(via, rest)
-            };
-        }
-        // A bare target name on a row is the context's own loud error (`crate::query`); not doubled here.
+        // A bare target name on a row is the context's own loud error
+        // (`crate::query`); not doubled here.
         if Target::parse(head).is_some() {
             return Ok(None);
         }
@@ -479,8 +522,8 @@ impl Judge<'_> {
             return Ok(Some(Verdict {
                 target,
                 name,
-                closed: true,
-                handle: None,
+                why: Why::Closed,
+                handle: handle.map(str::to_owned),
             }));
         }
         let v = self.vocabulary(target)?;
@@ -493,42 +536,42 @@ impl Judge<'_> {
         Ok(Some(Verdict {
             target,
             name,
-            closed: false,
+            why: Why::Authored,
             handle: handle.map(str::to_owned),
         }))
     }
 
-    /// The names a kind knows, for the nearest match: attributes, handles,
-    /// relations, the authored keys.
+    /// The candidates of a bare name: the kind's engine names (so `title`
+    /// finds `_title`) and, on an open kind, its authored keys.
     fn candidates(&self, target: Target) -> Result<Vec<String>> {
-        let mut out: Vec<String> = attributes(target).iter().map(|s| (*s).to_owned()).collect();
-        out.extend(handles(target).iter().map(|(n, _)| (*n).to_owned()));
-        if target == Target::Docs {
-            out.extend(SOURCE_HANDLES.iter().map(|s| (*s).to_owned()));
-        }
-        out.extend(relations(target).iter().map(|(n, _)| (*n).to_owned()));
+        let mut out: Vec<String> = engine_names(target)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         if !closed(target) {
             out.extend(self.vocabulary(target)?.list.iter().cloned());
         }
         Ok(out)
     }
 
-    /// The error of a closed kind: `` `target` is not a field of links (fields: id, path, …); did you mean `…`? ``.
-    fn field_error_message(&self, target: Target, name: &str) -> Result<String> {
+    /// The error of an unknown engine name: `` `_target` is not an engine name
+    /// of links (engine names: _id, _path, …); did you mean `_dst_path`? `` —
+    /// the nearest match drawn from the engine names and the authored keys, so
+    /// a `_layer` written for the authored `layer` is pointed at it.
+    fn engine_name_error_message(&self, target: Target, name: &str) -> Result<String> {
         Ok(format!(
-            "`{name}` is not a field of {} (fields: {}){}",
+            "`{name}` is not an engine name of {} (engine names: {}){}",
             target.as_str(),
-            attributes(target).join(", "),
+            engine_names(target).join(", "),
             suggestion(name, &self.candidates(target)?)
         ))
     }
 
-    /// The hint of an open kind: `` `preview` is not a field of blocks and no
-    /// block in this repository carries a property by that name; did you mean
-    /// `…`? ``. Under a source handle the name is an authored lookup by
-    /// construction, so the hint says only that: `` no document in this
-    /// repository carries a property `path` (`data.path`); did you mean `…`? ``,
-    /// the nearest match drawn from the authored keys alone.
+    /// The hint of an open kind: `` no block in this repository carries a
+    /// property `preview`; did you mean `_text`? ``. Under a source handle the
+    /// name is shown with it — `` no document in this repository carries a
+    /// property `x` (`_data.x`); did you mean `y`? `` — and the nearest match
+    /// is drawn from the authored keys alone.
     fn property_hint_message(
         &self,
         target: Target,
@@ -543,12 +586,29 @@ impl Judge<'_> {
             ));
         }
         Ok(format!(
-            "`{name}` is not a field of {} and no {} in this repository carries a property by that name{}",
-            target.as_str(),
+            "no {} in this repository carries a property `{name}`{}",
             noun(target),
             suggestion(name, &self.candidates(target)?)
         ))
     }
+}
+
+/// The error of a bare name on a closed kind: `` `target` reads an authored
+/// property, and a link carries none (engine names: _id, _path, …); did you
+/// mean `_dst_path`? `` — the nearest match drawn from the engine names.
+#[must_use]
+pub fn closed_kind_error_message(target: Target, name: &str, handle: Option<&str>) -> String {
+    let shown = handle.map_or(String::new(), |h| format!(" (`{h}.{name}`)"));
+    let names: Vec<String> = engine_names(target)
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    format!(
+        "`{name}`{shown} reads an authored property, and a {} carries none (engine names: {}){}",
+        noun(target),
+        names.join(", "),
+        suggestion(name, &names)
+    )
 }
 
 // ---- messages --------------------------------------------------------------
@@ -582,18 +642,34 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     d[m][n]
 }
 
-/// The nearest match of `name` among `candidates` (§1.5): case-insensitive; a
+/// The nearest match of `name` among `candidates` (§1.5). First, the one hint
+/// the name rule makes certain: a candidate that is exactly `name` with the
+/// engine prefix added or removed (`id` → `_id`, `_layer` → `layer`) wins
+/// outright, whatever its length. Otherwise case-insensitive and
+/// **prefix-blind** — the `_` is a declaration, not spelling, so `commited` is
+/// one edit from `_commit` and `titel` one from `_title` as from `title`: a
 /// candidate qualifies when its distance is ≤ 2, or when one of the two is a
 /// substring of the other and the shorter has at least three characters. One
 /// typo (distance 1) wins first; then a substring match outranks a distance-2
-/// match (`via` → `via_id`, not `id`; `dst_pth` → `dst_path`, not `dst`);
-/// within a class the lowest distance, then the shorter candidate, then
-/// alphabetical. A name under three characters gets no suggestion (it is
-/// within distance 2 of nearly anything, and too short for the substring
-/// rule). `None` when nothing qualifies.
+/// match (`_via` → `_via_id`, not `_id`; `_dst_pth` → `_dst_path`, not
+/// `_dst`); within a class the lowest distance, then the shorter candidate (so
+/// the bare authored `title` beats `_title` when both are one edit away), then
+/// alphabetical. A name under three characters gets no suggestion apart from
+/// the prefix rule (it is within distance 2 of nearly anything, and too short
+/// for the substring rule). `None` when nothing qualifies.
 #[must_use]
 pub fn nearest<'c>(name: &str, candidates: impl IntoIterator<Item = &'c str>) -> Option<String> {
-    let needle = name.to_lowercase();
+    let candidates: Vec<&str> = candidates.into_iter().collect();
+    let lower = name.to_lowercase();
+    let prefixed = format!("_{lower}");
+    let unprefixed = lower.strip_prefix('_');
+    for c in &candidates {
+        let hay = c.to_lowercase();
+        if hay == prefixed || unprefixed == Some(hay.as_str()) {
+            return Some((*c).to_owned());
+        }
+    }
+    let needle = lower.strip_prefix('_').unwrap_or(&lower).to_owned();
     let needle_len = needle.chars().count();
     if needle_len < 3 {
         return None;
@@ -618,16 +694,17 @@ pub fn nearest<'c>(name: &str, candidates: impl IntoIterator<Item = &'c str>) ->
         if !seen.insert(c) {
             continue;
         }
-        let hay = c.to_lowercase();
+        let hay_full = c.to_lowercase();
+        let hay = hay_full.strip_prefix('_').unwrap_or(&hay_full);
         if hay == needle {
             continue;
         }
-        let d = edit_distance(&needle, &hay);
+        let d = edit_distance(&needle, hay);
         let hay_len = hay.chars().count();
         let (shorter, shorter_len, longer) = if needle_len <= hay_len {
-            (needle.as_str(), needle_len, hay.as_str())
+            (needle.as_str(), needle_len, hay)
         } else {
-            (hay.as_str(), hay_len, needle.as_str())
+            (hay, hay_len, needle.as_str())
         };
         let sub = shorter_len >= 3 && longer.contains(shorter);
         if !(d <= 2 || sub) {
@@ -666,11 +743,11 @@ fn suggestion(name: &str, candidates: &[String]) -> String {
 
 // ---- the pass --------------------------------------------------------------
 
-/// Judge every name the query reads. Returns the hints (one per offending name
-/// of an open kind, first-reference order, deduplicated) under
-/// [`UnknownNames::Hint`]; fails with `filter_invalid` for a tier-3 name on a
-/// closed kind in either mode, and for one on an open kind under
-/// [`UnknownNames::Refuse`].
+/// Judge every name the query reads. Returns the hints (one per unknown bare
+/// name of an open kind, first-reference order, deduplicated) under
+/// [`UnknownNames::Hint`]; fails with `filter_invalid` for an unknown engine
+/// name (`_x`) and for a bare name on a closed kind in either mode, and for an
+/// unknown bare name on an open kind under [`UnknownNames::Refuse`].
 pub fn check_names(
     store: &Store,
     repo_id: &str,
@@ -696,11 +773,24 @@ pub fn check_names(
         let Some(verdict) = judge.judge(kind, &path)? else {
             continue;
         };
-        if verdict.closed {
-            return Err(SurfaceError::filter_invalid(
-                judge.field_error_message(verdict.target, &verdict.name)?,
-                "OQX",
-            ));
+        match verdict.why {
+            Why::Engine => {
+                return Err(SurfaceError::filter_invalid(
+                    judge.engine_name_error_message(verdict.target, &verdict.name)?,
+                    "OQX",
+                ));
+            }
+            Why::Closed => {
+                return Err(SurfaceError::filter_invalid(
+                    closed_kind_error_message(
+                        verdict.target,
+                        &verdict.name,
+                        verdict.handle.as_deref(),
+                    ),
+                    "OQX",
+                ));
+            }
+            Why::Authored => {}
         }
         let message = judge.property_hint_message(
             verdict.target,
@@ -765,6 +855,23 @@ mod tests {
     fn refusal(store: &Store, repo: &str, q: &str, mode: UnknownNames) -> SurfaceError {
         let raw = oqx::parse_string(q).unwrap();
         check_names(store, repo, &raw, mode, &VocabularyCache::default()).unwrap_err()
+    }
+
+    const DOCS_NAMES: &str = "_id, _path, _raw, _hash, _updated_at, _created_at, _title, _tags, _format, _data, _frontmatter, _inline, _blocks, _nodes, _out_links, _in_links, _revisions";
+    const BLOCKS_NAMES: &str = "_id, _path, _raw, _hash, _updated_at, _created_at, _doc_id, _type, _text, _attrs, _depth, _ordinal, _doc, _children, _nodes, _out_links, _section";
+    const LINKS_NAMES: &str = "_id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block";
+    const REVISIONS_NAMES: &str = "_id, _path, _rev, _seq, _doc_id, _commit, _ts, _origin, _actor, _reason, _hash, _is_current, _archived, _doc";
+
+    #[test]
+    fn engine_names_are_the_table_in_order() {
+        assert_eq!(engine_names(Target::Docs).join(", "), DOCS_NAMES);
+        assert_eq!(engine_names(Target::Blocks).join(", "), BLOCKS_NAMES);
+        assert_eq!(
+            engine_names(Target::Nodes).join(", "),
+            "_id, _path, _doc_id, _block_id, _kind, _name, _value, _attrs, _doc, _block, _blocks, _subsections, _children"
+        );
+        assert_eq!(engine_names(Target::Links).join(", "), LINKS_NAMES);
+        assert_eq!(engine_names(Target::Revisions).join(", "), REVISIONS_NAMES);
     }
 
     #[test]
@@ -834,15 +941,15 @@ mod tests {
     }
 
     #[test]
-    fn tiers() {
+    fn the_name_rule() {
         let (store, repo) = fixture();
-        // tier 1
-        assert!(hints(&store, &repo, "select title, tags, path, blocks, d: doc.id from docs where nodes exists { where kind == \"md:task\" }").is_empty());
+        // engine names — attributes, handles and relations — are silent
+        assert!(hints(&store, &repo, "select _title, _tags, _path, _blocks, d: $it._id from docs where _nodes exists { where _kind == \"md:task\" }").is_empty());
         assert!(
             hints(
                 &store,
                 &repo,
-                "select type, text, attrs, children, section.level, doc.title from blocks"
+                "select _type, _text, _attrs, _children, _section.level, _doc._title from blocks"
             )
             .is_empty()
         );
@@ -850,11 +957,11 @@ mod tests {
             hints(
                 &store,
                 &repo,
-                "select dst_path, s: doc.title, t: dst.title from links"
+                "select _dst_path, s: _doc._title, t: _dst._title from links"
             )
             .is_empty()
         );
-        // tier 2
+        // a bare property some objects carry is silent; a dotted prefix of a key is known
         assert!(
             hints(
                 &store,
@@ -872,7 +979,8 @@ mod tests {
             )
             .is_empty()
         );
-        // tier 3
+        // a bare name no object carries is one hint per name, first-reference
+        // order, deduplicated
         assert_eq!(
             hints(
                 &store,
@@ -880,34 +988,111 @@ mod tests {
                 "select stag, kynd from docs where stag == \"x\" order by kynd"
             ),
             [
-                "`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?",
-                "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?",
+                "no document in this repository carries a property `stag`; did you mean `stage`?",
+                "no document in this repository carries a property `kynd`; did you mean `kind`?",
             ]
         );
         assert_eq!(
             hints(&store, &repo, "select meta.ownr, stage.x from docs"),
             [
-                "`meta.ownr` is not a field of docs and no document in this repository carries a property by that name; did you mean `meta.owner`?",
-                "`stage.x` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?",
+                "no document in this repository carries a property `meta.ownr`; did you mean `meta.owner`?",
+                "no document in this repository carries a property `stage.x`; did you mean `stage`?",
             ]
         );
+        // a bare name that spells an engine attribute without its prefix is
+        // pointed at the engine name outright
         assert_eq!(
             hints(
                 &store,
                 &repo,
-                "select p: data.path, k: frontmatter.kynd from docs"
+                "select id, title, path, tags, format from docs"
             ),
             [
-                "no document in this repository carries a property `path` (`data.path`)",
-                "no document in this repository carries a property `kynd` (`frontmatter.kynd`); did you mean `kind`?",
+                "no document in this repository carries a property `id`; did you mean `_id`?",
+                "no document in this repository carries a property `title`; did you mean `_title`?",
+                "no document in this repository carries a property `path`; did you mean `_path`?",
+                "no document in this repository carries a property `tags`; did you mean `_tags`?",
+                "no document in this repository carries a property `format`; did you mean `_format`?",
+            ]
+        );
+        assert_eq!(
+            hints(&store, &repo, "select text, preview from blocks"),
+            [
+                "no block in this repository carries a property `text`; did you mean `_text`?",
+                "no block in this repository carries a property `preview`",
+            ]
+        );
+        // under a source handle the name is shown with the handle, the
+        // authored keys alone as candidates
+        assert_eq!(
+            hints(
+                &store,
+                &repo,
+                "select p: _data.path, k: _frontmatter.kynd from docs"
+            ),
+            [
+                "no document in this repository carries a property `path` (`_data.path`)",
+                "no document in this repository carries a property `kynd` (`_frontmatter.kynd`); did you mean `kind`?",
             ]
         );
     }
 
     #[test]
-    fn links_are_closed_and_dst_reaches_docs() {
+    fn an_unknown_engine_name_is_loud_in_either_mode() {
         let (store, repo) = fixture();
-        let err = "`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)";
+        let docs_err = format!(
+            "`_nope` is not an engine name of docs (engine names: {DOCS_NAMES}); did you mean `_nodes`?"
+        );
+        for mode in [UnknownNames::Hint, UnknownNames::Refuse] {
+            let e = refusal(&store, &repo, "select _nope from docs", mode);
+            assert_eq!(
+                (e.code.as_str(), e.message.as_str()),
+                ("filter_invalid", docs_err.as_str())
+            );
+        }
+        // the nearest match is drawn from the engine names and the authored
+        // keys: a `_kind` written for the authored `kind` is pointed at it
+        assert_eq!(
+            refusal(
+                &store,
+                &repo,
+                "from docs where _kind == \"x\"",
+                UnknownNames::Hint
+            )
+            .message,
+            format!(
+                "`_kind` is not an engine name of docs (engine names: {DOCS_NAMES}); did you mean `kind`?"
+            )
+        );
+        assert_eq!(
+            refusal(
+                &store,
+                &repo,
+                "select _tittle from blocks",
+                UnknownNames::Hint
+            )
+            .message,
+            format!("`_tittle` is not an engine name of blocks (engine names: {BLOCKS_NAMES})")
+        );
+        // behind a reach-through the name is judged against the reached kind
+        assert!(
+            refusal(
+                &store,
+                &repo,
+                "select _doc._nope from blocks",
+                UnknownNames::Hint
+            )
+            .message
+            .starts_with("`_nope` is not an engine name of docs")
+        );
+    }
+
+    #[test]
+    fn closed_kinds_refuse_a_bare_name_and_dst_reaches_docs() {
+        let (store, repo) = fixture();
+        let err = format!(
+            "`target` reads an authored property, and a link carries none (engine names: {LINKS_NAMES})"
+        );
         let e = refusal(
             &store,
             &repo,
@@ -916,37 +1101,57 @@ mod tests {
         );
         assert_eq!(
             (e.code.as_str(), e.message.as_str()),
-            ("filter_invalid", err)
+            ("filter_invalid", err.as_str())
         );
         let e = refusal(
             &store,
             &repo,
-            "from docs where out_links exists { where target == \"x\" }",
+            "from docs where _out_links exists { where target == \"x\" }",
             UnknownNames::Hint,
         );
         assert_eq!(e.message, err);
         assert_eq!(
-            hints(&store, &repo, "select dst.kynd from links"),
-            [
-                "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?"
-            ]
+            refusal(
+                &store,
+                &repo,
+                "select dst_path from links",
+                UnknownNames::Hint
+            )
+            .message,
+            format!(
+                "`dst_path` reads an authored property, and a link carries none (engine names: {LINKS_NAMES}); did you mean `_dst_path`?"
+            )
         );
-        // `block` (4.11) reaches the source block: its fields read clean, a
-        // misspelling is judged as a block's; the handle is not a field, so
-        // the closed-row list above is unchanged.
+        assert_eq!(
+            refusal(
+                &store,
+                &repo,
+                "select rev from revisions",
+                UnknownNames::Hint
+            )
+            .message,
+            format!(
+                "`rev` reads an authored property, and a revision carries none (engine names: {REVISIONS_NAMES}); did you mean `_rev`?"
+            )
+        );
+        assert_eq!(
+            hints(&store, &repo, "select _dst.kynd from links"),
+            ["no document in this repository carries a property `kynd`; did you mean `kind`?"]
+        );
+        // `_block` (4.11) reaches the source block: its engine names read
+        // clean, a misspelling is judged as a block's; the handle is not an
+        // attribute, so the closed-row list names it after the attributes.
         assert!(
             hints(
                 &store,
                 &repo,
-                "select block.text, block.type, block.doc.path from links"
+                "select _block._text, _block._type, _block._doc._path from links"
             )
             .is_empty()
         );
         assert_eq!(
-            hints(&store, &repo, "select block.typ from links"),
-            [
-                "`typ` is not a field of blocks and no block in this repository carries a property by that name; did you mean `type`?"
-            ]
+            hints(&store, &repo, "select _block.typ from links"),
+            ["no block in this repository carries a property `typ`; did you mean `_type`?"]
         );
     }
 
@@ -957,7 +1162,7 @@ mod tests {
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?"
+            "no document in this repository carries a property `stag`; did you mean `stage`?"
         );
         assert_eq!(e.data.unwrap()["hint"], "OQX");
     }
@@ -970,12 +1175,12 @@ mod tests {
             // a group scope (oqx 0.24): a key is never a row property; `rows`
             // yields the grouped rows, so names under it are judged as docs/blocks
             "select stage, n: count(), kynd: collect(kind) from docs group by stage having n > 1 order by count() desc",
-            "select kind, open: rows count { where nodes exists { where kind == \"md:task\" } } from docs group by kind",
-            "select p: path, open from docs where nodes collect { ^open: value where kind == \"md:task\" }",
-            "select $key: id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0",
-            "select a: attrs.whatever from blocks",
-            "select n: tags.size() from docs",
-            "select t: (blocks, nodes) collect { select kynd } from docs",
+            "select kind, open: rows count { where _nodes exists { where _kind == \"md:task\" } } from docs group by kind",
+            "select p: _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" }",
+            "select $key: _id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0",
+            "select a: _attrs.whatever from blocks",
+            "select n: _tags.size() from docs",
+            "select t: (_blocks, _nodes) collect { select kynd } from docs",
         ] {
             assert!(hints(&store, &repo, q).is_empty(), "{q}");
         }
@@ -988,16 +1193,14 @@ mod tests {
             .len(),
             1
         );
-        // under a group scope, `rows` is still the docs: a tier-3 name through it hints
+        // under a group scope, `rows` is still the docs: an unknown bare name through it hints
         assert_eq!(
             hints(
                 &store,
                 &repo,
                 "select stage, t: rows collect { select kynd } from docs group by stage"
             ),
-            [
-                "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?"
-            ]
+            ["no document in this repository carries a property `kynd`; did you mean `kind`?"]
         );
         assert_eq!(
             hints(
@@ -1005,9 +1208,7 @@ mod tests {
                 &repo,
                 "select lang, n: rows count { where chekced } from blocks group by lang"
             ),
-            [
-                "`chekced` is not a field of blocks and no block in this repository carries a property by that name; did you mean `checked`?"
-            ]
+            ["no block in this repository carries a property `chekced`; did you mean `checked`?"]
         );
     }
 
@@ -1024,7 +1225,13 @@ mod tests {
                 UnknownNames::Hint
             )
             .message
-            .contains("is not a field of links")
+            .contains("reads an authored property, and a link carries none")
+        );
+        // the engine-name check still runs
+        assert!(
+            refusal(&store, &repo, "select _nope from docs", UnknownNames::Hint)
+                .message
+                .starts_with("`_nope` is not an engine name of docs")
         );
     }
 
@@ -1040,41 +1247,57 @@ mod tests {
     #[test]
     fn nearest_match_rule() {
         let links = [
-            "id",
-            "path",
-            "doc_id",
-            "block_id",
-            "via_id",
-            "dst_id",
-            "dst_path",
-            "uri",
-            "field",
-            "dst_kind",
-            "predicate",
-            "provenance",
-            "anchor",
+            "_id",
+            "_path",
+            "_doc_id",
+            "_block_id",
+            "_via_id",
+            "_dst_id",
+            "_dst_path",
+            "_uri",
+            "_field",
+            "_dst_kind",
+            "_predicate",
+            "_provenance",
+            "_anchor",
         ];
         let n = |name: &str, c: &[&str]| nearest(name, c.iter().copied());
-        assert_eq!(n("dst_pth", &links).as_deref(), Some("dst_path"));
+        // the one certain hint: a name that is a candidate with the engine
+        // prefix added or removed wins outright, whatever its length
+        assert_eq!(n("id", &links).as_deref(), Some("_id"));
+        assert_eq!(n("dst_path", &links).as_deref(), Some("_dst_path"));
+        assert_eq!(n("title", &["titel", "_title"]).as_deref(), Some("_title"));
+        assert_eq!(n("_kind", &["kinds", "kind"]).as_deref(), Some("kind"));
+        assert_eq!(n("dst_pth", &links).as_deref(), Some("_dst_path"));
         assert_eq!(n("target", &links), None);
-        assert_eq!(n("DST", &links).as_deref(), Some("dst_id"));
-        assert_eq!(n("via", &links).as_deref(), Some("via_id"));
+        assert_eq!(n("DST", &links).as_deref(), Some("_dst_id"));
+        assert_eq!(n("via", &links).as_deref(), Some("_via_id"));
         assert_eq!(n("x", &links), None);
-        assert_eq!(n("in", &["id", "in_links", "out_links"]), None);
+        assert_eq!(n("in", &["_id", "_in_links", "_out_links"]), None);
         assert_eq!(
-            n("tag", &["id", "path", "tags", "title"]).as_deref(),
-            Some("tags")
+            n("tag", &["_id", "_path", "_tags", "_title"]).as_deref(),
+            Some("_tags")
         );
         assert_eq!(
             n(
                 "preview",
                 &[
-                    "id", "path", "type", "text", "attrs", "depth", "ordinal", "children"
+                    "_id",
+                    "_path",
+                    "_type",
+                    "_text",
+                    "_attrs",
+                    "_depth",
+                    "_ordinal",
+                    "_children"
                 ]
             ),
             None
         );
-        assert_eq!(n("predicat", &links).as_deref(), Some("predicate"));
+        assert_eq!(n("predicat", &links).as_deref(), Some("_predicate"));
+        // prefix-blind: the bare authored key wins a tie by length
+        assert_eq!(n("titel", &["_title", "title"]).as_deref(), Some("title"));
+        assert_eq!(n("commited", &["_commit"]).as_deref(), Some("_commit"));
         assert_eq!(n("abc", &["acb", "abc_x", "abd"]).as_deref(), Some("abd"));
         assert_eq!(n("abcd", &["abxy", "abcd_x"]).as_deref(), Some("abcd_x"));
         assert_eq!(n("abc", &["abcd", "xabc"]).as_deref(), Some("abcd"));

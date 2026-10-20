@@ -52,8 +52,10 @@ pub struct DocInfo {
     pub current_rev: Option<String>,
 }
 
-/// A live doc by id **or** repo-relative path (`findDocByRef`): a `d_` id is
-/// looked up by id only; anything else is a path.
+/// A live doc by id **or** path (`findDocByRef`): a `d_` id is looked up by
+/// id only; anything else is a path in either form (spec/surface §1 "Paths"
+/// — the reference's `findDoc` reads the column, which holds the storage
+/// form, through `storagePath`: every leading `/` stripped).
 pub fn find_doc_by_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Option<DocInfo>> {
     let map = |row: &rusqlite::Row<'_>| {
         Ok(DocInfo {
@@ -73,7 +75,7 @@ pub fn find_doc_by_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Opti
     } else {
         conn.query_row(
             "SELECT doc_id, path, current_rev FROM docs WHERE path = ?1 AND repo_id = ?2 AND deleted_commit IS NULL",
-            params![r, repo_id],
+            params![r.trim_start_matches('/'), repo_id],
             map,
         )
     };
@@ -279,7 +281,7 @@ impl ApplyResult {
             Value::Array(
                 self.revisions
                     .iter()
-                    .map(|r| json!({ "id": r.doc, "path": r.path, "hash": r.hash }))
+                    .map(|r| json!({ "_id": r.doc, "_path": r.path, "_hash": r.hash }))
                     .collect(),
             ),
         );

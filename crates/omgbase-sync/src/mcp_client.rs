@@ -383,7 +383,10 @@ fn bool_field(v: &Value, key: &str) -> bool {
     v.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 
-/// An `observe_many` member as the wire carries it → the store's outcome.
+/// An `observe_many` member as the wire carries it (`{ _id, _path, rev,
+/// commitId, … }` — the document's identity under its engine names,
+/// `spec/surface` §3, 5.0; the `observe*` ARGUMENTS keep `path` /
+/// `files[].path`, a file event's path being a role) → the store's outcome.
 /// Hashes are not on the wire (`old_hash_hex` is `None`, `new_hash_hex`
 /// empty); the coordinator reads `echo`/`conflicted`/`path` only.
 fn observe_outcome(v: &Value) -> ObserveOutcome {
@@ -402,8 +405,8 @@ fn observe_outcome(v: &Value) -> ObserveOutcome {
         })
         .unwrap_or_default();
     ObserveOutcome {
-        path: str_field(v, "path"),
-        doc_id: str_field(v, "id"),
+        path: str_field(v, "_path"),
+        doc_id: str_field(v, "_id"),
         rev: opt_str_field(v, "rev"),
         commit_id: opt_str_field(v, "commitId"),
         converged: bool_field(v, "converged"),
@@ -415,7 +418,8 @@ fn observe_outcome(v: &Value) -> ObserveOutcome {
     }
 }
 
-/// A `changes_since` page as the wire carries it (`camelCase`).
+/// A `changes_since` page as the wire carries it (`camelCase`; a revision is
+/// `{ _id, _path, _hash }` — `spec/sync` §6, 3.0).
 fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
     let digests = v
         .get("digests")
@@ -435,9 +439,9 @@ fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
                         .map(|rs| {
                             rs.iter()
                                 .map(|r| DigestRevision {
-                                    doc: str_field(r, "id"),
-                                    path: str_field(r, "path"),
-                                    content_hash: str_field(r, "hash"),
+                                    doc: str_field(r, "_id"),
+                                    path: str_field(r, "_path"),
+                                    content_hash: str_field(r, "_hash"),
                                 })
                                 .collect()
                         })
@@ -473,8 +477,8 @@ impl EngineClient for McpEngineClient {
     fn observe_delete(&mut self, path: &str) -> Result<DeleteOutcome> {
         let out = self.call("observe_delete", json!({ "path": path }))?;
         Ok(DeleteOutcome {
-            path: opt_str_field(&out, "path").unwrap_or_else(|| path.to_owned()),
-            doc_id: opt_str_field(&out, "id"),
+            path: opt_str_field(&out, "_path").unwrap_or_else(|| path.to_owned()),
+            doc_id: opt_str_field(&out, "_id"),
             old_hash_hex: None,
         })
     }
@@ -497,15 +501,18 @@ impl EngineClient for McpEngineClient {
         Ok(changes_page(&out, cursor))
     }
 
-    /// `docs_read` by path; a tool error (`doc_missing`, …) reads as absent,
-    /// as the reference treats it. The hash is computed here: the wire
-    /// carries the bytes, not the store's `file_hash`.
+    /// `docs_read { _path }` — the argument addresses the row's `_path`
+    /// (`spec/surface` §4, 5.0: a bare `path` is refused, no tolerance) — and
+    /// `_raw` is the document's reconstructed bytes; a tool error
+    /// (`doc_missing`, …) reads as absent, as the reference treats it. The
+    /// hash is computed here: the wire carries the bytes, not the store's
+    /// `file_hash`.
     fn read_doc(&mut self, path: &str) -> Result<Option<DocBytes>> {
-        let res = self.call_tool("docs_read", json!({ "path": path }))?;
+        let res = self.call_tool("docs_read", json!({ "_path": path }))?;
         if res.is_error {
             return Ok(None);
         }
-        let Some(content) = res.body.get("raw").and_then(Value::as_str) else {
+        let Some(content) = res.body.get("_raw").and_then(Value::as_str) else {
             return Ok(None);
         };
         Ok(Some(DocBytes {
@@ -881,7 +888,7 @@ mod tests {
     #[test]
     fn wire_shapes_map_to_store_outcomes() {
         let o = observe_outcome(&json!({
-            "id": "d_0", "path": "a.md", "rev": "r_0", "commitId": "c_0",
+            "_id": "d_0", "_path": "a.md", "rev": "r_0", "commitId": "c_0",
             "converged": true, "echo": false, "conflicted": false,
             "dispositions": [{ "kind": "same", "count": 2 }, { "kind": "edited", "count": 1 }],
         }));
@@ -889,13 +896,13 @@ mod tests {
         assert_eq!(o.dispositions["same"], 2);
         assert!(o.converged && !o.echo);
         let echo = observe_outcome(
-            &json!({ "id": "d_0", "path": "a.md", "rev": null, "commitId": null, "converged": true, "echo": true, "conflicted": false, "dispositions": [] }),
+            &json!({ "_id": "d_0", "_path": "a.md", "rev": null, "commitId": null, "converged": true, "echo": true, "conflicted": false, "dispositions": [] }),
         );
         assert!(echo.echo && echo.rev.is_none());
         let page = changes_page(
             &json!({
                 "digests": [{ "commit": "c_1", "seq": 1, "ts": "t", "origin": "api", "actor": null, "summary": "s",
-                              "revisions": [{ "id": "d_0", "path": "a.md", "hash": "ab" }] }],
+                              "revisions": [{ "_id": "d_0", "_path": "a.md", "_hash": "ab" }] }],
                 "cursor": 1, "truncated": false, "head": 1,
             }),
             0,
@@ -946,7 +953,7 @@ done
             c.call("docs_list", json!({})).unwrap(),
             json!({ "items": [] })
         );
-        let r = c.call_tool("docs_read", json!({ "doc": "x" })).unwrap();
+        let r = c.call_tool("docs_read", json!({ "_path": "x" })).unwrap();
         assert!(r.is_error);
         assert_eq!(r.body["error"], "doc_missing");
         assert!(

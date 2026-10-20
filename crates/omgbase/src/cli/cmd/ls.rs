@@ -44,10 +44,11 @@ pub fn ls(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
     }
     let doc = Json::Array(rows.clone());
-    cli.capture(&doc); // shell: docs become the addressable frame (ref = id, label path)
-    // `--ids` prints the documents' `id`s (spec/cli 3.0; the paths before, a
-    // stand-in for an identity the row did not carry).
-    let ids: Vec<String> = rows.iter().map(|r| str_of(r, "id")).collect();
+    cli.capture(&doc); // shell: docs become the addressable frame (ref = _id, label _path)
+    // `--ids` prints the documents' `_id`s (spec/cli 5.0 — the row's engine
+    // attribute; the paths before 3.0, a stand-in for an identity the row did
+    // not carry).
+    let ids: Vec<String> = rows.iter().map(|r| str_of(r, "_id")).collect();
     if let Some(code) = machine_out(cli, &doc, Some(&rows), Some(&ids)) {
         return code;
     }
@@ -61,9 +62,9 @@ pub fn ls(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .iter()
         .map(|r| {
             vec![
-                style.accent(&str_of(r, "path")),
+                style.accent(&str_of(r, "_path")),
                 style.dim(&format!("{} blocks", i64_of(r, "blocks"))),
-                style.dim(&rel_time(r.get("updated_at").and_then(Json::as_str), now)),
+                style.dim(&rel_time(r.get("_updated_at").and_then(Json::as_str), now)),
             ]
         })
         .collect();

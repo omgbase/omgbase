@@ -77,13 +77,16 @@ pub fn machine_out(
 
 /// A string field of a JSON object, `""` when absent.
 /// A document ref as the surface's locator (`spec/surface` §4 "Arguments",
-/// 3.0): a `d_` id is the `id` argument, anything else the `path` — the two
-/// names a `docs_*` tool takes (one of them required).
+/// 5.0): a `d_` id is the `_id` argument, anything else the `_path` — the two
+/// names a `docs_*` tool takes (one of them required; the bare `id`/`path`
+/// are refused there as `filter_invalid`). The same pair is a document
+/// effect target's address (`{ kind: "document", _id | _path }`,
+/// `spec/mutate` §11).
 pub fn doc_locator(m: &mut serde_json::Map<String, Json>, r: &str) {
     let key = if omgbase_store::is_id_ref(r, "d") {
-        "id"
+        "_id"
     } else {
-        "path"
+        "_path"
     };
     m.insert(key.to_owned(), Json::String(r.to_owned()));
 }

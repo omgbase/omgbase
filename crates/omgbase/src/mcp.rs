@@ -210,7 +210,7 @@ mod tests {
             json!([])
         );
         assert!(call["result"].get("isError").is_none());
-        let bad = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "docs_read", "arguments": { "path": "nope" } } })).unwrap();
+        let bad = handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "docs_read", "arguments": { "_path": "nope" } } })).unwrap();
         assert_eq!(bad["result"]["isError"], true);
         let ping = handle(
             &mut s,

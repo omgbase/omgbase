@@ -58,7 +58,7 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
             // §9 Fixed: `--json` is the `docs_read` result tagged with its kind
             // (`{ kind: "document", ...docs_read }`; the `read_ref` result before
             // surface 3.0).
-            let read = cli.call("docs_read", json!({ "id": doc_id }))?;
+            let read = cli.call("docs_read", json!({ "_id": doc_id }))?;
             let mut tagged = serde_json::Map::new();
             tagged.insert("kind".to_owned(), json!("document"));
             if let Json::Object(m) = read {
@@ -75,10 +75,10 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
         ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
                 "blocks_read",
-                json!({ "id": block_id, "resolution": "full" }),
+                json!({ "_id": block_id, "resolution": "full" }),
             )?;
             let history = if include_history {
-                Some(cli.call("blocks_history", json!({ "id": block_id, "limit": 5 }))?)
+                Some(cli.call("blocks_history", json!({ "_id": block_id, "limit": 5 }))?)
             } else {
                 None
             };
@@ -92,12 +92,13 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
 }
 
 /// The document card: the MERGED authored keys (frontmatter + inline — the
-/// `data` view), skipping every stored `$` key (the computed rows' storage
+/// `_data` view), skipping every stored `$` key (the computed rows' storage
 /// spelling), then — when the document has computed rows — a `computed`
-/// section with the keys spelled bare (`title`, `tags`: the re-keyed
-/// `properties.computed` the `docs_read` payload carries, `spec/surface` §1.2,
-/// 3.0: the store's `$title`/`$tags` never reach the terminal), then the open
-/// edges.
+/// section with the keys under their surface names (`_title`, `_tags`: the
+/// re-keyed `properties.computed` the `docs_read` payload carries,
+/// `spec/surface` §1.2, 5.0: the store's `$title`/`$tags` never reach the
+/// terminal, and a computed title never masquerades as authored), then the
+/// open edges.
 fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, links: &Json) {
     let style = cli.style;
     cli.io.out(&style.wordmark(path));
@@ -136,17 +137,17 @@ fn render_doc_card(cli: &Cli, path: &str, properties: &Json, payload: &Json, lin
 
 fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
     let style = cli.style;
-    let kind = str_of(node, "type");
+    let kind = str_of(node, "_type");
     cli.io.out(&format!(
         "  {} {}  {}",
         type_glyph(&style, &kind),
         style.bold(&kind),
-        style.id(&str_of(node, "id"))
+        style.id(&str_of(node, "_id"))
     ));
     cli.io.out(&style.rule());
-    // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`);
+    // The placement is flattened onto the row (5.0: `parent_id`/`_ordinal`/`_depth`);
     // the line reads the same.
-    if node.get("ordinal").is_some() {
+    if node.get("_ordinal").is_some() {
         let parent = node
             .get("parent_id")
             .and_then(Json::as_str)
@@ -156,11 +157,11 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
             "  {}  parent={} ordinal={} depth={}",
             style.dim("placement"),
             style.id(&parent),
-            fmt_value(node.get("ordinal").unwrap_or(&Json::Null)),
-            fmt_value(node.get("depth").unwrap_or(&Json::Null))
+            fmt_value(node.get("_ordinal").unwrap_or(&Json::Null)),
+            fmt_value(node.get("_depth").unwrap_or(&Json::Null))
         ));
     }
-    if let Some(attrs) = node.get("attrs").and_then(Json::as_object) {
+    if let Some(attrs) = node.get("_attrs").and_then(Json::as_object) {
         if !attrs.is_empty() {
             cli.io.out(&format!("  {}", style.dim("attrs")));
             for (k, v) in attrs {
@@ -173,7 +174,7 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
             }
         }
     }
-    if let Some(text) = node.get("text").and_then(Json::as_str) {
+    if let Some(text) = node.get("_text").and_then(Json::as_str) {
         if !text.is_empty() {
             cli.io.out(&format!("  {}  {text}", style.dim("text")));
         }

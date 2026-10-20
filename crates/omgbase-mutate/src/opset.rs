@@ -188,18 +188,18 @@ impl Opset {
         m.insert("version".to_owned(), json!(1));
         m.insert("kind".to_owned(), json!("doc_update"));
         // The document under the surface's row rule (`spec/surface` §1.2, 3.0):
-        // identity `id`/`path`, its hash `hash`; `base_revision` names a role.
+        // identity `_id`/`_path`, its hash `_hash`; `base_revision` names a role.
         m.insert(
             "target".to_owned(),
-            json!({ "id": self.target_doc, "path": self.target_path }),
+            json!({ "_id": self.target_doc, "_path": self.target_path }),
         );
         m.insert(
             "precondition".to_owned(),
             json!({
-                "id": self.precondition.doc,
-                "path": self.precondition.path,
+                "_id": self.precondition.doc,
+                "_path": self.precondition.path,
                 "base_revision": self.precondition.base_revision,
-                "hash": self.precondition.hash,
+                "_hash": self.precondition.hash,
             }),
         );
         m.insert("matcher_v".to_owned(), json!(self.matcher_v));

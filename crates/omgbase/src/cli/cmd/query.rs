@@ -81,7 +81,7 @@ fn capture_result(cli: &mut Cli, result: &Json) {
 }
 
 /// Render an `OqxResult` per the mode and the consumer. `bare` hits (cli 4.1)
-/// carry no envelope: the human table has no id/path columns, only the
+/// carry no envelope: the human table has no `_id`/`_path` columns, only the
 /// projection's; `--json`/`--jsonl` print the bare hits as they came.
 pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Result<i32> {
     let style = cli.style;
@@ -141,9 +141,10 @@ pub fn render_result(cli: &Cli, result: &Json, source: &str, bare: bool) -> Resu
         // A bare hit carries no id: `--ids` prints the document, as it does
         // for a scalar result (the reference's `emitMachine`).
         Mode::Ids if bare => io.out(&js_json(result)),
+        // `--ids` prints the hits' `_id`s (spec/surface §1.4, 5.0).
         Mode::Ids => {
             for h in &hits {
-                io.out(&str_of(h, "id"));
+                io.out(&str_of(h, "_id"));
             }
         }
         Mode::Jsonl => {

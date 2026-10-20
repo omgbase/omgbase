@@ -448,7 +448,7 @@ fn build_catalog() -> Vec<ToolSpec> {
     // The document locator every `docs_*` tool takes (§4 "Arguments"): the
     // row's own attributes, at least one of them (checked by the handler).
     let doc = |extra: &[(&str, Json)], required: &[&str]| {
-        let mut props = vec![("id", s()), ("path", s())];
+        let mut props = vec![("_id", s()), ("_path", s())];
         props.extend(extra.iter().cloned());
         schema(&props, required, true)
     };
@@ -490,8 +490,8 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "blocks_read",
             description: d::BLOCKS_READ,
             input_schema: schema(
-                &[("id", s()), ("resolution", resolution_schema())],
-                &["id"],
+                &[("_id", s()), ("resolution", resolution_schema())],
+                &["_id"],
                 true,
             ),
         },
@@ -499,8 +499,8 @@ fn build_catalog() -> Vec<ToolSpec> {
             name: "nodes_block_read",
             description: d::NODES_BLOCK_READ,
             input_schema: schema(
-                &[("id", s()), ("resolution", resolution_schema())],
-                &["id"],
+                &[("_id", s()), ("resolution", resolution_schema())],
+                &["_id"],
                 true,
             ),
         },
@@ -509,11 +509,11 @@ fn build_catalog() -> Vec<ToolSpec> {
             description: d::BLOCKS_READ_MANY,
             input_schema: schema(
                 &[
-                    ("ids", strings()),
+                    ("_ids", strings()),
                     ("resolution", resolution_schema()),
                     ("budget_tokens", i()),
                 ],
-                &["ids"],
+                &["_ids"],
                 true,
             ),
         },
@@ -657,12 +657,12 @@ fn build_catalog() -> Vec<ToolSpec> {
             description: d::BLOCKS_UPDATE,
             input_schema: schema(
                 &[
-                    ("id", s()),
+                    ("_id", s()),
                     ("markdown", s()),
                     ("checked", b()),
                     ("expect", expect_schema()),
                 ],
-                &["id"],
+                &["_id"],
                 true,
             ),
         },
@@ -690,13 +690,13 @@ fn build_catalog() -> Vec<ToolSpec> {
             description: d::BLOCKS_SPLIT,
             input_schema: schema(
                 &[
-                    ("id", s()),
+                    ("_id", s()),
                     (
                         "at",
                         json!({ "type": "array", "items": { "type": "integer" } }),
                     ),
                 ],
-                &["id", "at"],
+                &["_id", "at"],
                 true,
             ),
         },
@@ -712,21 +712,21 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "blocks_check",
             description: d::BLOCKS_CHECK,
-            input_schema: schema(&[("ids", strings()), ("checked", b())], &["ids"], true),
+            input_schema: schema(&[("_ids", strings()), ("checked", b())], &["_ids"], true),
         },
         ToolSpec {
             name: "nodes_set",
             description: d::NODES_SET,
             input_schema: schema(
-                &[("id", s()), ("prop", s()), ("value", s())],
-                &["id", "prop", "value"],
+                &[("_id", s()), ("prop", s()), ("value", s())],
+                &["_id", "prop", "value"],
                 true,
             ),
         },
         ToolSpec {
             name: "blocks_append",
             description: d::BLOCKS_APPEND,
-            input_schema: schema(&[("id", s()), ("text", s())], &["id", "text"], true),
+            input_schema: schema(&[("_id", s()), ("text", s())], &["_id", "text"], true),
         },
         ToolSpec {
             name: "docs_append",
@@ -826,7 +826,7 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "blocks_history",
             description: d::BLOCKS_HISTORY,
-            input_schema: schema(&[("id", s()), ("limit", i())], &["id"], false),
+            input_schema: schema(&[("_id", s()), ("limit", i())], &["_id"], false),
         },
         ToolSpec {
             name: "docs_diff",
@@ -852,8 +852,8 @@ fn build_catalog() -> Vec<ToolSpec> {
             input_schema: schema(
                 &[
                     ("path_glob", s()),
-                    ("id", s()),
-                    ("path", s()),
+                    ("_id", s()),
+                    ("_path", s()),
                     ("include_deleted", b()),
                     ("limit", i()),
                 ],
@@ -1152,17 +1152,18 @@ impl Surface {
     }
 
     // ---- the document locator (§4 "Arguments") ---------------------------------------
-    // `id` is the document's id, `path` its path (either form, §1 "Paths"); at
-    // least one is required, and when both are given they must name the same
-    // document. A tool whose prefix is not `docs` refers to a document as the
-    // every `docs_*` tool — `docs_diff` and `docs_diff_unified` included — under the same
-    // rules (the names are bare because the attributes themselves are becoming
-    // bare — surface 3.0 attribute flip, follow-up). A miss is `doc_missing`
-    // "no document with id or path "<value>"" with the arguments as given in
-    // `data`; neither given is `filter_invalid` "pass id or path"; a
-    // disagreement is `filter_invalid` "id "…" and path "…" name different
-    // documents". The reference's `locateDoc`, byte for byte.
-    /// A document locator (`id` or `path`, either form) resolved to the live
+    // `_id` is the document's id, `_path` its path (either form, §1 "Paths");
+    // at least one is required, and when both are given they must name the
+    // same document. Every `docs_*` tool — `docs_diff` and `docs_diff_unified`
+    // included — locates under the same rules (5.0: the arguments are the
+    // row's engine attributes, spelled exactly; a bare `id`/`path` never
+    // reaches here — `validate_arguments` refuses it with the `_` spelling and
+    // a `fix`). A miss is `doc_missing` "no document with _id or _path
+    // "<value>"" with the arguments as given in `data`; neither given is
+    // `filter_invalid` "pass _id or _path"; a disagreement is `filter_invalid`
+    // "_id "…" and _path "…" name different documents". The reference's
+    // `locateDoc`, byte for byte.
+    /// A document locator (`_id` or `_path`, either form) resolved to the live
     /// document's id under the `docs_update` tool's rules — the error a
     /// `docs_update` with that locator would raise (`doc_missing` with the
     /// given keys as `data`). The CLI's local `update <doc>` resolves its
@@ -1189,7 +1190,7 @@ impl Surface {
     }
 
     fn locate_doc(&self, repo_id: &str, tool: &str, args: &Json) -> Result<String> {
-        let (id_key, path_key) = ("id", "path");
+        let (id_key, path_key) = ("_id", "_path");
         let schema = &tool_spec(tool).expect("a catalog tool").input_schema;
         let id = arg_str(args, id_key);
         let path = arg_str(args, path_key);
@@ -1295,7 +1296,7 @@ impl Surface {
     /// normalized heading text of the named document's live headings (an
     /// ATX-looking value, "## Title", loses its hashes). Zero →
     /// `parent_missing` naming the heading; several → `ambiguous_heading` with
-    /// the candidates `[{ id, doc_id }]` (pass the heading's id to
+    /// the candidates `[{ _id, _doc_id }]` (pass the heading's id to
     /// `blocks_append` instead). Never an id lookup — the id form is
     /// `blocks_append`'s (§9).
     ///
@@ -1342,7 +1343,7 @@ impl Surface {
                 Err(SurfaceError::with_data(
                     "parent_missing",
                     format!("no heading {} in {shown}", Json::String(section.to_owned())),
-                    json!({ "section": section, "path": shown, "fix": fix }),
+                    json!({ "section": section, "_path": shown, "fix": fix }),
                 ))
             }
             1 => Ok(matches[0].0.clone()),
@@ -1354,8 +1355,8 @@ impl Surface {
                 ),
                 json!({
                     "section": section,
-                    "path": shown,
-                    "candidates": matches.iter().map(|(b, d, _)| json!({ "id": b, "doc_id": d })).collect::<Vec<_>>(),
+                    "_path": shown,
+                    "candidates": matches.iter().map(|(b, d, _)| json!({ "_id": b, "_doc_id": d })).collect::<Vec<_>>(),
                     "fix": fixes::append_into_heading(&matches[0].0, text),
                 }),
             )),
@@ -1379,7 +1380,7 @@ impl Surface {
             return Err(SurfaceError::with_data(
                 "block_missing",
                 format!("no node with id {}", Json::String(node_id.to_owned())),
-                json!({ "id": node_id }),
+                json!({ "_id": node_id }),
             ));
         };
         let live = match &block_id {
@@ -1720,13 +1721,13 @@ impl Surface {
                         format!(
                             "no document with id or path {}",
                             Json::String(
-                                arg_str(args, "id")
-                                    .or(arg_str(args, "path"))
+                                arg_str(args, "_id")
+                                    .or(arg_str(args, "_path"))
                                     .unwrap_or_default()
                                     .to_owned()
                             )
                         ),
-                        json!({ "id": doc_id }),
+                        json!({ "_id": doc_id }),
                     )
                 })
             }
@@ -1743,8 +1744,8 @@ impl Surface {
             }
             "blocks_read" => {
                 self.scope(args)?;
-                let id = arg_string(args, "id")?;
-                // `id` is a block id, unambiguously the `blocks_` kind's (§4
+                let id = arg_string(args, "_id")?;
+                // `_id` is a block id, unambiguously the `blocks_` kind's (§4
                 // "Names and arguments"): an `n_` id names a NODE and is
                 // `block_missing` pointing at `nodes_block_read` (the name pass
                 // had dereferenced it here, §9).
@@ -1755,7 +1756,7 @@ impl Surface {
                             "no block with id {} (an n_ id names a node — nodes_block_read reads its block)",
                             Json::String(id.clone())
                         ),
-                        json!({ "id": id }),
+                        json!({ "_id": id }),
                     ));
                 }
                 let doc_id = self.doc_of_block(&id)?;
@@ -1769,7 +1770,7 @@ impl Surface {
             }
             "nodes_block_read" => {
                 self.scope(args)?;
-                let id = arg_string(args, "id")?;
+                let id = arg_string(args, "_id")?;
                 // The block a node was projected from: the node must exist and
                 // name a live block (a block-less node — one derived from the
                 // frontmatter — has none). Both misses are `block_missing`,
@@ -1785,7 +1786,7 @@ impl Surface {
             }
             "blocks_read_many" => {
                 self.scope(args)?;
-                let ids = arg_strings(args, "ids")?;
+                let ids = arg_strings(args, "_ids")?;
                 read::blocks_read_many(
                     &self.store,
                     None,
@@ -1896,7 +1897,7 @@ impl Surface {
                         .text_search(&repo, &q, arg_usize(args, "limit")?.unwrap_or(50))?;
                 Ok(json!({
                     "hits": res.hits.iter().map(|h| json!({
-                        "id": h.block_id, "doc_id": h.doc_id, "path": reference_path(&h.path), "type": h.block_type, "text": h.text, "score": h.score,
+                        "_id": h.block_id, "_doc_id": h.doc_id, "_path": reference_path(&h.path), "_type": h.block_type, "_text": h.text, "score": h.score,
                     })).collect::<Vec<_>>(),
                     "truncated": res.truncated,
                 }))
@@ -1923,7 +1924,7 @@ impl Surface {
                     None => l.to_owned(),
                 };
                 Ok(Json::Array(hits.iter().map(|h| json!({
-                    "id": h.id, "locator": locator(&h.locator), "preview": h.preview, "evidence": evidence_json(&h.evidence),
+                    "_id": h.id, "locator": locator(&h.locator), "preview": h.preview, "evidence": evidence_json(&h.evidence),
                 })).collect()))
             }
             "apply" => {
@@ -2042,10 +2043,10 @@ impl Surface {
             "blocks_update" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "_id")?)?;
                 let markdown = arg_str(args, "markdown");
                 let checked = arg_bool(args, "checked")?;
-                // `set markdown` then `set attrs.checked` (4.0: `checked` is
+                // `set markdown` then `set _attrs.checked` (4.0: `checked` is
                 // the one editable attribute — `attrs` is a retired name);
                 // the caller's `expect` rides the first, a missing
                 // `content_hash` is pinned from the live block (3.2).
@@ -2110,7 +2111,7 @@ impl Surface {
             "blocks_split" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let block = self.resolve_block_ref(&repo, &arg_string(args, "id")?)?;
+                let block = self.resolve_block_ref(&repo, &arg_string(args, "_id")?)?;
                 let at: Vec<usize> = args
                     .get("at")
                     .and_then(Json::as_array)
@@ -2140,11 +2141,11 @@ impl Surface {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
                 let blocks: Vec<String> =
-                    require_some(name, "ids", arg_strings(args, "ids")?, spec)?
+                    require_some(name, "_ids", arg_strings(args, "_ids")?, spec)?
                         .iter()
                         .map(|b| self.resolve_block_ref(&repo, b))
                         .collect::<Result<_>>()?;
-                // N × `set attrs.checked`, each pinned by the planner; an id
+                // N × `set _attrs.checked`, each pinned by the planner; an id
                 // named twice is one identical scalar write — the planner
                 // drops the duplicate (a pinned 3.2 fix: the second op no
                 // longer fails `stale_expectation`).
@@ -2155,7 +2156,7 @@ impl Surface {
             "nodes_set" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let node_id = arg_string(args, "id")?;
+                let node_id = arg_string(args, "_id")?;
                 let known: Option<i64> = self
                     .store
                     .conn()
@@ -2169,7 +2170,7 @@ impl Surface {
                     return Err(SurfaceError::with_data(
                         "block_missing",
                         format!("no node with id {}", Json::String(node_id.clone())),
-                        json!({ "id": node_id }),
+                        json!({ "_id": node_id }),
                     ));
                 }
                 let effects = sugar::set_node(
@@ -2182,7 +2183,7 @@ impl Surface {
             "blocks_append" => {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
-                let given = arg_string(args, "id")?;
+                let given = arg_string(args, "_id")?;
                 let block = self.resolve_block_ref(&repo, &given)?;
                 let text = arg_string(args, "text")?;
                 // By what the block is (the reference's `blocks_append`): a heading
@@ -2218,8 +2219,8 @@ impl Surface {
                             Json::String(block.clone())
                         ),
                         json!({
-                            "id": block,
-                            "type": kind,
+                            "_id": block,
+                            "_type": kind,
                             // §4 "Teaching" (4.4): the sibling insert, under the
                             // leaf's parent (the document when top-level).
                             "fix": fixes::append_after(
@@ -2248,7 +2249,7 @@ impl Surface {
                             &doc_id,
                             &info.path,
                             section,
-                            (arg_str(args, "id"), arg_str(args, "path"), &text),
+                            (arg_str(args, "_id"), arg_str(args, "_path"), &text),
                         )?;
                         EffectTarget::Section {
                             heading_id: heading,
@@ -2311,7 +2312,7 @@ impl Surface {
                 let mut m = Map::new();
                 m.insert(
                     "hits".to_owned(),
-                    Json::Array(plan.hits.iter().map(|h| json!({ "id": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
+                    Json::Array(plan.hits.iter().map(|h| json!({ "_id": h.block, "_path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
                 );
                 m.insert(
                     "pairs".to_owned(),
@@ -2405,8 +2406,8 @@ impl Surface {
                 }
                 // The Receipt, then the link report (§4, the reference's key
                 // order): `retargeted`, then each dangling link as a link row
-                // under the `links` target's names (§1.2, 3.0) with its source
-                // `path` rooted; its `target` stays as authored — that is what
+                // under the `links` target's names (§1.2, 5.0) with its source
+                // `_path` rooted; its `target` stays as authored — that is what
                 // the link says.
                 let mut m = Map::new();
                 m.insert(
@@ -2440,7 +2441,7 @@ impl Surface {
                     Vec::new()
                 };
                 let info = self.doc_info(&repo, &doc)?;
-                // One `set`/`unset frontmatter.<key>` per key, `unset` winning
+                // One `set`/`unset _frontmatter.<key>` per key, `unset` winning
                 // a key named in both (`sugar::set_meta`).
                 let sugar::Sugar { effects, reason } =
                     sugar::set_meta(&info.doc_id, &info.path, set.as_ref(), &unset);
@@ -2542,12 +2543,12 @@ impl Surface {
                 let out = self.store.observe_delete(&repo, &path, &ts)?;
                 self.notify();
                 Ok(
-                    json!({ "id": out.doc_id, "path": reference_path(&out.path), "deleted": out.deleted() }),
+                    json!({ "_id": out.doc_id, "_path": reference_path(&out.path), "deleted": out.deleted() }),
                 )
             }
             "blocks_history" => history::blocks_history(
                 &self.store,
-                &arg_string(args, "id")?,
+                &arg_string(args, "_id")?,
                 arg_i64(args, "limit")?,
             ),
             "docs_diff" => {
@@ -2562,8 +2563,8 @@ impl Surface {
             }
             "docs_diff_unified" => {
                 let (repo, _) = self.scope(args)?;
-                let doc_ref = arg_str(args, "id")
-                    .or(arg_str(args, "path"))
+                let doc_ref = arg_str(args, "_id")
+                    .or(arg_str(args, "_path"))
                     .unwrap_or_default()
                     .to_owned();
                 let doc_id = self.locate_doc(&repo, name, args)?;
@@ -2592,10 +2593,10 @@ impl Surface {
                     .optional()?;
                 let diff = history::diff_unified_text(&self.store, &doc_id, &from, &to)?;
                 Ok(
-                    json!({ "id": doc_id, "path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
+                    json!({ "_id": doc_id, "_path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
                 )
             }
-            // sugar for `docs_read { id | path, at: rev }` (4.7): the same code
+            // sugar for `docs_read { _id | _path, at: rev }` (4.7): the same code
             // path, the identical result.
             "docs_read_at" => {
                 let (repo, _) = self.scope(args)?;
@@ -2606,12 +2607,12 @@ impl Surface {
             "docs_history" => {
                 let (repo, _) = self.scope(args)?;
                 let glob = arg_str(args, "path_glob").filter(|g| !g.is_empty());
-                let id = arg_str(args, "id");
-                let path = arg_str(args, "path");
+                let id = arg_str(args, "_id");
+                let path = arg_str(args, "_path");
                 if glob.is_none() && id.is_none() && path.is_none() {
                     return Err(SurfaceError::new(
                         "target_missing",
-                        "docs_history requires one of path_glob, id or path",
+                        "docs_history requires one of path_glob, _id or _path",
                     ));
                 }
                 let include_deleted = arg_bool(args, "include_deleted")?.unwrap_or(false);
@@ -2698,13 +2699,13 @@ impl Surface {
     }
 }
 
-/// `block_missing` for a block the caller named (`id` or a ref): the
+/// `block_missing` for a block the caller named (`_id` or a ref): the
 /// attribute spelling, the argument as given in `data`.
 fn block_missing(value: &str) -> SurfaceError {
     SurfaceError::with_data(
         "block_missing",
         format!("no block with id {}", Json::String(value.to_owned())),
-        json!({ "id": value }),
+        json!({ "_id": value }),
     )
 }
 
@@ -2713,7 +2714,7 @@ fn node_has_no_block(node_id: &str, doc_id: &str) -> SurfaceError {
     SurfaceError::with_data(
         "block_missing",
         format!("node {} has no block", Json::String(node_id.to_owned())),
-        json!({ "id": node_id, "doc_id": doc_id }),
+        json!({ "_id": node_id, "_doc_id": doc_id }),
     )
 }
 
@@ -2738,7 +2739,7 @@ fn parse_effects(v: &Json) -> Result<Vec<PublicEffect>> {
 
 /// A plan on the wire (`spec/mutate` §11): the digest-covered core as the
 /// planner wrote it — a client echoes it back to `execute`, so no key moves
-/// — and, under §1 "Paths", the preview's `revisions[].path` and `diffs`
+/// — and, under §1 "Paths", the preview's `revisions[]._path` and `diffs`
 /// keys in the reference form.
 #[must_use]
 pub fn plan_json(plan: &Plan) -> Json {
@@ -2746,7 +2747,7 @@ pub fn plan_json(plan: &Plan) -> Json {
     if let Some(preview) = v.get_mut("preview").and_then(Json::as_object_mut) {
         if let Some(revs) = preview.get_mut("revisions").and_then(Json::as_array_mut) {
             for r in revs {
-                root_field(r, "path");
+                root_field(r, "_path");
             }
         }
         // The kernel results spell `merged_into` (the `spec/mutate` fixture
@@ -2769,7 +2770,7 @@ pub fn plan_json(plan: &Plan) -> Json {
             for r in retargets {
                 if let Some(hits) = r.get_mut("hits").and_then(Json::as_array_mut) {
                     for h in hits {
-                        root_field(h, "path");
+                        root_field(h, "_path");
                     }
                 }
             }
@@ -2778,30 +2779,30 @@ pub fn plan_json(plan: &Plan) -> Json {
     v
 }
 
-/// A receipt on the wire: `revisions[].path` in the reference form.
+/// A receipt on the wire: `revisions[]._path` in the reference form.
 #[must_use]
 pub fn receipt_json(receipt: &Receipt) -> Json {
     let mut v = receipt.to_json();
     if let Some(revs) = v.get_mut("revisions").and_then(Json::as_array_mut) {
         for r in revs {
-            root_field(r, "path");
+            root_field(r, "_path");
         }
     }
     v
 }
 
-/// A dangling inbound link as an edge row (`spec/surface` §4 `docs_move`, 3.0):
-/// `{ doc_id, path, block_id, target, anchor, field? }` — the source `path`
-/// rooted, the `target` as authored.
+/// A dangling inbound link as a link row (`spec/surface` §4 `docs_move`, 5.0):
+/// `{ _doc_id, _path, _block_id, target, _anchor, _field? }` — the source
+/// `_path` rooted, the `target` (a role) as authored.
 fn dangling_json(l: &omgbase_store::InboundLink) -> Json {
     let mut m = Map::new();
-    m.insert("doc_id".to_owned(), json!(l.doc));
-    m.insert("path".to_owned(), json!(reference_path(&l.path)));
-    m.insert("block_id".to_owned(), json!(l.block));
+    m.insert("_doc_id".to_owned(), json!(l.doc));
+    m.insert("_path".to_owned(), json!(reference_path(&l.path)));
+    m.insert("_block_id".to_owned(), json!(l.block));
     m.insert("target".to_owned(), json!(l.target));
-    m.insert("anchor".to_owned(), json!(l.anchor));
+    m.insert("_anchor".to_owned(), json!(l.anchor));
     if let Some(f) = &l.field {
-        m.insert("field".to_owned(), json!(f));
+        m.insert("_field".to_owned(), json!(f));
     }
     Json::Object(m)
 }
@@ -2813,7 +2814,7 @@ fn path_taken(message: String) -> SurfaceError {
 }
 
 /// `changes_since` on the wire (§1 Paths, 2.0): the store renders its digests
-/// in the storage form; every revision `path` is rooted here, and so is the
+/// in the storage form; every revision `_path` is rooted here, and so is the
 /// summary's subject — the reference composes `renderSummary` from rooted
 /// paths, so the same line reads `observed: /a.md — 3 inserted`,
 /// `api(human:spec): deleted /a.md`, `api(human:spec): moved /a.md → /b.md`,
@@ -2828,7 +2829,7 @@ fn root_changes_page(mut page: Json) -> Json {
     for d in digests.iter_mut() {
         if let Some(revs) = d.get_mut("revisions").and_then(Json::as_array_mut) {
             for r in revs.iter_mut() {
-                root_field(r, "path");
+                root_field(r, "_path");
             }
         }
         if let Some(summary) = d.get("summary").and_then(Json::as_str) {
@@ -2898,14 +2899,14 @@ fn evidence_json(e: &omgbase_store::Evidence) -> Json {
     Json::Object(m)
 }
 
-/// The public `observe` result: `{ id, path, rev, commitId, converged,
+/// The public `observe` result: `{ _id, _path, rev, commitId, converged,
 /// echo, conflicted, dispositions: [{ kind, count }] }` — the store's own
 /// `{ doc, commit, rev }` outcome (`spec/store` §9) re-shaped under the row
-/// rule (§1.2, 3.0).
+/// rule (§1.2, 5.0).
 fn observe_json(o: &omgbase_store::ObserveOutcome) -> Json {
     json!({
-        "id": o.doc_id,
-        "path": reference_path(&o.path),
+        "_id": o.doc_id,
+        "_path": reference_path(&o.path),
         "rev": o.rev,
         "commitId": o.commit_id,
         "converged": o.converged,
@@ -3090,8 +3091,8 @@ mod tests {
         }
         let select = "from docs where type == \"workstream\" and status == \"completed\"";
         let templates = json!([
-            { "op": "insert", "into": { "kind": "document", "path": { "oqx": "project" } }, "markdown": { "oqx": "\"- [\" + title + \"](\" + path + \")\"" } },
-            { "op": "set", "field": "frontmatter.rolled_up", "value": true },
+            { "op": "insert", "into": { "kind": "document", "_path": { "oqx": "project" } }, "markdown": { "oqx": "\"- [\" + _title + \"](\" + _path + \")\"" } },
+            { "op": "set", "field": "_frontmatter.rolled_up", "value": true },
         ]);
         let plan = s.call(
             "plan",
@@ -3103,12 +3104,12 @@ mod tests {
         assert_eq!(plan["effects"].as_array().map(Vec::len), Some(4));
         assert_eq!(
             plan["effects"][0]["into"],
-            json!({ "kind": "document", "id": "d_0", "path": "hub.md" })
+            json!({ "kind": "document", "_id": "d_0", "_path": "hub.md" })
         );
         assert_eq!(plan["effects"][0]["markdown"], "- [Alpha](/ws/alpha.md)");
         assert_eq!(
             plan["effects"][1]["target"],
-            json!({ "kind": "document", "id": "d_1", "path": "ws/alpha.md" })
+            json!({ "kind": "document", "_id": "d_1", "_path": "ws/alpha.md" })
         );
         assert_eq!(
             plan["selection"],
@@ -3262,7 +3263,7 @@ mod tests {
         );
         assert!(!out.is_error, "{}", out.body);
         let effects = json!([
-            { "op": "set", "target": { "kind": "document", "path": "/a.md" }, "field": "frontmatter.status", "value": "done" },
+            { "op": "set", "target": { "kind": "document", "_path": "/a.md" }, "field": "_frontmatter.status", "value": "done" },
             { "op": "insert", "into": { "kind": "section", "heading_id": "b_0" }, "markdown": "Tail." },
         ]);
         let plan = s.call("plan", json!({ "effects": effects, "diffs": true }));
@@ -3272,11 +3273,11 @@ mod tests {
         assert_eq!(plan["plan_id"].as_str().map(str::len), Some(64));
         assert_eq!(
             plan["effects"][0]["target"],
-            json!({ "kind": "document", "id": "d_0", "path": "a.md" }),
+            json!({ "kind": "document", "_id": "d_0", "_path": "a.md" }),
             "the core keeps storage paths"
         );
         assert_eq!(
-            plan["preview"]["revisions"][0]["path"], "/a.md",
+            plan["preview"]["revisions"][0]["_path"], "/a.md",
             "the preview is rooted"
         );
         assert!(
@@ -3340,11 +3341,11 @@ mod tests {
         assert_eq!(receipt.body["plan_id"], plan["plan_id"]);
         assert_eq!(receipt.body["committed"], true);
         assert_eq!(receipt.body["commit"], "c_1");
-        assert_eq!(receipt.body["revisions"][0]["path"], "/a.md");
+        assert_eq!(receipt.body["revisions"][0]["_path"], "/a.md");
         assert_eq!(receipt.body["new_ids"], json!({ "$new.0": "b_2" }));
-        let read = s.call("docs_read", json!({ "path": "a.md" }));
+        let read = s.call("docs_read", json!({ "_path": "a.md" }));
         assert_eq!(
-            read.body["raw"],
+            read.body["_raw"],
             "---\nstatus: done\n---\n\n# A\n\nAlpha.\n\nTail.\n"
         );
         // A replay is stale; the digest form with the same effects re-plans.
@@ -3400,42 +3401,42 @@ mod tests {
             assert!(!out.is_error, "{}", out.body);
         }
         // the default envelope is untouched
-        let plain = s.call("query", json!({ "query": "select title from docs" }));
+        let plain = s.call("query", json!({ "query": "select _title from docs" }));
         assert_eq!(
             plain.body["hits"][0],
-            json!({ "id": "d_0", "path": "/a.md", "title": "Alpha" })
+            json!({ "_id": "d_0", "_path": "/a.md", "_title": "Alpha" })
         );
         // bare: the projection only, `truncated`/`cursor` as before
         let bare = s.call(
             "query",
-            json!({ "query": "select title from docs", "bare": true }),
+            json!({ "query": "select _title from docs", "bare": true }),
         );
         assert!(!bare.is_error, "{}", bare.body);
         assert_eq!(
             bare.body["hits"],
-            json!([{ "title": "Alpha" }, { "title": "Beta" }, { "title": "Gamma" }])
+            json!([{ "_title": "Alpha" }, { "_title": "Beta" }, { "_title": "Gamma" }])
         );
         assert_eq!(bare.body["truncated"], false);
         assert_eq!(bare.body["cursor"], Json::Null);
         assert_eq!(bare.body["consumer"], "collect");
-        // `select id`/`path` under bare is the row's intrinsic, an ordinary
-        // column in the query's own order; an authored key of the same name
-        // stays `data.<k>`; with no envelope there is nothing to collide with
+        // `select _id`/`_path` under bare is the attribute, an ordinary
+        // column in the query's own order; the authored `id:` key is the
+        // bare `id` (5.0); with no envelope there is nothing to collide with
         let intrinsic = s.call(
             "query",
-            json!({ "query": "select i: data.id, id, path from docs where path == \"a.md\"", "bare": true }),
+            json!({ "query": "select i: id, _id, _path from docs where _path == \"a.md\"", "bare": true }),
         );
         assert_eq!(
             intrinsic.body["hits"].to_string(),
-            r#"[{"i":"authored-a","id":"d_0","path":"/a.md"}]"#
+            r#"[{"i":"authored-a","_id":"d_0","_path":"/a.md"}]"#
         );
         let no_collision = s.call(
             "query",
-            json!({ "query": "select path: layer from docs where title == \"Alpha\"", "bare": true }),
+            json!({ "query": "select _path: layer from docs where _title == \"Alpha\"", "bare": true }),
         );
-        assert_eq!(no_collision.body["hits"], json!([{ "path": "canon" }]));
+        assert_eq!(no_collision.body["hits"], json!([{ "_path": "canon" }]));
         assert_eq!(
-            s.call("query", json!({ "query": "select path: layer from docs" }))
+            s.call("query", json!({ "query": "select _path: layer from docs" }))
                 .body["error"],
             "filter_invalid"
         );
@@ -3445,19 +3446,19 @@ mod tests {
         // paging keeps the keyset cursor: identity is kept until the result is shaped
         let page1 = s.call(
             "query",
-            json!({ "query": "select title from docs", "bare": true, "limit": 2 }),
+            json!({ "query": "select _title from docs", "bare": true, "limit": 2 }),
         );
         assert_eq!(page1.body["truncated"], true);
         assert_eq!(
             page1.body["hits"],
-            json!([{ "title": "Alpha" }, { "title": "Beta" }])
+            json!([{ "_title": "Alpha" }, { "_title": "Beta" }])
         );
         let cursor = page1.body["cursor"].as_str().expect("a cursor").to_owned();
         let page2 = s.call(
             "query",
-            json!({ "query": "select title from docs", "bare": true, "limit": 2, "cursor": cursor }),
+            json!({ "query": "select _title from docs", "bare": true, "limit": 2, "cursor": cursor }),
         );
-        assert_eq!(page2.body["hits"], json!([{ "title": "Gamma" }]));
+        assert_eq!(page2.body["hits"], json!([{ "_title": "Gamma" }]));
         assert_eq!(page2.body["truncated"], false);
         // first/single and distinct are shaped the same way
         let first = s.call(
@@ -3473,14 +3474,14 @@ mod tests {
             distinct.body["hits"],
             json!([{ "layer": "canon" }, { "layer": "working" }])
         );
-        // nested rows keep their `{ id, path }` reference shape
+        // nested rows keep their `{ _id, _path }` reference shape
         let nested = s.call(
             "query",
-            json!({ "query": "select b: blocks collect { } from docs where path == \"b.md\"", "bare": true }),
+            json!({ "query": "select b: _blocks collect { } from docs where _path == \"b.md\"", "bare": true }),
         );
         assert_eq!(
             nested.body["hits"],
-            json!([{ "b": [{ "id": "b_1", "path": "/b.md" }] }])
+            json!([{ "b": [{ "_id": "b_1", "_path": "/b.md" }] }])
         );
         // refused: no select, values, a non-boolean
         let no_select = s.call("query", json!({ "query": "from docs", "bare": true }));
@@ -3491,7 +3492,7 @@ mod tests {
         );
         let values = s.call(
             "query",
-            json!({ "query": "select title values from docs", "bare": true }),
+            json!({ "query": "select _title values from docs", "bare": true }),
         );
         assert_eq!(values.body["error"], "filter_invalid");
         assert_eq!(
@@ -3500,7 +3501,7 @@ mod tests {
         );
         let typed = s.call(
             "query",
-            json!({ "query": "select title from docs", "bare": "yes" }),
+            json!({ "query": "select _title from docs", "bare": "yes" }),
         );
         assert_eq!(typed.body["error"], "filter_invalid");
         assert_eq!(
@@ -3510,9 +3511,9 @@ mod tests {
         // `bare: false` is the default envelope
         let off = s.call(
             "query",
-            json!({ "query": "select title from docs", "bare": false }),
+            json!({ "query": "select _title from docs", "bare": false }),
         );
-        assert_eq!(off.body["hits"][0]["id"], "d_0");
+        assert_eq!(off.body["hits"][0]["_id"], "d_0");
         assert!(s.tools().iter().any(
             |t| t.name == "query" && t.input_schema["properties"]["bare"]["type"] == "boolean"
         ));
@@ -3523,61 +3524,68 @@ mod tests {
         let mut s = surface();
         let out = s.call("observe", json!({ "path": "a.md", "content": "---\nlayer: canon\n---\n# Title\n\nHello world.\n\n- [ ] task one\n" }));
         assert!(!out.is_error, "{}", out.body);
-        assert_eq!(out.body["id"], "d_0");
+        assert_eq!(out.body["_id"], "d_0");
         assert_eq!(out.body["echo"], false);
-        let read = s.call("docs_read", json!({ "path": "a.md", "include_ids": true }));
+        let read = s.call("docs_read", json!({ "_path": "a.md", "include_ids": true }));
         assert!(!read.is_error, "{}", read.body);
-        assert_eq!(read.body["path"], "/a.md");
+        assert_eq!(read.body["_path"], "/a.md");
         // either form names the document (§1 Paths)
         assert_eq!(
-            s.call("docs_read", json!({ "path": "/a.md" })).body["path"],
+            s.call("docs_read", json!({ "_path": "/a.md" })).body["_path"],
             "/a.md"
         );
-        // §4 "Arguments": the retired `doc` is refused with its replacement.
+        // §4 "Arguments": the retired `doc` is refused with its replacement;
+        // (5.0) a bare `id`/`path` is refused with the `_` spelling and a fix.
         let retired = s.call("docs_read", json!({ "doc": "a.md" }));
         assert_eq!(retired.body["error"], "filter_invalid");
         assert_eq!(
             retired.body["message"],
-            "`doc` is no longer an argument — pass `id` or `path` (docs_read takes at?, id?, include_ids?, path?, repo?)"
+            "`doc` is no longer an argument — pass `_id` or `_path` (docs_read takes _id?, _path?, at?, include_ids?, repo?)"
         );
         let neither = s.call("docs_read", json!({}));
         assert_eq!(
             neither.body["message"],
-            "pass id or path (docs_read takes at?, id?, include_ids?, path?, repo?)"
+            "pass _id or _path (docs_read takes _id?, _path?, at?, include_ids?, repo?)"
         );
+        let bare_path = s.call("docs_read", json!({ "path": "a.md" }));
         assert_eq!(
-            s.call("docs_read", json!({ "path": "//a.md" })).body["id"],
+            bare_path.body["message"],
+            "`path` is not an argument — the engine field is `_path` (the bare namespace is the user's); pass `_path` (docs_read takes _id?, _path?, at?, include_ids?, repo?)"
+        );
+        assert_eq!(bare_path.body["data"]["fix"], r#"{"_path":"a.md"}"#);
+        assert_eq!(
+            s.call("docs_read", json!({ "_path": "//a.md" })).body["_id"],
             "d_0"
         );
         assert_eq!(read.body["properties"]["frontmatter"]["layer"], "canon");
         assert!(read.body["ids"].as_array().unwrap().len() >= 3);
-        let q = s.call("query", json!({ "query": "select title, layer, t: nodes collect { value where kind == \"md:task\" } from docs where layer == \"canon\" && nodes count { where kind == \"md:task\" } == 1" }));
+        let q = s.call("query", json!({ "query": "select _title, layer, t: _nodes collect { _value where _kind == \"md:task\" } from docs where layer == \"canon\" && _nodes count { where _kind == \"md:task\" } == 1" }));
         assert!(!q.is_error, "{}", q.body);
-        assert_eq!(q.body["hits"][0]["title"], "Title");
+        assert_eq!(q.body["hits"][0]["_title"], "Title");
         assert_eq!(q.body["hits"][0]["layer"], "canon");
-        assert_eq!(q.body["hits"][0]["t"][0]["value"], "task one");
-        assert_eq!(q.body["hits"][0]["id"], "d_0");
-        assert_eq!(q.body["hits"][0]["path"], "/a.md");
+        assert_eq!(q.body["hits"][0]["t"][0]["_value"], "task one");
+        assert_eq!(q.body["hits"][0]["_id"], "d_0");
+        assert_eq!(q.body["hits"][0]["_path"], "/a.md");
         assert_eq!(q.body["consumer"], "collect");
         let c = s.call(
             "query",
             json!({ "query": "blocks count { where text(\"hello\") }" }),
         );
         assert_eq!(c.body["count"], 1);
-        // 3.0: a bare `path` is the attribute (no loud-error set); a
-        // projection landing on the envelope must be aliased.
+        // 5.0: `_path` is the attribute; a projection landing on the
+        // envelope must be aliased.
         let ok = s.call(
             "query",
-            json!({ "query": "from docs where path == \"a.md\"" }),
+            json!({ "query": "from docs where _path == \"a.md\"" }),
         );
         assert!(!ok.is_error, "{}", ok.body);
-        assert_eq!(ok.body["hits"][0]["id"], "d_0");
-        let bad = s.call("query", json!({ "query": "select data.path from docs" }));
+        assert_eq!(ok.body["hits"][0]["_id"], "d_0");
+        let bad = s.call("query", json!({ "query": "select _path: layer from docs" }));
         assert!(bad.is_error);
         assert_eq!(bad.body["error"], "filter_invalid");
         assert_eq!(
             bad.body["message"],
-            "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
+            "projection `_path` collides with the hit envelope — alias it (`p: …`)"
         );
         let sem = s.call(
             "query",
@@ -3585,17 +3593,17 @@ mod tests {
         );
         assert_eq!(sem.body["error"], "provider_unavailable");
         assert_eq!(sem.body["data"], json!({ "provider": null }));
-        let outline = s.call("docs_outline", json!({ "path": "a.md" }));
+        let outline = s.call("docs_outline", json!({ "_path": "a.md" }));
         let text = outline.body["text"].as_str().unwrap();
         assert!(text.starts_with("b_0 h1   Title  §"), "{text}");
         assert!(text.contains("☐ task one"));
-        let missing = s.call("docs_read", json!({ "path": "nope.md" }));
+        let missing = s.call("docs_read", json!({ "_path": "nope.md" }));
         assert_eq!(missing.body["error"], "doc_missing");
         assert_eq!(
             missing.body["message"],
-            "no document with id or path \"nope.md\""
+            "no document with _id or _path \"nope.md\""
         );
-        assert_eq!(missing.body["data"], json!({ "path": "nope.md" }));
+        assert_eq!(missing.body["data"], json!({ "_path": "nope.md" }));
         let repos = s.call("repos", json!({}));
         assert_eq!(repos.body["repos"][0]["slug"], "fixture");
         let unknown = s.call("docs_list", json!({ "repo": "zzz" }));
@@ -3631,8 +3639,8 @@ mod tests {
         );
         assert!(!ok.is_error, "{}", ok.body);
         assert_eq!(ok.body["committed"], true);
-        let read = s.call("docs_read", json!({ "path": "a.md" }));
-        assert_eq!(read.body["raw"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
+        let read = s.call("docs_read", json!({ "_path": "a.md" }));
+        assert_eq!(read.body["_raw"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
         // blocks_move: the destination is checked once for the whole run.
         let stale = s.call(
             "blocks_move",
@@ -3648,12 +3656,12 @@ mod tests {
             json!({ "blocks": ["b_1", "b_2"], "to": "a.md", "at": "end", "expect": { "parent_children_hash": current } }),
         );
         assert!(!ok.is_error, "{}", ok.body);
-        let read = s.call("docs_read", json!({ "path": "a.md" }));
-        assert_eq!(read.body["raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
+        let read = s.call("docs_read", json!({ "_path": "a.md" }));
+        assert_eq!(read.body["_raw"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
         // The preview (`plan`, or the CLI's seam) still runs the CAS.
         let dry = s.call(
             "plan",
-            json!({ "effects": [{ "op": "move", "targets": [{ "kind": "block", "id": "b_1" }], "into": { "kind": "document", "path": "a.md" }, "at": "start", "expect": { "parent_children_hash": "00" } }] }),
+            json!({ "effects": [{ "op": "move", "targets": [{ "kind": "block", "_id": "b_1" }], "into": { "kind": "document", "_path": "a.md" }, "at": "start", "expect": { "parent_children_hash": "00" } }] }),
         );
         assert_eq!(dry.body["error"], "stale_expectation", "{}", dry.body);
         let dry = s
@@ -3675,7 +3683,7 @@ mod tests {
             "{}",
             many.body
         );
-        assert_eq!(many.body["items"][0]["path"], "/a.md");
+        assert_eq!(many.body["items"][0]["_path"], "/a.md");
         assert_eq!(many.body["truncated"], true);
         let one = s.call(
             "docs_read_many",
@@ -3685,7 +3693,7 @@ mod tests {
         assert_eq!(one.body["truncated"], false);
         let nodes = s.call(
             "blocks_read_many",
-            json!({ "ids": ["b_zzz", "b_1", "b_2"], "resolution": "full", "budget_tokens": 1 }),
+            json!({ "_ids": ["b_zzz", "b_1", "b_2"], "resolution": "full", "budget_tokens": 1 }),
         );
         assert_eq!(
             nodes.body["nodes"].as_array().unwrap().len(),
@@ -3693,7 +3701,7 @@ mod tests {
             "{}",
             nodes.body
         );
-        assert_eq!(nodes.body["nodes"][0]["id"], "b_1");
+        assert_eq!(nodes.body["nodes"][0]["_id"], "b_1");
         assert_eq!(nodes.body["truncated"], true);
         assert_eq!(nodes.body["unresolved"], json!(["b_zzz"]));
     }
@@ -3722,7 +3730,7 @@ mod tests {
             json!([{ "symbol": "$new.0", "kind": "block" }])
         );
         assert_eq!(fired.get(), 1, "a preview never fires the hook");
-        let plan = s.call("plan", json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "path": "a.md" }, "markdown": "Two." }] }));
+        let plan = s.call("plan", json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "_path": "a.md" }, "markdown": "Two." }] }));
         assert_eq!(
             plan.body["plan_id"], dry["plan_id"],
             "the preview IS the plan"
@@ -3736,69 +3744,76 @@ mod tests {
         assert_eq!(wet.body["committed"], true);
         assert_eq!(wet.body["commit"], "c_1");
         assert_eq!(wet.body["new_ids"], json!({ "$new.0": "b_2" }));
-        assert_eq!(wet.body["revisions"][0]["path"], "/a.md");
+        assert_eq!(wet.body["revisions"][0]["_path"], "/a.md");
         assert!(wet.body.get("results").is_none() && wet.body.get("diffs").is_none());
-        let read = s.call("docs_read", json!({ "id": "d_0" }));
-        assert_eq!(read.body["raw"], "# T\n\nOne.\n\nTwo.\n");
+        let read = s.call("docs_read", json!({ "_id": "d_0" }));
+        assert_eq!(read.body["_raw"], "# T\n\nOne.\n\nTwo.\n");
         let upd = s.call(
             "blocks_update",
-            json!({ "id": "b_1", "markdown": "One, edited." }),
+            json!({ "_id": "b_1", "markdown": "One, edited." }),
         );
         assert!(!upd.is_error, "{}", upd.body);
         assert!(
-            upd.body.get("id").is_none() && upd.body.get("ids").is_none(),
+            upd.body.get("_id").is_none() && upd.body.get("ids").is_none(),
             "{}",
             upd.body
         );
         assert_eq!(upd.body["revisions"].as_array().map(Vec::len), Some(1));
         let attrs = s.call(
             "blocks_update",
-            json!({ "id": "b_1", "attrs": { "checked": true } }),
+            json!({ "_id": "b_1", "attrs": { "checked": true } }),
         );
         assert_eq!(
             attrs.body["message"],
-            "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+            "`attrs` is no longer an argument — pass `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
         let dry = s.call(
             "blocks_update",
-            json!({ "id": "b_1", "markdown": "x", "dry_run": true }),
+            json!({ "_id": "b_1", "markdown": "x", "dry_run": true }),
         );
         assert_eq!(
             dry.body["message"],
-            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
-        let nothing = s.call("blocks_update", json!({ "id": "b_1" }));
+        let nothing = s.call("blocks_update", json!({ "_id": "b_1" }));
         assert_eq!(
             nothing.body["message"],
-            "pass `markdown` and/or `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)"
+            "pass `markdown` and/or `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
         );
+        // (5.0) the bare `id` is refused — never an alias — with the fix.
+        let bare = s.call("blocks_update", json!({ "id": "b_1", "markdown": "x" }));
+        assert_eq!(
+            bare.body["message"],
+            "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
+        );
+        assert_eq!(bare.body["data"]["fix"], r#"{"_id":"b_1","markdown":"x"}"#);
         let app = s.call(
             "docs_append",
-            json!({ "path": "a.md", "section": "T", "text": "Three." }),
+            json!({ "_path": "a.md", "section": "T", "text": "Three." }),
         );
         assert!(!app.is_error, "{}", app.body);
         let amb = s.call(
             "docs_append",
-            json!({ "path": "a.md", "section": "Nope", "text": "x" }),
+            json!({ "_path": "a.md", "section": "Nope", "text": "x" }),
         );
         assert_eq!(amb.body["error"], "parent_missing");
         assert_eq!(amb.body["message"], "no heading \"Nope\" in /a.md");
         // blocks_append: a heading's section, a leaf is block_not_container.
-        let into = s.call("blocks_append", json!({ "id": "b_0", "text": "Four." }));
+        let into = s.call("blocks_append", json!({ "_id": "b_0", "text": "Four." }));
         assert!(!into.is_error, "{}", into.body);
-        let leaf = s.call("blocks_append", json!({ "id": "b_1", "text": "x" }));
+        let leaf = s.call("blocks_append", json!({ "_id": "b_1", "text": "x" }));
         assert_eq!(leaf.body["error"], "block_not_container", "{}", leaf.body);
         // The fix (4.4): the sibling insert under the leaf's parent — the
         // document itself for a top-level leaf.
         assert_eq!(
             leaf.body["data"],
-            json!({ "id": "b_1", "type": "paragraph", "fix": "blocks_insert {\"at\":{\"after\":\"b_1\"},\"markdown\":\"x\",\"to\":\"/a.md\"}" })
+            json!({ "_id": "b_1", "_type": "paragraph", "fix": "blocks_insert {\"at\":{\"after\":\"b_1\"},\"markdown\":\"x\",\"to\":\"/a.md\"}" })
         );
-        let hist = s.call("blocks_history", json!({ "id": "b_1" }));
+        let hist = s.call("blocks_history", json!({ "_id": "b_1" }));
         let entries = hist.body.as_array().unwrap();
         assert!(entries.len() >= 2, "{}", hist.body);
         assert_eq!(entries[0]["origin"], "api", "newest first");
-        let du = s.call("docs_diff_unified", json!({ "path": "a.md" }));
+        let du = s.call("docs_diff_unified", json!({ "_path": "a.md" }));
         assert!(!du.is_error, "{}", du.body);
         assert!(du.body["diff"].as_str().unwrap().contains("+Four."));
     }
@@ -3822,7 +3837,7 @@ mod tests {
         assert!(!b.is_error, "{}", b.body);
         assert_eq!(
             b.body,
-            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "id": "d_0", "path": "/b.md", "hash": b.body["revisions"][0]["hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"] }),
+            json!({ "plan_id": b.body["plan_id"], "commit": "c_0", "revisions": [{ "_id": "d_0", "_path": "/b.md", "_hash": b.body["revisions"][0]["_hash"] }], "new_ids": { "$new.0": "d_0", "$new.1": "b_0", "$new.2": "b_1" }, "committed": true, "summary": ["create /b.md (2 blocks)"] }),
             "the created document is revisions[0], its symbols the document then its blocks"
         );
         let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
@@ -3856,7 +3871,7 @@ mod tests {
             c["preview"]["diffs"],
             json!({ "/c.md": { "before": "", "after": "---\ntitle: C\n---\n\n# C\n" } })
         );
-        assert_eq!(c["preview"]["revisions"][0]["id"], "$new.0");
+        assert_eq!(c["preview"]["revisions"][0]["_id"], "$new.0");
         assert_eq!(
             c["new_ids"],
             json!([{ "symbol": "$new.0", "kind": "document" }, { "symbol": "$new.1", "kind": "block" }])
@@ -3867,7 +3882,7 @@ mod tests {
         let m = s
             .preview_call(
                 "docs_move",
-                &json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": true }),
+                &json!({ "_path": "b.md", "to_path": "notes/b.md", "retarget_inbound": true }),
             )
             .unwrap();
         assert_eq!(
@@ -3894,14 +3909,14 @@ mod tests {
         let plain = s
             .preview_call(
                 "docs_move",
-                &json!({ "path": "b.md", "to_path": "notes/b.md", "retarget_inbound": false }),
+                &json!({ "_path": "b.md", "to_path": "notes/b.md", "retarget_inbound": false }),
             )
             .unwrap();
         assert_eq!(keys(&plain["preview"]["diffs"]), ["/b.md", "/notes/b.md"]);
 
         // docs_delete preview: the file → `""`.
         let d = s
-            .preview_call("docs_delete", &json!({ "path": "a.md" }))
+            .preview_call("docs_delete", &json!({ "_path": "a.md" }))
             .unwrap();
         assert_eq!(
             d["preview"]["diffs"],
@@ -3912,7 +3927,7 @@ mod tests {
         let sm = s
             .preview_call(
                 "docs_set_meta",
-                &json!({ "path": "a.md", "set": { "status": "open" } }),
+                &json!({ "_path": "a.md", "set": { "status": "open" } }),
             )
             .unwrap();
         assert_eq!(
@@ -3926,12 +3941,12 @@ mod tests {
         assert_eq!(snapshot(&s), before);
         let taken = s.preview_call("docs_create", &json!({ "path": "a.md", "markdown": "x" }));
         assert_eq!(taken.unwrap_err().code, "path_taken");
-        let missing = s.preview_call("docs_delete", &json!({ "path": "nope.md" }));
+        let missing = s.preview_call("docs_delete", &json!({ "_path": "nope.md" }));
         assert_eq!(missing.unwrap_err().code, "doc_missing");
-        let dry = s.call("docs_delete", json!({ "path": "a.md", "dry_run": true }));
+        let dry = s.call("docs_delete", json!({ "_path": "a.md", "dry_run": true }));
         assert_eq!(
             dry.body["message"],
-            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (docs_delete takes id?, path?, repo?)"
+            "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (docs_delete takes _id?, _path?, repo?)"
         );
         let real = s.call(
             "docs_create",
@@ -3947,7 +3962,7 @@ mod tests {
         // then `dangling` and `retargeted`.
         let moved = s.call(
             "docs_move",
-            json!({ "path": "b.md", "to_path": "notes/b.md" }),
+            json!({ "_path": "b.md", "to_path": "notes/b.md" }),
         );
         assert!(!moved.is_error, "{}", moved.body);
         assert_eq!(
@@ -3965,7 +3980,7 @@ mod tests {
         );
         assert_eq!(
             moved.body["revisions"],
-            json!([{ "id": "d_1", "path": "/a.md", "hash": moved.body["revisions"][0]["hash"] }])
+            json!([{ "_id": "d_1", "_path": "/a.md", "_hash": moved.body["revisions"][0]["_hash"] }])
         );
         assert_eq!(moved.body["dangling"], json!([]));
         assert_eq!(
@@ -3973,24 +3988,24 @@ mod tests {
             json!({ "blocks": ["b_3"], "docs": ["d_1"] })
         );
         assert_eq!(
-            s.call("docs_read", json!({ "id": "d_0" })).body["path"],
+            s.call("docs_read", json!({ "_id": "d_0" })).body["_path"],
             "/notes/b.md"
         );
         // Opted out: the link dangles, as a link row with its source rooted.
         let back = s.call(
             "docs_move",
-            json!({ "path": "notes/b.md", "to_path": "b.md", "retarget_inbound": false }),
+            json!({ "_path": "notes/b.md", "to_path": "b.md", "retarget_inbound": false }),
         );
         assert_eq!(back.body["revisions"], json!([]), "{}", back.body);
         assert_eq!(
             back.body["dangling"],
-            json!([{ "doc_id": "d_1", "path": "/a.md", "block_id": "b_3", "target": "notes/b.md", "anchor": null }])
+            json!([{ "_doc_id": "d_1", "_path": "/a.md", "_block_id": "b_3", "target": "notes/b.md", "_anchor": null }])
         );
         assert_eq!(back.body["retargeted"], Json::Null);
         // A set_meta and a delete: Receipts; the delete has no revision.
         let sm = s.call(
             "docs_set_meta",
-            json!({ "path": "a.md", "set": { "status": "open" } }),
+            json!({ "_path": "a.md", "set": { "status": "open" } }),
         );
         assert_eq!(
             sm.body["revisions"].as_array().map(Vec::len),
@@ -3999,11 +4014,11 @@ mod tests {
             sm.body
         );
         assert_eq!(sm.body["committed"], true);
-        let d = s.call("docs_delete", json!({ "path": "a.md" }));
+        let d = s.call("docs_delete", json!({ "_path": "a.md" }));
         assert_eq!(d.body["revisions"], json!([]), "{}", d.body);
         assert!(d.body["commit"].is_string());
         assert_eq!(
-            s.call("docs_read", json!({ "path": "a.md" })).body["error"],
+            s.call("docs_read", json!({ "_path": "a.md" })).body["error"],
             "doc_missing"
         );
     }
@@ -4030,10 +4045,10 @@ mod tests {
         assert_eq!(root_summary("observed: "), "observed: ");
         assert_eq!(root_summary("nonsense"), "nonsense");
         let page = root_changes_page(json!({
-            "digests": [{ "summary": "observed: a.md", "revisions": [{ "id": "d_0", "path": "a.md", "hash": "ff" }] }],
+            "digests": [{ "summary": "observed: a.md", "revisions": [{ "_id": "d_0", "_path": "a.md", "_hash": "ff" }] }],
             "cursor": 1, "truncated": false, "head": 1
         }));
-        assert_eq!(page["digests"][0]["revisions"][0]["path"], "/a.md");
+        assert_eq!(page["digests"][0]["revisions"][0]["_path"], "/a.md");
         assert_eq!(page["digests"][0]["summary"], "observed: /a.md");
     }
 
@@ -4078,9 +4093,9 @@ mod tests {
         }
         let one = s.call("docs_read_many", json!({ "docs": "a.md" }));
         assert!(!one.is_error, "{}", one.body);
-        assert_eq!(one.body["items"][0]["path"], "/a.md");
-        let ids = s.call("blocks_read_many", json!({ "ids": "b_1" }));
-        assert_eq!(ids.body["nodes"][0]["id"], "b_1");
+        assert_eq!(one.body["items"][0]["_path"], "/a.md");
+        let ids = s.call("blocks_read_many", json!({ "_ids": "b_1" }));
+        assert_eq!(ids.body["nodes"][0]["_id"], "b_1");
         let roots = s.call("graph", json!({ "roots": "a.md", "degrees": 0 }));
         assert_eq!(roots.body["roots"], json!(["d_0"]));
         let joined = s.call(
@@ -4106,19 +4121,19 @@ mod tests {
         );
         assert!(!out.is_error, "{}", out.body);
         for tool in ["plan", "apply"] {
-            let e = s.call(tool, json!({ "effects": [{ "op": "insert", "into": { "kind": "block", "id": "b_3" }, "at": "after", "markdown": "x" }] }));
+            let e = s.call(tool, json!({ "effects": [{ "op": "insert", "into": { "kind": "block", "_id": "b_3" }, "at": "after", "markdown": "x" }] }));
             assert!(e.is_error, "{tool}: {}", e.body);
             assert_eq!(e.body["error"], "filter_invalid");
             assert_eq!(
                 e.body["data"]["fix"],
-                r#"{"effects":[{"at":{"after":"b_3"},"into":{"id":"b_2","kind":"block"},"markdown":"x","op":"insert"}]}"#,
+                r#"{"effects":[{"at":{"after":"b_3"},"into":{"_id":"b_2","kind":"block"},"markdown":"x","op":"insert"}]}"#,
                 "{tool}"
             );
         }
-        let e = s.call("plan", json!({ "effects": [{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "text", "value": "x" }] }));
+        let e = s.call("plan", json!({ "effects": [{ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "text", "value": "x" }] }));
         assert_eq!(
             e.body["data"]["fix"],
-            r#"{"effects":[{"field":"markdown","op":"set","target":{"id":"b_1","kind":"block"},"value":"x"}]}"#
+            r#"{"effects":[{"field":"markdown","op":"set","target":{"_id":"b_1","kind":"block"},"value":"x"}]}"#
         );
     }
 }

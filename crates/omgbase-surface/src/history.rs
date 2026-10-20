@@ -133,16 +133,16 @@ pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) ->
     let mut entries = Vec::new();
     for (id, raw) in &before {
         match after_map.get(id.as_str()) {
-            None => entries.push(json!({ "kind": "removed", "id": id, "before": raw })),
+            None => entries.push(json!({ "kind": "removed", "_id": id, "before": raw })),
             Some(a) if *a != raw => {
-                entries.push(json!({ "kind": "changed", "id": id, "before": raw, "after": a }));
+                entries.push(json!({ "kind": "changed", "_id": id, "before": raw, "after": a }));
             }
             Some(_) => {}
         }
     }
     for (id, raw) in &after {
         if !before_map.contains_key(id.as_str()) {
-            entries.push(json!({ "kind": "added", "id": id, "after": raw }));
+            entries.push(json!({ "kind": "added", "_id": id, "after": raw }));
         }
     }
     Ok(Json::Array(entries))
@@ -317,7 +317,11 @@ pub fn resolve_doc_row(
         .optional()?)
 }
 
-/// §3 `docs_history`: `{ docs: [{ id, path, deleted, currentRev, versions }], truncated }`.
+/// §3 `docs_history`: `{ docs: [{ _id, _path, deleted, currentRev, versions }],
+/// truncated }` — each version a `revisions` row under the row's own names
+/// (§1.2, 5.0): `_rev _seq _commit _ts _origin _actor _hash _is_current
+/// _archived` (through 4.11 `rev seq commit updated_at origin actor hash
+/// isCurrent archived`).
 pub fn docs_history(
     store: &Store,
     repo_id: &str,
@@ -381,22 +385,22 @@ pub fn docs_history(
                 let rev: String = r.get(0)?;
                 let hash: Vec<u8> = r.get(3)?;
                 Ok(json!({
-                    "rev": rev,
-                    "seq": r.get::<_, i64>(1)?,
-                    "commit": r.get::<_, String>(2)?,
-                    "updated_at": r.get::<_, String>(4)?,
-                    "origin": r.get::<_, String>(5)?,
-                    "actor": r.get::<_, Option<String>>(6)?,
-                    "hash": hex(&hash),
-                    "isCurrent": current_rev.as_deref() == Some(rev.as_str()),
+                    "_rev": rev,
+                    "_seq": r.get::<_, i64>(1)?,
+                    "_commit": r.get::<_, String>(2)?,
+                    "_ts": r.get::<_, String>(4)?,
+                    "_origin": r.get::<_, String>(5)?,
+                    "_actor": r.get::<_, Option<String>>(6)?,
+                    "_hash": hex(&hash),
+                    "_is_current": current_rev.as_deref() == Some(rev.as_str()),
                     // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
-                    "archived": r.get::<_, Option<String>>(7)?.is_some(),
+                    "_archived": r.get::<_, Option<String>>(7)?.is_some(),
                 }))
             })?
             .collect::<std::result::Result<_, _>>()?;
         let mut m = Map::new();
-        m.insert("id".to_owned(), json!(doc_id));
-        m.insert("path".to_owned(), json!(reference_path(&path)));
+        m.insert("_id".to_owned(), json!(doc_id));
+        m.insert("_path".to_owned(), json!(reference_path(&path)));
         m.insert("deleted".to_owned(), json!(deleted_commit.is_some()));
         m.insert("currentRev".to_owned(), json!(current_rev));
         m.insert("versions".to_owned(), Json::Array(versions));

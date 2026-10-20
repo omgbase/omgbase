@@ -27,7 +27,9 @@ pub const DEFAULT_LIMIT: usize = 50;
 
 // ---- text search (§1.3) --------------------------------------------------------------
 
-/// One `text_search` hit; `score = −bm25` (higher is better).
+/// One `text_search` hit; `score = −bm25` (higher is better). On the wire
+/// (`blocks_search`) it is the block row under its engine names — `{ _id,
+/// _doc_id, _path, _type, _text, score }` (`spec/surface` §1.2, 5.0).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextHit {
     pub block_id: String,
@@ -855,7 +857,9 @@ pub struct ResolveHit {
 }
 
 /// §4 `resolve`: [`hybrid_search`] over `query` (+ an optional vector),
-/// limit default 10, reshaped to `{ id, locator, preview, evidence }`.
+/// limit default 10, reshaped to `{ _id, locator, preview, evidence }`
+/// (`id` is the block's `_id` on the wire — `spec/surface` §1.2, 5.0; the
+/// role keys stay bare).
 pub fn resolve(
     conn: &Connection,
     repo_id: &str,

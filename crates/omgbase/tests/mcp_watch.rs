@@ -312,7 +312,7 @@ fn no_watch_serves_without_priming_or_a_lease() {
     let (list, err) = s.call("docs_list", json!({}));
     assert!(!err, "{list}");
     assert_eq!(list["items"], json!([]), "no priming sweep ran");
-    let (_, err) = s.call("docs_read", json!({ "path": "hello.md" }));
+    let (_, err) = s.call("docs_read", json!({ "_path": "hello.md" }));
     assert!(err, "the file on disk is not in the store");
     assert!(!WatchLease::path_in(&omgbase_dir(&w)).exists());
     let (status, stderr) = s.close();
@@ -338,9 +338,9 @@ fn a_missing_adapter_primes_then_serves_without_a_watcher() {
         )],
     );
     // The priming sweep ran before the adapter was tried: the file is in.
-    let (doc, err) = s.call("docs_read", json!({ "path": "hello.md" }));
+    let (doc, err) = s.call("docs_read", json!({ "_path": "hello.md" }));
     assert!(!err, "{doc}");
-    assert_eq!(doc["raw"], "# Hello\n\nOne.\n");
+    assert_eq!(doc["_raw"], "# Hello\n\nOne.\n");
     assert!(
         !WatchLease::live(&omgbase_dir(&w)),
         "the lease was released when the adapter failed"
@@ -387,12 +387,12 @@ fn sigterm_shuts_down_cleanly() {
     assert!(stderr.contains("[mcp] signal: shutting down"), "{stderr}");
 }
 
-/// Poll `docs_read` until the document reads with `content` as its `raw`.
+/// Poll `docs_read` until the document reads with `content` as its `_raw`.
 fn wait_for_content(s: &mut Server, path: &str, content: &str, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        let (doc, err) = s.call("docs_read", json!({ "path": path }));
-        if !err && doc["raw"] == content {
+        let (doc, err) = s.call("docs_read", json!({ "_path": path }));
+        if !err && doc["_raw"] == content {
             return true;
         }
         thread::sleep(Duration::from_millis(250));
@@ -423,7 +423,7 @@ fn a_watched_run_ingests_files_written_under_the_workspace() {
         "this process holds the lease"
     );
     // The priming sweep brought the seed in before the adapter started.
-    let (doc, err) = s.call("docs_read", json!({ "path": "seed.md" }));
+    let (doc, err) = s.call("docs_read", json!({ "_path": "seed.md" }));
     assert!(!err, "{doc}");
 
     // chokidar ignores the initial scan and has no readiness signal on the
@@ -471,9 +471,9 @@ fn a_watched_run_ingests_files_written_under_the_workspace() {
     );
     assert!(!err, "{res}");
     thread::sleep(Duration::from_millis(1500));
-    let (doc, err) = s.call("docs_read", json!({ "path": "made.md" }));
+    let (doc, err) = s.call("docs_read", json!({ "_path": "made.md" }));
     assert!(!err, "{doc}");
-    assert_eq!(doc["raw"], "# Made\n\nBy the tool.\n");
+    assert_eq!(doc["_raw"], "# Made\n\nBy the tool.\n");
 
     let (status, stderr) = s.close();
     assert!(status.success(), "{stderr}");

@@ -142,7 +142,8 @@ pub fn set_actor(cli: &mut Cli, actor: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// A ref that must name a live block: its id, else `block_missing: no block with id "<ref>"`.
+/// A ref that must name a live block: its id, else `block_missing: no block with id "<ref>"`
+/// (its `data` spells the row attribute: `{ _id }`, spec/surface §4, 5.0).
 pub fn block_id(cli: &mut Cli, r: &str) -> Result<String> {
     let repo = cli.repo()?;
     match resolve_ref(cli.store()?.conn(), &repo.repo_id, r)? {
@@ -150,7 +151,7 @@ pub fn block_id(cli: &mut Cli, r: &str) -> Result<String> {
         _ => Err(CliError::engine_data(
             "block_missing",
             format!("no block with id {}", Json::String(r.to_owned())),
-            json!({ "id": r }),
+            json!({ "_id": r }),
         )),
     }
 }
@@ -173,7 +174,7 @@ fn block_ref(cli: &mut Cli, r: &str) -> Result<(String, String)> {
         _ => Err(CliError::engine_data(
             "block_missing",
             format!("no block with id {}", Json::String(r.to_owned())),
-            json!({ "id": r }),
+            json!({ "_id": r }),
         )),
     }
 }
@@ -225,9 +226,10 @@ pub fn anchor_of(at: &Json) -> Vec<String> {
     }
 }
 
-/// A ref as an effect target for a remote `plan` (§3.6): a `b_` id is the
-/// block, a `d_` id the document, anything else a document path — the engine
-/// resolves (the reference's `targetOf`).
+/// A ref as an effect target for a remote `plan` (§3.6; spec/mutate §11, 4.0:
+/// the address is the row's engine attribute): a `b_` id is the block
+/// (`_id`), a `d_` id the document (`_id`), anything else a document path
+/// (`_path`) — the engine resolves (the reference's `targetOf`).
 pub fn target_of(r: &str) -> EffectTarget {
     if is_id_ref(r, "b") {
         return EffectTarget::Block { id: r.to_owned() };
@@ -598,7 +600,7 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let markdown = read_content(&content)?;
     let block = block_arg(cli, &r)?;
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(block));
+    m.insert("_id".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(markdown));
     match a.value("expect") {
         Some(e) => {
@@ -687,18 +689,14 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return render_update_receipt(cli, receipt, None);
     }
     // Locally the document is resolved first (the reference's `requireDoc`:
-    // a miss is the tool's `doc_missing` naming the locator) and the plan is
-    // at hand (`applyEffectsDetailed`), so the confirmation lists every id
-    // the plan's results name, once each.
-    let mut locator = Map::new();
-    doc_locator(&mut locator, &doc);
-    let repo_id = cli.repo()?.repo_id.clone();
-    let id = cli
-        .surface(false)?
-        .locate_document(&repo_id, &Json::Object(locator))?;
+    // a miss is `doc_missing` "no document with id or path …" naming the
+    // locator — the verbs' wording, not the tools' "_id or _path") and the
+    // plan is at hand (`applyEffectsDetailed`), so the confirmation lists
+    // every id the plan's results name, once each.
+    let (id, _) = super::docs::doc_identity(cli, &doc)?;
     let effect = json!({
         "op": "set",
-        "target": { "kind": "document", "id": id },
+        "target": { "kind": "document", "_id": id },
         "field": "content",
         "value": bytes,
     });
@@ -771,15 +769,15 @@ fn render_update_plan(cli: &mut Cli, plan: Json) -> Result<i32> {
 }
 
 /// The document an `update` plan addresses, rooted: the preview's revision
-/// when the plan touches it, else the effect's resolved path (a content
-/// already current loads nothing).
+/// (`_path`) when the plan touches it, else the effect's resolved target's
+/// `_path` (a content already current loads nothing; spec/mutate §11, 4.0).
 fn update_plan_path(plan: &Json) -> String {
     if let Some(p) = plan
         .get("preview")
         .and_then(|p| p.get("revisions"))
         .and_then(Json::as_array)
         .and_then(|r| r.first())
-        .and_then(|r| r.get("path"))
+        .and_then(|r| r.get("_path"))
         .and_then(Json::as_str)
     {
         return p.to_owned();
@@ -789,7 +787,7 @@ fn update_plan_path(plan: &Json) -> String {
         .and_then(Json::as_array)
         .and_then(|e| e.first())
         .and_then(|e| e.get("target"))
-        .and_then(|t| t.get("path"))
+        .and_then(|t| t.get("_path"))
         .and_then(Json::as_str)
         .unwrap_or_default();
     if path.starts_with('/') {
@@ -874,11 +872,11 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let r = r.to_owned();
     let (_, block) = block_ref(cli, &r)?;
-    let node = cli.call("blocks_read", json!({ "id": block, "resolution": "raw" }))?;
-    let before = str_of(&node, "raw");
+    let node = cli.call("blocks_read", json!({ "_id": block, "resolution": "raw" }))?;
+    let before = str_of(&node, "_raw");
     // Pin the CAS BEFORE the editor opens.
     let pre_hash = node
-        .get("hash")
+        .get("_hash")
         .and_then(Json::as_str)
         .filter(|h| !h.is_empty())
         .map(str::to_owned);
@@ -951,7 +949,7 @@ pub fn edit(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // `blocks_update` builder; cli 4.0): a mid-edit change by someone else is
     // a clean `stale_expectation`, never a lost write.
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(block));
+    m.insert("_id".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(after));
     if let Some(h) = &pre_hash {
         m.insert("expect".to_owned(), json!({ "content_hash": h }));
@@ -1082,7 +1080,7 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
         blocks.push(task_block(cli, r, id)?);
     }
     let mut m = Map::new();
-    m.insert("ids".to_owned(), json!(blocks));
+    m.insert("_ids".to_owned(), json!(blocks));
     let checked = !a.flag("undo");
     if !checked {
         m.insert("checked".to_owned(), json!(false));
@@ -1093,7 +1091,8 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
 }
 
 /// §9 Fixed: `done` addresses task blocks only — any other live type is
-/// `type_mismatch` before an op is built.
+/// `type_mismatch` before an op is built (its `data` names the block's `_id`
+/// and `_type`, spec/surface §4, 5.0).
 fn task_block(cli: &mut Cli, r: &str, block: String) -> Result<String> {
     let kind: Option<String> = cli
         .store()?
@@ -1108,12 +1107,12 @@ fn task_block(cli: &mut Cli, r: &str, block: String) -> Result<String> {
         None => Err(CliError::engine_data(
             "block_missing",
             format!("no block with id {}", Json::String(r.to_owned())),
-            json!({ "id": r }),
+            json!({ "_id": r }),
         )),
         Some(t) if t != "task" => Err(CliError::engine_data(
             "type_mismatch",
             format!("not a task: {r} is a {t}"),
-            json!({ "block": block, "type": t }),
+            json!({ "_id": block, "_type": t }),
         )),
         Some(_) => Ok(block),
     }
@@ -1136,7 +1135,7 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // container's children, a leaf → `block_not_container`), spec/surface §4.
     let block = block_arg(cli, &target)?;
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(block));
+    m.insert("_id".to_owned(), json!(block));
     m.insert("text".to_owned(), json!(markdown));
     // A remote dry run (or a remote engine without the sugar tool) reads
     // the kind first: a heading → its section, else the block as a
@@ -1151,7 +1150,7 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
         move |cli| {
             let kind = if cli.remote_mode() && !cli.remote_has_tool("blocks_read")? {
                 let q = format!(
-                    "select t: type from blocks where id == {}",
+                    "select t: _type from blocks where _id == {}",
                     Json::String(block.clone())
                 );
                 let res = cli.call("query", json!({ "query": q }))?;
@@ -1159,9 +1158,9 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
             } else {
                 let read = cli.call(
                     "blocks_read",
-                    json!({ "id": block, "resolution": "skeleton" }),
+                    json!({ "_id": block, "resolution": "skeleton" }),
                 )?;
-                str_of(&read, "type")
+                str_of(&read, "_type")
             };
             let into = if kind == "heading" {
                 EffectTarget::Section { heading_id: block }
@@ -1199,7 +1198,7 @@ pub fn split(cli: &mut Cli, args: &[String]) -> Result<i32> {
         })?;
     let block = block_arg(cli, &r)?;
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(block));
+    m.insert("_id".to_owned(), json!(block));
     m.insert("at".to_owned(), json!(offsets));
     run_tool(
         cli,
@@ -1307,22 +1306,22 @@ mod tests {
     fn refs_become_effect_targets_and_placements() {
         assert_eq!(
             target_of("b_1").to_json(),
-            json!({ "kind": "block", "id": "b_1" })
+            json!({ "kind": "block", "_id": "b_1" })
         );
         assert_eq!(
             target_of("d_1").to_json(),
-            json!({ "kind": "document", "id": "d_1" })
+            json!({ "kind": "document", "_id": "d_1" })
         );
         assert_eq!(
             target_of("notes/a.md").to_json(),
-            json!({ "kind": "document", "path": "notes/a.md" })
+            json!({ "kind": "document", "_path": "notes/a.md" })
         );
         assert_eq!(at_of(&json!("end")), At::End);
         assert_eq!(at_of(&json!("start")), At::Start);
         assert_eq!(at_of(&json!({ "after": "b_2" })), At::After("b_2".into()));
         assert_eq!(
             effects_json(&sugar::remove_blocks(vec!["b_1".into()])),
-            json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }] }])
+            json!([{ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }] }])
         );
         assert_eq!(unified_diff_lines("a", "a"), vec![String::new()]);
     }

@@ -1,8 +1,8 @@
 //! The `graph` neighborhood macro (`spec/surface/README.md` §4): compiled to
-//! an OQX `follow out_links collect { from dst }` / `follow in_links collect
-//! { from doc }` walk over the link rows (3.0 follow-up: there are no
-//! `out`/`in` relations — `dst` is a link's destination document, `doc` its
-//! source; an absent `dst`, an external or phantom target, contributes no
+//! an OQX `follow _out_links collect { from _dst }` / `follow _in_links
+//! collect { from _doc }` walk over the link rows (3.0 follow-up: there are no
+//! `out`/`in` relations — `_dst` is a link's destination document, `_doc` its
+//! source; an absent `_dst`, an external or phantom target, contributes no
 //! successor) run through the shared runner and
 //! shaped into `{ documents, links, frontier }`. Port of
 //! `packages/core/src/mcp/graph.ts`; nothing here walks the graph itself.
@@ -36,25 +36,33 @@ pub struct GraphArgs {
     pub max_documents: Option<i64>,
 }
 
-/// The edge fields projected from `doc.out_links`/`doc.in_links` — the `links`
-/// target's own names, projected under themselves (`spec/surface` §1.2, 3.0:
+/// The edge fields projected from `_out_links`/`_in_links` — the `links`
+/// target's own names, projected under themselves (`spec/surface` §1.2, 5.0:
 /// no rename between the language and the result) — identical for both
 /// directions so a single filter handles either scan (an edge is a directional
 /// fact regardless of which endpoint the walk reached it from).
 const EDGE_FIELDS: [&str; 12] = [
-    "id",
-    "doc_id",
-    "block_id",
-    "via_id",
-    "dst_id",
-    "dst_path",
-    "uri",
-    "dst_kind",
-    "predicate",
-    "provenance",
-    "anchor",
-    "field",
+    "_id",
+    "_doc_id",
+    "_block_id",
+    "_via_id",
+    "_dst_id",
+    "_dst_path",
+    "_uri",
+    "_dst_kind",
+    "_predicate",
+    "_provenance",
+    "_anchor",
+    "_field",
 ];
+
+// The macro's own aliases: `__oqx_`/`__omg_` (two underscores) are the
+// runner's and the selector compiler's reserved prefixes; a single underscore
+// is the engine prefix of 5.0, which an ALIAS may use freely (an alias is never
+// a row read), and keeps these off any authored key.
+const DEPTH_ALIAS: &str = "_depth";
+const STOP_ALIAS: &str = "_stop";
+const LINKS_ALIAS: &str = "_links";
 
 /// The extra `select` items for caller projections. Each expression gets a
 /// stable internal alias (`_u0`, `_u1`, …) so it can never collide with a
@@ -71,10 +79,10 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
         if trimmed.is_empty() {
             continue;
         }
-        // A bare identifier keeps its spelling as the output key (3.0: a
-        // `title` selection is `title` in the document, as a `query` hit's
-        // would be; an OQX `$` name too); anything else is `sel_<i>`, so a
-        // projection can never overwrite the envelope here.
+        // An identifier keeps its spelling as the output key (5.0: a `layer`
+        // or `_title` selection is its own key in the document, as a `query`
+        // hit's would be; an OQX `$` name too); anything else is `sel_<i>`,
+        // so a projection can never overwrite the envelope here.
         let ident = trimmed.strip_prefix('$').unwrap_or(trimmed);
         let is_ident = ident
             .chars()
@@ -86,10 +94,10 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
         } else {
             format!("sel_{i}")
         };
-        // The envelope keys are the row's own identity: a `id`/`path`
+        // The envelope keys are the row's own identity: an `_id`/`_path`
         // selection lands on them rather than beside them (the engine reads
         // the same value).
-        if name != "id" && name != "path" {
+        if name != "_id" && name != "_path" {
             while used.contains(&name) {
                 name = format!("{name}_{i}");
             }
@@ -107,8 +115,8 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
 /// items.
 ///
 /// ```text
-/// select _depth: $depth, _stop: $stop, _links: doc.<dir>_links collect { <edge fields> } <user items>
-/// from docs where id == <root> or … follow distinct <dir>_links collect { from <dst | doc> } { depth <depth> }
+/// select _depth: $depth, _stop: $stop, _links: _<dir>_links collect { <edge fields> } <user items>
+/// from docs where _id == <root> or … follow distinct _<dir>_links collect { from <_dst | _doc> depth <depth> }
 /// ```
 fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
     let mut edges_body = build::subquery();
@@ -117,7 +125,7 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
         .map(|name| build::field(name, build::ident(name)))
         .collect();
     let edges = build::op(
-        build::path(&["doc", &format!("{dir}_links")]),
+        build::ident(&format!("_{dir}_links")),
         Consumer::Collect,
         edges_body,
     );
@@ -126,16 +134,16 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
         .map(|id| {
             build::scalar(build::binary(
                 BinaryOp::Eq,
-                build::ident("id"),
+                build::ident("_id"),
                 build::lit(id.as_str()),
             ))
         })
         .collect();
     let mut q = build::query(build::ident("docs"));
     q.select = vec![
-        build::field("_depth", build::ident("$depth")),
-        build::field("_stop", build::ident("$stop")),
-        build::collect("_links", edges),
+        build::field(DEPTH_ALIAS, build::ident("$depth")),
+        build::field(STOP_ALIAS, build::ident("$stop")),
+        build::collect(LINKS_ALIAS, edges),
     ];
     q.select.extend(user_select.iter().cloned());
     q.r#where = Some(if seed.len() == 1 {
@@ -145,10 +153,10 @@ fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[Select
     });
     // `depth` is the destination block's own clause (oqx 0.20).
     let mut step = build::subquery();
-    step.from = vec![build::ident(if dir == "out" { "dst" } else { "doc" })];
+    step.from = vec![build::ident(if dir == "out" { "_dst" } else { "_doc" })];
     step.depth = Some(depth);
     let mut walk = build::follow(vec![FollowDestination::Block(Box::new(build::op(
-        build::ident(&format!("{dir}_links")),
+        build::ident(&format!("_{dir}_links")),
         Consumer::Collect,
         step,
     )))]);
@@ -237,11 +245,11 @@ pub fn graph_neighborhood(
             query_truncated = true;
         }
         for hit in &res.hits {
-            // The walk's hits carry `id`/`path` (§1.4, 3.0), and so does
+            // The walk's hits carry `_id`/`_path` (§1.4, 5.0), and so does
             // `graph`'s own envelope (§4): one spelling for a document's identity.
-            let id = hit["id"].as_str().unwrap_or_default().to_owned();
-            let path = hit["path"].as_str().unwrap_or_default().to_owned();
-            let hop = hit["_depth"].as_f64().unwrap_or(f64::NAN);
+            let id = hit["_id"].as_str().unwrap_or_default().to_owned();
+            let path = hit["_path"].as_str().unwrap_or_default().to_owned();
+            let hop = hit[DEPTH_ALIAS].as_f64().unwrap_or(f64::NAN);
             let degree = (hop - 1.0) as i64;
             let replace = docs
                 .iter()
@@ -274,10 +282,10 @@ pub fn graph_neighborhood(
                     }
                 }
             }
-            if let Some(raw) = hit["_links"].as_array() {
+            if let Some(raw) = hit[LINKS_ALIAS].as_array() {
                 for e in raw {
-                    let eid = e["id"].as_str().unwrap_or_default();
-                    if !edges.iter().any(|x| x["id"].as_str() == Some(eid)) {
+                    let eid = e["_id"].as_str().unwrap_or_default();
+                    if !edges.iter().any(|x| x["_id"].as_str() == Some(eid)) {
                         edges.push(e.clone());
                     }
                 }
@@ -288,11 +296,11 @@ pub fn graph_neighborhood(
     if let Some(p) = &args.predicate {
         let mut adj: HashMap<String, Vec<String>> = HashMap::new();
         for e in &edges {
-            if e["predicate"].as_str() != Some(p.as_str()) {
+            if e["_predicate"].as_str() != Some(p.as_str()) {
                 continue;
             }
-            let src = e["doc_id"].as_str().unwrap_or_default().to_owned();
-            let dst = e["dst_id"].as_str().unwrap_or_default().to_owned();
+            let src = e["_doc_id"].as_str().unwrap_or_default().to_owned();
+            let dst = e["_dst_id"].as_str().unwrap_or_default().to_owned();
             if dirs.contains(&"out") {
                 adj.entry(src.clone()).or_default().push(dst.clone());
             }
@@ -346,11 +354,11 @@ pub fn graph_neighborhood(
         .map(|d| {
             let is_frontier = d.degree == effective_degrees;
             if is_frontier {
-                frontier.push(json!({ "id": d.id, "path": d.path, "degree": d.degree }));
+                frontier.push(json!({ "_id": d.id, "_path": d.path, "degree": d.degree }));
             }
             let mut m = Map::new();
-            m.insert("id".to_owned(), json!(d.id));
-            m.insert("path".to_owned(), json!(d.path));
+            m.insert("_id".to_owned(), json!(d.id));
+            m.insert("_path".to_owned(), json!(d.path));
             m.insert("degree".to_owned(), json!(d.degree));
             m.insert("frontier".to_owned(), json!(is_frontier));
             for (k, v) in &d.extra {
@@ -365,27 +373,27 @@ pub fn graph_neighborhood(
         .into_iter()
         .filter(|e| {
             if let Some(p) = &args.predicate {
-                if e["predicate"].as_str() != Some(p.as_str()) {
+                if e["_predicate"].as_str() != Some(p.as_str()) {
                     return false;
                 }
             }
-            let src_in = reached(e["doc_id"].as_str().unwrap_or_default());
-            let dst_kind = e["dst_kind"].as_str().unwrap_or_default();
+            let src_in = reached(e["_doc_id"].as_str().unwrap_or_default());
+            let dst_kind = e["_dst_kind"].as_str().unwrap_or_default();
             let dst_dangling =
-                dst_kind == "external" || (dst_kind == "document" && e["dst_path"].is_null());
-            let dst_in = reached(e["dst_id"].as_str().unwrap_or_default()) || dst_dangling;
+                dst_kind == "external" || (dst_kind == "document" && e["_dst_path"].is_null());
+            let dst_in = reached(e["_dst_id"].as_str().unwrap_or_default()) || dst_dangling;
             src_in && dst_in
         })
         .collect();
     kept.sort_by(|a, b| {
         let (sa, sb) = (
-            a["doc_id"].as_str().unwrap_or_default(),
-            b["doc_id"].as_str().unwrap_or_default(),
+            a["_doc_id"].as_str().unwrap_or_default(),
+            b["_doc_id"].as_str().unwrap_or_default(),
         );
         if sa == sb {
             locale_compare(
-                a["id"].as_str().unwrap_or_default(),
-                b["id"].as_str().unwrap_or_default(),
+                a["_id"].as_str().unwrap_or_default(),
+                b["_id"].as_str().unwrap_or_default(),
             )
         } else {
             locale_compare(sa, sb)
@@ -412,7 +420,7 @@ mod tests {
     fn user_select_aliases() {
         let (items, names) = build_user_select(&[
             "layer".into(),
-            "path".into(),
+            "_path".into(),
             "a + 1".into(),
             "layer".into(),
         ])
@@ -423,13 +431,13 @@ mod tests {
             .collect();
         assert_eq!(
             printed,
-            ["_u0: layer", "_u1: path", "_u2: a + 1", "_u3: layer"]
+            ["_u0: layer", "_u1: _path", "_u2: a + 1", "_u3: layer"]
         );
         assert_eq!(
             names,
             [
                 Some("layer".into()),
-                Some("path".into()),
+                Some("_path".into()),
                 Some("sel_2".into()),
                 Some("layer_3".into())
             ]
@@ -442,11 +450,9 @@ mod tests {
     #[test]
     fn query_shape() {
         let q = build_query(&["d_0".to_owned()], "out", 2, &[]);
-        assert!(
-            q.starts_with("select _depth: $depth, _stop: $stop, _links: doc.out_links collect {")
-        );
+        assert!(q.starts_with("select _depth: $depth, _stop: $stop, _links: _out_links collect {"));
         assert!(q.ends_with(
-            "from docs where id == \"d_0\" follow distinct out_links collect { from dst depth 2 }"
+            "from docs where _id == \"d_0\" follow distinct _out_links collect { from _dst depth 2 }"
         ));
         assert!(oqx::parse_string(&q).is_ok());
         // several roots: an `or` seed (the canonical print of the `or` node since
@@ -455,7 +461,7 @@ mod tests {
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _links: doc.in_links collect { id: id, doc_id: doc_id, block_id: block_id, via_id: via_id, dst_id: dst_id, dst_path: dst_path, uri: uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, field: field } from docs where id == \"d_14\" or id == \"d_15\" follow distinct in_links collect { from doc depth 8 }"
+            "select _depth: $depth, _stop: $stop, _links: _in_links collect { _id: _id, _doc_id: _doc_id, _block_id: _block_id, _via_id: _via_id, _dst_id: _dst_id, _dst_path: _dst_path, _uri: _uri, _dst_kind: _dst_kind, _predicate: _predicate, _provenance: _provenance, _anchor: _anchor, _field: _field } from docs where _id == \"d_14\" or _id == \"d_15\" follow distinct _in_links collect { from _doc depth 8 }"
         );
     }
 

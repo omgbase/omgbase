@@ -58,7 +58,7 @@
 //! document), a `#` locator is refused with a fix. **Without a selector** a
 //! `-> ` / `{ oqx }` slot evaluates in its own target's row scope: the
 //! effects are grouped by resolved target identity and one synthetic query
-//! per identity (`from <root> where id == "<id>"`, the slot items appended as
+//! per identity (`from <root> where _id == "<id>"`, the slot items appended as
 //! `__omg_sel_<effectIndex>_<slot>`) runs through the AST runner; the plan
 //! has no `selection`, `planner_v` stays p3 and the intent record gains
 //! `templates` (the effects as written) — a plain request without the leader
@@ -276,7 +276,7 @@ fn symbol_kind(member: Member, op: &str, field: Option<&str>) -> &'static str {
         Member::Target => match op {
             "split" => "block",
             "set" => match field {
-                Some(f) if f == "markdown" || f == "attrs.checked" => "block",
+                Some(f) if f == "markdown" || f == "_attrs.checked" => "block",
                 _ => "document",
             },
             _ => "document",
@@ -302,19 +302,19 @@ fn bare_target(s: &str, here: &str, member: Member, op: &str, field: Option<&str
         ));
     }
     if omgbase_mutate::parse_new_symbol(s).is_some() {
-        return Ok(json!({ "kind": symbol_kind(member, op, field), "id": s }));
+        return Ok(json!({ "kind": symbol_kind(member, op, field), "_id": s }));
     }
     if is_id_ref(s, "b") {
-        return Ok(json!({ "kind": "block", "id": s }));
+        return Ok(json!({ "kind": "block", "_id": s }));
     }
     if is_id_ref(s, "d") {
-        return Ok(json!({ "kind": "document", "id": s }));
+        return Ok(json!({ "kind": "document", "_id": s }));
     }
     if is_node_id(s) {
-        return Ok(json!({ "kind": "node", "id": s }));
+        return Ok(json!({ "kind": "node", "_id": s }));
     }
     if path_looking(s) {
-        return Ok(json!({ "kind": "document", "path": s }));
+        return Ok(json!({ "kind": "document", "_path": s }));
     }
     Err(shape_error(format!(
         "{here}: a target is {{ kind: …, … }} or a bare document path, a `b_`/`d_`/`n_` id or `$new.n` (got {})",
@@ -448,7 +448,7 @@ fn desugar_effect(
         Ok(())
     }
     // One target member: a bare string normalizes (a leader → the whole-target
-    // directive, or its folded literal normalized); an object's `id` / `path`
+    // directive, or its folded literal normalized); an object's `_id` / `_path`
     // take a leader, its other members may not.
     fn one_target(
         v: &Json,
@@ -476,14 +476,14 @@ fn desugar_effect(
             }
             Json::Object(t) => {
                 let mut out = t.clone();
-                for m in ["id", "path"] {
+                for m in ["_id", "_path"] {
                     if let Some(src) = t.get(m).and_then(leader_of) {
                         let v = desugar_expression(src, &format!("{here}.{m}"))?;
                         out.insert(m.to_owned(), v);
                     }
                 }
                 for (k, x) in t {
-                    if k != "id" && k != "path" {
+                    if k != "_id" && k != "_path" {
                         refuse_leader(x, &format!("{here}.{k}"), request)?;
                     }
                 }
@@ -830,7 +830,7 @@ fn contains_oqx(v: &Json) -> bool {
     }
 }
 
-/// A row rendered as a value by the runner (`{ id, path }` and nothing else,
+/// A row rendered as a value by the runner (`{ _id, _path }` and nothing else,
 /// `spec/surface` §1.4).
 fn row_ref(v: &Json) -> Option<(&str, &str)> {
     let o = v.as_object()?;
@@ -937,7 +937,7 @@ fn hit_kind(root: Target) -> &'static str {
 }
 
 fn hit_ref(root: Target, id: &str) -> Json {
-    json!({ "kind": hit_kind(root), "id": id })
+    json!({ "kind": hit_kind(root), "_id": id })
 }
 
 /// The selector-less refusal of an expression where the row would come from
@@ -1008,7 +1008,7 @@ impl Admit<'_> {
         self.push("value".to_owned(), SlotKind::Value, "value", &src)
     }
 
-    /// A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path:
+    /// A target member: `{ kind, _id: { oqx } }` or `{ kind: "document", _path:
     /// { oqx } }`, or (3.2) the whole target `{ oqx }` — the identity the
     /// value names, `probe_kind` standing in for its unknown kind; absent →
     /// the hit when `defaultable` (never on a plain effect).
@@ -1033,7 +1033,7 @@ impl Admit<'_> {
             }
             self.base.remove(key);
             self.probe
-                .insert(key.to_owned(), json!({ "kind": probe_kind, "id": PROBE }));
+                .insert(key.to_owned(), json!({ "kind": probe_kind, "_id": PROBE }));
             let member = if key == "into" {
                 Member::Into
             } else {
@@ -1051,17 +1051,17 @@ impl Admit<'_> {
             return Ok(false);
         }
         if let Some(t) = t.as_object() {
-            let id_x = t.get("id").and_then(oqx_of).map(str::to_owned);
-            let path_x = t.get("path").and_then(oqx_of).map(str::to_owned);
+            let id_x = t.get("_id").and_then(oqx_of).map(str::to_owned);
+            let path_x = t.get("_path").and_then(oqx_of).map(str::to_owned);
             if id_x.is_some() && path_x.is_some() {
                 return Err(refused(format!(
-                    "{}.{key}: give `id` or `path` as an expression, not both",
+                    "{}.{key}: give `_id` or `_path` as an expression, not both",
                     self.here
                 )));
             }
             if let Some((member, src)) = id_x
-                .map(|s| ("id", s))
-                .or_else(|| path_x.map(|s| ("path", s)))
+                .map(|s| ("_id", s))
+                .or_else(|| path_x.map(|s| ("_path", s)))
             {
                 if self.plain && primary {
                     return Err(needs_selector(&format!("{}.{key}", self.here)));
@@ -1083,7 +1083,7 @@ impl Admit<'_> {
                 )?;
             }
             for (k, v) in t {
-                if k != "id" && k != "path" && contains_oqx(v) {
+                if k != "_id" && k != "_path" && contains_oqx(v) {
                     return Err(refused(format!(
                         "{}.{key}.{k}: `{{ oqx }}` is not allowed here",
                         self.here
@@ -1094,7 +1094,7 @@ impl Admit<'_> {
         Ok(false)
     }
 
-    /// `targets[]`: each element `{ kind: "block", id: { oqx } }` (or, 3.2, a
+    /// `targets[]`: each element `{ kind: "block", _id: { oqx } }` (or, 3.2, a
     /// whole `{ oqx }`) yields one block; absent → `[the hit]` when
     /// `defaultable`. The list is always the primary target of its op.
     fn targets_slot(&mut self, defaultable: bool) -> Result<bool> {
@@ -1119,7 +1119,7 @@ impl Admit<'_> {
                     arr[k] = json!({});
                 }
                 if let Some(arr) = self.probe.get_mut("targets").and_then(Json::as_array_mut) {
-                    arr[k] = json!({ "kind": "block", "id": PROBE });
+                    arr[k] = json!({ "kind": "block", "_id": PROBE });
                 }
                 self.push(
                     format!("targets_{k}"),
@@ -1132,18 +1132,18 @@ impl Admit<'_> {
             let Some(t) = t.as_object() else {
                 continue;
             };
-            if t.get("path").and_then(oqx_of).is_some() {
+            if t.get("_path").and_then(oqx_of).is_some() {
                 return Err(refused(format!(
-                    "{}.targets[{k}]: a block target has `id`, not `path`",
+                    "{}.targets[{k}]: a block target has `_id`, not `_path`",
                     self.here
                 )));
             }
-            if let Some(src) = t.get("id").and_then(oqx_of).map(str::to_owned) {
+            if let Some(src) = t.get("_id").and_then(oqx_of).map(str::to_owned) {
                 if self.plain {
-                    return Err(needs_selector(&format!("{}.targets[{k}].id", self.here)));
+                    return Err(needs_selector(&format!("{}.targets[{k}]._id", self.here)));
                 }
                 let mut literal = t.clone();
-                literal.remove("id");
+                literal.remove("_id");
                 if let Some(arr) = self.base.get_mut("targets").and_then(Json::as_array_mut) {
                     arr[k] = Json::Object(literal);
                 }
@@ -1154,17 +1154,17 @@ impl Admit<'_> {
                     .and_then(|a| a.get_mut(k))
                     .and_then(Json::as_object_mut)
                 {
-                    p.insert("id".to_owned(), json!(PROBE));
+                    p.insert("_id".to_owned(), json!(PROBE));
                 }
                 self.push(
                     format!("targets_{k}"),
                     SlotKind::TargetsIdentity { k },
-                    &format!("targets[{k}].id"),
+                    &format!("targets[{k}]._id"),
                     &src,
                 )?;
             }
             for (key, v) in t {
-                if key != "id" && contains_oqx(v) {
+                if key != "_id" && contains_oqx(v) {
                     return Err(refused(format!(
                         "{}.targets[{k}].{key}: `{{ oqx }}` is not allowed here",
                         self.here
@@ -1552,7 +1552,7 @@ pub type Row = (String, String);
 fn slot_data(k: usize, t: Option<usize>, row: &Row, expression: &str) -> Json {
     let mut d = json!({
         "effect_index": k,
-        "row": { "id": row.0, "path": row.1 },
+        "row": { "_id": row.0, "_path": row.1 },
         "expression": expression,
     });
     if let Some(t) = t {
@@ -1694,10 +1694,10 @@ fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(J
             SlotKind::Identity { .. } | SlotKind::TargetsIdentity { .. } => {
                 let v = identity_value(v, s, o)?;
                 // A string lands as the member that held the expression; a
-                // row ref as `id` (the reference's `identityMember`).
+                // row ref as `_id` (the reference's `identityMember`).
                 let (member, value) = match (v.as_str(), row_ref(v)) {
                     (Some(s), _) => (None, json!(s)),
-                    (None, Some((id, _))) => (Some("id".to_owned()), json!(id)),
+                    (None, Some((id, _))) => (Some("_id".to_owned()), json!(id)),
                     (None, None) => unreachable!("identity_value admitted it"),
                 };
                 let (target, written) = match &s.kind {
@@ -1706,7 +1706,7 @@ fn bind_one(root: Target, hit: &Json, t: &Template, o: &Origin<'_>) -> Result<(J
                         e.get_mut("targets")
                             .and_then(Json::as_array_mut)
                             .and_then(|a| a.get_mut(*k)),
-                        "id".to_owned(),
+                        "_id".to_owned(),
                     ),
                     _ => unreachable!("identity kinds"),
                 };
@@ -1835,7 +1835,7 @@ pub fn settle_symbols(
             continue;
         };
         let Some(n) = obj
-            .get("id")
+            .get("_id")
             .and_then(Json::as_str)
             .and_then(omgbase_mutate::parse_new_symbol)
         else {
@@ -2206,8 +2206,8 @@ fn scope_of(
     if v.as_ref().is_some_and(|v| {
         oqx_of(v).is_some()
             || v.as_object().is_some_and(|o| {
-                o.get("id").is_some_and(|x| oqx_of(x).is_some())
-                    || o.get("path").is_some_and(|x| oqx_of(x).is_some())
+                o.get("_id").is_some_and(|x| oqx_of(x).is_some())
+                    || o.get("_path").is_some_and(|x| oqx_of(x).is_some())
             })
     }) {
         return Err(needs_selector(&where_));
@@ -2230,7 +2230,7 @@ fn scope_of(
     let id_of = |key: &str| t.get(key).and_then(Json::as_str).map(str::to_owned);
     // A bare `$new.n` (the desugar's record) has no row yet.
     if sugar.symbols.contains(&member)
-        && let Some(sym) = id_of("id").filter(|id| omgbase_mutate::parse_new_symbol(id).is_some())
+        && let Some(sym) = id_of("_id").filter(|id| omgbase_mutate::parse_new_symbol(id).is_some())
     {
         return Err(refused(format!(
             "{where_}: {sym} has no row yet — it is created by this plan; use a literal target or a selector"
@@ -2244,11 +2244,11 @@ fn scope_of(
     }
     Ok(match kind {
         "document" => {
-            let id = id_of("id");
-            let path = id_of("path");
+            let id = id_of("_id");
+            let path = id_of("_path");
             if id.is_none() && path.is_none() {
                 return Err(shape_error(format!(
-                    "{where_}: a document target needs `id` or `path`"
+                    "{where_}: a document target needs `_id` or `_path`"
                 )));
             }
             let by_id = match &id {
@@ -2269,7 +2269,7 @@ fn scope_of(
                 && a.doc_id != b.doc_id
             {
                 return Err(shape_error(format!(
-                    "id {} and path {} name different documents",
+                    "_id {} and _path {} name different documents",
                     Json::String(id.clone().unwrap_or_default()),
                     Json::String(path.clone().unwrap_or_default())
                 )));
@@ -2282,7 +2282,7 @@ fn scope_of(
             }
         }
         "block" => {
-            let id = id_of("id").unwrap_or_default();
+            let id = id_of("_id").unwrap_or_default();
             Scope {
                 root: Target::Blocks,
                 id: id.clone(),
@@ -2302,7 +2302,7 @@ fn scope_of(
             }
         }
         _ => {
-            let id = id_of("id").unwrap_or_default();
+            let id = id_of("_id").unwrap_or_default();
             Scope {
                 root: Target::Nodes,
                 id: id.clone(),
@@ -2326,7 +2326,7 @@ enum Plain {
 /// Otherwise each effect with expression slots is admitted as a template
 /// over its own primary target's row ([`scope_of`]): the effects are grouped
 /// by that row's identity, one synthetic query per identity — `from <root>
-/// where id == "<id>"` with the slot items appended, named
+/// where _id == "<id>"` with the slot items appended, named
 /// `__omg_sel_<effectIndex>_<slot>` — runs (`limit 2`), and the row binds the
 /// slots exactly as a selector's hit would. Bare `$new.n` kinds are settled
 /// last, in request order, each against the effects before it.
@@ -2388,7 +2388,7 @@ pub fn expand_plain(
         }
         for g in &groups {
             let src = format!(
-                "from {} where id == {}",
+                "from {} where _id == {}",
                 g.scope.root.as_str(),
                 Json::String(g.scope.id.clone())
             );
@@ -2476,7 +2476,7 @@ pub fn annotate(mut e: SurfaceError, rows: &[Row], templates: usize) -> SurfaceE
         && let Some((id, path)) = rows.get(k / templates)
     {
         data.insert("template_index".to_owned(), json!(k % templates));
-        data.insert("row".to_owned(), json!({ "id": id, "path": path }));
+        data.insert("row".to_owned(), json!({ "_id": id, "_path": path }));
     }
     e
 }
@@ -2596,14 +2596,14 @@ mod tests {
 
     fn rollup_templates() -> Json {
         json!([
-            { "op": "insert", "into": { "kind": "document", "path": { "oqx": "project" } }, "at": "end",
+            { "op": "insert", "into": { "kind": "document", "_path": { "oqx": "project" } }, "at": "end",
               "markdown": { "oqx": "\"- completed: [\" + title + \"](\" + path + \")\"" } },
-            { "op": "set", "field": "frontmatter.rolled_up", "value": true },
+            { "op": "set", "field": "_frontmatter.rolled_up", "value": true },
         ])
     }
 
     fn hit(id: &str, path: &str, slots: Json) -> Json {
-        let mut h = json!({ "id": id, "path": path });
+        let mut h = json!({ "_id": id, "_path": path });
         if let Some(o) = slots.as_object() {
             for (k, v) in o {
                 h[k] = v.clone();
@@ -2635,7 +2635,7 @@ mod tests {
         assert_eq!((c.bound, c.implicit()), (SELECTION_CEILING, true));
         let c = compile(&req(
             "select hub: project from docs",
-            json!([{ "op": "insert", "into": { "kind": "document", "path": { "oqx": "hub" } }, "markdown": "x" }]),
+            json!([{ "op": "insert", "into": { "kind": "document", "_path": { "oqx": "hub" } }, "markdown": "x" }]),
             Some(5),
         ))
         .unwrap();
@@ -2651,7 +2651,7 @@ mod tests {
         // A value-position directive is an expression too; `^` validates at depth 1.
         let c = compile(&req(
             "from docs",
-            json!([{ "op": "set", "target": { "kind": "document", "id": { "oqx": "^docs single { id values where data.slug == ^hub_slug }" } }, "field": "frontmatter.x", "value": 1 }]),
+            json!([{ "op": "set", "target": { "kind": "document", "_id": { "oqx": "^docs single { _id values where slug == ^hub_slug }" } }, "field": "_frontmatter.x", "value": 1 }]),
             None,
         ))
         .unwrap();
@@ -2667,7 +2667,7 @@ mod tests {
     /// same request over the rewritten selector as its `fix`.
     #[test]
     fn a_bracket_list_in_a_selector_is_fixed_to_a_tuple() {
-        let t = json!([{ "op": "set", "field": "frontmatter.rolled_up", "value": true }]);
+        let t = json!([{ "op": "set", "field": "_frontmatter.rolled_up", "value": true }]);
         let e = compile(&req(
             "from docs where stage in [\"nigredo\", \"albedo\"]",
             t.clone(),
@@ -2683,7 +2683,7 @@ mod tests {
         assert_eq!(d["hint"], HINT);
         assert_eq!(
             d["fix"],
-            r#"{"effects":[{"field":"frontmatter.rolled_up","op":"set","value":true}],"select":"from docs where stage in (\"nigredo\", \"albedo\")"}"#
+            r#"{"effects":[{"field":"_frontmatter.rolled_up","op":"set","value":true}],"select":"from docs where stage in (\"nigredo\", \"albedo\")"}"#
         );
         // `expect` rides along; one member is a grouping — no hint, no fix
         let e = compile(&req(
@@ -2708,7 +2708,7 @@ mod tests {
 
     #[test]
     fn the_static_pass_refuses_what_cannot_be_a_selection() {
-        let t = json!([{ "op": "set", "field": "frontmatter.x", "value": 1 }]);
+        let t = json!([{ "op": "set", "field": "_frontmatter.x", "value": 1 }]);
         let refuse = |select: &str, templates: Json, max: Option<usize>| -> SurfaceError {
             let e = compile(&req(select, templates, max)).unwrap_err();
             assert_eq!(e.code, "filter_invalid", "{select}");
@@ -2757,7 +2757,7 @@ mod tests {
             ),
             (
                 "from docs where $repo",
-                "select: `$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`",
+                "select: `$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`",
             ),
         ];
         for (select, message) in selector {
@@ -2845,19 +2845,19 @@ mod tests {
                 "effects[0].field: `{ oqx }` is not allowed here",
             ),
             (
-                json!([{ "op": "set", "target": { "kind": "document", "id": { "oqx": "a" }, "path": { "oqx": "b" } }, "field": "frontmatter.x", "value": 1 }]),
-                "effects[0].target: give `id` or `path` as an expression, not both",
+                json!([{ "op": "set", "target": { "kind": "document", "_id": { "oqx": "a" }, "_path": { "oqx": "b" } }, "field": "_frontmatter.x", "value": 1 }]),
+                "effects[0].target: give `_id` or `_path` as an expression, not both",
             ),
             (
-                json!([{ "op": "set", "target": { "kind": { "oqx": "k" }, "id": "d_1" }, "field": "frontmatter.x", "value": 1 }]),
+                json!([{ "op": "set", "target": { "kind": { "oqx": "k" }, "_id": "d_1" }, "field": "_frontmatter.x", "value": 1 }]),
                 "effects[0].target.kind: `{ oqx }` is not allowed here",
             ),
             (
-                json!([{ "op": "remove", "targets": [{ "kind": "block", "path": { "oqx": "p" } }] }]),
-                "effects[0].targets[0]: a block target has `id`, not `path`",
+                json!([{ "op": "remove", "targets": [{ "kind": "block", "_path": { "oqx": "p" } }] }]),
+                "effects[0].targets[0]: a block target has `_id`, not `_path`",
             ),
             (
-                json!([{ "op": "set", "field": "frontmatter.x", "value": { "oqx": "a, b" } }]),
+                json!([{ "op": "set", "field": "_frontmatter.x", "value": { "oqx": "a, b" } }]),
                 "effects[0].value: `oqx` must be one expression over the hit, not a query",
             ),
         ];
@@ -2869,7 +2869,7 @@ mod tests {
         // a nested `{ oqx }` under `value` or a frontmatter value is data
         compile(&req(
             "from docs",
-            json!([{ "op": "set", "field": "frontmatter.x", "value": { "k": { "oqx": "x" } } }]),
+            json!([{ "op": "set", "field": "_frontmatter.x", "value": { "k": { "oqx": "x" } } }]),
             None,
         ))
         .unwrap();
@@ -2889,7 +2889,7 @@ mod tests {
         assert_eq!(data(&e)["hint"], "arguments");
         let e = refuse(
             "from blocks",
-            json!([{ "op": "unset", "field": "frontmatter.x" }]),
+            json!([{ "op": "unset", "field": "_frontmatter.x" }]),
             None,
         );
         assert!(e.message.contains("(got \"block\")"), "{}", e.message);
@@ -2908,7 +2908,7 @@ mod tests {
         // an expression that does not parse names the slot; the offset is shifted by 16
         let e = refuse(
             "from docs",
-            json!([{ "op": "set", "field": "frontmatter.x", "value": { "oqx": "1 +" } }]),
+            json!([{ "op": "set", "field": "_frontmatter.x", "value": { "oqx": "1 +" } }]),
             None,
         );
         assert_eq!(
@@ -2917,7 +2917,7 @@ mod tests {
         );
         let e = refuse(
             "from docs",
-            json!([{ "op": "set", "field": "frontmatter.x", "value": { "oqx": "a from blocks" } }]),
+            json!([{ "op": "set", "field": "_frontmatter.x", "value": { "oqx": "a from blocks" } }]),
             None,
         );
         assert_eq!(
@@ -2966,7 +2966,7 @@ mod tests {
             hit(
                 "d_5",
                 "/workstreams/b.md",
-                json!({ "__omg_sel_0_into": { "id": "d_9", "path": "/projects/y.md" }, "__omg_sel_0_markdown": "- completed: [B](/workstreams/b.md)" }),
+                json!({ "__omg_sel_0_into": { "_id": "d_9", "_path": "/projects/y.md" }, "__omg_sel_0_markdown": "- completed: [B](/workstreams/b.md)" }),
             ),
         ];
         let Bound { effects, rows, .. } = bind(&c, &hits, &mut no_settle).unwrap();
@@ -2981,11 +2981,11 @@ mod tests {
         assert_eq!(
             json,
             [
-                json!({ "op": "insert", "into": { "kind": "document", "path": "/projects/x.md" }, "at": "end", "markdown": "- completed: [A](/workstreams/a.md)" }),
-                json!({ "op": "set", "target": { "kind": "document", "id": "d_2" }, "field": "frontmatter.rolled_up", "value": true }),
+                json!({ "op": "insert", "into": { "kind": "document", "_path": "/projects/x.md" }, "at": "end", "markdown": "- completed: [A](/workstreams/a.md)" }),
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_2" }, "field": "_frontmatter.rolled_up", "value": true }),
                 // a row-as-value binds by its id, whichever member held the expression
-                json!({ "op": "insert", "into": { "kind": "document", "id": "d_9" }, "at": "end", "markdown": "- completed: [B](/workstreams/b.md)" }),
-                json!({ "op": "set", "target": { "kind": "document", "id": "d_5" }, "field": "frontmatter.rolled_up", "value": true }),
+                json!({ "op": "insert", "into": { "kind": "document", "_id": "d_9" }, "at": "end", "markdown": "- completed: [B](/workstreams/b.md)" }),
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_5" }, "field": "_frontmatter.rolled_up", "value": true }),
             ]
         );
         // absent / null / [] → target_missing with the row and the expression
@@ -3000,11 +3000,11 @@ mod tests {
             assert_eq!(e.code, "target_missing");
             assert_eq!(
                 e.message,
-                "effects[0].into.path: the expression yielded no identity for row d_2"
+                "effects[0].into._path: the expression yielded no identity for row d_2"
             );
             assert_eq!(
                 *data(&e),
-                json!({ "effect_index": 0, "template_index": 0, "row": { "id": "d_2", "path": "/w.md" }, "expression": "project" })
+                json!({ "effect_index": 0, "template_index": 0, "row": { "_id": "d_2", "_path": "/w.md" }, "expression": "project" })
             );
         }
         // a list of one or more → ambiguous_target with the count
@@ -3017,7 +3017,7 @@ mod tests {
         assert_eq!(e.code, "ambiguous_target");
         assert_eq!(
             e.message,
-            "effects[0].into.path: the expression yielded 1 identities for row d_2; a target resolves to exactly one"
+            "effects[0].into._path: the expression yielded 1 identities for row d_2; a target resolves to exactly one"
         );
         assert_eq!(data(&e)["count"], 1);
         assert_eq!(data(&e)["expression"], "project");
@@ -3031,11 +3031,11 @@ mod tests {
         assert_eq!(e.code, "filter_invalid");
         assert_eq!(
             e.message,
-            "effects[0].into.path: the expression yielded a number (3), not an identity (a string or a row)"
+            "effects[0].into._path: the expression yielded a number (3), not an identity (a string or a row)"
         );
         assert_eq!(
             *data(&e),
-            json!({ "reason": e.message, "hint": HINT, "effect_index": 0, "template_index": 0, "row": { "id": "d_2", "path": "/w.md" }, "expression": "project" })
+            json!({ "reason": e.message, "hint": HINT, "effect_index": 0, "template_index": 0, "row": { "_id": "d_2", "_path": "/w.md" }, "expression": "project" })
         );
         // markdown must be a string
         let h = hit(
@@ -3055,20 +3055,20 @@ mod tests {
             "effects[0].markdown: the expression yielded absent for row d_2"
         );
         // an object that is not a row ref
-        let c = compile(&req("from docs", json!([{ "op": "set", "field": "frontmatter.x", "value": 1 }, { "op": "insert", "into": { "kind": "document", "path": { "oqx": "p" } }, "markdown": "x" }]), None)).unwrap();
+        let c = compile(&req("from docs", json!([{ "op": "set", "field": "_frontmatter.x", "value": 1 }, { "op": "insert", "into": { "kind": "document", "_path": { "oqx": "p" } }, "markdown": "x" }]), None)).unwrap();
         let e = bind(
             &c,
             &[hit(
                 "d_1",
                 "/a.md",
-                json!({ "__omg_sel_1_into": { "id": "d_2", "path": "/p.md", "extra": 1 } }),
+                json!({ "__omg_sel_1_into": { "_id": "d_2", "_path": "/p.md", "extra": 1 } }),
             )],
             &mut no_settle,
         )
         .unwrap_err();
         assert_eq!(
             e.message,
-            "effects[1].into.path: the expression yielded an object, not an identity (a string or a row)"
+            "effects[1].into._path: the expression yielded an object, not an identity (a string or a row)"
         );
         assert_eq!(data(&e)["effect_index"], 1);
         assert_eq!(data(&e)["template_index"], 1);
@@ -3082,11 +3082,11 @@ mod tests {
         let c = compile(&req(
             "from blocks",
             json!([
-                { "op": "move", "into": { "kind": "block", "id": { "oqx": "parent" } }, "at": { "after": { "oqx": "anchor" } } },
-                { "op": "set", "field": "attrs.checked", "value": { "oqx": "done" } },
-                { "op": "remove", "targets": [{ "kind": "block", "id": { "oqx": "sibling" } }, { "kind": "block", "id": { "oqx": "other" } }] },
+                { "op": "move", "into": { "kind": "block", "_id": { "oqx": "parent" } }, "at": { "after": { "oqx": "anchor" } } },
+                { "op": "set", "field": "_attrs.checked", "value": { "oqx": "done" } },
+                { "op": "remove", "targets": [{ "kind": "block", "_id": { "oqx": "sibling" } }, { "kind": "block", "_id": { "oqx": "other" } }] },
                 { "op": "remove" },
-                { "op": "merge", "targets": [{ "kind": "block", "id": { "oqx": "a" } }, { "kind": "block", "id": "b_5" }], "separator": { "oqx": "sep" } },
+                { "op": "merge", "targets": [{ "kind": "block", "_id": { "oqx": "a" } }, { "kind": "block", "_id": "b_5" }], "separator": { "oqx": "sep" } },
                 { "op": "split", "at": [2] },
             ]),
             Some(1),
@@ -3116,9 +3116,9 @@ mod tests {
             "b_1",
             "/a.md",
             json!({
-                "__omg_sel_0_into": { "id": "b_9", "path": "/a.md" }, "__omg_sel_0_at": "b_8",
+                "__omg_sel_0_into": { "_id": "b_9", "_path": "/a.md" }, "__omg_sel_0_at": "b_8",
                 "__omg_sel_1_value": false,
-                "__omg_sel_2_targets_0": "b_2", "__omg_sel_2_targets_1": { "id": "b_3", "path": "/a.md" },
+                "__omg_sel_2_targets_0": "b_2", "__omg_sel_2_targets_1": { "_id": "b_3", "_path": "/a.md" },
                 "__omg_sel_4_targets_0": "b_4", "__omg_sel_4_separator": " / ",
             }),
         );
@@ -3126,27 +3126,27 @@ mod tests {
         let json: Vec<Json> = effects.iter().map(Effect::to_json).collect();
         assert_eq!(
             json[0],
-            json!({ "op": "move", "targets": [{ "kind": "block", "id": "b_1" }], "into": { "kind": "block", "id": "b_9" }, "at": { "after": "b_8" } })
+            json!({ "op": "move", "targets": [{ "kind": "block", "_id": "b_1" }], "into": { "kind": "block", "_id": "b_9" }, "at": { "after": "b_8" } })
         );
         assert_eq!(
             json[1],
-            json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "attrs.checked", "value": false })
+            json!({ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "_attrs.checked", "value": false })
         );
         assert_eq!(
             json[2],
-            json!({ "op": "remove", "targets": [{ "kind": "block", "id": "b_2" }, { "kind": "block", "id": "b_3" }] })
+            json!({ "op": "remove", "targets": [{ "kind": "block", "_id": "b_2" }, { "kind": "block", "_id": "b_3" }] })
         );
         assert_eq!(
             json[3],
-            json!({ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }] })
+            json!({ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }] })
         );
         assert_eq!(
             json[4],
-            json!({ "op": "merge", "targets": [{ "kind": "block", "id": "b_4" }, { "kind": "block", "id": "b_5" }], "separator": " / " })
+            json!({ "op": "merge", "targets": [{ "kind": "block", "_id": "b_4" }, { "kind": "block", "_id": "b_5" }], "separator": " / " })
         );
         assert_eq!(
             json[5],
-            json!({ "op": "split", "target": { "kind": "block", "id": "b_1" }, "at": [2] })
+            json!({ "op": "split", "target": { "kind": "block", "_id": "b_1" }, "at": [2] })
         );
         // over docs a targetless `remove`/`move` is the document form
         let c = compile(&req("from docs", json!([{ "op": "remove" }, { "op": "move", "to": { "oqx": "\"archive/\" + title + \".md\"" } }]), None)).unwrap();
@@ -3164,16 +3164,16 @@ mod tests {
         .unwrap();
         assert_eq!(
             effects[0].to_json(),
-            json!({ "op": "remove", "target": { "kind": "document", "id": "d_1" } })
+            json!({ "op": "remove", "target": { "kind": "document", "_id": "d_1" } })
         );
         assert_eq!(
             effects[1].to_json(),
-            json!({ "op": "move", "target": { "kind": "document", "id": "d_1" }, "to": "archive/A.md", "retarget_inbound": true })
+            json!({ "op": "move", "target": { "kind": "document", "_id": "d_1" }, "to": "archive/A.md", "retarget_inbound": true })
         );
         // an absent value is refused (use `unset`); a row ref lands as a record
         let c = compile(&req(
             "from docs",
-            json!([{ "op": "set", "field": "frontmatter.hub", "value": { "oqx": "hub" } }]),
+            json!([{ "op": "set", "field": "_frontmatter.hub", "value": { "oqx": "hub" } }]),
             None,
         ))
         .unwrap();
@@ -3187,19 +3187,19 @@ mod tests {
             &[hit(
                 "d_1",
                 "/a.md",
-                json!({ "__omg_sel_0_value": { "id": "d_2", "path": "/p.md" } }),
+                json!({ "__omg_sel_0_value": { "_id": "d_2", "_path": "/p.md" } }),
             )],
             &mut no_settle,
         )
         .unwrap();
         assert_eq!(
             effects[0].to_json()["value"],
-            json!({ "id": "d_2", "path": "/p.md" })
+            json!({ "_id": "d_2", "_path": "/p.md" })
         );
         // a `create` per hit: path / markdown / frontmatter values (an absent one is refused too)
         let c = compile(&req(
             "from docs",
-            json!([{ "op": "create", "path": { "oqx": "\"/notes/\" + slug + \".md\"" }, "markdown": { "oqx": "\"# \" + title" }, "frontmatter": { "source": { "oqx": "path" }, "layer": "draft" } }]),
+            json!([{ "op": "create", "path": { "oqx": "\"/notes/\" + slug + \".md\"" }, "markdown": { "oqx": "\"# \" + title" }, "frontmatter": { "source": { "oqx": "_path" }, "layer": "draft" } }]),
             None,
         ))
         .unwrap();
@@ -3249,7 +3249,7 @@ mod tests {
         let a = annotate(e, &rows, 2);
         let d = a.data.unwrap();
         assert_eq!(d["template_index"], 1);
-        assert_eq!(d["row"], json!({ "id": "d_2", "path": "/b.md" }));
+        assert_eq!(d["row"], json!({ "_id": "d_2", "_path": "/b.md" }));
         // already annotated, or no effect index: untouched
         let e = SurfaceError::with_data("doc_missing", "x", json!({ "doc": "d" }));
         assert_eq!(annotate(e.clone(), &rows, 2), e);
@@ -3284,37 +3284,37 @@ mod tests {
     #[test]
     fn the_leader_is_exact_and_everything_else_is_literal() {
         for literal in ["->x", " -> x", "-->", "->", "a -> b", "${HOME}", "x"] {
-            let e = json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": literal });
+            let e = json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": literal });
             assert_eq!(desugar(e.clone()).unwrap(), e, "{literal}");
             assert!(!needs_sugar(&json!([e])), "{literal}");
         }
         assert_eq!(
-            desugar(json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> \"-> note\"" })).unwrap(),
-            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> note" })
+            desugar(json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "-> \"-> note\"" })).unwrap(),
+            json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "-> note" })
         );
         assert_eq!(
-            desugar(json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> title" })).unwrap(),
-            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": { "oqx": "title" } })
+            desugar(json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "-> title" })).unwrap(),
+            json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": { "oqx": "title" } })
         );
         // typing follows the value: `-> 1` stays an expression (a number lands as one)
         assert_eq!(
-            desugar(json!({ "op": "set", "target": "d_0", "field": "frontmatter.priority", "value": "-> priority + 1" })).unwrap(),
-            json!({ "op": "set", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.priority", "value": { "oqx": "priority + 1" } })
+            desugar(json!({ "op": "set", "target": "d_0", "field": "_frontmatter.priority", "value": "-> priority + 1" })).unwrap(),
+            json!({ "op": "set", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.priority", "value": { "oqx": "priority + 1" } })
         );
         // nested strings of a `value` are data
-        let nested = json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": { "a": "-> b" } });
+        let nested = json!({ "op": "set", "target": "d_0", "field": "_frontmatter.x", "value": { "a": "-> b" } });
         assert_eq!(desugar(nested.clone()).unwrap()["value"], nested["value"]);
         // the request routes through the sugar path exactly when something is sugar
         assert!(needs_sugar(
             &json!([{ "op": "insert", "into": "hub.md", "markdown": "x" }])
         ));
         assert!(needs_sugar(
-            &json!([{ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "-> title" }])
+            &json!([{ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "-> title" }])
         ));
         assert!(needs_sugar(
             &json!([{ "op": "remove", "targets": ["b_1"] }])
         ));
-        let plain = SelectRequest::from_args(&json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "->x" }] })).unwrap();
+        let plain = SelectRequest::from_args(&json!({ "effects": [{ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "->x" }] })).unwrap();
         assert!(plain.is_none());
         let sugar = SelectRequest::from_args(
             &json!({ "effects": [{ "op": "insert", "into": "hub.md", "markdown": "-> x" }] }),
@@ -3344,7 +3344,7 @@ mod tests {
         // a folded leader in a target is a bare string, then normalized
         assert_eq!(
             desugar(json!({ "op": "insert", "into": "-> \"hub.md\"", "markdown": "x" })).unwrap(),
-            json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "x" })
+            json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "x" })
         );
         // an unparsable expression: the offset counts from the written string
         let e =
@@ -3369,27 +3369,27 @@ mod tests {
         let d = |v: Json| desugar(v).unwrap();
         assert_eq!(
             d(json!({ "op": "insert", "into": "hub.md", "markdown": "x" }))["into"],
-            json!({ "kind": "document", "path": "hub.md" })
+            json!({ "kind": "document", "_path": "hub.md" })
         );
         assert_eq!(
             d(json!({ "op": "insert", "into": "/notes/a", "markdown": "x" }))["into"],
-            json!({ "kind": "document", "path": "/notes/a" })
+            json!({ "kind": "document", "_path": "/notes/a" })
         );
         assert_eq!(
             d(json!({ "op": "insert", "into": "d_2", "markdown": "x" }))["into"],
-            json!({ "kind": "document", "id": "d_2" })
+            json!({ "kind": "document", "_id": "d_2" })
         );
         assert_eq!(
-            d(json!({ "op": "set", "target": "b_5", "field": "attrs.checked", "value": true }))["target"],
-            json!({ "kind": "block", "id": "b_5" })
+            d(json!({ "op": "set", "target": "b_5", "field": "_attrs.checked", "value": true }))["target"],
+            json!({ "kind": "block", "_id": "b_5" })
         );
         assert_eq!(
             d(json!({ "op": "set", "target": "n_0123456789ab", "field": "value", "value": 1 }))["target"],
-            json!({ "kind": "node", "id": "n_0123456789ab" })
+            json!({ "kind": "node", "_id": "n_0123456789ab" })
         );
         assert_eq!(
-            d(json!({ "op": "remove", "targets": ["b_8", { "kind": "block", "id": "b_9" }] }))["targets"],
-            json!([{ "kind": "block", "id": "b_8" }, { "kind": "block", "id": "b_9" }])
+            d(json!({ "op": "remove", "targets": ["b_8", { "kind": "block", "_id": "b_9" }] }))["targets"],
+            json!([{ "kind": "block", "_id": "b_8" }, { "kind": "block", "_id": "b_9" }])
         );
         // `$new.n`: a provisional kind the slot admits, and the member recorded
         let (v, sugar) = desugar_effect(
@@ -3398,7 +3398,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(v["into"], json!({ "kind": "document", "id": "$new.0" }));
+        assert_eq!(v["into"], json!({ "kind": "document", "_id": "$new.0" }));
         assert_eq!(sugar.symbols, [Member::Into]);
         let (v, sugar) = desugar_effect(
             &json!({ "op": "set", "target": "$new.2", "field": "markdown", "value": "x" }),
@@ -3406,11 +3406,11 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(v["target"], json!({ "kind": "block", "id": "$new.2" }));
+        assert_eq!(v["target"], json!({ "kind": "block", "_id": "$new.2" }));
         assert_eq!(sugar.symbols, [Member::Target]);
         let (v, sugar) =
             desugar_effect(&json!({ "op": "remove", "targets": ["$new.1"] }), 0, None).unwrap();
-        assert_eq!(v["targets"], json!([{ "kind": "block", "id": "$new.1" }]));
+        assert_eq!(v["targets"], json!([{ "kind": "block", "_id": "$new.1" }]));
         assert_eq!(sugar.symbols, [Member::Targets(0)]);
         // a `-> ` whole target is the directive; a leader in `id` / `path` too
         assert_eq!(
@@ -3419,9 +3419,9 @@ mod tests {
         );
         assert_eq!(
             d(
-                json!({ "op": "insert", "into": { "kind": "document", "path": "-> project" }, "markdown": "x" })
+                json!({ "op": "insert", "into": { "kind": "document", "_path": "-> project" }, "markdown": "x" })
             )["into"],
-            json!({ "kind": "document", "path": { "oqx": "project" } })
+            json!({ "kind": "document", "_path": { "oqx": "project" } })
         );
         // a locator: hint arguments, with the fix
         let e = desugar(json!({ "op": "insert", "into": "hub.md#Status", "markdown": "x" }))
@@ -3471,7 +3471,7 @@ mod tests {
                 "effects[0].field",
             ),
             (
-                json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": 1, "expect": { "revision": "-> r" } }),
+                json!({ "op": "set", "target": "d_0", "field": "_frontmatter.x", "value": 1, "expect": { "revision": "-> r" } }),
                 "effects[0].expect.revision",
             ),
             (
@@ -3491,7 +3491,7 @@ mod tests {
                 "effects[0].at[0]",
             ),
             (
-                json!({ "op": "set", "target": "d_0", "field": "frontmatter.x", "value": 1, "bogus": "-> z" }),
+                json!({ "op": "set", "target": "d_0", "field": "_frontmatter.x", "value": 1, "bogus": "-> z" }),
                 "effects[0].bogus",
             ),
             (
@@ -3508,7 +3508,7 @@ mod tests {
         // an unknown op — `-> set` included — is left for the shape check (hint arguments)
         for v in [
             json!({ "op": "frobnicate", "x": "-> y" }),
-            json!({ "op": "-> set", "target": "d_0", "field": "frontmatter.x", "value": 1 }),
+            json!({ "op": "-> set", "target": "d_0", "field": "_frontmatter.x", "value": 1 }),
         ] {
             assert_eq!(desugar(v.clone()).unwrap(), v);
             let e = Effect::validate(&v, 0).map_err(shape_error).unwrap_err();
@@ -3523,21 +3523,21 @@ mod tests {
     fn binding_a_whole_target() {
         let c = compile(&req(
             "from docs",
-            json!([{ "op": "insert", "into": "-> project", "markdown": "x" }, { "op": "set", "target": "-> hub", "field": "frontmatter.x", "value": 1 }]),
+            json!([{ "op": "insert", "into": "-> project", "markdown": "x" }, { "op": "set", "target": "-> hub", "field": "_frontmatter.x", "value": 1 }]),
             None,
         ))
         .unwrap();
         let Bound { effects, .. } = bind(
             &c,
-            &[hit("d_1", "/a.md", json!({ "__omg_sel_0_into": "hub.md", "__omg_sel_1_target": { "id": "d_7", "path": "/hub.md" } }))],
+            &[hit("d_1", "/a.md", json!({ "__omg_sel_0_into": "hub.md", "__omg_sel_1_target": { "_id": "d_7", "_path": "/hub.md" } }))],
             &mut no_settle,
         )
         .unwrap();
         assert_eq!(
             effects.iter().map(Effect::to_json).collect::<Vec<_>>(),
             [
-                json!({ "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "at": "end", "markdown": "x" }),
-                json!({ "op": "set", "target": { "kind": "document", "id": "d_7" }, "field": "frontmatter.x", "value": 1 }),
+                json!({ "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "at": "end", "markdown": "x" }),
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_7" }, "field": "_frontmatter.x", "value": 1 }),
             ]
         );
         let Bound { effects, .. } = bind(
@@ -3552,7 +3552,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             effects[0].to_json()["into"],
-            json!({ "kind": "block", "id": "b_3" })
+            json!({ "kind": "block", "_id": "b_3" })
         );
         let e = bind(
             &c,
@@ -3586,7 +3586,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             effects[0].to_json()["into"],
-            json!({ "kind": "document", "id": "$new.0" })
+            json!({ "kind": "document", "_id": "$new.0" })
         );
         // the prefix is empty for the first effect: nothing to settle against yet
         assert!(seen.is_empty());
@@ -3648,9 +3648,9 @@ mod tests {
             &ctx,
             &ds,
             json!([
-                { "op": "insert", "into": "hub.md", "markdown": "-> `## ${title} (${type})`" },
-                { "op": "set", "target": "/ws/alpha.md", "field": "frontmatter.hub", "value": "-> project" },
-                { "op": "set", "target": "d_1", "field": "frontmatter.n", "value": "-> 1 + 1" },
+                { "op": "insert", "into": "hub.md", "markdown": "-> `## ${_title} (${type})`" },
+                { "op": "set", "target": "/ws/alpha.md", "field": "_frontmatter.hub", "value": "-> project" },
+                { "op": "set", "target": "d_1", "field": "_frontmatter.n", "value": "-> 1 + 1" },
             ]),
         )
         .unwrap();
@@ -3661,11 +3661,11 @@ mod tests {
         assert_eq!(effects[1]["value"], "hub.md");
         assert_eq!(
             effects[1]["target"],
-            json!({ "kind": "document", "id": "d_1", "path": "ws/alpha.md" })
+            json!({ "kind": "document", "_id": "d_1", "_path": "ws/alpha.md" })
         );
         assert_eq!(effects[2]["value"], 2);
         let templates = plan.templates.clone().expect("templates");
-        assert_eq!(templates[0]["markdown"], "-> `## ${title} (${type})`");
+        assert_eq!(templates[0]["markdown"], "-> `## ${_title} (${type})`");
         assert_eq!(templates[1]["target"], "/ws/alpha.md");
         let wire = plan.to_json(false);
         assert!(wire.get("templates").is_some());
@@ -3675,9 +3675,9 @@ mod tests {
             .plan_effects(
                 &ctx,
                 &omgbase_mutate::Effect::list_from_json(&json!([
-                    { "op": "insert", "into": { "kind": "document", "path": "hub.md" }, "markdown": "## Hub (project)" },
-                    { "op": "set", "target": { "kind": "document", "path": "ws/alpha.md" }, "field": "frontmatter.hub", "value": "hub.md" },
-                    { "op": "set", "target": { "kind": "document", "id": "d_1" }, "field": "frontmatter.n", "value": 2 },
+                    { "op": "insert", "into": { "kind": "document", "_path": "hub.md" }, "markdown": "## Hub (project)" },
+                    { "op": "set", "target": { "kind": "document", "_path": "ws/alpha.md" }, "field": "_frontmatter.hub", "value": "hub.md" },
+                    { "op": "set", "target": { "kind": "document", "_id": "d_1" }, "field": "_frontmatter.n", "value": 2 },
                 ]))
                 .unwrap(),
                 &ds,
@@ -3692,8 +3692,8 @@ mod tests {
             &ds,
             json!([
                 { "op": "insert", "into": "hub.md", "markdown": "-> \"## Hub (project)\"" },
-                { "op": "set", "target": "/ws/alpha.md", "field": "frontmatter.hub", "value": "-> `hub.md`" },
-                { "op": "set", "target": "d_1", "field": "frontmatter.n", "value": 2 },
+                { "op": "set", "target": "/ws/alpha.md", "field": "_frontmatter.hub", "value": "-> `hub.md`" },
+                { "op": "set", "target": "d_1", "field": "_frontmatter.n", "value": 2 },
             ]),
         )
         .unwrap();
@@ -3749,7 +3749,7 @@ mod tests {
         );
         let e = refuse(
             &mut store,
-            json!([{ "op": "set", "target": { "kind": "document", "id": "-> x" }, "field": "frontmatter.a", "value": "-> title" }]),
+            json!([{ "op": "set", "target": { "kind": "document", "_id": "-> x" }, "field": "_frontmatter.a", "value": "-> title" }]),
         );
         assert!(
             e.message
@@ -3771,7 +3771,7 @@ mod tests {
         // a literal target that names no row is the lowering's own error
         let e = refuse(
             &mut store,
-            json!([{ "op": "set", "target": "gone.md", "field": "frontmatter.a", "value": "-> title" }]),
+            json!([{ "op": "set", "target": "gone.md", "field": "_frontmatter.a", "value": "-> title" }]),
         );
         assert_eq!(e.code, "doc_missing");
         assert_eq!(data(&e)["doc"], "gone.md");
@@ -3796,7 +3796,7 @@ mod tests {
         );
         assert_eq!(
             *data(&e),
-            json!({ "reason": e.message, "hint": HINT, "effect_index": 0, "row": { "id": "d_0", "path": "/hub.md" }, "expression": "nope" })
+            json!({ "reason": e.message, "hint": HINT, "effect_index": 0, "row": { "_id": "d_0", "_path": "/hub.md" }, "expression": "nope" })
         );
     }
 
@@ -3821,15 +3821,15 @@ mod tests {
         let effects: Vec<Json> = plan.effects.iter().map(Effect::to_json).collect();
         assert_eq!(
             effects[1]["into"],
-            json!({ "kind": "document", "id": "$new.0", "path": "n.md" })
+            json!({ "kind": "document", "_id": "$new.0", "_path": "n.md" })
         );
         assert_eq!(
             effects[2]["target"],
-            json!({ "kind": "block", "id": "$new.2" })
+            json!({ "kind": "block", "_id": "$new.2" })
         );
         assert_eq!(
             effects[3]["targets"],
-            json!([{ "kind": "block", "id": "$new.1" }])
+            json!([{ "kind": "block", "_id": "$new.1" }])
         );
         assert!(plan.templates.is_none());
         let e = plan_plain(
@@ -3838,7 +3838,7 @@ mod tests {
             &ds,
             json!([
                 { "op": "create", "path": "n.md", "markdown": "# N" },
-                { "op": "unset", "target": "$new.1", "field": "frontmatter.k" },
+                { "op": "unset", "target": "$new.1", "field": "_frontmatter.k" },
             ]),
         )
         .unwrap_err();

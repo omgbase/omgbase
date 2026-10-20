@@ -497,7 +497,7 @@ pub(crate) fn stale_plan(base: &DocBase, current: Option<&DocBase>) -> crate::er
             "expected_revision": base.current_rev,
             "current": {
                 "revision": current.and_then(|c| c.current_rev.clone()),
-                "hash": current.and_then(|c| c.file_hash.as_deref().map(hex)),
+                "_hash": current.and_then(|c| c.file_hash.as_deref().map(hex)),
             },
             "retriable": true,
         }),

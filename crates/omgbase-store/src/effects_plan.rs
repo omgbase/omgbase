@@ -118,7 +118,7 @@ impl Receipt {
         json!({
             "plan_id": self.plan_id,
             "commit": self.commit,
-            "revisions": self.revisions.iter().map(|r| json!({ "id": r.doc, "path": r.path, "hash": r.hash })).collect::<Vec<_>>(),
+            "revisions": self.revisions.iter().map(|r| json!({ "_id": r.doc, "_path": r.path, "_hash": r.hash })).collect::<Vec<_>>(),
             "new_ids": new_ids,
             "committed": true,
             "summary": self.summary,
@@ -147,7 +147,7 @@ fn merr(code: ErrorCode, msg: impl Into<String>, data: Value) -> Error {
 /// fence it with `---` lines — a second YAML document, or invalid JSON. Until
 /// the effect learns those formats the request is refused outright —
 /// `type_mismatch`, the target's kind does not admit the op — and the mapping
-/// is edited with `set content` (the whole file). `data { doc?, path, format,
+/// is edited with `set content` (the whole file). `data { doc?, _path, _format,
 /// field }`: `doc` only for a stored document (a `create`'s `$new` symbol has
 /// none); no `fix` (the correction is a different tool, not a corrected call).
 fn frontmatter_not_markdown(path: &str, format: &str, field: &str, doc_id: Option<&str>) -> Error {
@@ -156,8 +156,8 @@ fn frontmatter_not_markdown(path: &str, format: &str, field: &str, doc_id: Optio
     if let Some(doc) = doc_id {
         data.insert("doc".to_owned(), json!(doc));
     }
-    data.insert("path".to_owned(), json!(path));
-    data.insert("format".to_owned(), json!(format));
+    data.insert("_path".to_owned(), json!(path));
+    data.insert("_format".to_owned(), json!(format));
     data.insert("field".to_owned(), json!(field));
     merr(
         ErrorCode::TypeMismatch,
@@ -378,7 +378,7 @@ impl Store {
             .optional()?)
     }
 
-    /// A document target → `{ id, path }` of a live document, or the create
+    /// A document target → `{ _id, _path }` of a live document, or the create
     /// it names by symbol (`$new.n`).
     fn resolve_document_target(&self, p: &Planning<'_>, t: &Target) -> Result<Target> {
         let Target::Document { id, path } = t else {
@@ -389,7 +389,7 @@ impl Store {
         };
         let disagree = || {
             invalid(format!(
-                "id {} and path {} name different documents",
+                "`_id` {} and `_path` {} name different documents",
                 Value::String(id.clone().unwrap_or_default()),
                 Value::String(path.clone().unwrap_or_default())
             ))
@@ -722,7 +722,7 @@ impl Store {
                 json!({
                     "doc": doc_id,
                     "expected_revision": rev,
-                    "current": { "revision": base.current_rev, "hash": base.file_hash.as_deref().map(hex) },
+                    "current": { "revision": base.current_rev, "_hash": base.file_hash.as_deref().map(hex) },
                     "retriable": true,
                 }),
             ));
@@ -864,7 +864,7 @@ impl Store {
                     scalar: Some(ScalarWrite {
                         key: format!("document:{id}:path"),
                         target: FocusTarget::document(id),
-                        field: "path".into(),
+                        field: "_path".into(),
                         value: Some(json!(to)),
                     }),
                     docs: vec![id.clone()],
@@ -1312,10 +1312,10 @@ impl Store {
                     }
                     return self.lower_content(p, doc_id, content);
                 }
-                // `frontmatter.<key>` — on a created document too (3.0): its
+                // `_frontmatter.<key>` — on a created document too (3.0): its
                 // tree is loaded, the patch is a head like any other — but
                 // only on a Markdown document (1.2; `frontmatter_not_markdown`).
-                let key = field.strip_prefix("frontmatter.").expect("validated");
+                let key = field.strip_prefix("_frontmatter.").expect("validated");
                 self.require_markdown_for_frontmatter(p, doc_id, field)?;
                 self.patch_frontmatter_key(p, doc_id, key, value)
             }
@@ -1347,7 +1347,7 @@ impl Store {
                     }
                     Field::Checked => {
                         let Some(checked) = value.as_bool() else {
-                            return Err(invalid("`attrs.checked` takes a boolean value"));
+                            return Err(invalid("`_attrs.checked` takes a boolean value"));
                         };
                         let mut attrs = Map::new();
                         attrs.insert("checked".to_owned(), json!(checked));
@@ -1417,7 +1417,7 @@ impl Store {
         }
     }
 
-    /// `spec/mutate` §11.3 `set`/`unset frontmatter.<key>` (3.6, "Frontmatter
+    /// `spec/mutate` §11.3 `set`/`unset _frontmatter.<key>` (3.6, "Frontmatter
     /// entries"): the frontmatter is edited BY ENTRY. The document's head is
     /// cut into its parts (`split_frontmatter_raw`, the §11.10 split rule): a
     /// `set` replaces the key's part — the lead lines (a comment documenting
@@ -1434,7 +1434,7 @@ impl Store {
     /// rule does not recognise) still composes as `docs_set_meta` did through
     /// 3.5 — `compose_file(body, merged)` — which for a new fence is the same
     /// bytes a one-key part would give.
-    /// `set`/`unset frontmatter.<key>` apply to Markdown documents only
+    /// `set`/`unset _frontmatter.<key>` apply to Markdown documents only
     /// ([`frontmatter_not_markdown`]); the format is the path's, as the
     /// reference's planner reads it off the loaded document.
     fn require_markdown_for_frontmatter(
@@ -2041,7 +2041,7 @@ impl Store {
                     json!({
                         "doc": d.id,
                         "expected_revision": d.base_revision,
-                        "current": { "revision": row.current_rev, "hash": hash },
+                        "current": { "revision": row.current_rev, "_hash": hash },
                         "retriable": true,
                     }),
                 ));

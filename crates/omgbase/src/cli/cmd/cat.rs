@@ -18,9 +18,9 @@ struct CatOne {
     capture: Json,
 }
 
-/// `raw ?? text ?? label` of a `blocks_read` object (3.0: the block's bytes are `raw`).
+/// `_raw ?? _text ?? label` of a `blocks_read` object (5.0: the block's bytes are `_raw`).
 pub fn node_text(node: &Json) -> String {
-    for k in ["raw", "text", "label"] {
+    for k in ["_raw", "_text", "label"] {
         if let Some(s) = node.get(k).and_then(Json::as_str) {
             return s.to_owned();
         }
@@ -48,7 +48,7 @@ fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
         } else {
             "blocks_read"
         };
-        let node = cli.call(tool, json!({ "id": r, "resolution": resolution }))?;
+        let node = cli.call(tool, json!({ "_id": r, "resolution": resolution }))?;
         return Ok(CatOne {
             text: node_text(&node),
             capture: node.clone(),
@@ -62,7 +62,7 @@ fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
         warn_doc_resolution(cli, r, resolution);
     }
     let text = res
-        .get("raw")
+        .get("_raw")
         .and_then(Json::as_str)
         .unwrap_or("")
         .to_owned();
@@ -90,12 +90,12 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
     match resolved {
         ResolvedRef::Document { doc_id } => {
             // §9 Fixed: `--json` is the `docs_read` result.
-            let res = cli.call("docs_read", json!({ "id": doc_id }))?;
+            let res = cli.call("docs_read", json!({ "_id": doc_id }))?;
             if resolution != "raw" {
                 warn_doc_resolution(cli, r, resolution);
             }
             let text = res
-                .get("raw")
+                .get("_raw")
                 .and_then(Json::as_str)
                 .unwrap_or("")
                 .to_owned();
@@ -110,7 +110,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
         ResolvedRef::Block { block_id, .. } => {
             let node = cli.call(
                 "blocks_read",
-                json!({ "id": block_id, "resolution": resolution }),
+                json!({ "_id": block_id, "resolution": resolution }),
             )?;
             Ok(CatOne {
                 text: node_text(&node),

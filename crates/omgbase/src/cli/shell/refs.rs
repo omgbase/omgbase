@@ -80,7 +80,7 @@ fn bad(token: &str) -> RefError {
 /// (does not start with `@`); an error for a malformed `@…`. The grammar is
 /// `^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$` — the
 /// field admits a leading `$` so a query hit's identity is addressable
-/// (`@1.id`, `@t[1].path`; `spec/surface` §1.4, 3.0).
+/// (`@1._id`, `@t[1]._path`; `spec/surface` §1.4, 5.0).
 pub fn parse_ref(token: &str) -> Result<Option<ParsedRef>, RefError> {
     let Some(body) = token.strip_prefix('@') else {
         return Ok(None);
@@ -207,14 +207,9 @@ fn row_of(el: &Json) -> Row {
     }
     if let Some(o) = el.as_object() {
         let r#ref = first_string(o, REF_KEYS);
-        let label = first_string(
-            o,
-            &[
-                "path", "path", "locator", "name", "id", "id", "node", "doc_id",
-            ],
-        )
-        .or_else(|| r#ref.clone())
-        .unwrap_or_else(|| preview(el));
+        let label = first_string(o, LABEL_KEYS)
+            .or_else(|| r#ref.clone())
+            .unwrap_or_else(|| preview(el));
         return Row {
             r#ref: r#ref.unwrap_or_else(|| label.clone()),
             label,
@@ -230,13 +225,26 @@ fn row_of(el: &Json) -> Row {
 }
 
 /// The keys that make an object an entity ref, in precedence order: a row's
-/// `id` (`spec/surface` §1.2, 3.0 — every tool result spells a row's identity
-/// as the intrinsic), a `links` row's far node (`doc_id`) and an edge's
-/// `block_id`, then the pre-3.0 envelopes (`id`, `node`, `block`) — kept so a
-/// remote 2.x server's results still address — then `locator` and a path.
+/// `_id` (`spec/surface` §1.2, 5.0 — every tool result spells a row's identity
+/// as the engine attribute, `_`-prefixed), a `links` row's far node (`_doc_id`)
+/// and an edge's `_block_id`, then the role names `node` and `block` (a `node
+/// props` card's `node`; a role key that names a block), then `locator` and
+/// the document's `_path`. The bare `id`/`path` (4.x) and `$id`/`$path`
+/// tolerance is gone (`spec/cli` 5.0): a bare key is an authored property,
+/// never the row's identity.
 const REF_KEYS: &[&str] = &[
-    "id", "doc_id", "block_id", "id", "node", "block", "locator", "path", "path",
+    "_id",
+    "_doc_id",
+    "_block_id",
+    "node",
+    "block",
+    "locator",
+    "_path",
 ];
+
+/// The human label of a row, in precedence order: its `_path`, a `locator`, a
+/// `name` (a repo, a source), then the id-like keys.
+const LABEL_KEYS: &[&str] = &["_path", "locator", "name", "_id", "node", "_doc_id"];
 
 fn first_string(o: &serde_json::Map<String, Json>, keys: &[&str]) -> Option<String> {
     keys.iter()
@@ -305,8 +313,8 @@ mod tests {
             }
         );
         assert_eq!(p("@_").base, "_");
-        assert_eq!(p("@t[2].path").index, Some(2));
-        assert_eq!(p("@t[2].path").field.as_deref(), Some("path"));
+        assert_eq!(p("@t[2]._path").index, Some(2));
+        assert_eq!(p("@t[2]._path").field.as_deref(), Some("_path"));
         assert_eq!(p("@my-name_2").base, "my-name_2");
         assert_eq!(p("@_.kind").field.as_deref(), Some("kind"));
         for bad in [
@@ -332,7 +340,7 @@ mod tests {
 
     #[test]
     fn rows_and_coercion() {
-        let hits = json!({ "hits": [{ "id": "d_1", "path": "a.md" }, { "id": "d_2" }] });
+        let hits = json!({ "hits": [{ "_id": "d_1", "_path": "a.md" }, { "_id": "d_2" }] });
         let rows = derive_rows(&hits).unwrap();
         assert_eq!(rows[0].r#ref, "d_1");
         assert_eq!(rows[0].label, "a.md");
@@ -358,7 +366,7 @@ mod tests {
             derive_rows(&bare).is_none(),
             "a receipt without its ids is a card"
         );
-        let links = json!({ "out": [{ "doc_id": "d_1" }], "in": [{ "doc_id": "d_0" }] });
+        let links = json!({ "out": [{ "_doc_id": "d_1" }], "in": [{ "_doc_id": "d_0" }] });
         let rows = derive_rows(&links).unwrap();
         assert_eq!(
             rows.iter().map(|r| r.r#ref.as_str()).collect::<Vec<_>>(),

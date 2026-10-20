@@ -81,11 +81,11 @@ pub fn fix_tool(tool: &str, args: &Json) -> String {
     format!("{tool} {}", canonical_json(args))
 }
 
-/// The selector that names exactly one row: `from <root> where id == "<id>"`
+/// The selector that names exactly one row: `from <root> where _id == "<id>"`
 /// (`narrowedTo`).
 #[must_use]
 pub fn narrowed_to(root: &str, id: &str) -> String {
-    format!("from {root} where id == {}", Json::String(id.to_owned()))
+    format!("from {root} where _id == {}", Json::String(id.to_owned()))
 }
 
 /// The root a row id belongs to, by its prefix (`rootOfId`).
@@ -127,7 +127,7 @@ pub struct Origin {
 
 /// `conflicting_effects { effects: [a, b] }`: keep the later effect — the
 /// request minus the earlier one. Under a selector a cross-hit collision
-/// narrows the selector to the later hit (`from <root> where id == …`,
+/// narrows the selector to the later hit (`from <root> where _id == …`,
 /// `expect.max: 1`) and a same-hit collision drops the earlier template.
 #[must_use]
 pub fn conflicting_effects(
@@ -503,10 +503,10 @@ pub fn append_after(parent: &str, id: &str, text: &str) -> String {
 pub fn append_without_section(id: Option<&str>, path: Option<&str>, text: &str) -> String {
     let mut m = Map::new();
     if let Some(id) = id {
-        m.insert("id".to_owned(), json!(id));
+        m.insert("_id".to_owned(), json!(id));
     }
     if let Some(path) = path {
-        m.insert("path".to_owned(), json!(path));
+        m.insert("_path".to_owned(), json!(path));
     }
     m.insert("text".to_owned(), json!(text));
     fix_tool("docs_append", &Json::Object(m))
@@ -516,7 +516,7 @@ pub fn append_without_section(id: Option<&str>, path: Option<&str>, text: &str) 
 /// (`ambiguous_heading`): `blocks_append` into the first candidate by id.
 #[must_use]
 pub fn append_into_heading(heading_id: &str, text: &str) -> String {
-    fix_tool("blocks_append", &json!({ "id": heading_id, "text": text }))
+    fix_tool("blocks_append", &json!({ "_id": heading_id, "text": text }))
 }
 
 #[cfg(test)]
@@ -525,8 +525,8 @@ mod tests {
 
     fn effects() -> Json {
         json!([
-            { "op": "insert", "into": { "kind": "document", "path": "a.md" }, "markdown": "x" },
-            { "op": "set", "target": { "kind": "document", "path": "a.md" }, "field": "frontmatter.k", "value": 1 },
+            { "op": "insert", "into": { "kind": "document", "_path": "a.md" }, "markdown": "x" },
+            { "op": "set", "target": { "kind": "document", "_path": "a.md" }, "field": "_frontmatter.k", "value": 1 },
             { "op": "create", "path": "c.md", "markdown": "# C" }
         ])
     }
@@ -566,7 +566,7 @@ mod tests {
             fix_tool("plan", &json!({ "effects": [] })),
             "plan {\"effects\":[]}"
         );
-        assert_eq!(narrowed_to("docs", "d_1"), "from docs where id == \"d_1\"");
+        assert_eq!(narrowed_to("docs", "d_1"), "from docs where _id == \"d_1\"");
         assert_eq!(root_of_id("d_1"), "docs");
         assert_eq!(root_of_id("n_1"), "nodes");
         assert_eq!(root_of_id("b_1"), "blocks");
@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(
             conflicting_effects(&req, 1, 2, Some(&origins)).unwrap(),
             canon(
-                json!({ "select": "from docs where id == \"d_2\"", "effects": [effects()[1], effects()[1]], "expect": { "max": 1 } })
+                json!({ "select": "from docs where _id == \"d_2\"", "effects": [effects()[1], effects()[1]], "expect": { "max": 1 } })
             )
         );
         assert_eq!(
@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn a_stale_revision_at_plan_time_is_repinned_to_the_current_one() {
         let args = json!({ "effects": [
-            { "op": "set", "target": { "kind": "document", "path": "a.md" }, "field": "frontmatter.k", "value": 1, "expect": { "revision": "r_0" } },
+            { "op": "set", "target": { "kind": "document", "_path": "a.md" }, "field": "_frontmatter.k", "value": 1, "expect": { "revision": "r_0" } },
             effects()[0],
         ] });
         let e = attach(
@@ -719,8 +719,8 @@ mod tests {
     #[test]
     fn a_symbol_before_its_create_moves_the_create_first_and_renames_it() {
         let args = json!({ "effects": [
-            { "op": "insert", "into": { "kind": "document", "path": "a.md" }, "markdown": "x" },
-            { "op": "insert", "into": { "kind": "document", "id": "$new.3" }, "markdown": "y" },
+            { "op": "insert", "into": { "kind": "document", "_path": "a.md" }, "markdown": "x" },
+            { "op": "insert", "into": { "kind": "document", "_id": "$new.3" }, "markdown": "y" },
             { "op": "create", "path": "c.md", "markdown": "# C" }
         ] });
         // One symbol allocated by effect 0; the create moved before effect 1
@@ -737,7 +737,7 @@ mod tests {
         let fixed = json!([
             args["effects"][0],
             args["effects"][2],
-            { "op": "insert", "into": { "kind": "document", "id": "$new.1" }, "markdown": "y" },
+            { "op": "insert", "into": { "kind": "document", "_id": "$new.1" }, "markdown": "y" },
         ]);
         assert_eq!(fix_of(&e).unwrap(), canon(json!({ "effects": fixed })));
         // A symbol an earlier effect DID allocate (the wrong kind) is not reordered.
@@ -788,7 +788,7 @@ mod tests {
             &req,
             err(
                 "stale_plan",
-                json!({ "current": { "revision": "r_2" }, "effect_index": 3, "template_index": 0, "row": { "id": "d_2", "path": "/w.md" } }),
+                json!({ "current": { "revision": "r_2" }, "effect_index": 3, "template_index": 0, "row": { "_id": "d_2", "_path": "/w.md" } }),
             ),
             Some(&origins),
             none,
@@ -813,18 +813,18 @@ mod tests {
         assert_eq!(
             ambiguous_slot(&req, "effects[0].into", "d_7", ("docs", "d_2")).unwrap(),
             canon(
-                json!({ "select": "from docs where id == \"d_2\"", "effects": [{ "op": "insert", "into": "d_7", "markdown": "x" }], "expect": { "max": 1 } })
+                json!({ "select": "from docs where _id == \"d_2\"", "effects": [{ "op": "insert", "into": "d_7", "markdown": "x" }], "expect": { "max": 1 } })
             )
         );
         let plain = Request {
             select: None,
-            effects: json!([{ "op": "set", "target": { "kind": "document", "path": "-> project" }, "field": "frontmatter.k", "value": 1 }]),
+            effects: json!([{ "op": "set", "target": { "kind": "document", "_path": "-> project" }, "field": "_frontmatter.k", "value": 1 }]),
             expect: None,
         };
         assert_eq!(
-            ambiguous_slot(&plain, "effects[0].target.path", "/p.md", ("docs", "d_2")).unwrap(),
+            ambiguous_slot(&plain, "effects[0].target._path", "/p.md", ("docs", "d_2")).unwrap(),
             canon(
-                json!({ "effects": [{ "op": "set", "target": { "kind": "document", "path": "/p.md" }, "field": "frontmatter.k", "value": 1 }] })
+                json!({ "effects": [{ "op": "set", "target": { "kind": "document", "_path": "/p.md" }, "field": "_frontmatter.k", "value": 1 }] })
             )
         );
         assert_eq!(
@@ -868,7 +868,7 @@ mod tests {
         let req = Request {
             select: None,
             effects: json!([
-                { "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "markdown", "value": "x", "expect": { "content_hash": "-> hash" } }
+                { "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "markdown", "value": "x", "expect": { "content_hash": "-> hash" } }
             ]),
             expect: None,
         };
@@ -929,11 +929,11 @@ mod tests {
         );
         assert_eq!(
             append_without_section(None, Some("/a.md"), "t"),
-            "docs_append {\"path\":\"/a.md\",\"text\":\"t\"}"
+            "docs_append {\"_path\":\"/a.md\",\"text\":\"t\"}"
         );
         assert_eq!(
             append_into_heading("b_h", "t"),
-            "blocks_append {\"id\":\"b_h\",\"text\":\"t\"}"
+            "blocks_append {\"_id\":\"b_h\",\"text\":\"t\"}"
         );
     }
 }

@@ -12,11 +12,13 @@
 //!
 //! ```text
 //! unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
-//! `doc` is no longer an argument — pass `id` or `path` (docs_read takes …)
+//! `id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes …)
+//!   — with `data.fix` the same call respelled (`spec/surface` §4, 5.0: no tolerance for a bare `id`/`path`/`ids`)
+//! `doc` is no longer an argument — pass `_id` or `_path` (docs_read takes …)
 //! `query` is required (query takes …)
 //! `limit` must be an integer (query takes …)
-//! pass id or path (docs_read takes …)                      — a locator tool called with neither
-//! id "d_x" and path "/a.md" name different documents (…)    — both given, disagreeing
+//! pass _id or _path (docs_read takes …)                      — a locator tool called with neither
+//! _id "d_x" and _path "/a.md" name different documents (…)    — both given, disagreeing
 //! ```
 
 use serde_json::{Map, Value as Json, json};
@@ -163,10 +165,18 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Opti
     given.sort_unstable();
     for key in given {
         if !props.contains_key(key) {
-            return Err(argument_error(
+            // (5.0) A bare engine-field name where the tool takes its `_`
+            // spelling: the error carries the corrected call (every bare
+            // `id`/`path`/`ids` the call holds respelled at once), never a
+            // silent acceptance.
+            let fix = bare_engine_argument(key, props).then(|| {
+                omgbase_mutate::canonical_json(&Json::Object(respell_engine_arguments(obj, props)))
+            });
+            return Err(argument_error_fix(
                 tool,
                 &unknown_argument_message(key, props),
                 schema,
+                fix,
             ));
         }
     }
@@ -252,24 +262,61 @@ pub fn validate_arguments(tool: &str, schema: &Json, args: &Json) -> Result<Opti
     Ok(normalized.map(Json::Object))
 }
 
-/// What to say about an argument name the tool does not take: the names 3.0
-/// retired are called out with their replacement (`doc` → `id`/`path`,
-/// `block`/`node` → `id`, `heading` → `section`, `markdown` → `text`) when
-/// the tool has the replacement, and so are the inputs 4.0 retired — `ops`
-/// (where the tool takes `effects`: the kernel ops are a library/fixture
-/// contract), `dry_run` (every preview is `plan`), `attrs` (where the tool
-/// takes `checked`); otherwise the nearest valid name (Levenshtein ≤ 2, or
-/// one a prefix of the other).
+/// The bare engine-field names a tool may be called with by mistake
+/// (`spec/surface` §4, 5.0): each has its `_` spelling in the shape.
+const BARE_ENGINE_ARGUMENTS: [&str; 4] = ["id", "path", "ids", "paths"];
+
+/// Whether `key` is a bare engine-field name whose `_` spelling the tool takes.
+#[must_use]
+pub fn bare_engine_argument(key: &str, props: &Map<String, Json>) -> bool {
+    BARE_ENGINE_ARGUMENTS.contains(&key) && props.contains_key(&format!("_{key}"))
+}
+
+/// The call with every bare engine-field argument respelled to its `_` form
+/// (the `fix` of the no-tolerance error).
+#[must_use]
+pub fn respell_engine_arguments(
+    args: &Map<String, Json>,
+    props: &Map<String, Json>,
+) -> Map<String, Json> {
+    let mut out = Map::new();
+    for (k, v) in args {
+        let key = if bare_engine_argument(k, props) {
+            format!("_{k}")
+        } else {
+            k.clone()
+        };
+        out.insert(key, v.clone());
+    }
+    out
+}
+
+/// What to say about an argument name the tool does not take. A bare engine
+/// field (`id`, `path`, `ids`) where the tool takes its `_` spelling is the
+/// no-tolerance error of 5.0 (`spec/surface` §4 "Arguments": the bare
+/// namespace is the user's, an engine field is matched by its exact name).
+/// The names 3.0 retired are called out with their replacement (`doc` →
+/// `_id`/`_path`, `block`/`node` → `_id`, `heading` → `section`, `markdown`
+/// → `text`) when the tool has the replacement, and so are the inputs 4.0
+/// retired — `ops` (where the tool takes `effects`: the kernel ops are a
+/// library/fixture contract), `dry_run` (every preview is `plan`), `attrs`
+/// (where the tool takes `checked`); otherwise the nearest valid name
+/// (Levenshtein ≤ 2, or one a prefix of the other).
 #[must_use]
 pub fn unknown_argument_message(key: &str, props: &Map<String, Json>) -> String {
     let has = |n: &str| props.contains_key(n);
     let retired =
         |replacement: &str| format!("`{key}` is no longer an argument — pass {replacement}");
-    if key == "doc" && has("id") && has("path") {
-        return retired("`id` or `path`");
+    if bare_engine_argument(key, props) {
+        return format!(
+            "`{key}` is not an argument — the engine field is `_{key}` (the bare namespace is the user's); pass `_{key}`"
+        );
     }
-    if (key == "block" || key == "node") && has("id") {
-        return retired("`id`");
+    if key == "doc" && has("_id") && has("_path") {
+        return retired("`_id` or `_path`");
+    }
+    if (key == "block" || key == "node") && has("_id") {
+        return retired("`_id`");
     }
     if key == "heading" && has("section") {
         return retired("`section` (the heading's text), or blocks_append with the heading's `id`");
@@ -440,7 +487,7 @@ mod tests {
 
     fn schema() -> Json {
         json!({ "type": "object", "properties": {
-            "id": { "type": "string" }, "path": { "type": "string" }, "include_ids": { "type": "boolean" }, "repo": { "type": "string" }
+            "_id": { "type": "string" }, "_path": { "type": "string" }, "include_ids": { "type": "boolean" }, "repo": { "type": "string" }
         }, "required": [] })
     }
 
@@ -448,7 +495,7 @@ mod tests {
     fn hints_list_the_shape_in_bytewise_order() {
         assert_eq!(
             arguments_hint("docs_read", &schema()),
-            "docs_read takes id?, include_ids?, path?, repo?"
+            "docs_read takes _id?, _path?, include_ids?, repo?"
         );
         assert_eq!(
             arguments_hint(
@@ -465,7 +512,7 @@ mod tests {
         let e = validate_arguments("docs_read", &s, &json!({ "doc": "a.md" })).unwrap_err();
         assert_eq!(
             e.message,
-            "`doc` is no longer an argument — pass `id` or `path` (docs_read takes id?, include_ids?, path?, repo?)"
+            "`doc` is no longer an argument — pass `_id` or `_path` (docs_read takes _id?, _path?, include_ids?, repo?)"
         );
         assert_eq!(e.data.unwrap()["hint"], "arguments");
         let e = validate_arguments("docs_read", &s, &json!({ "include_id": true })).unwrap_err();
@@ -492,6 +539,48 @@ mod tests {
         assert!(validate_arguments("blocks_search", &q, &json!({ "q": "x", "limit": 5 })).is_ok());
     }
 
+    /// (5.0, `spec/surface` §4 "Arguments") a bare `id`/`path`/`ids` where
+    /// the tool takes the `_` spelling is refused with the corrected call as
+    /// its `fix`; the bare name is never an alias.
+    #[test]
+    fn bare_engine_arguments_are_refused_with_a_fix() {
+        let s = schema();
+        let e = validate_arguments("docs_read", &s, &json!({ "id": "d_1" })).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes _id?, _path?, include_ids?, repo?)"
+        );
+        let d = e.data.unwrap();
+        assert_eq!(d["hint"], "arguments");
+        assert_eq!(d["fix"], r#"{"_id":"d_1"}"#);
+        // every bare engine field of the call is respelled at once
+        let e = validate_arguments(
+            "docs_read",
+            &s,
+            &json!({ "path": "a.md", "id": "d_1", "include_ids": true }),
+        )
+        .unwrap_err();
+        assert!(e.message.starts_with("`id` is not an argument"));
+        assert_eq!(
+            e.data.unwrap()["fix"],
+            r#"{"_id":"d_1","_path":"a.md","include_ids":true}"#
+        );
+        let many = json!({ "type": "object", "properties": { "_ids": { "type": "array", "items": { "type": "string" } } }, "required": ["_ids"] });
+        let e =
+            validate_arguments("blocks_read_many", &many, &json!({ "ids": ["b_1"] })).unwrap_err();
+        assert_eq!(
+            e.message,
+            "`ids` is not an argument — the engine field is `_ids` (the bare namespace is the user's); pass `_ids` (blocks_read_many takes _ids)"
+        );
+        assert_eq!(e.data.unwrap()["fix"], r#"{"_ids":["b_1"]}"#);
+        // a tool without the `_` spelling: the plain unknown-argument message, no fix
+        let q = json!({ "type": "object", "properties": { "q": { "type": "string" } }, "required": ["q"] });
+        let e =
+            validate_arguments("blocks_search", &q, &json!({ "q": "x", "id": "b_1" })).unwrap_err();
+        assert!(e.message.starts_with("unknown argument `id`"));
+        assert!(e.data.unwrap().get("fix").is_none());
+    }
+
     /// The inputs 4.0 retired name their replacement (`spec/surface` §4).
     #[test]
     fn retired_write_inputs_name_their_replacement() {
@@ -512,19 +601,19 @@ mod tests {
             e.message,
             "`effects` is required (apply takes effects, reason?)"
         );
-        let update = json!({ "type": "object", "properties": { "id": { "type": "string" }, "checked": { "type": "boolean" } }, "required": ["id"] });
+        let update = json!({ "type": "object", "properties": { "_id": { "type": "string" }, "checked": { "type": "boolean" } }, "required": ["_id"] });
         let e = validate_arguments(
             "blocks_update",
             &update,
-            &json!({ "id": "b_1", "attrs": {} }),
+            &json!({ "_id": "b_1", "attrs": {} }),
         )
         .unwrap_err();
         assert_eq!(
             e.message,
-            "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, id)"
+            "`attrs` is no longer an argument — pass `checked` (blocks_update takes _id, checked?)"
         );
         // Unknown names are never stripped: the check runs before the handler.
-        let e = validate_arguments("blocks_update", &update, &json!({ "id": "b_1", "zzz": 1 }))
+        let e = validate_arguments("blocks_update", &update, &json!({ "_id": "b_1", "zzz": 1 }))
             .unwrap_err();
         assert!(e.message.starts_with("unknown argument `zzz` ("));
     }
@@ -534,8 +623,8 @@ mod tests {
         assert_eq!(levenshtein("kitten", "sitting"), 3);
         assert_eq!(levenshtein("", "ab"), 2);
         assert_eq!(nearest("q", &["query", "limit"]), Some("query"));
-        assert_eq!(nearest("id", &["id", "path"]), Some("id"));
-        assert_eq!(nearest("zzzz", &["id", "path"]), None);
+        assert_eq!(nearest("_id", &["_id", "_path"]), Some("_id"));
+        assert_eq!(nearest("zzzz", &["_id", "_path"]), None);
     }
 
     /// `spec/surface` §4 "Arguments" (4.5): a string list takes one bare

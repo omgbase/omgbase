@@ -95,7 +95,7 @@ impl LinkRepairPlan {
             Value::Array(
                 self.hits
                     .iter()
-                    .map(|h| json!({ "id": h.block, "path": h.path, "old_raw": h.old_raw, "new_raw": h.new_raw }))
+                    .map(|h| json!({ "_id": h.block, "_path": h.path, "old_raw": h.old_raw, "new_raw": h.new_raw }))
                     .collect(),
             ),
         );

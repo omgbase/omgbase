@@ -164,19 +164,20 @@ pub fn links_stale(
             &target,
             anchor.as_deref(),
         )?;
-        // An edge row under the `edges` target's names (`spec/surface` §1.2,
-        // 3.0). The surface speaks the reference form: `path` and `target`
-        // rooted; `authored` stays exactly as written in the source.
+        // A link row under the `links` target's names (`spec/surface` §1.2,
+        // 5.0); `target`, `authored` and `reason` are roles. The surface
+        // speaks the reference form: `_path` and `target` rooted; `authored`
+        // stays exactly as written in the source.
         stale.push(json!({
-            "doc_id": src_doc,
-            "path": reference_path(&src_path),
-            "block_id": src_block,
-            "predicate": predicate,
-            "provenance": provenance,
-            "dst_kind": dst_kind,
+            "_doc_id": src_doc,
+            "_path": reference_path(&src_path),
+            "_block_id": src_block,
+            "_predicate": predicate,
+            "_provenance": provenance,
+            "_dst_kind": dst_kind,
             "target": reference_path(&target),
             "authored": authored,
-            "anchor": anchor,
+            "_anchor": anchor,
             "reason": "dangling_doc",
         }));
     }
@@ -223,7 +224,7 @@ pub fn links_stale_summary(store: &Store, repo_id: &str, path_glob: Option<&str>
     Ok(json!({
         "staleCount": stale_count,
         "byTarget": by_target.iter().map(|(t, n)| json!({ "target": reference_path(&t[PHANTOM.len()..]), "count": n })).collect::<Vec<_>>(),
-        "bySource": by_source.iter().map(|(p, n)| json!({ "path": reference_path(p), "count": n })).collect::<Vec<_>>(),
+        "bySource": by_source.iter().map(|(p, n)| json!({ "_path": reference_path(p), "count": n })).collect::<Vec<_>>(),
         "externalCount": external,
         "totalOpenEdges": total,
     }))

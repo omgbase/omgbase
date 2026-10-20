@@ -6,8 +6,9 @@
 //! through the mirroring `docs_create` / `docs_move` / `docs_set_meta` /
 //! `docs_delete` tool (`spec/surface` §4, each answering with the Receipt).
 //! Rendered as document operations (§4): the confirmation `  ok <verb>
-//! <path>` on stderr, the document id on stdout; `--json` prints `{ id,
-//! path, committed }` (`mv` adds `dangling`/`retargeted`) — the verb's own
+//! <path>` on stderr, the document id on stdout; `--json` prints `{ _id,
+//! _path, committed }` (`mv` adds `dangling`/`retargeted`; spec/cli 5.0: the
+//! row's engine attributes, `_`-prefixed) — the verb's own
 //! shape over the Receipt, as the reference renders it. The global
 //! `--dry-run` is a **plan** (§3.6): the per-file diffs of the effect's
 //! preview, nothing minted, nothing committed.
@@ -72,14 +73,14 @@ fn run_doc(
 /// store's row (a miss is the surface's `doc_missing` naming the locator);
 /// remotely a `d_` ref is the id already and a path is read back through
 /// `docs_read` — the Receipt of a move or a delete need not carry it.
-fn doc_identity(cli: &mut Cli, r: &str) -> Result<(String, String)> {
+pub(super) fn doc_identity(cli: &mut Cli, r: &str) -> Result<(String, String)> {
     if cli.remote_mode() {
         let read = if is_id_ref(r, "d") {
-            cli.call("docs_read", json!({ "id": r }))?
+            cli.call("docs_read", json!({ "_id": r }))?
         } else {
-            cli.call("docs_read", json!({ "path": r }))?
+            cli.call("docs_read", json!({ "_path": r }))?
         };
-        return Ok((str_of(&read, "id"), canonical(&str_of(&read, "path"))));
+        return Ok((str_of(&read, "_id"), canonical(&str_of(&read, "_path"))));
     }
     let repo = cli.repo()?;
     match find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)? {
@@ -96,7 +97,7 @@ fn doc_identity(cli: &mut Cli, r: &str) -> Result<(String, String)> {
     }
 }
 
-/// §4 document-op confirmation over `{ id, path, committed: true }` (+ `mv`'s
+/// §4 document-op confirmation over `{ _id, _path, committed: true }` (+ `mv`'s
 /// extras): the `--json` document in a machine mode, else `  ok <verb>
 /// <path>` on stderr, the Receipt's `summary` lines under it (cli 4.3), and
 /// the id on stdout.
@@ -108,10 +109,10 @@ fn report(cli: &mut Cli, verb: &str, res: &Json, receipt: &Json) -> Result<i32> 
     cli.io.err(&cli.style.dim(&format!(
         "  {} {verb} {}",
         cli.style.ok(cli.style.glyphs().ok),
-        cli.style.accent(&str_of(res, "path"))
+        cli.style.accent(&str_of(res, "_path"))
     )));
     render_summary(cli, receipt);
-    cli.io.out(&str_of(res, "id"));
+    cli.io.out(&str_of(res, "_id"));
     Ok(EXIT_OK)
 }
 
@@ -136,9 +137,9 @@ fn require_absent(cli: &mut Cli, rel: &str, taken_message: String) -> Result<()>
     Ok(())
 }
 
-/// `{ id, path, committed: true }`, the path rooted.
+/// `{ _id, _path, committed: true }`, the path rooted.
 fn doc_op(id: &str, path: &str) -> Json {
-    json!({ "id": id, "path": reference_path(path), "committed": true })
+    json!({ "_id": id, "_path": reference_path(path), "committed": true })
 }
 
 // ---- new ------------------------------------------------------------------------------
@@ -170,7 +171,7 @@ pub fn new(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // The created document is the Receipt's `$new.0` (its `revisions[0]`).
     let id = res["new_ids"]["$new.0"]
         .as_str()
-        .or_else(|| res["revisions"][0]["id"].as_str())
+        .or_else(|| res["revisions"][0]["_id"].as_str())
         .unwrap_or_default()
         .to_owned();
     report(cli, "created", &doc_op(&id, &rel), &res)
@@ -250,15 +251,16 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut out = doc_op(&id, &to_rel);
     match links {
         // Each dangling link is a link row under the `links` target's names
-        // (spec/surface §1.2) with its source `path` rooted.
+        // (spec/surface §1.2, 5.0: `_doc_id`, `_path`, `_block_id`, `_anchor`,
+        // `_field`) with its source `_path` rooted.
         Some((dangling, retargeted)) => {
             out["dangling"] = Json::Array(
                 dangling
                     .iter()
                     .map(|l| {
                         let mut v = l.to_json();
-                        if let Some(p) = v.get("path").and_then(Json::as_str).map(reference_path) {
-                            v["path"] = json!(p);
+                        if let Some(p) = v.get("_path").and_then(Json::as_str).map(reference_path) {
+                            v["_path"] = json!(p);
                         }
                         v
                     })
@@ -299,8 +301,8 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let where_ = dangling
         .iter()
         .map(|l| {
-            let path = str_of(l, "path");
-            match l.get("block_id").and_then(Json::as_str) {
+            let path = str_of(l, "_path");
+            match l.get("_block_id").and_then(Json::as_str) {
                 Some(b) => format!("{path} {b}"),
                 None => format!("{path} (frontmatter)"),
             }
@@ -314,12 +316,12 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
         if n == 1 { "" } else { "s" },
         if n == 1 { "s" } else { "" },
     )));
-    let new_path = str_of(&out, "path");
+    let new_path = str_of(&out, "_path");
     // Authored links left as written (`--no-retarget`): the retarget that
     // rewrites them — from the path the move left behind, rooted.
     if dangling
         .iter()
-        .any(|l| l.get("block_id").is_some_and(Json::is_string))
+        .any(|l| l.get("_block_id").is_some_and(Json::is_string))
     {
         cli.io.err(&style.dim(&format!(
             "  fix: {} retarget {} {new_path} --apply",
@@ -331,13 +333,13 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // (source, field).
     let mut seen: Vec<(String, String)> = Vec::new();
     for l in &dangling {
-        if l.get("block_id").is_some_and(Json::is_string) {
+        if l.get("_block_id").is_some_and(Json::is_string) {
             continue;
         }
-        let Some(field) = l.get("field").and_then(Json::as_str) else {
+        let Some(field) = l.get("_field").and_then(Json::as_str) else {
             continue;
         };
-        let key = (str_of(l, "path"), field.to_owned());
+        let key = (str_of(l, "_path"), field.to_owned());
         if seen.contains(&key) {
             continue;
         }
@@ -499,12 +501,12 @@ pub fn meta(cli: &mut Cli, args: &[String]) -> Result<i32> {
         let mut effects: Vec<Json> = Vec::new();
         for (k, v) in &set {
             if !opts.unset.contains(k) {
-                effects.push(json!({ "op": "set", "target": target, "field": format!("frontmatter.{k}"), "value": v }));
+                effects.push(json!({ "op": "set", "target": target, "field": format!("_frontmatter.{k}"), "value": v }));
             }
         }
         for k in &opts.unset {
             effects.push(
-                json!({ "op": "unset", "target": target, "field": format!("frontmatter.{k}") }),
+                json!({ "op": "unset", "target": target, "field": format!("_frontmatter.{k}") }),
             );
         }
         let plan = cli.preview("docs_set_meta", Json::Object(m), Json::Array(effects))?;
@@ -562,7 +564,7 @@ mod tests {
     fn doc_op_roots_the_path() {
         assert_eq!(
             doc_op("d_1", "notes/a.md"),
-            json!({ "id": "d_1", "path": "/notes/a.md", "committed": true })
+            json!({ "_id": "d_1", "_path": "/notes/a.md", "committed": true })
         );
     }
 }

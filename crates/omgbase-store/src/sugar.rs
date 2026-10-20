@@ -95,8 +95,8 @@ pub fn delete_document(doc_id: &str, path: &str) -> Sugar {
     }
 }
 
-/// `docs_set_meta { doc, set?, unset? }`: one `set frontmatter.<k>` per
-/// `set` key, then one `unset frontmatter.<k>` per `unset` key — a key named
+/// `docs_set_meta { doc, set?, unset? }`: one `set _frontmatter.<k>` per
+/// `set` key, then one `unset _frontmatter.<k>` per `unset` key — a key named
 /// in both is only unset (the legacy merge spread `set` then deleted `unset`,
 /// so `unset` won; the planner would call two writes to one scalar a
 /// conflict) — `reason: "set_meta <path>"`. An empty patch yields no effect;
@@ -115,7 +115,7 @@ pub fn set_meta(
             if !unset.contains(k) {
                 effects.push(Effect::Set {
                     target: target.clone(),
-                    field: format!("frontmatter.{k}"),
+                    field: format!("_frontmatter.{k}"),
                     value: v.clone(),
                     expect: None,
                 });
@@ -125,7 +125,7 @@ pub fn set_meta(
     for k in unset {
         effects.push(Effect::Unset {
             target: target.clone(),
-            field: format!("frontmatter.{k}"),
+            field: format!("_frontmatter.{k}"),
             expect: None,
         });
     }
@@ -163,7 +163,7 @@ pub fn insert(into: Target, at: At, markdown: &str, expect: Option<EffectExpect>
 }
 
 /// `blocks_update { id, markdown?, checked?, expect? }`: `set markdown` and/or
-/// `set attrs.checked`; the caller's `expect` rides the first effect (the
+/// `set _attrs.checked`; the caller's `expect` rides the first effect (the
 /// planner pins the second from the tree after the first op — the hashes the
 /// one legacy op checked once); a missing `content_hash` is pinned from the
 /// live block by the planner, so `expect: {}` succeeds (a pinned 3.2 fix).
@@ -181,18 +181,18 @@ pub fn update_block(
     }
     if let Some(c) = checked {
         let expect = if effects.is_empty() { expect } else { None };
-        effects.push(set_block(id, "attrs.checked", json!(c), expect));
+        effects.push(set_block(id, "_attrs.checked", json!(c), expect));
     }
     effects
 }
 
-/// `blocks_check { ids, checked? = true }`: N × `set attrs.checked`, each
+/// `blocks_check { ids, checked? = true }`: N × `set _attrs.checked`, each
 /// pinned by the planner; an id named twice is one identical scalar write —
 /// the planner drops the duplicate (a pinned 3.2 fix).
 #[must_use]
 pub fn check_blocks(ids: &[String], checked: bool) -> Vec<Effect> {
     ids.iter()
-        .map(|b| set_block(b, "attrs.checked", json!(checked), None))
+        .map(|b| set_block(b, "_attrs.checked", json!(checked), None))
         .collect()
 }
 
@@ -300,13 +300,13 @@ mod tests {
         assert_eq!(m.reason, "move a.md -> b/c.md");
         assert_eq!(
             m.effects[0].to_json(),
-            json!({ "op": "move", "target": { "kind": "document", "id": "d_0" }, "to": "b/c.md", "retarget_inbound": false })
+            json!({ "op": "move", "target": { "kind": "document", "_id": "d_0" }, "to": "b/c.md", "retarget_inbound": false })
         );
         let d = delete_document("d_0", "a.md");
         assert_eq!(d.reason, "delete a.md");
         assert_eq!(
             d.effects[0].to_json(),
-            json!({ "op": "remove", "target": { "kind": "document", "id": "d_0" } })
+            json!({ "op": "remove", "target": { "kind": "document", "_id": "d_0" } })
         );
         let mut set = Map::new();
         set.insert("status".to_owned(), json!("x"));
@@ -316,15 +316,15 @@ mod tests {
         assert_eq!(
             s.effects.iter().map(Effect::to_json).collect::<Vec<_>>(),
             vec![
-                json!({ "op": "set", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.other", "value": 1 }),
-                json!({ "op": "unset", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.status" }),
+                json!({ "op": "set", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.other", "value": 1 }),
+                json!({ "op": "unset", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.status" }),
             ],
             "a key in both lists is only unset"
         );
         assert!(set_meta("d_0", "a.md", None, &[]).effects.is_empty());
         assert_eq!(
             update_content("d_0", "# A\n")[0].to_json(),
-            json!({ "op": "set", "target": { "kind": "document", "id": "d_0" }, "field": "content", "value": "# A\n" })
+            json!({ "op": "set", "target": { "kind": "document", "_id": "d_0" }, "field": "content", "value": "# A\n" })
         );
     }
 
@@ -343,7 +343,7 @@ mod tests {
             "the guard rides the first"
         );
         let checked_only = update_block("b_1", None, Some(false), Some(expect));
-        assert_eq!(checked_only[0].to_json()["field"], "attrs.checked");
+        assert_eq!(checked_only[0].to_json()["field"], "_attrs.checked");
         assert_eq!(
             checked_only[0].to_json()["expect"],
             json!({ "content_hash": "ab" })
@@ -357,7 +357,7 @@ mod tests {
         );
         assert_eq!(
             set_node("n_1", "value", "/x.md")[0].to_json()["target"],
-            json!({ "kind": "node", "id": "n_1" })
+            json!({ "kind": "node", "_id": "n_1" })
         );
         assert_eq!(
             merge_blocks(vec!["b_1".into(), "b_2".into()], None)[0].to_json()["op"],
@@ -374,7 +374,7 @@ mod tests {
         );
         assert_eq!(
             insert(block("b_1"), At::End, "x", None)[0].to_json()["into"],
-            json!({ "kind": "block", "id": "b_1" })
+            json!({ "kind": "block", "_id": "b_1" })
         );
     }
 }

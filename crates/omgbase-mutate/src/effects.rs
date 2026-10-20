@@ -227,7 +227,7 @@ fn bare_anchor(at: &str, into: &Target, here: &str, f: Option<&Fixer<'_>>) -> Sh
     };
     let parent = match row.parent {
         None => json!(reference_path(&row.path)),
-        Some(p) => json!({ "kind": "block", "id": p }),
+        Some(p) => json!({ "kind": "block", "_id": p }),
     };
     let mut effect = f.written.clone();
     effect.insert("into".to_owned(), parent);
@@ -339,14 +339,14 @@ impl Target {
         match self {
             Target::Document { id, path } => {
                 if let Some(id) = id {
-                    m.insert("id".to_owned(), json!(id));
+                    m.insert("_id".to_owned(), json!(id));
                 }
                 if let Some(path) = path {
-                    m.insert("path".to_owned(), json!(path));
+                    m.insert("_path".to_owned(), json!(path));
                 }
             }
             Target::Block { id } | Target::Node { id } => {
-                m.insert("id".to_owned(), json!(id));
+                m.insert("_id".to_owned(), json!(id));
             }
             Target::Section { heading_id } => {
                 m.insert("heading_id".to_owned(), json!(heading_id));
@@ -447,8 +447,8 @@ pub enum Effect {
         markdown: String,
         expect: Option<EffectExpect>,
     },
-    /// Write a field: `frontmatter.<key>` / `content` of a document,
-    /// `markdown` / `attrs.checked` of a block, an editable property of a
+    /// Write a field: `_frontmatter.<key>` / `content` of a document,
+    /// `markdown` / `_attrs.checked` of a block, an editable property of a
     /// node.
     Set {
         target: Target,
@@ -456,7 +456,7 @@ pub enum Effect {
         value: Value,
         expect: Option<EffectExpect>,
     },
-    /// Remove a document's `frontmatter.<key>`.
+    /// Remove a document's `_frontmatter.<key>`.
     Unset {
         target: Target,
         field: String,
@@ -623,24 +623,24 @@ fn validate_target(
     }
     Ok(match kind {
         "document" => {
-            only_keys(obj, &["kind", "id", "path"], here)?;
-            let id = optional_string(obj, "id", here)?;
-            let path = optional_string(obj, "path", here)?;
+            only_keys(obj, &["kind", "_id", "_path"], here)?;
+            let id = optional_string(obj, "_id", here)?;
+            let path = optional_string(obj, "_path", here)?;
             if id.is_none() && path.is_none() {
-                return Err(format!("{here}: a document target needs `id` or `path`"));
+                return Err(format!("{here}: a document target needs `_id` or `_path`"));
             }
             Target::Document { id, path }
         }
         "block" => {
-            only_keys(obj, &["kind", "id"], here)?;
+            only_keys(obj, &["kind", "_id"], here)?;
             Target::Block {
-                id: require_string(obj, "id", here)?,
+                id: require_string(obj, "_id", here)?,
             }
         }
         "node" => {
-            only_keys(obj, &["kind", "id"], here)?;
+            only_keys(obj, &["kind", "_id"], here)?;
             Target::Node {
-                id: require_string(obj, "id", here)?,
+                id: require_string(obj, "_id", here)?,
             }
         }
         "section" => {
@@ -739,21 +739,21 @@ fn check_field(
     match target {
         Target::Document { .. } => {
             if field
-                .strip_prefix("frontmatter.")
+                .strip_prefix("_frontmatter.")
                 .is_some_and(|k| !k.is_empty())
                 || (op == "set" && field == "content")
             {
                 Ok(())
             } else {
                 Err(format!(
-                    "{here}: a document's `field` is `frontmatter.<key>`{} (got \"{field}\")",
+                    "{here}: a document's `field` is `_frontmatter.<key>`{} (got \"{field}\")",
                     if op == "set" { " or `content`" } else { "" }
                 )
                 .into())
             }
         }
         Target::Block { .. } => {
-            if field == "markdown" || field == "attrs.checked" {
+            if field == "markdown" || field == "_attrs.checked" {
                 Ok(())
             } else {
                 // (3.4, §8) `text` / `content` / `body` / `raw` on a block: the fix spells `markdown`.
@@ -764,7 +764,7 @@ fn check_field(
                 });
                 Err(ShapeError {
                     message: format!(
-                        "{here}: a block's `field` is `markdown` or `attrs.checked` (got \"{field}\")"
+                        "{here}: a block's `field` is `markdown` or `_attrs.checked` (got \"{field}\")"
                     ),
                     fix,
                 })
@@ -1238,13 +1238,13 @@ impl Effect {
 /// What a `set`/`unset` `field` names, by target kind (§11.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Field<'a> {
-    /// `frontmatter.<key>` of a document.
+    /// `_frontmatter.<key>` of a document.
     Frontmatter(&'a str),
     /// `content` of a document: the whole-document planner.
     Content,
     /// `markdown` of a block.
     Markdown,
-    /// `attrs.checked` of a block.
+    /// `_attrs.checked` of a block.
     Checked,
     /// An editable property of a node (`value`, `name`, `checked`).
     NodeProp(&'a str),
@@ -1257,7 +1257,7 @@ pub fn classify_field<'a>(
 ) -> std::result::Result<Field<'a>, String> {
     check_field(target, field, "field", "set", None).map_err(|e| e.message)?;
     Ok(match target {
-        Target::Document { .. } => match field.strip_prefix("frontmatter.") {
+        Target::Document { .. } => match field.strip_prefix("_frontmatter.") {
             Some(key) => Field::Frontmatter(key),
             None => Field::Content,
         },
@@ -1369,7 +1369,7 @@ pub fn map_block_ids(op: &Op, f: impl Fn(&str) -> String) -> Op {
 
 // ---- focus and conflicts (decision 4, §11.3) ----------------------------------------------
 
-/// What a focus names: `{ kind: "document" | "block" | "node" | "path", id? | path? }`.
+/// What a focus names: `{ kind: "document" | "block" | "node" | "path", _id? | _path? }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FocusTarget {
     pub kind: &'static str,
@@ -1419,10 +1419,10 @@ impl FocusTarget {
         let mut m = Map::new();
         m.insert("kind".to_owned(), json!(self.kind));
         if let Some(id) = &self.id {
-            m.insert("id".to_owned(), json!(id));
+            m.insert("_id".to_owned(), json!(id));
         }
         if let Some(path) = &self.path {
-            m.insert("path".to_owned(), json!(path));
+            m.insert("_path".to_owned(), json!(path));
         }
         Value::Object(m)
     }
@@ -1795,8 +1795,8 @@ impl PlanOpset {
     pub fn to_json(&self) -> Value {
         json!({
             "creates": self.creates.iter().map(|c| json!({ "symbol": c.symbol, "path": c.path, "source": c.source, "before_op": c.before_op })).collect::<Vec<_>>(),
-            "moves": self.moves.iter().map(|m| json!({ "id": m.id, "from": m.from, "to": m.to })).collect::<Vec<_>>(),
-            "tombstones": self.tombstones.iter().map(|t| json!({ "id": t.id, "path": t.path })).collect::<Vec<_>>(),
+            "moves": self.moves.iter().map(|m| json!({ "_id": m.id, "from": m.from, "to": m.to })).collect::<Vec<_>>(),
+            "tombstones": self.tombstones.iter().map(|t| json!({ "_id": t.id, "_path": t.path })).collect::<Vec<_>>(),
             "set_frontmatter": self.set_frontmatter.iter().map(|f| json!({ "doc": f.doc, "raw": f.raw })).collect::<Vec<_>>(),
             "ops": self.ops.iter().map(Op::to_json).collect::<Vec<_>>(),
         })
@@ -1844,7 +1844,7 @@ impl PlanOpset {
                 .iter()
                 .map(|m| {
                     Ok(PlanMove {
-                        id: s(m, "id", "moves[]")?,
+                        id: s(m, "_id", "moves[]")?,
                         from: s(m, "from", "moves[]")?,
                         to: s(m, "to", "moves[]")?,
                     })
@@ -1854,8 +1854,8 @@ impl PlanOpset {
                 .iter()
                 .map(|t| {
                     Ok(PlanTombstone {
-                        id: s(t, "id", "tombstones[]")?,
-                        path: s(t, "path", "tombstones[]")?,
+                        id: s(t, "_id", "tombstones[]")?,
+                        path: s(t, "_path", "tombstones[]")?,
                     })
                 })
                 .collect::<std::result::Result<_, String>>()?,
@@ -1916,8 +1916,8 @@ impl Preconditions {
     #[must_use]
     pub fn to_json(&self) -> Value {
         json!({
-            "docs": self.docs.iter().map(|d| json!({ "id": d.id, "path": d.path, "base_revision": d.base_revision, "hash": d.hash })).collect::<Vec<_>>(),
-            "blocks": self.blocks.iter().map(|b| json!({ "id": b.id, "content_hash": b.content_hash })).collect::<Vec<_>>(),
+            "docs": self.docs.iter().map(|d| json!({ "_id": d.id, "_path": d.path, "base_revision": d.base_revision, "_hash": d.hash })).collect::<Vec<_>>(),
+            "blocks": self.blocks.iter().map(|b| json!({ "_id": b.id, "content_hash": b.content_hash })).collect::<Vec<_>>(),
             "parents": self.parents.iter().map(|p| json!({ "doc": p.doc, "parent": p.parent, "parent_children_hash": p.parent_children_hash })).collect::<Vec<_>>(),
             "absent_paths": self.absent_paths,
         })
@@ -1952,10 +1952,10 @@ impl Preconditions {
                 .iter()
                 .map(|d| {
                     Ok(DocPrecondition {
-                        id: s(d, "id", "docs[]")?,
-                        path: s(d, "path", "docs[]")?,
+                        id: s(d, "_id", "docs[]")?,
+                        path: s(d, "_path", "docs[]")?,
                         base_revision: opt(d, "base_revision", "docs[]")?,
-                        hash: opt(d, "hash", "docs[]")?,
+                        hash: opt(d, "_hash", "docs[]")?,
                     })
                 })
                 .collect::<std::result::Result<_, String>>()?,
@@ -1963,7 +1963,7 @@ impl Preconditions {
                 .iter()
                 .map(|b| {
                     Ok(BlockPrecondition {
-                        id: s(b, "id", "blocks[]")?,
+                        id: s(b, "_id", "blocks[]")?,
                         content_hash: s(b, "content_hash", "blocks[]")?,
                     })
                 })
@@ -2199,7 +2199,7 @@ impl RetargetPreview {
     pub fn to_json(&self) -> Value {
         json!({
             "effect_index": self.effect_index,
-            "hits": self.hits.iter().map(|h| json!({ "id": h.id, "path": h.path, "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect::<Vec<_>>(),
+            "hits": self.hits.iter().map(|h| json!({ "_id": h.id, "_path": h.path, "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect::<Vec<_>>(),
             "pairs": self.pairs.iter().map(|p| json!({ "from": p.from, "to": p.to, "hits": p.hits })).collect::<Vec<_>>(),
         })
     }
@@ -2229,8 +2229,8 @@ impl RetargetPreview {
                 .iter()
                 .map(|h| {
                     Ok(RetargetHitPreview {
-                        id: s(h, "id")?,
-                        path: s(h, "path")?,
+                        id: s(h, "_id")?,
+                        path: s(h, "_path")?,
                         old_raw: s(h, "oldRaw")?,
                         new_raw: s(h, "newRaw")?,
                     })
@@ -2287,7 +2287,7 @@ impl PlanPreview {
             Value::Array(
                 self.revisions
                     .iter()
-                    .map(|r| json!({ "id": r.id, "path": r.path, "hash": r.hash }))
+                    .map(|r| json!({ "_id": r.id, "_path": r.path, "_hash": r.hash }))
                     .collect(),
             ),
         );
@@ -2365,9 +2365,9 @@ impl PlanPreview {
                 a.iter()
                     .map(|r| {
                         Ok(PlanRevision {
-                            id: str_of(r, "id")?,
-                            path: str_of(r, "path")?,
-                            hash: str_of(r, "hash")?,
+                            id: str_of(r, "_id")?,
+                            path: str_of(r, "_path")?,
+                            hash: str_of(r, "_hash")?,
                         })
                     })
                     .collect::<std::result::Result<Vec<_>, String>>()
@@ -2683,10 +2683,15 @@ impl Plan {
         })
     }
 
-    /// §11.7 admission of a client's plan object, in this order: `version`
-    /// ≠ 1 → `unsupported_plan_version` (before any other member is read);
-    /// a missing or mistyped core member → invalid; the recomputed digest
-    /// ≠ `plan_id` → `plan_mismatch { expected, actual }`.
+    /// §11.7 admission of a client's plan object, in the reference's order:
+    /// `version` ≠ 1 → `unsupported_plan_version` (before any other member
+    /// is read); a missing or mistyped core member → invalid (the coarse
+    /// shape only — the members' types, not their entries); the digest
+    /// recomputed over the core AS GIVEN ≠ `plan_id` → `plan_mismatch
+    /// { expected, actual }`; then the strict parse. The digest precedes
+    /// the entry-level parse so a plan edited after planning — a stray or
+    /// misspelled key inside `preconditions.docs[]`, say — is reported as
+    /// the edit it is (`plan_mismatch`), not as a shape error.
     pub fn admit(v: &Value) -> std::result::Result<Plan, Admission> {
         let obj = v
             .as_object()
@@ -2695,12 +2700,109 @@ impl Plan {
         if version != json!(PLAN_VERSION) {
             return Err(Admission::Refused(unsupported_plan_version(&version)));
         }
-        let plan = Plan::from_json(v).map_err(Admission::Invalid)?;
-        let actual = plan.digest();
-        if actual != plan.plan_id {
-            return Err(Admission::Refused(plan_mismatch(&plan.plan_id, &actual)));
+        Self::check_shape(obj).map_err(Admission::Invalid)?;
+        let mut core = json!({
+            "version": obj["version"],
+            "planner_v": obj["planner_v"],
+            "effects": obj["effects"],
+            "opset": obj["opset"],
+            "preconditions": obj["preconditions"],
+            "new_ids": obj["new_ids"],
+        });
+        if let Some(sel) = obj.get("selection") {
+            core["selection"] = sel.clone();
         }
-        Ok(plan)
+        let actual = digest(&core);
+        let Some(expected) = obj["plan_id"].as_str() else {
+            unreachable!("check_shape requires a string plan_id")
+        };
+        if actual != expected {
+            return Err(Admission::Refused(plan_mismatch(expected, &actual)));
+        }
+        Plan::from_json(v).map_err(Admission::Invalid)
+    }
+
+    /// The coarse shape the reference checks before digesting (`admitPlan`):
+    /// the core's keys present and of the right type, `opset.creates[]`
+    /// entries and `selection` by their members, `templates` an array.
+    fn check_shape(obj: &Map<String, Value>) -> std::result::Result<(), String> {
+        for k in [
+            "planner_v",
+            "effects",
+            "opset",
+            "preconditions",
+            "new_ids",
+            "plan_id",
+        ] {
+            if !obj.contains_key(k) {
+                return Err(format!("`plan.{k}` is required"));
+            }
+        }
+        if !obj["planner_v"].is_string() {
+            return Err("`plan.planner_v` must be a string".into());
+        }
+        if !obj["effects"].is_array() {
+            return Err("`plan.effects` must be an array".into());
+        }
+        let opset = obj["opset"]
+            .as_object()
+            .ok_or("`plan.opset` must be an object")?;
+        for k in ["creates", "moves", "tombstones", "set_frontmatter", "ops"] {
+            if !opset.get(k).is_some_and(Value::is_array) {
+                return Err(format!("`plan.opset.{k}` must be an array"));
+            }
+        }
+        for c in opset["creates"].as_array().into_iter().flatten() {
+            let ok = c.get("symbol").is_some_and(Value::is_string)
+                && c.get("path").is_some_and(Value::is_string)
+                && c.get("source").is_some_and(Value::is_string)
+                && c.get("before_op").is_some_and(Value::is_number);
+            if !ok {
+                return Err(
+                    "`plan.opset.creates[]` entries are { symbol, path, source, before_op }".into(),
+                );
+            }
+        }
+        let pre = obj["preconditions"]
+            .as_object()
+            .ok_or("`plan.preconditions` must be an object")?;
+        for k in ["docs", "blocks", "parents", "absent_paths"] {
+            if !pre.get(k).is_some_and(Value::is_array) {
+                return Err(format!("`plan.preconditions.{k}` must be an array"));
+            }
+        }
+        if !obj["new_ids"].is_array() {
+            return Err("`plan.new_ids` must be an array".into());
+        }
+        if let Some(sel) = obj.get("selection") {
+            let ok = sel.get("query").is_some_and(Value::is_string)
+                && sel.get("templates").is_some_and(Value::is_array)
+                && sel.get("cardinality").is_some_and(Value::is_number)
+                && sel.get("identities").is_some_and(Value::is_array);
+            if !ok {
+                return Err(
+                    "`plan.selection` is { query, expect?, templates, cardinality, identities }"
+                        .into(),
+                );
+            }
+            if let Some(e) = sel.get("expect")
+                && !e.get("max").is_some_and(Value::is_number)
+            {
+                return Err("`plan.selection.expect` is { max }".into());
+            }
+        }
+        if !obj["plan_id"].is_string() {
+            return Err("`plan.plan_id` must be a string".into());
+        }
+        // `null` reads as absent here as in the strict parse (a client may
+        // drop the member — never mistype it).
+        if let Some(t) = obj.get("templates")
+            && !t.is_null()
+            && !t.is_array()
+        {
+            return Err("`plan.templates` must be an array".into());
+        }
+        Ok(())
     }
 }
 
@@ -2777,7 +2879,7 @@ mod tests {
     fn fm_set(key: &str, value: Value) -> Effect {
         Effect::Set {
             target: doc("d_0", "a.md"),
-            field: format!("frontmatter.{key}"),
+            field: format!("_frontmatter.{key}"),
             value,
             expect: None,
         }
@@ -2811,17 +2913,17 @@ mod tests {
         let effects = json!([
             { "op": "create", "path": "n.md", "markdown": "# N", "frontmatter": { "k": 1 } },
             { "op": "insert", "into": { "kind": "section", "heading_id": "b_1" }, "at": "end", "markdown": "x" },
-            { "op": "insert", "into": { "kind": "document", "id": "d_0", "path": "a.md" }, "at": { "after": "b_1" }, "markdown": "x", "expect": { "parent_children_hash": "cd", "revision": "r_0" } },
-            { "op": "set", "target": { "kind": "document", "path": "a.md" }, "field": "frontmatter.status", "value": "done" },
-            { "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "attrs.checked", "value": true, "expect": { "content_hash": "ab" } },
-            { "op": "set", "target": { "kind": "node", "id": "n_1" }, "field": "value", "value": 3 },
-            { "op": "unset", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.old" },
-            { "op": "move", "target": { "kind": "document", "id": "d_0" }, "to": "b.md", "retarget_inbound": true },
-            { "op": "move", "targets": [{ "kind": "block", "id": "b_1" }], "into": { "kind": "block", "id": "b_2" }, "at": "start" },
-            { "op": "remove", "target": { "kind": "document", "id": "d_0" } },
-            { "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }], "expect": { "b_1": { "content_hash": "ab" } } },
-            { "op": "split", "target": { "kind": "block", "id": "b_1" }, "at": [3] },
-            { "op": "merge", "targets": [{ "kind": "block", "id": "b_1" }, { "kind": "block", "id": "b_2" }], "separator": " " },
+            { "op": "insert", "into": { "kind": "document", "_id": "d_0", "_path": "a.md" }, "at": { "after": "b_1" }, "markdown": "x", "expect": { "parent_children_hash": "cd", "revision": "r_0" } },
+            { "op": "set", "target": { "kind": "document", "_path": "a.md" }, "field": "_frontmatter.status", "value": "done" },
+            { "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "_attrs.checked", "value": true, "expect": { "content_hash": "ab" } },
+            { "op": "set", "target": { "kind": "node", "_id": "n_1" }, "field": "value", "value": 3 },
+            { "op": "unset", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.old" },
+            { "op": "move", "target": { "kind": "document", "_id": "d_0" }, "to": "b.md", "retarget_inbound": true },
+            { "op": "move", "targets": [{ "kind": "block", "_id": "b_1" }], "into": { "kind": "block", "_id": "b_2" }, "at": "start" },
+            { "op": "remove", "target": { "kind": "document", "_id": "d_0" } },
+            { "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }], "expect": { "b_1": { "content_hash": "ab" } } },
+            { "op": "split", "target": { "kind": "block", "_id": "b_1" }, "at": [3] },
+            { "op": "merge", "targets": [{ "kind": "block", "_id": "b_1" }, { "kind": "block", "_id": "b_2" }], "separator": " " },
             { "op": "retarget", "repairs": [{ "from": "a.md", "to": "b.md" }], "path_glob": "notes/*" },
         ]);
         let parsed = Effect::list_from_json(&effects).unwrap();
@@ -2830,10 +2932,10 @@ mod tests {
             assert_eq!(e.to_json(), *v, "{}", e.name());
         }
         // Defaults materialize on the way out (`at`, `retarget_inbound`).
-        let e = Effect::from_json(&json!({ "op": "move", "target": { "kind": "document", "path": "a.md" }, "to": "b.md" })).unwrap();
+        let e = Effect::from_json(&json!({ "op": "move", "target": { "kind": "document", "_path": "a.md" }, "to": "b.md" })).unwrap();
         assert_eq!(e.to_json()["retarget_inbound"], json!(true));
         let e = Effect::from_json(
-            &json!({ "op": "insert", "into": { "kind": "block", "id": "b_1" }, "markdown": "x" }),
+            &json!({ "op": "insert", "into": { "kind": "block", "_id": "b_1" }, "markdown": "x" }),
         )
         .unwrap();
         assert_eq!(e.to_json()["at"], json!("end"));
@@ -2842,12 +2944,12 @@ mod tests {
         assert!(bad(json!({ "op": "nope" })).starts_with("effects[2]: `op` must be one of"));
         assert_eq!(
             bad(
-                json!({ "op": "set", "target": { "kind": "block", "id": "b" }, "field": "markdown" })
+                json!({ "op": "set", "target": { "kind": "block", "_id": "b" }, "field": "markdown" })
             ),
             "effects[2]: `value` is required"
         );
         assert!(
-            bad(json!({ "op": "move", "target": { "kind": "block", "id": "b" }, "to": "x" }))
+            bad(json!({ "op": "move", "target": { "kind": "block", "_id": "b" }, "to": "x" }))
                 .contains("`kind` must be one of document")
         );
         assert!(
@@ -2859,10 +2961,10 @@ mod tests {
                 .contains("effects[2].targets[0]: a target is")
         );
         assert!(bad(json!({ "op": "remove", "targets": [] })).contains("non-empty"));
-        assert!(bad(json!({ "op": "set", "target": { "kind": "document", "path": "a.md" }, "field": "title", "value": 1 })).contains("a document's `field` is `frontmatter.<key>` or `content`"));
-        assert!(bad(json!({ "op": "unset", "target": { "kind": "document", "path": "a.md" }, "field": "content" })).contains("(got \"content\")"));
-        assert!(bad(json!({ "op": "set", "target": { "kind": "node", "id": "n" }, "field": "a.b", "value": 1 })).contains("editable properties"));
-        assert!(bad(json!({ "op": "insert", "into": { "kind": "document", "path": "a.md" }, "at": { "before": "b", "after": "c" }, "markdown": "x" })).contains("`at` must be"));
+        assert!(bad(json!({ "op": "set", "target": { "kind": "document", "_path": "a.md" }, "field": "title", "value": 1 })).contains("a document's `field` is `_frontmatter.<key>` or `content`"));
+        assert!(bad(json!({ "op": "unset", "target": { "kind": "document", "_path": "a.md" }, "field": "content" })).contains("(got \"content\")"));
+        assert!(bad(json!({ "op": "set", "target": { "kind": "node", "_id": "n" }, "field": "a.b", "value": 1 })).contains("editable properties"));
+        assert!(bad(json!({ "op": "insert", "into": { "kind": "document", "_path": "a.md" }, "at": { "before": "b", "after": "c" }, "markdown": "x" })).contains("`at` must be"));
         assert!(Effect::list_from_json(&json!([])).is_err());
         assert!(Effect::list_from_json(&json!({})).is_err());
     }
@@ -2871,7 +2973,7 @@ mod tests {
     fn describe_and_classify() {
         assert_eq!(
             fm_set("status", json!(1)).describe(),
-            "set frontmatter.status on document d_0"
+            "set _frontmatter.status on document d_0"
         );
         let mv = Effect::MoveBlocks {
             targets: vec!["b_1".into(), "b_2".into()],
@@ -2891,7 +2993,7 @@ mod tests {
         };
         assert_eq!(rt.describe(), "retarget a->b");
         assert_eq!(
-            classify_field(&doc("d_0", "a.md"), "frontmatter.status"),
+            classify_field(&doc("d_0", "a.md"), "_frontmatter.status"),
             Ok(Field::Frontmatter("status"))
         );
         assert_eq!(
@@ -2899,7 +3001,7 @@ mod tests {
             Ok(Field::Content)
         );
         assert_eq!(
-            classify_field(&Target::Block { id: "b".into() }, "attrs.checked"),
+            classify_field(&Target::Block { id: "b".into() }, "_attrs.checked"),
             Ok(Field::Checked)
         );
         assert_eq!(
@@ -2941,7 +3043,7 @@ mod tests {
             scalar(
                 "document:d_0:frontmatter.status",
                 FocusTarget::document("d_0"),
-                "frontmatter.status",
+                "_frontmatter.status",
                 v,
             )
         };
@@ -2949,7 +3051,7 @@ mod tests {
             t.check(
                 0,
                 &write(Some(json!("done"))),
-                "set frontmatter.status on document d_0"
+                "set _frontmatter.status on document d_0"
             )
             .unwrap()
         );
@@ -2957,19 +3059,19 @@ mod tests {
             !t.check(
                 1,
                 &write(Some(json!("done"))),
-                "set frontmatter.status on document d_0"
+                "set _frontmatter.status on document d_0"
             )
             .unwrap()
         );
         assert_eq!(
             t.diagnostics,
-            ["effect 1 (set frontmatter.status on document d_0) duplicates effect 0; dropped"]
+            ["effect 1 (set _frontmatter.status on document d_0) duplicates effect 0; dropped"]
         );
         let e = t.check(2, &write(Some(json!("open"))), "x").unwrap_err();
         assert_eq!(e.code, ErrorCode::ConflictingEffects);
         assert_eq!(
             e.to_json(),
-            json!({ "code": "conflicting_effects", "effects": [0, 2], "focus": { "kind": "scalar", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.status" }, "retriable": false })
+            json!({ "code": "conflicting_effects", "effects": [0, 2], "focus": { "kind": "scalar", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.status" }, "retriable": false })
         );
         // set then unset
         let e = t.check(3, &write(None), "x").unwrap_err();
@@ -2990,7 +3092,7 @@ mod tests {
         let e = t.check(1, &hit, "retarget").unwrap_err();
         assert_eq!(
             e.data["focus"]["target"],
-            json!({ "kind": "block", "id": "b_1" })
+            json!({ "kind": "block", "_id": "b_1" })
         );
     }
 
@@ -3012,7 +3114,7 @@ mod tests {
         let e = t.check(1, &touch_child, "x").unwrap_err();
         assert_eq!(
             e.data["focus"],
-            json!({ "kind": "identity", "target": { "kind": "block", "id": "b_2" } })
+            json!({ "kind": "identity", "target": { "kind": "block", "_id": "b_2" } })
         );
         // A path retired by a move; a create there.
         let mut t = ConflictTracker::default();
@@ -3030,7 +3132,7 @@ mod tests {
         let e = t.check(1, &create, "create a.md").unwrap_err();
         assert_eq!(
             e.data["focus"],
-            json!({ "kind": "identity", "target": { "kind": "path", "path": "a.md" } })
+            json!({ "kind": "identity", "target": { "kind": "path", "_path": "a.md" } })
         );
         // `set content` after any touch of the document.
         let mut t = ConflictTracker::default();
@@ -3056,7 +3158,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             e.data["focus"],
-            json!({ "kind": "identity", "target": { "kind": "document", "id": "d_0" } })
+            json!({ "kind": "identity", "target": { "kind": "document", "_id": "d_0" } })
         );
         // A removed document: its id is retired.
         let mut t = ConflictTracker::default();
@@ -3069,7 +3171,7 @@ mod tests {
         let e = t.check(1, &insert, "insert").unwrap_err();
         assert_eq!(
             e.data["focus"]["target"],
-            json!({ "kind": "document", "id": "d_0" })
+            json!({ "kind": "document", "_id": "d_0" })
         );
         let m = symbol_missing("$new.5", None, "block");
         assert_eq!(
@@ -3158,7 +3260,7 @@ mod tests {
         }
         .sealed();
         let written = vec![
-            json!({ "op": "set", "target": "a.md", "field": "frontmatter.status", "value": "-> `done`" }),
+            json!({ "op": "set", "target": "a.md", "field": "_frontmatter.status", "value": "-> `done`" }),
         ];
         let sugared = Plan {
             templates: Some(written.clone()),
@@ -3190,7 +3292,7 @@ mod tests {
         );
         assert!(
             record.ends_with(
-                "\"templates\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":\"a.md\",\"value\":\"-> `done`\"}],\"v\":1}"
+                "\"templates\":[{\"field\":\"_frontmatter.status\",\"op\":\"set\",\"target\":\"a.md\",\"value\":\"-> `done`\"}],\"v\":1}"
             ),
             "{record}"
         );
@@ -3234,7 +3336,7 @@ mod tests {
         let wire = plan.to_json(true);
         assert!(wire.get("preview").is_some());
         assert_eq!(
-            wire["preconditions"]["docs"][0]["hash"],
+            wire["preconditions"]["docs"][0]["_hash"],
             Value::Null,
             "a null value stays"
         );
@@ -3273,7 +3375,7 @@ mod tests {
         }
         let record = intent_record(&plan.plan_id, &plan.effects, None, None);
         assert!(
-            record.starts_with("{\"effects\":[{\"field\":\"frontmatter.status\""),
+            record.starts_with("{\"effects\":[{\"field\":\"_frontmatter.status\""),
             "{record}"
         );
         assert!(record.ends_with("\"v\":1}"));
@@ -3290,14 +3392,14 @@ mod tests {
             query: "from docs where status == \"completed\"".into(),
             expect: Some(SelectionExpect { max: 10 }),
             templates: vec![
-                json!({ "op": "set", "field": "frontmatter.rolled_up", "value": true }),
+                json!({ "op": "set", "field": "_frontmatter.rolled_up", "value": true }),
             ],
             cardinality: 2,
             identities: vec!["d_1".into(), "d_0".into()],
         };
         assert_eq!(
             canonical_json(&selection.to_json()),
-            "{\"cardinality\":2,\"expect\":{\"max\":10},\"identities\":[\"d_1\",\"d_0\"],\"query\":\"from docs where status == \\\"completed\\\"\",\"templates\":[{\"field\":\"frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}]}"
+            "{\"cardinality\":2,\"expect\":{\"max\":10},\"identities\":[\"d_1\",\"d_0\"],\"query\":\"from docs where status == \\\"completed\\\"\",\"templates\":[{\"field\":\"_frontmatter.rolled_up\",\"op\":\"set\",\"value\":true}]}"
         );
         let without = Selection {
             expect: None,
@@ -3331,13 +3433,14 @@ mod tests {
         assert_ne!(bare.plan_id, selected.plan_id);
         assert!(bare.core_json().get("selection").is_none());
         assert_eq!(selected.core_json()["selection"], selection.to_json());
-        // The spec's vector (`effects::select-zero-hits-commit-null`): the empty
-        // p3 core with a zero-hit selection, `expect` absent.
+        // The spec's vector (`effects::select-zero-hits-commit-null`; 4.0 — the
+        // template's field is `_frontmatter.x`): the empty p3 core with a
+        // zero-hit selection, `expect` absent.
         let zero = Plan {
             selection: Some(Selection {
                 query: "from docs where type == \"nope\"".into(),
                 expect: None,
-                templates: vec![json!({ "op": "set", "field": "frontmatter.x", "value": 1 })],
+                templates: vec![json!({ "op": "set", "field": "_frontmatter.x", "value": 1 })],
                 cardinality: 0,
                 identities: vec![],
             }),
@@ -3346,7 +3449,7 @@ mod tests {
         .sealed();
         assert_eq!(
             zero.plan_id,
-            "73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9"
+            "75d2a3c518e7ee5a396d82d61318fd06146be3a3f3e3e3af2c45f73f2eb34299"
         );
         // The record and the wire form carry it; admission reads it back.
         let record = intent_record(
@@ -3361,8 +3464,10 @@ mod tests {
         );
         let wire = selected.to_json(false);
         assert_eq!(Plan::admit(&wire).unwrap(), selected);
-        // Tampering with the identities is a digest mismatch; a malformed
-        // member is a shape error; `null` is not an omission.
+        // Tampering with the identities is a digest mismatch — so is a
+        // shortened list (the digest is taken over the core as given, before
+        // the entries are read, as the reference's `admitPlan` does); a
+        // malformed member is a shape error; `null` is not an omission.
         let mut tampered = wire.clone();
         tampered["selection"]["identities"] = json!(["d_1", "d_2"]);
         assert!(matches!(
@@ -3373,16 +3478,23 @@ mod tests {
         short["selection"]["identities"] = json!(["d_1"]);
         assert!(matches!(
             Plan::admit(&short),
+            Err(Admission::Refused(m)) if m.code == ErrorCode::PlanMismatch
+        ));
+        let mut malformed = wire.clone();
+        malformed["selection"]["cardinality"] = json!("2");
+        assert!(matches!(
+            Plan::admit(&malformed),
             Err(Admission::Invalid(m)) if m.contains("cardinality")
         ));
         let mut nulled = wire.clone();
         nulled["selection"] = Value::Null;
         assert!(matches!(Plan::admit(&nulled), Err(Admission::Invalid(_))));
+        // An emptied template list is a well-shaped edit: the digest catches it.
         let mut empty = wire;
         empty["selection"]["templates"] = json!([]);
         assert!(matches!(
             Plan::admit(&empty),
-            Err(Admission::Invalid(m)) if m.contains("templates")
+            Err(Admission::Refused(m)) if m.code == ErrorCode::PlanMismatch
         ));
     }
 
@@ -3418,7 +3530,7 @@ mod tests {
 
     #[test]
     fn a_bare_anchor_is_fixed_from_the_blocks_parent() {
-        let effects = json!([{ "op": "insert", "into": { "kind": "block", "id": "b_4" }, "at": "after", "markdown": "x" }]);
+        let effects = json!([{ "op": "insert", "into": { "kind": "block", "_id": "b_4" }, "at": "after", "markdown": "x" }]);
         let c = ctx(&effects, None, None, &rows);
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
@@ -3428,22 +3540,22 @@ mod tests {
         assert_eq!(
             e.fix.as_deref(),
             Some(
-                r#"{"effects":[{"at":{"after":"b_4"},"into":{"id":"b_3","kind":"block"},"markdown":"x","op":"insert"}]}"#
+                r#"{"effects":[{"at":{"after":"b_4"},"into":{"_id":"b_3","kind":"block"},"markdown":"x","op":"insert"}]}"#
             )
         );
         // top-level: the document's rooted path; the written effect is the base
-        let effects = json!([{ "op": "move", "targets": [{ "kind": "block", "id": "b_6" }], "into": { "kind": "block", "id": "b_1" }, "at": "before" }]);
+        let effects = json!([{ "op": "move", "targets": [{ "kind": "block", "_id": "b_6" }], "into": { "kind": "block", "_id": "b_1" }, "at": "before" }]);
         let c = ctx(&effects, None, None, &rows);
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert!(e.message.contains("\"before block X\""));
         assert_eq!(
             e.fix.as_deref(),
             Some(
-                r#"{"effects":[{"at":{"before":"b_1"},"into":"/a.md","op":"move","targets":[{"id":"b_6","kind":"block"}]}]}"#
+                r#"{"effects":[{"at":{"before":"b_1"},"into":"/a.md","op":"move","targets":[{"_id":"b_6","kind":"block"}]}]}"#
             )
         );
         // an unknown block, a document `into`, or no context: the message alone
-        let effects = json!([{ "op": "insert", "into": { "kind": "block", "id": "b_99" }, "at": "after", "markdown": "x" }]);
+        let effects = json!([{ "op": "insert", "into": { "kind": "block", "_id": "b_99" }, "at": "after", "markdown": "x" }]);
         let c = ctx(&effects, None, None, &rows);
         assert_eq!(
             Effect::validate_with(&effects[0], 0, Some(&c))
@@ -3451,7 +3563,7 @@ mod tests {
                 .fix,
             None
         );
-        let effects = json!([{ "op": "insert", "into": { "kind": "document", "path": "a.md" }, "at": "after", "markdown": "x" }]);
+        let effects = json!([{ "op": "insert", "into": { "kind": "document", "_path": "a.md" }, "at": "after", "markdown": "x" }]);
         let c = ctx(&effects, None, None, &rows);
         assert_eq!(
             Effect::validate_with(&effects[0], 0, Some(&c))
@@ -3467,7 +3579,7 @@ mod tests {
 
     #[test]
     fn a_guard_first_plural_expect_is_inverted() {
-        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }, { "kind": "block", "id": "b_8" }],
+        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }, { "kind": "block", "_id": "b_8" }],
             "expect": { "content_hash": { "b_1": "h1", "b_8": "h8" }, "parent_children_hash": { "b_1": "p1" } } }]);
         let c = ctx(&effects, None, None, &rows);
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
@@ -3478,11 +3590,11 @@ mod tests {
         assert_eq!(
             e.fix.as_deref(),
             Some(
-                r#"{"effects":[{"expect":{"b_1":{"content_hash":"h1","parent_children_hash":"p1"},"b_8":{"content_hash":"h8"}},"op":"remove","targets":[{"id":"b_1","kind":"block"},{"id":"b_8","kind":"block"}]}]}"#
+                r#"{"effects":[{"expect":{"b_1":{"content_hash":"h1","parent_children_hash":"p1"},"b_8":{"content_hash":"h8"}},"op":"remove","targets":[{"_id":"b_1","kind":"block"},{"_id":"b_8","kind":"block"}]}]}"#
             )
         );
         // a value that is not a map of strings is the plain per-id message
-        let effects = json!([{ "op": "merge", "targets": [{ "kind": "block", "id": "b_1" }], "expect": { "content_hash": "h1" } }]);
+        let effects = json!([{ "op": "merge", "targets": [{ "kind": "block", "_id": "b_1" }], "expect": { "content_hash": "h1" } }]);
         let c = ctx(&effects, None, None, &rows);
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
@@ -3498,7 +3610,7 @@ mod tests {
         let effects =
             json!([{ "op": "set", "field": "markdown", "value": "x", "expect": { "max": 5 } }]);
         // the probe the compile validates (a target in the slot)
-        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 5 } });
+        let probe = json!({ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 5 } });
         let c = ctx(&effects, Some(&select), None, &rows);
         let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
         assert_eq!(
@@ -3513,7 +3625,7 @@ mod tests {
         );
         // a top-level `max` already there is kept; the other guards stay
         let effects = json!([{ "op": "set", "field": "markdown", "value": "x", "expect": { "max": 9, "revision": "r_0" } }]);
-        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 9, "revision": "r_0" } });
+        let probe = json!({ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "markdown", "value": "x", "expect": { "max": 9, "revision": "r_0" } });
         let top = json!({ "max": 2 });
         let c = ctx(&effects, Some(&select), Some(&top), &rows);
         let e = Effect::validate_with(&probe, 0, Some(&c)).unwrap_err();
@@ -3524,35 +3636,35 @@ mod tests {
             )
         );
         // without a `select`: only the drop (a plural `expect` too)
-        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "id": "b_1" }], "expect": { "max": 2 } }]);
+        let effects = json!([{ "op": "remove", "targets": [{ "kind": "block", "_id": "b_1" }], "expect": { "max": 2 } }]);
         let c = ctx(&effects, None, None, &rows);
         let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
         assert_eq!(
             e.fix.as_deref(),
-            Some(r#"{"effects":[{"op":"remove","targets":[{"id":"b_1","kind":"block"}]}]}"#)
+            Some(r#"{"effects":[{"op":"remove","targets":[{"_id":"b_1","kind":"block"}]}]}"#)
         );
     }
 
     #[test]
     fn a_block_field_alias_is_fixed_to_markdown() {
         for alias in ["text", "content", "body", "raw"] {
-            let effects = json!([{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": alias, "value": "x" }]);
+            let effects = json!([{ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": alias, "value": "x" }]);
             let c = ctx(&effects, None, None, &rows);
             let e = Effect::validate_with(&effects[0], 0, Some(&c)).unwrap_err();
             assert_eq!(
                 e.message,
                 format!(
-                    "effects[0]: a block's `field` is `markdown` or `attrs.checked` (got \"{alias}\")"
+                    "effects[0]: a block's `field` is `markdown` or `_attrs.checked` (got \"{alias}\")"
                 )
             );
             assert_eq!(
                 e.fix.as_deref(),
                 Some(
-                    r#"{"effects":[{"field":"markdown","op":"set","target":{"id":"b_1","kind":"block"},"value":"x"}]}"#
+                    r#"{"effects":[{"field":"markdown","op":"set","target":{"_id":"b_1","kind":"block"},"value":"x"}]}"#
                 )
             );
         }
-        let effects = json!([{ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "title", "value": "x" }]);
+        let effects = json!([{ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "title", "value": "x" }]);
         let c = ctx(&effects, None, None, &rows);
         assert_eq!(
             Effect::validate_with(&effects[0], 0, Some(&c))
@@ -3562,7 +3674,7 @@ mod tests {
         );
         // the corrected effect is spelled from the request as written, not the probe
         let effects = json!([{ "op": "set", "target": "b_1", "field": "text", "value": "x" }]);
-        let probe = json!({ "op": "set", "target": { "kind": "block", "id": "b_1" }, "field": "text", "value": "x" });
+        let probe = json!({ "op": "set", "target": { "kind": "block", "_id": "b_1" }, "field": "text", "value": "x" });
         let c = ctx(&effects, None, None, &rows);
         assert_eq!(
             Effect::validate_with(&probe, 0, Some(&c))

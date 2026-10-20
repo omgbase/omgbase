@@ -543,7 +543,7 @@ fn ls_over_the_reference_server_renders_like_local() {
             blank_ago(&text(&l.stdout)),
             "ls {mode:?}: remote (left) vs local (right)"
         );
-        // `--ids` prints the documents' `id`s (spec/cli 3.0); the other modes
+        // `--ids` prints the documents' `_id`s (spec/cli 5.0); the other modes
         // name the paths.
         if mode == ["--ids"] {
             let out = text(&l.stdout);
@@ -598,14 +598,14 @@ fn every_read_over_the_reference_server_renders_like_local() {
     let p = Pair::seed("reads");
     let server = ts_server(&omg, &p.remote);
     let intro =
-        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
-    let alpha = p.id(r#"from blocks where path == "notes/a.md" && text == "Alpha beta.""#);
-    let tasks =
-        p.id(r#"from blocks where path == "notes/a.md" && type == "heading" && text == "Tasks""#);
+        p.id(r#"from blocks where _path == "notes/a.md" && _text == "Intro paragraph, revised.""#);
+    let alpha = p.id(r#"from blocks where _path == "notes/a.md" && _text == "Alpha beta.""#);
+    let tasks = p
+        .id(r#"from blocks where _path == "notes/a.md" && _type == "heading" && _text == "Tasks""#);
     let a_doc = {
         let out = p.local(&["--json", "cat", "notes/a.md"], None);
         let v: serde_json::Value = serde_json::from_str(text(&out.stdout).trim()).unwrap();
-        v["id"].as_str().unwrap().to_owned()
+        v["_id"].as_str().unwrap().to_owned()
     };
     let cases: Vec<(&str, Vec<&str>)> = vec![
         ("query", vec!["query", "from docs"]),
@@ -614,7 +614,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
             vec![
                 "--json",
                 "query",
-                r#"select type, text from blocks where path == "notes/a.md""#,
+                r#"select _type, _text from blocks where _path == "notes/a.md""#,
             ],
         ),
         ("query --jsonl", vec!["--jsonl", "query", "from docs"]),
@@ -625,7 +625,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
         ("query count", vec!["query", "docs count { }"]),
         (
             "query values",
-            vec!["query", "select path values from docs"],
+            vec!["query", "select _path values from docs"],
         ),
         ("outline", vec!["outline", "notes/a.md"]),
         (
@@ -738,7 +738,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
 /// remote branch renders differently are pinned as they are: `update <b_>`
 /// has no CAS notice remotely, `update <doc>` lists the Receipt's `new_ids`
 /// remotely (the plan's result ids locally), `--json` on the block sugar
-/// carries the tool's `id`/`ids`, and `retarget --apply` prints
+/// carries the tool's `_id`/`_ids`, and `retarget --apply` prints
 /// `retargeted N block(s)` (with the tool's whole result in `--json`).
 /// `node props` is refused.
 #[test]
@@ -750,14 +750,14 @@ fn every_write_over_the_reference_server_lands_like_local() {
     };
     let p = Pair::seed("writes");
     let server = ts_server(&omg, &p.remote);
-    let list = p.id(r#"from blocks where path == "notes/a.md" && type == "list""#);
-    let tasks =
-        p.id(r#"from blocks where path == "notes/a.md" && type == "heading" && text == "Tasks""#);
-    let task_one = p.id(r#"from blocks where path == "notes/a.md" && text == "task one""#);
-    let task_two = p.id(r#"from blocks where path == "notes/a.md" && text == "task two""#);
-    let alpha = p.id(r#"from blocks where path == "notes/a.md" && text == "Alpha beta.""#);
+    let list = p.id(r#"from blocks where _path == "notes/a.md" && _type == "list""#);
+    let tasks = p
+        .id(r#"from blocks where _path == "notes/a.md" && _type == "heading" && _text == "Tasks""#);
+    let task_one = p.id(r#"from blocks where _path == "notes/a.md" && _text == "task one""#);
+    let task_two = p.id(r#"from blocks where _path == "notes/a.md" && _text == "task two""#);
+    let alpha = p.id(r#"from blocks where _path == "notes/a.md" && _text == "Alpha beta.""#);
     let intro =
-        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
+        p.id(r#"from blocks where _path == "notes/a.md" && _text == "Intro paragraph, revised.""#);
 
     let same = |what: &str, args: &[&str]| -> Vec<String> {
         let (l, r) = p.both(&server, args, None);
@@ -865,7 +865,7 @@ fn every_write_over_the_reference_server_lands_like_local() {
         )
     );
     // `--json` on the block sugar: the reference's remote branch prints the
-    // tool's decorated result (`id`/`ids`), the local path the bare `ApplyResult`.
+    // tool's decorated result (`_id`/`_ids`), the local path the bare `ApplyResult`.
     let (l, r) = p.both(
         &server,
         &[
@@ -880,7 +880,7 @@ fn every_write_over_the_reference_server_lands_like_local() {
     let lv: serde_json::Value = serde_json::from_str(text(&l.stdout).trim()).unwrap();
     let rv: serde_json::Value = serde_json::from_str(text(&r.stdout).trim()).unwrap();
     assert!(
-        rv.get("id").is_none() && rv.get("ids").is_none(),
+        rv.get("_id").is_none() && rv.get("_ids").is_none() && rv.get("ids").is_none(),
         "4.0: the Receipt alone: {rv}"
     );
     assert_eq!(rv, lv, "the Receipt, both sides");
@@ -958,7 +958,7 @@ fn every_write_over_the_reference_server_lands_like_local() {
     );
     assert_eq!(moved_blocks, std::slice::from_ref(&task_two));
     assert!(moved_remote.is_empty(), "{moved_remote:?}");
-    let node = p.id(r#"from nodes where kind == "md:task" && value == "task three""#);
+    let node = p.id(r#"from nodes where _kind == "md:task" && _value == "task three""#);
     let (_, node_remote) = same_write("node set", &["node", "set", &node, "checked", "true"], None);
     assert!(node_remote.is_empty(), "{node_remote:?}");
     let r = p.remote(&server, &["node", "props", &node], None);
@@ -1070,7 +1070,7 @@ fn every_write_over_the_reference_server_lands_like_local() {
         ],
     );
     let changeset = format!(
-        r#"{{"effects":[{{"op":"insert","into":{{"kind":"block","id":"{list}"}},"markdown":"- [ ] via apply"}}]}}"#
+        r#"{{"effects":[{{"op":"insert","into":{{"kind":"block","_id":"{list}"}},"markdown":"- [ ] via apply"}}]}}"#
     );
     let (applied, applied_remote) = same_write(
         "apply -f -",
@@ -1152,8 +1152,8 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
         (l, r)
     };
     let intro =
-        p.id(r#"from blocks where path == "notes/a.md" && text == "Intro paragraph, revised.""#);
-    let list = p.id(r#"from blocks where path == "notes/a.md" && type == "list""#);
+        p.id(r#"from blocks where _path == "notes/a.md" && _text == "Intro paragraph, revised.""#);
+    let list = p.id(r#"from blocks where _path == "notes/a.md" && _type == "list""#);
     let cases: Vec<(&str, Vec<&str>)> = vec![
         ("ls", vec!["ls"]),
         ("ls --json", vec!["--json", "ls"]),
@@ -1166,7 +1166,7 @@ fn the_reference_omg_reaches_omgbase_mcp_as_its_server() {
             vec![
                 "--json",
                 "query",
-                r#"select type from blocks where path == "index.md""#,
+                r#"select _type from blocks where _path == "index.md""#,
             ],
         ),
         ("find", vec!["find", "task"]),
@@ -1266,7 +1266,7 @@ fn sync_server_mirrors_a_directory_into_the_reference_engine() {
         .as_array()
         .expect("an array of rows")
         .iter()
-        .filter_map(|i| i["path"].as_str())
+        .filter_map(|i| i["_path"].as_str())
         .collect();
     assert_eq!(paths, ["/sub/y.md", "/x.md"]);
     // Again: everything echoes.

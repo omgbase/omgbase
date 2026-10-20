@@ -34,7 +34,7 @@ pub fn hist(cli: &mut Cli, args: &[String]) -> Result<i32> {
         block_id
     };
     let mut req = serde_json::Map::new();
-    req.insert("id".to_owned(), json!(block_id));
+    req.insert("_id".to_owned(), json!(block_id));
     if let Some(n) = number(&a, "n")? {
         req.insert("limit".to_owned(), json!(n));
     }

@@ -3016,7 +3016,7 @@ fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
         serde_json::json!({
             "doc": "d_0",
             "expected_revision": "r_0",
-            "current": { "revision": "r_9", "hash": hash },
+            "current": { "revision": "r_9", "_hash": hash },
             "retriable": true,
         })
     );
@@ -4009,7 +4009,7 @@ fn doc_by_path(path: &str) -> Target {
 fn set_fm(target: Target, key: &str, value: Value) -> Fx {
     Fx::Set {
         target,
-        field: format!("frontmatter.{key}"),
+        field: format!("_frontmatter.{key}"),
         value,
         expect: None,
     }
@@ -4095,7 +4095,7 @@ fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
     // Resolved: the document target carries id and path.
     assert_eq!(
         plan.effects[0].to_json()["target"],
-        json!({ "kind": "document", "id": "d_0", "path": "a.md" })
+        json!({ "kind": "document", "_id": "d_0", "_path": "a.md" })
     );
     // Lowered: one file head (set_meta's bytes) + one insert; every opset key present.
     assert_eq!(
@@ -4110,7 +4110,7 @@ fn plan_effects_burns_no_id_and_previews_the_exact_bytes() {
     assert_eq!(
         plan.preconditions.to_json(),
         json!({
-            "docs": [{ "id": "d_0", "path": "a.md", "base_revision": "r_0", "hash": hex(&sha256(FM_DOC.as_bytes())) }],
+            "docs": [{ "_id": "d_0", "_path": "a.md", "base_revision": "r_0", "_hash": hex(&sha256(FM_DOC.as_bytes())) }],
             "blocks": [], "parents": [], "absent_paths": [],
         })
     );
@@ -4203,7 +4203,7 @@ fn the_intent_record_carries_the_templates_a_plan_carries() {
     let effects = vec![set_fm(doc_by_path("a.md"), "status", json!("done"))];
     let mut plan = a.plan_effects(&ctx(&repo_a, T1), &effects, &ds_a).unwrap();
     let plain_id = plan.plan_id.clone();
-    let written = json!([{ "op": "set", "target": "a.md", "field": "frontmatter.status", "value": "-> `done`" }]);
+    let written = json!([{ "op": "set", "target": "a.md", "field": "_frontmatter.status", "value": "-> `done`" }]);
     plan.templates = written.as_array().cloned();
     let receipt = a
         .execute_plan(&ctx(&repo_a, T1), &plan, &origin, &mut ds_a)
@@ -4260,11 +4260,11 @@ fn plan_then_execute_and_one_shot_apply_leave_identical_footprints() {
         json!({
             "plan_id": plan.plan_id,
             "commit": "c_1",
-            "revisions": [{ "id": "d_0", "path": "a.md", "hash": hex(&sha256(SLICE_ONE_AFTER.as_bytes())) }],
+            "revisions": [{ "_id": "d_0", "_path": "a.md", "_hash": hex(&sha256(SLICE_ONE_AFTER.as_bytes())) }],
             "new_ids": { "$new.0": "b_2" },
             "committed": true,
             "summary": [
-                "set frontmatter.status = \"done\" in /a.md",
+                "set _frontmatter.status = \"done\" in /a.md",
                 "insert 1 block at the end of section \"A\" in /a.md",
             ],
         })
@@ -4456,7 +4456,7 @@ fn conflicting_effects_are_rejected_when_planned() {
     assert_eq!(m.data["effects"], json!([0, 1]));
     assert_eq!(
         m.data["focus"],
-        json!({ "kind": "scalar", "target": { "kind": "document", "id": "d_0" }, "field": "frontmatter.status" })
+        json!({ "kind": "scalar", "target": { "kind": "document", "_id": "d_0" }, "field": "_frontmatter.status" })
     );
     assert_eq!(m.data["retriable"], false);
     assert_eq!(m.data["effect_index"], 1);
@@ -4469,7 +4469,7 @@ fn conflicting_effects_are_rejected_when_planned() {
     assert_eq!(plan.effects.len(), 1, "the repeat is dropped");
     assert_eq!(
         plan.diagnostics,
-        ["effect 1 (set frontmatter.status on document d_0) duplicates effect 0; dropped"]
+        ["effect 1 (set _frontmatter.status on document d_0) duplicates effect 0; dropped"]
     );
     assert_eq!(plan.opset.set_frontmatter.len(), 1);
 
@@ -4489,7 +4489,7 @@ fn conflicting_effects_are_rejected_when_planned() {
     let m = expect_code(&err, ErrorCode::ConflictingEffects);
     assert_eq!(
         m.data["focus"],
-        json!({ "kind": "identity", "target": { "kind": "block", "id": "b_1" } })
+        json!({ "kind": "identity", "target": { "kind": "block", "_id": "b_1" } })
     );
 
     let unknown = [set_fm(
@@ -4508,7 +4508,7 @@ fn conflicting_effects_are_rejected_when_planned() {
     // A stale `expect.revision` is caught when planning.
     let stale = [Fx::Set {
         target: doc_by_path("a.md"),
-        field: "frontmatter.k".into(),
+        field: "_frontmatter.k".into(),
         value: json!(1),
         expect: Some(omgbase_mutate::EffectExpect {
             revision: Some("r_9".into()),
@@ -4586,7 +4586,7 @@ fn create_then_set_on_the_new_document_folds_and_maps_the_symbols() {
     assert_eq!(plan.preconditions.absent_paths, ["notes/n.md"]);
     assert_eq!(
         plan.effects[1].to_json()["target"],
-        json!({ "kind": "document", "id": "$new.0", "path": "notes/n.md" })
+        json!({ "kind": "document", "_id": "$new.0", "_path": "notes/n.md" })
     );
     let preview = plan.preview.as_ref().unwrap();
     assert_eq!(preview.revisions[0].id, "$new.0");
@@ -4710,7 +4710,7 @@ fn move_document_retargets_inbound_links_in_one_commit() {
     assert_eq!(plan.preconditions.absent_paths, ["notes/b.md"]);
     assert_eq!(
         plan.opset.to_json()["moves"],
-        json!([{ "id": "d_1", "from": "b.md", "to": "notes/b.md" }])
+        json!([{ "_id": "d_1", "from": "b.md", "to": "notes/b.md" }])
     );
     assert_eq!(
         plan.opset.ops.len(),
@@ -5420,7 +5420,7 @@ fn frontmatter_effects_are_refused_on_yaml_and_json_documents() {
     );
     assert_eq!(
         Value::Object(m.data.clone()),
-        json!({ "doc": yaml.doc_id, "path": "/attn/focus.yaml", "format": "yaml", "field": "frontmatter.since", "effect_index": 0 })
+        json!({ "doc": yaml.doc_id, "_path": "/attn/focus.yaml", "_format": "yaml", "field": "_frontmatter.since", "effect_index": 0 })
     );
 
     let mut fm = serde_json::Map::new();
@@ -5439,7 +5439,7 @@ fn frontmatter_effects_are_refused_on_yaml_and_json_documents() {
     let m = expect_mutation(&err, ErrorCode::TypeMismatch);
     assert_eq!(
         Value::Object(m.data.clone()),
-        json!({ "path": "/attn/c.json", "format": "json", "field": "frontmatter", "effect_index": 0 })
+        json!({ "_path": "/attn/c.json", "_format": "json", "field": "frontmatter", "effect_index": 0 })
     );
     assert!(m.data.get("fix").is_none());
 

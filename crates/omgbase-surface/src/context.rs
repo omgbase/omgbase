@@ -29,11 +29,11 @@
 //! One seam differs from the reference and is bridged here:
 //!
 //! * the Rust engine expands `entries(x)` in row position itself (never via
-//!   `call_function`), so the `data` / `frontmatter` / `inline` source
+//!   `call_function`), so the `_data` / `_frontmatter` / `_inline` source
 //!   handles are materialized eagerly as plain objects — one key per
 //!   top-level property in key order, valued by the scalar-vs-list rule —
-//!   instead of the reference's lazy handle. `frontmatter.<k>` and
-//!   `entries(frontmatter)` read the same values either way.
+//!   instead of the reference's lazy handle. `_frontmatter.<k>` and
+//!   `entries(_frontmatter)` read the same values either way.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -121,92 +121,105 @@ impl Target {
     }
 }
 
-/// THE NAME RULE (`spec/surface` §1.2, 3.0). `$` belongs to OQX: `$it`,
-/// `$key`, `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the
-/// LANGUAGE injects into a scope; omgbase adds no `$` names. Every engine
-/// attribute is a bare snake_case name that WINS on collision — the convention
-/// the relations (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …)
-/// always followed: a bare name that is an engine attribute reads the
-/// engine's value, never the author's. The attributes: every row's
-/// `id`/`path`; docs' and blocks' `raw`/`hash`/`updated_at`/`created_at` (4.10:
-/// the commit `ts` of the thing's first revision / earliest `block_changes`
-/// row — "first observed by omgbase", not a filesystem time); docs' `title`
-/// (the computed title) and `tags` (authored tags ∪ body hashtags) and
-/// `format`; a foreign key named for what it is (`doc_id`, `block_id`,
-/// `via_id`, `dst_id`, `dst_path`, `uri`), a column its column (`type`,
-/// `text`, `depth`, `ordinal`, `kind`, `predicate`, `field`). User data is
-/// bare too, read by any non-colliding key; where it collides it is reached
-/// through a source handle — `data` (the merged authored view: frontmatter +
-/// inline by the property rule, exactly the read a bare non-colliding key
-/// performs), `frontmatter`, `inline` — so `data.path` is the author's `path:`
-/// key, `data.tags` the authored list alone, `data.title` the authored title.
-/// There is no loud-error set: a bare `id`/`path`/`updated_at`/`hash`/`raw`
-/// is simply the engine's attribute (before this batch of 3.0 the attributes
-/// were `$`-prefixed and the bare spelling was an error, §9). A bare target
-/// name — `docs`, `links`, … — is a loud error of its own (`crate::query`).
+/// THE NAME RULE (`spec/surface` §1.2, 5.0: "underscore = engine"). On every
+/// record kind a BARE name is a user-authored entry and an UNDERSCORE-prefixed
+/// name is engine-provided, however derived — the prefix declares an engine
+/// field on a record, and the bare namespace is the user's on every kind (any
+/// record may carry user data later, so docs, blocks, nodes, links, revisions
+/// and the root row all follow it). `$` belongs to OQX: `$it`, `$key`,
+/// `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the LANGUAGE
+/// injects into a scope; omgbase adds no `$` names. The engine names: every
+/// row's `_id`/`_path`; docs' and blocks' `_raw`/`_hash`/`_updated_at`/
+/// `_created_at` (4.10: the commit `ts` of the thing's first revision /
+/// earliest `block_changes` row — "first observed by omgbase", not a
+/// filesystem time); docs' `_title` (the computed title) and `_tags` (authored
+/// tags ∪ body hashtags) and `_format`; a foreign key named for what it is
+/// (`_doc_id`, `_block_id`, `_via_id`, `_dst_id`, `_dst_path`, `_uri`), a
+/// column its column (`_type`, `_text`, `_depth`, `_ordinal`, `_kind`,
+/// `_predicate`, `_field`); the handles `_data`/`_frontmatter`/`_inline`, the
+/// reach-throughs `_doc`/`_block`/`_dst` and the relations (`_blocks`,
+/// `_children`, `_out_links`, …). A bare name is ALWAYS the author's: on a
+/// document a property (frontmatter + inline by the property rule — `title`,
+/// `tags`, `id`, `path`, `doc` included; nothing is reserved), on a block or
+/// node an `attrs` key (`checked`). `_data.<k>` is the same merged read as the
+/// bare `<k>` (kept as the handle for `entries(_data)`), `_frontmatter.<k>` /
+/// `_inline.<k>` one source each — and the only way to reach an authored key
+/// that itself begins with `_`. The self aliases (`doc` on a document, `block`
+/// on a block, `section` on a node) are gone: `$it` is the self. Collections
+/// stay bare (`from docs`, `^docs`) — a root name names a collection, not a
+/// row property — and so do the row functions in call position (`text("x")`,
+/// `under(…)`): a call is never an entry read. A bare target name — `docs`,
+/// `links`, … — inside a block is a loud error of its own (`crate::query`).
 const DOC_ATTRIBUTES: [&str; 9] = [
-    "id",
-    "path",
-    "raw",
-    "hash",
-    "updated_at",
-    "created_at",
-    "title",
-    "tags",
-    "format",
+    "_id",
+    "_path",
+    "_raw",
+    "_hash",
+    "_updated_at",
+    "_created_at",
+    "_title",
+    "_tags",
+    "_format",
 ];
 const BLOCK_ATTRIBUTES: [&str; 12] = [
-    "id",
-    "path",
-    "raw",
-    "hash",
-    "updated_at",
-    "created_at",
-    "doc_id",
-    "type",
-    "text",
-    "attrs",
-    "depth",
-    "ordinal",
+    "_id",
+    "_path",
+    "_raw",
+    "_hash",
+    "_updated_at",
+    "_created_at",
+    "_doc_id",
+    "_type",
+    "_text",
+    "_attrs",
+    "_depth",
+    "_ordinal",
 ];
 const NODE_ATTRIBUTES: [&str; 8] = [
-    "id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs",
+    "_id",
+    "_path",
+    "_doc_id",
+    "_block_id",
+    "_kind",
+    "_name",
+    "_value",
+    "_attrs",
 ];
 const EDGE_ATTRIBUTES: [&str; 13] = [
-    "id",
-    "path",
-    "doc_id",
-    "block_id",
-    "via_id",
-    "dst_id",
-    "dst_path",
-    "uri",
-    "field",
-    "dst_kind",
-    "predicate",
-    "provenance",
-    "anchor",
+    "_id",
+    "_path",
+    "_doc_id",
+    "_block_id",
+    "_via_id",
+    "_dst_id",
+    "_dst_path",
+    "_uri",
+    "_field",
+    "_dst_kind",
+    "_predicate",
+    "_provenance",
+    "_anchor",
 ];
 /// The history target (`spec/surface` §1.2, 4.7): a revision row's own
-/// columns under the names `docs_history` already uses (`rev`, `seq`,
-/// `commit`, `origin`, `actor`, `hash`), the commit's `ts` and `reason`,
-/// `is_current`, and (4.9) `archived` — the revision's bodies live in an
+/// columns under the names `docs_history` uses (`_rev`, `_seq`, `_commit`,
+/// `_origin`, `_actor`, `_hash`), the commit's `_ts` and `_reason`,
+/// `_is_current`, and (4.9) `_archived` — the revision's bodies live in an
 /// archive segment (`spec/store` §7.1; `docs_read { at }` reads through it
 /// when attached).
 const REVISION_ATTRIBUTES: [&str; 13] = [
-    "id",
-    "path",
-    "rev",
-    "seq",
-    "doc_id",
-    "commit",
-    "ts",
-    "origin",
-    "actor",
-    "reason",
-    "hash",
-    "is_current",
-    "archived",
+    "_id",
+    "_path",
+    "_rev",
+    "_seq",
+    "_doc_id",
+    "_commit",
+    "_ts",
+    "_origin",
+    "_actor",
+    "_reason",
+    "_hash",
+    "_is_current",
+    "_archived",
 ];
 /// The engine attributes per kind (`spec/surface` §1.2 table).
 #[must_use]
@@ -230,31 +243,52 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
 pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 pub(crate) const REVISION_FROM: &str =
     "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
-/// The source handles of a document (§1.2): `data` is the merged authored
+/// The source handles of a document (§1.2): `_data` is the merged authored
 /// view (frontmatter + inline), the other two one source each.
-pub const SOURCE_HANDLES: [&str; 3] = ["data", "frontmatter", "inline"];
+pub const SOURCE_HANDLES: [&str; 3] = ["_data", "_frontmatter", "_inline"];
+
+/// The `properties.source` a handle narrows a read to: `_data` → both
+/// authored sources (`None`), `_frontmatter` / `_inline` → that source.
+#[must_use]
+pub fn handle_source(handle: &str) -> Option<&str> {
+    (handle != "_data").then(|| &handle[1..])
+}
+
+/// The reach-through handles per kind (§1.2) — each a statically single row
+/// of another kind: `_doc` (the owning document; a revision's current row; a
+/// link's source), `_block` (a node's or link's source block), `_dst` (a
+/// link's destination document).
+#[must_use]
+pub fn reach_throughs(t: Target) -> &'static [&'static str] {
+    match t {
+        Target::Docs => &[],
+        Target::Blocks | Target::Revisions => &["_doc"],
+        Target::Nodes => &["_doc", "_block"],
+        Target::Links => &["_doc", "_dst", "_block"],
+    }
+}
 
 /// The key marking a LAZY OWNER row (foreign-key elimination, `spec/surface`
-/// §1, 3.0): the owner a reach-through hands out (`doc` on a block, node or
-/// edge; `block` on a node) carries only the columns the child row already
+/// §1, 3.0): the owner a reach-through hands out (`_doc` on a block, node or
+/// edge; `_block` on a node) carries only the columns the child row already
 /// knows — `doc_id` + `path` (from the child's `doc_id`/`src_doc` and
 /// `__path`), or `block_id` + `doc_id` + `__path` — tagged with the owner's
-/// target, plus this key. `get` answers `id`, `path`, the owner's own
+/// target, plus this key. `get` answers `_id`, `_path`, the owner's own
 /// foreign keys, its relations and its properties (which need only the id)
-/// from those columns and runs NO statement, exactly like the bare `doc_id`;
-/// the first read of anything else (`format`, `hash`, `text`, …) loads the
+/// from those columns and runs NO statement, exactly like the bare `_doc_id`;
+/// the first read of anything else (`_format`, `_hash`, `_text`, …) loads the
 /// full row ([`StoreContext::owner_full`], memoized per run). The port of the
 /// reference's `lazyOwner` Proxy. The marker is a tagged row to everything
 /// else (`identity`, `render_row_values`, `materialize`, hits) and the hidden
 /// key is stripped with the tag.
 pub const LAZY_KEY: &str = "__oqx_lazy";
 
-/// The value of a statically SINGLE relation that has no row — `dst` on an
-/// external or dangling link, `block` on a node without one (oqx 0.20,
+/// The value of a statically SINGLE relation that has no row — `_dst` on an
+/// external or dangling link, `_block` on a node without one (oqx 0.20,
 /// SEMANTICS §3): an object the engine treats as one row with no rows
-/// (`to_rows` empty, `is_single` true), so `dst { title }` is absent rather
-/// than `[]`, while as a VALUE it is absent (`materialize`), so `dst == null`,
-/// `has(dst)` and `dst.title` read as before. The port of the reference's
+/// (`to_rows` empty, `is_single` true), so `_dst { _title }` is absent rather
+/// than `[]`, while as a VALUE it is absent (`materialize`), so `_dst == null`,
+/// `has(_dst)` and `_dst._title` read as before. The port of the reference's
 /// `ABSENT_SINGLE`.
 pub const ABSENT_KEY: &str = "__oqx_absent";
 
@@ -454,8 +488,8 @@ pub fn strip_tags(v: Value) -> Value {
 
 /// §1.4 rows as values (1.2): a store row that surfaces as a VALUE in a result
 /// tree — a nested `collect { }` / `first { }` / `single { }` with an empty
-/// projection, or a `values` item that is a row — renders as `{ id, path }`
-/// (3.0: the hit envelope's own keys, spelled as the attributes; the target's
+/// projection, or a `values` item that is a row — renders as `{ _id, _path }`
+/// (5.0: the hit envelope's own keys, spelled as the attributes; the target's
 /// id column as a string; the owning document's path in the reference form,
 /// §1 "Paths": a docs row's `path`, every other row's `__path` join column,
 /// rooted), never the store row. Everything else
@@ -727,8 +761,8 @@ impl<'a> StoreContext<'a> {
     /// depth). Its own keys are the five collections as lazy markers (in
     /// [`ALL_TARGETS`] order), so
     /// `entries(^$it)` names them without running a scan and `^$it.docs` is
-    /// the same scan as `^docs`; `get` answers `id` with the repository id (an
-    /// intrinsic, not an entry). Same shape as the reference's root row.
+    /// the same scan as `^docs`; `get` answers `_id` with the repository id
+    /// (an engine name, not an entry). Same shape as the reference's root row.
     fn root_row(&self) -> Value {
         let mut o = Object::with_capacity(ALL_TARGETS.len());
         for t in ALL_TARGETS {
@@ -781,7 +815,7 @@ impl<'a> StoreContext<'a> {
         Ok(Self::tag_all(self.all(sql, &repo)?, t))
     }
 
-    /// A document's revisions (the `revisions` relation of a docs row, §1.2,
+    /// A document's revisions (the `_revisions` relation of a docs row, §1.2,
     /// 4.7): oldest first, as `docs_history` lists them.
     fn doc_revisions(&self, doc_id: &str) -> oqx::Result<Value> {
         let sql = format!(
@@ -863,10 +897,10 @@ impl<'a> StoreContext<'a> {
         Ok(Value::Object(out))
     }
 
-    /// The `data` / `frontmatter` / `inline` bag as a plain object: one entry
-    /// per top-level key in key order, each valued by [`Self::doc_prop`].
-    /// `data` (`None`) is frontmatter ∪ inline — the keys deduped, each valued
-    /// by the merged read.
+    /// The `_data` / `_frontmatter` / `_inline` bag as a plain object: one
+    /// entry per top-level key in key order, each valued by [`Self::doc_prop`].
+    /// `_data` (`None`) is frontmatter ∪ inline — the keys deduped, each
+    /// valued by the merged read.
     fn doc_prop_bag(&self, doc_id: &str, source: Option<&str>) -> oqx::Result<Value> {
         let keys = match source {
             Some(s) => self.all(
@@ -890,7 +924,7 @@ impl<'a> StoreContext<'a> {
         Ok(Value::Object(out))
     }
 
-    /// `tags` on a document: authored ∪ hashtags, each list as the property
+    /// `_tags` on a document: authored ∪ hashtags, each list as the property
     /// rule reads it (a scalar-authored `tags: x` is one element), deduped by
     /// canonical JSON of each element, authored first in authored order, then
     /// the computed `$tags` row (body hashtags, `spec/properties` §3.3) in
@@ -1008,7 +1042,7 @@ impl<'a> StoreContext<'a> {
         let doc_path = || SqlValue::Text(col_str(row, "path"));
         let block_id = || SqlValue::Text(col_str(row, "block_id"));
         Ok(Some(match (t, key) {
-            (Target::Docs, "nodes") => {
+            (Target::Docs, "_nodes") => {
                 // Document order: block-less nodes first, then by the owning
                 // block's pre-order rank, `span_start`, `node_id`.
                 let rows = self.all(
@@ -1043,23 +1077,23 @@ impl<'a> StoreContext<'a> {
                 });
                 Value::Array(keyed.into_iter().map(|(_, r)| Self::tag(r, Target::Nodes)).collect())
             }
-            (Target::Docs, "blocks") => {
+            (Target::Docs, "_blocks") => {
                 Value::Array(self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"))?)
             }
             // A document's revision list (`spec/surface` §1.2, 4.7), oldest first.
-            (Target::Docs, "revisions") => self.doc_revisions(&col_str(row, "doc_id"))?,
+            (Target::Docs, "_revisions") => self.doc_revisions(&col_str(row, "doc_id"))?,
             // The linked / linking DOCUMENTS are reached through the link rows
             // (3.0 follow-up, §9: the `out` / `in` relations are gone):
-            // `out_links collect distinct { from dst }` and `in_links collect
-            // distinct { from doc }`.
-            (Target::Docs, "out_links") => Self::tag_all(
+            // `_out_links collect distinct { from _dst }` and `_in_links
+            // collect distinct { from _doc }`.
+            (Target::Docs, "_out_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_path(), doc_id()],
                 )?,
                 Target::Links,
             ),
-            (Target::Docs, "in_links") => Self::tag_all(
+            (Target::Docs, "_in_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
                      WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id",
@@ -1067,28 +1101,28 @@ impl<'a> StoreContext<'a> {
                 )?,
                 Target::Links,
             ),
-            (Target::Blocks, "children") => Self::tag_all(
+            (Target::Blocks, "_children") => Self::tag_all(
                 self.all(
                     "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.parent_block = ?2 AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id",
                     &[path(), block_id()],
                 )?,
                 Target::Blocks,
             ),
-            (Target::Blocks, "nodes") => Self::tag_all(
+            (Target::Blocks, "_nodes") => Self::tag_all(
                 self.all(
                     "SELECT n.*, ?1 AS __path FROM nodes n WHERE n.block_id = ?2 ORDER BY n.span_start, n.node_id",
                     &[path(), block_id()],
                 )?,
                 Target::Nodes,
             ),
-            (Target::Blocks, "out_links") => Self::tag_all(
+            (Target::Blocks, "_out_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_block = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[path(), block_id()],
                 )?,
                 Target::Links,
             ),
-            (Target::Blocks, "section") => {
+            (Target::Blocks, "_section") => {
                 let top = to_sql(&self.top_ordinal(row)?);
                 Self::tag_all(
                     self.all(
@@ -1100,7 +1134,7 @@ impl<'a> StoreContext<'a> {
                     Target::Nodes,
                 )
             }
-            (Target::Nodes, "blocks") => {
+            (Target::Nodes, "_blocks") => {
                 let (f, l) = (Self::jattr(row, "first_ordinal"), Self::jattr(row, "last_ordinal"));
                 if f.is_absent() || l.is_absent() {
                     return Ok(Some(Value::Array(Vec::new())));
@@ -1119,7 +1153,7 @@ impl<'a> StoreContext<'a> {
                 }
                 Value::Array(kept)
             }
-            (Target::Nodes, "subsections") => {
+            (Target::Nodes, "_subsections") => {
                 let (f, l, lvl) = (
                     Self::jattr(row, "first_ordinal"),
                     Self::jattr(row, "last_ordinal"),
@@ -1138,7 +1172,7 @@ impl<'a> StoreContext<'a> {
                     Target::Nodes,
                 )
             }
-            (Target::Nodes, "children") => {
+            (Target::Nodes, "_children") => {
                 let (f, l, lvl) = (
                     Self::jattr(row, "first_ordinal"),
                     Self::jattr(row, "last_ordinal"),
@@ -1171,12 +1205,13 @@ impl<'a> StoreContext<'a> {
     // The owner is handed out as a LAZY row (`LAZY_KEY`) whose identity columns
     // are already known from the child — a block's/node's `doc_id` and `__path`
     // name its document, an edge's `src_doc` and `__path` its source doc, a
-    // node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.id` and
-    // `doc.path` (and `block.id`/`block.path`/`block.doc_id` on a node)
-    // read those columns and run NO statement, exactly like the bare `doc_id`;
-    // the full owner row is loaded on the first read of anything else
-    // (`doc.format`, `block.text`). The translator mirrors this in SQL
-    // (`doc.id` → the FK column). Port of the reference's `lazyOwner` Proxy.
+    // node's `block_id` (+ `doc_id`, `__path`) its block — so `_doc._id` and
+    // `_doc._path` (and `_block._id`/`_block._path`/`_block._doc_id` on a
+    // node) read those columns and run NO statement, exactly like the bare
+    // `_doc_id`; the full owner row is loaded on the first read of anything
+    // else (`_doc._format`, `_block._text`). The translator mirrors this in
+    // SQL (`_doc._id` → the FK column). Port of the reference's `lazyOwner`
+    // Proxy.
 
     fn lazy_owner(known: &[(&str, Value)], t: Target) -> Value {
         let mut o = Object::with_capacity(known.len() + 2);
@@ -1206,11 +1241,11 @@ impl<'a> StoreContext<'a> {
         }
     }
 
-    /// `dst` on a link row (`spec/surface` §1.2, 3.0 follow-up): the
-    /// destination DOCUMENT row when the link points at one (`dst_kind ==
+    /// `_dst` on a link row (`spec/surface` §1.2, 3.0 follow-up): the
+    /// destination DOCUMENT row when the link points at one (`_dst_kind ==
     /// "document"` and the document exists — a phantom target has the kind
-    /// and no row), read by `dst_id` exactly as `dst_path` is; absent for a
-    /// `block` or `external` destination (never reached into). `doc` stays
+    /// and no row), read by `_dst_id` exactly as `_dst_path` is; absent for a
+    /// `block` or `external` destination (never reached into). `_doc` stays
     /// the source document.
     fn destination_doc(&self, row: &Value) -> oqx::Result<Value> {
         if col(row, "dst_kind") != &Value::Str("document".to_owned()) {
@@ -1221,10 +1256,10 @@ impl<'a> StoreContext<'a> {
             .unwrap_or_else(absent_single))
     }
 
-    /// `doc` on a revision row (`spec/surface` §1.2, 4.7): the document's
-    /// CURRENT live row — the revision's `path` may be an earlier one — and
-    /// absent (the single-with-no-row marker, as `dst` on a dangling link)
-    /// for a tombstoned document: its revisions are rows, `doc == null` tells
+    /// `_doc` on a revision row (`spec/surface` §1.2, 4.7): the document's
+    /// CURRENT live row — the revision's `_path` may be an earlier one — and
+    /// absent (the single-with-no-row marker, as `_dst` on a dangling link)
+    /// for a tombstoned document: its revisions are rows, `_doc == null` tells
     /// them apart. Read in full, as the reference does (not a lazy owner: the
     /// liveness test is the point of the read).
     fn revision_doc(&self, row: &Value) -> oqx::Result<Value> {
@@ -1256,10 +1291,10 @@ impl<'a> StoreContext<'a> {
         }
     }
 
-    /// `block` on a link row (`spec/surface` §1.2, 4.11): the SOURCE block
-    /// the link was written in — the blocks row `block_id` (the edge's
+    /// `_block` on a link row (`spec/surface` §1.2, 4.11): the SOURCE block
+    /// the link was written in — the blocks row `_block_id` (the edge's
     /// `src_block`) names, in the source document (`__path` is already the
-    /// block's document path) — mirroring `doc`; absent when the link has
+    /// block's document path) — mirroring `_doc`; absent when the link has
     /// none (a frontmatter link).
     fn link_block(&self, row: &Value) -> oqx::Result<Value> {
         let id = col(row, "src_block");
@@ -1307,28 +1342,30 @@ impl<'a> StoreContext<'a> {
     }
 
     /// Whether reading `key` off a lazy owner of `t` needs the full row. The
-    /// known columns answer the identity (`id`, `path`), the self alias, the
-    /// relations (keyed by `doc_id` / `path` / `block_id`), the properties
-    /// and source handles (keyed by `doc_id`), `raw`, `title` and `tags` on
-    /// docs (by id), `updated_at` on blocks (by id), a bare target name (an
-    /// error) and an unknown `$x` (absent); everything that reads another
-    /// column — `format`, `hash`, `updated_at` on docs; `type`, `text`,
-    /// `attrs`, `ordinal`, `depth`, an attrs key, `section`, `raw`/`hash` on
-    /// blocks — loads it.
+    /// known columns answer the identity (`_id`, `_path`), the relations
+    /// (keyed by `doc_id` / `path` / `block_id`), the properties and source
+    /// handles (keyed by `doc_id`), `_raw`, `_title`, `_tags` and
+    /// `_created_at` on docs (by id), `_updated_at` / `_created_at` on blocks
+    /// (by id), `_doc` on a block (by `doc_id` + `__path`), a bare target name
+    /// (an error) and an unknown `_x` / `$x` (absent); everything that reads
+    /// another column — `_format`, `_hash`, `_updated_at` on docs; `_type`,
+    /// `_text`, `_attrs`, `_ordinal`, `_depth`, a bare attrs key, `_section`,
+    /// `_raw` / `_hash` on blocks — loads it.
     fn lazy_needs_load(t: Target, key: &str) -> bool {
         match t {
-            Target::Docs => matches!(key, "format" | "hash" | "updated_at"),
+            Target::Docs => matches!(key, "_format" | "_hash" | "_updated_at"),
             Target::Blocks => {
                 !matches!(
                     key,
-                    "id" | "path"
-                        | "updated_at"
-                        | "doc_id"
-                        | "block"
-                        | "doc"
-                        | "children"
-                        | "nodes"
-                        | "out_links"
+                    "_id"
+                        | "_path"
+                        | "_updated_at"
+                        | "_created_at"
+                        | "_doc_id"
+                        | "_doc"
+                        | "_children"
+                        | "_nodes"
+                        | "_out_links"
                 ) && Target::parse(key).is_none()
             }
             // never handed out as lazy owners
@@ -1358,59 +1395,61 @@ impl<'a> StoreContext<'a> {
     }
 
     /// The engine attributes (see the name rule above; `spec/surface` §1.2,
-    /// 3.0): bare, snake_case, winning on collision. `path` (and the edge
-    /// field `dst_path`) is the REFERENCE form (`/a/b.md`, §1 "Paths", 2.0):
-    /// the rows carry the storage form (`path`, the `__path` join column) and
-    /// the read roots it, so nothing below the binding changes. The runner
-    /// roots the string literals a query compares them with. The caller has
-    /// checked `name` against [`attributes`], so the fallthrough is unreachable
-    /// in practice (`Undefined`).
+    /// 5.0): `_`-prefixed, snake_case. `_path` (and the edge field
+    /// `_dst_path`) is the REFERENCE form (`/a/b.md`, §1 "Paths", 2.0): the
+    /// rows carry the storage form (`path`, the `__path` join column) and the
+    /// read roots it, so nothing below the binding changes. The runner roots
+    /// the string literals a query compares them with. The caller has checked
+    /// `name` against [`attributes`], so the fallthrough is unreachable in
+    /// practice (`Undefined`).
     fn attribute(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
         let c = |k: &str| col(row, k).clone();
         let rooted = |k: &str| Value::Str(reference_path(&col_str(row, k)));
+        // The store column an engine name reads under its own spelling.
+        let column = &name[1..];
         Ok(match (t, name) {
-            (Target::Docs, "id") => c("doc_id"),
-            (Target::Docs, "path") => rooted("path"),
-            (Target::Docs, "hash") => Self::null_if_absent(c("file_hash")),
-            (Target::Docs, "updated_at") => Self::null_if_absent(self.scalar(
+            (Target::Docs, "_id") => c("doc_id"),
+            (Target::Docs, "_path") => rooted("path"),
+            (Target::Docs, "_hash") => Self::null_if_absent(c("file_hash")),
+            (Target::Docs, "_updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
                 &[to_sql(&c("current_rev"))],
             )?),
-            // `created_at` (4.10): the commit `ts` of the document's first
-            // revision (`seq = 1`, the row `revisions first { ts values }`
+            // `_created_at` (4.10): the commit `ts` of the document's first
+            // revision (`seq = 1`, the row `_revisions first { _ts values }`
             // reads) — when omgbase first observed the document, not a
             // filesystem time. The retention squash (`spec/store` §7.1, 15.0)
             // keeps every revision and commit row, so the value survives
             // archiving.
-            (Target::Docs, "created_at") => Self::null_if_absent(self.scalar(
+            (Target::Docs, "_created_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ?1 AND r.seq = 1",
                 &[to_sql(&c("doc_id"))],
             )?),
-            // `raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
-            (Target::Docs, "raw") => {
+            // `_raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
+            (Target::Docs, "_raw") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
                     Ok(Some(s)) => Value::Str(s),
                     Ok(None) => Value::Null,
                     Err(e) => return Err(OqxError::eval(e.to_string())),
                 }
             }
-            // `title`: the computed title (`spec/properties` §3.3 — the
+            // `_title`: the computed title (`spec/properties` §3.3 — the
             // authored title, else the first H1, else absent → null); the
-            // store writes it under `$title`. `data.title` is the authored
-            // one alone.
-            (Target::Docs, "title") => {
+            // store writes it under `$title`. The bare `title` is the authored
+            // key alone.
+            (Target::Docs, "_title") => {
                 Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$title", Some("computed"))?)
             }
-            // `tags`: authored tags ∪ body `#hashtags` (the computed `$tags`
-            // row); `data.tags` is the authored list alone.
-            (Target::Docs, "tags") => self.doc_tags(&col_str(row, "doc_id"))?,
-            (Target::Docs, "format") => c("format"),
-            (Target::Blocks, "id") => c("block_id"),
-            (Target::Blocks, "path") => rooted("__path"),
-            // `raw`: the block's raw source bytes — the blob its `raw_hash`
-            // names (a container's raw holds its children verbatim); `text`
+            // `_tags`: authored tags ∪ body `#hashtags` (the computed `$tags`
+            // row); the bare `tags` is the authored list alone.
+            (Target::Docs, "_tags") => self.doc_tags(&col_str(row, "doc_id"))?,
+            (Target::Docs, "_format") => c("format"),
+            (Target::Blocks, "_id") => c("block_id"),
+            (Target::Blocks, "_path") => rooted("__path"),
+            // `_raw`: the block's raw source bytes — the blob its `raw_hash`
+            // names (a container's raw holds its children verbatim); `_text`
             // is the normalized text.
-            (Target::Blocks, "raw") => match c("raw_hash") {
+            (Target::Blocks, "_raw") => match c("raw_hash") {
                 Value::Str(hex) => {
                     let hash = omgbase_store::tree::from_hex(&hex)
                         .map_err(|e| OqxError::eval(e.to_string()))?;
@@ -1430,62 +1469,62 @@ impl<'a> StoreContext<'a> {
                 }
                 _ => Value::Null,
             },
-            (Target::Blocks, "hash") => Self::null_if_absent(c("raw_hash")),
-            (Target::Blocks, "updated_at") => Self::null_if_absent(self.scalar(
+            (Target::Blocks, "_hash") => Self::null_if_absent(c("raw_hash")),
+            (Target::Blocks, "_updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
             )?),
-            // `created_at` (4.10): the EARLIEST commit `ts` among the block's
-            // `block_changes` — the same join as `updated_at` under MIN: the
+            // `_created_at` (4.10): the EARLIEST commit `ts` among the block's
+            // `block_changes` — the same join as `_updated_at` under MIN: the
             // commit that first wrote the id (`inserted`, or the split/merge
             // lineage row that minted it). Store 14.2 keeps that row and the
             // 15.0 squash keeps each block's earliest row (`spec/store` §7.1),
             // so it survives archiving; a resurrected block keeps its original
             // creation.
-            (Target::Blocks, "created_at") => Self::null_if_absent(self.scalar(
+            (Target::Blocks, "_created_at") => Self::null_if_absent(self.scalar(
                 "SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
             )?),
             // The structural columns and the foreign keys under the surface's
-            // names (§1.2, 3.0).
-            (Target::Blocks, "doc_id" | "type" | "text" | "ordinal" | "depth") => c(name),
-            (Target::Blocks | Target::Nodes, "attrs") => parse_json(&c("attrs")),
-            (Target::Nodes, "id") => c("node_id"),
-            (Target::Nodes, "path") => rooted("__path"),
-            (Target::Nodes, "doc_id" | "kind" | "name" | "value") => c(name),
-            (Target::Nodes, "block_id") => Self::null_if_absent(c("block_id")),
+            // names (§1.2).
+            (Target::Blocks, "_doc_id" | "_type" | "_text" | "_ordinal" | "_depth") => c(column),
+            (Target::Blocks | Target::Nodes, "_attrs") => parse_json(&c("attrs")),
+            (Target::Nodes, "_id") => c("node_id"),
+            (Target::Nodes, "_path") => rooted("__path"),
+            (Target::Nodes, "_doc_id" | "_kind" | "_name" | "_value") => c(column),
+            (Target::Nodes, "_block_id") => Self::null_if_absent(c("block_id")),
             // edges: the store's columns under the surface's names (a foreign
-            // key is named for what it is, the `src_field` column is `field`).
-            (Target::Links, "id") => c("edge_id"),
-            (Target::Links, "path") => rooted("__path"),
-            (Target::Links, "doc_id") => c("src_doc"),
-            (Target::Links, "block_id") => Self::null_if_absent(c("src_block")),
-            (Target::Links, "via_id") => Self::null_if_absent(c("via_node")),
-            (Target::Links, "dst_id") => c("dst_node"),
-            (Target::Links, "dst_path") => match self.scalar(
+            // key is named for what it is, the `src_field` column is `_field`).
+            (Target::Links, "_id") => c("edge_id"),
+            (Target::Links, "_path") => rooted("__path"),
+            (Target::Links, "_doc_id") => c("src_doc"),
+            (Target::Links, "_block_id") => Self::null_if_absent(c("src_block")),
+            (Target::Links, "_via_id") => Self::null_if_absent(c("via_node")),
+            (Target::Links, "_dst_id") => c("dst_node"),
+            (Target::Links, "_dst_path") => match self.scalar(
                 "SELECT path FROM docs WHERE doc_id = ?1",
                 &[to_sql(&c("dst_node"))],
             )? {
                 Value::Undefined | Value::Null => Value::Null,
                 p => Value::Str(reference_path(&js_string(&p))),
             },
-            (Target::Links, "uri") => Self::null_if_absent(self.scalar(
+            (Target::Links, "_uri") => Self::null_if_absent(self.scalar(
                 "SELECT uri FROM external_nodes WHERE node_id = ?1",
                 &[to_sql(&c("dst_node"))],
             )?),
-            (Target::Links, "field") => Self::null_if_absent(c("src_field")),
-            (Target::Links, "predicate" | "provenance" | "dst_kind" | "anchor") => c(name),
+            (Target::Links, "_field") => Self::null_if_absent(c("src_field")),
+            (Target::Links, "_predicate" | "_provenance" | "_dst_kind" | "_anchor") => c(column),
             // revisions: the `revisions` × `commits` columns under
-            // docs_history's names (`spec/surface` §1.2, 4.7). `rendered_hash`
-            // is a blob, already hex (`sql_value`).
-            (Target::Revisions, "id" | "rev") => c("rev_id"),
-            (Target::Revisions, "path") => rooted("path"),
-            (Target::Revisions, "seq" | "doc_id" | "ts" | "origin") => c(name),
-            (Target::Revisions, "commit") => c("commit_id"),
-            (Target::Revisions, "actor" | "reason") => Self::null_if_absent(c(name)),
-            (Target::Revisions, "hash") => c("rendered_hash"),
-            (Target::Revisions, "is_current" | "archived") => Value::Bool(matches!(
-                c(name),
+            // docs_history's names, `_`-prefixed (`spec/surface` §1.2, 4.7).
+            // `rendered_hash` is a blob, already hex (`sql_value`).
+            (Target::Revisions, "_id" | "_rev") => c("rev_id"),
+            (Target::Revisions, "_path") => rooted("path"),
+            (Target::Revisions, "_seq" | "_doc_id" | "_ts" | "_origin") => c(column),
+            (Target::Revisions, "_commit") => c("commit_id"),
+            (Target::Revisions, "_actor" | "_reason") => Self::null_if_absent(c(column)),
+            (Target::Revisions, "_hash") => c("rendered_hash"),
+            (Target::Revisions, "_is_current" | "_archived") => Value::Bool(matches!(
+                c(column),
                 Value::Number(n) if n == 1.0
             )),
             _ => Value::Undefined,
@@ -1844,9 +1883,9 @@ impl DataContext for StoreContext<'_> {
             return Value::Array(rows.unwrap_or_default());
         }
         // The root scope's names (`spec/oqx` §2 step 5 at the root): the five
-        // lazy scans and `id`, the repository id — so `^docs` / `0^docs` from
-        // any row is the scan and `^id` / `0^id` the id.
-        if name == "id" {
+        // lazy scans and `_id`, the repository id — so `^docs` / `0^docs` from
+        // any row is the scan and `^_id` / `0^_id` the id.
+        if name == "_id" {
             return Value::Str(self.repo_id.clone());
         }
         // A root scan is handed out LAZILY (see `SCAN_KEY`): `to_rows` runs it
@@ -1864,10 +1903,10 @@ impl DataContext for StoreContext<'_> {
         if row.is_absent() {
             return Ok(Value::Undefined);
         }
-        // The root row: `^$it.id` is the repository id, `^$it.<target>` the
+        // The root row: `^$it._id` is the repository id, `^$it.<target>` the
         // lazy root scan (the same marker `^<target>` / `root(name)` hands out).
         if is_root_object(row) {
-            if key == "id" {
+            if key == "_id" {
                 return Ok(Value::Str(self.repo_id.clone()));
             }
             return Ok(Target::parse(key).map_or(Value::Undefined, scan_marker));
@@ -1886,59 +1925,62 @@ impl DataContext for StoreContext<'_> {
         // (text/under/…) never arrive here: the runner rewrites them to
         // `$it.fn(…)`, so they reach `call_method` with the row as receiver.
 
-        // engine attributes win on collision (the name rule above).
-        if attributes(t).contains(&key) {
-            return self.attribute(row, t, key);
-        }
-        // self-alias namespaces
-        match (t, key) {
-            (Target::Docs, "doc") | (Target::Blocks, "block") | (Target::Nodes, "section") => {
-                return Ok(row.clone());
+        // An underscore-prefixed name is the engine's (the name rule above):
+        // an attribute, a reach-through, a relation or a source handle — never
+        // the author's.
+        if key.starts_with('_') {
+            if attributes(t).contains(&key) {
+                return self.attribute(row, t, key);
             }
-            // from a revision to its document's CURRENT row (4.7), before the
-            // owning-doc arm the other kinds share.
-            (Target::Revisions, "doc") => return self.revision_doc(row),
-            (_, "doc") => return self.owning_doc(row),
-            (Target::Nodes, "block") => return self.owning_block(row),
-            (Target::Links, "dst") => return self.destination_doc(row),
-            (Target::Links, "block") => return self.link_block(row),
-            _ => {}
-        }
-        if let Some(v) = self.relation(row, t, key)? {
-            return Ok(v);
+            // reach-through to owning entities, from a link row to its
+            // destination and from a revision to its document's current row —
+            // statically single relations: absent is the single-with-no-row
+            // marker.
+            match (t, key) {
+                (Target::Revisions, "_doc") => return self.revision_doc(row),
+                (Target::Blocks | Target::Nodes | Target::Links, "_doc") => {
+                    return self.owning_doc(row);
+                }
+                (Target::Nodes, "_block") => return self.owning_block(row),
+                (Target::Links, "_dst") => return self.destination_doc(row),
+                (Target::Links, "_block") => return self.link_block(row),
+                _ => {}
+            }
+            if let Some(v) = self.relation(row, t, key)? {
+                return Ok(v);
+            }
+            // The source handles of a document: `_data` is the merged authored
+            // view (frontmatter + inline), the other two one source each;
+            // `_data.<k>` is the bare `<k>`, and the one way to an authored key
+            // spelled `_x`.
+            if t == Target::Docs && SOURCE_HANDLES.contains(&key) {
+                return self.doc_prop_bag(&col_str(row, "doc_id"), handle_source(key));
+            }
+            // Any other `_name` is no engine name of this kind (the names pass
+            // refuses it statically, before any row is read): absent.
+            return Ok(Value::Undefined);
         }
         // A bare target name that is not one of this row's relations reads a
         // property the row has none of (`spec/surface` §1.1, 2.0): loud, naming
-        // the root-row spelling. `docs`/`links` never get here (the runner
-        // refuses them statically); `blocks` on a block or edge row, `nodes`
-        // on a node or edge row and `revisions` on anything but a document do.
-        // The reference throws from `get` too.
+        // the root-row spelling. The runner refuses every root name inside a
+        // block statically (5.0: the relations are `_blocks`/`_nodes`/
+        // `_revisions`, so a bare one is never a relation); the context
+        // answers the same error should one reach it. The reference throws
+        // from `get` too.
         if let Some(named) = Target::parse(key) {
             return Err(OqxError::eval(crate::query::bare_target_message(
                 named, None,
             )));
         }
-        // the author's data.
+        // the author's data — every bare name.
         Ok(match t {
-            Target::Docs => {
-                let doc_id = col_str(row, "doc_id");
-                // The source handles: `data` is the merged authored view
-                // (frontmatter + inline), the other two one source each;
-                // `data.<k>` reaches an authored key whose bare name is an
-                // engine attribute (`data.path`, `data.tags`).
-                if SOURCE_HANDLES.contains(&key) {
-                    let source = (key != "data").then_some(key);
-                    return self.doc_prop_bag(&doc_id, source);
-                }
-                return self.doc_prop(&doc_id, key, None);
-            }
-            // blocks / nodes: a bare non-structural identifier flattens into
-            // `attrs.<k>` (the attributes above win on collision); an absent
-            // key is undefined, matching a doc's missing frontmatter key.
+            Target::Docs => self.doc_prop(&col_str(row, "doc_id"), key, None)?,
+            // blocks / nodes: a bare identifier flattens into `_attrs.<k>`; an
+            // absent key is undefined, matching a doc's missing frontmatter key.
             Target::Blocks | Target::Nodes => Self::jattr(row, key),
             // closed row shapes (§1.5): no authored data reaches a link or
-            // revision row — an unknown name is absent (the names pass has
-            // already refused a tier-3 name statically).
+            // revision row — a bare name is absent (the names pass has already
+            // refused it statically).
             Target::Links | Target::Revisions => Value::Undefined,
         })
     }
@@ -2099,8 +2141,8 @@ mod tests {
 
     #[test]
     fn rows_surfacing_as_values_render_id_and_path() {
-        // §1.4 (1.2, keys renamed in 3.0): a tagged store row anywhere in a
-        // value tree is `{ id, path }`; untagged records keep their keys,
+        // §1.4 (1.2, keys respelled in 5.0): a tagged store row anywhere in a
+        // value tree is `{ _id, _path }`; untagged records keep their keys,
         // minus the tag.
         let mut node = Object::new();
         node.insert("node_id", Value::Str("n_1".into()));
@@ -2130,18 +2172,18 @@ mod tests {
                 .map(|(k, _)| k.to_owned())
                 .collect()
         };
-        assert_eq!(keys(&tasks[0]), ["id", "path"]);
+        assert_eq!(keys(&tasks[0]), ["_id", "_path"]);
         assert_eq!(
-            tasks[0].as_object().unwrap().get("id"),
+            tasks[0].as_object().unwrap().get("_id"),
             Some(&Value::Str("n_1".into()))
         );
         assert_eq!(
-            tasks[0].as_object().unwrap().get("path"),
+            tasks[0].as_object().unwrap().get("_path"),
             Some(&Value::Str("/a.md".into()))
         );
-        assert_eq!(keys(&tasks[1]), ["id", "path"]);
+        assert_eq!(keys(&tasks[1]), ["_id", "_path"]);
         assert_eq!(
-            tasks[1].as_object().unwrap().get("id"),
+            tasks[1].as_object().unwrap().get("_id"),
             Some(&Value::Str("d_0".into()))
         );
         // An id column that is not a string still renders as its string form.
@@ -2149,11 +2191,11 @@ mod tests {
         edge.insert("edge_id", Value::Number(7.0));
         let e = render_row_values(tag_row(edge, Target::Links));
         assert_eq!(
-            e.as_object().unwrap().get("id"),
+            e.as_object().unwrap().get("_id"),
             Some(&Value::Str("7".into()))
         );
         assert_eq!(
-            e.as_object().unwrap().get("path"),
+            e.as_object().unwrap().get("_path"),
             Some(&Value::Str(String::new()))
         );
     }

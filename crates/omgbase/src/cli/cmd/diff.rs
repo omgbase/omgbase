@@ -49,7 +49,7 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
         req.insert("to_rev".to_owned(), json!(str_of(&result, "to")));
         let entries = cli.call("docs_diff", Json::Object(req))?;
         let items: Vec<Json> = entries.as_array().cloned().unwrap_or_default();
-        let ids: Vec<String> = items.iter().map(|e| str_of(e, "id")).collect();
+        let ids: Vec<String> = items.iter().map(|e| str_of(e, "_id")).collect();
         if let Some(code) = machine_out(cli, &entries, Some(&items), Some(&ids)) {
             return code;
         }
@@ -72,7 +72,7 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 .next()
                 .unwrap_or("")
                 .to_owned();
-            let line = format!("{mark} {}  {preview}", style.id(&str_of(e, "id")));
+            let line = format!("{mark} {}  {preview}", style.id(&str_of(e, "_id")));
             cli.io.out(line.trim_end());
         }
         return Ok(EXIT_OK);

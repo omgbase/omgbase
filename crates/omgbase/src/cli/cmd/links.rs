@@ -38,15 +38,18 @@ impl LinksQuery {
     }
 }
 
-/// `docLinks`: `{ out: [{ predicate, doc_id, kind, count, samples? | block_id? }], in: [...] }`
-/// — the far node as `doc_id`, the source block as `block_id` (spec/cli 3.0).
+/// `docLinks`: `{ out: [{ _predicate, _doc_id, kind, count, samples? | _block_id? }], in: [...] }`
+/// — the keys that carry a links-row attribute are `_`-prefixed (the far node
+/// `_doc_id`, the source block `_block_id`, `_predicate`); `kind` (what the far
+/// node is), `count` (the rollup) and `samples` name roles and stay bare
+/// (spec/cli 5.0).
 pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json> {
     let mut out: Vec<Json> = Vec::new();
     let mut inbound: Vec<Json> = Vec::new();
     let row = |predicate: String, node: String, kind: &str, count: i64| -> Map<String, Json> {
         let mut m = Map::new();
-        m.insert("predicate".to_owned(), json!(predicate));
-        m.insert("doc_id".to_owned(), json!(node));
+        m.insert("_predicate".to_owned(), json!(predicate));
+        m.insert("_doc_id".to_owned(), json!(node));
         m.insert("kind".to_owned(), json!(kind));
         m.insert("count".to_owned(), json!(count));
         m
@@ -71,7 +74,7 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
                     continue;
                 }
                 let mut m = row(predicate, node, &kind, 1);
-                m.insert("block_id".to_owned(), json!(block));
+                m.insert("_block_id".to_owned(), json!(block));
                 out.push(Json::Object(m));
             }
         } else {
@@ -121,7 +124,7 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
                     continue;
                 }
                 let mut m = row(predicate, node, "document", 1);
-                m.insert("block_id".to_owned(), json!(block));
+                m.insert("_block_id".to_owned(), json!(block));
                 inbound.push(Json::Object(m));
             }
         } else {
@@ -151,14 +154,14 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
 
 fn src_of(cli: &Cli, e: &Json) -> String {
     let block = e
-        .get("block_id")
+        .get("_block_id")
         .and_then(Json::as_str)
         .unwrap_or("frontmatter");
     cli.style.dim(&format!("({block})"))
 }
 
 /// The two groups as `links` and `show` print them; a group prints only
-/// when non-empty. A row carrying `block_id` (block-grain) names its source
+/// when non-empty. A row carrying `_block_id` (block-grain) names its source
 /// block instead of a count.
 pub fn render_link_groups(cli: &Cli, links: &Json, out_title: &str, in_title: &str) {
     let style = cli.style;
@@ -168,7 +171,7 @@ pub fn render_link_groups(cli: &Cli, links: &Json, out_title: &str, in_title: &s
     if let Some(out) = out.filter(|o| !o.is_empty()) {
         cli.io.out(&style.dim(out_title));
         for e in out {
-            let tail = if e.get("block_id").is_some() {
+            let tail = if e.get("_block_id").is_some() {
                 src_of(cli, e)
             } else {
                 style.dim(&format!(
@@ -178,29 +181,29 @@ pub fn render_link_groups(cli: &Cli, links: &Json, out_title: &str, in_title: &s
             };
             cli.io.out(&format!(
                 "    {} {} {} {tail}",
-                style.accent(&str_of(e, "predicate")),
+                style.accent(&str_of(e, "_predicate")),
                 style.dim(g.arrow),
-                style.id(&str_of(e, "doc_id"))
+                style.id(&str_of(e, "_doc_id"))
             ));
         }
     }
     if let Some(inbound) = inbound.filter(|i| !i.is_empty()) {
         cli.io.out(&style.dim(in_title));
         for e in inbound {
-            if e.get("block_id").is_some() {
+            if e.get("_block_id").is_some() {
                 cli.io.out(&format!(
                     "    {} {} {} {}",
-                    style.id(&str_of(e, "doc_id")),
+                    style.id(&str_of(e, "_doc_id")),
                     src_of(cli, e),
                     style.dim(g.arrow),
-                    style.accent(&str_of(e, "predicate"))
+                    style.accent(&str_of(e, "_predicate"))
                 ));
             } else {
                 cli.io.out(&format!(
                     "    {} {} {} {}",
-                    style.id(&str_of(e, "doc_id")),
+                    style.id(&str_of(e, "_doc_id")),
                     style.dim(g.arrow),
-                    style.accent(&str_of(e, "predicate")),
+                    style.accent(&str_of(e, "_predicate")),
                     style.dim(&format!(
                         "×{}",
                         e.get("count").and_then(Json::as_i64).unwrap_or(0)
@@ -253,7 +256,7 @@ pub fn links(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 .cloned()
                 .unwrap_or_default()
         })
-        .map(|e| str_of(&e, "doc_id"))
+        .map(|e| str_of(&e, "_doc_id"))
         .collect();
     let empty = far.is_empty();
     if let Some(code) = machine_out(cli, &result, None, Some(&far)) {

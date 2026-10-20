@@ -224,7 +224,7 @@ pub fn summarize_effect(e: &Effect, lookup: &dyn SummaryLookup) -> String {
                 canonical_json(value),
                 doc_path_of(lookup, &target_doc(lookup, target))
             ),
-            Target::Block { id } if field == "attrs.checked" => format!(
+            Target::Block { id } if field == "_attrs.checked" => format!(
                 "{} {} in {}",
                 if value.as_bool() == Some(true) {
                     "check"
@@ -517,24 +517,24 @@ mod tests {
             expect: None,
         };
         assert_eq!(
-            line(&set(doc(), "frontmatter.status", json!("done"))),
-            "set frontmatter.status = \"done\" in /a.md"
+            line(&set(doc(), "_frontmatter.status", json!("done"))),
+            "set _frontmatter.status = \"done\" in /a.md"
         );
         assert_eq!(
             line(&set(
                 doc(),
-                "frontmatter.tags",
+                "_frontmatter.tags",
                 json!({ "b": 1, "a": ["x"] })
             )),
-            "set frontmatter.tags = {\"a\":[\"x\"],\"b\":1} in /a.md"
+            "set _frontmatter.tags = {\"a\":[\"x\"],\"b\":1} in /a.md"
         );
         assert_eq!(
             line(&Effect::Unset {
                 target: doc(),
-                field: "frontmatter.status".into(),
+                field: "_frontmatter.status".into(),
                 expect: None,
             }),
-            "unset frontmatter.status in /a.md"
+            "unset _frontmatter.status in /a.md"
         );
         assert_eq!(
             line(&set(doc(), "content", json!("# A\n"))),
@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(
             line(&set(
                 Target::Block { id: "b_t".into() },
-                "attrs.checked",
+                "_attrs.checked",
                 json!(true)
             )),
             "check task b_t in /a.md"
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(
             line(&set(
                 Target::Block { id: "b_t".into() },
-                "attrs.checked",
+                "_attrs.checked",
                 json!(false)
             )),
             "uncheck task b_t in /a.md"

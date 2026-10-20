@@ -146,30 +146,30 @@ pub fn wants_help(args: &[String]) -> bool {
 }
 
 const QUERY_EXAMPLES: &[&str] = &[
-    "  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'",
-    "       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'",
-    "       query 'select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }'",
-    "       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id",
+    "  e.g. query 'from docs where _nodes count { where _kind == \"md:task\" } >= 2'",
+    "       query 'select items: _blocks collect { where _type == \"list_item\" } from nodes where _kind == \"md:section\"'",
+    "       query 'select _title, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" and not checked }'",
+    "       query 'select owner_id, owner: ^nodes single { where _kind == \"person\" and id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^_id / 0^_id = the repository id",
     "       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level",
-    "       query 'from docs where nodes none { where kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)",
+    "       query 'from docs where _nodes none { where _kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)",
     "       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent",
-    "       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow children { depth 2 } is its block",
-    "       query 'select subject, process: ^docs[slug == ^subject].path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; title! = the value or a loud error; a select item may use the items to its left",
-    "       query 'select path, $depth from docs where path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination",
-    "       query 'select path, next: ^docs { ^path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^path directly",
+    "       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow _children { depth 2 } is its block",
+    "       query 'select subject, process: ^docs[slug == ^subject]._path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; _title! = the value or a loud error; a select item may use the items to its left",
+    "       query 'select _title, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination",
+    "       query 'select _title, next: ^docs { ^_path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (_path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^_path directly",
     "       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)",
-    "       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)",
-    "       query 'select path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)",
-    "       query 'select path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)",
-    "       query 'docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)",
+    "       query 'select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(_data), entries(_attrs), entries(_inline)",
+    "       query 'select _path values from docs where layer == \"canon\"'   # `values`: bare values, no {_id,_path} hits (one item only)",
+    "       query 'select _title, tags: _tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag); _tags = authored tags ∪ #hashtags, bare `tags` the authored key alone",
+    "       query 'docs collect { from _nodes where _kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)",
     "       query 'from docs where text(\"philosophers stone\") and layer == \"canon\"'   # full-text prune",
     "       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)",
     "       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]",
-    "       query 'select t: text, d: $depth, s: $stop from blocks where id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)",
-    "       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)",
-    "       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow out_links collect { from dst }'   # citation graph (cyclic-safe: $stop=cycle)",
-    "       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk",
-    "       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri",
+    "       query 'select t: _text, d: $depth, s: $stop from blocks where _id == \"b_x\" follow _children'   # recursive walk ($depth/$stop metadata)",
+    "       query 'from nodes where _name == \"Overview\" follow _subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)",
+    "       query 'select p: _doc._path, d: $depth, s: $stop from docs where _path == \"/index.md\" follow _out_links collect { from _dst }'   # citation graph (cyclic-safe: $stop=cycle)",
+    "       query 'from blocks where _type == \"list_item\" and $leaf follow _children'   # $leaf/$depth/$stop filter the walk result post-walk",
+    "       query 'select src: _doc_id, to: _dst_path from links where _predicate == \"depends_on\"'   # the links target: _predicate/_provenance/_dst_kind + _doc_id/_dst_path/_uri",
 ];
 
 fn s(x: &str) -> String {
@@ -386,7 +386,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 (
                     s("--bare"),
                     s(
-                        "hits as the projection only — no automatic id/path columns (needs a `select`; `values` is the bare-values form)",
+                        "hits as the projection only — no automatic _id/_path columns (needs a `select`; `values` is the bare-values form)",
                     ),
                 ),
                 (
@@ -400,6 +400,9 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 s(
                     "full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.",
+                ),
+                s(
+                    "names: an engine field is `_`-prefixed (_id _path _title _tags _updated_at _type _text _doc …); a bare name is an authored key (title, tags, layer); `$it` is the row itself.",
                 ),
                 s("examples:"),
             ],

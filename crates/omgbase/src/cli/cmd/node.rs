@@ -44,7 +44,8 @@ fn set(cli: &mut Cli, rest: &[String]) -> Result<i32> {
     }
     let value = a.positionals[2..].join(" ");
     let mut m = Map::new();
-    m.insert("id".to_owned(), json!(node_id));
+    // `_id` the node (spec/surface §4 "Arguments", 5.0).
+    m.insert("_id".to_owned(), json!(node_id));
     m.insert("prop".to_owned(), json!(prop));
     m.insert("value".to_owned(), json!(value));
     let (node_id, prop) = (node_id.to_owned(), prop.to_owned());

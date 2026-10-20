@@ -431,7 +431,7 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
             let composed = o.get("data").and_then(Json::as_object).is_some_and(|d| {
                 d.get("hint").and_then(Json::as_str) == Some("arguments")
                     || [
-                        "id", "path", "doc_id", "doc_path", "ref", "section", "provider",
+                        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider",
                     ]
                     .iter()
                     .any(|k| d.contains_key(*k))
@@ -739,19 +739,20 @@ fn check_seed(outcome: &Json, paths: &[&String], writer: Engine) -> Result<(), S
         )));
     }
     for (i, (o, path)) in items.iter().zip(paths).enumerate() {
-        // Every path a tool returns is the reference form (spec/surface §1 "Paths", 2.0).
+        // Every path a tool returns is the reference form (spec/surface §1 "Paths", 2.0);
+        // an observe outcome names its document `_id`/`_path` (§4, 5.0).
         let want = format!("/{path}");
-        if o.get("path").and_then(Json::as_str) != Some(want.as_str()) {
+        if o.get("_path").and_then(Json::as_str) != Some(want.as_str()) {
             return Err(bad(format!(
                 "outcome {i} is for {}, expected {want}",
-                o["path"]
+                o["_path"]
             )));
         }
         let want = format!("d_{i}");
-        if o.get("id").and_then(Json::as_str) != Some(want.as_str()) {
+        if o.get("_id").and_then(Json::as_str) != Some(want.as_str()) {
             return Err(bad(format!(
                 "outcome {i} minted {}, expected {want} (is the minter seam active?)",
-                o["id"]
+                o["_id"]
             )));
         }
         if o.get("echo") != Some(&Json::Bool(false)) {

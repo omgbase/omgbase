@@ -44,11 +44,14 @@
 //!   ?`, `p.type = 'number' AND p.val_num <op> ?`), the whole wrapped `(…)
 //!   IS 1` (`IS NOT 1` for `!=`) so an absent or differently typed value
 //!   compares as in memory — unequal, never ordered.
-//! * **Handles are not properties** ([`non_property_handles`]): a bare
-//!   identifier or `doc.<k>` head that names a relation, reach-through
-//!   handle, source handle or bag (`nodes`, `doc`, `frontmatter`, `attrs`, …)
-//!   resolves to rows or an object in memory, never to a property row or a
-//!   JSON attribute, so it is declined rather than read as a key.
+//! * **Handles are not properties** ([`non_property_handles`]): an engine
+//!   name that is a relation, reach-through handle, source handle or bag
+//!   (`_nodes`, `_doc`, `_frontmatter`, `_attrs`, …) resolves to rows or an
+//!   object in memory, never to a property row or a JSON attribute, so it is
+//!   declined rather than read as a key. Since 5.0 (`spec/surface` §1.2,
+//!   "underscore = engine") a BARE name is always the author's — a document
+//!   property, or on blocks and nodes an `attrs` key — and an
+//!   underscore-prefixed one the engine's: translated, or declined.
 
 use oqx::Value;
 use oqx::ast::{BinaryOp, Expr, LogicalOp};
@@ -100,11 +103,11 @@ pub enum Ty {
     Num,
     /// A boolean literal or binding.
     Bool,
-    /// A `json_extract` read (an `attrs` path or a bare attribute name):
-    /// JSON `true` and `1` both surface as `1`, so a bool or num against it
-    /// tests `json_type` first ([`typed_compare`]).
+    /// A `json_extract` read (an `_attrs` path or a bare attrs key): JSON
+    /// `true` and `1` both surface as `1`, so a bool or num against it tests
+    /// `json_type` first ([`typed_compare`]).
     Json,
-    /// A document property scalar (bare key on docs, `doc.<k>`): `val_bool`,
+    /// A document property scalar (bare key on docs, `_doc.<k>`): `val_bool`,
     /// `val_num` and `val_text` coalesce into one column, and a list-valued or
     /// nested key has no scalar row (`NULL`); a bool or num against it tests
     /// `p.type` first ([`typed_compare`]).
@@ -189,48 +192,45 @@ fn const_ty(v: &Value) -> Option<Ty> {
 
 // ---- handles -----------------------------------------------------------------------
 
-/// The bare names that resolve to something other than a property or
-/// attribute on each target — the self alias, the reach-through handles, the
-/// relations and the bags (`spec/surface` §1.2) — exactly the keys
-/// [`crate::StoreContext`]'s `get` answers before its property fallback. A
-/// comparison against one of these is declined rather than read as a key
-/// (`nodes == null` is not `NULL IS NULL`). A unit test proves the sets
+/// The engine names that resolve to something other than a scalar on each
+/// target — the reach-through handles, the relations, the property source
+/// handles and (blocks/nodes) the whole `_attrs` object (`spec/surface` §1.2)
+/// — exactly the keys [`crate::StoreContext`]'s `get` answers with rows, a row
+/// or a bag. A comparison against one of these is declined rather than read as
+/// a key (`_nodes == null` is not `NULL IS NULL`). A unit test proves the sets
 /// match the context.
 #[must_use]
 pub fn non_property_handles(t: Target) -> &'static [&'static str] {
     match t {
         Target::Docs => &[
-            "doc",
-            "blocks",
-            "nodes",
-            "out_links",
-            "in_links",
-            "revisions",
-            "data",
-            "frontmatter",
-            "inline",
+            "_blocks",
+            "_nodes",
+            "_out_links",
+            "_in_links",
+            "_revisions",
+            "_data",
+            "_frontmatter",
+            "_inline",
         ],
         Target::Blocks => &[
-            "block",
-            "doc",
-            "children",
-            "nodes",
-            "out_links",
-            "section",
-            "attrs",
+            "_doc",
+            "_children",
+            "_nodes",
+            "_out_links",
+            "_section",
+            "_attrs",
         ],
         Target::Nodes => &[
-            "section",
-            "doc",
-            "block",
-            "blocks",
-            "subsections",
-            "children",
-            "attrs",
+            "_doc",
+            "_block",
+            "_blocks",
+            "_subsections",
+            "_children",
+            "_attrs",
         ],
-        Target::Links => &["doc", "dst", "block"],
+        Target::Links => &["_doc", "_dst", "_block"],
         // a revision's one reach-through: the document's current row (4.7)
-        Target::Revisions => &["doc"],
+        Target::Revisions => &["_doc"],
     }
 }
 
@@ -238,75 +238,82 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
 
 /// The identity/bytes/time attributes per kind — the names [`attribute_sql`]
 /// owns (the structural columns are handled per target in [`operand`]).
-/// `spec/surface` §1.2, 3.0: bare, snake_case, winning on collision — so a
-/// name here is translated or declined, never read as a property or an attr.
+/// `spec/surface` §1.2, 5.0: `_`-prefixed, snake_case — a name here is
+/// translated or declined, never read as a property or an attr (an engine
+/// name is never the author's).
 pub(crate) fn row_attributes(t: Target) -> &'static [&'static str] {
     match t {
         Target::Docs => &[
-            "id",
-            "path",
-            "raw",
-            "hash",
-            "updated_at",
-            "created_at",
-            "title",
-            "tags",
+            "_id",
+            "_path",
+            "_raw",
+            "_hash",
+            "_updated_at",
+            "_created_at",
+            "_title",
+            "_tags",
         ],
-        Target::Blocks => &["id", "path", "raw", "hash", "updated_at", "created_at"],
-        Target::Nodes | Target::Links | Target::Revisions => &["id", "path"],
+        Target::Blocks => &[
+            "_id",
+            "_path",
+            "_raw",
+            "_hash",
+            "_updated_at",
+            "_created_at",
+        ],
+        Target::Nodes | Target::Links | Target::Revisions => &["_id", "_path"],
     }
 }
 
 /// A row attribute → a param-free SQL scalar and its type, per target.
 /// Foreign keys and columns are translated in [`operand`]'s ident arm
-/// ([`edge_field`] for edges). Anything not mapped (`raw`, reconstructed or a
-/// blob; `title`, computed; `tags`, the union of the authored list and the
-/// computed hashtags; blocks `updated_at`/`created_at`) returns `None` →
-/// residual. `updated_at` and `created_at` (4.10) are correlated subqueries
+/// ([`edge_field`] for edges). Anything not mapped (`_raw`, reconstructed or a
+/// blob; `_title`, computed; `_tags`, the union of the authored list and the
+/// computed hashtags; blocks `_updated_at`/`_created_at`) returns `None` →
+/// residual. `_updated_at` and `_created_at` (4.10) are correlated subqueries
 /// over the document's revisions (`current_rev` / `seq = 1`). Every mapped
-/// attribute is text.
-/// `path` is rendered by [`Operand::path_col`] (the rooted read,
-/// `spec/surface` §1 "Paths").
+/// attribute is text. `_path` is rendered by [`Operand::path_col`] (the rooted
+/// read, `spec/surface` §1 "Paths").
 fn attribute_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
     let (s, d) = (ctx.self_alias, ctx.doc_alias);
     let sql = match (ctx.target, name) {
-        (Target::Docs, "id") => format!("{s}.doc_id"),
-        (Target::Docs, "path") => format!("('/' || {d}.path)"),
-        (Target::Docs, "hash") => format!("lower(hex({s}.file_hash))"),
-        (Target::Docs, "updated_at") => format!(
+        (Target::Docs, "_id") => format!("{s}.doc_id"),
+        (Target::Docs, "_path") => format!("('/' || {d}.path)"),
+        (Target::Docs, "_hash") => format!("lower(hex({s}.file_hash))"),
+        (Target::Docs, "_updated_at") => format!(
             "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {s}.current_rev)"
         ),
-        (Target::Docs, "created_at") => format!(
+        (Target::Docs, "_created_at") => format!(
             "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = {s}.doc_id AND r.seq = 1)"
         ),
-        (Target::Blocks, "id") => format!("{s}.block_id"),
-        (Target::Blocks, "path") => format!("('/' || {d}.path)"),
-        (Target::Blocks, "hash") => format!("lower(hex({s}.raw_hash))"),
-        (Target::Nodes, "id") => format!("{s}.node_id"),
-        (Target::Nodes, "path") => format!("('/' || {d}.path)"),
-        (Target::Links, "id") => format!("{s}.edge_id"),
-        (Target::Links, "path") => format!("('/' || {d}.path)"),
+        (Target::Blocks, "_id") => format!("{s}.block_id"),
+        (Target::Blocks, "_path") => format!("('/' || {d}.path)"),
+        (Target::Blocks, "_hash") => format!("lower(hex({s}.raw_hash))"),
+        (Target::Nodes, "_id") => format!("{s}.node_id"),
+        (Target::Nodes, "_path") => format!("('/' || {d}.path)"),
+        (Target::Links, "_id") => format!("{s}.edge_id"),
+        (Target::Links, "_path") => format!("('/' || {d}.path)"),
         _ => return None,
     };
     Some((sql, Ty::Text))
 }
 
 /// The links target's plain fields → the store's columns (`spec/surface`
-/// §1.2, 3.0: a foreign key is named for what it is, never `$`-prefixed).
-/// `dst_path` and `uri` are correlated subqueries; `dst_path` is the
+/// §1.2: a foreign key is named for what it is, `_`-prefixed since 5.0).
+/// `_dst_path` and `_uri` are correlated subqueries; `_dst_path` is the
 /// reference form.
 fn edge_field(name: &str, s: &str) -> Option<Operand> {
     let sql = match name {
-        "doc_id" => format!("{s}.src_doc"),
-        "block_id" => format!("{s}.src_block"),
-        "via_id" => format!("{s}.via_node"),
-        "dst_id" => format!("{s}.dst_node"),
-        "dst_path" => {
+        "_doc_id" => format!("{s}.src_doc"),
+        "_block_id" => format!("{s}.src_block"),
+        "_via_id" => format!("{s}.via_node"),
+        "_dst_id" => format!("{s}.dst_node"),
+        "_dst_path" => {
             format!("(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = {s}.dst_node)")
         }
-        "uri" => format!("(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = {s}.dst_node)"),
-        "field" => format!("{s}.src_field"),
-        "predicate" | "provenance" | "dst_kind" | "anchor" => format!("{s}.{name}"),
+        "_uri" => format!("(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = {s}.dst_node)"),
+        "_field" => format!("{s}.src_field"),
+        "_predicate" | "_provenance" | "_dst_kind" | "_anchor" => format!("{s}.{}", &name[1..]),
         _ => return None,
     };
     Operand::text(sql)
@@ -328,13 +335,13 @@ fn is_seg(s: &str) -> bool {
 /// the typed pushes select a type test ([`typed_compare`]).
 ///
 /// `source` narrows the scope to one authored source — the read
-/// `frontmatter.<k>` / `inline.<k>` performs (`spec/surface` §1.2; the
+/// `_frontmatter.<k>` / `_inline.<k>` performs (`spec/surface` §1.2; the
 /// context's `doc_prop(doc_id, key, Some(source))`): both the row and the
-/// count are of that source's rows only. The merged `data.<k>` read is the
+/// count are of that source's rows only. The merged `_data.<k>` read is the
 /// bare read, so it passes no source. `doc_id` is the SQL expression naming
 /// the document: the scan's `d.doc_id`, or a link's `e.dst_node` for a
-/// `dst.<k>` read (the destination's rows by its id — a non-document or
-/// phantom destination has none, so the read is NULL exactly where `dst` is
+/// `_dst.<k>` read (the destination's rows by its id — a non-document or
+/// phantom destination has none, so the read is NULL exactly where `_dst` is
 /// absent in memory). Same text as the reference's `propSubquery`.
 fn prop_row(doc_id: &str, key: &str, select: &str, source: Option<&str>) -> Option<String> {
     if !is_seg(key) {
@@ -361,15 +368,15 @@ fn prop_scalar(doc_id: &str, key: &str, source: Option<&str>) -> Option<String> 
     )
 }
 
-/// The source a handle scopes a property read to (`spec/surface` §1.2, 3.0):
-/// `data` is the merged authored view (no scope — exactly the bare read),
-/// `frontmatter` / `inline` one source each. `None` for a name that is not a
-/// source handle.
+/// The source a handle scopes a property read to (`spec/surface` §1.2):
+/// `_data` is the merged authored view (no scope — exactly the bare read),
+/// `_frontmatter` / `_inline` one source each. `None` for a name that is not
+/// a source handle.
 fn handle_source(handle: &str) -> Option<Option<&'static str>> {
     match handle {
-        "data" => Some(None),
-        "frontmatter" => Some(Some("frontmatter")),
-        "inline" => Some(Some("inline")),
+        "_data" => Some(None),
+        "_frontmatter" => Some(Some("frontmatter")),
+        "_inline" => Some(Some("inline")),
         _ => None,
     }
 }
@@ -399,9 +406,9 @@ enum Shape {
     /// `json_extract(col, 'path')`.
     Json { col: String, path: String },
     /// A document property read: the SQL expression naming the document
-    /// (`d.doc_id`; a link's `e.dst_node` for `dst.<k>`), the key and the
-    /// source a handle scoped it to (`frontmatter.<k>` / `inline.<k>`;
-    /// `None` for the bare or `data.<k>` read).
+    /// (`d.doc_id`; a link's `e.dst_node` for `_dst.<k>`), the key and the
+    /// source a handle scoped it to (`_frontmatter.<k>` / `_inline.<k>`;
+    /// `None` for the bare or `_data.<k>` read).
     Prop {
         doc_id: String,
         key: String,
@@ -431,9 +438,9 @@ impl Operand {
         Some(Self::plain(sql, Ty::Text))
     }
 
-    /// `path` / `doc.path`: the reference form over the storage column, so
+    /// `_path` / `_doc._path`: the reference form over the storage column, so
     /// every comparison, `startsWith`, `contains`, `lower()`… sees exactly the
-    /// string the in-memory intrinsic yields.
+    /// string the in-memory attribute yields.
     fn path_col(col: String) -> Option<Self> {
         Some(Self {
             frag: Frag::bare(format!("('/' || {col})")),
@@ -483,8 +490,8 @@ impl Operand {
     }
 }
 
-/// The dotted `attrs.a.b` / `doc.x` receiver chain as segments, or `None` if
-/// it is not a plain identifier navigation.
+/// The dotted `_attrs.a.b` / `_doc.x` receiver chain as segments, or `None`
+/// if it is not a plain identifier navigation.
 fn member_segments(e: &Expr) -> Option<Vec<&str>> {
     match e {
         Expr::Ident { name, .. } => Some(vec![name.as_str()]),
@@ -521,54 +528,62 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
         }
         Expr::Ident { name, .. } => {
             // An OQX `$` name (`$it`, `$key`, the follow intrinsics) is the
-            // language's, never a column; omgbase adds no `$` names (§1.2, 3.0).
+            // language's, never a column; omgbase adds no `$` names (§1.2).
             if name.starts_with('$') {
                 return None;
             }
             let name = name.as_str();
-            // The row's own attributes win on collision (§1.2): translated or
-            // declined (`raw`, `title`, `tags`), never read as a property or an attr.
-            if row_attributes(target).contains(&name) {
-                if name == "path" {
-                    return Operand::path_col(format!("{d}.path"));
+            // An engine name (§1.2, 5.0: `_`-prefixed) is translated or
+            // declined (`_raw`, `_title`, `_tags`; a relation, a reach-through,
+            // a source handle, the whole `_attrs` object — decline (b)); never
+            // read as a property or an attr. A `_x` that is no engine name of
+            // the kind is refused before planning (`crate::names`), so it
+            // declines here.
+            if let Some(column) = name.strip_prefix('_') {
+                if row_attributes(target).contains(&name) {
+                    if name == "_path" {
+                        return Operand::path_col(format!("{d}.path"));
+                    }
+                    return attribute_sql(name, ctx).map(|(sql, ty)| Operand::plain(sql, ty));
                 }
-                return attribute_sql(name, ctx).map(|(sql, ty)| Operand::plain(sql, ty));
+                if non_property_handles(target).contains(&name) {
+                    return None;
+                }
+                return match target {
+                    // `_format` is a column, not a property.
+                    Target::Docs if name == "_format" => Operand::text(format!("{s}.format")),
+                    Target::Blocks => match name {
+                        "_doc_id" | "_type" | "_text" => Operand::text(format!("{s}.{column}")),
+                        "_ordinal" | "_depth" => {
+                            Some(Operand::plain(format!("{s}.{column}"), Ty::Int))
+                        }
+                        _ => None,
+                    },
+                    Target::Nodes => match name {
+                        "_doc_id" | "_block_id" | "_kind" | "_name" | "_value" => {
+                            Operand::text(format!("{s}.{column}"))
+                        }
+                        _ => None,
+                    },
+                    Target::Links => edge_field(name, s),
+                    // never reached: the planner declines a revisions scan (4.7)
+                    Target::Docs | Target::Revisions => None,
+                };
             }
-            // A relation, reach-through handle, source handle or bag is not a
-            // property read (§1): rows or an object in memory, never a key. A
-            // bare target name is a relation or a loud error (the root-row
-            // rule, `crate::query`), never a property.
-            if non_property_handles(target).contains(&name) || Target::parse(name).is_some() {
+            // A bare target name is a loud error (the root-row rule,
+            // `crate::query`), never a property.
+            if Target::parse(name).is_some() {
                 return None;
             }
+            // A bare name is the author's (§1.2): a document property, or on
+            // blocks and nodes an `attrs` key — the same pushdown as the
+            // `_attrs.<k>` member form (json_extract), so `checked` ==
+            // `_attrs.checked`. A link row carries no authored data
+            // (`crate::names` refuses the read).
             match target {
-                Target::Docs => {
-                    // `format` is a column, not a property.
-                    if name == "format" {
-                        return Operand::text(format!("{s}.format"));
-                    }
-                    Operand::prop(d, name, None)
-                }
-                Target::Blocks => {
-                    if matches!(name, "doc_id" | "type" | "text") {
-                        return Operand::text(format!("{s}.{name}"));
-                    }
-                    if matches!(name, "ordinal" | "depth") {
-                        return Some(Operand::plain(format!("{s}.{name}"), Ty::Int));
-                    }
-                    // A bare non-structural identifier flattens into attrs —
-                    // the same pushdown as the `attrs.<k>` member form.
-                    Operand::json(format!("{s}.attrs"), &[name])
-                }
-                Target::Nodes => {
-                    if matches!(name, "doc_id" | "block_id" | "kind" | "name" | "value") {
-                        return Operand::text(format!("{s}.{name}"));
-                    }
-                    Operand::json(format!("{s}.attrs"), &[name])
-                }
-                Target::Links => edge_field(name, s),
-                // never reached: the planner declines a revisions scan (4.7)
-                Target::Revisions => None,
+                Target::Docs => Operand::prop(d, name, None),
+                Target::Blocks | Target::Nodes => Operand::json(format!("{s}.attrs"), &[name]),
+                Target::Links | Target::Revisions => None,
             }
         }
         Expr::Member { .. } => {
@@ -577,87 +592,75 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
             if rest.is_empty() {
                 return None;
             }
-            // attrs.<path> → json_extract on the row's attrs (blocks/nodes).
-            if *head == "attrs" && matches!(target, Target::Blocks | Target::Nodes) {
+            // _attrs.<path> → json_extract on the row's attrs (blocks/nodes).
+            if *head == "_attrs" && matches!(target, Target::Blocks | Target::Nodes) {
                 return Operand::json(format!("{s}.attrs"), rest);
             }
-            // A key read through a source handle (§1.2, 3.0): `data.<k>` is
-            // exactly the bare property read, `frontmatter.<k>` / `inline.<k>`
-            // the same read scoped to one source — on docs, and through `doc.`
-            // on the other targets (`doc.inline.element`). A WHOLE handle
-            // (`frontmatter == null`) stays declined below (decline (b)).
+            // A key read through a source handle (§1.2): `_data.<k>` is
+            // exactly the bare property read, `_frontmatter.<k>` /
+            // `_inline.<k>` the same read scoped to one source — on docs, and
+            // through `_doc.` on the other targets (`_doc._inline.element`). A
+            // WHOLE handle (`_frontmatter == null`) stays declined below
+            // (decline (b)).
             if target == Target::Docs
                 && rest.len() == 1
                 && let Some(source) = handle_source(head)
             {
                 return Operand::prop(d, rest[0], source);
             }
-            if *head == "doc"
+            if *head == "_doc"
+                && target != Target::Docs
                 && rest.len() == 2
                 && let Some(source) = handle_source(rest[0])
             {
                 return Operand::prop(d, rest[1], source);
             }
-            // doc.<x> reach-through — the owning doc (alias `doc`). On the docs
-            // target `doc` is the row itself; either way it resolves against `d`.
-            // FOREIGN-KEY ELIMINATION (`spec/surface` §1, 3.0): `doc.id` is the
-            // row's own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and
-            // `doc.path` / `doc.hash` / `doc.updated_at` the scan's
-            // already-joined document columns — no extra join, the same SQL as
-            // the bare `doc_id`.
-            if *head == "doc" {
+            // _doc.<x> reach-through — the owning doc (alias `doc`, which is
+            // `d`) on blocks, nodes and links (a document has no `_doc` since
+            // 5.0: `$it` is the self). FOREIGN-KEY ELIMINATION (`spec/surface`
+            // §1, 3.0): `_doc._id` is the row's own FK column (`b.doc_id`,
+            // `n.doc_id`, `e.src_doc`) and `_doc._path` / `_doc._hash` /
+            // `_doc._updated_at` the scan's already-joined document columns —
+            // no extra join, the same SQL as the bare `_doc_id`.
+            if *head == "_doc" && target != Target::Docs {
                 if rest.len() != 1 {
                     return None;
                 }
                 let k = rest[0];
-                if k == "id" {
-                    return Operand::text(if target == Target::Links {
+                return match k {
+                    "_id" => Operand::text(if target == Target::Links {
                         format!("{s}.src_doc")
                     } else {
                         format!("{s}.doc_id")
-                    });
-                }
-                if k == "path" {
-                    return Operand::path_col(format!("{d}.path"));
-                }
-                if k == "hash" {
-                    return Operand::text(format!("lower(hex({d}.file_hash))"));
-                }
-                if k == "updated_at" {
-                    return Operand::text(format!(
+                    }),
+                    "_path" => Operand::path_col(format!("{d}.path")),
+                    "_hash" => Operand::text(format!("lower(hex({d}.file_hash))")),
+                    "_updated_at" => Operand::text(format!(
                         "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {d}.current_rev)"
-                    ));
-                }
-                if k == "created_at" {
-                    return Operand::text(format!(
+                    )),
+                    "_created_at" => Operand::text(format!(
                         "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = {d}.doc_id AND r.seq = 1)"
-                    ));
-                }
-                if k == "format" {
-                    return Operand::text(format!("{d}.format"));
-                }
-                // `doc.raw` / `doc.title` / `doc.tags` are the attribute, not
-                // pushable; `doc.nodes`, `doc.data`, `doc.doc`… are the doc's
-                // handles, not its properties; `doc.docs` / `doc.links` raise.
-                if k.starts_with('$')
-                    || row_attributes(Target::Docs).contains(&k)
-                    || non_property_handles(Target::Docs).contains(&k)
-                    || Target::parse(k).is_some()
-                {
-                    return None;
-                }
-                return Operand::prop(d, k, None);
+                    )),
+                    "_format" => Operand::text(format!("{d}.format")),
+                    // `_doc._raw` / `_doc._title` / `_doc._nodes`, an unknown
+                    // engine name: not pushable (decline (b)); a bare target
+                    // name is the loud error, never a property.
+                    _ if k.starts_with('$') || k.starts_with('_') || Target::parse(k).is_some() => {
+                        None
+                    }
+                    _ => Operand::prop(d, k, None),
+                };
             }
-            // dst.<x> reach-through from a link (`spec/surface` §1.2, 3.0
+            // _dst.<x> reach-through from a link (`spec/surface` §1.2, 3.0
             // follow-up): the destination DOCUMENT, keyed by the row's own
-            // `dst_node` — the lookup `dst_path` already runs. A property read
+            // `dst_node` — the lookup `_dst_path` already runs. A property read
             // scopes `properties` by `e.dst_node` directly; the document's own
             // columns are a primary-key probe `(SELECT … FROM docs dd WHERE
-            // dd.doc_id = e.dst_node)` — NULL wherever `dst` is absent in
-            // memory (a block or external destination, a phantom). `dst.raw` /
-            // `dst.title` / `dst.tags` and the relations stay residual, as
-            // `doc.*`'s do.
-            if *head == "dst" && target == Target::Links {
+            // dd.doc_id = e.dst_node)` — NULL wherever `_dst` is absent in
+            // memory (a block or external destination, a phantom). `_dst._raw`
+            // / `_dst._title` / `_dst._tags` and the relations stay residual,
+            // as `_doc.*`'s do.
+            if *head == "_dst" && target == Target::Links {
                 let dst_id = format!("{s}.dst_node");
                 if rest.len() == 2
                     && let Some(source) = handle_source(rest[0])
@@ -674,60 +677,57 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     ))
                 };
                 return match k {
-                    "id" => probe("dd.doc_id"),
-                    "path" => probe("'/' || dd.path"),
-                    "hash" => probe("lower(hex(dd.file_hash))"),
-                    "updated_at" => probe(
+                    "_id" => probe("dd.doc_id"),
+                    "_path" => probe("'/' || dd.path"),
+                    "_hash" => probe("lower(hex(dd.file_hash))"),
+                    "_updated_at" => probe(
                         "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)",
                     ),
-                    "created_at" => probe(
+                    "_created_at" => probe(
                         "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)",
                     ),
-                    "format" => probe("dd.format"),
-                    _ if k.starts_with('$')
-                        || row_attributes(Target::Docs).contains(&k)
-                        || non_property_handles(Target::Docs).contains(&k)
-                        || Target::parse(k).is_some() =>
-                    {
+                    "_format" => probe("dd.format"),
+                    _ if k.starts_with('$') || k.starts_with('_') || Target::parse(k).is_some() => {
                         None
                     }
                     _ => Operand::prop_of(&dst_id, k, None),
                 };
             }
-            // block.<x> reach-through from a node: the block's identity is the
-            // node's FK (`block.id` → `n.block_id`, `block.path` → the joined
-            // `d.path`, `block.doc_id` → `n.doc_id` — FK elimination again);
-            // `type` / `text` are a correlated read of the block row.
-            if *head == "block" && target == Target::Nodes && rest.len() == 1 {
+            // _block.<x> reach-through from a node: the block's identity is
+            // the node's FK (`_block._id` → `n.block_id`, `_block._path` → the
+            // joined `d.path`, `_block._doc_id` → `n.doc_id` — FK elimination
+            // again); `_type` / `_text` are a correlated read of the block row.
+            if *head == "_block" && target == Target::Nodes && rest.len() == 1 {
                 return match rest[0] {
-                    "id" => Operand::text(format!("{s}.block_id")),
-                    "path" => Operand::path_col(format!("{d}.path")),
-                    "doc_id" => Operand::text(format!("{s}.doc_id")),
-                    k @ ("type" | "text") => Operand::text(format!(
-                        "(SELECT bb.{k} FROM blocks bb WHERE bb.block_id = {s}.block_id)"
+                    "_id" => Operand::text(format!("{s}.block_id")),
+                    "_path" => Operand::path_col(format!("{d}.path")),
+                    "_doc_id" => Operand::text(format!("{s}.doc_id")),
+                    k @ ("_type" | "_text") => Operand::text(format!(
+                        "(SELECT bb.{} FROM blocks bb WHERE bb.block_id = {s}.block_id)",
+                        &k[1..]
                     )),
                     _ => None,
                 };
             }
-            // block.<x> reach-through from a link (`spec/surface` §1.2, 4.11):
-            // the SOURCE block, keyed by the row's own `src_block` — `block.id`
-            // is that FK column (NULL for a frontmatter link, exactly where
-            // `block` is absent in memory); everything else is a primary-key
-            // probe of the block row, NULL for the same rows (`block.path`
-            // reads the scan's joined source document inside the probe, so it
-            // too is NULL when there is no block). `raw`, `hash`,
-            // `updated_at`, `attrs` and the relations stay residual.
-            if *head == "block" && target == Target::Links && rest.len() == 1 {
+            // _block.<x> reach-through from a link (`spec/surface` §1.2,
+            // 4.11): the SOURCE block, keyed by the row's own `src_block` —
+            // `_block._id` is that FK column (NULL for a frontmatter link,
+            // exactly where `_block` is absent in memory); everything else is
+            // a primary-key probe of the block row, NULL for the same rows
+            // (`_block._path` reads the scan's joined source document inside
+            // the probe, so it too is NULL when there is no block). `_raw`,
+            // `_hash`, `_updated_at`, `_attrs` and the relations stay residual.
+            if *head == "_block" && target == Target::Links && rest.len() == 1 {
                 let probe = |col: &str| {
                     Operand::text(format!(
                         "(SELECT {col} FROM blocks bb WHERE bb.block_id = {s}.src_block)"
                     ))
                 };
                 return match rest[0] {
-                    "id" => Operand::text(format!("{s}.src_block")),
-                    "path" => probe(&format!("'/' || {d}.path")),
-                    "doc_id" => probe("bb.doc_id"),
-                    k @ ("type" | "text") => probe(&format!("bb.{k}")),
+                    "_id" => Operand::text(format!("{s}.src_block")),
+                    "_path" => probe(&format!("'/' || {d}.path")),
+                    "_doc_id" => probe("bb.doc_id"),
+                    k @ ("_type" | "_text") => probe(&format!("bb.{}", &k[1..])),
                     _ => None,
                 };
             }
@@ -893,7 +893,7 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
     })
 }
 
-/// The path equality fast path (`spec/surface` §1 "Paths"): `path == "/a.md"`
+/// The path equality fast path (`spec/surface` §1 "Paths"): `_path == "/a.md"`
 /// (or `!=`, either side) against a ROOTED text constant is `d.path IS ?` with
 /// the constant's storage form, so the `(repo_id, path)` index serves it;
 /// `'/' || d.path IS ?` — what the general form emits — is the same predicate
@@ -1082,7 +1082,7 @@ mod tests {
     #[test]
     fn equality_is_null_safe_is() {
         assert_eq!(
-            translate_predicate(&pred("path == \"index.md\""), &DOCS),
+            translate_predicate(&pred("_path == \"index.md\""), &DOCS),
             frag("(('/' || d.path) IS ?)", &[text("index.md")])
         );
     }
@@ -1094,19 +1094,19 @@ mod tests {
     #[test]
     fn a_rooted_path_literal_is_the_indexed_fast_path() {
         assert_eq!(
-            translate_predicate(&pred("path == \"/index.md\""), &DOCS),
+            translate_predicate(&pred("_path == \"/index.md\""), &DOCS),
             frag("(d.path IS ?)", &[text("index.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("\"/x.md\" != path"), &DOCS),
+            translate_predicate(&pred("\"/x.md\" != _path"), &DOCS),
             frag("(d.path IS NOT ?)", &[text("x.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("path < \"/m\""), &DOCS),
+            translate_predicate(&pred("_path < \"/m\""), &DOCS),
             frag("(('/' || d.path) < ?)", &[text("/m")])
         );
         assert_eq!(
-            translate_predicate(&pred("path == \"index.md\""), &DOCS),
+            translate_predicate(&pred("_path == \"index.md\""), &DOCS),
             frag("(('/' || d.path) IS ?)", &[text("index.md")])
         );
     }
@@ -1114,7 +1114,7 @@ mod tests {
     #[test]
     fn inequality_is_null_safe_is_not() {
         assert_eq!(
-            translate_predicate(&pred("path != \"x\""), &DOCS),
+            translate_predicate(&pred("_path != \"x\""), &DOCS),
             frag("(('/' || d.path) IS NOT ?)", &[text("x")])
         );
     }
@@ -1122,7 +1122,7 @@ mod tests {
     #[test]
     fn intrinsic_column_mapping() {
         assert_eq!(
-            translate_predicate(&pred("id == \"d_1\""), &DOCS),
+            translate_predicate(&pred("_id == \"d_1\""), &DOCS),
             frag("(d.doc_id IS ?)", &[text("d_1")])
         );
     }
@@ -1132,15 +1132,15 @@ mod tests {
     #[test]
     fn relational_ops_are_plain_comparisons() {
         assert_eq!(
-            translate_predicate(&pred("path < \"m\""), &DOCS),
+            translate_predicate(&pred("_path < \"m\""), &DOCS),
             frag("(('/' || d.path) < ?)", &[text("m")])
         );
         assert_eq!(
-            translate_predicate(&pred("path >= \"m\""), &DOCS),
+            translate_predicate(&pred("_path >= \"m\""), &DOCS),
             frag("(('/' || d.path) >= ?)", &[text("m")])
         );
         // arithmetic in predicate position → residual
-        assert_eq!(translate_predicate(&pred("path + 1"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_path + 1"), &DOCS), None);
     }
 
     // -- string ops are case-sensitive (substr/instr, never LIKE) --
@@ -1148,7 +1148,7 @@ mod tests {
     #[test]
     fn starts_with_is_substr_equality() {
         assert_eq!(
-            translate_predicate(&pred("path.startsWith(\"lab/\")"), &DOCS),
+            translate_predicate(&pred("_path.startsWith(\"lab/\")"), &DOCS),
             frag(
                 "(substr(('/' || d.path), 1, length(?)) = ?)",
                 &[text("lab/"), text("lab/")]
@@ -1159,7 +1159,7 @@ mod tests {
     #[test]
     fn lower_then_starts_with_pushes_with_explicit_lower() {
         assert_eq!(
-            translate_predicate(&pred("path.lower().startsWith(\"lab/\")"), &DOCS),
+            translate_predicate(&pred("_path.lower().startsWith(\"lab/\")"), &DOCS),
             frag(
                 "(substr(lower(('/' || d.path)), 1, length(?)) = ?)",
                 &[text("lab/"), text("lab/")]
@@ -1170,7 +1170,7 @@ mod tests {
     #[test]
     fn contains_is_instr() {
         assert_eq!(
-            translate_predicate(&pred("path.contains(\"notes\")"), &DOCS),
+            translate_predicate(&pred("_path.contains(\"notes\")"), &DOCS),
             frag("(instr(('/' || d.path), ?) > 0)", &[text("notes")])
         );
     }
@@ -1178,7 +1178,7 @@ mod tests {
     #[test]
     fn ends_with_is_negative_substr_equality() {
         assert_eq!(
-            translate_predicate(&pred("path.endsWith(\".md\")"), &DOCS),
+            translate_predicate(&pred("_path.endsWith(\".md\")"), &DOCS),
             frag(
                 "(substr(('/' || d.path), -length(?)) = ?)",
                 &[text(".md"), text(".md")]
@@ -1189,7 +1189,7 @@ mod tests {
     #[test]
     fn upper_wraps_the_receiver_in_value_position() {
         assert_eq!(
-            translate_value(&pred("path.upper()"), &DOCS),
+            translate_value(&pred("_path.upper()"), &DOCS),
             frag("upper(('/' || d.path))", &[])
         );
     }
@@ -1213,7 +1213,7 @@ mod tests {
     #[test]
     fn updated_at_pushes_as_its_revisions_subquery() {
         let f =
-            translate_predicate(&pred("updated_at >= \"2026-01-01\""), &DOCS).expect("pushable");
+            translate_predicate(&pred("_updated_at >= \"2026-01-01\""), &DOCS).expect("pushable");
         assert!(
             f.sql.contains("FROM revisions r JOIN commits c"),
             "{}",
@@ -1224,7 +1224,8 @@ mod tests {
     // `created_at` (4.10): the same shape at `seq = 1`, keyed by the document.
     #[test]
     fn created_at_pushes_as_its_first_revision_subquery() {
-        let f = translate_predicate(&pred("created_at < \"2026-01-01\""), &DOCS).expect("pushable");
+        let f =
+            translate_predicate(&pred("_created_at < \"2026-01-01\""), &DOCS).expect("pushable");
         assert_eq!(
             f.sql,
             "((SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = d.doc_id AND r.seq = 1) < ?)"
@@ -1232,7 +1233,7 @@ mod tests {
         assert_eq!(f.params, vec![text("2026-01-01")]);
         // a block's is residual, like its `updated_at`
         assert_eq!(
-            translate_predicate(&pred("created_at == \"x\""), &BLOCKS),
+            translate_predicate(&pred("_created_at == \"x\""), &BLOCKS),
             None
         );
     }
@@ -1240,7 +1241,7 @@ mod tests {
     #[test]
     fn format_is_a_column_not_a_property() {
         assert_eq!(
-            translate_predicate(&pred("format == \"markdown\""), &DOCS),
+            translate_predicate(&pred("_format == \"markdown\""), &DOCS),
             frag("(d.format IS ?)", &[text("markdown")])
         );
     }
@@ -1255,19 +1256,19 @@ mod tests {
         // (against a text column — against a JSON or property read the
         // boolean pushes typed, see the typed-shape tests)
         assert_eq!(
-            translate_predicate(&pred("type == true"), &blocks).map(|f| f.params),
+            translate_predicate(&pred("_type == true"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Integer(1)])
         );
         assert_eq!(
-            translate_predicate(&pred("type == false"), &blocks).map(|f| f.params),
+            translate_predicate(&pred("_type == false"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Integer(0)])
         );
         assert_eq!(
-            translate_predicate(&pred("ordinal < 1000"), &blocks).map(|f| f.params),
+            translate_predicate(&pred("_ordinal < 1000"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Real(1000.0)])
         );
         assert_eq!(
-            translate_predicate(&pred("path == null"), &DOCS).map(|f| f.params),
+            translate_predicate(&pred("_path == null"), &DOCS).map(|f| f.params),
             Some(vec![SqlValue::Null])
         );
     }
@@ -1277,13 +1278,13 @@ mod tests {
     /// One representative expression per [`Ty`] on the blocks target (the only
     /// target with an integer column; `doc.<k>` is its property read).
     const REPRESENTATIVES: [(Ty, &str); 7] = [
-        (Ty::Text, "path"),
-        (Ty::Int, "ordinal"),
+        (Ty::Text, "_path"),
+        (Ty::Int, "_ordinal"),
         (Ty::Num, "1"),
         (Ty::Bool, "true"),
         (Ty::Null, "null"),
         (Ty::Json, "checked"),
-        (Ty::Prop, "doc.layer"),
+        (Ty::Prop, "_doc.layer"),
     ];
 
     #[test]
@@ -1298,19 +1299,19 @@ mod tests {
             assert_eq!(got, ty, "{src}");
         }
         assert_eq!(
-            typed_value(&pred("attrs.a.b"), &blocks).map(|(_, t)| t),
+            typed_value(&pred("_attrs.a.b"), &blocks).map(|(_, t)| t),
             Some(Ty::Json)
         );
         assert_eq!(
-            typed_value(&pred("depth"), &blocks).map(|(_, t)| t),
+            typed_value(&pred("_depth"), &blocks).map(|(_, t)| t),
             Some(Ty::Int)
         );
         assert_eq!(
-            typed_value(&pred("doc_id"), &blocks).map(|(_, t)| t),
+            typed_value(&pred("_doc_id"), &blocks).map(|(_, t)| t),
             Some(Ty::Text)
         );
         assert_eq!(
-            typed_value(&pred("type.lower()"), &blocks).map(|(_, t)| t),
+            typed_value(&pred("_type.lower()"), &blocks).map(|(_, t)| t),
             Some(Ty::Text)
         );
         assert_eq!(
@@ -1322,7 +1323,7 @@ mod tests {
             Some(Ty::Prop)
         );
         assert_eq!(
-            typed_value(&pred("format"), &DOCS).map(|(_, t)| t),
+            typed_value(&pred("_format"), &DOCS).map(|(_, t)| t),
             Some(Ty::Text)
         );
     }
@@ -1416,23 +1417,26 @@ mod tests {
         };
         typed("checked == 1", &blocks);
         typed("checked == true", &blocks);
-        typed("attrs.checked == true", &blocks);
+        typed("_attrs.checked == true", &blocks);
         // … or a property read (bare on docs, `doc.<k>` elsewhere)
         typed("verified == 1", &DOCS);
         typed("verified == true", &DOCS);
         typed("era < 1000", &DOCS);
-        typed("doc.era < 1000", &blocks);
+        typed("_doc.era < 1000", &blocks);
         // a boolean against an integer column; a number stays pushable
-        assert_eq!(translate_predicate(&pred("ordinal == true"), &blocks), None);
         assert_eq!(
-            translate_predicate(&pred("ordinal == 1"), &blocks),
+            translate_predicate(&pred("_ordinal == true"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("_ordinal == 1"), &blocks),
             frag("(b.ordinal IS ?)", &[SqlValue::Real(1.0)])
         );
         // null against a property read; against a JSON read or a column it pushes
-        assert_eq!(translate_predicate(&pred("tags != null"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("tags == null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_tags != null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_tags == null"), &DOCS), None);
         assert_eq!(
-            translate_predicate(&pred("doc.tags == null"), &blocks),
+            translate_predicate(&pred("_doc._tags == null"), &blocks),
             None
         );
         assert_eq!(
@@ -1443,7 +1447,7 @@ mod tests {
             )
         );
         assert_eq!(
-            translate_predicate(&pred("ordinal != null"), &blocks),
+            translate_predicate(&pred("_ordinal != null"), &blocks),
             frag("(b.ordinal IS NOT ?)", &[SqlValue::Null])
         );
         // a string literal against anything pushes under equality
@@ -1452,28 +1456,31 @@ mod tests {
             frag("(json_extract(b.attrs, '$.checked') IS ?)", &[text("x")])
         );
         assert!(translate_predicate(&pred("layer == \"canon\""), &DOCS).is_some());
-        assert!(translate_predicate(&pred("ordinal == \"1\""), &blocks).is_some());
-        assert!(translate_predicate(&pred("ordinal != \"1\""), &blocks).is_some());
+        assert!(translate_predicate(&pred("_ordinal == \"1\""), &blocks).is_some());
+        assert!(translate_predicate(&pred("_ordinal != \"1\""), &blocks).is_some());
         // … but a relational comparison across text and a number / integer
         // declines (the fifth shape): SQLite orders integers before text
-        assert_eq!(translate_predicate(&pred("ordinal < \"3\""), &blocks), None);
         assert_eq!(
-            translate_predicate(&pred("\"3\" >= ordinal"), &blocks),
+            translate_predicate(&pred("_ordinal < \"3\""), &blocks),
             None
         );
-        assert_eq!(translate_predicate(&pred("path > 5"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("type <= 1"), &blocks), None);
         assert_eq!(
-            translate_predicate(&pred("ordinal < 3"), &blocks),
+            translate_predicate(&pred("\"3\" >= _ordinal"), &blocks),
+            None
+        );
+        assert_eq!(translate_predicate(&pred("_path > 5"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_type <= 1"), &blocks), None);
+        assert_eq!(
+            translate_predicate(&pred("_ordinal < 3"), &blocks),
             frag("(b.ordinal < ?)", &[SqlValue::Real(3.0)])
         );
         assert_eq!(
-            translate_predicate(&pred("path > \"m\""), &DOCS),
+            translate_predicate(&pred("_path > \"m\""), &DOCS),
             frag("(('/' || d.path) > ?)", &[text("m")])
         );
         // two reads carry no type at plan time; a boolean equals only text/null
         assert_eq!(
-            translate_predicate(&pred("ordinal == checked"), &blocks),
+            translate_predicate(&pred("_ordinal == checked"), &blocks),
             None
         );
         assert_eq!(
@@ -1481,7 +1488,7 @@ mod tests {
             None
         );
         assert_eq!(
-            translate_predicate(&pred("doc.era == doc.year"), &blocks),
+            translate_predicate(&pred("_doc.era == _doc.year"), &blocks),
             None
         );
         assert_eq!(translate_predicate(&pred("level < \"x\""), &blocks), None);
@@ -1489,13 +1496,13 @@ mod tests {
         assert_eq!(translate_predicate(&pred("true == false"), &blocks), None);
         assert_eq!(translate_predicate(&pred("checked < true"), &blocks), None);
         assert_eq!(
-            translate_predicate(&pred("doc.verified >= false"), &blocks),
+            translate_predicate(&pred("_doc.verified >= false"), &blocks),
             None
         );
-        assert_eq!(translate_predicate(&pred("ordinal > null"), &blocks), None);
-        assert!(translate_predicate(&pred("ordinal == depth"), &blocks).is_some());
-        assert!(translate_predicate(&pred("ordinal <= depth"), &blocks).is_some());
-        assert!(translate_predicate(&pred("type == null"), &blocks).is_some());
+        assert_eq!(translate_predicate(&pred("_ordinal > null"), &blocks), None);
+        assert!(translate_predicate(&pred("_ordinal == _depth"), &blocks).is_some());
+        assert!(translate_predicate(&pred("_ordinal <= _depth"), &blocks).is_some());
+        assert!(translate_predicate(&pred("_type == null"), &blocks).is_some());
     }
 
     // -- the typed pushes (spec/surface §1, 1.2 patch) --
@@ -1532,7 +1539,7 @@ mod tests {
             frag("((json_type(b.attrs, '$.checked') = 'true') IS NOT 1)", &[])
         );
         assert_eq!(
-            translate_predicate(&pred("false == attrs.checked"), &blocks),
+            translate_predicate(&pred("false == _attrs.checked"), &blocks),
             frag("((json_type(b.attrs, '$.checked') = 'false') IS 1)", &[])
         );
         // a bound boolean is the same shape
@@ -1587,7 +1594,7 @@ mod tests {
         }
         // a constant on the left is normalized to the right, the op flipped
         assert_eq!(
-            translate_predicate(&pred("2 <= attrs.level"), &nodes),
+            translate_predicate(&pred("2 <= _attrs.level"), &nodes),
             frag(&shape(">=", "IS 1"), &two)
         );
         assert_eq!(
@@ -1623,7 +1630,7 @@ mod tests {
         );
         // `doc.<k>` from a block reads the owning document's row
         assert_eq!(
-            translate_predicate(&pred("doc.verified == false"), &blocks),
+            translate_predicate(&pred("_doc.verified == false"), &blocks),
             frag(
                 &prop_sql("verified", "p.type = 'bool' AND p.val_bool = ?", "IS 1"),
                 &[SqlValue::Integer(0)]
@@ -1668,7 +1675,7 @@ mod tests {
             );
         }
         assert_eq!(
-            translate_predicate(&pred("doc.era >= 1000"), &blocks),
+            translate_predicate(&pred("_doc.era >= 1000"), &blocks),
             frag(
                 &prop_sql("era", "p.type = 'number' AND p.val_num >= ?", "IS 1"),
                 &thousand
@@ -1700,7 +1707,7 @@ mod tests {
         };
         let e = Expr::Logical {
             op: LogicalOp::And,
-            left: eq(ident("type"), lit("task")),
+            left: eq(ident("_type"), lit("task")),
             right: Box::new(Expr::Binary {
                 op: BinaryOp::Eq,
                 left: ident("checked"),
@@ -1773,16 +1780,16 @@ mod tests {
         assert!(against(0, "checked"));
         assert!(against(1, "checked"));
         assert!(against(2, "checked"));
-        assert!(!against(2, "ordinal"));
-        assert!(against(1, "ordinal"));
+        assert!(!against(2, "_ordinal"));
+        assert!(against(1, "_ordinal"));
         // a null binding pushes against JSON, not against a property
         assert!(against(3, "checked"));
-        assert!(!against(3, "doc.tags"));
+        assert!(!against(3, "_doc.tags"));
         // an absent binding (past the end) is null
         assert!(against(9, "checked"));
-        assert!(!against(9, "doc.tags"));
+        assert!(!against(9, "_doc.tags"));
         // a non-scalar binding has no faithful SQL value
-        assert!(!against(4, "type"));
+        assert!(!against(4, "_type"));
     }
 
     // -- decline (b): handles are not property reads --
@@ -1826,27 +1833,29 @@ mod tests {
             }
         }
         // the fixtures' shapes
-        assert_eq!(translate_predicate(&pred("nodes == null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_nodes == null"), &DOCS), None);
         assert_eq!(
-            translate_predicate(&pred("frontmatter == null"), &DOCS),
+            translate_predicate(&pred("_frontmatter == null"), &DOCS),
             None
         );
-        assert_eq!(translate_predicate(&pred("nodes == null"), &blocks), None);
-        assert_eq!(translate_predicate(&pred("attrs == null"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("_nodes == null"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("_attrs == null"), &blocks), None);
         // `doc.<handle>` is the doc's handle, not its property; `doc.<k>` still pushes
         assert_eq!(
-            translate_predicate(&pred("doc.nodes == null"), &blocks),
+            translate_predicate(&pred("_doc._nodes == null"), &blocks),
             None
         );
         assert_eq!(
-            translate_predicate(&pred("doc.frontmatter == null"), &blocks),
+            translate_predicate(&pred("_doc._frontmatter == null"), &blocks),
             None
         );
-        assert_eq!(translate_predicate(&pred("doc.doc == null"), &DOCS), None);
-        assert!(translate_predicate(&pred("doc.layer == \"canon\""), &blocks).is_some());
-        // a plain attribute or property of the same spelling elsewhere still pushes
+        assert_eq!(translate_predicate(&pred("_doc._doc == null"), &DOCS), None);
+        assert!(translate_predicate(&pred("_doc.layer == \"canon\""), &blocks).is_some());
+        // a bare name of the same spelling is the author's everywhere (5.0): a
+        // property on docs, an attrs key on blocks — and pushes
         assert!(translate_predicate(&pred("section == \"x\""), &DOCS).is_some());
         assert!(translate_predicate(&pred("frontmatter == \"x\""), &blocks).is_some());
+        assert!(translate_predicate(&pred("doc == \"x\""), &DOCS).is_some());
     }
 
     /// The handle sets are exactly the keys the store context resolves to
@@ -1946,37 +1955,49 @@ mod tests {
 
     #[test]
     fn attributes_that_are_not_columns_decline_and_are_never_properties() {
-        // 3.0: the attribute wins — declined, never read as a same-named
-        // property or attr.
-        assert_eq!(translate_predicate(&pred("title == \"x\""), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("tags == \"x\""), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("raw == \"x\""), &DOCS), None);
+        // an engine attribute is declined, never read as a same-named property
+        // or attr; the bare spelling IS the author's property (5.0) and pushes
+        assert_eq!(translate_predicate(&pred("_title == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_tags == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_raw == \"x\""), &DOCS), None);
+        assert!(
+            translate_predicate(&pred("title == \"x\""), &DOCS)
+                .is_some_and(|f| f.sql.contains("p.key = 'title'"))
+        );
+        assert!(
+            translate_predicate(&pred("path == \"x\""), &DOCS)
+                .is_some_and(|f| f.sql.contains("p.key = 'path'"))
+        );
+        assert!(
+            translate_predicate(&pred("_doc.title == \"x\""), &BLOCKS)
+                .is_some_and(|f| f.sql.contains("p.key = 'title'"))
+        );
         assert_eq!(
-            translate_predicate(&pred("doc.title == \"x\""), &BLOCKS),
+            translate_predicate(&pred("_doc._title == \"x\""), &BLOCKS),
             None
         );
         assert_eq!(
-            translate_predicate(&pred("doc.raw == \"x\""), &BLOCKS),
+            translate_predicate(&pred("_doc._raw == \"x\""), &BLOCKS),
             None
         );
-        assert_eq!(translate_predicate(&pred("raw == \"x\""), &BLOCKS), None);
+        assert_eq!(translate_predicate(&pred("_raw == \"x\""), &BLOCKS), None);
         // a source handle is a non-property name on docs
-        assert_eq!(translate_predicate(&pred("data == null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_data == null"), &DOCS), None);
         // the pushable attributes push, bare or through `doc.`
-        assert!(translate_predicate(&pred("path == \"x\""), &DOCS).is_some());
-        assert!(translate_predicate(&pred("hash == \"x\""), &DOCS).is_some());
-        assert!(translate_predicate(&pred("doc.path == \"x\""), &BLOCKS).is_some());
+        assert!(translate_predicate(&pred("_path == \"x\""), &DOCS).is_some());
+        assert!(translate_predicate(&pred("_hash == \"x\""), &DOCS).is_some());
+        assert!(translate_predicate(&pred("_doc._path == \"x\""), &BLOCKS).is_some());
     }
 
     #[test]
     fn a_key_read_through_a_source_handle_is_pushed_scoped_to_its_source() {
         // `data.<k>` is exactly the bare read (same SQL, no source clause).
         let bare = translate_predicate(&pred("layer == \"canon\""), &DOCS).unwrap();
-        let data = translate_predicate(&pred("data.layer == \"canon\""), &DOCS).unwrap();
+        let data = translate_predicate(&pred("_data.layer == \"canon\""), &DOCS).unwrap();
         assert_eq!(bare, data);
         assert!(!bare.sql.contains("p.source"));
         // `frontmatter.<k>` / `inline.<k>`: the row AND the count are of that source.
-        let fm = translate_predicate(&pred("frontmatter.layer == \"canon\""), &DOCS).unwrap();
+        let fm = translate_predicate(&pred("_frontmatter.layer == \"canon\""), &DOCS).unwrap();
         assert_eq!(
             fm.sql,
             "((SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p \
@@ -1984,47 +2005,47 @@ mod tests {
               AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'layer' AND p2.deleted_commit IS NULL AND p2.source = 'frontmatter') = 1 \
               LIMIT 1) IS ?)"
         );
-        let inl = translate_predicate(&pred("doc.inline.element == \"fire\""), &BLOCKS).unwrap();
+        let inl = translate_predicate(&pred("_doc._inline.element == \"fire\""), &BLOCKS).unwrap();
         assert!(
             inl.sql.contains("p.source = 'inline'") && inl.sql.contains("p2.source = 'inline'")
         );
-        assert!(translate_predicate(&pred("doc.data.layer == \"canon\""), &BLOCKS).is_some());
+        assert!(translate_predicate(&pred("_doc._data.layer == \"canon\""), &BLOCKS).is_some());
         // a typed push keeps the scope
-        let typed = translate_predicate(&pred("frontmatter.verified == true"), &DOCS).unwrap();
+        let typed = translate_predicate(&pred("_frontmatter.verified == true"), &DOCS).unwrap();
         assert!(
             typed.sql.contains("p.type = 'bool'") && typed.sql.contains("p.source = 'frontmatter'")
         );
         // a WHOLE handle, a deeper chain and `entries(…)` still decline
         assert_eq!(
-            translate_predicate(&pred("frontmatter == null"), &DOCS),
+            translate_predicate(&pred("_frontmatter == null"), &DOCS),
             None
         );
-        assert_eq!(translate_predicate(&pred("data == null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_data == null"), &DOCS), None);
         assert_eq!(
-            translate_predicate(&pred("frontmatter.meta.owner == \"x\""), &DOCS),
-            None
-        );
-        assert_eq!(
-            translate_predicate(&pred("doc.frontmatter == null"), &BLOCKS),
+            translate_predicate(&pred("_frontmatter.meta.owner == \"x\""), &DOCS),
             None
         );
         assert_eq!(
-            translate_predicate(&pred("size(entries(frontmatter)) > 0"), &DOCS),
+            translate_predicate(&pred("_doc._frontmatter == null"), &BLOCKS),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("size(entries(_frontmatter)) > 0"), &DOCS),
             None
         );
     }
 
     #[test]
     fn docs_raw_and_computed_intrinsics_are_not_columns() {
-        assert_eq!(translate_predicate(&pred("raw == \"x\""), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("title == \"x\""), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("tags == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_raw == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_title == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_tags == \"x\""), &DOCS), None);
     }
 
     #[test]
     fn matches_needs_a_regexp_udf() {
         assert_eq!(
-            translate_predicate(&pred("path.matches(\"^lab/\")"), &DOCS),
+            translate_predicate(&pred("_path.matches(\"^lab/\")"), &DOCS),
             None
         );
     }
@@ -2033,7 +2054,7 @@ mod tests {
     fn negation_as_a_nested_expr_is_not_and_safe() {
         let e = Expr::Unary {
             op: oqx::ast::UnaryOp::Not,
-            expr: ident("path"),
+            expr: ident("_path"),
             span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
@@ -2043,8 +2064,8 @@ mod tests {
     fn disjunction_as_a_nested_expr_is_declined() {
         let e = Expr::Logical {
             op: LogicalOp::Or,
-            left: eq(ident("path"), lit("a")),
-            right: eq(ident("path"), lit("b")),
+            left: eq(ident("_path"), lit("a")),
+            right: eq(ident("_path"), lit("b")),
             span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
@@ -2068,7 +2089,7 @@ mod tests {
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("updated_at == \"x\""), &blocks),
+            translate_predicate(&pred("_updated_at == \"x\""), &blocks),
             None
         );
     }
@@ -2077,18 +2098,18 @@ mod tests {
     fn range_membership_in_and_bare_idents_are_declined() {
         assert_eq!(translate_predicate(&pred("era in 800..1680"), &DOCS), None);
         assert_eq!(
-            translate_predicate(&pred("\"a\" in list(tags)"), &DOCS),
+            translate_predicate(&pred("\"a\" in list(_tags)"), &DOCS),
             None
         );
         assert_eq!(translate_predicate(&pred("verified"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("doc.verified"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("size(tags) > 1"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("_doc.verified"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("size(_tags) > 1"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("$it.text(\"x\")"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("$it == \"x\""), &DOCS), None);
         assert_eq!(translate_predicate(&pred("^slug == \"x\""), &DOCS), None);
         // a WHOLE source handle (3.0: `frontmatter.<k>` itself is pushed)
         assert_eq!(
-            translate_predicate(&pred("frontmatter == null"), &DOCS),
+            translate_predicate(&pred("_frontmatter == null"), &DOCS),
             None
         );
     }
@@ -2099,10 +2120,10 @@ mod tests {
     fn and_composes_two_pushable_comparisons() {
         let e = Expr::Logical {
             op: LogicalOp::And,
-            left: eq(ident("path"), lit("a")),
+            left: eq(ident("_path"), lit("a")),
             right: Box::new(Expr::Binary {
                 op: BinaryOp::Ne,
-                left: ident("id"),
+                left: ident("_id"),
                 right: lit("d_2"),
                 span: oqx::Span::EMPTY,
             }),
@@ -2121,9 +2142,9 @@ mod tests {
     fn and_declines_wholesale_if_either_side_is_not_pushable() {
         let e = Expr::Logical {
             op: LogicalOp::And,
-            left: eq(ident("path"), lit("a")),
+            left: eq(ident("_path"), lit("a")),
             // raw is reconstructed, not a column → the whole && declines.
-            right: eq(ident("raw"), lit("x")),
+            right: eq(ident("_raw"), lit("x")),
             span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
@@ -2132,7 +2153,7 @@ mod tests {
     #[test]
     fn resolves_a_binding_to_its_param_value() {
         let e = eq(
-            ident("path"),
+            ident("_path"),
             Box::new(Expr::Binding {
                 index: 0,
                 span: oqx::Span::EMPTY,
@@ -2167,7 +2188,7 @@ mod tests {
         // reached through constructed AST, as in the reference's tests)
         let both = Expr::Logical {
             op: LogicalOp::And,
-            left: eq(ident("type"), lit("task")),
+            left: eq(ident("_type"), lit("task")),
             right: eq(ident("marker"), lit("x")),
             span: oqx::Span::EMPTY,
         };
@@ -2179,13 +2200,13 @@ mod tests {
             )
         );
         assert_eq!(
-            translate_predicate(&pred("attrs.marker == \"x\""), &blocks),
+            translate_predicate(&pred("_attrs.marker == \"x\""), &blocks),
             frag("(json_extract(b.attrs, '$.marker') IS ?)", &[text("x")])
         );
         // (a boolean or number against a JSON read pushes typed — see the
         // typed-shape tests)
         assert_eq!(
-            translate_predicate(&pred("attrs.checked == true"), &blocks),
+            translate_predicate(&pred("_attrs.checked == true"), &blocks),
             frag("((json_type(b.attrs, '$.checked') = 'true') IS 1)", &[])
         );
         let nodes = TranslateCtx {
@@ -2194,7 +2215,7 @@ mod tests {
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("kind == \"md:section\""), &nodes),
+            translate_predicate(&pred("_kind == \"md:section\""), &nodes),
             frag("(n.kind IS ?)", &[text("md:section")])
         );
         assert_eq!(
@@ -2209,12 +2230,12 @@ mod tests {
             )
         );
         assert_eq!(
-            translate_predicate(&pred("attrs.a.b == \"c\""), &nodes),
+            translate_predicate(&pred("_attrs.a.b == \"c\""), &nodes),
             frag("(json_extract(n.attrs, '$.a.b') IS ?)", &[text("c")])
         );
         // `attrs.<k>` is a blocks/nodes form; on docs it is not a column.
         assert_eq!(
-            translate_predicate(&pred("attrs.marker == \"x\""), &DOCS),
+            translate_predicate(&pred("_attrs.marker == \"x\""), &DOCS),
             None
         );
     }
@@ -2226,50 +2247,50 @@ mod tests {
             self_alias: "b",
             ..DOCS
         };
-        let f = translate_predicate(&pred("doc.type == \"lab-note\""), &blocks).expect("pushable");
+        let f = translate_predicate(&pred("_doc.type == \"lab-note\""), &blocks).expect("pushable");
         assert!(
             f.sql.contains("p.doc_id = d.doc_id AND p.key = 'type'"),
             "{}",
             f.sql
         );
         assert_eq!(
-            translate_predicate(&pred("doc.path == \"a.md\""), &blocks),
+            translate_predicate(&pred("_doc._path == \"a.md\""), &blocks),
             frag("(('/' || d.path) IS ?)", &[text("a.md")])
         );
         // a rooted literal (what the runner's rewrite always produces) takes
         // the indexed fast path on the storage column
         assert_eq!(
-            translate_predicate(&pred("doc.path == \"/a.md\""), &blocks),
+            translate_predicate(&pred("_doc._path == \"/a.md\""), &blocks),
             frag("(d.path IS ?)", &[text("a.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc.format == \"markdown\""), &blocks),
+            translate_predicate(&pred("_doc._format == \"markdown\""), &blocks),
             frag("(d.format IS ?)", &[text("markdown")])
         );
         // FK elimination: `doc.id` is the row's own FK column (3.0)
         assert_eq!(
-            translate_predicate(&pred("doc.id == \"d_1\""), &blocks),
+            translate_predicate(&pred("_doc._id == \"d_1\""), &blocks),
             frag("(b.doc_id IS ?)", &[text("d_1")])
         );
-        assert_eq!(translate_predicate(&pred("doc.a.b == 1"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("_doc.a.b == 1"), &blocks), None);
         let nodes = TranslateCtx {
             target: Target::Nodes,
             self_alias: "n",
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("block.type == \"task\""), &nodes),
+            translate_predicate(&pred("_block._type == \"task\""), &nodes),
             frag(
                 "((SELECT bb.type FROM blocks bb WHERE bb.block_id = n.block_id) IS ?)",
                 &[text("task")]
             )
         );
         assert_eq!(
-            translate_predicate(&pred("block.type == \"task\""), &blocks),
+            translate_predicate(&pred("_block._type == \"task\""), &blocks),
             None
         );
         assert_eq!(
-            translate_predicate(&pred("section.level == 1"), &nodes),
+            translate_predicate(&pred("_section.level == 1"), &nodes),
             None
         );
     }
@@ -2282,34 +2303,34 @@ mod tests {
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("predicate == \"references\""), &edges),
+            translate_predicate(&pred("_predicate == \"references\""), &edges),
             frag("(e.predicate IS ?)", &[text("references")])
         );
         assert_eq!(
-            translate_predicate(&pred("dst_path == \"index.md\""), &edges),
+            translate_predicate(&pred("_dst_path == \"index.md\""), &edges),
             frag(
                 "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
                 &[text("index.md")]
             )
         );
         assert_eq!(
-            translate_predicate(&pred("block_id == \"b_1\""), &edges),
+            translate_predicate(&pred("_block_id == \"b_1\""), &edges),
             frag("(e.src_block IS ?)", &[text("b_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("via_id == null"), &edges),
+            translate_predicate(&pred("_via_id == null"), &edges),
             frag("(e.via_node IS ?)", &[SqlValue::Null])
         );
         assert_eq!(
-            translate_predicate(&pred("dst_id == \"d_2\""), &edges),
+            translate_predicate(&pred("_dst_id == \"d_2\""), &edges),
             frag("(e.dst_node IS ?)", &[text("d_2")])
         );
         assert_eq!(
-            translate_predicate(&pred("field == \"before\""), &edges),
+            translate_predicate(&pred("_field == \"before\""), &edges),
             frag("(e.src_field IS ?)", &[text("before")])
         );
         assert!(
-            translate_predicate(&pred("uri == \"https://x\""), &edges)
+            translate_predicate(&pred("_uri == \"https://x\""), &edges)
                 .is_some_and(|f| f.sql.contains("FROM external_nodes xn"))
         );
         assert_eq!(translate_predicate(&pred("weight == 1"), &edges), None);
@@ -2355,77 +2376,78 @@ mod tests {
         };
         // doc.id is the FK column on every joined target, the same SQL as doc_id
         assert_eq!(
-            translate_predicate(&pred("doc.id == \"d_1\""), &blocks),
+            translate_predicate(&pred("_doc._id == \"d_1\""), &blocks),
             frag("(b.doc_id IS ?)", &[text("d_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc_id == \"d_1\""), &blocks),
+            translate_predicate(&pred("_doc_id == \"d_1\""), &blocks),
             frag("(b.doc_id IS ?)", &[text("d_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc.id == \"d_1\""), &nodes),
+            translate_predicate(&pred("_doc._id == \"d_1\""), &nodes),
             frag("(n.doc_id IS ?)", &[text("d_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc.id == \"d_1\""), &edges),
+            translate_predicate(&pred("_doc._id == \"d_1\""), &edges),
             frag("(e.src_doc IS ?)", &[text("d_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc_id == \"d_1\""), &edges),
+            translate_predicate(&pred("_doc_id == \"d_1\""), &edges),
             frag("(e.src_doc IS ?)", &[text("d_1")])
         );
+        // a document has no `_doc` (5.0: `$it` is the self): not pushable
         assert_eq!(
-            translate_predicate(&pred("doc.id == \"d_1\""), &DOCS),
-            frag("(d.doc_id IS ?)", &[text("d_1")])
+            translate_predicate(&pred("_doc._id == \"d_1\""), &DOCS),
+            None
         );
         // doc.path / doc.hash / doc.updated_at read the joined document columns
         assert_eq!(
-            translate_predicate(&pred("doc.path == \"/a.md\""), &blocks),
+            translate_predicate(&pred("_doc._path == \"/a.md\""), &blocks),
             frag("(d.path IS ?)", &[text("a.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc.path == \"/a.md\""), &edges),
+            translate_predicate(&pred("_doc._path == \"/a.md\""), &edges),
             frag("(d.path IS ?)", &[text("a.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("doc.hash == \"ab\""), &blocks),
+            translate_predicate(&pred("_doc._hash == \"ab\""), &blocks),
             frag("(lower(hex(d.file_hash)) IS ?)", &[text("ab")])
         );
         assert!(
-            translate_predicate(&pred("doc.updated_at >= \"2026\""), &nodes)
+            translate_predicate(&pred("_doc._updated_at >= \"2026\""), &nodes)
                 .is_some_and(|f| f.sql.contains("r.rev_id = d.current_rev"))
         );
         assert!(
-            translate_predicate(&pred("doc.created_at >= \"2026\""), &nodes)
+            translate_predicate(&pred("_doc._created_at >= \"2026\""), &nodes)
                 .is_some_and(|f| f.sql.contains("r.doc_id = d.doc_id AND r.seq = 1"))
         );
         assert_eq!(
-            translate_predicate(&pred("doc.raw == \"x\""), &blocks),
+            translate_predicate(&pred("_doc._raw == \"x\""), &blocks),
             None
         );
         // block.id / block.path / block.doc_id on a node are the node's own columns
         assert_eq!(
-            translate_predicate(&pred("block.id == \"b_1\""), &nodes),
+            translate_predicate(&pred("_block._id == \"b_1\""), &nodes),
             frag("(n.block_id IS ?)", &[text("b_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("block_id == \"b_1\""), &nodes),
+            translate_predicate(&pred("_block_id == \"b_1\""), &nodes),
             frag("(n.block_id IS ?)", &[text("b_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("block.path == \"/a.md\""), &nodes),
+            translate_predicate(&pred("_block._path == \"/a.md\""), &nodes),
             frag("(d.path IS ?)", &[text("a.md")])
         );
         assert_eq!(
-            translate_predicate(&pred("block.doc_id == \"d_1\""), &nodes),
+            translate_predicate(&pred("_block._doc_id == \"d_1\""), &nodes),
             frag("(n.doc_id IS ?)", &[text("d_1")])
         );
         assert!(
-            translate_predicate(&pred("block.text == \"x\""), &nodes)
+            translate_predicate(&pred("_block._text == \"x\""), &nodes)
                 .is_some_and(|f| f.sql.contains("SELECT bb.text FROM blocks bb"))
         );
         assert_eq!(
-            translate_predicate(&pred("block.hash == \"x\""), &nodes),
+            translate_predicate(&pred("_block._hash == \"x\""), &nodes),
             None
         );
     }
@@ -2442,40 +2464,40 @@ mod tests {
         // identity and the document's own columns: a primary-key probe, NULL
         // where `dst` is absent in memory
         assert_eq!(
-            translate_predicate(&pred("dst.id == \"d_2\""), &edges),
+            translate_predicate(&pred("_dst._id == \"d_2\""), &edges),
             frag(
                 "((SELECT dd.doc_id FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
                 &[text("d_2")]
             )
         );
         assert_eq!(
-            translate_predicate(&pred("dst.path == \"/a.md\""), &edges),
+            translate_predicate(&pred("_dst._path == \"/a.md\""), &edges),
             frag(
                 "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
                 &[text("/a.md")]
             )
         );
         assert_eq!(
-            translate_predicate(&pred("dst.format == \"yaml\""), &edges),
+            translate_predicate(&pred("_dst._format == \"yaml\""), &edges),
             frag(
                 "((SELECT dd.format FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
                 &[text("yaml")]
             )
         );
         assert!(
-            translate_predicate(&pred("dst.hash == \"ab\""), &edges)
+            translate_predicate(&pred("_dst._hash == \"ab\""), &edges)
                 .is_some_and(|f| f.sql.contains("lower(hex(dd.file_hash))"))
         );
         assert!(
-            translate_predicate(&pred("dst.updated_at == \"t\""), &edges)
+            translate_predicate(&pred("_dst._updated_at == \"t\""), &edges)
                 .is_some_and(|f| f.sql.contains("WHERE r.rev_id = dd.current_rev"))
         );
         assert!(
-            translate_predicate(&pred("dst.created_at == \"t\""), &edges)
+            translate_predicate(&pred("_dst._created_at == \"t\""), &edges)
                 .is_some_and(|f| f.sql.contains("WHERE r.doc_id = dd.doc_id AND r.seq = 1"))
         );
         // a property: the properties scope keyed by e.dst_node itself
-        let prop = translate_predicate(&pred("dst.layer == \"canon\""), &edges).expect("pushed");
+        let prop = translate_predicate(&pred("_dst.layer == \"canon\""), &edges).expect("pushed");
         assert!(
             prop.sql
                 .contains("p.doc_id = e.dst_node AND p.key = 'layer'"),
@@ -2485,36 +2507,36 @@ mod tests {
         assert_eq!(prop.params, vec![text("canon")]);
         // a typed push keeps the same scope
         assert!(
-            translate_predicate(&pred("dst.era > 1600"), &edges)
+            translate_predicate(&pred("_dst.era > 1600"), &edges)
                 .is_some_and(|f| f.sql.contains("p.doc_id = e.dst_node AND p.key = 'era'"))
         );
         // through a source handle
         assert!(
-            translate_predicate(&pred("dst.frontmatter.layer == \"canon\""), &edges)
+            translate_predicate(&pred("_dst._frontmatter.layer == \"canon\""), &edges)
                 .is_some_and(|f| f.sql.contains("p.source = 'frontmatter'"))
         );
         // the attributes the owner's reach-through declines decline here too,
         // and so do the relations, the whole handle and a bare `dst`
         for k in [
-            "raw",
-            "title",
-            "tags",
-            "nodes",
-            "out_links",
-            "data",
+            "_raw",
+            "_title",
+            "_tags",
+            "_nodes",
+            "_out_links",
+            "_data",
             "docs",
             "$x",
         ] {
             assert_eq!(
-                translate_predicate(&pred(&format!("dst.{k} == \"x\"")), &edges),
+                translate_predicate(&pred(&format!("_dst.{k} == \"x\"")), &edges),
                 None,
                 "dst.{k}"
             );
         }
-        assert_eq!(translate_predicate(&pred("dst == null"), &edges), None);
+        assert_eq!(translate_predicate(&pred("_dst == null"), &edges), None);
         // `dst` is a link's name only
         assert_eq!(
-            translate_predicate(&pred("dst.layer == \"canon\""), &DOCS),
+            translate_predicate(&pred("_dst.layer == \"canon\""), &DOCS),
             None
         );
     }
@@ -2530,44 +2552,44 @@ mod tests {
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("block.id == \"b_1\""), &edges),
+            translate_predicate(&pred("_block._id == \"b_1\""), &edges),
             frag("(e.src_block IS ?)", &[text("b_1")])
         );
         assert_eq!(
-            translate_predicate(&pred("block.type == \"paragraph\""), &edges),
+            translate_predicate(&pred("_block._type == \"paragraph\""), &edges),
             frag(
                 "((SELECT bb.type FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
                 &[text("paragraph")]
             )
         );
         assert!(
-            translate_predicate(&pred("block.text == \"x\""), &edges).is_some_and(|f| f
+            translate_predicate(&pred("_block._text == \"x\""), &edges).is_some_and(|f| f
                 .sql
                 .contains("SELECT bb.text FROM blocks bb WHERE bb.block_id = e.src_block"))
         );
         assert_eq!(
-            translate_predicate(&pred("block.path == \"/a.md\""), &edges),
+            translate_predicate(&pred("_block._path == \"/a.md\""), &edges),
             frag(
                 "((SELECT '/' || d.path FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
                 &[text("/a.md")]
             )
         );
         assert_eq!(
-            translate_predicate(&pred("block.doc_id == \"d_1\""), &edges),
+            translate_predicate(&pred("_block._doc_id == \"d_1\""), &edges),
             frag(
                 "((SELECT bb.doc_id FROM blocks bb WHERE bb.block_id = e.src_block) IS ?)",
                 &[text("d_1")]
             )
         );
         // the block's own attributes and relations stay residual
-        for k in ["hash", "raw", "updated_at", "attrs", "children"] {
+        for k in ["_hash", "_raw", "_updated_at", "_attrs", "_children"] {
             assert_eq!(
-                translate_predicate(&pred(&format!("block.{k} == \"x\"")), &edges),
+                translate_predicate(&pred(&format!("_block.{k} == \"x\"")), &edges),
                 None,
                 "block.{k}"
             );
         }
-        assert_eq!(translate_predicate(&pred("block == null"), &edges), None);
+        assert_eq!(translate_predicate(&pred("_block == null"), &edges), None);
     }
 
     #[test]

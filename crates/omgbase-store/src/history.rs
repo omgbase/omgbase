@@ -58,7 +58,10 @@ impl ChangesPage {
 }
 
 impl CommitDigest {
-    /// The digest as the MCP surface renders it.
+    /// The digest as the MCP surface renders it (`spec/sync` §6, 3.0): the
+    /// digest's own keys describe a commit and stay bare; a revision is a
+    /// `revisions` row rendered, so it takes the row's engine names
+    /// `{ _id, _path, _hash }` (`spec/surface` §1.2, 5.0).
     #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
@@ -69,7 +72,7 @@ impl CommitDigest {
             "actor": self.actor,
             "summary": self.summary,
             "revisions": self.revisions.iter().map(|r| serde_json::json!({
-                "id": r.doc, "path": r.path, "hash": r.content_hash,
+                "_id": r.doc, "_path": r.path, "_hash": r.content_hash,
             })).collect::<Vec<_>>(),
         })
     }
@@ -372,7 +375,7 @@ mod tests {
         let page = store.changes_since(&repo, 0, 50, None).unwrap();
         let json = page.to_json();
         assert_eq!(
-            json["digests"][0]["revisions"][0]["hash"],
+            json["digests"][0]["revisions"][0]["_hash"],
             page.digests[0].revisions[0].content_hash
         );
         assert_eq!(json["head"], 1);
