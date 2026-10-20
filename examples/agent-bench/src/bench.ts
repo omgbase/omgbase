@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-// pnpm bench [--profiles full,minimal] [--runs 3] [--tasks a,b] [--model <id>]
+// pnpm bench [--profiles full,minimal,fs] [--runs 3] [--tasks a,b] [--model <id>]
 //            [--effort high] [--max-turns 20] [--out results] [--dry]
 //
-// Every (task, profile, run) cell: a fresh alchemy workspace, one `omg mcp`
-// server under the profile, the agent loop, the checks, a JSONL transcript.
+// Every (task, profile, run) cell: a fresh alchemy workspace, one tool server
+// under the profile — `omg mcp` for `full`/`minimal`, the in-process filesystem
+// baseline for `fs` — the agent loop, the checks, a JSONL transcript. The checks
+// always run through omgbase: under `fs` the workspace is swept (`omg sync`) and a
+// `full` server spawned for them, so every profile is judged by the same oracle.
 // Writes results/<timestamp>/{report.md,results.json,transcripts/*.jsonl}.
 //
-// --dry: no model. Each task's scripted solution is replayed through the same
-// loop (so the hook fires too) against a fresh workspace and its checks must
-// pass; then the checks run against an untouched workspace and must FAIL
-// (unless the task says `trivial_on_fresh`), proving each check discriminates.
+// --dry: no model. Each task's scripted solution for the profile (`solution`, or
+// `solution_fs` under `fs`) is replayed through the same loop (so the hook fires
+// too) against a fresh workspace and its checks must pass; then the checks run
+// against an untouched workspace and must FAIL (unless the task says
+// `trivial_on_fresh`), proving each check discriminates.
 //
 // The very first model request of a bench is its credential probe: when it fails
 // with an authentication/credential error (no AWS credentials, an expired SSO
@@ -19,15 +23,17 @@ import { parseArgs } from "node:util";
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runAgent, DEFAULT_MAX_TURNS, SYSTEM_PROMPT } from "./agent.ts";
+import { runAgent, DEFAULT_MAX_TURNS, systemPromptFor } from "./agent.ts";
 import { runChecks } from "./checks.ts";
+import { FsServer } from "./fs-server.ts";
 import { OmgServer } from "./mcp.ts";
 import { ClaudeModel, DEFAULT_MODEL, ScriptedModel, isCredentialError, modelIdFor, resolveProvider, type Model, type ModelRequest, type Provider } from "./model.ts";
 import { fmtDollars, runCost } from "./pricing.ts";
 import { renderReport, type ReportMeta } from "./report.ts";
+import type { ToolServer } from "./server.ts";
 import { loadTasks } from "./tasks.ts";
-import type { Profile, RunMetrics, Task, TranscriptEvent } from "./types.ts";
-import { createWorkspace, PACKAGE_ROOT } from "./workspace.ts";
+import { isFsProfile, type Profile, type RunMetrics, type Solution, type Task, type TranscriptEvent } from "./types.ts";
+import { createWorkspace, syncWorkspace, PACKAGE_ROOT, type Workspace } from "./workspace.ts";
 
 export interface BenchOptions {
   profiles: Profile[];
@@ -44,9 +50,11 @@ export interface BenchOptions {
   log?: (line: string) => void;
 }
 
-export const USAGE = `usage: pnpm bench [--profiles full,minimal] [--runs 3] [--tasks id,id] [--model ${DEFAULT_MODEL}]
+export const USAGE = `usage: pnpm bench [--profiles full,minimal,fs] [--runs 3] [--tasks id,id] [--model ${DEFAULT_MODEL}]
                   [--provider anthropic|bedrock] [--effort low|medium|high|xhigh|max] [--max-turns ${DEFAULT_MAX_TURNS}]
                   [--out results] [--dry]
+  --profiles  omgbase catalog profiles (full, minimal — \`omg mcp --tools\`) and/or fs, the filesystem baseline:
+          generic file tools over the same vault, no omgbase; default full,minimal
   --provider  anthropic (ANTHROPIC_API_KEY) or bedrock (the AWS credential chain: AWS_PROFILE/SSO, AWS_REGION);
           default bedrock when CLAUDE_CODE_USE_BEDROCK is set and no ANTHROPIC_API_KEY is, else anthropic
           (AGENT_BENCH_PROVIDER overrides). On bedrock a bare model id maps to global.anthropic.<id>
@@ -147,6 +155,30 @@ export class FirstRequestGuard {
   }
 }
 
+/** The scripted oracle for a profile: `solution_fs` under `fs`, `solution` (the omgbase tools) otherwise. */
+export function solutionFor(task: Task, profile: Profile): Solution {
+  return isFsProfile(profile) ? task.solution_fs : task.solution;
+}
+
+/** The server the agent talks to: the filesystem baseline, or `omg mcp` under the catalog profile. */
+export async function openAgentServer(workspace: Workspace, profile: Profile): Promise<ToolServer> {
+  return isFsProfile(profile) ? new FsServer(workspace) : OmgServer.spawn({ workspace, profile });
+}
+
+/**
+ * The omg server the checks run through. Under an omgbase profile it is the agent's
+ * own server. Under `fs` the store has not seen the agent's disk writes (the agent
+ * never went through omgbase and `--no-watch` sweeps nothing), so the workspace is
+ * swept first — `omg sync`, spec/sync §4.3: new files ingested, edited files
+ * re-ingested, vanished paths tombstoned — and a `full` server spawned over it.
+ */
+export async function openCheckServer(workspace: Workspace, profile: Profile, agent: ToolServer, onEvent?: (e: TranscriptEvent) => void): Promise<OmgServer> {
+  if (!isFsProfile(profile)) return agent as OmgServer;
+  const sweep = syncWorkspace(workspace);
+  onEvent?.({ type: "sync", t: new Date().toISOString(), scanned: sweep.scanned, ingested: sweep.ingested, deleted: sweep.deleted, conflicted: sweep.conflicted });
+  return OmgServer.spawn({ workspace, profile: "full" });
+}
+
 function stamp(d = new Date()): string {
   return d.toISOString().replace(/[:.]/g, "-").replace(/-\d{3}Z$/, "Z");
 }
@@ -179,13 +211,16 @@ export async function runCell(args: {
     wall_ms: 0, hit_turn_cap: false, hook_fired: false, passed: false, check_failures: [], final_text: "", transcript: transcriptRel,
   };
   const workspace = createWorkspace();
-  let server: OmgServer | null = null;
+  let server: ToolServer | null = null;
+  let checker: OmgServer | null = null;
   try {
-    server = await OmgServer.spawn({ workspace, profile });
+    server = await openAgentServer(workspace, profile);
     const tools = await server.tools();
-    onEvent({ type: "start", t: new Date().toISOString(), task: task.id, profile, run, model: model.name, system: SYSTEM_PROMPT, prompt: task.prompt, tools: tools.map((t) => t.name) });
-    const loop = await runAgent({ task, model, server, workspace, tools, maxTurns, onEvent });
-    const failures = await runChecks(task, { server, finalText: loop.metrics.final_text });
+    const system = systemPromptFor(profile);
+    onEvent({ type: "start", t: new Date().toISOString(), task: task.id, profile, run, model: model.name, system, prompt: task.prompt, tools: tools.map((t) => t.name) });
+    const loop = await runAgent({ task, model, server, workspace, tools, system, maxTurns, onEvent });
+    checker = await openCheckServer(workspace, profile, server, onEvent);
+    const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text });
     onEvent({ type: "check", t: new Date().toISOString(), passed: failures.length === 0, failures });
     const metrics: RunMetrics = { ...base, ...loop.metrics, passed: failures.length === 0, check_failures: failures };
     const cost = runCost(metrics);
@@ -196,6 +231,7 @@ export async function runCell(args: {
     onEvent({ type: "error", t: new Date().toISOString(), message });
     return { ...base, error: message, check_failures: [`harness: ${message}`] };
   } finally {
+    if (checker && checker !== server) await checker.close();
     await server?.close();
     workspace.cleanup();
   }
@@ -206,18 +242,20 @@ export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string
   const problems: string[] = [];
   for (const profile of profiles) {
     for (const task of tasks) {
-      // positive: the solution reaches the end state
+      // positive: the profile's solution reaches the end state
       {
+        const solution = solutionFor(task, profile);
         const workspace = createWorkspace();
-        const server = await OmgServer.spawn({ workspace, profile });
+        const server = await openAgentServer(workspace, profile);
+        let checker: OmgServer | null = null;
         try {
           const tools = await server.tools();
-          const model = new ScriptedModel(task.solution);
+          const model = new ScriptedModel(solution);
           const events: TranscriptEvent[] = [];
-          const loop = await runAgent({ task, model, server, workspace, tools, maxTurns: task.solution.steps.length + 1, onEvent: (e) => events.push(e) });
+          const loop = await runAgent({ task, model, server, workspace, tools, maxTurns: solution.steps.length + 1, onEvent: (e) => events.push(e) });
           // every step's outcome vs its expectation
           const results = events.filter((e): e is Extract<TranscriptEvent, { type: "tool_result" }> => e.type === "tool_result");
-          task.solution.steps.forEach((step, i) => {
+          solution.steps.forEach((step, i) => {
             const r = results[i];
             if (!r) return void problems.push(`${task.id} [${profile}]: solution step ${i} (${step.tool}) never ran`);
             if (step.expect_error) {
@@ -227,18 +265,22 @@ export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string
             }
           });
           if (task.hook && !loop.metrics.hook_fired) problems.push(`${task.id} [${profile}]: the hook never fired`);
-          const failures = await runChecks(task, { server, finalText: loop.metrics.final_text });
+          checker = await openCheckServer(workspace, profile, server, (e) => events.push(e));
+          const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text });
           for (const f of failures) problems.push(`${task.id} [${profile}]: after the solution, check failed: ${f}`);
-          log(`  ${failures.length === 0 ? "ok  " : "FAIL"} ${task.id} [${profile}] solution: ${task.solution.steps.length} step(s), ${loop.metrics.failed_calls} expected failure(s)`);
+          const sync = events.find((e): e is Extract<TranscriptEvent, { type: "sync" }> => e.type === "sync");
+          const swept = sync ? `, swept +${sync.ingested.length} -${sync.deleted.length}` : "";
+          log(`  ${failures.length === 0 ? "ok  " : "FAIL"} ${task.id} [${profile}] solution: ${solution.steps.length} step(s), ${loop.metrics.failed_calls} expected failure(s)${swept}`);
         } finally {
+          if (checker && checker !== server) await checker.close();
           await server.close();
           workspace.cleanup();
         }
       }
-      // negative: the checks reject the untouched workspace
+      // negative: the checks reject the untouched workspace (through omgbase, whatever the profile)
       if (!task.trivial_on_fresh) {
         const workspace = createWorkspace();
-        const server = await OmgServer.spawn({ workspace, profile });
+        const server = await OmgServer.spawn({ workspace, profile: isFsProfile(profile) ? "full" : profile });
         try {
           const failures = await runChecks(task, { server, finalText: "" });
           if (failures.length === 0) problems.push(`${task.id} [${profile}]: the checks pass on an untouched workspace — they do not discriminate`);

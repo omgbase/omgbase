@@ -37,5 +37,31 @@
     ],
     "final_text": "Appended three stage lines under Processes in /index.md."
   },
-  "notes": "A multi-document read rolled up into one write. b_12 is the Processes heading of /index.md."
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^(slug|stage): ",
+          "glob": "processes/*.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/index.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/index.md",
+          "old_string": "- [coagulation](/processes/coagulation.md)\n",
+          "new_string": "- [coagulation](/processes/coagulation.md)\n\n- calcination: nigredo\n- coagulation: rubedo\n- dissolution: nigredo\n"
+        }
+      }
+    ],
+    "final_text": "Appended three stage lines under Processes in /index.md."
+  },
+  "notes": "A multi-document read rolled up into one write. b_12 is the Processes heading of /index.md. On bare files the rollup is a grep over the process notes' frontmatter (`^(slug|stage): ` — magnum-opus has `stages:` and `stage_range:`, which the anchored pattern skips) and one edit of index.md."
 }

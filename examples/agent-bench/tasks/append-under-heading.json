@@ -45,5 +45,24 @@
     ],
     "final_text": "Added the task under Tasks in /processes/calcination.md."
   },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/processes/calcination.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/processes/calcination.md",
+          "old_string": "- [ ] Chase down the earliest recorded weight-gain measurement\n",
+          "new_string": "- [ ] Chase down the earliest recorded weight-gain measurement\n- [ ] Weigh the calx after cooling\n"
+        }
+      }
+    ],
+    "final_text": "Added the task under Tasks in /processes/calcination.md."
+  },
   "notes": "b_153 is the Tasks heading of calcination under the sequential minter (spec/surface §4 Descriptions names it too)."
 }

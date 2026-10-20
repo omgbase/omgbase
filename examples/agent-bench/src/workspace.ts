@@ -44,10 +44,35 @@ export function workspaceEnv(dir: string): NodeJS.ProcessEnv {
   };
 }
 
-function omg(dir: string, env: NodeJS.ProcessEnv, argv: string[]): void {
+function omg(dir: string, env: NodeJS.ProcessEnv, argv: string[]): string {
   const r = spawnSync(process.execPath, [OMG, "--no-color", ...argv], { cwd: dir, env, encoding: "utf8", timeout: 60_000 });
   if (r.error) throw new Error(`spawn omg ${argv.join(" ")}: ${r.error.message}`);
   if (r.status !== 0) throw new Error(`omg ${argv.join(" ")} exited ${r.status}\n${r.stdout}${r.stderr}`);
+  return r.stdout;
+}
+
+/** What the one-shot sweep found (`omg sync --json`; spec/sync §4.3): paths in the `/`-rooted reference form. */
+export interface SweepResult {
+  scanned: number;
+  ingested: string[];
+  deleted: string[];
+  conflicted: string[];
+  changed: boolean;
+}
+
+/**
+ * Make the store observe what the disk holds: `omg sync`, the explicit form of the
+ * freshness sweep (spec/sync §4.3) — a file not in the stat cache or whose
+ * `(mtime, size)` moved is re-hashed and, when its bytes changed, ingested as an
+ * observed commit (a new file included); a cached path that is gone is tombstoned
+ * (so a move is a deletion plus an insertion). `omg mcp --no-watch` runs no priming
+ * sweep of its own, which is why the `fs` profile calls this before spawning the
+ * server its checks run through.
+ */
+export function syncWorkspace(ws: Workspace): SweepResult {
+  const out = omg(ws.dir, ws.env, ["--json", "sync"]);
+  const r = JSON.parse(out) as SweepResult;
+  return { scanned: r.scanned, ingested: r.ingested, deleted: r.deleted, conflicted: r.conflicted, changed: r.changed };
 }
 
 /** Build a fresh workspace under the OS temp dir (or `root`). ~1–2 s (two cold omg starts). */

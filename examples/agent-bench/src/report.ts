@@ -4,7 +4,7 @@
 // per-profile totals table, the failed-call codes and the tool-call histogram per
 // profile, and the run list with its transcripts. Pure: metrics in, Markdown out.
 import { fmtDollars, runCost } from "./pricing.ts";
-import type { Profile, RunMetrics } from "./types.ts";
+import { isFsProfile, type Profile, type RunMetrics } from "./types.ts";
 
 export interface ReportMeta {
   model: string;
@@ -86,13 +86,25 @@ function meanCost(rows: RunMetrics[]): number | null {
   return costs.every((c): c is number => c !== undefined) ? mean(costs) : null;
 }
 
-function statsRow(label: string, s: CellStats): string {
-  const pbw = s.plan_before_write === null ? "—" : `${Math.round(s.plan_before_write * 100)}%`;
+/** One table row; `plan→write` is `—` when no run wrote, and always under `fs` (it has no plan tool). */
+function statsRow(label: string, s: CellStats, profile: Profile): string {
+  const pbw = s.plan_before_write === null || isFsProfile(profile) ? "—" : `${Math.round(s.plan_before_write * 100)}%`;
   const cost = s.cost === null ? "" : fmtDollars(s.cost);
   return `| ${label} | ${s.passed}/${s.n} (${Math.round(s.pass_rate * 100)}%) | ${fmt(s.turns)} | ${fmt(s.calls)} | ${fmt(s.failed)} | ${tokens(s.uncached_tokens)} / ${tokens(s.cached_tokens)} / ${tokens(s.output_tokens)} | ${cost} | ${fmt(s.wall_s)} | ${pbw} |`;
 }
 
 const HEADER = "| task | profile | pass | turns | calls | failed | uncached / cached / out | $ / run | wall s | plan→write |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
+
+/** `\`full\`, \`minimal\` (omgbase MCP), \`fs\` (filesystem baseline)` — which profiles are omgbase and which the bare-files control. */
+export function describeProfiles(profiles: Profile[]): string {
+  const code = (ps: Profile[]) => ps.map((p) => `\`${p}\``).join(", ");
+  const omg = profiles.filter((p) => !isFsProfile(p));
+  const fs = profiles.filter(isFsProfile);
+  const parts: string[] = [];
+  if (omg.length > 0) parts.push(`${code(omg)} (omgbase MCP)`);
+  if (fs.length > 0) parts.push(`${code(fs)} (filesystem baseline, no omgbase)`);
+  return parts.join(", ");
+}
 
 function histogram(rows: RunMetrics[], pick: (r: RunMetrics) => Record<string, number>): [string, number][] {
   const acc: Record<string, number> = {};
@@ -106,21 +118,21 @@ export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
   const out: string[] = [];
   out.push("# agent-bench report", "");
   out.push(`- model: \`${meta.model}\`${meta.provider ? ` via ${meta.provider}` : ""}${meta.effort ? ` (effort ${meta.effort})` : ""}`);
-  out.push(`- profiles: ${profiles.map((p) => `\`${p}\``).join(", ")} · runs per cell: ${meta.runs} · turn cap: ${meta.max_turns}`);
+  out.push(`- profiles: ${describeProfiles(profiles)} · runs per cell: ${meta.runs} · turn cap: ${meta.max_turns}`);
   out.push(`- tasks: ${tasks.length} · runs: ${results.length}`);
   if (meta.omg_version) out.push(`- omg: ${meta.omg_version}`);
   out.push(`- started ${meta.started} · finished ${meta.finished}`);
   const perRun = meanCost(results);
   if (perRun !== null) out.push(`- cost: ${fmtDollars(perRun * results.length)} for ${results.length} run(s) at Anthropic list price (\`src/pricing.ts\`)`);
   out.push("");
-  out.push("Tokens are means per run: `uncached` input bills at full price, `cached` (cache reads + cache writes) at a tenth and 1.25× of it, `out` is output; `$ / run` is the mean cost at Anthropic list price (`src/pricing.ts`; blank for a model the table does not price — a Bedrock bill differs). `plan→write` is the share of runs that wrote something whose first write was preceded by a `plan` (— when no run wrote).", "");
+  out.push("Tokens are means per run: `uncached` input bills at full price, `cached` (cache reads + cache writes) at a tenth and 1.25× of it, `out` is output; `$ / run` is the mean cost at Anthropic list price (`src/pricing.ts`; blank for a model the table does not price — a Bedrock bill differs). `plan→write` is the share of runs that wrote something whose first write was preceded by a `plan` (— when no run wrote, and under `fs`, which has no plan tool).", "");
 
   out.push("## Task × profile", "", HEADER);
   for (const task of tasks) {
     for (const profile of profiles) {
       const rows = results.filter((r) => r.task === task && r.profile === profile);
       if (rows.length === 0) continue;
-      out.push(statsRow(`${task} | \`${profile}\``, cellStats(rows)));
+      out.push(statsRow(`${task} | \`${profile}\``, cellStats(rows), profile));
     }
   }
   out.push("");
@@ -129,14 +141,14 @@ export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
   for (const profile of profiles) {
     const rows = results.filter((r) => r.profile === profile);
     if (rows.length === 0) continue;
-    out.push(statsRow(`all | \`${profile}\``, cellStats(rows)));
+    out.push(statsRow(`all | \`${profile}\``, cellStats(rows), profile));
   }
   out.push("");
 
   for (const profile of profiles) {
     const rows = results.filter((r) => r.profile === profile);
     if (rows.length === 0) continue;
-    out.push(`## \`${profile}\``, "");
+    out.push(`## \`${profile}\`${isFsProfile(profile) ? " (filesystem baseline)" : " (omgbase)"}`, "");
     const failed = histogram(rows, (r) => r.failed_by_code);
     out.push(`Failed calls by code: ${failed.length === 0 ? "none" : failed.map(([k, v]) => `\`${k}\` ${v}`).join(", ")}`, "");
     const calls = histogram(rows, (r) => r.calls_by_tool);

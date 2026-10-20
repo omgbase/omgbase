@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { FS_TOOL_NAMES } from "../src/fs-server.ts";
 import { loadTasks, validateTask } from "../src/tasks.ts";
+import { isWriteTool } from "../src/types.ts";
 
 const VALID = {
   id: "demo",
   prompt: "do a thing",
   checks: [{ kind: "read", path: "/index.md", matches: ["Alchemy"] }],
   solution: { steps: [{ tool: "docs_read", args: { _path: "/index.md" } }], final_text: "done" },
+  solution_fs: { steps: [{ tool: "read_file", args: { path: "/index.md" } }], final_text: "done" },
 };
 
 describe("tasks/*.json", () => {
@@ -41,6 +44,19 @@ describe("tasks/*.json", () => {
       expect(t.solution.steps.length).toBeGreaterThan(0);
     }
   });
+
+  it("every task carries an fs solution that uses only the seven file tools; the no-op and the contradiction write nothing", () => {
+    for (const t of tasks) {
+      expect(t.solution_fs.final_text.length).toBeGreaterThan(0);
+      expect(t.solution_fs.steps.length).toBeGreaterThan(0);
+      for (const step of t.solution_fs.steps) expect(FS_TOOL_NAMES).toContain(step.tool);
+      const writes = t.solution_fs.steps.filter((s) => isWriteTool(s.tool)).length;
+      if (t.id === "noop" || t.id === "contradiction") expect(writes).toBe(0);
+      else expect(writes).toBeGreaterThan(0);
+    }
+    // the hook analog: read, a write the hook fires before, a re-read, the corrective edit
+    expect(tasks.find((t) => t.id === "stale-plan-retry")!.solution_fs.steps.map((s) => s.tool)).toEqual(["read_file", "edit_file", "read_file", "edit_file"]);
+  });
 });
 
 describe("validateTask", () => {
@@ -63,7 +79,9 @@ describe("validateTask", () => {
     expect(validateTask(hook, "x")).toEqual(["x.hook: hook.on must be \"after_first_plan\"", "x.hook: hook.append must be a non-empty string"]);
   });
 
-  it("rejects a non-object", () => {
+  it("rejects a non-object, and a task without an fs solution", () => {
     expect(validateTask(null, "x")).toEqual(["x: a task must be an object"]);
+    const { solution_fs: _dropped, ...noFs } = VALID;
+    expect(validateTask(noFs, "x")).toEqual(["x.solution_fs: must be an object (steps + final_text)"]);
   });
 });

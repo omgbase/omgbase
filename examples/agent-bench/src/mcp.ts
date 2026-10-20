@@ -4,20 +4,11 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type Anthropic from "@anthropic-ai/sdk";
+import type { CallOutcome, ToolServer } from "./server.ts";
 import type { Profile } from "./types.ts";
 import { OMG, type Workspace } from "./workspace.ts";
 
-/** One forwarded call, as the loop records it: `ok` is false on an error envelope or a JSON-RPC error. */
-export interface CallOutcome {
-  ok: boolean;
-  /** the text handed back to the model (the server's JSON text, or the JSON-RPC error message) */
-  text: string;
-  /** the parsed JSON when the text parses */
-  result: unknown;
-  /** the envelope's `error` code, `unknown_tool` for the profile's JSON-RPC refusal, `rpc_error` otherwise */
-  error_code?: string;
-  ms: number;
-}
+export type { CallOutcome } from "./server.ts";
 
 export interface SpawnOptions {
   workspace: Workspace;
@@ -26,7 +17,7 @@ export interface SpawnOptions {
   omg?: string;
 }
 
-export class OmgServer {
+export class OmgServer implements ToolServer {
   private readonly client: Client;
   private readonly transport: StdioClientTransport;
   readonly profile: Profile;

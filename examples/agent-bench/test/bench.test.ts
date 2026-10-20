@@ -42,6 +42,7 @@ describe("parseBenchArgs", () => {
   it("parses every flag and refuses bad values", () => {
     expect(parseBenchArgs(["--profiles", "minimal", "--runs", "1", "--tasks", "noop,rollup", "--model", "claude-sonnet-5", "--effort", "low", "--max-turns", "5", "--out", "/tmp/x", "--dry"], {}))
       .toMatchObject({ profiles: ["minimal"], runs: 1, tasks: ["noop", "rollup"], model: "claude-sonnet-5", effort: "low", maxTurns: 5, out: "/tmp/x", dry: true });
+    expect(parseBenchArgs(["--profiles", "full,minimal,fs"], {})).toMatchObject({ profiles: ["full", "minimal", "fs"] });
     expect(parseBenchArgs(["--runs", "0"], {})).toEqual({ error: "--runs must be a positive integer" });
     expect(parseBenchArgs(["--effort", "huge"], {})).toMatchObject({ error: expect.stringMatching(/--effort/) });
     expect(parseBenchArgs(["--bogus"], {})).toMatchObject({ error: expect.stringMatching(/bogus/) });
@@ -73,6 +74,26 @@ describe("bench", () => {
     expect(json.results).toHaveLength(2);
     expect(json.results[0]).not.toHaveProperty("cost_usd"); // the scripted model is not priced
     expect(log.some((l) => /pass frontmatter-edit \[full\] #1: 2 turn\(s\), 1 call\(s\), 0 failed, 0 uncached \/ 0 cached \/ 0 out, /.test(l))).toBe(true);
+  });
+
+  it("an fs cell: the filesystem tools for the agent, a sweep and an omgbase server for the checks, the baseline named in the report", async () => {
+    const own = mkdtempSync(join(tmpdir(), "agent-bench-fs-"));
+    const { dir, results, problems } = await bench({
+      ...BASE, out: own, profiles: ["fs"], tasks: ["doc-move", "noop"],
+      makeModel: (task) => new ScriptedModel(task.solution_fs),
+    });
+    expect(problems).toEqual([]);
+    expect(results.map((r) => [r.task, r.profile, r.passed, r.write_calls, r.plan_before_write])).toEqual([["doc-move", "fs", true, 3, false], ["noop", "fs", true, 0, null]]);
+    expect(results[0]!.calls_by_tool).toEqual({ grep: 1, move_file: 1, edit_file: 2 });
+    const lines = readFileSync(join(dir!, "transcripts", "doc-move.fs.1.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines.map((l) => l.type)).toEqual(["start", "assistant", "tool_call", "tool_result", "assistant", "tool_call", "tool_result", "assistant", "tool_call", "tool_result", "assistant", "tool_call", "tool_result", "assistant", "end", "sync", "check"]);
+    expect(lines[0]).toMatchObject({ profile: "fs", tools: ["list_files", "read_file", "write_file", "edit_file", "grep", "move_file", "delete_file"], system: expect.stringMatching(/^You are managing a Markdown knowledge base/) });
+    expect(lines.find((l) => l.type === "sync")).toMatchObject({ ingested: ["/index.md", "/practitioners/isaac-newton.md", "/texts/emerald-tablet.md"], deleted: ["/practitioners/newton.md"] });
+    const report = readFileSync(join(dir!, "report.md"), "utf8");
+    expect(report).toContain("- profiles: `fs` (filesystem baseline, no omgbase)");
+    expect(report).toContain("| doc-move | `fs` | 1/1 (100%) | 5.0 | 4.0 | 0.0 | 0 / 0 / 0 |  |");
+    expect(report).toMatch(/\| doc-move \| `fs` \| .* \| — \|\n/);
+    rmSync(own, { recursive: true, force: true });
   });
 
   it("aborts the whole bench with one message when the very first model request fails on credentials", async () => {

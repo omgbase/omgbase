@@ -63,5 +63,25 @@
       }
     ],
     "final_text": "Created /processes/sublimation.md with a Procedure section."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "write_file",
+        "args": {
+          "path": "processes/sublimation.md",
+          "content": "---\ntype: process\nlayer: draft\n---\n\n# Sublimation\n\nDriving a solid straight into vapour and condensing it again, skipping the liquid.\n"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "processes/sublimation.md",
+          "old_string": "skipping the liquid.\n",
+          "new_string": "skipping the liquid.\n\n## Procedure\n\nHeat the material gently in a closed vessel with a cool head and collect the deposit.\n"
+        }
+      }
+    ],
+    "final_text": "Created /processes/sublimation.md with a Procedure section."
   }
 }

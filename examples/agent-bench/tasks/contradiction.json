@@ -42,5 +42,16 @@
     ],
     "final_text": "The request is contradictory: `layer` cannot be both canon and draft, so I made no change. Which value do you want?"
   },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/processes/coagulation.md"
+        }
+      }
+    ],
+    "final_text": "The request is contradictory: `layer` cannot be both canon and draft, so I made no change. Which value do you want?"
+  },
   "notes": "The correct behaviour is to report the conflict, not to pick a value: the document must be untouched and the final answer must mention the conflict."
 }

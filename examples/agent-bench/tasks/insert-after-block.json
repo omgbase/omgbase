@@ -42,5 +42,24 @@
     ],
     "final_text": "Inserted the paragraph after the stages table."
   },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/processes/magnum-opus.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/processes/magnum-opus.md",
+          "old_string": "| Rubedo | red | the completed stone |\n\n",
+          "new_string": "| Rubedo | red | the completed stone |\n\nThe colours are those of the vessel, not of the matter.\n\n"
+        }
+      }
+    ],
+    "final_text": "Inserted the paragraph after the stages table."
+  },
   "notes": "A read-then-write that needs a block id for the anchor: the query's hit envelope carries it as `_id` (surface 5.0; `select _id` would collapse onto the envelope, so the query projects nothing)."
 }

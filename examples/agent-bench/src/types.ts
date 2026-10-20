@@ -3,15 +3,31 @@
 // per-run metrics and the transcript events. Everything the Anthropic SDK
 // already types (messages, tools, usage) is used from the SDK, not redefined.
 
-/** A catalog profile name as passed to `omg mcp --tools <profile>`. Kept open so a new profile needs no code change. */
+/**
+ * A profile name: an omgbase catalog profile as passed to `omg mcp --tools <profile>`
+ * (`full`, `minimal`), or `fs` — the filesystem baseline, generic file tools over the
+ * same vault with no omgbase at all. Kept open so a new catalog profile needs no code change.
+ */
 export type Profile = string;
 
-/** The tools of the `full` catalog that only read (plus `plan`, which writes nothing). Everything else is a write. */
+/** The filesystem baseline: `FsServer` (src/fs-server.ts) instead of `omg mcp`; the checks still run through omgbase. */
+export const FS_PROFILE = "fs";
+
+export function isFsProfile(profile: Profile): boolean {
+  return profile === FS_PROFILE;
+}
+
+/**
+ * The tools that only read: the `full` catalog's readers (plus `plan`, which writes
+ * nothing) and the `fs` profile's `list_files`/`read_file`/`grep`. Everything else is a
+ * write — `write_file`, `edit_file`, `move_file`, `delete_file` included.
+ */
 export const READ_TOOLS: ReadonlySet<string> = new Set([
   "docs_outline", "docs_read", "docs_read_many", "blocks_read", "nodes_block_read", "blocks_read_many",
   "docs_tree", "docs_list", "query_syntax", "query", "graph", "blocks_search", "blocks_resolve",
   "plan", "links_stale", "blocks_history", "docs_diff", "docs_diff_unified", "docs_read_at", "docs_history",
   "changes_since", "repos_status", "sync_status", "repos", "version",
+  "list_files", "read_file", "grep",
 ]);
 
 export function isWriteTool(name: string): boolean {
@@ -44,7 +60,12 @@ export interface ReadCheck {
   not_matches?: string[];
 }
 
-/** `unchanged`: the document's bytes equal the fixture file and no `api`-origin commit touched it (the no-op and the contradiction). */
+/**
+ * `unchanged`: the document's bytes equal the fixture file and no `api`-origin commit
+ * touched it (the no-op and the contradiction). Under the `fs` profile nothing is
+ * `api`-origin — the sweep's commits are observed — so the second half is vacuous
+ * there and the bytes comparison carries the check.
+ */
 export interface UnchangedCheck {
   kind: "unchanged";
   path: string;
@@ -103,11 +124,13 @@ export interface Task {
   id: string;
   /** what the model is asked to do — identical across profiles */
   prompt: string;
-  /** every check must pass */
+  /** every check must pass — through omgbase, under every profile */
   checks: Check[];
   hook?: Hook;
-  /** the oracle: a scripted call sequence that reaches the end state (dry run + tests) */
+  /** the oracle for the omgbase profiles: a scripted call sequence in `minimal`'s tools that reaches the end state (dry run + tests) */
   solution: Solution;
+  /** the oracle for the `fs` profile: the same end state reached with the seven file tools (`read_file`/`edit_file`/…) */
+  solution_fs: Solution;
   /** the end state equals the fresh workspace, so the negative control is skipped (the no-op) */
   trivial_on_fresh?: boolean;
   notes?: string;
@@ -161,6 +184,8 @@ export type TranscriptEvent =
   | { type: "tool_call"; t: string; turn: number; id: string; tool: string; args: unknown }
   | { type: "tool_result"; t: string; turn: number; id: string; tool: string; ok: boolean; error_code?: string; ms: number; result: unknown }
   | { type: "hook"; t: string; turn: number; hook: Hook; when: "after_plan" | "before_write" }
+  /** `fs` only: the freshness sweep (`omg sync`) that observed the agent's disk writes before the checks */
+  | { type: "sync"; t: string; scanned: number; ingested: string[]; deleted: string[]; conflicted: string[] }
   | { type: "end"; t: string; turns: number; hit_turn_cap: boolean; final_text: string }
   | { type: "check"; t: string; passed: boolean; failures: string[] }
   | { type: "error"; t: string; message: string };

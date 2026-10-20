@@ -43,5 +43,24 @@
       }
     ],
     "final_text": "Set verified: true on /substances/philosophers-stone.md."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/substances/philosophers-stone.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/substances/philosophers-stone.md",
+          "old_string": "verified: false\n",
+          "new_string": "verified: true\n"
+        }
+      }
+    ],
+    "final_text": "Set verified: true on /substances/philosophers-stone.md."
   }
 }

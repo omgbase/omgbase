@@ -1,6 +1,6 @@
 // tasks/*.json: load and validate. A task is a prompt, machine-checkable end-state
-// checks, an optional hook and the scripted solution the dry run and the tests
-// replay. Validation is structural (every member typed, ids unique, regexes
+// checks, an optional hook and the two scripted solutions the dry run and the tests
+// replay — `solution` in the omgbase tools, `solution_fs` in the file tools. Validation is structural (every member typed, ids unique, regexes
 // compile); whether a check is *right* is what `pnpm bench --dry` proves.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -75,8 +75,8 @@ function validateHook(h: unknown, at: string, problems: string[]): void {
 }
 
 function validateSolution(s: unknown, at: string, problems: string[]): void {
-  if (!isRecord(s)) return void problems.push(`${at}: solution must be an object`);
-  if (!Array.isArray(s.steps)) problems.push(`${at}: solution.steps must be an array`);
+  if (!isRecord(s)) return void problems.push(`${at}: must be an object (steps + final_text)`);
+  if (!Array.isArray(s.steps)) problems.push(`${at}: steps must be an array`);
   else {
     s.steps.forEach((step: unknown, i) => {
       const sa = `${at}.steps[${i}]`;
@@ -94,10 +94,10 @@ function validateSolution(s: unknown, at: string, problems: string[]): void {
       for (const r of refs) if (r >= i) problems.push(`${sa}: $result ${r} must refer to an earlier step`);
     });
   }
-  if (typeof s.final_text !== "string") problems.push(`${at}: solution.final_text must be a string`);
+  if (typeof s.final_text !== "string") problems.push(`${at}: final_text must be a string`);
 }
 
-const TASK_KEYS = new Set(["id", "prompt", "checks", "hook", "solution", "trivial_on_fresh", "notes"]);
+const TASK_KEYS = new Set(["id", "prompt", "checks", "hook", "solution", "solution_fs", "trivial_on_fresh", "notes"]);
 
 /** Structural problems of one task document (empty = valid). */
 export function validateTask(doc: unknown, at: string): string[] {
@@ -110,6 +110,7 @@ export function validateTask(doc: unknown, at: string): string[] {
   else doc.checks.forEach((c: unknown, i) => validateCheck(c, `${at}.checks[${i}]`, problems));
   if (doc.hook !== undefined) validateHook(doc.hook, `${at}.hook`, problems);
   validateSolution(doc.solution, `${at}.solution`, problems);
+  validateSolution(doc.solution_fs, `${at}.solution_fs`, problems);
   if (doc.trivial_on_fresh !== undefined && typeof doc.trivial_on_fresh !== "boolean") problems.push(`${at}: trivial_on_fresh must be a boolean`);
   if (doc.notes !== undefined && typeof doc.notes !== "string") problems.push(`${at}: notes must be a string`);
   return problems;

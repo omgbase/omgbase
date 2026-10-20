@@ -1,6 +1,8 @@
-// End-state checks, run through the same MCP server after the loop ends (the
-// server has already re-ingested anything the hook wrote to disk). Every check
-// returns a list of failure strings; empty = passed.
+// End-state checks, run through an omg MCP server after the loop ends — under an
+// omgbase profile the run's own server (it has already re-ingested anything the
+// hook wrote to disk); under `fs` a `full` server spawned after `omg sync` has
+// observed the agent's disk writes (src/bench.ts). The oracle is the same for every
+// profile. Every check returns a list of failure strings; empty = passed.
 import { isDeepStrictEqual } from "node:util";
 import type { OmgServer } from "./mcp.ts";
 import type { Check, Task } from "./types.ts";
@@ -56,6 +58,8 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<string[
       return failures;
     }
     case "unchanged": {
+      // Bytes first; then no `api`-origin commit. Under `fs` the second half is vacuous
+      // (the sweep's commits are observed, never api) and the bytes carry the check.
       const raw = await readRaw(server, check.path);
       if (raw === null) return [`${check.path}: not readable (missing?)`];
       if (raw !== fixtureBytes(check.path)) failures.push(`${check.path}: bytes differ from the fixture`);

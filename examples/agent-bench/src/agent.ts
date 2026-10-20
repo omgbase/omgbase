@@ -1,28 +1,40 @@
-// The agent loop: task prompt + the fixed system prompt → the model; every
-// `tool_use` is forwarded to the omg MCP server and its result handed back; stop
-// when the model answers without a tool call or the turn cap is hit. The loop
-// records every event into a transcript and the per-run metrics; the task's hook
-// (the stale-plan disk edit) is applied here, between the model and the server.
+// The agent loop: task prompt + the profile's fixed system prompt → the model; every
+// `tool_use` is forwarded to the tool server (the omg MCP server, or the filesystem
+// baseline) and its result handed back; stop when the model answers without a tool
+// call or the turn cap is hit. The loop records every event into a transcript and
+// the per-run metrics; the task's hook (the stale-plan disk edit) is applied here,
+// between the model and the server.
 import type Anthropic from "@anthropic-ai/sdk";
 import { appendFileSync } from "node:fs";
 import type { Model } from "./model.ts";
 import { usageOf } from "./model.ts";
-import type { OmgServer } from "./mcp.ts";
-import { isWriteTool, type Hook, type RunMetrics, type Task, type TokenUsage, type TranscriptEvent } from "./types.ts";
+import type { ToolServer } from "./server.ts";
+import { isFsProfile, isWriteTool, type Hook, type Profile, type RunMetrics, type Task, type TokenUsage, type TranscriptEvent } from "./types.ts";
 import type { Workspace } from "./workspace.ts";
 
-/** Minimal and identical across profiles (the brief's wording). */
+/** Minimal and identical across the omgbase profiles (the brief's wording). */
 export const SYSTEM_PROMPT =
   "You are operating an omgbase knowledge base through MCP tools. Complete the task; prefer previewing with plan before committing writes you cannot undo.";
+
+/** The `fs` analog: the same instruction with the medium named — a vault of Markdown files and filesystem tools. */
+export const FS_SYSTEM_PROMPT =
+  "You are managing a Markdown knowledge base (an Obsidian-style vault of `.md` files with YAML frontmatter and `[[wikilinks]]`/relative links) through filesystem tools. Complete the task; read before you write, and change nothing beyond what the task asks.";
+
+/** The two prompts differ only in naming the medium. */
+export function systemPromptFor(profile: Profile): string {
+  return isFsProfile(profile) ? FS_SYSTEM_PROMPT : SYSTEM_PROMPT;
+}
 
 export const DEFAULT_MAX_TURNS = 20;
 
 export interface RunOptions {
   task: Task;
   model: Model;
-  server: OmgServer;
+  server: ToolServer;
   workspace: Workspace;
   tools: Anthropic.Tool[];
+  /** the system prompt; default the one for the server's profile (`systemPromptFor`) */
+  system?: string;
   maxTurns?: number;
   /** receives every transcript event (the bench appends them to a JSONL file) */
   onEvent?: (e: TranscriptEvent) => void;
@@ -51,6 +63,7 @@ export function applyHook(hook: Hook, workspace: Workspace): void {
 export async function runAgent(opts: RunOptions): Promise<LoopResult> {
   const { task, model, server, workspace, tools } = opts;
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
+  const system = opts.system ?? systemPromptFor(server.profile);
   const emit = (e: TranscriptEvent) => opts.onEvent?.(e);
   const started = performance.now();
 
@@ -83,7 +96,7 @@ export async function runAgent(opts: RunOptions): Promise<LoopResult> {
     }
     turns += 1;
     const turn = turns;
-    const response = await model.complete({ system: SYSTEM_PROMPT, tools, messages });
+    const response = await model.complete({ system, tools, messages });
     const u = usageOf(response);
     for (const k of Object.keys(usage) as (keyof TokenUsage)[]) usage[k] += u[k];
     emit({ type: "assistant", t: now(), turn, stop_reason: response.stop_reason, content: response.content, usage: u, model: response.model });

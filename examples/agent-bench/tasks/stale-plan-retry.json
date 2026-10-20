@@ -70,5 +70,38 @@
     ],
     "final_text": "The document changed on disk after the first plan; re-planned and executed the append."
   },
-  "notes": "The harness appends a list item to the file on disk right after the model's first plan (or before its first write when it never plans); the server answers the stale commit with sync_conflict (retriable) and re-ingests, so the model must plan again. The check needs both the disk line and the model's paragraph, in order."
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/timeline/review.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/timeline/review.md",
+          "old_string": "- Who keeps the lab notes in March?\n",
+          "new_string": "- Who keeps the lab notes in March?\n\nDecisions deferred to spring are tracked in the March notes.\n"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/timeline/review.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/timeline/review.md",
+          "old_string": "\nDecisions deferred to spring are tracked in the March notes.\n- Confirm the alum order before the dissolution trials resume.\n",
+          "new_string": "- Confirm the alum order before the dissolution trials resume.\n\nDecisions deferred to spring are tracked in the March notes.\n"
+        }
+      }
+    ],
+    "final_text": "The file had gained a line on disk since my first read; re-read it and placed the paragraph after the new line, at the very end."
+  },
+  "notes": "The harness appends a list item to the file on disk right after the model's first plan (or before its first write when it never plans); the server answers the stale commit with sync_conflict (retriable) and re-ingests, so the model must plan again. The check needs both the disk line and the model's paragraph, in order. Under `fs` there is no plan, so the hook fires right before the agent's first write — the file changes under it exactly as it would on a shared vault — and there is no sync_conflict to warn it: the write succeeds. The scripted solution's first edit is anchored to the last question line, so it lands but leaves the disk line BELOW the paragraph; the re-read shows the new line and the second edit moves the paragraph to the end. An agent that writes the whole file from its first read clobbers the line and fails the check; one that re-reads (or anchors its edit to the end) passes."
 }

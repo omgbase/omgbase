@@ -48,5 +48,40 @@
       }
     ],
     "final_text": "Checked off the three tasks in /texts/mutus-liber.md."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/texts/mutus-liber.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/texts/mutus-liber.md",
+          "old_string": "- [ ] Obtain a facsimile with plate numbering",
+          "new_string": "- [x] Obtain a facsimile with plate numbering"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/texts/mutus-liber.md",
+          "old_string": "- [ ] Compare the 1677 and 1702 plate sequences",
+          "new_string": "- [x] Compare the 1677 and 1702 plate sequences"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/texts/mutus-liber.md",
+          "old_string": "- [ ] Decide whether the dew operation is literal",
+          "new_string": "- [x] Decide whether the dew operation is literal"
+        }
+      }
+    ],
+    "final_text": "Checked off the three tasks in /texts/mutus-liber.md."
   }
 }

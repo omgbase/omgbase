@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellStats, renderReport } from "../src/report.ts";
+import { cellStats, describeProfiles, renderReport } from "../src/report.ts";
 import type { RunMetrics } from "../src/types.ts";
 
 function run(over: Partial<RunMetrics>): RunMetrics {
@@ -77,6 +77,22 @@ describe("renderReport", () => {
     expect(priced).toContain("| a | `full` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 28.3k / 5690 / 632 | $0.160 | 4.0 | 0% |");
     expect(priced).toContain("| a | `minimal` | 1/1 (100%) | 3.0 | 2.0 | 0.0 | 1000 / 90.0k / 632 | $0.066 | 4.0 | 0% |");
     expect(priced).toContain("| all | `full` | 2/2 (100%) | 3.0 | 2.0 | 0.0 | 28.3k / 5690 / 632 | $0.160 | 4.0 | 0% |");
+  });
+
+  it("names the omgbase profiles and the filesystem baseline apart; plan→write is — under fs", () => {
+    expect(describeProfiles(["full", "minimal", "fs"])).toBe("`full`, `minimal` (omgbase MCP), `fs` (filesystem baseline, no omgbase)");
+    expect(describeProfiles(["full", "minimal"])).toBe("`full`, `minimal` (omgbase MCP)");
+    expect(describeProfiles(["fs"])).toBe("`fs` (filesystem baseline, no omgbase)");
+    const three = renderReport([
+      ...results,
+      run({ task: "a", profile: "fs", run: 1, passed: true, plan_before_write: false, calls_by_tool: { read_file: 2, edit_file: 1 } }),
+    ], { ...META, profiles: ["full", "minimal", "fs"] });
+    expect(three).toContain("- profiles: `full`, `minimal` (omgbase MCP), `fs` (filesystem baseline, no omgbase) · runs per cell: 2 · turn cap: 20");
+    expect(three).toContain("| a | `fs` | 1/1 (100%) | 3.0 | 2.0 | 0.0 | 1000 / 20.0k / 100 |  | 4.0 | — |");
+    expect(three).toContain("| all | `fs` | 1/1 (100%) |");
+    expect(three).toContain("## `fs` (filesystem baseline)\n\nFailed calls by code: none\n\nTool calls: `read_file` 2, `edit_file` 1");
+    expect(three).toContain("## `full` (omgbase)");
+    expect(md).toContain("| a | `full` | 1/2 (50%) | 3.0 | 2.0 | 0.5 | 1000 / 20.0k / 100 |  | 4.0 | 0% |"); // unchanged for omgbase
   });
 
   it("renders an empty result set without throwing", () => {

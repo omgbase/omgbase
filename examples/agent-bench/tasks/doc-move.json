@@ -56,5 +56,40 @@
       }
     ],
     "final_text": "Moved the note to /practitioners/isaac-newton.md; the two inbound links were retargeted."
-  }
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "practitioners/newton\\.md"
+        }
+      },
+      {
+        "tool": "move_file",
+        "args": {
+          "from": "/practitioners/newton.md",
+          "to": "/practitioners/isaac-newton.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/index.md",
+          "old_string": "[Isaac Newton](/practitioners/newton.md)",
+          "new_string": "[Isaac Newton](/practitioners/isaac-newton.md)"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/texts/emerald-tablet.md",
+          "old_string": "[Newton](/practitioners/newton.md)",
+          "new_string": "[Newton](/practitioners/isaac-newton.md)"
+        }
+      }
+    ],
+    "final_text": "Moved the note to /practitioners/isaac-newton.md and rewrote the two inbound links (index.md, texts/emerald-tablet.md)."
+  },
+  "notes": "On bare files a move is `move_file` plus a grep for the old path and one edit per linking file — the two inbound links have to be rewritten by hand; omgbase's `move` retargets them itself. The sweep sees the move as a deletion plus an insertion."
 }

@@ -67,5 +67,49 @@
       }
     ],
     "final_text": "Retargeted the links in four documents to /substances/lapis.md."
-  }
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "substances/philosophers-stone\\.md"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/index.md",
+          "old_string": "(/substances/philosophers-stone.md)",
+          "new_string": "(/substances/lapis.md)"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/processes/coagulation.md",
+          "old_string": "(/substances/philosophers-stone.md)",
+          "new_string": "(/substances/lapis.md)"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/processes/magnum-opus.md",
+          "old_string": "(/substances/philosophers-stone.md)",
+          "new_string": "(/substances/lapis.md)"
+        }
+      },
+      {
+        "tool": "edit_file",
+        "args": {
+          "path": "/lab/2026-02-notes.md",
+          "old_string": "(/substances/philosophers-stone.md)",
+          "new_string": "(/substances/lapis.md)"
+        }
+      }
+    ],
+    "final_text": "Retargeted the links in four documents to /substances/lapis.md."
+  },
+  "notes": "On bare files: grep for the target, then one exact-match edit per linking file (four); the stone note itself is not touched."
 }
