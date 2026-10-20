@@ -60,18 +60,18 @@ fn phase6b_resurrection(
         let hit = by_raw
             .get(&(n.kind.as_str(), n.raw_hash.as_str()))
             .or_else(|| by_norm.get(&(n.kind.as_str(), n.norm_hash.as_str())));
-        if let Some(hit) = hit {
-            if !consumed.contains(&hit.id) {
-                consumed.push(hit.id.clone());
-                state.assign(&n.key, &hit.id);
-                state.push(
-                    &hit.id,
-                    DispositionKind::Resurrected,
-                    Some(0.99),
-                    Some(Reason::ExactHash),
-                    Detail::new(),
-                );
-            }
+        if let Some(hit) = hit
+            && !consumed.contains(&hit.id)
+        {
+            consumed.push(hit.id.clone());
+            state.assign(&n.key, &hit.id);
+            state.push(
+                &hit.id,
+                DispositionKind::Resurrected,
+                Some(0.99),
+                Some(Reason::ExactHash),
+                Detail::new(),
+            );
         }
     }
 }

@@ -623,23 +623,22 @@ impl<'e, C: DataContext> Exec<'e, C> {
             args,
             ..
         } = e
+            && name == "entries"
         {
-            if name == "entries" {
-                let mut vals = Vec::with_capacity(args.len());
-                for a in args {
-                    vals.push(self.eval_expr(a, scope)?);
-                }
-                let target = vals.into_iter().next().unwrap_or(Value::Undefined);
-                return Ok(Rows::plural(
-                    entries_of(&target)
-                        .into_iter()
-                        .map(|en| Row {
-                            value: en.value,
-                            key: Some(en.key),
-                        })
-                        .collect(),
-                ));
+            let mut vals = Vec::with_capacity(args.len());
+            for a in args {
+                vals.push(self.eval_expr(a, scope)?);
             }
+            let target = vals.into_iter().next().unwrap_or(Value::Undefined);
+            return Ok(Rows::plural(
+                entries_of(&target)
+                    .into_iter()
+                    .map(|en| Row {
+                        value: en.value,
+                        key: Some(en.key),
+                    })
+                    .collect(),
+            ));
         }
         let v = self.eval_raw(e, scope)?;
         self.coerce_rows(&v, Some(e))
@@ -2348,10 +2347,10 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 g.rows.iter().cloned().map(Row::into_value).collect(),
             ));
         }
-        if RECUR.contains(&name) {
-            if let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name)) {
-                return Ok(v.clone());
-            }
+        if RECUR.contains(&name)
+            && let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name))
+        {
+            return Ok(v.clone());
         }
         if let Some(v) = scope.lifts.borrow().get(name) {
             return Ok(v.clone());

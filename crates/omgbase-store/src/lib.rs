@@ -235,11 +235,11 @@ impl Store {
     /// [`Store::open`] with a replaceable minter (§2.2).
     pub fn open_with_minter(path: impl AsRef<Path>, minter: Box<dyn IdMinter>) -> Result<Self> {
         let path = path.as_ref();
-        if path.as_os_str() != ":memory:" {
-            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-                std::fs::create_dir_all(dir)
-                    .map_err(|e| Error::Other(format!("cannot create {}: {e}", dir.display())))?;
-            }
+        if path.as_os_str() != ":memory:"
+            && let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(dir)
+                .map_err(|e| Error::Other(format!("cannot create {}: {e}", dir.display())))?;
         }
         Self::from_connection(Connection::open(path)?, minter)
     }

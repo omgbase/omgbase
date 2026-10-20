@@ -145,13 +145,12 @@ fn validate_blocks(at: &str, blocks: &Json, is_old: bool, problems: &mut Vec<Str
         if !is_old && obj.contains_key("id") {
             problems.push(format!("{here}: new block must not carry an `id`"));
         }
-        if let Some(anchors) = obj.get("anchors") {
-            if !anchors
+        if let Some(anchors) = obj.get("anchors")
+            && !anchors
                 .as_array()
                 .is_some_and(|a| a.iter().all(Json::is_string))
-            {
-                problems.push(format!("{here}: `anchors` must be an array of strings"));
-            }
+        {
+            problems.push(format!("{here}: `anchors` must be an array of strings"));
         }
         match obj.get("children") {
             Some(children) if children.is_array() => {

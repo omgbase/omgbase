@@ -88,13 +88,13 @@ fn route(
         if trimmed.is_empty() {
             continue;
         }
-        if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(trimmed) {
-            if let Some(event) = parse_event(&obj) {
-                if watching.load(Ordering::SeqCst) {
-                    let _ = events.send(event);
-                }
-                continue;
+        if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(trimmed)
+            && let Some(event) = parse_event(&obj)
+        {
+            if watching.load(Ordering::SeqCst) {
+                let _ = events.send(event);
             }
+            continue;
         }
         // Non-JSON on stdout is a protocol violation; surfaced as a response
         // so the awaiting call fails instead of hanging.

@@ -482,13 +482,13 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
     // A top-level `from <name>` that is no collection (`from edges`, the links
     // target's name before 3.0) would scan an absent root and come back empty:
     // refused, naming the five collections.
-    if let Expr::Ident { name, .. } = &q.source {
-        if Target::parse(name).is_none() {
-            return Err(SurfaceError::filter_invalid(
-                unknown_target_message(name),
-                "OQX",
-            ));
-        }
+    if let Expr::Ident { name, .. } = &q.source
+        && Target::parse(name).is_none()
+    {
+        return Err(SurfaceError::filter_invalid(
+            unknown_target_message(name),
+            "OQX",
+        ));
     }
     struct Check(Option<SurfaceError>);
     impl Visitor<'_> for Check {
@@ -502,14 +502,16 @@ pub fn check_root_spellings(q: &Query) -> Result<()> {
                 {
                     self.0 = Some(SurfaceError::filter_invalid(REPO_REMOVED_MESSAGE, "OQX"));
                 }
-                Node::Expr(Expr::Ident { name, .. })
-                    if ctx.depth >= 1
-                        && let Some(t) = Target::parse(name) =>
-                {
-                    self.0 = Some(SurfaceError::filter_invalid(
-                        bare_target_message(t, Some(ctx.depth)),
-                        "OQX",
-                    ));
+                // Not an `if let` match guard: that syntax needs a newer rustc than
+                // the crate's `rust-version` promises (the arm falls through to `_`
+                // either way, so the `if let` inside is equivalent).
+                Node::Expr(Expr::Ident { name, .. }) if ctx.depth >= 1 => {
+                    if let Some(t) = Target::parse(name) {
+                        self.0 = Some(SurfaceError::filter_invalid(
+                            bare_target_message(t, Some(ctx.depth)),
+                            "OQX",
+                        ));
+                    }
                 }
                 Node::Expr(Expr::Outer { name, levels, .. }) if *levels > ctx.depth => {
                     if let Some(t) = Target::parse(name) {

@@ -2119,10 +2119,10 @@ impl DataContext for StoreContext<'_> {
         if let Some(r) = dates::date_method(name, recv, args) {
             return Some(r);
         }
-        if name == "matches" {
-            if let Some(r) = self.matches_memoized(recv, args) {
-                return Some(r);
-            }
+        if name == "matches"
+            && let Some(r) = self.matches_memoized(recv, args)
+        {
+            return Some(r);
         }
         builtin_method_with(RegexDialect::Oqx, name, recv, args)
     }

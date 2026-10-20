@@ -2075,18 +2075,17 @@ impl Surface {
                         .collect::<Result<_>>()?;
                 let to_ref = arg_string(args, "to")?;
                 let (parent, doc_id) = self.resolve_parent_ref(&repo, &to_ref)?;
-                if parent == Parent::Doc {
-                    if let Some(first) = blocks.first() {
-                        if self.doc_id_of_block(first)? != Some(doc_id.clone()) {
-                            return Err(SurfaceError::with_data(
-                                "target_missing",
-                                format!(
-                                    "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
-                                ),
-                                json!({ "to": to_ref }),
-                            ));
-                        }
-                    }
+                if parent == Parent::Doc
+                    && let Some(first) = blocks.first()
+                    && self.doc_id_of_block(first)? != Some(doc_id.clone())
+                {
+                    return Err(SurfaceError::with_data(
+                        "target_missing",
+                        format!(
+                            "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
+                        ),
+                        json!({ "to": to_ref }),
+                    ));
                 }
                 let at = self.resolve_at(&repo, args.get("at"))?;
                 let effects = sugar::move_blocks(
@@ -2755,10 +2754,10 @@ pub fn plan_json(plan: &Plan) -> Json {
         // as the reference's `OpResult` is — the 3.x apply result's spelling.
         if let Some(results) = preview.get_mut("results").and_then(Json::as_array_mut) {
             for r in results {
-                if let Some(o) = r.as_object_mut() {
-                    if let Some(m) = o.shift_remove("merged_into") {
-                        o.insert("mergedInto".to_owned(), m);
-                    }
+                if let Some(o) = r.as_object_mut()
+                    && let Some(m) = o.shift_remove("merged_into")
+                {
+                    o.insert("mergedInto".to_owned(), m);
                 }
             }
         }

@@ -160,21 +160,21 @@ pub fn derive_rows(value: &Json) -> Option<Vec<Row>> {
     if let Some(digests) = o.get("digests").and_then(Json::as_array) {
         return Some(digests.iter().map(row_of).collect()); // log
     }
-    if o.get("plan_id").is_some_and(Json::is_string) {
-        if let Some(ids) = o.get("ids").and_then(Json::as_array) {
-            // A write's Receipt as the verbs capture it (cli 4.0): the ids the
-            // write names, one row per id.
-            return Some(
-                ids.iter()
-                    .filter_map(Json::as_str)
-                    .map(|id| Row {
-                        r#ref: id.to_owned(),
-                        label: id.to_owned(),
-                        value: Json::String(id.to_owned()),
-                    })
-                    .collect(),
-            );
-        }
+    if o.get("plan_id").is_some_and(Json::is_string)
+        && let Some(ids) = o.get("ids").and_then(Json::as_array)
+    {
+        // A write's Receipt as the verbs capture it (cli 4.0): the ids the
+        // write names, one row per id.
+        return Some(
+            ids.iter()
+                .filter_map(Json::as_str)
+                .map(|id| Row {
+                    r#ref: id.to_owned(),
+                    label: id.to_owned(),
+                    value: Json::String(id.to_owned()),
+                })
+                .collect(),
+        );
     }
     let out = o.get("out").and_then(Json::as_array);
     let inbound = o.get("in").and_then(Json::as_array);

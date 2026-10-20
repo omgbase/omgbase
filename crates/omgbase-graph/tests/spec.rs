@@ -802,10 +802,10 @@ fn check_graph(conn: &Connection, repo_id: &str) -> Vec<String> {
             ))
             .or_insert((0, Vec::new()));
         entry.0 += 1;
-        if let Some(b) = e["src_block"].as_str() {
-            if entry.1.len() < 3 {
-                entry.1.push(b.to_owned());
-            }
+        if let Some(b) = e["src_block"].as_str()
+            && entry.1.len() < 3
+        {
+            entry.1.push(b.to_owned());
         }
     }
     let want: BTreeSet<String> = want

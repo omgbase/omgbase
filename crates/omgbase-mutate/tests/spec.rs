@@ -580,13 +580,14 @@ fn validate_projection(at: &str, e: &Json, step_count: i64, problems: &mut Vec<S
             problems.push(format!("{at}.{k}: must be an array"));
         }
     }
-    if let Some(steps) = obj["steps"].as_array() {
-        if step_count >= 0 && steps.len() as i64 != step_count {
-            problems.push(format!(
-                "{at}.steps: {} outcomes for {step_count} steps",
-                steps.len()
-            ));
-        }
+    if let Some(steps) = obj["steps"].as_array()
+        && step_count >= 0
+        && steps.len() as i64 != step_count
+    {
+        problems.push(format!(
+            "{at}.steps: {} outcomes for {step_count} steps",
+            steps.len()
+        ));
     }
 }
 
@@ -1920,10 +1921,10 @@ fn check_all(r: &mut Runner) -> Vec<String> {
     };
     for (doc_id, path, file_hash) in live {
         let bytes = r.doc_store.read(&path).expect("mem store reads");
-        if let (Some(b), Some(h)) = (&bytes, &file_hash) {
-            if sha256(b.as_bytes())[..] == h[..] {
-                r.pending_disk.remove(&path);
-            }
+        if let (Some(b), Some(h)) = (&bytes, &file_hash)
+            && sha256(b.as_bytes())[..] == h[..]
+        {
+            r.pending_disk.remove(&path);
         }
         let reconstructed = r
             .store
@@ -2096,21 +2097,21 @@ fn check_invariants(
                     e.block_id
                 ));
             }
-            if let Some(t) = &e.trivia_hash_hex {
-                if !blob_hashes.contains(t) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} trivia_hash not in blobs",
-                        e.block_id
-                    ));
-                }
+            if let Some(t) = &e.trivia_hash_hex
+                && !blob_hashes.contains(t)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} trivia_hash not in blobs",
+                    e.block_id
+                ));
             }
-            if let Some(c) = &e.child_tree_hash_hex {
-                if !tree_hashes.contains(c) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} child tree not in tree_nodes",
-                        e.block_id
-                    ));
-                }
+            if let Some(c) = &e.child_tree_hash_hex
+                && !tree_hashes.contains(c)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} child tree not in tree_nodes",
+                    e.block_id
+                ));
             }
         }
         nodes.insert(h, node);
@@ -2561,13 +2562,13 @@ fn check_invariants(
             problems.push(format!("I5: blob {h} is unreachable from every revision"));
         }
     }
-    if let Ok(dry) = store.gc_dry_run() {
-        if dry.blobs_swept != 0 || dry.tree_nodes_swept != 0 {
-            problems.push(format!(
-                "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
-                dry.blobs_swept, dry.tree_nodes_swept
-            ));
-        }
+    if let Ok(dry) = store.gc_dry_run()
+        && (dry.blobs_swept != 0 || dry.tree_nodes_swept != 0)
+    {
+        problems.push(format!(
+            "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
+            dry.blobs_swept, dry.tree_nodes_swept
+        ));
     }
 
     // I6

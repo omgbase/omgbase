@@ -574,14 +574,13 @@ impl<'c> TreeResolver<'c> {
         let mut self_contained = form == Form::Full;
         if self_contained {
             for e in &entries {
-                if let Some(child) = &e.child_tree_hash_hex {
-                    if !self
+                if let Some(child) = &e.child_tree_hash_hex
+                    && !self
                         .list(doc_id, seq, child, Some(&e.block_id))?
                         .self_contained
-                    {
-                        self_contained = false;
-                        break;
-                    }
+                {
+                    self_contained = false;
+                    break;
                 }
             }
         }

@@ -348,10 +348,10 @@ pub fn planning_fix(
         }
         _ => None,
     };
-    if let Some(fix) = fix {
-        if let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) {
-            d.insert("fix".to_owned(), json!(fix));
-        }
+    if let Some(fix) = fix
+        && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
+    {
+        d.insert("fix".to_owned(), json!(fix));
     }
     err
 }
@@ -475,10 +475,10 @@ pub fn attach(
 }
 
 fn with_fix(mut err: SurfaceError, fix: Option<String>) -> SurfaceError {
-    if let Some(fix) = fix {
-        if let Some(d) = err.data.as_mut().and_then(Json::as_object_mut) {
-            d.insert("fix".to_owned(), json!(fix));
-        }
+    if let Some(fix) = fix
+        && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
+    {
+        d.insert("fix".to_owned(), json!(fix));
     }
     err
 }

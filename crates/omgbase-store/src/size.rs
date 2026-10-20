@@ -290,16 +290,15 @@ pub fn size_advice(
     // 15.0: what the retention policy would move to a segment, when it is
     // worth a run — more than a tenth of the history category's pages (dbstat
     // only: the comparison needs the bytes).
-    if retention.revisions > 0 {
-        if let Some(history_bytes) = history.and_then(|c| c.bytes) {
-            if retention.bytes * 100 > history_bytes * RETENTION_ADVICE_MIN_SHARE {
-                advice.push(format!(
-                    "{} revisions older than the policy would archive {}: `omg history export --prune`",
-                    retention.revisions,
-                    human_bytes(retention.bytes)
-                ));
-            }
-        }
+    if retention.revisions > 0
+        && let Some(history_bytes) = history.and_then(|c| c.bytes)
+        && retention.bytes * 100 > history_bytes * RETENTION_ADVICE_MIN_SHARE
+    {
+        advice.push(format!(
+            "{} revisions older than the policy would archive {}: `omg history export --prune`",
+            retention.revisions,
+            human_bytes(retention.bytes)
+        ));
     }
     if let Some(search) = categories
         .iter()

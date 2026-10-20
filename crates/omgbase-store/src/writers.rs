@@ -226,10 +226,11 @@ fn write_list(
         Some(p) => tree.by_block.get(p),
     });
     // An unchanged list reuses the base's node only when that node is context-free.
-    if let Some(base) = base {
-        if base.self_contained && base.texts == texts {
-            return Ok(base.hash.clone());
-        }
+    if let Some(base) = base
+        && base.self_contained
+        && base.texts == texts
+    {
+        return Ok(base.hash.clone());
     }
     let Some(base) = base.filter(|_| !ctx.checkpoint) else {
         return put_node_text(conn, &full);

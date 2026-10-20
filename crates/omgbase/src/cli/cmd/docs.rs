@@ -126,13 +126,13 @@ fn require_absent(cli: &mut Cli, rel: &str, taken_message: String) -> Result<()>
     if cli.store()?.live_doc_at(&repo.repo_id, rel)? {
         return Err(CliError::engine("path_taken", taken_message));
     }
-    if let Some(root) = &repo.root_path {
-        if FsDocStore::new(root).exists(rel) {
-            return Err(CliError::engine(
-                "path_taken",
-                format!("file already exists on disk at {rel}"),
-            ));
-        }
+    if let Some(root) = &repo.root_path
+        && FsDocStore::new(root).exists(rel)
+    {
+        return Err(CliError::engine(
+            "path_taken",
+            format!("file already exists on disk at {rel}"),
+        ));
     }
     Ok(())
 }

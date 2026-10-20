@@ -285,13 +285,14 @@ fn validate_projection(at: &str, e: &Json, step_count: i64, problems: &mut Vec<S
             problems.push(format!("{at}.{k}: must be an array"));
         }
     }
-    if let Some(steps) = obj["steps"].as_array() {
-        if step_count >= 0 && steps.len() as i64 != step_count {
-            problems.push(format!(
-                "{at}.steps: {} outcomes for {step_count} steps",
-                steps.len()
-            ));
-        }
+    if let Some(steps) = obj["steps"].as_array()
+        && step_count >= 0
+        && steps.len() as i64 != step_count
+    {
+        problems.push(format!(
+            "{at}.steps: {} outcomes for {step_count} steps",
+            steps.len()
+        ));
     }
 }
 
@@ -1486,21 +1487,21 @@ fn check_invariants(
                     e.block_id, e.raw_hash_hex
                 ));
             }
-            if let Some(t) = &e.trivia_hash_hex {
-                if !blob_hashes.contains(t) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} trivia_hash {t} not in blobs",
-                        e.block_id
-                    ));
-                }
+            if let Some(t) = &e.trivia_hash_hex
+                && !blob_hashes.contains(t)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} trivia_hash {t} not in blobs",
+                    e.block_id
+                ));
             }
-            if let Some(c) = &e.child_tree_hash_hex {
-                if !tree_hashes.contains(c) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} child tree {c} not in tree_nodes",
-                        e.block_id
-                    ));
-                }
+            if let Some(c) = &e.child_tree_hash_hex
+                && !tree_hashes.contains(c)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} child tree {c} not in tree_nodes",
+                    e.block_id
+                ));
             }
         }
         nodes.insert(h, node);
@@ -1962,13 +1963,13 @@ fn check_invariants(
             ));
         }
     }
-    if let Ok(dry) = store.gc_dry_run() {
-        if dry.blobs_swept != 0 || dry.tree_nodes_swept != 0 {
-            problems.push(format!(
-                "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
-                dry.blobs_swept, dry.tree_nodes_swept
-            ));
-        }
+    if let Ok(dry) = store.gc_dry_run()
+        && (dry.blobs_swept != 0 || dry.tree_nodes_swept != 0)
+    {
+        problems.push(format!(
+            "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
+            dry.blobs_swept, dry.tree_nodes_swept
+        ));
     }
 
     // ---- I6 pool -------------------------------------------------------------------------

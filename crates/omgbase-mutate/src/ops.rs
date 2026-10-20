@@ -627,10 +627,10 @@ pub fn op_update(
             block.kind = nb.kind;
             block.attrs = nb.attrs;
             block.children = nb.children;
-            if let Some(child_ids) = &args.child_ids {
-                if !block.children.is_empty() {
-                    assign_child_ids(&mut block.children, child_ids, "");
-                }
+            if let Some(child_ids) = &args.child_ids
+                && !block.children.is_empty()
+            {
+                assign_child_ids(&mut block.children, child_ids, "");
             }
             block.mark_subtree_clean();
             doc.mark_container_dirty(&parent);
@@ -646,15 +646,15 @@ pub fn op_update(
         for (k, v) in attrs {
             block.attrs.insert(k.clone(), v.clone());
         }
-        if let Some(checked) = attrs.get("checked") {
-            if block.kind == "task" || block.kind == "list_item" {
-                let replacement = if truthy(checked) { "[x]" } else { "[ ]" };
-                if let Some(pos) = find_checkbox(&block.raw) {
-                    block.raw.replace_range(pos..pos + 3, replacement);
-                }
-                block.kind = "task".to_owned();
-                block.dirty = true;
+        if let Some(checked) = attrs.get("checked")
+            && (block.kind == "task" || block.kind == "list_item")
+        {
+            let replacement = if truthy(checked) { "[x]" } else { "[ ]" };
+            if let Some(pos) = find_checkbox(&block.raw) {
+                block.raw.replace_range(pos..pos + 3, replacement);
             }
+            block.kind = "task".to_owned();
+            block.dirty = true;
         }
     }
     if let Some(trivia) = &args.trivia {

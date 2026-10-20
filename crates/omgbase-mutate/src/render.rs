@@ -87,10 +87,10 @@ fn render_table(t: &MutBlock, depth: usize) -> String {
         .iter()
         .map(|c| render_block(c, depth + 1))
         .collect();
-    if let Some(delim) = table_delimiter(&t.raw) {
-        if !rows.is_empty() {
-            rows.insert(1, delim.to_owned());
-        }
+    if let Some(delim) = table_delimiter(&t.raw)
+        && !rows.is_empty()
+    {
+        rows.insert(1, delim.to_owned());
     }
     rows.join("\n")
 }

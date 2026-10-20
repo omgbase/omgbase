@@ -1551,38 +1551,38 @@ impl ConflictTracker {
                 return Err(conflicting_effects(by, i, &identity(FocusTarget::path(p))));
             }
         }
-        if let Some(d) = &info.whole_doc {
-            if let Some(&by) = self.touched_docs.get(d) {
-                return Err(conflicting_effects(
-                    by,
-                    i,
-                    &identity(FocusTarget::document(d)),
-                ));
-            }
+        if let Some(d) = &info.whole_doc
+            && let Some(&by) = self.touched_docs.get(d)
+        {
+            return Err(conflicting_effects(
+                by,
+                i,
+                &identity(FocusTarget::document(d)),
+            ));
         }
-        if let Some(s) = &info.scalar {
-            if let Some((prev_i, prev)) = self.scalar.get(&s.key) {
-                let identical = match (&prev.value, &s.value) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => canonical_json(a) == canonical_json(b),
-                    _ => false,
-                };
-                if !identical {
-                    return Err(conflicting_effects(
-                        *prev_i,
-                        i,
-                        &Focus {
-                            kind: "scalar",
-                            target: s.target.clone(),
-                            field: Some(s.field.clone()),
-                        },
-                    ));
-                }
-                self.diagnostics.push(format!(
-                    "effect {i} ({describe}) duplicates effect {prev_i}; dropped"
+        if let Some(s) = &info.scalar
+            && let Some((prev_i, prev)) = self.scalar.get(&s.key)
+        {
+            let identical = match (&prev.value, &s.value) {
+                (None, None) => true,
+                (Some(a), Some(b)) => canonical_json(a) == canonical_json(b),
+                _ => false,
+            };
+            if !identical {
+                return Err(conflicting_effects(
+                    *prev_i,
+                    i,
+                    &Focus {
+                        kind: "scalar",
+                        target: s.target.clone(),
+                        field: Some(s.field.clone()),
+                    },
                 ));
-                return Ok(false);
             }
+            self.diagnostics.push(format!(
+                "effect {i} ({describe}) duplicates effect {prev_i}; dropped"
+            ));
+            return Ok(false);
         }
         for s in &info.scalars {
             if let Some((prev_i, _)) = self.scalar.get(&s.key) {
@@ -2574,10 +2574,8 @@ impl Plan {
         }
         m.insert("plan_id".to_owned(), json!(self.plan_id));
         m.insert("diagnostics".to_owned(), json!(self.diagnostics));
-        if with_preview {
-            if let Some(p) = &self.preview {
-                m.insert("preview".to_owned(), p.to_json());
-            }
+        if with_preview && let Some(p) = &self.preview {
+            m.insert("preview".to_owned(), p.to_json());
         }
         Value::Object(m)
     }

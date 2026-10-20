@@ -366,18 +366,19 @@ pub fn phase4_context(state: &mut PhaseState<'_>) {
                 tie = true;
             }
         }
-        if let Some(best) = best {
-            if !tie && best_sim >= state.config.context_sim_floor {
-                state.carry(
-                    o,
-                    best,
-                    classify_kind(o, best),
-                    0.75 + 0.2 * best_sim,
-                    Reason::ContextUnique,
-                    Detail::new(),
-                );
-                continue;
-            }
+        if let Some(best) = best
+            && !tie
+            && best_sim >= state.config.context_sim_floor
+        {
+            state.carry(
+                o,
+                best,
+                classify_kind(o, best),
+                0.75 + 0.2 * best_sim,
+                Reason::ContextUnique,
+                Detail::new(),
+            );
+            continue;
         }
         // Step 5 — the singleton rule (m2.3).
         let Some(n) = single else {

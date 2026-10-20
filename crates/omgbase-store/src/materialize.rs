@@ -249,14 +249,12 @@ fn materialize_row(
                         // new bytes under its new path, so a renamed file
                         // holding the prior bytes is rewritten. Foreign bytes
                         // win at the new path, as the sweep will see.
-                        if let Some(moved) = doc_store.read(&row.path)? {
-                            if !hashes_to(&moved, &row.rendered_hash)
-                                && replaceable(conn, row, &moved)?
-                            {
-                                if let Some(bytes) = bytes_for(conn, row)? {
-                                    doc_store.write(&row.path, &bytes)?;
-                                }
-                            }
+                        if let Some(moved) = doc_store.read(&row.path)?
+                            && !hashes_to(&moved, &row.rendered_hash)
+                            && replaceable(conn, row, &moved)?
+                            && let Some(bytes) = bytes_for(conn, row)?
+                        {
+                            doc_store.write(&row.path, &bytes)?;
                         }
                         Ok(true)
                     }
@@ -281,13 +279,13 @@ fn materialize_row(
             }
         }
         PendingKind::Remove => {
-            if let Some(on_disk) = doc_store.read(&row.path)? {
-                if hashes_to(&on_disk, &row.rendered_hash) {
-                    doc_store.remove(&row.path)?;
-                }
-                // Foreign bytes stay: untracked now, the next sweep re-creates
-                // the path (§5.6).
+            if let Some(on_disk) = doc_store.read(&row.path)?
+                && hashes_to(&on_disk, &row.rendered_hash)
+            {
+                doc_store.remove(&row.path)?;
             }
+            // Foreign bytes stay: untracked now, the next sweep re-creates
+            // the path (§5.6).
             Ok(true)
         }
     }
@@ -304,10 +302,10 @@ fn remove_if_replaceable(
     let Some(from) = from else {
         return Ok(());
     };
-    if let Some(bytes) = doc_store.read(from)? {
-        if replaceable(conn, row, &bytes)? {
-            doc_store.remove(from)?;
-        }
+    if let Some(bytes) = doc_store.read(from)?
+        && replaceable(conn, row, &bytes)?
+    {
+        doc_store.remove(from)?;
     }
     Ok(())
 }

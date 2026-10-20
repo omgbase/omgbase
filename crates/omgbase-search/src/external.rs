@@ -310,10 +310,10 @@ impl HttpProvider {
             .trim()
             .to_owned();
         let mut identity = Identity::from_settings(settings, "http");
-        if let Ok(mut res) = ureq::get(&url).call() {
-            if let Ok(meta) = res.body_mut().read_json::<Metadata>() {
-                identity.apply(&meta);
-            }
+        if let Ok(mut res) = ureq::get(&url).call()
+            && let Ok(meta) = res.body_mut().read_json::<Metadata>()
+        {
+            identity.apply(&meta);
         }
         Ok(Self { url, identity })
     }

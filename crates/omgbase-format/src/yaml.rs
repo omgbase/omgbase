@@ -416,27 +416,29 @@ fn resolve_plain(s: &str) -> Resolved {
         _ => {}
     }
     if let Some(oct) = s.strip_prefix("0o") {
-        if !oct.is_empty() && oct.bytes().all(|b| (b'0'..=b'7').contains(&b)) {
-            if let Ok(n) = u64::from_str_radix(oct, 8) {
-                #[allow(clippy::cast_precision_loss)]
-                return Resolved::Number(n as f64);
-            }
+        if !oct.is_empty()
+            && oct.bytes().all(|b| (b'0'..=b'7').contains(&b))
+            && let Ok(n) = u64::from_str_radix(oct, 8)
+        {
+            #[allow(clippy::cast_precision_loss)]
+            return Resolved::Number(n as f64);
         }
         return Resolved::Str;
     }
     if let Some(hex) = s.strip_prefix("0x") {
-        if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            if let Ok(n) = u64::from_str_radix(hex, 16) {
-                #[allow(clippy::cast_precision_loss)]
-                return Resolved::Number(n as f64);
-            }
+        if !hex.is_empty()
+            && hex.bytes().all(|b| b.is_ascii_hexdigit())
+            && let Ok(n) = u64::from_str_radix(hex, 16)
+        {
+            #[allow(clippy::cast_precision_loss)]
+            return Resolved::Number(n as f64);
         }
         return Resolved::Str;
     }
-    if is_core_number(s) {
-        if let Ok(n) = s.parse::<f64>() {
-            return Resolved::Number(n);
-        }
+    if is_core_number(s)
+        && let Ok(n) = s.parse::<f64>()
+    {
+        return Resolved::Number(n);
     }
     Resolved::Str
 }

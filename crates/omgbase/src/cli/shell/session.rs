@@ -288,10 +288,10 @@ impl<'a> ShellSession<'a> {
         flags.no_color = flags.no_color || self.no_color;
         let machine = flags.machine();
         let line_style = Style::detect(flags.no_color, self.cli.io.stdout_tty());
-        if flags.repo != self.cli.flags.repo {
-            if let Err(e) = self.cli.reselect_repo() {
-                return (render_error(&e, self.cli.io, &line_style, machine), None);
-            }
+        if flags.repo != self.cli.flags.repo
+            && let Err(e) = self.cli.reselect_repo()
+        {
+            return (render_error(&e, self.cli.io, &line_style, machine), None);
         }
         self.cli.flags = flags;
         self.cli.style = line_style;

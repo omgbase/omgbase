@@ -164,17 +164,17 @@ impl Cli {
         if !self.capturing {
             return;
         }
-        if self.announce_frame {
-            if let Some(rows) = super::shell::refs::derive_rows(value) {
-                let n = rows.len();
-                if n > 0 {
-                    let noun = if n == 1 { "row" } else { "rows" };
-                    self.io.err(
-                        &self
-                            .style
-                            .dim(&format!("  {n} {noun} — address with @1..@{n}")),
-                    );
-                }
+        if self.announce_frame
+            && let Some(rows) = super::shell::refs::derive_rows(value)
+        {
+            let n = rows.len();
+            if n > 0 {
+                let noun = if n == 1 { "row" } else { "rows" };
+                self.io.err(
+                    &self
+                        .style
+                        .dim(&format!("  {n} {noun} — address with @1..@{n}")),
+                );
             }
         }
         self.captured = Some(value.clone());
@@ -192,11 +192,11 @@ impl Cli {
     /// database (the process-wide minter keeps its counters).
     pub fn reselect_repo(&mut self) -> Result<()> {
         self.repo = None;
-        if matches!(self.engine, Engine::Surface(_)) {
-            if let Some(ws) = self.ws.clone() {
-                self.engine = Engine::Closed;
-                self.open_at(ws.root)?;
-            }
+        if matches!(self.engine, Engine::Surface(_))
+            && let Some(ws) = self.ws.clone()
+        {
+            self.engine = Engine::Closed;
+            self.open_at(ws.root)?;
         }
         Ok(())
     }

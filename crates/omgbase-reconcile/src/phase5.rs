@@ -46,10 +46,10 @@ fn neighbor_context(o: &MatchBlock, n: &MatchBlock, state: &PhaseState<'_>) -> f
         let new_sib = sibling_at(state.neu, n.parent_key.as_deref(), offset(n.index, delta));
         if old_sib.is_some() || new_sib.is_some() {
             total += 1;
-            if let (Some(os), Some(ns)) = (old_sib, new_sib) {
-                if state.matched_id(&ns.key) == Some(old_id(os)) {
-                    matched += 1;
-                }
+            if let (Some(os), Some(ns)) = (old_sib, new_sib)
+                && state.matched_id(&ns.key) == Some(old_id(os))
+            {
+                matched += 1;
             }
         }
     }

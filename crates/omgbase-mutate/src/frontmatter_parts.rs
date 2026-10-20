@@ -341,13 +341,13 @@ pub fn split_frontmatter_trivia(frontmatter_raw: &str) -> Option<FrontmatterSpli
     let lines = split_lines(frontmatter_raw);
     for (i, line) in lines.iter().enumerate().skip(1) {
         let c = content(line);
-        if let Some(rest) = c.strip_prefix("---") {
-            if rest.bytes().all(|b| b == b' ' || b == b'\t') {
-                let mut raw: String = lines[..i].concat();
-                raw.push_str(c);
-                let trivia = frontmatter_raw[raw.len()..].to_owned();
-                return Some(FrontmatterSplit { raw, trivia });
-            }
+        if let Some(rest) = c.strip_prefix("---")
+            && rest.bytes().all(|b| b == b' ' || b == b'\t')
+        {
+            let mut raw: String = lines[..i].concat();
+            raw.push_str(c);
+            let trivia = frontmatter_raw[raw.len()..].to_owned();
+            return Some(FrontmatterSplit { raw, trivia });
         }
     }
     None

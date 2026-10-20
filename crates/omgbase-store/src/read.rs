@@ -72,11 +72,11 @@ pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
         return Ok(None);
     };
     let mut out = leading;
-    if let Some(rev) = current_rev {
-        if let Some(fm) = current_frontmatter_raw(conn, &rev)? {
-            out.push_str(&fm);
-            out.push_str(fm_trivia.as_deref().unwrap_or(""));
-        }
+    if let Some(rev) = current_rev
+        && let Some(fm) = current_frontmatter_raw(conn, &rev)?
+    {
+        out.push_str(&fm);
+        out.push_str(fm_trivia.as_deref().unwrap_or(""));
     }
     let mut stmt = conn.prepare(
         "SELECT raw_hash, trivia_hash FROM blocks

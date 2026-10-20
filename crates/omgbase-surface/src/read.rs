@@ -912,10 +912,10 @@ pub fn docs_tree(
             Some(cur) => {
                 cur.docs += 1;
                 cur.blocks += row.blocks;
-                if let Some(ts) = &row.ts {
-                    if cur.ts.as_ref().is_none_or(|c| ts > c) {
-                        cur.ts = Some(ts.clone());
-                    }
+                if let Some(ts) = &row.ts
+                    && cur.ts.as_ref().is_none_or(|c| ts > c)
+                {
+                    cur.ts = Some(ts.clone());
                 }
             }
             None => by_path.push(Entry {

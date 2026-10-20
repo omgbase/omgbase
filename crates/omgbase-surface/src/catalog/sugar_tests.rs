@@ -315,18 +315,17 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                 .collect::<Result<_, _>>()?;
             let to_ref = arg_string(args, "to")?;
             let (parent, doc_id) = s.resolve_parent_ref(&repo, &to_ref)?;
-            if parent == Parent::Doc {
-                if let Some(first) = blocks.first() {
-                    if s.doc_id_of_block(first)? != Some(doc_id) {
-                        return Err(SurfaceError::with_data(
-                            "target_missing",
-                            format!(
-                                "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
-                            ),
-                            json!({ "to": to_ref }),
-                        ));
-                    }
-                }
+            if parent == Parent::Doc
+                && let Some(first) = blocks.first()
+                && s.doc_id_of_block(first)? != Some(doc_id)
+            {
+                return Err(SurfaceError::with_data(
+                    "target_missing",
+                    format!(
+                        "blocks_move cannot target another document's root ({to_ref}); anchor on a block in that document with at.before/at.after"
+                    ),
+                    json!({ "to": to_ref }),
+                ));
             }
             let at = s.resolve_at(&repo, args.get("at"))?;
             let ops = vec![Op::Move {

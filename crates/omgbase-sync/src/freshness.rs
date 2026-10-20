@@ -365,10 +365,10 @@ pub fn rebuild_file_stats(
         let Some(want) = live.get(path) else {
             continue; // no live doc: nothing the cache may vouch for
         };
-        if let Some(hash) = hash_file(fs, root, path)? {
-            if hash[..] == want[..] {
-                record_file_stat(store, repo_id, fs, root, path, &hash)?;
-            }
+        if let Some(hash) = hash_file(fs, root, path)?
+            && hash[..] == want[..]
+        {
+            record_file_stat(store, repo_id, fs, root, path, &hash)?;
         }
     }
     Ok(paths.len())

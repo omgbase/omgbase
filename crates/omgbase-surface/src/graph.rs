@@ -372,10 +372,10 @@ pub fn graph_neighborhood(
     let mut kept: Vec<Json> = edges
         .into_iter()
         .filter(|e| {
-            if let Some(p) = &args.predicate {
-                if e["_predicate"].as_str() != Some(p.as_str()) {
-                    return false;
-                }
+            if let Some(p) = &args.predicate
+                && e["_predicate"].as_str() != Some(p.as_str())
+            {
+                return false;
             }
             let src_in = reached(e["_doc_id"].as_str().unwrap_or_default());
             let dst_kind = e["_dst_kind"].as_str().unwrap_or_default();

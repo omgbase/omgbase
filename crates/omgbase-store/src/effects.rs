@@ -548,13 +548,13 @@ fn check_doc(
     if current != *base {
         return Err(stale_plan(base, Some(&current)));
     }
-    if let (Some(bytes), Some(hash)) = (on_disk, &current.file_hash) {
-        if sha256(bytes.as_bytes())[..] != hash[..] {
-            return Ok(Some(DiskConflict {
-                path: base.path.clone(),
-                bytes: bytes.to_owned(),
-            }));
-        }
+    if let (Some(bytes), Some(hash)) = (on_disk, &current.file_hash)
+        && sha256(bytes.as_bytes())[..] != hash[..]
+    {
+        return Ok(Some(DiskConflict {
+            path: base.path.clone(),
+            bytes: bytes.to_owned(),
+        }));
     }
     Ok(None)
 }

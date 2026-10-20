@@ -172,7 +172,7 @@ pub fn hash_hex(hash: &[u8]) -> String {
 
 /// Decode lowercase or uppercase hex into bytes.
 pub fn from_hex(s: &str) -> Result<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(Error::Other(format!("odd-length hex {s:?}")));
     }
     (0..s.len())

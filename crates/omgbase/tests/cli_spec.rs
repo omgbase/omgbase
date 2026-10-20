@@ -985,13 +985,13 @@ fn compare(got: &Outcome, want: &Expect) -> Option<String> {
             first_diff(&got.stdout, &want.stdout)
         ));
     }
-    if let Some(stderr) = &want.stderr {
-        if got.stderr != *stderr {
-            return Some(format!(
-                "stderr differs: {}",
-                first_diff(&got.stderr, stderr)
-            ));
-        }
+    if let Some(stderr) = &want.stderr
+        && got.stderr != *stderr
+    {
+        return Some(format!(
+            "stderr differs: {}",
+            first_diff(&got.stderr, stderr)
+        ));
     }
     None
 }

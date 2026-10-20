@@ -51,12 +51,11 @@ fn commit(manifest_dir: &Path) -> Option<String> {
             println!("cargo:rerun-if-changed={}", head.display());
             // `HEAD` names a ref (`ref: refs/heads/main`): a commit moves that
             // file, not `HEAD` itself.
-            if let Ok(text) = std::fs::read_to_string(&head) {
-                if let Some(r) = text.trim().strip_prefix("ref:") {
-                    if let Some(p) = git(manifest_dir, &["rev-parse", "--git-path", r.trim()]) {
-                        println!("cargo:rerun-if-changed={}", manifest_dir.join(p).display());
-                    }
-                }
+            if let Ok(text) = std::fs::read_to_string(&head)
+                && let Some(r) = text.trim().strip_prefix("ref:")
+                && let Some(p) = git(manifest_dir, &["rev-parse", "--git-path", r.trim()])
+            {
+                println!("cargo:rerun-if-changed={}", manifest_dir.join(p).display());
             }
         }
         return Some(short);

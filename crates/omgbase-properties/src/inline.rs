@@ -397,10 +397,10 @@ pub fn typed_inline_value(raw: &str) -> Typed {
         "false" => return Typed::bool(false),
         _ => {}
     }
-    if !v.is_empty() {
-        if let Some(n) = js_number(v).filter(|n| n.is_finite()) {
-            return Typed::number(n);
-        }
+    if !v.is_empty()
+        && let Some(n) = js_number(v).filter(|n| n.is_finite())
+    {
+        return Typed::number(n);
     }
     Typed::string(v)
 }

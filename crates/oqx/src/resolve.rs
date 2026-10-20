@@ -632,11 +632,11 @@ fn walk_where(
             span,
         },
         Where::Scalar { expr, span } => {
-            if let Expr::Ident { name, .. } = &expr {
-                if let Some(SelectItem::Collect { op, .. }) = aliases.get(name.as_str()) {
-                    // a collection in predicate position: non-empty
-                    return Ok(Where::Op(op.clone()));
-                }
+            if let Expr::Ident { name, .. } = &expr
+                && let Some(SelectItem::Collect { op, .. }) = aliases.get(name.as_str())
+            {
+                // a collection in predicate position: non-empty
+                return Ok(Where::Op(op.clone()));
             }
             Where::Scalar {
                 expr: subst(aliases, resolving, expr)?,

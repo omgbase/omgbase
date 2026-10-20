@@ -37,10 +37,10 @@ pub fn decode(row: &PropertyRow) -> Json {
 /// scalar; otherwise an array in (source rank, ord) order.
 #[must_use]
 pub fn shape(rows: &[&PropertyRow]) -> Json {
-    if let [only] = rows {
-        if only.card == Card::Scalar {
-            return decode(only);
-        }
+    if let [only] = rows
+        && only.card == Card::Scalar
+    {
+        return decode(only);
     }
     let mut ordered: Vec<&PropertyRow> = rows.to_vec();
     ordered.sort_by_key(|r| (r.source.rank(), r.ord));

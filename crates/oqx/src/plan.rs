@@ -121,21 +121,21 @@ pub fn as_equality(e: &Expr) -> Option<Equality<'_>> {
     else {
         return None;
     };
-    if let Expr::Ident { name, .. } = &**left {
-        if is_const(right) {
-            return Some(Equality {
-                field: name,
-                value: right,
-            });
-        }
+    if let Expr::Ident { name, .. } = &**left
+        && is_const(right)
+    {
+        return Some(Equality {
+            field: name,
+            value: right,
+        });
     }
-    if let Expr::Ident { name, .. } = &**right {
-        if is_const(left) {
-            return Some(Equality {
-                field: name,
-                value: left,
-            });
-        }
+    if let Expr::Ident { name, .. } = &**right
+        && is_const(left)
+    {
+        return Some(Equality {
+            field: name,
+            value: left,
+        });
     }
     None
 }

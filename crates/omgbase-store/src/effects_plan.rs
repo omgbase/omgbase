@@ -429,10 +429,10 @@ impl Store {
             }
             None => None,
         };
-        if let (Some(a), Some(b)) = (&by_id, &by_path) {
-            if a.doc_id != b.doc_id {
-                return Err(disagree());
-            }
+        if let (Some(a), Some(b)) = (&by_id, &by_path)
+            && a.doc_id != b.doc_id
+        {
+            return Err(disagree());
         }
         let base = by_id.or(by_path).expect("id or path is given");
         Ok(Target::Document {

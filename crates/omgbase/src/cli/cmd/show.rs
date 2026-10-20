@@ -161,39 +161,39 @@ fn render_block_card(cli: &Cli, node: &Json, history: Option<&Json>) {
             fmt_value(node.get("_depth").unwrap_or(&Json::Null))
         ));
     }
-    if let Some(attrs) = node.get("_attrs").and_then(Json::as_object) {
-        if !attrs.is_empty() {
-            cli.io.out(&format!("  {}", style.dim("attrs")));
-            for (k, v) in attrs {
-                cli.io.out(&format!(
-                    "    {} {} {}",
-                    style.accent(k),
-                    style.dim("="),
-                    fmt_value(v)
-                ));
-            }
+    if let Some(attrs) = node.get("_attrs").and_then(Json::as_object)
+        && !attrs.is_empty()
+    {
+        cli.io.out(&format!("  {}", style.dim("attrs")));
+        for (k, v) in attrs {
+            cli.io.out(&format!(
+                "    {} {} {}",
+                style.accent(k),
+                style.dim("="),
+                fmt_value(v)
+            ));
         }
     }
-    if let Some(text) = node.get("_text").and_then(Json::as_str) {
-        if !text.is_empty() {
-            cli.io.out(&format!("  {}  {text}", style.dim("text")));
-        }
+    if let Some(text) = node.get("_text").and_then(Json::as_str)
+        && !text.is_empty()
+    {
+        cli.io.out(&format!("  {}  {text}", style.dim("text")));
     }
-    if let Some(items) = history.and_then(Json::as_array) {
-        if !items.is_empty() {
-            cli.io.out(&format!("  {}", style.dim("history")));
-            for h in items {
-                cli.io.out(&format!(
-                    "    {} {} {} {}",
-                    style.dim(&format!(
-                        "#{}",
-                        fmt_value(h.get("seq").unwrap_or(&Json::Null))
-                    )),
-                    style.accent(&str_of(h, "kind")),
-                    style.dim(&str_of(h, "origin")),
-                    style.dim(&str_of(h, "ts"))
-                ));
-            }
+    if let Some(items) = history.and_then(Json::as_array)
+        && !items.is_empty()
+    {
+        cli.io.out(&format!("  {}", style.dim("history")));
+        for h in items {
+            cli.io.out(&format!(
+                "    {} {} {} {}",
+                style.dim(&format!(
+                    "#{}",
+                    fmt_value(h.get("seq").unwrap_or(&Json::Null))
+                )),
+                style.accent(&str_of(h, "kind")),
+                style.dim(&str_of(h, "origin")),
+                style.dim(&str_of(h, "ts"))
+            ));
         }
     }
 }

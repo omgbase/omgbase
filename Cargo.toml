@@ -8,7 +8,7 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 authors = ["Brendan Baldwin"]
 repository = "https://github.com/omgbase/omgbase"

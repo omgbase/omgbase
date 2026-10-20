@@ -185,11 +185,11 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
     // (spec/store §6.1, 16.0), with the exact stored separator appended so
     // the write path round-trips byte for byte.
     let mut frontmatter_raw = None;
-    if let Some(rev) = current_rev {
-        if let Some(mut raw) = current_frontmatter_raw(conn, &rev)? {
-            raw.push_str(frontmatter_trivia.as_deref().unwrap_or(""));
-            frontmatter_raw = Some(raw);
-        }
+    if let Some(rev) = current_rev
+        && let Some(mut raw) = current_frontmatter_raw(conn, &rev)?
+    {
+        raw.push_str(frontmatter_trivia.as_deref().unwrap_or(""));
+        frontmatter_raw = Some(raw);
     }
     Ok(Some(MutDoc {
         doc_id: doc_id.to_owned(),

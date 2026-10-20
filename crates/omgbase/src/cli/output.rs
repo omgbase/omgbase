@@ -331,15 +331,15 @@ pub fn render_error(err: &CliError, io: Io, style: &Style, machine: bool) -> i32
             if let Some(h) = hint {
                 io.err(&style.dim(&format!("  hint: {h}")));
             }
-            if let Some(d) = data {
-                if !payload_is_empty(d) {
-                    let text = js_json_pretty(d)
-                        .split('\n')
-                        .map(|l| format!("  {l}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    io.err(&style.dim(&text));
-                }
+            if let Some(d) = data
+                && !payload_is_empty(d)
+            {
+                let text = js_json_pretty(d)
+                    .split('\n')
+                    .map(|l| format!("  {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                io.err(&style.dim(&text));
             }
             EXIT_ERROR
         }

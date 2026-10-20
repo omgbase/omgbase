@@ -987,18 +987,18 @@ impl Store {
                 // clears the row in its transaction — unless the database
                 // already agrees with the file (a row naming other bytes is
                 // stale either way; the observation settles it).
-                if let Some((doc_id, Some(stored))) = &existing {
-                    if stored[..] == hash[..] {
-                        delete_pending(&self.conn, repo_id, &it.path)?;
-                        pending.push(echo(doc_id));
-                        continue;
-                    }
-                }
-            } else if let Some((doc_id, Some(stored))) = &existing {
-                if stored[..] == hash[..] {
+                if let Some((doc_id, Some(stored))) = &existing
+                    && stored[..] == hash[..]
+                {
+                    delete_pending(&self.conn, repo_id, &it.path)?;
                     pending.push(echo(doc_id));
                     continue;
                 }
+            } else if let Some((doc_id, Some(stored))) = &existing
+                && stored[..] == hash[..]
+            {
+                pending.push(echo(doc_id));
+                continue;
             }
             let clear_pending = intent.is_some();
             let prepared = prepare_reconcile(

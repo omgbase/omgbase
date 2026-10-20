@@ -549,13 +549,13 @@ fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
                     e.code, e.message
                 )));
             }
-            if let Some(needle) = expect.get("message_includes").and_then(Json::as_str) {
-                if !e.message.contains(needle) {
-                    return Err(clip(format!(
-                        "message {:?} does not include {needle:?}",
-                        e.message
-                    )));
-                }
+            if let Some(needle) = expect.get("message_includes").and_then(Json::as_str)
+                && !e.message.contains(needle)
+            {
+                return Err(clip(format!(
+                    "message {:?} does not include {needle:?}",
+                    e.message
+                )));
             }
             // (4.11) the corrected call, recorded verbatim — equal on both
             // sides, absent on both sides.
@@ -720,12 +720,12 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
         }
     } else if tool == "version" {
         return type_shape(&body, &[]);
-    } else if tool == "changes_since" {
-        if let Some(digests) = body.get_mut("digests").and_then(Json::as_array_mut) {
-            for d in digests {
-                if let Some(o) = d.as_object_mut() {
-                    o.remove("summary");
-                }
+    } else if tool == "changes_since"
+        && let Some(digests) = body.get_mut("digests").and_then(Json::as_array_mut)
+    {
+        for d in digests {
+            if let Some(o) = d.as_object_mut() {
+                o.remove("summary");
             }
         }
     }

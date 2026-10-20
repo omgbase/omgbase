@@ -373,11 +373,11 @@ impl Store {
         let mut by_block_order: Vec<String> = Vec::new();
         let mut by_block: HashMap<String, &InboundLink> = HashMap::new();
         for l in inbound {
-            if let Some(b) = &l.block {
-                if !by_block.contains_key(b) {
-                    by_block_order.push(b.clone());
-                    by_block.insert(b.clone(), l);
-                }
+            if let Some(b) = &l.block
+                && !by_block.contains_key(b)
+            {
+                by_block_order.push(b.clone());
+                by_block.insert(b.clone(), l);
             }
         }
         let parent_of = |id: &str| -> Result<Option<String>> {
@@ -396,10 +396,10 @@ impl Store {
             let mut cur = Some(block_id.clone());
             while let Some(c) = cur {
                 cur = parent_of(&c)?;
-                if let Some(p) = &cur {
-                    if by_block.contains_key(p) {
-                        containers.insert(p.clone());
-                    }
+                if let Some(p) = &cur
+                    && by_block.contains_key(p)
+                {
+                    containers.insert(p.clone());
                 }
             }
         }

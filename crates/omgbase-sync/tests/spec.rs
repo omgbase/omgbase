@@ -2666,21 +2666,21 @@ fn check_invariants(
                     e.block_id, e.raw_hash_hex
                 ));
             }
-            if let Some(t) = &e.trivia_hash_hex {
-                if !blob_hashes.contains(t) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} trivia_hash {t} not in blobs",
-                        e.block_id
-                    ));
-                }
+            if let Some(t) = &e.trivia_hash_hex
+                && !blob_hashes.contains(t)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} trivia_hash {t} not in blobs",
+                    e.block_id
+                ));
             }
-            if let Some(c) = &e.child_tree_hash_hex {
-                if !tree_hashes.contains(c) {
-                    problems.push(format!(
-                        "I2: tree_node {h} entry {} child tree {c} not in tree_nodes",
-                        e.block_id
-                    ));
-                }
+            if let Some(c) = &e.child_tree_hash_hex
+                && !tree_hashes.contains(c)
+            {
+                problems.push(format!(
+                    "I2: tree_node {h} entry {} child tree {c} not in tree_nodes",
+                    e.block_id
+                ));
             }
         }
         nodes.insert(h, node);
@@ -3133,13 +3133,13 @@ fn check_invariants(
             problems.push(format!("I5: blob {h} is unreachable from every revision"));
         }
     }
-    if let Ok(dry) = store.gc_dry_run() {
-        if dry.blobs_swept != 0 || dry.tree_nodes_swept != 0 {
-            problems.push(format!(
-                "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
-                dry.blobs_swept, dry.tree_nodes_swept
-            ));
-        }
+    if let Ok(dry) = store.gc_dry_run()
+        && (dry.blobs_swept != 0 || dry.tree_nodes_swept != 0)
+    {
+        problems.push(format!(
+            "I5: the implementation's GC would sweep {} blobs and {} tree nodes",
+            dry.blobs_swept, dry.tree_nodes_swept
+        ));
     }
 
     // ---- I6 pool -------------------------------------------------------------------------

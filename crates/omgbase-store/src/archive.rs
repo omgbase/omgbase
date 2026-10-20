@@ -614,10 +614,10 @@ pub fn archive_prefix(conn: &Connection, rev_id: &str, archive: Option<&str>) ->
             path: Some(row.path),
         });
     }
-    if attached.len() >= MAX_ATTACHED {
-        if let Some(oldest) = attached.first() {
-            let _ = conn.execute_batch(&format!("DETACH DATABASE {oldest}"));
-        }
+    if attached.len() >= MAX_ATTACHED
+        && let Some(oldest) = attached.first()
+    {
+        let _ = conn.execute_batch(&format!("DETACH DATABASE {oldest}"));
     }
     conn.execute(&format!("ATTACH DATABASE ?1 AS {alias}"), params![row.path])?;
     let claims: Option<String> = conn
