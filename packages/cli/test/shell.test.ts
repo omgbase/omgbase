@@ -61,7 +61,7 @@ afterAll(() => {
 describe("@N frame + show", () => {
   it("resolves @1 to the first row of the last displayed collection", () => {
     const { stdout, code } = shell(
-      ['query \'from blocks where type == "task"\'', "show @1", "exit"].join("\n"),
+      ['query \'from blocks where _type == "task"\'', "show @1", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     // show renders the block card, which prints the task's text.
@@ -73,7 +73,7 @@ describe("named bindings via @name =", () => {
   it("binds a query result and dereferences a row with @name[i]", () => {
     const { stdout, code } = shell(
       [
-        "@tasks = query 'from blocks where type == \"task\"'",
+        "@tasks = query 'from blocks where _type == \"task\"'",
         "bindings",
         "cat @tasks[1]",
         "exit",
@@ -88,7 +88,7 @@ describe("named bindings via @name =", () => {
   it("binds from a bare @ref snapshot", () => {
     const { stdout, code } = shell(
       [
-        "query 'from blocks where type == \"task\"'",
+        "query 'from blocks where _type == \"task\"'",
         "@first = @1",
         "cat @first",
         "exit",
@@ -103,7 +103,7 @@ describe("node-id substitution (from nodes hits are actionable)", () => {
   it("cat @1 resolves a section node to its heading block", () => {
     const { stdout, code } = shell(
       [
-        'query \'from nodes where kind == "md:section" && name == "Launch"\'',
+        'query \'from nodes where _kind == "md:section" && _name == "Launch"\'',
         "cat @1",
         "exit",
       ].join("\n"),
@@ -115,7 +115,7 @@ describe("node-id substitution (from nodes hits are actionable)", () => {
 
 describe("@_ previous result and .field", () => {
   it("reads a field off the previous result", () => {
-    const { stdout, code } = shell(["show hub.md", "@_.path", "exit"].join("\n"));
+    const { stdout, code } = shell(["show hub.md", "@_._path", "exit"].join("\n"));
     expect(code).toBe(0);
     expect(stdout).toContain("hub.md");
   });
@@ -125,7 +125,7 @@ describe("substitution drives a mutation", () => {
   it("done @1 completes the task selected from a query frame", () => {
     const { stdout, code } = shell(
       [
-        "query 'from blocks where type == \"task\" && !attrs.checked'",
+        "query 'from blocks where _type == \"task\" && !_attrs.checked'",
         "done @1",
         "exit",
       ].join("\n"),
@@ -134,7 +134,7 @@ describe("substitution drives a mutation", () => {
     // done prints the affected id(s) to stdout.
     expect(stdout).toMatch(/b_[0-9a-z]+/);
     // and the task is now checked.
-    const after = shell(['query \'from blocks where type == "task" && attrs.checked\' --ids', "exit"].join("\n"));
+    const after = shell(['query \'from blocks where _type == "task" && _attrs.checked\' --ids', "exit"].join("\n"));
     expect(after.stdout.match(/b_[0-9a-z]+/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -143,7 +143,7 @@ describe("frame semantics", () => {
   it("bare @_ inspects a collection result and lists it as the frame (no coercion error)", () => {
     // Regression guard: resolving @_ must not eagerly coerce the collection.
     const { stdout, code } = shell(
-      ["query 'from blocks where type == \"task\"'", "@_", "exit"].join("\n"),
+      ["query 'from blocks where _type == \"task\"'", "@_", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     // Inspection prints numbered selectors for the collection.
@@ -156,7 +156,7 @@ describe("frame semantics", () => {
     // resolves the original query row.
     const { stdout, code } = shell(
       [
-        "query 'from blocks where type == \"task\"'",
+        "query 'from blocks where _type == \"task\"'",
         "show @1", // card; frame must survive
         "cat @1", // still the first task's bytes
         "exit",
@@ -169,7 +169,7 @@ describe("frame semantics", () => {
   it("a binding assignment runs quietly and does not clobber the numbered frame", () => {
     const { stdout, code } = shell(
       [
-        "query 'from blocks where type == \"task\"'", // frame = tasks
+        "query 'from blocks where _type == \"task\"'", // frame = tasks
         "@d = find deploy", // quiet; must not become the frame
         "cat @1", // still the first task
         "exit",
@@ -183,7 +183,7 @@ describe("frame semantics", () => {
 
   it("a --json command line still populates the frame", () => {
     const { stdout, code } = shell(
-      ["query 'from blocks where type == \"task\"' --json", "cat @1", "exit"].join("\n"),
+      ["query 'from blocks where _type == \"task\"' --json", "cat @1", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     expect(stdout).toContain('"hits"'); // the verbatim json result
@@ -212,7 +212,7 @@ describe("bindings management", () => {
 
   it("reads a field off a named binding", () => {
     const { stdout, code } = shell(
-      ["@d = show hub.md", "@d.path", "exit"].join("\n"),
+      ["@d = show hub.md", "@d._path", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     expect(stdout).toContain("hub.md");
@@ -221,7 +221,7 @@ describe("bindings management", () => {
 
 describe("errors", () => {
   it("an out-of-range @N is a usage error (exit 2)", () => {
-    const { code, stderr } = shell(["query 'from blocks where type == \"task\"'", "show @9"].join("\n"));
+    const { code, stderr } = shell(["query 'from blocks where _type == \"task\"'", "show @9"].join("\n"));
     expect(code).toBe(2);
     expect(stderr).toMatch(/out of range/);
   });
@@ -229,7 +229,7 @@ describe("errors", () => {
   it("passing a bare collection binding as an argument is refused", () => {
     const { code, stderr } = shell(
       [
-        "@tasks = query 'from blocks where type == \"task\"'",
+        "@tasks = query 'from blocks where _type == \"task\"'",
         "show @tasks", // a collection can't be one argument
       ].join("\n"),
     );
@@ -260,7 +260,7 @@ describe("errors", () => {
   // reappearance. Two commands ⇒ an initial prompt plus one after each.
   it("--prompt emits the prompt before each line, ordered with output", () => {
     const r = spawnSync("node", [BIN, "-C", vault, "shell", "--prompt", "omg> "], {
-      input: ["query 'from blocks where type == \"task\"'", "bindings", "exit"].join("\n"),
+      input: ["query 'from blocks where _type == \"task\"'", "bindings", "exit"].join("\n"),
       encoding: "utf8",
       env: { ...process.env, NO_COLOR: "1" },
     });
@@ -273,7 +273,7 @@ describe("errors", () => {
 
   it("the prompt can also come from $OMG_SHELL_PROMPT (no --prompt flag)", () => {
     const r = spawnSync("node", [BIN, "-C", vault, "shell"], {
-      input: ["query 'from blocks where type == \"task\"'", "exit"].join("\n"),
+      input: ["query 'from blocks where _type == \"task\"'", "exit"].join("\n"),
       encoding: "utf8",
       env: { ...process.env, NO_COLOR: "1", OMG_SHELL_PROMPT: "omg> " },
     });

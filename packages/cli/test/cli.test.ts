@@ -111,28 +111,28 @@ describe("C4 — dependency query (has_edge)", () => {
     const repos = JSON.parse(omg(["repos", "--json"]).stdout) as unknown;
     void repos;
     const links = JSON.parse(omg(["links", "target.md", "--in", "--json"]).stdout) as {
-      in: { node: string; predicate: string }[];
+      in: { _doc_id: string; _predicate: string }[];
     };
     expect(links.in.length).toBeGreaterThanOrEqual(1);
-    expect(links.in[0]!.predicate).toBe("references");
+    expect(links.in[0]!._predicate).toBe("references");
   });
 });
 
 describe("query (oqx)", () => {
   it("OQX filter over tasks, --ids emits bare ids (pipe fuel)", () => {
-    const { stdout } = omg(["query", 'from blocks where type == "task"', "--ids"]);
+    const { stdout } = omg(["query", 'from blocks where _type == "task"', "--ids"]);
     const ids = stdout.trim().split("\n").filter(Boolean);
     expect(ids).toHaveLength(2);
     for (const id of ids) expect(id).toMatch(/^b_/);
   });
 
   it("unchecked-task filter narrows the set", () => {
-    const { stdout } = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]);
+    const { stdout } = omg(["query", 'from blocks where _type == "task" && !_attrs.checked', "--ids"]);
     expect(stdout.trim().split("\n").filter(Boolean)).toHaveLength(1);
   });
 
   it("a select clause projects fields onto each hit", () => {
-    const { stdout } = omg(["query", 'select p: path, t: type from blocks where type == "task"', "--json"]);
+    const { stdout } = omg(["query", 'select p: _path, t: _type from blocks where _type == "task"', "--json"]);
     const { hits } = JSON.parse(stdout) as { hits: Record<string, unknown>[] };
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {
@@ -141,53 +141,53 @@ describe("query (oqx)", () => {
     }
   });
 
-  // Human tier, projected: header + id + path (the hit envelope, surface 3.0) + the select columns, in order.
+  // Human tier, projected: header + _id + _path (the hit envelope, surface 5.0) + the select columns, in order.
   it("a projecting query prints a header and the projected columns in select order", () => {
-    const { stdout } = omg(["query", 'select title, status, layer from docs where path == "hub.md"']);
+    const { stdout } = omg(["query", 'select _title, status, layer from docs where _path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("id         path     title  status  layer");
+    expect(lines[0]).toBe("_id        _path    _title  status  layer");
     // hub.md sets no layer → empty last cell, trailing whitespace trimmed.
-    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub    active$/);
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub     active$/);
   });
 
   it("a projected path collapses onto the envelope's path column (never printed twice)", () => {
-    const { stdout } = omg(["query", 'select path, title from docs where path == "hub.md"']);
+    const { stdout } = omg(["query", 'select _path, _title from docs where _path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         path     title");
+    expect(lines[0]).toBe("_id        _path    _title");
     expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub$/);
     expect(lines[1]!.split("hub.md")).toHaveLength(2);
   });
 
-  // `--bare` (spec/cli §6, 4.1): the tool's `bare` — the projection alone, no id/path columns.
+  // `--bare` (spec/cli §6, 4.1): the tool's `bare` — the projection alone, no _id/_path columns.
   it("--bare prints the projection table without the id/path columns; --json the bare hits; no select is the surface's refusal", () => {
-    const { stdout } = omg(["query", 'select title, status from docs where path == "hub.md"', "--bare"]);
-    expect(stdout.trimEnd().split("\n")).toEqual(["title  status", "Hub    active"]);
-    const json = JSON.parse(omg(["query", 'select title, status from docs where path == "hub.md"', "--bare", "--json"]).stdout) as { hits: unknown[]; truncated: boolean };
-    expect(json.hits).toEqual([{ title: "Hub", status: "active" }]);
+    const { stdout } = omg(["query", 'select _title, status from docs where _path == "hub.md"', "--bare"]);
+    expect(stdout.trimEnd().split("\n")).toEqual(["_title  status", "Hub     active"]);
+    const json = JSON.parse(omg(["query", 'select _title, status from docs where _path == "hub.md"', "--bare", "--json"]).stdout) as { hits: unknown[]; truncated: boolean };
+    expect(json.hits).toEqual([{ _title: "Hub", status: "active" }]);
     expect(json.truncated).toBe(false);
-    // a projected id is an ordinary column (the intrinsic), rendered like any cell
-    const withId = omg(["query", 'select id, title from docs where path == "hub.md"', "--bare"]).stdout.trimEnd().split("\n");
-    expect(withId[0]).toBe("id         title");
+    // a projected _id is an ordinary column (the engine field), rendered like any cell
+    const withId = omg(["query", 'select _id, _title from docs where _path == "hub.md"', "--bare"]).stdout.trimEnd().split("\n");
+    expect(withId[0]).toBe("_id        _title");
     expect(withId[1]).toMatch(/^d_[a-z0-9]{7}  Hub$/);
-    const refused = omg(["query", 'from docs where path == "hub.md"', "--bare", "--json"], { expectFail: true });
+    const refused = omg(["query", 'from docs where _path == "hub.md"', "--bare", "--json"], { expectFail: true });
     expect(refused.code).toBe(1);
   });
 
   it("a nested collect renders as compact JSON; an absent field is an empty cell", () => {
     const { stdout } = omg([
       "query",
-      'select title, open: blocks collect { select t: text where type == "task" && !attrs.checked } from docs order by path asc',
+      'select _title, open: _blocks collect { select t: _text where _type == "task" && !_attrs.checked } from docs order by _path asc',
     ]);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         path        title   open");
+    expect(lines[0]).toBe("_id        _path       _title  open");
     expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md     Hub     \[\{"t":"wire the deploy pipeline"\}\]$/);
-    // target.md has no frontmatter title, but `title` is the computed attribute (its H1, 3.0); empty collect → [].
+    // target.md has no frontmatter title, but `_title` is the computed attribute (its H1; 5.0: a bare `title` is the authored key); empty collect → [].
     expect(lines[2]).toMatch(/^d_[a-z0-9]{7}  \/target\.md  Target  \[\]$/);
   });
 
   it("a long cell is clipped at 60 chars with an ellipsis", () => {
-    const q = 'select all: blocks collect { select t: text } from docs where path == "hub.md"';
+    const q = 'select all: _blocks collect { select t: _text } from docs where _path == "hub.md"';
     const row = omg(["query", q]).stdout.trimEnd().split("\n")[1]!;
     const cell = row.split(/  +/)[2]!;
     expect([...cell]).toHaveLength(60);
@@ -199,7 +199,7 @@ describe("query (oqx)", () => {
   });
 
   it("a non-projecting query is unchanged: `<id>  <path>` lines, no header", () => {
-    const { stdout } = omg(["query", 'from docs order by path asc']);
+    const { stdout } = omg(["query", 'from docs order by _path asc']);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md$/);
@@ -207,7 +207,7 @@ describe("query (oqx)", () => {
   });
 
   it("--ids is unaffected by a projection", () => {
-    const { stdout } = omg(["query", 'select title, layer from docs order by path asc', "--ids"]);
+    const { stdout } = omg(["query", 'select _title, layer from docs order by _path asc', "--ids"]);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
     for (const l of lines) expect(l).toMatch(/^d_[a-z0-9]{7}$/);
@@ -216,7 +216,7 @@ describe("query (oqx)", () => {
 
 describe("freshness (§3.3): reads are current without a watcher", () => {
   it("an out-of-band edit is visible on the next command", () => {
-    const before = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const before = omg(["query", 'from blocks where _type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(before).toHaveLength(2);
 
     writeFileSync(
@@ -241,7 +241,7 @@ describe("freshness (§3.3): reads are current without a watcher", () => {
     const future = Date.now() / 1000 + 5;
     utimesSync(join(vault, "hub.md"), future, future);
 
-    const after = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const after = omg(["query", 'from blocks where _type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(after).toHaveLength(3);
   });
 });
@@ -385,7 +385,7 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
   // The fixture's task count is whatever earlier suites left it at (the
   // freshness test appends one), so compare against the piped id count.
   const taskIds = (): { ids: string; n: number } => {
-    const ids = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout;
+    const ids = omg(["query", 'from blocks where _type == "task"', "--ids"]).stdout;
     return { ids, n: ids.trim().split("\n").filter(Boolean).length };
   };
 
@@ -404,9 +404,9 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
     const many = JSON.parse(piped(["cat", "-", "--json"], ids).stdout) as unknown[];
     expect(Array.isArray(many)).toBe(true);
     expect(many).toHaveLength(n);
-    const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { path: string; raw: string };
-    expect(one.path).toBe("/hub.md");
-    expect(one.raw).toContain("# Hub");
+    const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { _path: string; _raw: string };
+    expect(one._path).toBe("/hub.md");
+    expect(one._raw).toContain("# Hub");
   });
 
   it("show - hydrates each id to a card", () => {
@@ -415,7 +415,7 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
     expect(res.status).toBe(0);
     expect(res.stdout).toContain("wire the deploy pipeline");
     expect(res.stdout).toContain("write the readme");
-    const json = JSON.parse(piped(["show", "-", "--json"], ids).stdout) as { id: string }[];
+    const json = JSON.parse(piped(["show", "-", "--json"], ids).stdout) as { _id: string }[];
     expect(json).toHaveLength(n);
   });
 
@@ -548,6 +548,6 @@ describe("the commit confirmation prints the Receipt's summary (spec/cli §4, 4.
     expect(j.status).toBe(0);
     expect(JSON.parse(j.stdout)).toMatchObject({ committed: true }); // the document-op JSON is unchanged …
     const h = spawnSync("node", [BIN, "-C", vault, "meta", "hub.md", "--set", "status=active"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-    expect(h.stderr).toContain("  ok patched /hub.md\n    set frontmatter.status = \"active\" in /hub.md\n"); // … the summary rides under the human confirmation
+    expect(h.stderr).toContain("  ok patched /hub.md\n    set _frontmatter.status = \"active\" in /hub.md\n"); // … the summary rides under the human confirmation
   });
 });

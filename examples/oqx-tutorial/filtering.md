@@ -196,22 +196,26 @@ d_zdac7ww  /processes/calcination.md
 
 ## `$it` — the current item itself
 
-A list-valued property can be a subquery receiver: `tags exists { … }` runs the
-block once per **element**, and `$it` names that element. So this is the
-element-wise spelling of `"tria-prima" in list(tags)`:
+A list-valued property can be a subquery receiver: `_tags exists { … }` runs the
+block once per **element**, and `$it` names that element. `_tags` is the engine's
+list (the authored `tags` plus any body `#hashtags`, always a list), where a bare
+`tags` reads the authored value as written — a string for mercury's
+`tags: substance`, which no subquery can iterate. So this is the element-wise
+spelling of `"tria-prima" in list(tags)`:
 
 ```console
-$ omg query 'from docs where tags exists { where $it == "tria-prima" }'
+$ omg query 'from docs where _tags exists { where $it == "tria-prima" }'
 d_h73rhv8  /substances/salt.md
 d_5zmf9f7  /substances/sulphur.md
 ```
 
 In a projection the same idea filters a list in place — each substance's tags
 minus the `substance` tag itself (`$it values` makes it a plain array; a
-scalar-authored `tags: substance` is one element, so mercury's list empties):
+scalar-authored `tags: substance` is one element of `_tags`, so mercury's list
+empties):
 
 ```console
-$ omg query 'select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"' --jsonl
+$ omg query 'select tags: _tags collect { $it values where $it != "substance" } from docs where type == "substance"' --jsonl
 {"_id":"d_0vsapzt","_path":"/substances/mercury.md","tags":[]}
 {"_id":"d_1rren8z","_path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
 {"_id":"d_prj3j7a","_path":"/substances/prima-materia.md","tags":["theory"]}

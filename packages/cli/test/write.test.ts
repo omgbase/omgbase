@@ -47,10 +47,10 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("C2 — complete unchecked tasks via pipe (resulting commit)", () => {
   it("done - consumes ids from stdin and checks the boxes on disk", () => {
-    const ids = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
+    const ids = omg(["query", 'from blocks where _type == "task" && !_attrs.checked', "--ids"]).trim();
     expect(ids.split("\n").filter(Boolean)).toHaveLength(2);
     omg(["done", "-"], ids + "\n");
-    const after = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
+    const after = omg(["query", 'from blocks where _type == "task" && !_attrs.checked', "--ids"]).trim();
     expect(after).toBe("");
     // and it's persisted in the file
     expect(readFileSync(join(vault, "hub.md"), "utf8")).not.toContain("- [ ] wire deploy");
@@ -95,13 +95,13 @@ describe("C7 — fence authoring (run, inert)", () => {
   it("evaluates an omg fence and does not write anything", () => {
     writeFileSync(
       join(vault, "q.md"),
-      ["# Q", "", "```omg", 'from blocks where type == "task"', "```", ""].join("\n"),
+      ["# Q", "", "```omg", 'from blocks where _type == "task"', "```", ""].join("\n"),
     );
     // freshness sweep picks up the new file on the next command
     const out = omg(["run", "q.md", "--ids"]).trim().split("\n").filter(Boolean);
     expect(out.length).toBe(3); // three tasks in hub.md
     // fence stayed inert: the code_fence block is still just a fence
-    const fenceQuery = omg(["query", 'from blocks where type == "code_fence"', "--ids"]).trim();
+    const fenceQuery = omg(["query", 'from blocks where _type == "code_fence"', "--ids"]).trim();
     expect(fenceQuery.split("\n").filter(Boolean)).toHaveLength(1);
   });
 });
@@ -131,7 +131,7 @@ describe("update — whole-document reconciliation", () => {
   it("preserves the untouched paragraph's id across a whole-doc update", () => {
     const doc = "note.md";
     omg(["new", doc, "-f", "-"], "# Topic\n\nFirst paragraph, long enough to reconcile across an edit here.\n\nKept paragraph that remains untouched by this whole update.\n");
-    const keep = 'from blocks where text == "Kept paragraph that remains untouched by this whole update."';
+    const keep = 'from blocks where _text == "Kept paragraph that remains untouched by this whole update."';
     const before = omg(["query", keep, "--ids"]).trim();
     expect(before).toMatch(/^b_/);
     omg(["update", doc, "-f", "-"], "# Topic\n\nFirst paragraph, now edited a bit but still recognizable here.\n\nKept paragraph that remains untouched by this whole update.\n");
@@ -149,7 +149,7 @@ describe("update — whole-document reconciliation", () => {
   });
 
   it("dispatches a b_ target to a block replace (polymorphic target)", () => {
-    const id = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim().split("\n")[0]!;
+    const id = omg(["query", 'from blocks where _type == "task" && !_attrs.checked', "--ids"]).trim().split("\n")[0]!;
     omg(["update", id, "-m", "- [ ] wire deploy pipeline"]);
     expect(readFileSync(join(vault, "hub.md"), "utf8")).toContain("wire deploy pipeline");
   });
@@ -161,12 +161,12 @@ describe("doctor", () => {
   });
 });
 
-describe("traversal (OQX follow out_links collect { from dst })", () => {
+describe("traversal (OQX follow _out_links collect { from _dst })", () => {
   it("walks the citation graph from a seed doc to its linked doc", () => {
-    // hub.md links to old.md — `follow out_links collect { from dst }` reaches it across the edge graph.
-    const res = JSON.parse(omg(["query", 'from docs where path == "hub.md" follow out_links collect { from dst }', "--json"])) as {
-      hits: { path: string }[];
+    // hub.md links to old.md — `follow _out_links collect { from _dst }` reaches it across the edge graph.
+    const res = JSON.parse(omg(["query", 'from docs where _path == "hub.md" follow _out_links collect { from _dst }', "--json"])) as {
+      hits: { _path: string }[];
     };
-    expect(res.hits.map((h) => h.path)).toContain("/old.md");
+    expect(res.hits.map((h) => h._path)).toContain("/old.md");
   });
 });

@@ -97,12 +97,23 @@ describe("omg mcp (stdio)", () => {
     expect(names).toContain("docs_outline");
     expect(names).toContain("query");
 
-    const outline = await rpc.send("tools/call", { name: "docs_outline", arguments: { path: "hub.md" } });
+    const outline = await rpc.send("tools/call", { name: "docs_outline", arguments: { _path: "hub.md" } });
     const oc = (outline.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
     expect(oc.isError).toBeFalsy();
     expect(oc.content?.[0]?.text ?? "").toContain("Hub");
 
-    const q = await rpc.send("tools/call", { name: "query", arguments: { query: 'from blocks where type == "task"' } });
+    // 5.0 "underscore = engine" (spec/surface §4 "Arguments"): a bare `path` names no
+    // argument — no tolerance; the error carries the same call respelled as `fix`.
+    const bare = await rpc.send("tools/call", { name: "docs_outline", arguments: { path: "hub.md" } });
+    const bc = (bare.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
+    expect(bc.isError).toBe(true);
+    const be = JSON.parse(bc.content?.[0]?.text ?? "{}") as { error?: string; message?: string; data?: { hint?: string; fix?: string } };
+    expect(be.error).toBe("filter_invalid");
+    expect(be.message).toContain("`path` is not an argument — the engine field is `_path` (the bare namespace is the user's); pass `_path`");
+    expect(be.data?.hint).toBe("arguments");
+    expect(be.data?.fix).toBe(JSON.stringify({ _path: "hub.md" }));
+
+    const q = await rpc.send("tools/call", { name: "query", arguments: { query: 'from blocks where _type == "task"' } });
     const qc = (q.result as { content?: { text?: string }[] }) ?? {};
     const body = JSON.parse(qc.content?.[0]?.text ?? "{}") as { hits?: unknown[] };
     expect(body.hits).toHaveLength(2);
@@ -154,7 +165,7 @@ describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
       const res = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs", ...args } });
       const c = (res.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
       if (c.isError) return ["<error>"];
-      return ((JSON.parse(c.content?.[0]?.text ?? "{}") as { hits?: { path?: string }[] }).hits ?? []).map((h) => h.path ?? "");
+      return ((JSON.parse(c.content?.[0]?.text ?? "{}") as { hits?: { _path?: string }[] }).hits ?? []).map((h) => h._path ?? "");
     };
 
     // No repo → the bound default (alpha).
@@ -266,7 +277,7 @@ describe("omg mcp — the workspace writer lock (spec/sync §7)", () => {
     // A write succeeds and leaves no lock behind.
     const created = await call("docs_create", { path: "locked/a.md", markdown: "# A\n" });
     expect(created.isError).toBe(false);
-    expect((created.body.revisions as { path: string }[])[0]!.path).toBe("/locked/a.md"); // the Receipt (4.0)
+    expect((created.body.revisions as { _path: string }[])[0]!._path).toBe("/locked/a.md"); // the Receipt (4.0)
     expect(existsSync(lockFile)).toBe(false);
 
     // A live foreign holder: this vitest process's pid is alive, so the child
@@ -285,7 +296,7 @@ describe("omg mcp — the workspace writer lock (spec/sync §7)", () => {
     expect(dry.isError).toBe(true);
     expect(dry.body.error).toBe("repo_not_found");
     // Reads never touch the lock.
-    const read = await call("docs_read", { path: "locked/a.md" });
+    const read = await call("docs_read", { _path: "locked/a.md" });
     expect(read.isError).toBe(false);
     // The holder's record is intact (never stolen); once it is gone the write lands.
     expect(JSON.parse(readFileSyncUtf8(lockFile)).pid).toBe(process.pid);

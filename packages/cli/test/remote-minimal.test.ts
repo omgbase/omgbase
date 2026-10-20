@@ -55,22 +55,22 @@ describe("omg --server against `omg mcp --tools minimal`", () => {
     expect(v.profile).toBe("minimal");
     expect(remote(["version"])).toContain("profile  minimal");
     expect(local(["version"])).toContain("profile  full");
-    const out = JSON.parse(remote(["cat", "hub.md", "--json"])) as { path: string };
-    expect(out.path).toBe("/hub.md");
+    const out = JSON.parse(remote(["cat", "hub.md", "--json"])) as { _path: string };
+    expect(out._path).toBe("/hub.md");
   }, 60_000);
 
   it("done falls back to apply { effects } (no blocks_check on the server) and the file changes", () => {
     // `order by text`: the default order is (path, id) and ids are random here, so without it `ids[0]` is either task.
-    const ids = local(["query", 'from blocks where type == "task" and not checked order by text', "--ids"]).trim().split("\n").filter(Boolean);
+    const ids = local(["query", 'from blocks where _type == "task" and not checked order by _text', "--ids"]).trim().split("\n").filter(Boolean);
     expect(ids).toHaveLength(2);
-    const receipt = JSON.parse(remote(["done", ids[0]!, "--json"])) as { committed: boolean; revisions: { path: string }[] };
+    const receipt = JSON.parse(remote(["done", ids[0]!, "--json"])) as { committed: boolean; revisions: { _path: string }[] };
     expect(receipt.committed).toBe(true);
-    expect(receipt.revisions.map((r) => r.path)).toEqual(["/hub.md"]);
+    expect(receipt.revisions.map((r) => r._path)).toEqual(["/hub.md"]);
     expect(readFileSync(join(vault, "hub.md"), "utf8")).toContain("- [x] a task");
   }, 60_000);
 
   it("insert / append / update <block> / new / meta / mv / rm --doc all commit through apply", () => {
-    const hubId = (JSON.parse(local(["cat", "hub.md", "--json"])) as { id: string }).id;
+    const hubId = (JSON.parse(local(["cat", "hub.md", "--json"])) as { _id: string })._id;
     // insert at a document's top level (a path ref → a document target)
     const ins = JSON.parse(remote(["insert", "hub.md", "-m", "## Notes\n\nfirst", "--json"])) as { new_ids: Record<string, string>; committed: boolean };
     expect(ins.committed).toBe(true);
@@ -84,18 +84,18 @@ describe("omg --server against `omg mcp --tools minimal`", () => {
     expect(upd.committed).toBe(true);
     expect(readFileSync(join(vault, "hub.md"), "utf8")).toContain("## Notes (renamed)\n\nfirst\n\nsecond");
     // new, meta, mv, rm --doc
-    const created = JSON.parse(remote(["new", "fresh.md", "-m", "# Fresh\n", "--json"])) as { id: string; path: string; committed: boolean };
-    expect(created.path).toBe("/fresh.md");
+    const created = JSON.parse(remote(["new", "fresh.md", "-m", "# Fresh\n", "--json"])) as { _id: string; _path: string; committed: boolean };
+    expect(created._path).toBe("/fresh.md");
     expect(created.committed).toBe(true);
-    const meta = JSON.parse(remote(["meta", "fresh.md", "--set", "layer=draft", "--json"])) as { path: string; committed: boolean };
-    expect(meta.path).toBe("/fresh.md");
+    const meta = JSON.parse(remote(["meta", "fresh.md", "--set", "layer=draft", "--json"])) as { _path: string; committed: boolean };
+    expect(meta._path).toBe("/fresh.md");
     expect(readFileSync(join(vault, "fresh.md"), "utf8")).toContain("layer: draft");
-    const moved = JSON.parse(remote(["mv", "fresh.md", "notes/fresh.md", "--json"])) as { path: string; retargeted: unknown; dangling: unknown[] };
-    expect(moved.path).toBe("/notes/fresh.md");
+    const moved = JSON.parse(remote(["mv", "fresh.md", "notes/fresh.md", "--json"])) as { _path: string; retargeted: unknown; dangling: unknown[] };
+    expect(moved._path).toBe("/notes/fresh.md");
     expect(moved.dangling).toEqual([]);
     expect(moved.retargeted).toBeNull();
-    const rm = JSON.parse(remote(["rm", "--doc", "notes/fresh.md", "--json"])) as { path: string; committed: boolean };
-    expect(rm.path).toBe("/notes/fresh.md");
+    const rm = JSON.parse(remote(["rm", "--doc", "notes/fresh.md", "--json"])) as { _path: string; committed: boolean };
+    expect(rm._path).toBe("/notes/fresh.md");
     // a whole-document update (docs_update → apply { set content })
     const doc = JSON.parse(remote(["update", hubId, "-m", "---\nlayer: draft\n---\n\n# Hub\n\nIntro, rewritten.\n", "--json"])) as { committed: boolean };
     expect(doc.committed).toBe(true);
@@ -103,9 +103,9 @@ describe("omg --server against `omg mcp --tools minimal`", () => {
   }, 120_000);
 
   it("retarget --apply falls back to apply { retarget } and rewrites the link", () => {
-    const r = JSON.parse(remote(["retarget", "/hub.md", "/hub-renamed.md", "--apply", "--json"])) as { committed: boolean; revisions: { path: string }[] };
+    const r = JSON.parse(remote(["retarget", "/hub.md", "/hub-renamed.md", "--apply", "--json"])) as { committed: boolean; revisions: { _path: string }[] };
     expect(r.committed).toBe(true);
-    expect(r.revisions.map((x) => x.path)).toEqual(["/old.md"]);
+    expect(r.revisions.map((x) => x._path)).toEqual(["/old.md"]);
     expect(readFileSync(join(vault, "old.md"), "utf8")).toContain("(/hub-renamed.md)");
   }, 60_000);
 
