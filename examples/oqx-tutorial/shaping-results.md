@@ -47,22 +47,18 @@ $ omg query 'select era, known: known_for from docs where type == "practitioner"
 {"_id":"d_rw4ygr0","_path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
 ```
 
-`known: known_for` renames the projected column; a bare `era` keeps its name.
 The projection comes *first*: OQX clauses have one fixed order — `select`, `from`,
 `where`, `follow`, `order by`, `limit`, `offset` — and `select` is the only keyword
 you may drop (`era, known: known_for from docs …` means the same). A `where` may
 refer to a `select` alias (`select _path, old: era < 1000 from docs where old`).
 
-### Underscore = engine; a bare name is yours
+### `_title` and `title` side by side
 
-`_id`, `_path`, `_title`, `_tags`, `_raw`, `_hash`, `_updated_at`, `_format` are
-the document's **engine fields** — the leading underscore says the engine
-derived the value. A bare name is always an authored key, read from the merged
-view of frontmatter plus inline fields (`_data.<k>` spells the same read). So
-`_title` is the computed title (the first H1) and `title` is your own
-`title:` key. The hub authors `title: Alchemy` and its H1 says the same; the
-lab notes have no `title:` key, so `title` is absent there while `_title` still
-comes from the heading:
+A bare name reads the merged view of frontmatter plus inline fields (`_data.<k>`
+spells the same read out loud); `_title` is the computed title (the first H1)
+and `title` your own `title:` key. The hub authors `title: Alchemy` and its H1
+says the same; the lab notes have no `title:` key, so `title` is absent there
+while `_title` still comes from the heading:
 
 ```console
 $ omg query 'select _title, t: title from docs where type == "hub" or type == "lab-note"'

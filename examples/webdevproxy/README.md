@@ -1,12 +1,22 @@
 # webdevproxy — a development-only local web proxy for MCP servers
 
 A small Node program (no build step) that lets the browser demos in this
-repository — [`graph-ui`](../graph-ui/README.md), [`live-tail`](../live-tail/README.md)
-— reach an **omgbase MCP server** from a Vite dev server without any CORS or
-OAuth setup on the server side. The page talks to `localhost`; the proxy talks
-to the server. It is **private, unpublished and not for production**: it
-listens on `127.0.0.1` only, holds your bearer tokens, and allows exactly the
-browser origins a dev setup needs.
+repository — [`graph-ui`](../graph-ui/README.md), [`live-tail`](../live-tail/README.md),
+[`repo-explorer`](../repo-explorer/README.md) — reach an **omgbase MCP server**
+from a Vite dev server without any CORS or OAuth setup on the server side. The
+page talks to `localhost`; the proxy talks to the server. It is **private,
+unpublished and not for production**: it listens on `127.0.0.1` only, holds
+your bearer tokens, and allows exactly the browser origins a dev setup needs.
+
+The proxy is **spelling-agnostic**: it relays JSON-RPC messages verbatim in
+both directions (`src/proxy.mjs` hands each message to the upstream transport
+and each answer back unchanged — no tool-name or argument allowlist, no
+rewriting of result keys or error bodies), so a surface 5.0 server's
+`_`-prefixed engine names (`_id`, `_path`, `_raw`, …), its `filter_invalid`
+refusal of a bare `path` argument and the `data.fix` it carries reach the page
+exactly as `omg mcp` wrote them. Nothing in the proxy knows which tools exist;
+only the `initialize` result is inspected, for the protocol version the
+upstream negotiated.
 
 Two modes, one flag each:
 

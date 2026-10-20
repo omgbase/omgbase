@@ -128,7 +128,7 @@ words (no "latest change", no "created" badge, no digest summary line):
 09:05:07  Alpha  /notes/alpha.md   seq 6 · c_761p702   api   +1 −0
 ```
 
-— the update's time (a recent document's `updated_at`, a digest's `ts`;
+— the update's time (a recent document's `_updated_at`, a digest's `ts`;
 `HH:MM:SS` today, else `YYYY-MM-DD HH:MM`), `title` prominent, `path`
 secondary (the path alone when the title is null or the same), the change's
 `seq` and commit id (a recent card takes them, with the actor, from
@@ -164,7 +164,7 @@ prose), at a nested list item (the indentation context is gone), at a table
 row (a row without the header and alignment rows is not a table). Rendering
 the hunk's lines as Markdown would break all three. So the element does not
 render the excerpt. When the markdown view is on, the page fetches both
-revisions' full text — `docs_read_at { id | path, rev }` for `docs_diff_unified`'s
+revisions' full text — `docs_read_at { _id | _path, rev }` for `docs_diff_unified`'s
 `from` and `to` (a created document already has its content: the before side
 is empty) — and `lib/markdown-diff.ts` renders the **documents**, using the
 hunks only to decide what to show and how to colour it:
@@ -399,6 +399,30 @@ reconnected* in the header; only a second failure is shown.
   surface gate and the names in `paths.test.ts`; 92 tests).
 
 ## Verified headlessly
+
+Surface 5.0 (2026-10-20; the TS `omg` at surface 5.0 / `omgbase` 0.26.1; Chrome
+`--headless=new` over CDP, the dev flow as documented — `dev:workspace --force`,
+`dev:mcp` on 8788, `dev:vite` on 5174 — plus a Node script issuing the page's
+exact MCP calls against the same proxy): the header read `local · omg mcp -C …
+· surface 5.0`, the pill `live · 2 s`, the idle filter `select _path, _title,
+_updated_at from docs` / `order by _updated_at desc limit 25`; the recent cards
+listed newest-first with their created diffs (`+7 −0`, `+11 −0`, …), each
+built from `docs_history` versions spelled `{ _rev, _seq, _commit, _ts, _origin,
+_actor, _hash, _is_current, _archived }` and `docs_read_at { _id, _path, rev,
+_raw }`; `omg meta notes/alpha.md --set status=shipped` and `… notes/beta.md
+--set status=done` arrived at the top within one poll as `Beta /notes/beta.md
+seq 11 · c_… api · human:… +1 −1` with `-status: active` / `+status: done`
+(`changes_since` digests' `revisions: [{ _id, _path, _hash }]`, the diff from
+`docs_diff_unified { _path, from_rev, to_rev }` → `{ _id, _path, from, to,
+diff }`); the filter `status == "active"` narrowed the recent list and a change
+to `notes/gamma.md` read `1 change hidden by the filter`; the markdown switch
+rendered the beta change as one yaml block with `ctx:title: Beta` /
+`del:status: active` / `add:status: done`. The same calls spelled the 4.x way
+(`docs_history { id }`, `docs_diff_unified { path }`, `docs_read_at { path }`)
+were refused by the server with `filter_invalid` and a `data.fix` naming
+`_id`/`_path`. No console errors (Lit's dev-mode warning only).
+
+Earlier runs (surface 3.0, the bare spelling):
 
 After the pre-3.0 compatibility branches were removed (Chrome `--headless=new`
 over CDP on free ports — proxy 18962, Vite 15962 — against the current build

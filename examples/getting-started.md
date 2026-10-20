@@ -144,6 +144,33 @@ verified: true
 ---
 ```
 
+## One naming rule, everywhere
+
+That frontmatter is yours, and a query reads every key in it by its **bare**
+name (`type`, `tags`, `verified`). What the engine knows about a document — its
+id, its path, the title it computed from the first heading, the tags it
+gathered — is spelled with a leading underscore: `_id`, `_path`, `_title`,
+`_tags`. That is the whole rule, and it holds on every kind of row (documents,
+blocks, nodes, links, revisions): **a bare name is user-authored; an
+underscore-prefixed name is engine-provided.** Nothing is reserved — a `title:`
+or `id:` key of your own is the bare `title` / `id`, and the engine's are
+`_title` / `_id`. Sulphur has no `title:` key, so `title` is empty while
+`_title` comes from the H1; `tags` is the authored list as written, `_tags` that
+list plus any `#hashtags` in the body:
+
+```console
+$ omg query 'select _title, title, tags from docs where _path == "/substances/sulphur.md"'
+_id        _path                   _title   title  tags
+d_s67d0jy  /substances/sulphur.md  Sulphur         ["substance","tria-prima"]
+```
+
+The spelling is the same wherever a value travels: every hit leads with `_id`
+and `_path`; `omg cat --json` and `omg show --json` carry `_id`, `_path` and
+`_raw`; an MCP tool argument that names a document is `_id` or `_path` (a bare
+`id` or `path` is refused with the corrected call, never quietly accepted); and
+the shell reads a row's fields as `@1._id` / `@1._path`. The row itself is `$it`
+— the only `$` names in a query are the language's own.
+
 You now have a queryable workspace. From here:
 
 - **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end.

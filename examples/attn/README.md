@@ -27,7 +27,10 @@ switch writes).
 ## The storage model
 
 Two kinds of document, both Markdown with frontmatter (a plain `.yaml` file
-does not project properties in omgbase today):
+projects its top-level mapping as properties since properties 1.2, but the
+`set _frontmatter.<key>` effects every switch is made of are Markdown-only —
+on a `.yaml` document they are refused with `type_mismatch`, so the pointer
+stays a `.md`):
 
 ```yaml
 # /attn/focus.md — the Focus pointer: one document, rewritten by every switch
@@ -307,7 +310,7 @@ the page against `omg mcp --tools minimal` — refreshed for the revised model
    *current value* of the contested document, not a retry.
 7. **Focus cues are one query per cue per switch**, each run in full as
    authored (every page) only to test one membership. Fine for tens of cues; a
-   `query_many` on the minimal profile, or a bound `where … and path == $focused`
+   `query_many` on the minimal profile, or a bound `where … and _path == $focused`
    the client could append without parsing the user's query, would do it in one.
 8. **No `now()`** keeps time cues client-side (fine) but means a cue's stored
    OQX cannot be time-relative; bindings on `query` (`{ query, bindings: {
@@ -362,31 +365,45 @@ cue query so the app can blame the cue, not itself.
 
 ## Verified against the real stack
 
-Over `.dev-workspace` built and seeded by `scripts/dev-workspace.mjs`, and
-`omg mcp -C … --tools minimal` on stdio driven through the app's own lib
-modules (a Caller decoding the envelope as `OmgClient.call` does): `tools/list`
-was the ten; `version` said `surface 4.7`, `profile minimal` (the run predates
-surface 5.0 — the names below are as the 4.7 server spelled them; the app now
-speaks 5.0, `_frontmatter.<key>`, `_path`, `_updated_at`, `_raw`). The pointer read
-the salt in focus with the dew on the stack; the feed query returned the nine
-intents with their `cues` lists and `focus: { since }` on the one in focus. The
-cue engine lifted "Distil the May dew" (its `on: focus` query ran as authored
-and the salt was among its hits) and "Tend the garden" (a due time cue) into
-Cued, and nothing else; the enter / exit cues baselined. The history read **7
-revisions in 8 calls** (the ingested pointer plus the six seeded switches),
-with `interrupt` / `back` inferred from the stack. Adding "Sweep the laboratory
-floor #household #rest" was one `create` (`$new.0` the intent) that put it at
-the top of the feed and made the enter cue fire for it; switching to it made
-"when-resting" match and "when-the-opus-is-focused" not, and **every other
-intent's `updated_at` was unchanged**. `interrupt` to the letter pushed the
-stack to two, `back` popped it; a switch carrying the stale `rev` was
-`stale_plan` with `data.current.revision` and the re-pinned `fix`; `stop` set
-`focused_intent: null`. A focus cue and a deliberately broken enter cue were
-added to "Enjoy lunch" through `plan { diffs: true }` (the preview showed the
-`cues:` block with the `query: |` scalars) → `execute`; the list read back
-intact, the new focus cue matched the salt, the broken one was `filter_invalid
-(OQX)` for that cue alone, and `remove` committed the list minus it. Releasing
-the salt made the `query-exit` cue fire (by id — the row had left), reactivate
-put it back; add + focus committed the intent and the pointer in one `apply`.
-The page itself was not loaded in a browser in that run; the scripted tests
-cover the elements' logic.
+Over `.dev-workspace` built and seeded by `scripts/dev-workspace.mjs` (the six
+switches go through `omg apply`, the pointer's CAS token through `omg --json
+show` → `pointerOf`), and `omg mcp -C … --tools minimal` on stdio driven
+through the app's own lib modules (a Caller decoding the envelope as
+`OmgClient.call` does), **on both engines** — the TypeScript `omg` (0.25.0)
+and the Rust `omgbase` (0.26.1), each reporting `surface 5.0`, `profile
+minimal`; the two runs were call-for-call identical. `tools/list` was the ten.
+The pointer (`docs_read { _path }`) read the salt in focus with the dew on the
+stack, `rev` and `_id` in hand; the feed query returned the nine intents with
+their `cues` lists, the authored `title` and `tags`, and `focus: { since }` on
+exactly the one in focus; the where-form of the join returned that one row.
+The cue engine matched "Distil the May dew"'s `on: focus` query (run as
+authored, the salt among its hits by `_path`) and not the letter's; the three
+`on: time` cues were due by the clock; the enter / exit cues baselined (7
+active intents; 3 active works of the Opus). The history read **7 revisions in
+8 calls** (one `revisions` query, seven `docs_read { _path, at }` → `_raw`),
+with switch / interrupt / back inferred from the stack. Adding "Sweep the
+laboratory floor #household #rest" was one `create` (Receipt `revisions[{ _id,
+_path, _hash }]`, `new_ids.$new.0` the document) that put it at the top of the
+feed and made the enter cue fire for it; switching to it wrote `/attn/focus.md`
+only (one revision in the Receipt, `set _frontmatter.focused_intent` / `since`
+in the summary), made "when-resting" match and "when-the-opus-is-focused" not,
+and **every other intent's `_updated_at` was unchanged**. `interrupt` to the
+letter pushed the stack to two, `back` popped it; a switch carrying the stale
+`rev` was `stale_plan` with `data.current.revision` and the re-pinned `fix`;
+`stop` set `focused_intent: null` and kept the stack. A focus cue and a
+deliberately broken enter cue were added to "Enjoy lunch" through `plan {
+diffs: true }` (the preview showed the `cues:` block with the `query: |`
+scalars; `preview.revisions[{ _id, _path, _hash }]`) → `execute { plan_id,
+effects }`; the list read back intact, the new focus cue matched the salt, the
+broken one was `filter_invalid (OQX)` for that cue alone, `remove` committed
+the list minus it and `unset _frontmatter.cues` cleared the last. Releasing the
+salt made the `query-exit` cue fire (by id — the row had left), reactivate put
+it back; `set content` moved the edited intent to the top; add + focus
+committed the intent and the pointer in one `apply` (two revisions); the
+history reloaded 12 revisions in 6 calls (the cache). A 4.x `docs_read { path
+}` was `filter_invalid` with the `_path` spelling in `data.fix` — the gate's
+reason. `pnpm dev:mcp` then served the same workspace through webdevproxy
+(`/whoami` said local; over `/mcp` `initialize` answered, `tools/list` was the
+ten and `docs_read { _path: "/attn/focus.md" }` returned the pointer). The page itself
+was not loaded in a browser in that run; the scripted tests cover the
+elements' logic.

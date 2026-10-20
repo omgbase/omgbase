@@ -55,8 +55,7 @@ n_cafa6b6cd406  /practitioners/paracelsus.md
 Nodes carry a `_kind` — `md:task`, `md:link`, `md:wikilink`, `md:section`,
 `md:inline_field` — plus kind-specific fields: a section's or inline field's `_name`, a link's or
 field's `_value`, and a task's `checked` — an `attrs` key, bare because it was
-authored (`_attrs.checked` is the same read). The underscore marks what the
-engine derived; a bare name is always the author's.
+authored (`_attrs.checked` is the same read).
 
 Every heading becomes an `md:section` node named by its text. Three pages have
 an "Open questions" section:

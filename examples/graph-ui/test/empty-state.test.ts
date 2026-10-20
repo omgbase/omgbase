@@ -8,20 +8,20 @@ describe("firstWhereText", () => {
   it("quotes the top-level where clause as written", () => {
     expect(firstWhereText(DEFAULT_QUERY, parse(DEFAULT_QUERY))).toBe(`_path == "/timeline/kickoff.md"`);
     expect(firstWhereText(defaultQuery(NAMES_4), parse(defaultQuery(NAMES_4)))).toBe(`path == "/timeline/kickoff.md"`);
-    const multi = `select path from docs where phase == "plan" && (owner == "/people/ada.md" || tags.contains("x"))`;
+    const multi = `select _path from docs where phase == "plan" && (owner == "/people/ada.md" || tags.contains("x"))`;
     expect(firstWhereText(multi, parse(multi))).toBe(`phase == "plan" && (owner == "/people/ada.md" || tags.contains("x"))`);
   });
 
   it("is null without a where clause or a parse, and survives non-BMP characters before it", () => {
-    expect(firstWhereText("select path from docs", parse("select path from docs"))).toBeNull();
+    expect(firstWhereText("select _path from docs", parse("select _path from docs"))).toBeNull();
     expect(firstWhereText("nonsense", null)).toBeNull();
-    const src = `select path, t: "😀" from docs where path == "/a.md"`;
-    expect(firstWhereText(src, parse(src))).toBe(`path == "/a.md"`);
+    const src = `select _path, t: "😀" from docs where _path == "/a.md"`;
+    expect(firstWhereText(src, parse(src))).toBe(`_path == "/a.md"`);
   });
 });
 
 describe("pathLiterals", () => {
-  it("collects every `_path == \"…\"` literal (a 4.x query's `path ==`), either side, nested blocks included, deduped in source order", () => {
+  it("collects every `_path == \"…\"` literal (a 4.x query's `_path ==`), either side, nested blocks included, deduped in source order", () => {
     expect(pathLiterals(parse(DEFAULT_QUERY))).toEqual(["/timeline/kickoff.md"]);
     expect(pathLiterals(parse(defaultQuery(NAMES_4)))).toEqual(["/timeline/kickoff.md"]);
     const q = parse(`select _path from docs where _path == "/a.md" || "b.md" == _path || _path == "/a.md" follow ^docs collect { where _path == "/c.md" }`);
@@ -56,15 +56,15 @@ describe("missingPathLiterals", () => {
 });
 
 describe("emptyStateText", () => {
-  it("names the repository, and each missing path, in the panel and the footer", () => {
-    const t = emptyStateText({ where: `path == "/timeline/kickoff.md"`, missing: ["/timeline/kickoff.md"] }, "notes");
+  it("names the repository, and each missing _path, in the panel and the footer", () => {
+    const t = emptyStateText({ where: `_path == "/timeline/kickoff.md"`, missing: ["/timeline/kickoff.md"] }, "notes");
     expect(t.title).toBe("the query matched nothing in repo notes");
     expect(t.details).toEqual(["/timeline/kickoff.md is not in repo notes"]);
     expect(t.footer).toBe("matched nothing — /timeline/kickoff.md is not in this repo");
   });
 
   it("roots a bare literal, and stays short when nothing is missing", () => {
-    expect(emptyStateText({ where: `path == "timeline/kickoff.md"`, missing: ["timeline/kickoff.md"] }, "notes").details).toEqual(["/timeline/kickoff.md is not in repo notes"]);
+    expect(emptyStateText({ where: `_path == "timeline/kickoff.md"`, missing: ["timeline/kickoff.md"] }, "notes").details).toEqual(["/timeline/kickoff.md is not in repo notes"]);
     const t = emptyStateText({ where: `phase == "nope"`, missing: [] }, "notes");
     expect(t.details).toEqual([]);
     expect(t.footer).toBe("matched nothing");

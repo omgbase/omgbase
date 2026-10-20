@@ -45,10 +45,10 @@ $ omg query 'from docs where _path == "/index.md" follow distinct _out_links col
 ## Backlinks (`_in_links collect { from _doc }`)
 
 `_in_links collect { from _doc }` walks the edges backwards — the inbound link
-rows to their source documents. Options go in a second brace after the block.
-Bound the walk to one hop (`depth 2`) and
-keep only that hop (`$depth == 2`) to get the documents that *directly* cite the
-magnum opus:
+rows to their source documents. The walk's knobs are clauses of that destination
+block, written after its `from`/`where`. Bound the walk to one hop (`depth 2`)
+and keep only that hop (`$depth == 2`) to get the documents that *directly* cite
+the magnum opus:
 
 ```console
 $ omg query 'from docs where _path == "/processes/magnum-opus.md" and $depth == 2 follow _in_links collect { from _doc depth 2 }' | awk '{print $2}' | sort
@@ -121,10 +121,11 @@ $ omg query 'select _name, depth: $depth, stop: $stop from nodes where _kind == 
 ```
 
 Other knobs, briefly: `order by $ordinal` yields the walk's natural 1..N order
-(seed first); `by <expr>` re-keys node identity so the walk stops when the
-expression repeats (e.g. `by type` — stop when a document *type* recurs); and
-every walk is capped at depth 8. On a block, `_children` walks a list down to its
-items the same way.
+(seed first); a destination block may project `$key: <expr>` to re-key the
+identity that `distinct` and cycle detection compare (`follow distinct
+_out_links collect { $key: type from _dst }` keeps one document per *type*);
+and every walk is capped at depth 8. On a block, `_children` walks a list down
+to its items the same way.
 
 Next: **[sugar.md](./sugar.md)** — the shorthand forms (brackets, `!`,
 where-first blocks, `is`) and `refs()` for the document references a frontmatter

@@ -42,9 +42,12 @@ describe("docReadOf / docOpOf", () => {
     expect(docReadOf({ id: "d_b", path: "b.md", rev: "r_2", properties: { frontmatter: fm }, raw: "---\nbefore: [/a.md]\n---\n" })).toEqual(want);
     expect(docReadOf({})).toEqual({ id: null, path: null, rev: null, raw: null, frontmatter: {} });
   });
-  it("a document op's result: `{ _id, _path, committed }` (4.x: `{ id, path, committed }`)", () => {
-    expect(docOpOf({ _id: "d_b", _path: "/b.md", committed: true })).toEqual({ id: "d_b", path: "/b.md", committed: true });
-    expect(docOpOf({ id: "d_b", path: "/b.md", committed: true })).toEqual({ id: "d_b", path: "/b.md", committed: true });
-    expect(docOpOf({ _id: "d_b", _path: "b.md" })).toEqual({ id: "d_b", path: "/b.md", committed: false });
+  it("a document write's result is the Receipt: `{ plan_id, commit, revisions: [{ _id, _path, _hash }], committed, summary }` — the first revision is the document written (4.x: `revisions: [{ id, path, hash }]`)", () => {
+    const receipt = { plan_id: "6655f1…", commit: "c_tbk3hsz", revisions: [{ _id: "d_b", _path: "b.md", _hash: "c25a…" }], new_ids: {}, committed: true, summary: ["set _frontmatter.after = […] in /b.md"] };
+    expect(docOpOf(receipt)).toEqual({ id: "d_b", path: "/b.md", hash: "c25a…", commit: "c_tbk3hsz", committed: true });
+    expect(docOpOf({ ...receipt, revisions: [{ id: "d_b", path: "/b.md", hash: "c25a…" }] })).toEqual({ id: "d_b", path: "/b.md", hash: "c25a…", commit: "c_tbk3hsz", committed: true });
+    // No revision (nothing changed), or a shape that is not a receipt at all.
+    expect(docOpOf({ plan_id: "x", commit: "c_1", revisions: [], committed: true })).toEqual({ id: null, path: null, hash: null, commit: "c_1", committed: true });
+    expect(docOpOf({})).toEqual({ id: null, path: null, hash: null, commit: null, committed: false });
   });
 });

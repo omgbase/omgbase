@@ -277,7 +277,9 @@ takes either spelling and normalises to one internal shape with rooted paths:
 `graphEdgeRows(result)` / `edgeOf(e)` / `docOf(d)` for the `graph` tool's
 `links[]` and documents (this demo fetches edges through `query`, not `graph`,
 so these are for a consumer that does), `docReadOf(r)` for `docs_read` and
-`docOpOf(r)` for a document op's `{ _id, _path, committed }`.
+`docOpOf(r)` for a document write's Receipt (`docs_set_meta`, `docs_create`, … are
+sugar over `apply`): `{ plan_id, commit, revisions: [{ _id, _path, _hash }],
+committed, summary }` — the first revision is the document written.
 
 Nodes are keyed by the rooted path, and the edge fetch roots the rows'
 `_path`/`_dst_path` before matching them to the shown nodes while spelling its
@@ -293,7 +295,7 @@ the bare spellings too) in the query gets "`_path` is already `/`-rooted; use
 Try: `select _path, _title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
 fields, and the three `loop-*` notes trigger the cycle banner); `follow
-out_links collect { from dst }` for the link graph; `order by phase` for a
+_out_links collect { from _dst }` for the link graph; `order by phase` for a
 sequence axis; `follow before` to
 see the hint and the server's error (with the `refs()` fix) in the status line.
 
@@ -512,7 +514,7 @@ The editor's status area also carries the hints from `src/lib/hints.ts` (see
 `view → edges → layout` with the fetcher the page hands it, over cards sized
 from `view.projection` (`src/lib/cards.ts`). The page owns what
 sits around the graph: the empty-state panel (`src/lib/empty-state.ts` — the
-first `where` as text, the `path == "…"` literals, which of them the
+first `where` as text, the `_path == "…"` literals, which of them the
 repository lacks, the words) and the delayed loading pill; the preset query
 and the sample-or-not decision are `src/lib/starter-query.ts`; the mode and
 header label that follow the bridge are `src/lib/connection.ts`. Edge edits flow
@@ -634,8 +636,11 @@ the query projected the field under its own name (`select … after`), else from
 select. A scalar field is set to the reference (or unset on remove); a list is
 appended to / filtered, order preserved, duplicates (by identity, in any
 spelling) dropped; a list that loses its last member is unset (the *emptied
-list* setting can keep `[]` instead). The call is `docs_set_meta { doc, set: {
-field: value } }` or `{ unset: [field] }`; writes to one document are queued so
+list* setting can keep `[]` instead). The call is `docs_set_meta { _path | _id, set: {
+field: value } }` or `{ _path | _id, unset: [field] }` (the document argument is
+`docLocator(doc, names)` — `{ path }`/`{ id }` on a 4.x server; a 5.0 server
+refuses the bare spelling with `filter_invalid` and a `fix`), answered with the
+Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], committed, summary }`; writes to one document are queued so
 two quick toggles cannot race (there is no CAS on `docs_set_meta`). Then the
 query re-runs and the edges are refetched.
 
@@ -855,6 +860,29 @@ cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.
 
 ## Verified headlessly
+
+Surface 5.0 (2026-10-20; the TS `omg` at surface 5.0 / `omgbase` 0.26.1; Chrome
+`--headless=new` over CDP, the dev flow as documented — `dev:workspace --force`,
+`dev:mcp` on 8787, `dev:vite` on 5173 — plus a Node script issuing the page's
+exact MCP calls against the same proxy): the header read `local sample · /mcp ·
+1 repo · surface 5.0`; the default query (`_in_links collect { from _doc where
+^_path in list(after) }`) returned 9 rows as `{ _id, _path, _title, phase,
+before, after }`, the picker inferred `before/after` (drawn, axis) + `before` +
+`after`, the cards panel listed `_path`/`_title` as intrinsics with `_title` the
+label, and the graph drew 9 cards with 10 `before/after` edges (`9 nodes · 10
+edges · elk`); the starter (`select _path, _title … order by _updated_at desc`)
+drew 20 cards with 22 `_out_links` edges under a force layout; `follow before`
+raised the `refs()` hint and the server's hit-rule error; arming `after` and
+⌘-clicking `loop-a` from `beta` wrote `after: ["/timeline/beta.md"]` into
+`.dev-workspace/sample/timeline/loop-a.md` through `docs_set_meta { _path, set }`
+(the Receipt carried `revisions: [{ _id, _path, _hash }]`), and the graph
+re-ran. The same calls spelled the 4.x way were refused by the server
+(`docs_read { path }` → `filter_invalid` with `data.fix = { _path }`), while a
+4.x-spelled *query* (`select path, title … where path == "…"`) is not an error
+on 5.0 — `path` is an authored key there — and matched nothing, which the empty
+state reported. No console errors (Lit's dev-mode warning only).
+
+Earlier runs:
 
 After the pre-3.0 compatibility branches were removed (Chrome `--headless=new`
 over CDP on free ports — proxy 18961, Vite 15961 — against the current build):

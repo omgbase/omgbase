@@ -4,7 +4,7 @@
 // row's identity is `_id`/`_path`, its bytes `_raw`, its hash `_hash`, its
 // time `_updated_at`, a link row's `_doc_id`, `_block_id`, `_dst_id`,
 // `_dst_path`, `_uri`, `_field` — and a bare key names a role (`rev`,
-// `properties`, `committed`, `degree`, `frontier`) or the user's authored
+// `properties`, `committed`, `commit`, `revisions`, `degree`, `frontier`) or the user's authored
 // data. A 3.x/4.x server spells the engine keys bare (`id`, `path`, `raw`,
 // `doc_id`, `dst_path`, …). The link rows are the `links` collection (§1.1:
 // `from links`, `^links`, `_out_links`/`_in_links`) and the `graph` tool's
@@ -111,14 +111,28 @@ export function docReadOf(r: Wire): DocRead {
   };
 }
 
-/** A document operation's result (`docs_set_meta`, `docs_create`, …): `{ _id, _path, committed }` (4.x: `{ id, path, committed }`). */
+/** A document write's result — `docs_set_meta`, `docs_create`, `docs_append`, …
+ * are sugar over `apply`, so they answer with the RECEIPT (spec/surface §4,
+ * spec/mutate §11): `{ plan_id, commit, revisions: [{ _id, _path, _hash }],
+ * new_ids, committed, summary }` (4.x: `revisions: [{ id, path, hash }]`). The
+ * demo reads the one document it wrote: the first revision's identity. */
 export interface DocOpResult {
   id: string | null;
   path: string | null;
+  hash: string | null;
+  commit: string | null;
   committed: boolean;
 }
 
 export function docOpOf(r: Wire): DocOpResult {
-  const path = str(pick(r, "_path", "path"));
-  return { id: str(pick(r, "_id", "id")), path: path === null ? null : rooted(path), committed: r.committed === true };
+  const revisions = Array.isArray(r.revisions) ? r.revisions.filter((x): x is Wire => x !== null && typeof x === "object") : [];
+  const first = revisions[0];
+  const path = first ? str(pick(first, "_path", "path")) : null;
+  return {
+    id: first ? str(pick(first, "_id", "id")) : null,
+    path: path === null ? null : rooted(path),
+    hash: first ? str(pick(first, "_hash", "hash")) : null,
+    commit: str(r.commit),
+    committed: r.committed === true,
+  };
 }

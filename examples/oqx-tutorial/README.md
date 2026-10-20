@@ -22,7 +22,7 @@ Read in order:
 6. **[aggregates.md](./aggregates.md)** — folding a query to a value
    (`count`/`exists`/`first`/`single`) and full-text `text()`.
 7. **[graph-traversal.md](./graph-traversal.md)** — `follow` over the link and
-   structure graphs, with `$depth` / `$stop` / `$ordinal`, `frontier`, and `by`.
+   structure graphs, with `$depth` / `$stop` / `$ordinal`, `frontier`, and `$key`.
 8. **[sugar.md](./sugar.md)** — the shorthand forms: a block without a consumer
    is `collect`, where-first bodies, brackets `x[p]` / `x[p]!` / `x[n]`, postfix
    `!`, `is` / `is not`, alias reuse; and `refs()` for document references held

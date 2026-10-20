@@ -26,7 +26,9 @@ $ omg cat lab/2026-02-notes.md | grep '^- \['
 ```
 
 A query counts the open ones directly — a task is a block whose `checked` attr
-is false while it's open (`_type` is the engine's, `checked` the author's):
+is false while it's open (the naming rule from
+[getting-started](./getting-started.md#one-naming-rule-everywhere): `_type` is
+the engine's, `checked` the author's):
 
 ```console
 $ omg query 'blocks count { where _type == "task" and not checked and _path == "/lab/2026-02-notes.md" }'
@@ -65,9 +67,10 @@ $ omg query 'blocks count { where _type == "task" and not checked and _path == "
 ## Read the history back
 
 Every block has a biography. `omg hist` shows a block's revisions newest-first —
-this task was first created when the note was ingested (commit `#3`), then
-`edited` just now when we completed it (commit `#19`). The trailing value is the
-commit timestamp:
+this task was first created when the note was ingested (commit `#3`, the third
+of the twenty ingest commits), then `edited` just now when we completed it
+(commit `#21`, the first after them). The trailing value is the commit
+timestamp:
 
 ```console
 $ omg hist b_as1y4cr

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
 import { bareFollowFields, messageRuns, queryHints, slashPrefixedPaths } from "../src/lib/hints.ts";
 
-const q = (follow: string) => parse(`select path from docs where path == "a.md" follow ${follow}`);
-const SLASHED = `select path from docs where path == "a.md" follow refs(before), in_links collect { from doc where ("/" + ^path) in list(after) }`;
+const q = (follow: string) => parse(`select _path from docs where _path == "a.md" follow ${follow}`);
+const SLASHED = `select _path from docs where _path == "a.md" follow refs(before), _in_links collect { from _doc where ("/" + ^_path) in list(after) }`;
 
 describe("queryHints", () => {
   it("flags a bare frontmatter-looking follow destination and names the refs() form", () => {
@@ -12,7 +12,7 @@ describe("queryHints", () => {
     expect(hints[0]).toMatchObject({ kind: "follow-bare-field", field: "before" });
     expect(hints[0]!.message).toBe("`before` holds document references; `follow refs(before)` walks the documents (a bare field follows the strings)");
     // The span covers the destination token.
-    const src = `select path from docs where path == "a.md" follow before`;
+    const src = `select _path from docs where _path == "a.md" follow before`;
     expect(src.slice(...hints[0]!.span)).toBe("before");
   });
 
@@ -33,7 +33,7 @@ describe("queryHints", () => {
     ]) {
       expect(queryHints(q(follow)), follow).toEqual([]);
     }
-    expect(queryHints(parse("select path from docs"))).toEqual([]);
+    expect(queryHints(parse("select _path from docs"))).toEqual([]);
     expect(queryHints(null)).toEqual([]);
   });
 
@@ -41,12 +41,12 @@ describe("queryHints", () => {
     expect(bareFollowFields(q("before, after")).map((f) => f.field)).toEqual(["before", "after"]);
   });
 
-  it("flags `\"/\" + ^path` — the path is already rooted", () => {
+  it("flags `\"/\" + ^_path` — the path is already rooted", () => {
     const hints = queryHints(parse(SLASHED));
     expect(hints).toHaveLength(1);
-    expect(hints[0]).toMatchObject({ kind: "path-already-rooted", field: "^path" });
-    expect(hints[0]!.message).toBe("`path` is already `/`-rooted; use `^path`");
-    expect(SLASHED.slice(...hints[0]!.span)).toBe('("/" + ^path)'); // the parser's span keeps the parentheses
+    expect(hints[0]).toMatchObject({ kind: "path-already-rooted", field: "^_path" });
+    expect(hints[0]!.message).toBe("`_path` is already `/`-rooted; use `^_path`");
+    expect(SLASHED.slice(...hints[0]!.span)).toBe('("/" + ^_path)'); // the parser's span keeps the parentheses
     expect(queryHints(parse(`select path from docs follow in_links collect { from doc where ^path in list(after) }`))).toEqual([]);
     // At the top level, and a link's destination path over the `links` rows (spec/surface §1.1–§1.2).
     expect(queryHints(parse(`select p: "/" + path from docs`))[0]!.message).toBe("`path` is already `/`-rooted; use `path`");
@@ -59,12 +59,12 @@ describe("queryHints", () => {
     expect(queryHints(parse(`select p: "/" + _title from docs`))).toEqual([]);
     expect(queryHints(parse(`select _path from docs where _path == "a.md" || _path == ^^_path`))).toEqual([]);
     // A slash prefixed to something else is not a path; a literal is the server's to root.
-    expect(queryHints(parse(`select p: "/" + title from docs`))).toEqual([]);
+    expect(queryHints(parse(`select p: "/" + _title from docs`))).toEqual([]);
     expect(queryHints(parse(`select path from docs where path == "a.md" || path == ^^path`))).toEqual([]);
   });
 
   it("orders hints by source position and keeps the follow hint beside a path hint", () => {
-    const src = `select path from docs follow before, in_links collect { from doc where ("/" + ^path) in list(after) }`;
+    const src = `select _path from docs follow before, _in_links collect { from _doc where ("/" + ^_path) in list(after) }`;
     expect(queryHints(parse(src)).map((h) => h.kind)).toEqual(["follow-bare-field", "path-already-rooted"]);
   });
 

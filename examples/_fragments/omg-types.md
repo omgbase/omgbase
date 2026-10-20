@@ -20,8 +20,9 @@ per-document lists of ids.
 - `dollar` — one literal `$`, for an output line that *starts* with one.
   recital reads any line beginning with `$` as a prompt, so such a line is
   written `{{:dollar}}rest-of-line` — same text, same widths, not a command.
-  (The query table's header read `$id …` before surface 3.0 made the attributes
-  bare; no transcript needs it today, the type stays for the next such line.)
+  (The query table's header read `$id …` before surface 3.0; since 5.0 it reads
+  `_id  _path …`. No transcript needs it today; the type stays for the next such
+  line.)
 
 <!-- recital type:
 doc_id: "d_[a-z0-9]{7}"

@@ -146,10 +146,11 @@ d_9px29y1  /practitioners/maria-prophetissa.md
 
 ## Match on the path
 
-Names that begin with `_` are **engine fields** — facts about the row itself
-rather than its frontmatter; every bare name is yours. `_path` is the document's
-`/`-rooted path (a frontmatter `path:` key of your own is the bare `path`), with
-the usual string methods:
+`_path` is the first **engine field** on this page — the underscore rule from
+[getting-started](../getting-started.md#one-naming-rule-everywhere): a bare name
+is a key you authored, a `_` name is a fact the engine holds about the row. It
+is the document's `/`-rooted path (a `path:` key of your own would be the bare
+`path`), with the usual string methods:
 
 ```console
 $ omg query 'from docs where _path.startsWith("/practitioners/")'
@@ -200,8 +201,9 @@ A list-valued property can be a subquery receiver: `_tags exists { … }` runs t
 block once per **element**, and `$it` names that element. `_tags` is the engine's
 list (the authored `tags` plus any body `#hashtags`, always a list), where a bare
 `tags` reads the authored value as written — a string for mercury's
-`tags: substance`, which no subquery can iterate. So this is the element-wise
-spelling of `"tria-prima" in list(tags)`:
+`tags: substance`, which a subquery refuses to iterate (`tags` is a string, not
+a collection). So this is the element-wise spelling of `"tria-prima" in
+list(tags)`:
 
 ```console
 $ omg query 'from docs where _tags exists { where $it == "tria-prima" }'

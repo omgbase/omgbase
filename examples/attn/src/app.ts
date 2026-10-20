@@ -1,7 +1,7 @@
 // The page: one element composing the focus bar, the intent feed and the
 // stream, over module-level signals.
 //
-//   connect → (whoami) → version (surface ≥ 4.7, the profile) + tools/list →
+//   connect → (whoami) → version (surface ≥ 5.0, the profile) + tools/list →
 //   [repos, when listed] → load: the pointer (docs_read), the intents with their
 //   cues and the virtual #focus (one query), the pointer's history (one query
 //   over revisions + docs_read { at } per revision not yet cached) → the cue

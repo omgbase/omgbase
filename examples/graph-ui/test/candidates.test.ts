@@ -3,10 +3,10 @@ import { parse } from "@omgbase/oqx";
 import { BUILTIN_BACKLINKS, BUILTIN_LINKS, STRUCTURAL_RELATIONS, detectPairs, inferCandidates, linkRowsReceiver, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
 import { NAMES_4 } from "../src/lib/paths.ts";
 
-const TIMELINE = `select path, title, before, after
+const TIMELINE = `select _path, _title, before, after
 from docs
-where path == "/timeline/kickoff.md"
-follow ^docs collect { where after.contains(^path) }
+where _path == "/timeline/kickoff.md"
+follow ^docs collect { where after.contains(^_path) }
 order by $ordinal`;
 
 describe("inferCandidates", () => {
@@ -23,23 +23,23 @@ describe("inferCandidates", () => {
   });
 
   it("reads an outer-ref membership test as the frontier's property pointing forward", () => {
-    const q = parse(`path from docs where path == "a.md" follow ^docs collect { where path in ^before }`);
+    const q = parse(`_path from docs where _path == "a.md" follow ^docs collect { where _path in ^before }`);
     const c = inferCandidates(q, []);
     expect(c.map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
     expect(c[0]!.defaults.layout).toBe(true);
   });
 
-  it("reads `field` / `predicate` literals under in_links / out_links / ^links (spec/surface §1.1–§1.2)", () => {
-    const q = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.in_links exists { where field == "before" && path == ^^path } }`);
+  it("reads `field` / `predicate` literals under _in_links / _out_links / ^links (spec/surface §1.1–§1.2)", () => {
+    const q = parse(`_path from docs where _path == "a.md" follow ^docs collect { where $it._in_links exists { where _field == "before" && _path == ^^_path } }`);
     expect(inferCandidates(q, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
-    const q2 = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.out_links exists { where predicate == "after" && dst_path == ^^path } }`);
+    const q2 = parse(`_path from docs where _path == "a.md" follow ^docs collect { where $it._out_links exists { where _predicate == "after" && _dst_path == ^^_path } }`);
     expect(inferCandidates(q2, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
-    const q3 = parse(`path from docs where path == "a.md" follow ^docs collect { where $it.in_links exists { where field == "before" } }`);
+    const q3 = parse(`_path from docs where _path == "a.md" follow ^docs collect { where $it._in_links exists { where _field == "before" } }`);
     expect(inferCandidates(q3, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
-    const q4 = parse(`path from docs where path == "a.md" follow ^docs collect { where ^^links exists { where predicate == "owner" && dst_path == ^^path } }`);
+    const q4 = parse(`_path from docs where _path == "a.md" follow ^docs collect { where ^^links exists { where _predicate == "owner" && _dst_path == ^^_path } }`);
     expect(inferCandidates(q4, []).map((x) => [x.name, x.defaults.direction])).toEqual([["owner", "forward"]]);
     // A literal under something that is not the link rows names nothing.
-    const q5 = parse(`path from docs where path == "a.md" follow ^docs collect { where doc.blocks exists { where field == "x" } }`);
+    const q5 = parse(`_path from docs where _path == "a.md" follow ^docs collect { where $it._blocks exists { where _field == "x" } }`);
     expect(inferCandidates(q5, [])).toEqual([]);
   });
 
@@ -58,26 +58,26 @@ describe("inferCandidates", () => {
     expect(STRUCTURAL_RELATIONS.has("before")).toBe(false);
   });
 
-  it("reads the link-graph walk through the link rows: `out_links collect { from dst }` → links, `in_links collect { from doc }` → backlinks, named by the receiver as written", () => {
-    const c = inferCandidates(parse(`path from docs where path == "a.md" follow out_links collect { from dst }`), []);
-    expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["out_links", "links", ["follow"], { edge: true, layout: true, direction: "forward" }]]);
-    const b = inferCandidates(parse(`path from docs where path == "a.md" follow in_links collect { from doc depth 2 }`), []);
-    expect(b.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["in_links", "backlinks", ["follow"], { edge: true, layout: true, direction: "backward" }]]);
+  it("reads the link-graph walk through the link rows: `_out_links collect { from _dst }` → links, `_in_links collect { from _doc }` → backlinks, named by the receiver as written", () => {
+    const c = inferCandidates(parse(`_path from docs where _path == "a.md" follow _out_links collect { from _dst }`), []);
+    expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["_out_links", "links", ["follow"], { edge: true, layout: true, direction: "forward" }]]);
+    const b = inferCandidates(parse(`_path from docs where _path == "a.md" follow _in_links collect { from _doc depth 2 }`), []);
+    expect(b.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["_in_links", "backlinks", ["follow"], { edge: true, layout: true, direction: "backward" }]]);
     // dotted receivers, `distinct`, several destinations, a filtered body — the receiver still names the relation
-    const d = inferCandidates(parse(`path from docs where path == "a.md" follow distinct doc.out_links collect { from dst where provenance == "link" }, $it.in_links collect { from doc }, refs(before)`), []);
-    expect(d.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([["doc.out_links", "links", "forward"], ["$it.in_links", "backlinks", "backward"], ["before", "frontmatter", "forward"]]);
+    const d = inferCandidates(parse(`_path from docs where _path == "a.md" follow distinct $it._out_links collect { from _dst where _provenance == "link" }, $it._in_links collect { from _doc }, refs(before)`), []);
+    expect(d.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([["$it._out_links", "links", "forward"], ["$it._in_links", "backlinks", "backward"], ["before", "frontmatter", "forward"]]);
     // a `field`/`predicate` literal in the body keeps the frontmatter-relation reading (beside the link-graph candidate)
-    const f = inferCandidates(parse(`path from docs where path == "a.md" follow out_links collect { from dst where field == "owner" }`), []);
-    expect(f.map((x) => [x.name, x.kind])).toEqual([["out_links", "links"], ["owner", "frontmatter"]]);
+    const f = inferCandidates(parse(`_path from docs where _path == "a.md" follow _out_links collect { from _dst where _field == "owner" }`), []);
+    expect(f.map((x) => [x.name, x.kind])).toEqual([["_out_links", "links"], ["owner", "frontmatter"]]);
     // with a follow there is no builtin pair
     expect(c.some((x) => x.sources.includes("builtin"))).toBe(false);
   });
 
   it("maps plain destinations: the link rows → links / backlinks, a bare name → frontmatter", () => {
-    const c = inferCandidates(parse(`path from docs where path == "a.md" follow doc.out_links, doc.in_links, before`), []);
+    const c = inferCandidates(parse(`_path from docs where _path == "a.md" follow $it._out_links, $it._in_links, before`), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([
-      ["doc.out_links", "links", "forward"],
-      ["doc.in_links", "backlinks", "backward"],
+      ["$it._out_links", "links", "forward"],
+      ["$it._in_links", "backlinks", "backward"],
       ["before", "frontmatter", "forward"],
     ]);
     // Every follow destination is drawn; the first one lays out.
@@ -85,14 +85,14 @@ describe("inferCandidates", () => {
     expect(c.map((x) => x.defaults.layout)).toEqual([true, false, false]);
   });
 
-  it("turns a non-attribute order by key into a sequence candidate (`path`/`updated_at` are attributes, never keys)", () => {
-    const c = inferCandidates(parse(`path, date from docs order by date desc, path, updated_at`), [], NAMES_4);
-    expect(c.map((x) => x.name)).toEqual(["date", "doc.out_links", "doc.in_links"]); // + the builtin links (no follow)
+  it("turns a non-attribute order by key into a sequence candidate (`_path`/`_updated_at` are attributes, never keys)", () => {
+    const c = inferCandidates(parse(`_path, date from docs order by date desc, _path, _updated_at`), []);
+    expect(c.map((x) => x.name)).toEqual(["date", "_out_links", "_in_links"]); // + the builtin links (no follow)
     expect(c[0]).toMatchObject({ name: "date", kind: "sequence", sources: ["order by"], defaults: { edge: false, layout: true, direction: "backward" } });
-    expect(c.find((x) => x.name === "doc.out_links")!.defaults.edge).toBe(true); // nothing else is drawn
+    expect(c.find((x) => x.name === "_out_links")!.defaults.edge).toBe(true); // nothing else is drawn
   });
 
-  it("offers the builtin link graph when the query has no follow: doc.out_links drawn only when nothing else is, never the axis (the 4.x names)", () => {
+  it("offers the builtin link graph when the query has no follow — the 4.x names: doc.out_links drawn only when nothing else is, never the axis", () => {
     const bare = inferCandidates(parse(`select path, title from docs order by updated_at desc limit 40`), [], NAMES_4);
     expect(bare.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([
       ["doc.out_links", "links", ["builtin"], { edge: true, layout: false, direction: "forward" }],
@@ -108,10 +108,10 @@ describe("inferCandidates", () => {
 
   it("infers path-valued fields from rows, drawn only when the query has no follow", () => {
     const rows = [
-      { id: "d_1", path: "/a.md", before: ["/b.md"], owner: "/people/ada.md", title: "A" },
-      { id: "d_2", path: "/b.md", before: [], after: ["/a.md"] },
+      { _id: "d_1", _path: "/a.md", before: ["/b.md"], owner: "/people/ada.md", _title: "A" },
+      { _id: "d_2", _path: "/b.md", before: [], after: ["/a.md"] },
     ];
-    const c = inferCandidates(parse(`path, before, after, owner, title from docs`), rows).filter((x) => !x.sources.includes("builtin") && !x.pair);
+    const c = inferCandidates(parse(`_path, before, after, owner, _title from docs`), rows).filter((x) => !x.sources.includes("builtin") && !x.pair);
     expect(c.map((x) => x.name).sort()).toEqual(["after", "before", "owner"]);
     for (const x of c) expect(x.sources).toEqual(["inferred"]);
     // `before` and `after` form a pair (rule 5), which takes the drawn/axis defaults; the fields stay listed.
@@ -119,12 +119,12 @@ describe("inferCandidates", () => {
     expect(c.find((x) => x.name === "after")!.defaults.direction).toBe("backward");
     expect(c.find((x) => x.name === "owner")!.defaults.layout).toBe(false);
     // Without the inverse, the single field is drawn and lays out as before.
-    const single = inferCandidates(parse(`path, before, owner from docs`), rows.map(({ after: _after, ...r }) => r)).filter((x) => !x.sources.includes("builtin"));
+    const single = inferCandidates(parse(`_path, before, owner from docs`), rows.map(({ after: _after, ...r }) => r)).filter((x) => !x.sources.includes("builtin"));
     expect(single.find((x) => x.name === "before")!.defaults).toEqual({ edge: true, layout: true, direction: "forward" });
   });
 
   it("merges the same name from follow and rows and keeps follow's roles", () => {
-    const rows = [{ id: "d_1", path: "/a.md", after: ["/b.md"], owner: "/c.md" }];
+    const rows = [{ _id: "d_1", _path: "/a.md", after: ["/b.md"], owner: "/c.md" }];
     const c = inferCandidates(parse(TIMELINE), rows);
     const after = c.find((x) => x.name === "after")!;
     expect(after.sources).toEqual(["follow", "inferred"]);
@@ -136,7 +136,7 @@ describe("inferCandidates", () => {
   });
 
   it("reads `follow refs(<field>)` as the field, forward — the frontier owns it", () => {
-    const src = `path from docs where path == "a.md" follow refs(before)`;
+    const src = `_path from docs where _path == "a.md" follow refs(before)`;
     const c = inferCandidates(parse(src), []);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ name: "before", kind: "frontmatter", sources: ["follow"], defaults: { edge: true, layout: true, direction: "forward" } });
@@ -144,13 +144,13 @@ describe("inferCandidates", () => {
   });
 
   it("reads `refs(^field)` and a `refs(field) collect { … }` destination block the same way", () => {
-    expect(inferCandidates(parse(`path from docs follow refs(^before)`), []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
-    const c = inferCandidates(parse(`path from docs follow refs(before) collect { where phase != "x" }`), []);
+    expect(inferCandidates(parse(`_path from docs follow refs(^before)`), []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    const c = inferCandidates(parse(`_path from docs follow refs(before) collect { where phase != "x" }`), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.sources])).toEqual([["before", "frontmatter", "forward", ["follow"]]]);
   });
 
   it("walks both ways with refs(before), refs(after): the pair is drawn and lays out, the fields stay listed undrawn", () => {
-    const c = inferCandidates(parse(`path from docs follow refs(before), refs(after)`), []);
+    const c = inferCandidates(parse(`_path from docs follow refs(before), refs(after)`), []);
     expect(c.map((x) => [x.name, x.defaults.edge, x.defaults.layout, x.defaults.direction])).toEqual([
       ["before/after", true, true, "forward"],
       ["before", false, false, "forward"],
@@ -159,22 +159,22 @@ describe("inferCandidates", () => {
     // `refs(after)` walks the strings forward, but the pair still flips `after` edges: it is the field's meaning, not the walk's.
     expect(c[0]!.pair).toEqual({ forward: "before", backward: "after", by: "name" });
     // Two unrelated walks: no pair, the old rule.
-    const two = inferCandidates(parse(`path from docs follow refs(owner), refs(see_also)`), []);
+    const two = inferCandidates(parse(`_path from docs follow refs(owner), refs(see_also)`), []);
     expect(two.map((x) => [x.name, x.defaults.edge, x.defaults.layout])).toEqual([["owner", true, true], ["see_also", true, false]]);
   });
 
   it("reads a refs() receiver inside a destination block's where: the candidate row's field points backward, an outer one forward", () => {
-    const back = parse(`path from docs follow ^docs collect { where refs(after) exists { where path == ^^path } }`);
+    const back = parse(`_path from docs follow ^docs collect { where refs(after) exists { where _path == ^^_path } }`);
     expect(inferCandidates(back, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
-    const fwd = parse(`path from docs follow ^docs collect { where refs(^before) exists { where path == ^path } }`);
+    const fwd = parse(`_path from docs follow ^docs collect { where refs(^before) exists { where _path == ^_path } }`);
     expect(inferCandidates(fwd, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
   });
 
   it("reads the natural timeline query: refs(before) forward and the backlink block's `after` backward", () => {
-    const src = `select path, title, phase, before, after
+    const src = `select _path, _title, phase, before, after
 from docs
-where path == "/timeline/kickoff.md"
-follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
+where _path == "/timeline/kickoff.md"
+follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }
 order by $ordinal`;
     const c = inferCandidates(parse(src), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.defaults.edge, x.defaults.layout])).toEqual([
@@ -182,27 +182,27 @@ order by $ordinal`;
       ["before", "frontmatter", "forward", false, false],
       ["after", "frontmatter", "backward", false, false],
     ]);
-    expect(src.slice(...c[2]!.spans[0]!)).toBe("^path in list(after)");
+    expect(src.slice(...c[2]!.spans[0]!)).toBe("^_path in list(after)");
     // Hovering the pair lights both fields: its spans are the members'.
     expect(c[0]!.spans).toEqual([...c[1]!.spans, ...c[2]!.spans]);
     expect(c[0]!.sources).toEqual(["pair"]);
     // `$ordinal` is recursion metadata, not a sequence candidate (the pair is the only sequence-kinded one).
     expect(c.some((x) => x.kind === "sequence" && !x.pair)).toBe(false);
-    // The backlink block correlates the reached document with the frontier (`^path in list(after)`), so the walk MEANS `after`:
-    // the whole backlink graph (`in_links`) is not offered beside it.
+    // The backlink block correlates the reached document with the frontier (`^_path in list(after)`), so the walk MEANS `after`:
+    // the whole backlink graph (`_in_links`) is not offered beside it.
     expect(c.map((x) => x.name)).toEqual(["before/after", "before", "after"]);
-    expect(inferCandidates(parse(`path from docs follow in_links collect { from doc where phase == "x" }`), []).map((x) => x.name)).toEqual(["in_links"]); // an uncorrelated filter keeps the walk
+    expect(inferCandidates(parse(`_path from docs follow _in_links collect { from _doc where phase == "x" }`), []).map((x) => x.name)).toEqual(["_in_links"]); // an uncorrelated filter keeps the walk
   });
 
   it("reads the correlation idiom in its spellings — a membership test, a contains(), a nested refs() — without mistaking an attribute for a field", () => {
-    for (const follow of [`^docs collect { where after.contains(^path) }`, `in_links collect { from doc where ^path in list(after) }`, `^docs collect { where refs(after) exists { where path == ^^path } }`]) {
-      const cands = inferCandidates(parse(`path from docs where path == "/a.md" follow ${follow}`), []).filter((x) => x.kind === "frontmatter");
+    for (const follow of [`^docs collect { where after.contains(^_path) }`, `_in_links collect { from _doc where ^_path in list(after) }`, `^docs collect { where refs(after) exists { where _path == ^^_path } }`]) {
+      const cands = inferCandidates(parse(`_path from docs where _path == "/a.md" follow ${follow}`), []).filter((x) => x.kind === "frontmatter");
       expect(cands.map((x) => [x.name, x.defaults.direction]), follow).toEqual([["after", "backward"]]);
     }
-    expect(inferCandidates(parse(`path from docs where path == "/a.md" follow ^docs collect { where path in ^before }`), []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    expect(inferCandidates(parse(`_path from docs where _path == "/a.md" follow ^docs collect { where _path in ^before }`), []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
   });
 
-  it("maps $it.in_links / doc.out_links / in_links / out_links to backlinks and links, named as written", () => {
+  it("maps the 4.x spellings — $it.in_links / doc.out_links / in_links / out_links — to backlinks and links, named as written", () => {
     const c = inferCandidates(parse(`path from docs follow $it.in_links, out_links, doc.in_links, $it.out_links`), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([
       ["$it.in_links", "backlinks", "backward"],
@@ -213,33 +213,34 @@ order by $ordinal`;
   });
 
   it("merges refs(before) with the inferred before from the rows", () => {
-    const rows = [{ id: "d_1", path: "/a.md", before: ["/b.md"] }];
-    const c = inferCandidates(parse(`path, before from docs follow refs(before)`), rows);
+    const rows = [{ _id: "d_1", _path: "/a.md", before: ["/b.md"] }];
+    const c = inferCandidates(parse(`_path, before from docs follow refs(before)`), rows);
     expect(c).toHaveLength(1);
     expect(c[0]!.sources).toEqual(["follow", "inferred"]);
   });
 
-  it("reads a hit's path through the envelope (`id`/`path`, rooted or bare)", () => {
+  it("reads a hit's _path through the envelope (`_id`/`_path`, rooted or bare)", () => {
     const rooted = [
-      { id: "d_1", path: "/a.md", before: ["/b.md"] },
-      { id: "d_2", path: "/b.md", after: ["/a.md"] },
+      { _id: "d_1", _path: "/a.md", before: ["/b.md"] },
+      { _id: "d_2", _path: "/b.md", after: ["/a.md"] },
     ];
-    const bare = rooted.map(({ path, ...r }) => ({ path: path.slice(1), ...r }));
+    const bare = rooted.map(({ _path, ...r }) => ({ _path: _path.slice(1), ...r }));
     expect(reciprocal(rooted, "before", "after")).toBe(true);
     expect(reciprocal(bare, "before", "after")).toBe(true);
-    // A field whose values are rows-as-values (`{ id, path }`) references those documents.
+    // A field whose values are rows-as-values (`{ _id, _path }`) references those documents.
     const nested = [
-      { id: "d_1", path: "/a.md", before: [{ id: "d_2", path: "/b.md" }] },
-      { id: "d_2", path: "/b.md", after: { id: "d_1", path: "a.md" } },
+      { _id: "d_1", _path: "/a.md", before: [{ _id: "d_2", _path: "/b.md" }] },
+      { _id: "d_2", _path: "/b.md", after: { _id: "d_1", _path: "a.md" } },
     ];
     expect(reciprocal(nested, "before", "after")).toBe(true);
     // The envelope is not a frontmatter field.
-    expect(pathValuedFields([{ id: "d_1", path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
+    expect(pathValuedFields([{ _id: "d_1", _path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
   });
 
   it("works without an AST (unparsable source) from rows alone", () => {
     expect(inferCandidates(null, [{ _id: "x", _path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "_out_links", "_in_links"]);
     expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["_out_links", "_in_links"]);
+    // The builtins follow the server's names (a 4.x server: the link rows under the document's self alias).
     expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }], NAMES_4).map((c) => c.name)).toEqual(["next", "doc.out_links", "doc.in_links"]);
     expect(inferCandidates(null, [], NAMES_4).map((c) => c.name)).toEqual(["doc.out_links", "doc.in_links"]);
   });
@@ -305,7 +306,7 @@ order by $ordinal`;
     expect(inferCandidates(parse(`_path from docs follow _in_links collect { from _doc where phase == "x" }`), []).map((x) => x.name)).toEqual(["_in_links"]);
   });
 
-  it("reads a hit's path through the 5.0 envelope (`_id`/`_path`) and rows-as-values", () => {
+  it("reads a hit's _path through the 5.0 envelope (`_id`/`_path`) and rows-as-values", () => {
     const rows = [
       { _id: "d_1", _path: "/a.md", before: [{ _id: "d_2", _path: "/b.md" }] },
       { _id: "d_2", _path: "/b.md", after: { _id: "d_1", _path: "a.md" } },
@@ -328,7 +329,7 @@ describe("inverse pairs (rule 5)", () => {
     expect(detectPairs([field("parent"), field("children")])).toEqual([]);
     expect(detectPairs([field("before"), field("owner")])).toEqual([]);
     expect(detectPairs([field("after")])).toEqual([]);
-    // Only frontmatter fields pair: the link graph (`doc.out_links`/`doc.in_links`), sequences and dotted paths never do.
+    // Only frontmatter fields pair: the link graph (`$it._out_links`/`$it._in_links`), sequences and dotted paths never do.
     expect(detectPairs([{ ...field("before"), kind: "sequence" }, field("after")])).toEqual([]);
     expect(detectPairs([field("meta.before"), field("after")])).toEqual([]);
   });
@@ -342,39 +343,39 @@ describe("inverse pairs (rule 5)", () => {
 
   it("pairs two fields whose rows reciprocate (A.x ∋ B and B.y ∋ A), the backward word as the backward end", () => {
     const rows = [
-      { id: "1", path: "/a.md", leads_to: ["/b.md"] },
-      { id: "2", path: "/b.md", comes_from: "/a.md", leads_to: ["/c.md"] },
-      { id: "3", path: "/c.md", comes_from: "/b.md" },
+      { _id: "1", _path: "/a.md", leads_to: ["/b.md"] },
+      { _id: "2", _path: "/b.md", comes_from: "/a.md", leads_to: ["/c.md"] },
+      { _id: "3", _path: "/c.md", comes_from: "/b.md" },
     ];
     expect(reciprocal(rows, "leads_to", "comes_from")).toBe(true);
     expect(detectPairs([field("leads_to"), field("comes_from")], rows)).toEqual([{ forward: "leads_to", backward: "comes_from", by: "data" }]);
     // The vocabulary decides which end is which when it can.
-    expect(detectPairs([field("x"), field("depends_on", "backward")], [{ id: "1", path: "/a.md", x: ["/b.md"] }, { id: "2", path: "/b.md", depends_on: "/a.md" }]))
+    expect(detectPairs([field("x"), field("depends_on", "backward")], [{ _id: "1", _path: "/a.md", x: ["/b.md"] }, { _id: "2", _path: "/b.md", depends_on: "/a.md" }]))
       .toEqual([{ forward: "x", backward: "depends_on", by: "data" }]);
     // Bare and rooted paths reciprocate alike.
-    expect(reciprocal([{ id: "1", path: "a.md", x: ["/b.md"] }, { id: "2", path: "b.md", y: ["/a.md"] }], "x", "y")).toBe(true);
+    expect(reciprocal([{ _id: "1", _path: "a.md", x: ["/b.md"] }, { _id: "2", _path: "b.md", y: ["/a.md"] }], "x", "y")).toBe(true);
   });
 
   it("finds no false pairs: parallel relations, one-way references, symmetric fields, unknown targets", () => {
     // `owner` and `see_also` both point from a to b: two relations the same way, not inverses.
-    const parallel = [{ id: "1", path: "/a.md", owner: "/b.md", see_also: ["/b.md"] }, { id: "2", path: "/b.md" }];
+    const parallel = [{ _id: "1", _path: "/a.md", owner: "/b.md", see_also: ["/b.md"] }, { _id: "2", _path: "/b.md" }];
     expect(reciprocal(parallel, "owner", "see_also")).toBe(false);
     expect(detectPairs([field("owner"), field("see_also")], parallel)).toEqual([]);
     // One-way: a → b under x, nothing back.
-    expect(reciprocal([{ id: "1", path: "/a.md", x: "/b.md" }, { id: "2", path: "/b.md" }], "x", "y")).toBe(false);
+    expect(reciprocal([{ _id: "1", _path: "/a.md", x: "/b.md" }, { _id: "2", _path: "/b.md" }], "x", "y")).toBe(false);
     // A row naming the same document under both fields is a contradiction even when another row reciprocates.
-    const mixed = [{ id: "1", path: "/a.md", x: ["/b.md"], y: ["/b.md"] }, { id: "2", path: "/b.md", y: ["/a.md"] }];
+    const mixed = [{ _id: "1", _path: "/a.md", x: ["/b.md"], y: ["/b.md"] }, { _id: "2", _path: "/b.md", y: ["/a.md"] }];
     expect(reciprocal(mixed, "x", "y")).toBe(false);
     // The target is not among the rows: nothing to confirm with.
-    expect(reciprocal([{ id: "1", path: "/a.md", x: "/zz.md" }], "x", "y")).toBe(false);
+    expect(reciprocal([{ _id: "1", _path: "/a.md", x: "/zz.md" }], "x", "y")).toBe(false);
     // No rows: only the vocabulary pairs.
     expect(detectPairs([field("leads_to"), field("comes_from")], [])).toEqual([]);
     // Each field is in at most one pair: a name pair is not re-paired by data.
-    const rows = [{ id: "1", path: "/a.md", before: ["/b.md"], then: ["/b.md"] }, { id: "2", path: "/b.md", after: ["/a.md"] }];
+    const rows = [{ _id: "1", _path: "/a.md", before: ["/b.md"], then: ["/b.md"] }, { _id: "2", _path: "/b.md", after: ["/a.md"] }];
     expect(detectPairs([field("before"), field("after", "backward"), field("then")], rows)).toEqual([{ forward: "before", backward: "after", by: "name" }]);
   });
 
-  it("builds the combined candidate: sequence kind, source pair, inserted before its first member, the axis, undrawn members", () => {
+  it("builds the combined candidate: sequence kind, source pair, inserted before its first member, the axis, undrawn members (the 4.x names, as the sample starter reads on a 4.x server)", () => {
     const rows = [{ id: "1", path: "/a.md", after: ["/b.md"], owner: "/p.md" }, { id: "2", path: "/b.md", before: ["/a.md"] }];
     const c = inferCandidates(parse(`path, owner, after, before from docs`), rows, NAMES_4);
     // Inferred fields come in first-seen row order (`after`, `owner`, `before`); the pair sits just before its first member.
@@ -398,7 +399,7 @@ describe("inverse pairs (rule 5)", () => {
 
 describe("pathValuedFields", () => {
   it("accepts root paths, relative paths and lists; rejects metadata, mixed lists and non-paths", () => {
-    expect(pathValuedFields([{ id: "a", path: "x.md", $depth: 1, a: "/a.md", b: "dir/b.md", c: ["/a.md", "b.md"], d: ["/a.md", 3], e: "hello", f: [] }]))
+    expect(pathValuedFields([{ _id: "a", _path: "x.md", $depth: 1, a: "/a.md", b: "dir/b.md", c: ["/a.md", "b.md"], d: ["/a.md", 3], e: "hello", f: [] }]))
       .toEqual(["a", "b", "c"]);
   });
 });
@@ -408,7 +409,7 @@ describe("refsField / relationKind", () => {
     const expr = (src: string) => parse(`select x: ${src} from docs`).select[0]!.kind === "field" ? (parse(`select x: ${src} from docs`).select[0] as { expr: import("@omgbase/oqx").Expr }).expr : null!;
     expect(refsField(expr("refs(before)"))).toEqual({ name: "before", outer: false });
     expect(refsField(expr("refs(^before)"))).toEqual({ name: "before", outer: true });
-    for (const src of ["refs($it)", "refs(path)", "refs(\"/a.md\")", "refs(before, after)", "size(before)", "before.refs()", "before"]) {
+    for (const src of ["refs($it)", "refs(_path)", "refs(\"/a.md\")", "refs(before, after)", "size(before)", "before.refs()", "before"]) {
       expect(refsField(expr(src)), src).toBeNull();
     }
   });

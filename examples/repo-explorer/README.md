@@ -273,27 +273,77 @@ call once, noting *session expired at the server — reconnected* in the header.
 
 ## Verified against the real stack
 
-(Recorded against surface 4.7, before the 5.0 respelling; the names below are
-quoted as they read then — `path`, `dst_path`, `doc_id`, `title` — and are
-`_path`, `_dst_path`, `_doc_id`, `_title` today. The 5.0 round was verified
-through the scripted-server suite only; a live pass against a 5.0 `omg` is
-still to do.) Over a scratch workspace built from the alchemy corpus with
-`scripts/dev-workspace.mjs`, webdevproxy started exactly as `pnpm dev` starts
-it (the minimal stand-in as `omg`), and the browser-side client over Streamable
-HTTP: `tools/list` returned the ten; `version` said `surface 4.7`, `profile
-minimal`; the root level listed `/index.md` and six folders (`total` 19 docs,
-315 blocks — one document had been deleted through `apply` to populate the
-deleted list); `/processes/calcination.md` rendered with 20 of 20 blocks
-anchored and verified (315 of 315 over all 19 documents); its backlinks were
-the five documents that link to it and its one outlink the dangling
-`[[salt]]` (`dst_path: null`, `dst_id: phantom:salt`); `from revisions where
-doc_id == …` listed its one revision and `docs_read { at }` of it diffed empty
-against the current body; the deleted list showed `/texts/mutus-liber.md` with
-its two revisions; `select titel from docs` came back with the `title` hint;
-`select target from links` with the `filter_invalid` naming the fields;
-`query_syntax` with the reference; `plan` previewed `set frontmatter.verified =
-false in /processes/calcination.md` with the file diff; `execute` committed it
-(`changes_since` then showed `api(agent:mcp): /processes/calcination.md — 20
-edited`); executing the same plan again was `plan_mismatch` with the engine's
-`fix`; `repos` was `unknown tool`. The page itself was loaded in headless
-Chrome against `pnpm dev` (see the commit message for what rendered).
+Recorded against **surface 5.0** (`omg` 0.26.1, the TypeScript engine; the
+proxy was also run in front of the Rust `omgbase` binary for `docs_read`,
+`query` and the argument refusal, with byte-identical envelopes). Over a scratch
+workspace built from the alchemy corpus with `scripts/dev-workspace.mjs`,
+webdevproxy started exactly as `pnpm dev` starts it (`pnpm dev:mcp`: the
+minimal stand-in as `omg`), and the page's own `src/lib` modules driven from
+Node through `OmgClient` over Streamable HTTP, every call in the table above
+was made once against the live server:
+
+- `tools/list` returned exactly the ten; `version` said `specs.surface
+  "5.0"`, `profile "minimal"`, `engine "typescript"` — the gate passed.
+- `docs_tree {}` listed `/index.md` and six folders (`total` 20 docs, 327
+  blocks); `{ path: "/processes/", depth: 1 }` four `doc` rows, each
+  `{ _id, _path, kind, docs, blocks, _updated_at }` — exactly those keys.
+- `docs_read { _path: "/processes/calcination.md", include_ids: true }`
+  returned `{ _id, _path, rev, properties, _raw, ids, hashes, parents }`,
+  `properties.computed` = `{ _title: "Calcination" }`, seven frontmatter keys
+  and two inline fields in the table; `{ _id }` read the same document; 20 of
+  20 blocks anchored and hash-verified. `docs_read { path: … }` (the 4.x
+  spelling) was refused: `filter_invalid` — "`path` is not an argument — the
+  engine field is `_path` (the bare namespace is the user's); pass `_path`",
+  `data.hint "arguments"`, `data.fix "{\"_path\":\"/processes/calcination.md\"}"`.
+- the links queries: five backlinks (`/index.md`, `/lab/2026-01-notes.md`,
+  `/processes/magnum-opus.md`, `/substances/prima-materia.md`,
+  `/substances/salt.md`) and one outlink, the dangling `[[salt]]` (`_dst_path:
+  null`, `_dst_kind: "document"`, `_dst_id: "phantom:salt"`); salt's "wikilinks
+  naming" list had six documents by `_dst_id == "phantom:salt"` while its
+  `_dst_path` backlinks were 0 (feedback 10 holds); `[[salt]]` resolved to
+  `/substances/salt.md`.
+- `from revisions where _doc_id == …` listed the one `observed` revision
+  (`_rev`, `_seq`, `_hash`, `_is_current: true`, `_doc_id`); `docs_read { _id,
+  at }` returned its `_raw` (`renderedHashMatch: true`) and diffed empty
+  against the current body; `locatorQuery` found a block's `_path` and a
+  revision's `_path` + `_doc_id`.
+- the console: the starter query's columns were `_id, _path, _title, layer,
+  tags`; `select titel from docs` came back with the hint "did you mean
+  `title`?", `select title from docs where path == "/index.md"` (4.x) with
+  zero hits and "no document … carries a property `path`; did you mean
+  `_path`?"; `select target from links` was `filter_invalid` naming the
+  thirteen link engine names (`hint: "OQX"`); `query_syntax` returned the
+  reference (37 KB, `_title` in it); `repos` was `unknown tool` →
+  `OmgError("unknown_tool")`.
+- `changes_since { limit: 1 }` gave `head 20`; `plan { set
+  _frontmatter.verified = false, diffs: true }` previewed `set
+  _frontmatter.verified = false in /processes/calcination.md` with the
+  before/after bytes and `preview.revisions[{ _id, _path, _hash }]`; `execute
+  { plan_id, effects, reason }` committed `c_gb0tfmb` with the same revision
+  triple; `changes_since { cursor: 20 }` then showed one digest `api(agent:mcp):
+  /processes/calcination.md` with `revisions: [{ _id, _path, _hash }]`; the
+  re-read had `frontmatter.verified: false` and a second revision (`api ·
+  agent:mcp`, the reason); executing the same plan again was `plan_mismatch`
+  with `data.fix` = the effects as canonical JSON.
+- `apply { remove /texts/mutus-liber.md }` populated the deleted list: `from
+  revisions where _doc == null` showed the document's one revision, `docs_read
+  { _id, at }` of it was `doc_missing` (feedback 2 holds), the deletion's
+  digest had `revisions: []` and the summary `deleted /texts/mutus-liber.md`,
+  and the root `total` dropped to 19 docs / 315 blocks.
+
+The page itself was then loaded in headless Chrome against Vite + the same
+proxy and read through the DevTools protocol: the header `surface 5.0 ·
+minimal · default repo`, no missing-tools banner, the tree with its badges
+(`19 docs · 315 blocks`, `texts/ 1 doc`), `/processes/calcination.md` titled
+*Calcination* with 20 anchored and verified blocks, the history tab's two rows
+(`api · agent:mcp … current`, `observed`), `backlinks (5)` / `outlinks (1)`,
+the feed strip watching from `seq 22`, and four console runs — the starter
+query as the columns `_id, _path, _title, layer, tags`; `select title, path
+from docs` as `_id, _path, title` (the corpus authors a `title:` key) with the
+yellow hint bar "did you mean `_path`?"; `select target from links` as the red
+`filter_invalid` block with the engine names and `(OQX)`; `from revisions
+where _doc == null` as `_id, _path, _rev, _seq, _doc_id` naming the deleted
+document. `/substances/salt.md`'s properties table (seven frontmatter keys
+with their edit buttons, three inline, `computed _title Salt`) and its links
+tab (`backlinks (0)`, `outlinks (4)` with two dangling, `wikilinks naming
+[[salt]] (6)`) rendered as the table above says; no page errors.

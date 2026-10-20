@@ -19,7 +19,7 @@ $ omg find "quicksilver"
 b_qm3p1az  /substances/mercury.md#paragraph[1]  Quicksilver: a metal that is liquid at room temperature, and therefore the…
 ```
 
-The locator (`substances/mercury.md#paragraph[1]`) is for your eyes; the id is
+The locator (`/substances/mercury.md#paragraph[1]`) is for your eyes; the id is
 for follow-up commands. `-1` prints just the top hit's id, which makes `find`
 compose into other commands:
 
@@ -53,9 +53,10 @@ b_cmb5nds p    Sulphur combines directly with most metals on heating, producing 
 ## `omg show` — the metadata card
 
 Where `cat` gives bytes and `outline` gives structure, `show` gives the derived
-metadata: frontmatter and inline (`key:: value`) properties, the computed
-fields under their engine names (`_title`), plus the document's open links. Mercury declares a symbol, a melting point, its toxicity, and links
-out to other pages:
+metadata: the authored properties — frontmatter and inline (`key:: value`) —
+under their bare names, the computed title under its engine name `_title`, plus
+the document's open links. Mercury declares a symbol, a melting point, its
+toxicity, and links out to other pages:
 
 ```console
 $ omg show substances/mercury.md

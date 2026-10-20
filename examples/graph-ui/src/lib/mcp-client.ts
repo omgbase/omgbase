@@ -195,7 +195,8 @@ export class OmgClient {
 
   /** `docs_set_meta`: set and/or unset frontmatter keys on one document (its
    * argument from `docLocator`; re-ingested server-side; no CAS). The result
-   * is `{ _id, _path, committed }` (lib/shapes.ts `docOpOf`). */
+   * is the Receipt — `{ plan_id, commit, revisions: [{ _id, _path, _hash }],
+   * committed, summary }` (lib/shapes.ts `docOpOf`). */
   docsSetMeta(locator: Record<string, string>, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string): Promise<Record<string, unknown>> {
     return this.call("docs_set_meta", { ...locator, ...patch, ...(repo ? { repo } : {}) });
   }
