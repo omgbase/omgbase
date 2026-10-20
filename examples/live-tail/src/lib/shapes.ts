@@ -1,24 +1,30 @@
-// Tool-result shapes (surface 3.0, spec/surface §3–§4): a row's identity is
-// `id`/`path`, its bytes `raw`, its hash `hash`, its time `updated_at`. The
-// readers here coerce the wire objects into the typed shapes lib/feed.ts and
-// the page use (a missing or mistyped key reads as "" / 0 / false / null), so
-// nothing else in the demo reads a wire key.
+// Tool-result shapes (surface 5.0, spec/surface §3–§4): a row's identity is
+// `_id`/`_path`, its bytes `_raw`, its hash `_hash`; a `docs_history` version
+// is a `revisions` row under the row's names (`_rev _seq _commit _ts _origin
+// _actor _hash _is_current`). A 3.x/4.x server spells them bare (`id`, `path`,
+// `raw`, `hash`; a version `{ rev, seq, commit, updated_at, origin, actor,
+// hash, isCurrent }`). The readers here take EITHER spelling and coerce the
+// wire objects into the typed shapes lib/feed.ts and the page use (a missing or
+// mistyped key reads as "" / 0 / false / null), so nothing else in the demo
+// reads a wire key — the typed shapes keep the demo's own field names.
 //
-//   changes_since revisions  { id, path, hash }
-//   docs_history docs[]      { id, path, deleted, currentRev, versions: [{ rev, seq, commit, updated_at, origin, actor, hash, isCurrent }] }
-//   docs_diff_unified        { id, path, from, to, diff }
-//   docs_read_at             { id, path, rev, raw, … }
+//   changes_since revisions  { _id, _path, _hash }
+//   docs_history docs[]      { _id, _path, deleted, currentRev, versions: [{ _rev, _seq, _commit, _ts, _origin, _actor, _hash, _is_current, _archived }] }
+//   docs_diff_unified        { _id, _path, from, to, diff }
+//   docs_read_at             { _id, _path, rev, _raw, … }
 
 import type { ChangesSince, Digest, DocVersion, DocVersions, Revision } from "./feed.ts";
 
 type Wire = Record<string, unknown>;
+/** The first value among the keys (the 5.0 spelling first, then the 4.x one). */
+const pick = (w: Wire, ...keys: string[]): unknown => { for (const k of keys) if (w[k] !== undefined) return w[k]; return undefined; };
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 /** A change-feed revision. */
 export function revisionOf(r: Wire): Revision {
-  return { id: str(r.id), path: str(r.path), hash: str(r.hash) };
+  return { id: str(pick(r, "_id", "id")), path: str(pick(r, "_path", "path")), hash: str(pick(r, "_hash", "hash")) };
 }
 
 /** A digest with its revisions. */
@@ -33,21 +39,23 @@ export function changesOf(page: Wire): ChangesSince {
   return { digests, cursor: num(page.cursor), truncated: page.truncated === true, head: num(page.head) };
 }
 
-/** One `docs_history` version. */
+/** One `docs_history` version (a `revisions` row: `_rev _seq _commit _ts
+ * _origin _actor _hash _is_current`; the 4.x `rev seq commit updated_at origin
+ * actor hash isCurrent`). */
 export function versionOf(v: Wire): DocVersion {
   return {
-    rev: str(v.rev), seq: num(v.seq), commit: str(v.commit),
-    updated_at: str(v.updated_at),
-    origin: str(v.origin), actor: strOrNull(v.actor),
-    hash: str(v.hash),
-    isCurrent: v.isCurrent === true,
+    rev: str(pick(v, "_rev", "rev")), seq: num(pick(v, "_seq", "seq")), commit: str(pick(v, "_commit", "commit")),
+    updated_at: str(pick(v, "_ts", "updated_at")),
+    origin: str(pick(v, "_origin", "origin")), actor: strOrNull(pick(v, "_actor", "actor")),
+    hash: str(pick(v, "_hash", "hash")),
+    isCurrent: pick(v, "_is_current", "isCurrent") === true,
   };
 }
 
 /** One `docs_history` document with its versions. */
 export function docVersionsOf(d: Wire): DocVersions {
   return {
-    id: str(d.id), path: str(d.path),
+    id: str(pick(d, "_id", "id")), path: str(pick(d, "_path", "path")),
     deleted: d.deleted === true, currentRev: strOrNull(d.currentRev),
     versions: Array.isArray(d.versions) ? (d.versions as Wire[]).map(versionOf) : [],
   };
@@ -57,12 +65,12 @@ export interface UnifiedDiff { id: string; path: string; from: string; to: strin
 
 /** A `docs_diff_unified` result. */
 export function unifiedOf(r: Wire): UnifiedDiff {
-  return { id: str(r.id), path: str(r.path), from: str(r.from), to: str(r.to), diff: str(r.diff) };
+  return { id: str(pick(r, "_id", "id")), path: str(pick(r, "_path", "path")), from: str(r.from), to: str(r.to), diff: str(r.diff) };
 }
 
 export interface ReadAt { id: string; path: string; rev: string; raw: string }
 
 /** A `docs_read_at` result: the document's bytes as of `rev`. */
 export function readAtOf(r: Wire): ReadAt {
-  return { id: str(r.id), path: str(r.path), rev: str(r.rev), raw: str(r.raw) };
+  return { id: str(pick(r, "_id", "id")), path: str(pick(r, "_path", "path")), rev: str(r.rev), raw: str(pick(r, "_raw", "raw")) };
 }

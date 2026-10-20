@@ -2149,9 +2149,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "c63de1cbcefd06fbf47fe77a95af74a75a0e2cf581e5744705da26e888e98dd2"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "c63de1cbcefd06fbf47fe77a95af74a75a0e2cf581e5744705da26e888e98dd2"
               }
             ],
             "committed": true
@@ -2598,7 +2598,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"done\"}],\"plan_id\":\"c13edc26b38e096167be0ec5e3ef84545c0cbd0ed520550829ce211f44b9ae55\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"_frontmatter.status\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"done\"}],\"plan_id\":\"ece92d5158c2e99de8cecc61bbd645fe445a8d7fcd4dd9a3a97c6e9fdc7290fc\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2764,7 +2764,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"ff326dc3c733d1f4fcd8667857c71af83df0fdb8caabd8caf5686c77a4531d8f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"e9602c2ca3a966f02c278f625fa20fca47bc16b1f842f0dc272ead844e515667\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2937,7 +2937,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"ff326dc3c733d1f4fcd8667857c71af83df0fdb8caabd8caf5686c77a4531d8f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"e9602c2ca3a966f02c278f625fa20fca47bc16b1f842f0dc272ead844e515667\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3118,7 +3118,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"ff326dc3c733d1f4fcd8667857c71af83df0fdb8caabd8caf5686c77a4531d8f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"e9602c2ca3a966f02c278f625fa20fca47bc16b1f842f0dc272ead844e515667\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3370,7 +3370,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"00ab26841c1c0b0538d168079300d9aa47fb1e0a2e25ffc05e54d1a9f4e7ccc1\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"70f0a2d2e5c7955022d0483d72fe84406c48233957a482fa7eac26f2073cdc1d\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3586,7 +3586,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"0b034e113cf423210e969f2941dd6e13b4e84cb5f4b9dd3a56698280961de838\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"0d147ec75e8755e6f96d84cb98c9f6c3d6d7c83439e45f26d6a41684d5035add\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3791,7 +3791,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"2f60561b7004f864ab142186e3f015c7a0f436a6e237670a319c968331c2ab82\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"b54e3498054253773e498ca8b6f9cb218cccb0c862790d9d1b561f75da6b31eb\",\"v\":1}"
           }
         ],
         "revisions": [

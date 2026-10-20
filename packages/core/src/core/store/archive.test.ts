@@ -117,7 +117,7 @@ describe("reading through a segment", () => {
     threeRevisions();
     const r = exportHistory(store, repoId, { dest, now: NOW, policy: POLICY, prune: true });
     const at = readDocumentAtRevision(store, "d_0", "r_0")!;
-    expect(at.raw).toBe("# A\n\nOne.\n");
+    expect(at._raw).toBe("# A\n\nOne.\n");
     expect(at.renderedHashMatch).toBe(true);
     expect(diffBlocks(store, "d_0", "r_0", "r_2").map((e) => e.kind)).toEqual(["removed", "added"]);
     // Detached: the pointer stays, the read says so without a path.
@@ -129,7 +129,7 @@ describe("reading through a segment", () => {
     expect(err as RevisionArchived).toMatchObject({ rev: "r_0", archive: "s_0", path: null });
     // Attached again by path: works. Then the file disappears: the error names the recorded path.
     expect(attachArchive(store, repoId, r.segment!.path).attached.map((a) => a.segment_id)).toEqual(["s_0"]);
-    expect(readDocumentAtRevision(store, "d_0", "r_0")!.raw).toBe("# A\n\nOne.\n");
+    expect(readDocumentAtRevision(store, "d_0", "r_0")!._raw).toBe("# A\n\nOne.\n");
     detachArchive(store, repoId, r.segment!.path);
     attachArchive(store, repoId, dest); // by directory
     unlinkSync(r.segment!.path);

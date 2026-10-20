@@ -3,24 +3,25 @@ import { OmgError } from "../src/lib/mcp-client.ts";
 import { executePlan, parseValue, planEffects, planIsNoop, planOf, receiptOf, setFrontmatterEffect, unsetFrontmatterEffect } from "../src/lib/writes.ts";
 import { ScriptedCaller } from "./scripted.ts";
 
-// The Plan the server returned for the probe's `set frontmatter.verified = false` (preview with diffs).
+// The Plan the server returned for the probe's `set _frontmatter.verified = false` (preview with diffs), in the 5.0 spelling:
+// the resolved target `{ kind: "document", _id, _path }`, the field `_frontmatter.<k>`, the preview revisions `{ _id, _path, _hash }`.
 const PLAN_WIRE = {
   version: 1, planner_v: "p3",
-  effects: [{ op: "set", target: { kind: "document", id: "d_7", path: "processes/calcination.md" }, field: "frontmatter.verified", value: false }],
+  effects: [{ op: "set", target: { kind: "document", _id: "d_7", _path: "processes/calcination.md" }, field: "_frontmatter.verified", value: false }],
   plan_id: "3f2b06a044d93c47b1e01741583dd6b82dacd4f5df90699d1525d5b1487f14e0",
   diagnostics: [],
   preview: {
     results: [],
-    revisions: [{ id: "d_7", path: "/processes/calcination.md", hash: "dc27" }],
+    revisions: [{ _id: "d_7", _path: "/processes/calcination.md", _hash: "dc27" }],
     diffs: { "/processes/calcination.md": { before: "---\nverified: true\n---\n\n# C\n", after: "---\nverified: false\n---\n\n# C\n" } },
-    summary: ["set frontmatter.verified = false in /processes/calcination.md"],
+    summary: ["set _frontmatter.verified = false in /processes/calcination.md"],
   },
 };
 
 describe("effects and values", () => {
-  it("spells the frontmatter effects with a bare rooted path as the document target", () => {
-    expect(setFrontmatterEffect("processes/calcination.md", "verified", false)).toEqual({ op: "set", target: "/processes/calcination.md", field: "frontmatter.verified", value: false });
-    expect(unsetFrontmatterEffect("/a.md", "stage")).toEqual({ op: "unset", target: "/a.md", field: "frontmatter.stage" });
+  it("spells the frontmatter effects with a bare rooted path as the document target and the field as _frontmatter.<key> (spec/mutate 4.0)", () => {
+    expect(setFrontmatterEffect("processes/calcination.md", "verified", false)).toEqual({ op: "set", target: "/processes/calcination.md", field: "_frontmatter.verified", value: false });
+    expect(unsetFrontmatterEffect("/a.md", "stage")).toEqual({ op: "unset", target: "/a.md", field: "_frontmatter.stage" });
   });
   it("parseValue reads scalars the YAML-ish way, JSON for lists/objects/quoted strings, else text", () => {
     expect(parseValue("true")).toBe(true);
@@ -42,15 +43,15 @@ describe("plan and receipt shapes", () => {
     const given = [setFrontmatterEffect("/processes/calcination.md", "verified", false)];
     const p = planOf(PLAN_WIRE, given);
     expect(p.planId).toBe(PLAN_WIRE.plan_id);
-    expect(p.summary).toEqual(["set frontmatter.verified = false in /processes/calcination.md"]);
+    expect(p.summary).toEqual(["set _frontmatter.verified = false in /processes/calcination.md"]);
     expect(Object.keys(p.diffs)).toEqual(["/processes/calcination.md"]);
     expect(p.revisions).toEqual([{ id: "d_7", path: "/processes/calcination.md", hash: "dc27" }]);
     expect(p.effects).toBe(given);
     expect(planIsNoop(p)).toBe(false);
     expect(planIsNoop(planOf({ ...PLAN_WIRE, preview: { revisions: [], summary: [] } }, given))).toBe(true);
   });
-  it("receiptOf: commit null when nothing was committed", () => {
-    expect(receiptOf({ plan_id: "p", commit: "c_20", revisions: [{ id: "d_14", path: "substances/salt.md", hash: "h" }], new_ids: {}, committed: true, summary: ["set …"] }))
+  it("receiptOf: the Receipt's revisions are { _id, _path, _hash }; commit null when nothing was committed", () => {
+    expect(receiptOf({ plan_id: "p", commit: "c_20", revisions: [{ _id: "d_14", _path: "substances/salt.md", _hash: "h" }], new_ids: {}, committed: true, summary: ["set …"] }))
       .toEqual({ planId: "p", commit: "c_20", revisions: [{ id: "d_14", path: "/substances/salt.md", hash: "h" }], committed: true, summary: ["set …"] });
     expect(receiptOf({ plan_id: "p", commit: null, revisions: [], committed: true, summary: [] }).commit).toBeNull();
   });
@@ -81,6 +82,6 @@ describe("the write flow over a scripted minimal server", () => {
   });
   it("a sugar tool is refused by the scripted minimal server, as the real one refuses it", async () => {
     const s = new ScriptedCaller({});
-    await expect(s.call("docs_set_meta", { path: "/a.md", set: { k: 1 } })).rejects.toMatchObject({ code: "unknown_tool" });
+    await expect(s.call("docs_set_meta", { _path: "/a.md", set: { k: 1 } })).rejects.toMatchObject({ code: "unknown_tool" });
   });
 });

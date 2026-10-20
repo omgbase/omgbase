@@ -6,7 +6,7 @@ import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from
 import { remoteCall, docLocator } from "./_remote.js";
 
 // `omg diff <doc>` (11 §5.5) — `docs_diff_unified`: the unified diff, `--json` the
-// tool's `{ doc, path, from, to, diff }`. With no revisions: current vs previous
+// tool's `{ _id, _path, from, to, diff }` (spec/surface §3, 5.0). With no revisions: current vs previous
 // ("what did the last commit do here"). `--blocks` is the block-grain `diff`
 // tool: added/removed/changed blocks between the same two revisions.
 
@@ -55,8 +55,8 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     // Block-grain over the same resolved revision pair.
     let entries: DiffEntry[];
     if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "docs_diff", { ...docLocator(ref), from_rev: result.from, to_rev: result.to });
-    else entries = diffBlocks(cli.workspace().store, result.id, result.from, result.to);
-    if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e.id) });
+    else entries = diffBlocks(cli.workspace().store, result._id, result.from, result.to);
+    if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e._id) });
     if (entries.length === 0) {
       io.err(style.dim("  no changes"));
       return EXIT_OK;
@@ -64,7 +64,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     for (const e of entries) {
       const mark = e.kind === "added" ? style.ok("+") : e.kind === "removed" ? style.err("-") : style.warn("~");
       const preview = (e.after ?? e.before ?? "").split("\n")[0] ?? "";
-      io.out(`${mark} ${style.id(e.id)}  ${preview}`.trimEnd());
+      io.out(`${mark} ${style.id(e._id)}  ${preview}`.trimEnd());
     }
     return EXIT_OK;
   }

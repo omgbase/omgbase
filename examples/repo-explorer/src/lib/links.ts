@@ -1,16 +1,17 @@
-// Backlinks and outlinks: the `links` target (spec/surface §1.2) through the
-// `query` tool. A link row is one open authored link; `path` is the SOURCE
-// document, `dst_path` the destination document (null when the link is
-// external or dangling — a `[[wikilink]]` that names no document, say), `uri`
-// the external URL, `dst_id` a doc id, an external node id or `phantom:<path>`.
+// Backlinks and outlinks: the `links` target (spec/surface §1.2, the 5.0
+// spelling — every link attribute is engine-provided, so `_`-prefixed) through
+// the `query` tool. A link row is one open authored link; `_path` is the SOURCE
+// document, `_dst_path` the destination document (null when the link is
+// external or dangling — a `[[wikilink]]` that names no document, say), `_uri`
+// the external URL, `_dst_id` a doc id, an external node id or `phantom:<path>`.
 //
-//   inbound   select path, block_id, provenance, field, anchor from links where dst_path == "<path>"
-//   outbound  select dst_path, dst_id, dst_kind, uri, provenance, field, anchor from links where path == "<path>"
-//   by name   select path, block_id, provenance, field, anchor from links where dst_id == "phantom:<stem>"
+//   inbound   select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == "<path>"
+//   outbound  select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == "<path>"
+//   by name   select _path, _block_id, _provenance, _field, _anchor from links where _dst_id == "phantom:<stem>"
 //
 // The third: a `[[wikilink]]` naming a document by its bare name (`[[salt]]`
 // for /substances/salt.md) is not resolved by the graph layer — its row has
-// `dst_path: null` and `dst_id: "phantom:salt"` — so the `dst_path` query
+// `_dst_path: null` and `_dst_id: "phantom:salt"` — so the `_dst_path` query
 // cannot see it. The phantom id is the name, so a client can still list the
 // documents that mention this one by name (shown as "wikilinks naming …").
 
@@ -35,11 +36,11 @@ export interface LinkRow {
 const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
 export function inboundQuery(path: string): string {
-  return `select path, block_id, provenance, field, anchor from links where dst_path == ${JSON.stringify(rooted(path))}`;
+  return `select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == ${JSON.stringify(rooted(path))}`;
 }
 
 export function outboundQuery(path: string): string {
-  return `select dst_path, dst_id, dst_kind, uri, provenance, field, anchor from links where path == ${JSON.stringify(rooted(path))}`;
+  return `select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == ${JSON.stringify(rooted(path))}`;
 }
 
 /** The bare name a wikilink would use for a document: its file name without the extension (`/substances/salt.md` → `salt`). */
@@ -48,27 +49,27 @@ export function wikiStem(path: string): string {
   return base.replace(/\.[a-z0-9]+$/i, "");
 }
 
-/** The unresolved wikilinks that name this document: `dst_id == "phantom:<stem>"`. */
+/** The unresolved wikilinks that name this document: `_dst_id == "phantom:<stem>"`. */
 export function byNameQuery(path: string): string {
-  return `select path, block_id, provenance, field, anchor from links where dst_id == ${JSON.stringify(`phantom:${wikiStem(path)}`)}`;
+  return `select _path, _block_id, _provenance, _field, _anchor from links where _dst_id == ${JSON.stringify(`phantom:${wikiStem(path)}`)}`;
 }
 
 export function linkRowOf(hit: Record<string, unknown>): LinkRow | null {
   const id = hitId(hit);
   const path = hitPath(hit);
   if (id === null || path === null) return null;
-  const dst = strOrNull(hit.dst_path);
+  const dst = strOrNull(hit._dst_path);
   return {
     id,
     path: rooted(path),
-    blockId: strOrNull(hit.block_id),
+    blockId: strOrNull(hit._block_id),
     dstPath: dst === null ? null : rooted(dst),
-    dstId: strOrNull(hit.dst_id),
-    dstKind: strOrNull(hit.dst_kind),
-    uri: strOrNull(hit.uri),
-    provenance: strOrNull(hit.provenance),
-    field: strOrNull(hit.field),
-    anchor: strOrNull(hit.anchor),
+    dstId: strOrNull(hit._dst_id),
+    dstKind: strOrNull(hit._dst_kind),
+    uri: strOrNull(hit._uri),
+    provenance: strOrNull(hit._provenance),
+    field: strOrNull(hit._field),
+    anchor: strOrNull(hit._anchor),
   };
 }
 
@@ -111,7 +112,7 @@ export async function fetchLinks(caller: Caller, path: string, repo: string | nu
 /** Resolve a `[[wikilink]]`'s name to a document: the live documents whose path ends in `/<name>.md` (or is exactly it). */
 export function wikilinkQuery(name: string): string {
   const file = /\.[a-z0-9]+$/i.test(name) ? name : `${name}.md`;
-  return `select path from docs where path.endsWith(${JSON.stringify(`/${file}`)})`;
+  return `select _path from docs where _path.endsWith(${JSON.stringify(`/${file}`)})`;
 }
 
 export async function resolveWikilink(caller: Caller, name: string, repo: string | null): Promise<string[]> {

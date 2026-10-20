@@ -5,15 +5,15 @@ import { sanitizeFtsQuery } from "./fts-query.js";
 // FTS5, ranked by bm25. Index maintenance lives in core/store/fts.ts and runs
 // in the commit transaction; this module only reads.
 
-// A hit is the block row under the surface's row rule (spec/surface §1.2, 3.0;
+// A hit is the block row under the surface's row rule (spec/surface §1.2, 5.0;
 // spec/search §1.3): `id` the block, `doc_id` its document, `path` the
 // document's path (the storage form here; surface-paths.ts roots it).
 export interface TextHit {
-  id: string;
-  doc_id: string;
-  path: string;
-  type: string;
-  text: string;
+  _id: string;
+  _doc_id: string;
+  _path: string;
+  _type: string;
+  _text: string;
   score: number; // higher is better (negated bm25)
 }
 
@@ -33,8 +33,8 @@ export function textSearch(
   if (match === "") return { hits: [], truncated: false };
   const rows = store.db
     .prepare(
-      `SELECT b.block_id AS "id", b.doc_id AS doc_id, d.path AS "path", b.type AS type,
-              b.text AS text, bm25(blocks_fts) AS score
+      `SELECT b.block_id AS "_id", b.doc_id AS _doc_id, d.path AS "_path", b.type AS _type,
+              b.text AS _text, bm25(blocks_fts) AS score
        FROM blocks_fts
        JOIN blocks b ON b.rowid = blocks_fts.rowid
        JOIN docs d ON d.doc_id = b.doc_id

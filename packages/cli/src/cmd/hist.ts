@@ -28,7 +28,7 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
   if (cli.flags.server) {
     // Remote: blocks_history keys on a block id (globally unique). Pass the ref
     // through — a locator would need a local resolve, so remote hist wants an id.
-    changes = await remoteCall<NodeChange[]>(cli, "blocks_history", { id: ref, ...(values.n ? { limit: Number(values.n) } : {}) });
+    changes = await remoteCall<NodeChange[]>(cli, "blocks_history", { _id: ref, ...(values.n ? { limit: Number(values.n) } : {}) });
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);

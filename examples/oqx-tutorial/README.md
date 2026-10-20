@@ -9,16 +9,16 @@ Read in order:
 
 1. **[filtering.md](./filtering.md)** — `from` / `where`, and the scalar
    predicate surface: frontmatter, numbers, ranges, booleans, `and`/`or`/`not`,
-   `path` and `/`-rooted paths, `list()`, `$it`, `entries()`.
+   `_path` and `/`-rooted paths, `list()`, `$it`, `entries()`.
 2. **[targets.md](./targets.md)** — the three targets `docs` / `blocks` /
-   `nodes`, reaching the owning document with `doc.`, and `--ids`.
+   `nodes`, reaching the owning document with `_doc.`, and `--ids`.
 3. **[shaping-results.md](./shaping-results.md)** — `select`, `order by`, and
    paging with `-n` / `--cursor`.
 4. **[correlated-subqueries.md](./correlated-subqueries.md)** — `exists`,
    `count`, and `collect` over a document's own blocks and nodes.
 5. **[joins-and-lifts.md](./joins-and-lifts.md)** — `^name` correlation and
    `^docs` / `^nodes` root scans: lifts, dependent/semi/anti/self joins, `single`;
-   the repository as the root row (`^id`, `0^docs`, `entries(^$it)`).
+   the repository as the root row (`^_id`, `0^docs`, `entries(^$it)`).
 6. **[aggregates.md](./aggregates.md)** — folding a query to a value
    (`count`/`exists`/`first`/`single`) and full-text `text()`.
 7. **[graph-traversal.md](./graph-traversal.md)** — `follow` over the link and

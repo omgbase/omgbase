@@ -38,7 +38,7 @@ Every file round-trips byte-identically through the parser (asserted in
 | `verified` | scalar (bool) | 5 documents are `false` |
 | `tags` | **list, except `mercury.md` which is scalar** | exercises `list()` polymorphism |
 | `element`, `stage`, `stages`, `month` | scalar | on the documents where they apply |
-| `slug` | scalar | on every substance and process; equals the filename base, and a `[[wikilink]]`'s value IS a slug — so links resolve to documents by `slug == value` (the join key) |
+| `slug` | scalar | on every substance and process; equals the filename base, and a `[[wikilink]]`'s value IS a slug — so links resolve to documents by `slug == _value` (the join key) |
 | `subject` | scalar | on the two lab notes; a process `slug`, naming the notebook's subject for a 1:1 `single { … }` / `^docs[slug == ^subject]` lookup |
 | `when` | scalar (ISO date) | on the two milestones |
 | `before`, `after`, `see_also` | scalar or list of **document references** | on the two milestones: `/`-rooted paths (`/timeline/kickoff.md`), bare repo-relative paths (`processes/dissolution.md`), a document id (`d_0` under the spec minter) and dangling references (`/timeline/lost-notes.md`) — the `refs(x)` fixture; `review.before` names `kickoff`, `kickoff.after` names `review` (a 2-cycle for `follow refs(before), refs(after)`) |
@@ -53,8 +53,8 @@ every page that ever raised a question.
 The one exception is `substances/salt.md`, which carries a short **supply** list
 ("buy more salt of tartar") — and every item is checked. That makes it the
 deliberate **discriminator**: it is the only substance page with task nodes, and
-it has no *open* ones, so `nodes exists { where kind == "md:task" }` and
-`nodes exists { where kind == "md:task" and not attrs.checked }` return provably
+it has no *open* ones, so `_nodes exists { where _kind == "md:task" }` and
+`_nodes exists { where _kind == "md:task" and not checked }` return provably
 different sets. Several tests depend on this; keep it fully checked.
 
 ### Structure the corpus exercises
@@ -81,12 +81,13 @@ different sets. Several tests depend on this; keep it fully checked.
   identically-titled section of `- [ ]` checkboxes (block type `task`). This
   makes `under_heading("Open questions")` testable *and* gives the
   `list_item`-vs-`task` type filter a real discriminator (not luck). It also
-  exercises the `md:section` nodes and the `section.blocks` / `block.section`
-  relations (asserted to navigate the same content as `under_heading`).
+  exercises the `md:section` nodes and the `_blocks` (section → its content) /
+  `_section` (block → its enclosing section) relations (asserted to navigate the
+  same content as `under_heading`).
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
-  `select path, open from docs where nodes collect { ^open: value where kind ==
-  "md:task" and not attrs.checked }` both filter to those docs and capture each
+  `select _path, open from docs where _nodes collect { ^open: _value where _kind ==
+  "md:task" and not checked }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
 - **Correlation & joins (`^name` outer references + the root row's `^docs`/`^nodes` scans)** — the
@@ -121,8 +122,8 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
   doc→doc `references` edges (89 open edges — wikilinks resolve by path, so every `[[slug]]` is a `phantom:` stub), which the **citation-graph** demos
-  walk: `follow out_links collect { from dst }` (outgoing), `follow in_links
-  collect { from doc }` (backlinks — the link rows walked to the documents at
+  walk: `follow _out_links collect { from _dst }` (outgoing), `follow _in_links
+  collect { from _doc }` (backlinks — the link rows walked to the documents at
   their other end; there is no `out`/`in` relation since the 3.0 follow-up). It exercises
   every follow feature — `distinct` (philosophers-stone's 10-document transitive
   citation closure) vs default per-path occurrences (56), a post-walk `$depth`
@@ -131,16 +132,16 @@ different sets. Several tests depend on this; keep it fully checked.
   `frontier type == "practitioner"` (biographies as the edge of the walk),
   `$key: type` (re-keying identity — oqx 0.20 — so the walk stops when a
   document *type* repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a
-  **correlated destination-block `where`** (`follow out_links collect { from dst
+  **correlated destination-block `where`** (`follow _out_links collect { from _dst
   where type == ^type }`, `^` being the frontier row), a **destination list**
-  (`follow out_links collect { from dst depth 2 }, in_links collect { from doc
+  (`follow _out_links collect { from _dst depth 2 }, _in_links collect { from _doc
   depth 2 }`, unioned by identity within a step, each block with its own
   `depth`) and a **destination block over the root's documents**
-  (`follow ^docs collect { where out_links exists { where dst_path == ^^path }
-  }`, backlinks computed per frontier row, equal to `in_links collect { from
-  doc }`). The **structural** relations ride the heading
-  outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
-  and the block tree (`block.children` — a bullet list down to its items),
+  (`follow ^docs collect { where _out_links exists { where _dst_path == ^^_path }
+  }`, backlinks computed per frontier row, equal to `_in_links collect { from
+  _doc }`). The **structural** relations ride the heading
+  outline (a section node's `_children` — magnum-opus's `#` over four `##`, with `$leaf`)
+  and the block tree (a block's `_children` — a bullet list down to its items),
   including a **nested follow-collect** projecting each process document's
   outline as a subtree.
 - **Ranges** (`lo..hi`, `lo...hi`, open-ended; `range(prop)`) — the practitioner
@@ -157,30 +158,30 @@ different sets. Several tests depend on this; keep it fully checked.
   element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
   the list-authored substances keep their extras — and
   `tags exists { where $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
-- **The root row (`^docs`, `^id`, `0^docs`; surface 2.0)** — the repository is
+- **The root row (`^docs`, `^_id`, `0^docs`; surface 2.0)** — the repository is
   the root scope's row: from a top-level row `^docs` is the documents scan
-  (`size(^docs)` is 20), `^id` the repository id, `entries(^$it)` names the four
-  collections `docs`/`blocks`/`nodes`/`edges`; from a block's rows `^^docs` or the
+  (`size(^docs)` is 20), `^_id` the repository id, `entries(^$it)` names the
+  collections `docs`/`blocks`/`nodes`/`links`/`revisions`; from a block's rows `^^docs` or the
   absolute `0^docs`. A bare `docs` inside a block is the loud "did you mean
   `^docs`" error, never an empty read.
 - **Sugar (oqx 0.17)** — `docs { type == "substance" }` is the collect with a
   where-first body (the five substances); `docs count { is verified }` filters a
-  bare boolean (15); `^docs[slug == ^subject].path` is the bracket form of the
+  bare boolean (15); `^docs[slug == ^subject]._path` is the bracket form of the
   lab notes' 1:1 `single` lookup and `^docs[type == "practitioner" and era >
   1600]!` the required-single form (Newton; four matches without the era bound
   is the `single` error); `refs(before)[0]` is positional; `era!` is the required
   value (an error on a substance, which has no era); `era is not null` /
   `era is null` the identity-based absence test; `hub: ^docs[type == "hub"],
-  hub_path: hub.path` reuses a select alias to its left.
+  hub_path: hub._path` reuses a select alias to its left.
 - **`refs(x)` (surface 1.5)** — the milestones' `before`/`after`/`see_also`
   resolve to live document rows in either path form or by id, dangling
-  references dropped: `refs(before) collect { path, when }` on `review` yields
+  references dropped: `refs(before) collect { _path, when }` on `review` yields
   kickoff and dissolution (not `lost-notes`); `follow refs(before), refs(after)`
   from `review` walks review → {dissolution, kickoff} → review (a cycle, admitted
-  once); the reverse join is `^docs { ^path in list(before) }` — live because
-  `path` is the `/`-rooted reference form; `follow before` (the strings) is the
+  once); the reverse join is `^docs { ^_path in list(before) }` — live because
+  `_path` is the `/`-rooted reference form; `follow before` (the strings) is the
   "a hit must be a document, block, node or link row" error.
-- **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
+- **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `_nodes none { where _kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");
   `docs none { … }` is the scalar form. `order by era desc limit 2` /
@@ -190,11 +191,13 @@ different sets. Several tests depend on this; keep it fully checked.
   `count { … } >= 4`; a non-literal bound is `filter_invalid`.
 - **`entries()` / `$key`** (oqx ≥ 0.10) — salt's frontmatter comes back as seven
   `{k, v}` entries in key order, valued exactly like the bare reads (`tags` →
-  the array); `entries(frontmatter) exists { where $key == "era" and $it >
-  1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(inline)` is
+  the array); `entries(_frontmatter) exists { where $key == "era" and $it >
+  1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(_inline)` is
   non-empty for exactly the docs with `md:inline_field` nodes (Jabir's keys:
-  `century`, `known_for`); `entries(attrs)` on task nodes inspects the attrs
-  bag per key.
+  `century`, `known_for`); `entries(_attrs)` on task nodes inspects the attrs
+  bag per key. (Engine names — attributes, handles, relations — are
+  `_`-prefixed since surface 5.0; a bare name such as `type`, `layer`, `era`,
+  `slug` or a task's `checked` is the author's.)
 
 ### Adding to the corpus
 

@@ -1,26 +1,29 @@
-// Frontmatter edits through the Effect layer (spec/mutate §11, spec/surface
-// §4): `plan { effects: [{ op: "set", target: <path>, field: "frontmatter.<k>",
-// value }], diffs: true }` previews — the Plan's `preview.summary` (one line in
-// words per effect) and `preview.diffs` (the whole before/after bytes per
-// touched document) — and `execute { plan_id, effects }` commits exactly that
-// plan (the digest form: the same effects re-planned, committed only when the
-// digest still matches; a document that moved on is `plan_mismatch` /
-// `stale_plan`, retriable: plan again). The Receipt `{ plan_id, commit,
-// revisions: [{ id, path, hash }], new_ids, committed, summary }`.
+// Frontmatter edits through the Effect layer (spec/mutate §11 4.0, spec/surface
+// §4 5.0): `plan { effects: [{ op: "set", target: <path>, field:
+// "_frontmatter.<k>", value }], diffs: true }` previews — the Plan's
+// `preview.summary` (one line in words per effect) and `preview.diffs` (the
+// whole before/after bytes per touched document) — and `execute { plan_id,
+// effects }` commits exactly that plan (the digest form: the same effects
+// re-planned, committed only when the digest still matches; a document that
+// moved on is `plan_mismatch` / `stale_plan`, retriable: plan again). The
+// Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids,
+// committed, summary }` — a revision's keys are row attributes (`_`-prefixed),
+// the rest roles. The field is `_frontmatter.<k>`: the frontmatter handle is
+// engine-provided, the key under it the user's.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { rooted } from "./paths.ts";
 
 export type Effect = Record<string, unknown>;
 
-/** `set frontmatter.<key> = value` on a document (a bare path is a document target, spec/mutate 3.2). */
+/** `set _frontmatter.<key> = value` on a document (a bare path is a document target, spec/mutate 3.2). */
 export function setFrontmatterEffect(path: string, key: string, value: unknown): Effect {
-  return { op: "set", target: rooted(path), field: `frontmatter.${key}`, value };
+  return { op: "set", target: rooted(path), field: `_frontmatter.${key}`, value };
 }
 
-/** `unset frontmatter.<key>`. */
+/** `unset _frontmatter.<key>`. */
 export function unsetFrontmatterEffect(path: string, key: string): Effect {
-  return { op: "unset", target: rooted(path), field: `frontmatter.${key}` };
+  return { op: "unset", target: rooted(path), field: `_frontmatter.${key}` };
 }
 
 /** The value a user typed, as YAML-ish scalars read: `true`/`false`/`null`, a
@@ -61,7 +64,7 @@ export function planOf(wire: Wire, effects: Effect[]): Plan {
     const r = record(d);
     diffs[rooted(path)] = { before: str(r.before), after: str(r.after) };
   }
-  const revisions = Array.isArray(preview.revisions) ? (preview.revisions as Wire[]).map((r) => ({ id: str(r.id), path: rooted(str(r.path)), hash: str(r.hash) })) : [];
+  const revisions = Array.isArray(preview.revisions) ? (preview.revisions as Wire[]).map((r) => ({ id: str(r._id), path: rooted(str(r._path)), hash: str(r._hash) })) : [];
   return {
     planId: str(wire.plan_id),
     effects,
@@ -85,7 +88,7 @@ export function receiptOf(wire: Wire): Receipt {
   return {
     planId: str(wire.plan_id),
     commit: typeof wire.commit === "string" ? wire.commit : null,
-    revisions: Array.isArray(wire.revisions) ? (wire.revisions as Wire[]).map((r) => ({ id: str(r.id), path: rooted(str(r.path)), hash: str(r.hash) })) : [],
+    revisions: Array.isArray(wire.revisions) ? (wire.revisions as Wire[]).map((r) => ({ id: str(r._id), path: rooted(str(r._path)), hash: str(r._hash) })) : [],
     committed: wire.committed === true,
     summary: Array.isArray(wire.summary) ? (wire.summary as unknown[]).filter((s): s is string => typeof s === "string") : [],
   };

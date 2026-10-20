@@ -77,12 +77,12 @@ describe("docsMove — edge index follows the path", () => {
     expect(inboundBefore).toBeGreaterThanOrEqual(3);
 
     const res = docsMove(store, ctx(), "old.md", "moved/new.md", { retargetInbound: false });
-    const byPath = new Map(res.dangling.map((d) => [d.path, d]));
+    const byPath = new Map(res.dangling.map((d) => [d._path, d]));
     expect([...byPath.keys()].sort()).toEqual(["b.md", "c.md", "sub/d.md"]);
-    expect(byPath.get("b.md")).toMatchObject({ doc_id: docId("b.md"), target: "/old.md", anchor: "Top" });
-    expect(byPath.get("c.md")).toMatchObject({ doc_id: docId("c.md"), target: "old.md", anchor: null });
-    expect(byPath.get("sub/d.md")).toMatchObject({ doc_id: docId("sub/d.md"), target: "../old.md", anchor: null });
-    for (const d of res.dangling) expect(typeof d.block_id).toBe("string");
+    expect(byPath.get("b.md")).toMatchObject({ _doc_id: docId("b.md"), target: "/old.md", _anchor: "Top" });
+    expect(byPath.get("c.md")).toMatchObject({ _doc_id: docId("c.md"), target: "old.md", _anchor: null });
+    expect(byPath.get("sub/d.md")).toMatchObject({ _doc_id: docId("sub/d.md"), target: "../old.md", _anchor: null });
+    for (const d of res.dangling) expect(typeof d._block_id).toBe("string");
     expect(res.retargeted).toBeNull();
 
     // The edge index agrees: nothing open points at the doc; the old path's
@@ -93,7 +93,7 @@ describe("docsMove — edge index follows the path", () => {
     // (c.md's wikilink sits in a list item, so the list AND the item each carry
     // an edge — one stale row per edge, both dangling.)
     expect(stale).toHaveLength(inboundBefore);
-    expect(new Set(stale.map((s) => s.path))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
+    expect(new Set(stale.map((s) => s._path))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
     expect(stale.every((s) => s.target === "/old.md")).toBe(true);
     // The moved doc itself is fine on disk and in the DB.
     expect(existsSync(join(dir, "moved/new.md"))).toBe(true);
@@ -109,7 +109,7 @@ describe("docsMove — edge index follows the path", () => {
 
     const res = docsMove(store, ctx(), "old.md", "new.md", { retargetInbound: false });
     expect(res.dangling).toHaveLength(1);
-    expect(res.dangling[0]).toMatchObject({ doc_id: oldId, path: "old.md", target: "/old.md", anchor: "Other" });
+    expect(res.dangling[0]).toMatchObject({ _doc_id: oldId, _path: "old.md", target: "/old.md", _anchor: "Other" });
     const kept = openEdgesTo(oldId);
     expect(kept).toHaveLength(1); // the #Top fragment link stays
     expect(kept[0]!.anchor).toBe("Top");
@@ -145,8 +145,8 @@ describe("docsMove — edge index follows the path", () => {
     expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["/old.md.bak"]);
     // The rewritten links are now the moved doc's inbound set at its new path.
     const after = inboundLinksTo(store, repoId, oldId, "moved/new.md");
-    expect(new Set(after.map((l) => l.path))).toEqual(new Set(["b.md", "c.md", "moved/new.md", "sub/d.md"]));
-    expect(after.every((l) => l.block_id !== null)).toBe(true);
+    expect(new Set(after.map((l) => l._path))).toEqual(new Set(["b.md", "c.md", "moved/new.md", "sub/d.md"]));
+    expect(after.every((l) => l._block_id !== null)).toBe(true);
     // Only the deepest block per link was updated (not the list AND its item).
     const types = res.retargeted!.blocks.map((b) => (store.db.prepare("SELECT type FROM blocks WHERE block_id = ?").get(b) as { type: string } | undefined)?.type);
     expect(types).not.toContain("list");
@@ -156,16 +156,16 @@ describe("docsMove — edge index follows the path", () => {
     save("old.md", "# Old\n");
     save("fm.md", "---\ndepends_on: /old.md\n---\n\n# FM\n");
     const res = docsMove(store, ctx(), "old.md", "new.md");
-    expect(res.dangling).toEqual([{ doc_id: docId("fm.md"), path: "fm.md", block_id: null, target: "old.md", anchor: null, field: "depends_on" }]);
+    expect(res.dangling).toEqual([{ _doc_id: docId("fm.md"), _path: "fm.md", _block_id: null, target: "old.md", _anchor: null, _field: "depends_on" }]);
     // The rewrite ran and touched nothing: empty lists, not null (null = opted out or nothing linked in).
     expect(res.retargeted).toEqual({ blocks: [], docs: [] });
-    expect(linksStale(store, repoId).stale.map((s) => s.path)).toEqual(["/fm.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s._path)).toEqual(["/fm.md"]);
   });
 });
 
 describe("document operations — `plan` over the builders' effects validates, previews, commits nothing (spec/cli §3.6, 4.0)", () => {
   const commits = (): number => (store.db.prepare("SELECT count(*) n FROM commits").get() as { n: number }).n;
-  const docOf = (path: string) => ({ id: docId(path), path });
+  const docOf = (path: string) => ({ _id: docId(path), _path: path });
   const plan = (effects: unknown) => planEffects(store, { repoId, rootPath: dir, effects });
 
   it("a create plans the would-be file under a symbolic id ($new.0) and mints nothing; the file is not written", () => {
@@ -173,7 +173,7 @@ describe("document operations — `plan` over the builders' effects validates, p
     const n = commits();
     const p = plan(createEffects("/new/b.md", "# B\n\nbody", { title: "B" }).effects);
     expect(p.new_ids[0]).toEqual({ symbol: "$new.0", kind: "document" });
-    expect(p.preview!.revisions[0]).toMatchObject({ id: "$new.0", path: "new/b.md" });
+    expect(p.preview!.revisions[0]).toMatchObject({ _id: "$new.0", _path: "new/b.md" });
     expect(p.preview!.diffs).toEqual({ "new/b.md": { before: "", after: "---\ntitle: B\n---\n\n# B\n\nbody\n" } });
     expect(existsSync(join(dir, "new/b.md"))).toBe(false);
     expect(store.db.prepare("SELECT 1 FROM docs WHERE path = 'new/b.md'").get()).toBeUndefined();
@@ -188,13 +188,13 @@ describe("document operations — `plan` over the builders' effects validates, p
     const n = commits();
     const p = plan(moveDocEffects(docOf("old.md"), "moved/new.md", false).effects);
     expect(p.preview!.diffs).toEqual({ "old.md": { before: "# Old\n", after: "" }, "moved/new.md": { before: "", after: "# Old\n" } });
-    expect(p.opset.moves).toEqual([{ id: docId("old.md"), from: "old.md", to: "moved/new.md" }]);
+    expect(p.opset.moves).toEqual([{ _id: docId("old.md"), from: "old.md", to: "moved/new.md" }]);
     expect(existsSync(join(dir, "old.md"))).toBe(true);
     expect(existsSync(join(dir, "moved/new.md"))).toBe(false);
     expect(docId("old.md")).toBeDefined();
     expect(commits()).toBe(n);
     expect(() => plan(moveDocEffects(docOf("old.md"), "a.md").effects)).toThrow(/path_taken|already exists/);
-    expect(() => plan([{ op: "move", target: { kind: "document", path: "nope.md" }, to: "x.md" }])).toThrow(/doc_missing|no document|not found/);
+    expect(() => plan([{ op: "move", target: { kind: "document", _path: "nope.md" }, to: "x.md" }])).toThrow(/doc_missing|no document|not found/);
   });
 
   it("a move's plan previews the rewritten sources too (the default retarget)", () => {
@@ -210,7 +210,7 @@ describe("document operations — `plan` over the builders' effects validates, p
     save("a.md", "# A\n");
     const n = commits();
     const p = plan(deleteDocEffects(docOf("a.md")).effects);
-    expect(p.opset.tombstones).toEqual([{ id: docId("a.md"), path: "a.md" }]);
+    expect(p.opset.tombstones).toEqual([{ _id: docId("a.md"), _path: "a.md" }]);
     expect(p.preview!.diffs).toEqual({ "a.md": { before: "# A\n", after: "" } });
     expect(existsSync(join(dir, "a.md"))).toBe(true);
     expect(commits()).toBe(n);

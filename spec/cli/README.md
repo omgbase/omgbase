@@ -364,12 +364,20 @@ error[stale_expectation]: content hash mismatch
     "block": "b_309",
     "expected_content_hash": "00",
     "current": {
-      "content_hash": "…",
+      "_hash": "…",
       "markdown": "…"
     },
     "retriable": true
   }
 ```
+
+(`current._hash` is the block row's hash under the engine names of
+`spec/surface` §1.2, 5.0 — `current.hash` through 4.x; `op_index`, `block`
+and `expected_content_hash` are roles and stay bare.) Every `--json` error
+`data` carries the tool's payload verbatim, so the row-attribute keys inside
+it are the surface's: `doc_missing { _id?, _path? }`, `block_missing { _id
+}`, `ambiguous_heading.candidates[{ _id, _doc_id }]`, `stale_plan.current {
+revision, _hash }`.
 
 ### 3.6 `--dry-run`
 
@@ -436,35 +444,39 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
 ## 4. Shared renderers
 
 - **id + locator pairing**: `<id>  <locator>` — two spaces, the id first
-  (`query` hits — their `id` and `path` —, `find` hits, the shell's inspect
+  (`query` hits — their `_id` and `_path` —, `find` hits, the shell's inspect
   listing).
 - **columns** (`ls`, the query table, `repos`, `source list`): cells padded
   to the widest cell of their column, joined by two spaces, the last column
   unpadded, trailing whitespace removed from every line; a column may be
   right-aligned (`ls`'s counts and times).
-- **the query hit table** (`query`, `run`): a hit is `{ id, path,
-  ...projection }` (`spec/surface` §1.4, 3.0). With no projection, one
-  `<id>  <path>` line per hit; with a projection, a header row (`id`,
-  `path`, then the projected keys in first-seen order across the hits — a
-  `select path`/`id` is the envelope key itself, so it is never a column;
-  a column *named* `id` or `path` that is not the attribute itself is refused
-  by the surface — alias it), then one row per hit. Cells: strings verbatim up to their first newline (a cut is
-  marked `…`), numbers and booleans as JavaScript prints them, `null`/absent
-  → empty, lists and records as compact JSON; every cell but `id`/`path`
-  is clipped to 60 visible characters, the 60th being `…`. Before 3.0 a
-  `$path` projection sat beside the `path` column; for a few days of the 3.0
-  line the header read `$id`/`$path` (§10). **`--bare` (4.1)**: the hit is
-  its projection alone (`spec/surface` §1.4, 4.2), so the table has no
-  envelope columns — the header is every projected key in first-seen order
-  and a projected `id`/`path` is an ordinary column, clipped like any cell
-  (`query::bare`).
+- **the query hit table** (`query`, `run`): a hit is `{ _id, _path,
+  ...projection }` (`spec/surface` §1.4, 5.0 — the envelope under the
+  engine names: on every record a bare name is the user's, an
+  underscore-prefixed name the engine's). With no projection, one
+  `<id>  <path>` line per hit (the values); with a projection, a header row
+  (`_id`, `_path`, then the projected keys in first-seen order across the
+  hits — a `select _path`/`_id` is the envelope key itself, so it is never a
+  column; a column *named* `_id` or `_path` that is not the attribute itself
+  is refused by the surface — alias it; a projected authored `path` or `id`
+  key is an ordinary column beside the envelope's), then one row per hit.
+  Cells: strings verbatim up to their first newline (a cut is marked `…`),
+  numbers and booleans as JavaScript prints them, `null`/absent → empty,
+  lists and records as compact JSON; every cell but `_id`/`_path` is clipped
+  to 60 visible characters, the 60th being `…`. Through 4.x the header read
+  `id`/`path`; before 3.0 a `$path` projection sat beside the `path` column;
+  for a few days of the 3.0 line the header read `$id`/`$path` (§10).
+  **`--bare` (4.1)**: the hit is its projection alone (`spec/surface` §1.4,
+  4.2), so the table has no envelope columns — the header is every projected
+  key in first-seen order and a projected `_id`/`_path` is an ordinary
+  column, clipped like any cell (`query::bare`).
 - **the outline wire format** (`outline`): `spec/surface` §2's text
   verbatim, one line per block.
 - **commit confirmation** (block mutators; every write is a Receipt since
   cli 4.0): stderr `  ok committed · <n> document<s> touched` (`document`
   for one), `<n>` the receipt's `revisions`, then (cli 4.3) the Receipt's
   `summary` — one line per effect, in words (`spec/mutate` §11.9), each
-  indented four spaces on stderr (`    set frontmatter.verified = false in
+  indented four spaces on stderr (`    set _frontmatter.verified = false in
   /substances/salt.md`); stdout the ids the write names,
   one per line — the Plan's `preview.results[*].ids` in order (duplicates
   included) with every `$new.n` realized from the receipt's `new_ids`, when
@@ -476,8 +488,10 @@ The commit **actor** of every CLI write defaults to `human:<os username>`
 - **document-op confirmation** (`new`/`mv`/`rm --doc`/`meta`): stderr
   `  ok <verb> <path>` (`created` / `moved to` / `deleted` / `patched`),
   then (cli 4.3) the Receipt's `summary` lines indented four spaces as
-  above; stdout the document id. `--json` prints `{ id, path, committed }`
-  as before — the summary is the human rendering's.
+  above; stdout the document id. `--json` prints `{ _id, _path, committed }`
+  (5.0; `{ id, path, committed }` through 4.x — the document's row
+  attributes under the engine names, `committed` a role) — the summary is
+  the human rendering's.
 - **relative time** (`ls`): `<n>s ago` under a minute, then `<n>m ago`,
   `<n>h ago`, `<n>d ago`, computed from "now" (`0s ago` under the pinned
   clock); `—` when the document has no commit.
@@ -575,15 +589,18 @@ from stdin one per line, a `-` with empty stdin is
 `usage: cat requires a <node> (or - to read refs from stdin)`) prints, in
 order: a document → its exact bytes (`docs_read`); a block → its raw
 markdown, or at `--resolution text|outline|skeleton|full` the `blocks_read`
-field `raw ?? text ?? label`. `--resolution` other than `raw` on a document
+field `_raw ?? _text ?? label`. `--resolution` other than `raw` on a document
 ref warns on stderr
 `  --resolution <r> ignored for <ref>: a document is always its exact bytes (resolutions apply to block refs)`
 and prints the bytes. `--json`: one ref → the object, several → an array;
 `--jsonl` one object per line (`--ids`: the same document — a read has no
 id list); a block's object is `blocks_read` at the resolution
-(`{ id, type, raw, hash }` at raw), a document's is the `docs_read`
-result `{ id, path, rev, properties: { frontmatter, inline, computed },
-raw }` (3.0 — the row rule of `spec/surface` §1.2). Unknown ref →
+(`{ _id, _type, _raw, _hash }` at raw), a document's is the `docs_read`
+result `{ _id, _path, rev, properties: { frontmatter, inline, computed },
+_raw }` (5.0 — the row rule of `spec/surface` §1.2: the row attributes
+under the engine names, `rev` and `properties` roles; `properties.computed`
+spells its rows `_title`/`_tags`, the authored groups stay bare; `{ id,
+path, rev, properties, raw }` through 4.x). Unknown ref →
 `doc_missing: no node <ref>` (a `b_` id too, §9).
 
 ### `config`
@@ -615,13 +632,13 @@ string verbatim, anything else as JSON, an absent key as an empty line
 before it (or the current one again when there is only one → an empty
 diff, stderr `  no changes`). Human: the unified diff's lines
 (`spec/surface` §3, no header); `--json` the tool's result
-`{ id, path, from, to, diff }` (the reference and the tool share one
-function); `--jsonl`/`--ids` the same document. `--blocks` is the
+`{ _id, _path, from, to, diff }` (5.0; the reference and the tool share one
+function — `from`, `to`, `diff` are roles); `--jsonl`/`--ids` the same document. `--blocks` is the
 block-grain `docs_diff` tool over the same resolved pair: human one line per
 entry, `+ <id>  <first line of after>` (added), `- <id>  <first line of
 before>` (removed), `~ <id>  <first line of after>` (changed), none → stderr
 `  no changes`; `--json` the entry array
-`[{ kind, id, before?, after? }]`, `--jsonl` one per line, `--ids` the
+`[{ kind, _id, before?, after? }]` (5.0), `--jsonl` one per line, `--ids` the
 block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 → `target_missing: no revision "<rev>" for document <id>` with
 `data { doc, rev }`.
@@ -712,9 +729,9 @@ the names, order, row counts and advice exact.
 
 ### `done`
 
-`done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `blocks_check { ids }`
-(`--undo`: an `update` with `attrs.checked = false`, CAS pinned from the
-live row). Every block must be a live `task` block, checked before any op
+`done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `blocks_check { _ids }`
+(5.0; `--undo`: a `set _attrs.checked = false` effect — the kernel `update`
+with `attrs: { checked: false }` — CAS pinned from the live row). Every block must be a live `task` block, checked before any op
 is built: another type →
 `type_mismatch: not a task: <ref> is a <type>` with `data { block, type }`,
 nothing committed. Confirmation (§4).
@@ -774,9 +791,10 @@ Exact bytes: `mutate::execute-file`, `execute-stdin`, `execute-stale-plan`,
 hybrid ranking when a provider is configured, FTS-only with `--no-semantic`
 or without one. Human: `<id>  <locator>  <preview>` per hit; `-v` adds
 `    <evidence as JSON>` on **stderr** under each; none → stderr
-`  no matches`. `-1` prints the top hit's `id` alone (nothing when there is
-none). `--ids` the `id`s; `--json` the hit array (`[{ id, locator, preview,
-evidence }]`); `--jsonl` one hit per line.
+`  no matches`. `-1` prints the top hit's `_id` alone (nothing when there is
+none). `--ids` the `_id`s; `--json` the hit array (`[{ _id, locator, preview,
+evidence }]`, `spec/search` §4, 3.0 — `_id` the block row's, the rest roles);
+`--jsonl` one hit per line.
 No text → `usage: find requires <text>`.
 
 ### `gc`
@@ -959,11 +977,15 @@ ordered by (predicate, doc_id, block_id), the source block beside the far
 node — `    <predicate> > <doc_id> (<block_id>)` out, `    <doc_id>
 (<block_id>) > <predicate>` in (`(frontmatter)` for a block-less relation),
 no count. `--ids` the far node ids (out, then in); `--json` the
-`{ out: [{ predicate, doc_id, kind, count, samples? }], in: [...] }` object
-(`doc_id` is the far node: a document id, or for an outgoing external or
+`{ out: [{ _predicate, _doc_id, kind, count, samples? }], in: [...] }` object
+(`_doc_id` is the far node: a document id, or for an outgoing external or
 phantom edge that node's id; `--blocks`: `count` is 1, no `samples`, plus
-`block_id`) — 3.0, `node`/`block` before; `--jsonl` the same object (it is
-not a list). Unknown ref → `doc_missing: no node <ref>`.
+`_block_id`) — 5.0: the keys that carry a link row's attributes take the
+engine names (`predicate`/`doc_id`/`block_id` 3.0–4.x, `node`/`block`
+before 3.0); `kind`, `count` and `samples` are the grouping's own and stay
+bare. `docLinks` is a library read with no tool of its own, so this shape is
+the CLI's; `--jsonl` the same object (it is not a list). Unknown ref →
+`doc_missing: no node <ref>`.
 
 ### `log`
 
@@ -983,7 +1005,8 @@ observed or api deletion `observed: deleted <path>` /
 commit, by path), a move `api(<actor>): moved <from> → <to>` (from the
 commit's `reason`, `move <from> -> <to>`). None → stderr `  no changes`;
 truncated → the footer with the next seq. `--json` the
-`{ digests, cursor, truncated, head }` result; `--jsonl` one digest per
+`{ digests, cursor, truncated, head }` result (`spec/sync` §6 — a digest's
+`revisions` are `[{ _id, _path, _hash }]`, 5.0); `--jsonl` one digest per
 line plus the footer; `--ids` the commit ids plus the footer.
 
 ### `ls`
@@ -991,9 +1014,10 @@ line plus the footer; `--ids` the commit ids plus the footer.
 `ls [<glob>] [--ids|--json|--jsonl]` — `docs_list`, every page walked. The
 glob is a path pattern with `*` matching any run of characters, in either
 path form. Human: a column table of `<path>` (rooted), `<n> blocks` (right-aligned), the relative time
-(§4, right-aligned); none → stderr `  no documents`. `--ids` the `id`s
-(3.0; the paths before); `--json` the row array `[{ id, path, updated_at,
-blocks }]`; `--jsonl` one row per line.
+(§4, right-aligned); none → stderr `  no documents`. `--ids` the `_id`s
+(3.0; the paths before); `--json` the row array `[{ _id, _path, _updated_at,
+blocks }]` (5.0 — `docs_list.items[]` under the engine names; `blocks` is a
+count, a role); `--jsonl` one row per line.
 
 ### `mcp`
 
@@ -1028,7 +1052,7 @@ kernel's default), the first block's identity surviving. Fewer than two →
 `true` → boolean), `--set-json` as JSON, `--unset` removes; the body is
 untouched; the frontmatter is re-serialized by the engine (a list becomes a
 block sequence). Document-op confirmation (§4); `--json`
-`{ id, path, committed }`. Neither `--set` nor `--unset` →
+`{ _id, _path, committed }`. Neither `--set` nor `--unset` →
 `usage: meta requires --set or --unset`; a value without `=` →
 `usage: --set expects k=v, got '<v>'` / `usage: --set-json expects k=json, got '<v>'`.
 `--dry-run`: the patched file's diff (§3.6).
@@ -1050,8 +1074,10 @@ inbound links that named the old path are rewritten to the new one
 <new-path>`, then when anything was rewritten
 `  ok retargeted <n> inbound link(s) in <m> document(s)` (`link`/`document`
 for one); `--json` the `DocMoveResult`
-`{ id, path, committed, dangling: [{ doc_id, path, block_id, target,
-anchor, field? }], retargeted }`. `--no-retarget`
+`{ _id, _path, committed, dangling: [{ _doc_id, _path, _block_id, target,
+_anchor, _field? }], retargeted }` (5.0 — a dangling entry is a `links` row
+under its engine names; `target`, `retargeted` and `committed` are roles).
+`--no-retarget`
 (cli 1.2) passes `retarget_inbound: false`: the links are left as written
 and listed in `dangling`. Whatever still dangles is reported on stderr after
 the confirmation: `  ! <n> inbound link(s) still name(s) the old path:
@@ -1069,8 +1095,9 @@ as two file diffs plus the diff of every source the retarget would rewrite
 
 `new <path> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]` —
 `docs_create` from complete file bytes (frontmatter included, `-m`
-verbatim). Confirmation (§4) `created <path>`; `--json`
-`{ id, path, committed }`. Existing →
+verbatim; the tool's `path` argument is where to create — a role, bare).
+Confirmation (§4) `created <path>`; `--json`
+`{ _id, _path, committed }`. Existing →
 `path_taken: document already exists at <path>` (with the `{}` payload,
 §9). `--dry-run`: the would-be file's diff (§3.6), nothing created.
 
@@ -1114,13 +1141,17 @@ of their kind carries) → one stderr line `  hint: <text>` per entry, LAST, in
 every human rendering (scalar, values, table, `no hits`); the machine modes
 carry the member itself (`query::unknown-name-hint`, `unknown-name-no-hits`,
 `unknown-name-hint-json`; a links field is the error: `unknown-field-on-links`). `--ids`
-the hit ids (`id`); `--jsonl` one hit per line (`{ id, path, ... }`);
+the hit ids (`_id`); `--jsonl` one hit per line (`{ _id, _path, ... }`);
 `--json` the whole `OqxResult` (`{ hits, truncated, cursor, consumer, count?
-| exists? | none? | values?, hints? }`, every hit `{ id, path, ...projection }` —
-`spec/surface` §1.4, 3.0; copy a hit's `id` into the next `where id == "…"`
-unchanged). `--bare` (4.1) is the tool's `bare: true` passed through
+| exists? | none? | values?, hints? }`, every hit `{ _id, _path, ...projection }` —
+`spec/surface` §1.4, 5.0; copy a hit's `_id` into the next `where _id == "…"`
+unchanged; the source itself spells engine names with the underscore and
+authored keys bare — `omg q 'from docs where layer == "canon" select _title,
+_path'` — and a bare `title`/`id`/`path` reads the authored key, with the
+result's `hints` pointing at `_title`/`_id`/`_path` when no document carries
+one). `--bare` (4.1) is the tool's `bare: true` passed through
 (`spec/surface` §1.4, 4.2): every hit is its projection alone, rendered as
-the bare table (§4) — no id/path columns — and `--json`/`--jsonl` print the
+the bare table (§4) — no `_id`/`_path` columns — and `--json`/`--jsonl` print the
 bare hits; paging, `-n` and `--cursor` are unchanged (`query::bare`,
 `bare-json`). Its refusals are the surface's, rendered as every
 `filter_invalid`: without a `select` — "`bare` needs a `select` — without a
@@ -1165,8 +1196,9 @@ old and new raw (`spec/surface` §3's diff, the one every preview prints),
 then an empty line, under the stderr note
 `  plan — <n> block(s) would change; re-run with --apply to commit`; no hits →
 stderr `  no blocks reference <from>`. `--json` the plan
-`{ from, to, hits: [{ id, path, oldRaw, newRaw }] }` (the hits under the
-row rule: `id` the block, `path` its document, rooted). `--apply` commits
+`{ from, to, hits: [{ _id, _path, oldRaw, newRaw }] }` (the hits under the
+row rule, 5.0: `_id` the block, `_path` its document, rooted; `oldRaw`/
+`newRaw` roles). `--apply` commits
 the `links_retarget` tool's call (the Receipt + `hits` + `pairs`; `--json`
 prints it) through the Receipt confirmation (§4) and honors `--dry-run` as
 §3.6 (the plan's per-file diffs). Targets are
@@ -1178,7 +1210,7 @@ wikilink. `--scope` is a path glob over the documents searched.
 `rm <blocks…|-> [--actor <s>] [--dry-run]` · `rm --doc <doc> [--actor <s>] [--dry-run]`
 — a `remove` op (confirmation lists the removed ids; `--json`'s result
 carries `removed`), or with `--doc` `docs_delete` (document-op confirmation
-`deleted <path>`; `--json` `{ id, path, committed }`; the file leaves the
+`deleted <path>`; `--json` `{ _id, _path, committed }`; the file leaves the
 tree; `--dry-run` renders the file's removal, §3.6). Neither →
 `usage: rm requires one or more blocks (or - for stdin), or --doc`.
 
@@ -1201,17 +1233,19 @@ See §7.
 `show <node…|-> [--include history]` — the metadata card. A document: the
 wordmark with its path, the rule, `  properties` and
 `    <key> = <value>` (strings verbatim, else JSON) for every merged property
-including the computed `title`, then `  out links` / `  backlinks` as
+— the authored keys bare and the computed ones under their engine names,
+`_title` (5.0; `title` through 4.x) — then `  out links` / `  backlinks` as
 `links` renders them (each section only when non-empty). A block:
 `  <type glyph> <type>  <id>`, the rule,
 `  placement  parent=<parent_id|—> ordinal=<n> depth=<n>` (the row's
-`parent_id`/`ordinal`/`depth`, 3.0), `  attrs` with
-`    <k> = <v>` lines when any, `  text  <text>` when any, and with
+`parent_id`/`_ordinal`/`_depth`, 5.0; the line's words are text), `  attrs`
+with `    <k> = <v>` lines when any (the attrs keys, the author's),
+`  text  <text>` when any, and with
 `--include history` `  history` then `    #<seq> <kind> <origin> <ts>` for the
 last five changes. Several refs print one card after another. `--json`: a
 block's `blocks_read` at `full` (+ `history` when included); a document's
-`{ kind: "document", id, path, rev, properties: { frontmatter, inline,
-computed }, raw }` — `docs_read`'s result under `kind`, composed by the CLI
+`{ kind: "document", _id, _path, rev, properties: { frontmatter, inline,
+computed }, _raw }` — `docs_read`'s result under `kind`, composed by the CLI
 (the card's merged properties and links are the human rendering only); one ref → the object, several →
 an array; `--jsonl` one object per line; `--ids` the same as `--json`.
 
@@ -1290,8 +1324,10 @@ the right cell `<label padded to 8><value>`:
 `empty` or `<n> queued`. `--json` (every machine mode) the two tools'
 results as they are on the wire:
 `{ ...repos_status, sync: sync_status, watcher, embedQueue }` =
-`{ repoId, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk: { changed, deleted, untracked, checked }, sync: { lastCommitSeq, lastCheckpoint, convergent, diskChecked, disk }, watcher: "live"|"none", embedQueue }`
-(`rootPath` is `""` for a sourceless repo, as `repos_status` reports it).
+`{ _id, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk: { changed, deleted, untracked, checked }, sync: { lastCommitSeq, lastCheckpoint, convergent, diskChecked, disk }, watcher: "live"|"none", embedQueue }`
+(`_id` is the root row's id under the engine names, 5.0 — `repos_status`
+spelled it `id` through 4.x; `rootPath` is `""` for a sourceless repo, as
+`repos_status` reports it).
 `embedQueue` is the embedding queue depth of `spec/search` §2.3 — the
 embeddable blocks (live leaves of ≥ 24 tokens, §2.1) whose current
 `(content_hash, ctx_hash)` has no cached vector for the `embedding.model`
@@ -1381,12 +1417,12 @@ the unknown-command one.
 | `@N` (1-based) | row N of the **frame** — the last displayed collection |
 | `@_` | the previous command's typed result |
 | `@name` | a binding |
-| `…[i]` then `….field` | one index (1-based) then one shallow field (`[A-Za-z_]\w*`, optionally `$`-prefixed for an OQX-named projection: `@1.id`, `@t[1].path` — a hit's identity —, `@1.$depth`), in that order, no deeper |
+| `…[i]` then `….field` | one index (1-based) then one shallow field (`[A-Za-z_]\w*`, optionally `$`-prefixed for an OQX-named projection: `@1._id`, `@t[1]._path` — a hit's identity —, `@1.title` an authored key, `@1.$depth`), in that order, no deeper — any projected key, as the result spells it |
 
 A **collection** result replaces the frame and prints, on stderr,
 `  <n> row(s) — address with @1..@<n>` (`1 row`, `2 rows`; nothing when
-empty). Collections: `query`/`run` hits (row ref = `id`, label `path`;
-3.0), `ls` rows (ref = `id`, label `path`), `find` hits (`id`), `links` (out then in; ref = `doc_id`), a write's
+empty). Collections: `query`/`run` hits (row ref = `_id`, label `_path`;
+5.0), `ls` rows (ref = `_id`, label `_path`), `find` hits (`_id`), `links` (out then in; ref = `_doc_id`), a write's
 Receipt (the ids the write names, flattened; ref = the id), any array. A
 card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 **Not captured** at all (they leave `@_` and the frame untouched): `log`,
@@ -1395,9 +1431,11 @@ card or scalar (`show`, `cat`, a count) sets `@_` and leaves the frame.
 for a block; `show` a document captures the card object.
 
 Substitution coerces a row to its ref; a scalar to its string; an object
-with `id`/`doc_id`/`block_id`/`node`/`block`/`locator`/`path`
-(in that precedence; the pre-3.0 names stay so a remote 2.x server's results
-still address) to that; a bare collection is
+with `_id`/`_doc_id`/`_block_id`/`node`/`block`/`locator`/`_path`
+(in that precedence; 5.0 — the `$id`/`id`/`$path`/`path` tolerance of
+`REF_KEYS` is gone, so a 4.x server's rows no longer address by their
+envelope: the bare namespace is the user's, and a bare `id` on a row is an
+authored key, never the identity) to that; a bare collection is
 refused: `usage: reference is a collection; select one with [i]` (or
 `reference is a collection of <n>; select one with [i]` for an array).
 Errors: `usage: no displayed collection to index with @N`,
@@ -1863,6 +1901,49 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-20, cli 5.0 (`spec/surface` 5.0 "underscore = engine"; with
+  `spec/mutate` 4.0, `spec/sync` 3.0, `spec/search` 3.0, `spec/graph` 2.0):
+  the surface's row rule became one rule for every record kind — a BARE name
+  is a user-authored entry, an UNDERSCORE-prefixed name is engine-provided,
+  `$` stays OQX's — and the CLI renders it. Every verb's `--json`/`--jsonl`
+  carries the tool result verbatim, so the shapes moved with the surface's:
+  the hit envelope `{ _id, _path, …projection }` (`query`, `run`), `docs_read`
+  `{ _id, _path, rev, properties, _raw }` (`cat`, `show`), `blocks_read`
+  `{ _id, _type, _raw, _hash, … }`, `docs_list` `[{ _id, _path, _updated_at,
+  blocks }]` (`ls`), `blocks_resolve` `[{ _id, locator, preview, evidence }]`
+  (`find`), the Receipt's and a digest's `revisions[{ _id, _path, _hash }]`
+  (every write, `log`), the document ops' `{ _id, _path, committed }` (`new`,
+  `mv`, `rm --doc`, `meta`) and `mv`'s `dangling[{ _doc_id, _path, _block_id,
+  target, _anchor, _field? }]`, `docs_diff_unified` `{ _id, _path, from, to,
+  diff }` and `docs_diff` `[{ kind, _id, before?, after? }]` (`diff`), the
+  retarget plan's `hits[{ _id, _path, oldRaw, newRaw }]`, `repos_status`'s
+  `_id` (`status`), and every error `data` (`stale_expectation.current {
+  _hash, markdown }`, `doc_missing { _id?, _path? }`, …). The human hit
+  table's envelope columns read `_id` and `_path` (the bare list prints the
+  values, unchanged in text); `show`'s card prints the computed title as
+  `_title` beside the bare authored keys; the shell's row ref reads `_id`
+  (label `_path`), `.field` reads any projected key as the result spells it
+  (`@1._id`, `@t[1]._path`), and the `$id`/`id`/`$path`/`path` tolerance of
+  `REF_KEYS` is gone — a bare `id` on a row is an authored key. argv is
+  unchanged: no flag moved, and the only argv that carries the new spelling
+  is an OQX source (`omg q 'from docs select _title, _path'`). Role keys kept
+  their names everywhere — `rev`, `cursor`, `truncated`, `committed`,
+  `plan_id`, `new_ids`, `commit`, `locator`, `from`/`to`, `kind`,
+  `parent_id`, `blocks` (a count), `rootPath`, `source add`'s `repoId`
+  (this verb's own shape), and `links`' `kind`/`count`/`samples` (its
+  `predicate`/`doc_id`/`block_id` carry link-row attributes and moved to
+  `_predicate`/`_doc_id`/`_block_id`, the far node under `_doc_id`). A JSON
+  key renamed and a
+  header line changed in meaning: a major. **Migration:** scripts parsing
+  `--json`/`--jsonl` read `_id`/`_path` (and the other `_` keys above); the
+  bare `<id>  <path>` list and `--ids` are unchanged; OQX sources respell
+  engine names with the underscore (`id` → `_id`, `title` → `_title`,
+  `data.<k>` → `<k>`, `doc.<x>` → `_doc.<x>`; `scripts/rename-engine-names.
+  mjs` rewrites a 4.x query). Fixtures: every expectation moved by the key
+  spelling alone (table headers, `--json`/`--jsonl` bodies, error payloads,
+  shell frames, OQX sources in argv); nothing else. The Rust `omgbase`
+  binary follows in a separate round with the rest of the Rust twin; until
+  it lands `cli_spec.rs`'s allowlist is red by design.
 - 2026-10-15, cli 4.6: `history plan | export | attach | detach | list`
   (§6) — the operator surface of `spec/store` 15.0's retention (§7.1 there),
   and `doctor --size`'s `archived` line and retention advice. A CLI verb

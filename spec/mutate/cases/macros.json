@@ -70,9 +70,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "7c4b6f5ad434cb056bc8babdec6305e8097824a7fb6e639e2212c0ae8385360f"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "7c4b6f5ad434cb056bc8babdec6305e8097824a7fb6e639e2212c0ae8385360f"
               }
             ],
             "committed": true
@@ -623,9 +623,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "87d47e26f7faaddd1799d172372461b782a8e945a192897ba5c76f4efd159c20"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "87d47e26f7faaddd1799d172372461b782a8e945a192897ba5c76f4efd159c20"
               }
             ],
             "committed": true
@@ -1004,9 +1004,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "e239d6df79db7a22956201027d4d95fdd303376e39cad16aee761f7bc5b1074d"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "e239d6df79db7a22956201027d4d95fdd303376e39cad16aee761f7bc5b1074d"
               }
             ],
             "committed": true
@@ -1254,9 +1254,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "2b315c589073483c1260a8b4fb58821b273ab8712ce260861d961ee5da92be43"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "2b315c589073483c1260a8b4fb58821b273ab8712ce260861d961ee5da92be43"
               }
             ],
             "committed": true
@@ -1911,9 +1911,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "3fdce2b36aafb1db9136bbe2a13c1970f68758658b0f20cd71980e6bf247663b"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "3fdce2b36aafb1db9136bbe2a13c1970f68758658b0f20cd71980e6bf247663b"
               }
             ],
             "committed": true
@@ -2597,9 +2597,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "6782cf537f96176fe5b0f1d860c8cc7d9d1a58e30c506d9b33232cf4a1af67d7"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "6782cf537f96176fe5b0f1d860c8cc7d9d1a58e30c506d9b33232cf4a1af67d7"
               }
             ],
             "committed": true
@@ -2887,9 +2887,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "a31c2c03a879b7ac03f8ce6e29dbf3e72a64f119984596ce084f996947872d56"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "a31c2c03a879b7ac03f8ce6e29dbf3e72a64f119984596ce084f996947872d56"
               }
             ],
             "committed": true
@@ -3216,9 +3216,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "2d817209658abedb57f2ec0cb71bcd1c517ca860c71421d8c729f3e702139503"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "2d817209658abedb57f2ec0cb71bcd1c517ca860c71421d8c729f3e702139503"
               }
             ],
             "committed": true
@@ -3633,9 +3633,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "6248483c2eaac05f7def1a4ce6e2e3426fb78d93700505ec085e15dfee14b636"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "6248483c2eaac05f7def1a4ce6e2e3426fb78d93700505ec085e15dfee14b636"
               }
             ],
             "committed": true
@@ -4036,9 +4036,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "7c4b6f5ad434cb056bc8babdec6305e8097824a7fb6e639e2212c0ae8385360f"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "7c4b6f5ad434cb056bc8babdec6305e8097824a7fb6e639e2212c0ae8385360f"
               }
             ],
             "committed": true
@@ -5087,14 +5087,14 @@
             ],
             "hits": [
               {
-                "id": "b_1",
-                "path": "a.md",
+                "_id": "b_1",
+                "_path": "a.md",
                 "old_raw": "See [alpha](/x.md) and [beta](/x.md#Section).",
                 "new_raw": "See [alpha](/y.md) and [beta](/y.md#Section)."
               },
               {
-                "id": "b_2",
-                "path": "a.md",
+                "_id": "b_2",
+                "_path": "a.md",
                 "old_raw": "- item with [gamma](/x.md)",
                 "new_raw": "- item with [gamma](/y.md)"
               }
@@ -5120,9 +5120,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "8e45c86afd2d7cf63af5a89a159b92877b1b1a85dfadcfa397342bcf316aeff1"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "8e45c86afd2d7cf63af5a89a159b92877b1b1a85dfadcfa397342bcf316aeff1"
               }
             ],
             "committed": true
@@ -5943,14 +5943,14 @@
             ],
             "hits": [
               {
-                "id": "b_1",
-                "path": "a.md",
+                "_id": "b_1",
+                "_path": "a.md",
                 "old_raw": "See [alpha](/x.md) and [beta](/x.md#Section).",
                 "new_raw": "See [alpha](/z.md) and [beta](/z.md#Section)."
               },
               {
-                "id": "b_2",
-                "path": "a.md",
+                "_id": "b_2",
+                "_path": "a.md",
                 "old_raw": "- item with [gamma](/x.md)",
                 "new_raw": "- item with [gamma](/z.md)"
               }
@@ -5976,9 +5976,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "ad036cb8b4d7878f7a152c1f0e096c12349f7152eda31b6b0dce2310109b8ea0"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "ad036cb8b4d7878f7a152c1f0e096c12349f7152eda31b6b0dce2310109b8ea0"
               }
             ],
             "committed": true

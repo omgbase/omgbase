@@ -4,16 +4,16 @@
   "checks": [
     {
       "kind": "query",
-      "query": "select path from docs where path == \"/practitioners/isaac-newton.md\"",
+      "query": "from docs where _path == \"/practitioners/isaac-newton.md\"",
       "hits": [
         {
-          "path": "/practitioners/isaac-newton.md"
+          "_path": "/practitioners/isaac-newton.md"
         }
       ]
     },
     {
       "kind": "query",
-      "query": "select path from docs where path == \"/practitioners/newton.md\"",
+      "query": "from docs where _path == \"/practitioners/newton.md\"",
       "hits": []
     },
     {
@@ -47,7 +47,7 @@
               "op": "move",
               "target": {
                 "kind": "document",
-                "path": "/practitioners/newton.md"
+                "_path": "/practitioners/newton.md"
               },
               "to": "practitioners/isaac-newton.md"
             }

@@ -203,7 +203,7 @@ export interface ErrorOutcome {
 
 export interface ApplyOutcome {
   results: { ids: string[]; removed?: string[]; merged_into?: string[] }[];
-  revisions: { id: string; path: string; hash: string }[];
+  revisions: { _id: string; _path: string; _hash: string }[];
   diffs?: Record<string, { before: string; after: string }>;
   committed: boolean;
 }
@@ -391,7 +391,7 @@ export function toSpecOpset(o: Opset): Record<string, unknown> {
     version: o.version,
     kind: o.kind,
     target: o.target,
-    precondition: { id: o.precondition.id, path: o.precondition.path, base_revision: o.precondition.baseRevision, hash: o.precondition.hash },
+    precondition: { _id: o.precondition._id, _path: o.precondition._path, base_revision: o.precondition.baseRevision, _hash: o.precondition._hash },
     matcher_v: o.matcherV,
     ops: o.ops.map((p) => ({
       op: toSpecOp(p.op),
@@ -584,7 +584,7 @@ function runMacro(r: Runner, s: MacroStep): StepOutcome {
   let ops: Op[];
   let extra: Record<string, unknown> = {};
   const linkPlan = (p: LinkRepairPlan): Op[] => {
-    extra = { hits: p.hits.map((h) => ({ id: h.id, path: h.path, old_raw: h.oldRaw, new_raw: h.newRaw })), pairs: p.pairs };
+    extra = { hits: p.hits.map((h) => ({ _id: h._id, _path: h._path, old_raw: h.oldRaw, new_raw: h.newRaw })), pairs: p.pairs };
     return p.ops;
   };
   try {
@@ -611,7 +611,7 @@ function runMacro(r: Runner, s: MacroStep): StepOutcome {
 }
 
 // README §9 (3.0): the `docs` step runs the effect builders — `create`, `move
-// document`, `remove document`, `set`/`unset frontmatter.<k>` — through the
+// document`, `remove document`, `set`/`unset _frontmatter.<k>` — through the
 // Effect layer under the §6 reasons, exactly as the MCP tools and the `omg`
 // verbs do; the step resolves its `doc` ref itself (`doc_missing` when it names
 // nothing) and records `{ doc, path, committed }` (+ `dangling`/`retargeted`
@@ -622,14 +622,14 @@ function runDocs(r: Runner, s: DocsStep): StepOutcome {
   const docOf = (ref: string): SugarDoc => {
     const info = findDocByRef(r.store, r.repoId, ref);
     if (!info) throw new MutationError("doc_missing", `no document ${ref}`);
-    return { id: info.docId, path: info.path };
+    return { _id: info.docId, _path: info.path };
   };
   try {
     if (s.create) {
       const built = createEffects(s.create.path, s.create.markdown, s.create.frontmatter);
       const { receipt } = applySugar(r.store, request, built);
       const res = createdDoc(receipt!, (built.effects[0] as { path: string }).path);
-      return { doc: res.id, path: res.path, committed: res.committed };
+      return { doc: res._id, path: res._path, committed: res.committed };
     }
     if (s.move) {
       const doc = docOf(s.move.doc);
@@ -637,17 +637,17 @@ function runDocs(r: Runner, s: DocsStep): StepOutcome {
       const links = moveLinks(r.store, r.repoId, doc, s.move.to_path, retarget);
       const built = moveDocEffects(doc, s.move.to_path, retarget);
       applySugar(r.store, request, built);
-      return { doc: doc.id, path: (built.effects[0] as { to: string }).to, committed: true, dangling: links.dangling, retargeted: links.retargeted };
+      return { doc: doc._id, path: (built.effects[0] as { to: string }).to, committed: true, dangling: links.dangling, retargeted: links.retargeted };
     }
     if (s.delete) {
       const doc = docOf(s.delete.doc);
       applySugar(r.store, request, deleteDocEffects(doc));
-      return { doc: doc.id, path: doc.path, committed: true };
+      return { doc: doc._id, path: doc._path, committed: true };
     }
     const m = s.set_meta!;
     const doc = docOf(m.doc);
     applySugar(r.store, request, setMetaEffects(doc, m.set, m.unset));
-    return { doc: doc.id, path: doc.path, committed: true };
+    return { doc: doc._id, path: doc._path, committed: true };
   } catch (e) {
     return errorOutcome(e);
   }
@@ -667,7 +667,7 @@ function runPlan(r: Runner, s: PlanStep): StepOutcome {
     // 3.0: the opset is the planner's internal result; committing the content is
     // the `set content` effect (README §11.3), whose receipt is recorded.
     try {
-      const effects = [{ op: "set", target: { kind: "document", id: opset.target.id }, field: "content", value: s.content }];
+      const effects = [{ op: "set", target: { kind: "document", _id: opset.target._id }, field: "content", value: s.content }];
       out.apply = receiptOutcome(applyEffects(r.store, { repoId: r.repoId, docStore: r.docStore, effects, origin: s.origin ?? { actor: "agent:update" }, ts: s.ts }) as Receipt);
     } catch (e) {
       out.apply = errorOutcome(e);

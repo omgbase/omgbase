@@ -87,7 +87,7 @@ function renderHits(cli: Cli, from: string, to: string, hits: RetargetHit[]): nu
   }
   io.err(style.dim(`  plan — ${hits.length} block(s) would change; re-run with --apply to commit`));
   for (const h of hits) {
-    io.out(style.id(h.id));
+    io.out(style.id(h._id));
     for (const line of unifiedDiffLines(cli, h.oldRaw, h.newRaw)) io.out(line);
     io.out("");
   }

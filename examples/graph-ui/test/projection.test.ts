@@ -23,11 +23,16 @@ describe("projectionOf", () => {
     expect(TIMELINE.slice(...p.fields[2]!.span!)).toBe("phase");
   });
 
-  it("the starter: the title attribute is the label, the attributes are intrinsics", () => {
-    const p = projectionOf(parse(`select path, title from docs order by updated_at desc limit 40`), []);
-    expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["path", "intrinsic"], ["title", "intrinsic"]]);
-    expect(p.defaults).toEqual({ label: "title", shown: ["title"] });
-    // The authored title is a navigation off the `data` handle: a field.
+  it("the starter: the title attribute is the label, the attributes are intrinsics (5.0's `_title`, or 4.x's `title`)", () => {
+    const p = projectionOf(parse(`select _path, _title from docs order by _updated_at desc limit 40`), []);
+    expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["_path", "intrinsic"], ["_title", "intrinsic"]]);
+    expect(p.defaults).toEqual({ label: "_title", shown: ["_title"] });
+    // The authored title is a navigation off the `_data` handle: a field.
+    expect(projectionOf(parse(`select _path, t: _data.title from docs`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
+    // The 4.x spelling reads the same way.
+    const old = projectionOf(parse(`select path, title from docs order by updated_at desc limit 40`), []);
+    expect(old.fields.map((f) => [f.name, f.kind])).toEqual([["path", "intrinsic"], ["title", "intrinsic"]]);
+    expect(old.defaults).toEqual({ label: "title", shown: ["title"] });
     expect(projectionOf(parse(`select path, t: data.title from docs`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
   });
 
@@ -71,17 +76,24 @@ describe("projectionOf", () => {
     expect(rowFields([]).length).toBe(0);
   });
 
-  it("a bare `from docs` offers nothing: the envelope is all the rows carry", () => {
+  it("a bare `from docs` offers nothing: the envelope is all the rows carry (in either spelling)", () => {
+    expect(rowFields([{ _id: "d_1", _path: "/a.md" }, { _id: "d_2", _path: "/b.md" }])).toEqual([]);
     expect(rowFields([{ id: "d_1", path: "/a.md" }, { id: "d_2", path: "/b.md" }])).toEqual([]);
-    const p = projectionOf(parse(`from docs`), [{ id: "d_1", path: "/a.md" }]);
+    const p = projectionOf(parse(`from docs`), [{ _id: "d_1", _path: "/a.md" }]);
     expect(p).toEqual({ fields: [], defaults: { label: null, shown: [] } });
+    // A 5.0 row's `_title` is the computed title and the label; the walk's `$depth` an intrinsic.
+    const five = projectionOf(parse(`from docs where _path == "/a.md"`), [{ _id: "d_1", _path: "/a.md", _title: "A", phase: "plan", $depth: 0 }]);
+    expect(five.fields.map((f) => [f.name, f.kind])).toEqual([["_title", "intrinsic"], ["phase", "field"], ["$depth", "intrinsic"]]);
+    expect(five.defaults).toEqual({ label: "_title", shown: ["_title"] });
   });
 });
 
 describe("defaultChoice", () => {
   const f = (name: string) => ({ name, kind: "field" as const, span: null, source: "row" as const });
-  it("prefers title (the computed title attribute), then name; else the path", () => {
+  it("prefers _title (the computed title attribute; a 4.x server's title), then name; else the path", () => {
+    expect(defaultChoice([f("name"), f("_title")]).label).toBe("_title");
     expect(defaultChoice([f("name"), f("title")]).label).toBe("title");
+    expect(defaultChoice([f("title"), f("_title")]).label).toBe("_title");
     expect(defaultChoice([f("phase"), f("name")]).label).toBe("name");
     expect(defaultChoice([f("phase")])).toEqual({ label: null, shown: [] });
   });
@@ -102,7 +114,12 @@ describe("selectKind / isIntrinsic", () => {
     if (where.kind === "op") expect(where.sub.select.map((item) => selectKind(item))).toEqual([null]);
   });
 
-  it("isIntrinsic is a bare docs attribute, or a $name of OQX's own other than $it", () => {
+  it("isIntrinsic is a `_`-name (the 5.0 engine namespace), a bare 4.x docs attribute, or a $name of OQX's own other than $it", () => {
+    expect(isIntrinsic(exprOf("_title"))).toBe(true);
+    expect(isIntrinsic(exprOf("_updated_at"))).toBe(true);
+    expect(isIntrinsic(exprOf("_path"))).toBe(true);
+    expect(isIntrinsic(exprOf("$it._title"))).toBe(false);
+    expect(isIntrinsic(exprOf("_data.title"))).toBe(false); // the authored title, a navigation
     expect(isIntrinsic(exprOf("title"))).toBe(true);
     expect(isIntrinsic(exprOf("updated_at"))).toBe(true);
     expect(isIntrinsic(exprOf("$depth"))).toBe(true);

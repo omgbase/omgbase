@@ -8,6 +8,7 @@
 
 import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Transaction, type TransactionSpec } from "@codemirror/state";
 import { frameFor, type Frame } from "./feed.ts";
+import type { EngineNames } from "./paths.ts";
 
 export interface Hole { from: number; to: number }
 
@@ -69,9 +70,9 @@ export const holeOnly = EditorState.transactionFilter.of((tr): TransactionSpec |
 });
 
 /** The one transaction that swaps the frame: the whole document becomes
- * `frameFor(filter, { editing })`, the caret goes to the end of the hole. */
-export function reframeSpec(state: EditorState, filter: string, editing: boolean): TransactionSpec {
-  const framed = frameFor(filter, { editing });
+ * `frameFor(filter, { editing, names })`, the caret goes to the end of the hole. */
+export function reframeSpec(state: EditorState, filter: string, editing: boolean, names?: EngineNames): TransactionSpec {
+  const framed = frameFor(filter, { editing, ...(names ? { names } : {}) });
   return {
     changes: { from: 0, to: state.doc.length, insert: framed.text },
     selection: { anchor: framed.hole.to },
@@ -86,8 +87,8 @@ export function holeText(state: EditorState): string {
 }
 
 /** An EditorState over the frame for `filter` with the hole machinery installed (the element adds the view-side extensions). */
-export function holeState(filter: string, { editing = false }: { editing?: boolean } = {}, extensions: Extension = []): EditorState {
-  const framed = frameFor(filter, { editing });
+export function holeState(filter: string, { editing = false, names }: { editing?: boolean; names?: EngineNames } = {}, extensions: Extension = []): EditorState {
+  const framed = frameFor(filter, { editing, ...(names ? { names } : {}) });
   return EditorState.create({
     doc: framed.text,
     selection: { anchor: framed.hole.to },

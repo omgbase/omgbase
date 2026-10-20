@@ -3,6 +3,7 @@
 // lists exactly the ten minimal tools and refuses every other name, and assert
 // the tools it was asked for.
 import { describe, expect, it } from "vitest";
+import { OmgError } from "../src/lib/mcp-client.ts";
 import { fetchSyntax, runConsole } from "../src/lib/console.ts";
 import { fetchDocument, fetchDocumentAt } from "../src/lib/document.ts";
 import { fetchChanges } from "../src/lib/feed.ts";
@@ -15,19 +16,23 @@ import { ScriptedCaller, page } from "./scripted.ts";
 
 function minimalServer(): ScriptedCaller {
   return new ScriptedCaller({
-    docs_tree: () => ({ prefix: "/", depth: 1, total: { docs: 1, blocks: 2 }, entries: [{ id: "d_7", path: "/calc.md", kind: "doc", docs: 1, blocks: 2, updated_at: null }], truncated: false, cursor: null }),
-    docs_read: (a) => (a.at ? { id: "d_7", path: "/calc.md", rev: a.at, raw: "# Old\n", renderedHashMatch: true } : { id: "d_7", path: "/calc.md", rev: "r_7", properties: { frontmatter: {}, inline: {}, computed: {} }, raw: "# New\n", ids: ["b_1"], hashes: {}, parents: { b_1: null } }),
+    docs_tree: () => ({ prefix: "/", depth: 1, total: { docs: 1, blocks: 2 }, entries: [{ _id: "d_7", _path: "/calc.md", kind: "doc", docs: 1, blocks: 2, _updated_at: null }], truncated: false, cursor: null }),
+    docs_read: (a) => {
+      // 5.0: a document is addressed by `_id` or `_path`; a bare `id`/`path` is an argument error.
+      if ("id" in a || "path" in a) return new OmgError("filter_invalid", "`path` is not an argument — the document's path is `_path` (an engine field: the bare namespace is the user's)", { hint: "arguments" });
+      return a.at ? { _id: "d_7", _path: "/calc.md", rev: a.at, _raw: "# Old\n", renderedHashMatch: true } : { _id: "d_7", _path: "/calc.md", rev: "r_7", properties: { frontmatter: {}, inline: {}, computed: {} }, _raw: "# New\n", ids: ["b_1"], hashes: {}, parents: { b_1: null } };
+    },
     query: (a) => {
       const q = String(a.query);
-      if (q.startsWith("select rev,")) return page([{ id: "r_7", path: "/calc.md", rev: "r_7", seq: 1, ts: "t", origin: "observed", actor: null, reason: null, hash: "h", is_current: true, doc_id: "d_7" }]);
+      if (q.startsWith("select _rev,")) return page([{ _id: "r_7", _path: "/calc.md", _rev: "r_7", _seq: 1, _ts: "t", _origin: "observed", _actor: null, _reason: null, _hash: "h", _is_current: true, _doc_id: "d_7" }]);
       if (q.includes("from links")) return page([]);
-      return page([{ id: "d_7", path: "/calc.md" }]);
+      return page([{ _id: "d_7", _path: "/calc.md" }]);
     },
     query_syntax: () => ({ syntax: "# query" }),
     changes_since: () => ({ digests: [], cursor: 1, truncated: false, head: 1 }),
-    plan: () => ({ plan_id: "p1", preview: { revisions: [{ id: "d_7", path: "/calc.md", hash: "h2" }], summary: ["set frontmatter.k = 1 in /calc.md"], diffs: {} } }),
+    plan: () => ({ plan_id: "p1", preview: { revisions: [{ _id: "d_7", _path: "/calc.md", _hash: "h2" }], summary: ["set _frontmatter.k = 1 in /calc.md"], diffs: {} } }),
     execute: () => ({ plan_id: "p1", commit: "c_1", revisions: [], new_ids: {}, committed: true, summary: [] }),
-    version: () => ({ specs: { surface: "4.7" }, profile: "minimal" }),
+    version: () => ({ specs: { surface: "5.0" }, profile: "minimal" }),
   });
 }
 
@@ -35,13 +40,15 @@ describe("every feature over exactly the minimal ten", () => {
   it("tree, document, links, console + syntax, history + time travel, deleted list, feed, writes", async () => {
     const s = minimalServer();
     await fetchLevel(s, "/", null);                                   // 1. the tree
-    const doc = await fetchDocument(s, { path: "/calc.md" }, null);   // 2. the document (include_ids)
+    const doc = await fetchDocument(s, { _path: "/calc.md" }, null);  // 2. the document (include_ids)
+    expect(doc).toMatchObject({ id: "d_7", path: "/calc.md", raw: "# New\n" });
     await fetchLinks(s, doc.path, null);                              // 3. backlinks + outlinks
     await resolveWikilink(s, "salt", null);                           //    a [[wikilink]]
     await runConsole(s, "from docs", {});                             // 4. the console
     await fetchSyntax(s);                                             //    the syntax drawer
     const revs = await fetchRevisions(s, doc.id, null);               // 5. history
-    await fetchDocumentAt(s, { id: doc.id }, revs[0]!.rev, null);     //    time travel
+    expect(revs).toHaveLength(1);
+    await fetchDocumentAt(s, { _id: doc.id }, revs[0]!.rev, null);    //    time travel
     await fetchDeleted(s, null);                                      //    deleted documents
     await fetchChanges(s, null, null, 1);                             // 6. the live feed
     const plan = await planEffects(s, [setFrontmatterEffect(doc.path, "k", 1)], null); // 7. writes

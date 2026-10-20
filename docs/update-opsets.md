@@ -1,8 +1,8 @@
 # omgbase — Whole-Document Update Opsets
 
-**Status:** normative (as-built, 2026-10-12 — surface 4.0 / spec/mutate 3.0).
+**Status:** normative (as-built, 2026-10-12 — surface 4.0 / spec/mutate 3.0; row keys respelled to surface 5.0 / spec/mutate 4.0 "underscore = engine", 2026-10-20).
 
-> **Surfacing since 4.0.** The opset is no longer a wire object. `docs_update { id|path, content, reason? }` is sugar for the effect `set { target: document, field: "content", value }` and returns the plan's **receipt**; to inspect the identity decisions first, call `plan { effects: [that set] }` — the plan's `preview.identity[<doc id>]` carries exactly the opset's planning metadata (`matcher_v`, `summary`, `ops[{ op_index, disposition, blocks, confidence, reason, detail? }]`, `diagnostics`), outside the digest, and `omg update <doc> --dry-run` renders it as the plan lines below. `applyOpset`/`docsUpdate` and the `{ opset, plan, result }` result shape are gone; a `content` equal to the current bytes is zero effects and no commit. `planUpdate` remains the pure planning half the lowering calls.
+> **Surfacing since 4.0.** The opset is no longer a wire object. `docs_update { _id|_path, content, reason? }` is sugar for the effect `set { target: document, field: "content", value }` and returns the plan's **receipt**; to inspect the identity decisions first, call `plan { effects: [that set] }` — the plan's `preview.identity[<doc id>]` carries exactly the opset's planning metadata (`matcher_v`, `summary`, `ops[{ op_index, disposition, blocks, confidence, reason, detail? }]`, `diagnostics`), outside the digest, and `omg update <doc> --dry-run` renders it as the plan lines below. `applyOpset`/`docsUpdate` and the `{ opset, plan, result }` result shape are gone; a `content` equal to the current bytes is zero effects and no commit. `planUpdate` remains the pure planning half the lowering calls.
 **Depends on:** `reconciliation-spec.md` (matcher), `mutation-and-concurrency.md` (kernel, CAS, write protocol), `architecture.md` §2 (convergence, identity).
 
 > **The language-neutral specification is [`spec/mutate/README.md`](../spec/mutate/README.md) §7** (the opset shape, the top-level lowering as an exact rule — removes, updates with `child_ids`, LCS placement, retile — verification, the replace fallback, `apply_opset` preconditions), with executable fixtures in `spec/mutate/cases/plan.json` (`packages/core/corpus/mutate/spec.test.ts`, `MUTATE_SPEC_UPDATE=1`). When this document and the spec disagree, the spec's fixtures win.
@@ -37,12 +37,12 @@ An opset is a plan whose mutations are the existing six kernel ops (insert/updat
 interface Opset {
   version: 1;
   kind: "doc_update";
-  target: { id: DocId; path: string };          // the document, named as every row is (spec/surface §1.2)
+  target: { _id: DocId; _path: string };        // the document, named as every row is (spec/surface §1.2, 5.0: engine fields `_`-prefixed)
   precondition: {
-    id: DocId;
-    path: string;
-    baseRevision: RevId | null;   // current_rev at plan time
-    hash: Hex;                   // sha256 of the current rendered bytes (docs.file_hash) — the document's hash; `baseContentHash` before 3.0
+    _id: DocId;
+    _path: string;
+    baseRevision: RevId | null;   // current_rev at plan time (a role key — bare)
+    _hash: Hex;                  // sha256 of the current rendered bytes (docs.file_hash) — the document's `_hash`; `hash` through 4.11, `baseContentHash` before 3.0
   };
   matcherV: string;               // matcher version that produced the decisions
   ops: PlanOp[];                  // executable kernel ops + identity annotations
@@ -77,7 +77,7 @@ preserved: 37  updated: 4  moved: 2  created: 3  removed: 1  split: 0  merged: 0
 `planUpdate(store, repoId, rootPath, docRef, content) → Opset` (the pure planning half the `set content` lowering calls; on the wire it is `plan { effects: [set content] }` → `preview.identity`, and `omg update --dry-run` — `docs_update { dry_run: true }` was retired in surface 4.0, `docs_plan_update` in 3.0):
 
 1. Resolve `docRef` (id or path) to the existing document; load its current tree (`MutDoc`). A missing document is `doc_missing` — creation is `docs_create`'s job.
-2. Record the precondition: `baseRevision` (current_rev) and `hash` (sha256 of current rendered bytes).
+2. Record the precondition: `baseRevision` (current_rev) and `_hash` (sha256 of current rendered bytes).
 3. Parse the proposed `content` with the document's format adapter; split off frontmatter.
 4. **Reconcile** the proposed body against the current tree via the same `reconcileDocument` matcher the observation path uses (`03`), yielding a per-block assignment (carried or minted id) plus dispositions. No resurrection pool is consulted (see §6).
 5. **Lower** the assignment to kernel ops (§4).
@@ -122,7 +122,7 @@ When a lowering diverges, its diagnostic names **where**: the first differing by
 `applyOpset(store, req)` (and `docs.update` = plan + apply):
 
 1. Refuse a non-convergent plan (`plan_not_convergent`) — a plan that cannot reproduce the intended bytes is never applied silently.
-2. Validate the **precondition**: the document must still be at `baseRevision` and `hash`. A drift fails `stale_plan` (retriable), carrying current truth (`current: { revision, hash }`); the caller re-plans against the new state. This is the whole-document analogue of the block-level CAS in 04 §1.2.
+2. Validate the **precondition**: the document must still be at `baseRevision` and `_hash`. A drift fails `stale_plan` (retriable), carrying current truth (`current: { revision, _hash }`); the caller re-plans against the new state. This is the whole-document analogue of the block-level CAS in 04 §1.2.
 3. Replay the opset's kernel ops through `apply` (the single write path: file-CAS, atomic write, known-id identity threading, one commit).
 
 `docs_update { dry_run: true }` returns `{ opset, plan, result: null }` — the plan without executing (the planner call; the removed `docs_plan_update` was this).

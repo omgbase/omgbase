@@ -59,15 +59,15 @@ export interface OpResult {
   ids: string[];
 }
 
-/** One touched document in an apply result (spec/mutate §4, 2.0): its row
- *  attributes `id`, `path` (the storage form here; the surface roots it) and
- *  `hash` — the hex sha256 of the rendered bytes, i.e. the hash the committed
+/** One touched document in an apply result (spec/mutate §4, 2.0; 4.0 "underscore = engine"): its row
+ *  attributes `_id`, `_path` (the storage form here; the surface roots it) and
+ *  `_hash` — the hex sha256 of the rendered bytes, i.e. the hash the committed
  *  revision carries (a dry run reports the hash it would carry). The same
  *  three keys a `changes_since` revision carries. */
 export interface ApplyRevision {
-  id: string;
-  path: string;
-  hash: string;
+  _id: string;
+  _path: string;
+  _hash: string;
 }
 
 export interface ApplyResult {
@@ -345,7 +345,7 @@ export class ChangesetPlanner {
       // preconditions and its ingest is guarded by `path_taken` (`base: null`).
       const base = this.bases.get(docId) ?? null;
       diffs[d.path] = { before: this.before.get(docId) ?? "", after };
-      revisions.push({ id: docId, path: d.path, hash: sha256(after).toString("hex") });
+      revisions.push({ _id: docId, _path: d.path, _hash: sha256(after).toString("hex") });
       if (base) preconditions.push({ id: docId, ...base });
       effects.push({ kind: "ingest_known", docId, path: d.path, rendered: after, mutDoc: d, priorIds: this.priorIds.get(docId) ?? new Set(), base });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a

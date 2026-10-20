@@ -23,20 +23,20 @@ describe("textSearch — FTS5", () => {
     const repoId = setup();
     const { hits } = textSearch(store!, repoId, "identity");
     expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0]!.text).toContain("identity");
+    expect(hits[0]!._text).toContain("identity");
   });
 
   it("matches across documents and reports the path", () => {
     const repoId = setup();
     const { hits } = textSearch(store!, repoId, "WAL");
-    expect(hits[0]!.path).toBe("b.md");
+    expect(hits[0]!._path).toBe("b.md");
   });
 
   it("supports FTS phrase queries", () => {
     const repoId = setup();
     const { hits } = textSearch(store!, repoId, '"shingle indexes"');
     expect(hits.length).toBe(1);
-    expect(hits[0]!.text).toContain("shingle");
+    expect(hits[0]!._text).toContain("shingle");
   });
 
   it("re-ingest updates the index (no stale hits)", () => {

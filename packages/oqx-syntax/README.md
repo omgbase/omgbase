@@ -126,7 +126,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | template literals | `string.template.oqx` (the backticks and the text; escapes as above) | `string.template` | `` `${title} (${era})` `` (0.21; may span lines) |
 | interpolation delimiters | `punctuation.section.interpolation.oqx` | `delimiter.interpolation` | the `${` and `}` of an interpolation — the source between them is ordinary OQX, braces balanced (a `{ … }` block, a nested literal) |
 | bindings | `variable.other.binding.oqx` | `variable.binding` | `${0}` (the tagged-template form) |
-| intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$stop` — any `$name` (OQX's own; omgbase's attributes `id`/`path`/… are plain identifiers) |
+| intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$stop` — any `$name` (OQX's own; omgbase's engine names `_id`/`_path`/`_title`/… are plain identifiers — surface 5.0's `_` prefix is part of the identifier, not a sigil) |
 | lift / outer reference | `keyword.operator.lift.oqx` | `operator.lift` | `^budget` `^name:` |
 | aliases | `variable.other.alias.oqx` | `identifier.alias` | `label:` |
 | builtin functions / methods | `support.function.builtin.oqx`, `support.function.method.oqx` | `predefined.function`, `predefined.method` | `size(…)` `entries(…)` `.lower()` `.matches(…)` |

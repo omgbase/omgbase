@@ -2,15 +2,16 @@
 // highlighting from @omgbase/oqx-syntax, in which only the hole — the `where`
 // predicate — can be edited. Idle with no filter it is the plain two-line query,
 //
-//   select path, title, updated_at from docs
-//   order by updated_at desc limit 25
+//   select _path, _title, _updated_at from docs
+//   order by _updated_at desc limit 25
 //
-// — focusing it (a click anywhere) opens the `where ` line with the caret in
+// (the bare `path, title, updated_at` against a 3.x/4.x server — the `names`
+// property, lib/paths.ts) — focusing it (a click anywhere) opens the `where ` line with the caret in
 // the empty hole right after the keyword,
 //
-//   select path, title, updated_at from docs
+//   select _path, _title, _updated_at from docs
 //   where ⟨hole⟩
-//   order by updated_at desc limit 25
+//   order by _updated_at desc limit 25
 //
 // and the line stays while there is a filter, or while the field is focused
 // with an empty hole (the caret needs somewhere to be); blurring with an empty
@@ -43,6 +44,7 @@ import { StreamLanguage, defaultHighlightStyle, syntaxHighlighting } from "@code
 import { tags } from "@lezer/highlight";
 import { oqxStreamParser } from "@omgbase/oqx-syntax/codemirror";
 import { frameFor } from "../lib/feed.ts";
+import { NAMES_5, type EngineNames } from "../lib/paths.ts";
 import { holeField, holeState, holeText, reframeSpec, type Hole } from "../lib/hole.ts";
 
 export interface FilterDetail { value: string }
@@ -86,6 +88,8 @@ export class OqxFramedFilter extends LitElement {
   @property() value = "";
   @property({ type: Boolean, reflect: true }) invalid = false;
   @property() placeholder = "";
+  /** The engine names the frame spells (`_path`/`_title`/`_updated_at` from surface 5.0, bare before — lib/paths.ts `namesFor`); the frame is rebuilt when they change. */
+  @property({ attribute: false }) names: EngineNames = NAMES_5;
 
   /** Whether the hole is empty (drives the clear button; set from `value` before a render and from the editor's edits). */
   @state() private empty = true;
@@ -97,13 +101,13 @@ export class OqxFramedFilter extends LitElement {
   get editor(): EditorView | null { return this.view; }
 
   /** The hole's current range in the editor's document (UTF-16 offsets). */
-  get hole(): Hole { const h = this.view?.state.field(holeField) ?? frameFor(this.value).hole; return { from: h.from, to: h.to }; }
+  get hole(): Hole { const h = this.view?.state.field(holeField) ?? frameFor(this.value, { names: this.names }).hole; return { from: h.from, to: h.to }; }
 
   /** Whether the `where` line is shown. */
-  get where(): boolean { return this.view?.state.field(holeField).where ?? frameFor(this.value).where; }
+  get where(): boolean { return this.view?.state.field(holeField).where ?? frameFor(this.value, { names: this.names }).where; }
 
   /** What the field shows: the whole framed query. */
-  get text(): string { return this.view?.state.doc.toString() ?? frameFor(this.value).text; }
+  get text(): string { return this.view?.state.doc.toString() ?? frameFor(this.value, { names: this.names }).text; }
 
   private decorations(state: EditorState): DecorationSet {
     const hole = state.field(holeField);
@@ -118,12 +122,12 @@ export class OqxFramedFilter extends LitElement {
 
   /** Focus opens the `where` line (an empty idle frame has none); the caret lands in the hole. */
   private onFocus(view: EditorView): void {
-    if (!view.state.field(holeField).where) view.dispatch(reframeSpec(view.state, "", true));
+    if (!view.state.field(holeField).where) view.dispatch(reframeSpec(view.state, "", true, this.names));
   }
 
   /** Blur applies; an empty hole closes the `where` line. */
   private onBlur(view: EditorView): void {
-    if (view.state.field(holeField).where && holeText(view.state) === "") view.dispatch(reframeSpec(view.state, "", false));
+    if (view.state.field(holeField).where && holeText(view.state) === "") view.dispatch(reframeSpec(view.state, "", false, this.names));
     this.emit("filter-change");
   }
 
@@ -139,7 +143,7 @@ export class OqxFramedFilter extends LitElement {
       // CodeMirror mounts its style sheets in the root it is told about; inside a shadow root that must be explicit.
       root: this.renderRoot as ShadowRoot,
       parent,
-      state: holeState(this.value, { editing: false }, [
+      state: holeState(this.value, { editing: false, names: this.names }, [
           history(),
           keymap.of([
             { key: "Enter", run: () => { this.emit("filter-change"); return true; } },
@@ -159,7 +163,7 @@ export class OqxFramedFilter extends LitElement {
             if (!u.docChanged) return;
             this.empty = this.holeText() === "";
             // The hole emptied while nobody is typing in it (a value from outside): the where line goes too (not during this update).
-            if (this.empty && !u.view.hasFocus && u.state.field(holeField).where) queueMicrotask(() => { const v = this.view; if (v && !v.hasFocus && v.state.field(holeField).where && holeText(v.state) === "") v.dispatch(reframeSpec(v.state, "", false)); });
+            if (this.empty && !u.view.hasFocus && u.state.field(holeField).where) queueMicrotask(() => { const v = this.view; if (v && !v.hasFocus && v.state.field(holeField).where && holeText(v.state) === "") v.dispatch(reframeSpec(v.state, "", false, this.names)); });
             this.emit("filter-input");
           }),
       ]),
@@ -168,6 +172,8 @@ export class OqxFramedFilter extends LitElement {
 
   protected override updated(changed: Map<PropertyKey, unknown>): void {
     if (!this.view) return;
+    // A new server spells the frame differently: rebuild it around the hole's text.
+    if (changed.has("names") && changed.get("names") !== undefined) this.setHole(this.holeText());
     // The page keeps the trimmed value; a trailing space mid-typing is not a reason to rewrite the field.
     else if (changed.has("value") && this.value !== this.holeText().trim()) this.setHole(this.value);
   }
@@ -185,7 +191,7 @@ export class OqxFramedFilter extends LitElement {
   /** Replace the whole document with the frame around `value` (bypasses the hole filter); the where line stays open while focused. */
   private setHole(value: string): void {
     if (!this.view) return;
-    this.view.dispatch(reframeSpec(this.view.state, value, this.view.hasFocus));
+    this.view.dispatch(reframeSpec(this.view.state, value, this.view.hasFocus, this.names));
   }
 
   private emit(name: "filter-input" | "filter-change"): void {
@@ -199,7 +205,7 @@ export class OqxFramedFilter extends LitElement {
   private clear(): void {
     if (!this.view) return;
     this.view.focus();
-    this.view.dispatch(reframeSpec(this.view.state, "", true));
+    this.view.dispatch(reframeSpec(this.view.state, "", true, this.names));
     this.empty = true;
     this.emit("filter-change");
   }

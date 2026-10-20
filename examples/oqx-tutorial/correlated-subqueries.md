@@ -3,7 +3,7 @@
 # OQX tutorial · 4. Correlated subqueries: exists, count, collect
 
 The step up from flat filters: ask about the blocks or nodes **inside** each
-document. A subquery like `nodes exists { … }` is *correlated* — evaluated once
+document. A subquery like `_nodes exists { … }` is *correlated* — evaluated once
 per candidate document, over that document's own nodes.
 
 ## "documents that contain a matching node"
@@ -11,7 +11,7 @@ per candidate document, over that document's own nodes.
 Which documents have an **open** (unchecked) task somewhere in them?
 
 ```console
-$ omg query 'from docs where nodes exists { where kind == "md:task" and not attrs.checked }'
+$ omg query 'from docs where _nodes exists { where _kind == "md:task" and not checked }'
 d_b089t54  /lab/2026-01-notes.md
 d_w18c2st  /lab/2026-02-notes.md
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
@@ -32,7 +32,7 @@ on the substance reference pages — so asking for substances with open tasks
 returns nothing (`no hits`, still exit 0):
 
 ```console
-$ omg query 'from docs where type == "substance" and nodes exists { where kind == "md:task" and not attrs.checked }'
+$ omg query 'from docs where type == "substance" and _nodes exists { where _kind == "md:task" and not checked }'
   no hits
 ```
 
@@ -41,13 +41,13 @@ $ omg query 'from docs where type == "substance" and nodes exists { where kind =
 Both halves apply per document — "lab notes that still have open work":
 
 ```console
-$ omg query 'from docs where type == "lab-note" and nodes exists { where kind == "md:task" and not attrs.checked }'
+$ omg query 'from docs where type == "lab-note" and _nodes exists { where _kind == "md:task" and not checked }'
 d_b089t54  /lab/2026-01-notes.md
 d_w18c2st  /lab/2026-02-notes.md
 ```
 
 (`count { … }` in filter position means the same as `exists` — non-empty — and
-also lets you compare, e.g. `nodes count { where kind == "md:task" } >= 3`.)
+also lets you compare, e.g. `_nodes count { where _kind == "md:task" } >= 3`.)
 
 ## `none { }` — "no matching node" and "every"
 
@@ -56,7 +56,7 @@ same as `!… exists { … }`). Substances with no task at all — salt drops ou
 because its supply list *is* a task list, even though every item is checked:
 
 ```console
-$ omg query 'from docs where type == "substance" and nodes none { where kind == "md:task" }'
+$ omg query 'from docs where type == "substance" and _nodes none { where _kind == "md:task" }'
 d_0vsapzt  /substances/mercury.md
 d_1rren8z  /substances/philosophers-stone.md
 d_prj3j7a  /substances/prima-materia.md
@@ -67,7 +67,7 @@ d_5zmf9f7  /substances/sulphur.md
 "no task is open", and now salt qualifies:
 
 ```console
-$ omg query 'from docs where type == "substance" and nodes none { where kind == "md:task" and not attrs.checked }'
+$ omg query 'from docs where type == "substance" and _nodes none { where _kind == "md:task" and not checked }'
 d_0vsapzt  /substances/mercury.md
 d_1rren8z  /substances/philosophers-stone.md
 d_prj3j7a  /substances/prima-materia.md
@@ -82,9 +82,9 @@ result. This projects each lab note together with its open-task texts as a
 nested list (`--jsonl` to see the structure):
 
 ```console
-$ omg query 'select open: nodes collect { select text: value where kind == "md:task" and not attrs.checked } from docs where type == "lab-note"' --jsonl
-{"id":"d_b089t54","path":"/lab/2026-01-notes.md","open":[{"text":"Repeat the series with copper"},{"text":"Plot mass gain against heating time"},{"text":"Tabulate the metal sulphides by colour"}]}
-{"id":"d_w18c2st","path":"/lab/2026-02-notes.md","open":[{"text":"Assay cycle 1 and cycle 4 crops for iron"},{"text":"Write the plateau result up for the coagulation note"}]}
+$ omg query 'select open: _nodes collect { select text: _value where _kind == "md:task" and not checked } from docs where type == "lab-note"' --jsonl
+{"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","open":[{"text":"Repeat the series with copper"},{"text":"Plot mass gain against heating time"},{"text":"Tabulate the metal sulphides by colour"}]}
+{"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","open":[{"text":"Assay cycle 1 and cycle 4 crops for iron"},{"text":"Write the plateau result up for the coagulation note"}]}
 ```
 
 ## Scoping to a section
@@ -94,7 +94,7 @@ substring). The reference pages state open questions as prose bullets under an
 "Open questions" heading:
 
 ```console
-$ omg query 'from blocks where type == "list_item" and under_heading("Open questions")'
+$ omg query 'from blocks where _type == "list_item" and under_heading("Open questions")'
 b_5wn6bqe  /substances/philosophers-stone.md
 b_k176dfc  /substances/philosophers-stone.md
 b_c1ks39r  /substances/prima-materia.md
@@ -102,11 +102,11 @@ b_sjxw7ds  /substances/prima-materia.md
 ```
 
 The same reach via node structure: a block's enclosing section is a node, so
-`section exists { where name == "Open questions" }` selects the identical items —
+`_section exists { where _name == "Open questions" }` selects the identical items —
 two routes to one section range:
 
 ```console
-$ omg query 'from blocks where type == "list_item" and section exists { where name == "Open questions" }'
+$ omg query 'from blocks where _type == "list_item" and _section exists { where _name == "Open questions" }'
 b_5wn6bqe  /substances/philosophers-stone.md
 b_k176dfc  /substances/philosophers-stone.md
 b_c1ks39r  /substances/prima-materia.md

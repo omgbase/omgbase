@@ -192,7 +192,7 @@ type Args = Record<string, unknown> & { dry_run?: boolean };
 type Legacy = (ws: Ws, a: Args) => unknown;
 
 function blockMissing(value: string): EngineError {
-  return new EngineError("block_missing", `no block with id ${JSON.stringify(value)}`, { data: { id: value } });
+  return new EngineError("block_missing", `no block with id ${JSON.stringify(value)}`, { data: { _id: value } });
 }
 function resolveBlockRef(ws: Ws, ref: string): string {
   const r = resolveRef(ws.store, ws.repoId, ref);
@@ -212,10 +212,10 @@ function docIdOfBlock(ws: Ws, id: string): string | undefined {
   return (ws.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(id) as { doc_id: string } | undefined)?.doc_id;
 }
 function locateDoc(ws: Ws, a: Args): string {
-  const id = a.id as string | undefined;
-  const path = a.path as string | undefined;
-  const given = { ...(id !== undefined ? { id } : {}), ...(path !== undefined ? { path } : {}) };
-  const missing = (v: string) => new EngineError("doc_missing", `no document with id or path ${JSON.stringify(v)}`, { data: given });
+  const id = a._id as string | undefined;
+  const path = a._path as string | undefined;
+  const given = { ...(id !== undefined ? { _id: id } : {}), ...(path !== undefined ? { _path: path } : {}) };
+  const missing = (v: string) => new EngineError("doc_missing", `no document with _id or _path ${JSON.stringify(v)}`, { data: given });
   const byId = id !== undefined ? findDoc(ws.store, { docId: id }) : null;
   if (id !== undefined && (!byId || byId.repoId !== ws.repoId)) throw missing(id);
   const byPath = path !== undefined ? findDoc(ws.store, { repoId: ws.repoId, path }) : null;
@@ -227,8 +227,8 @@ function resolveSectionHeading(ws: Ws, docId: string, docPath: string, section: 
   const rows = ws.store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL").all(docId) as { block_id: string; doc_id: string; text: string }[];
   const matches = rows.filter((r) => normalizeText(r.text) === needle);
   const shown = referencePath(docPath);
-  if (matches.length === 0) throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, path: shown } });
-  if (matches.length > 1) throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(section)} matches ${matches.length} headings in ${shown}; pass the heading's id to blocks_append`, { data: { section, path: shown, candidates: matches.map((m) => ({ id: m.block_id, doc_id: m.doc_id })) } });
+  if (matches.length === 0) throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, _path: shown } });
+  if (matches.length > 1) throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(section)} matches ${matches.length} headings in ${shown}; pass the heading's id to blocks_append`, { data: { section, _path: shown, candidates: matches.map((m) => ({ _id: m.block_id, _doc_id: m.doc_id })) } });
   return matches[0]!.block_id;
 }
 function legacyApply(ws: Ws, ops: Op[], reason: string, dryRun?: boolean) {
@@ -243,7 +243,7 @@ const LEGACY: Record<string, Legacy> = {
     return legacyApply(ws, ops, "blocks_insert", a.dry_run);
   },
   blocks_update: (ws, a) => {
-    const block = resolveBlockRef(ws, a.id as string);
+    const block = resolveBlockRef(ws, a._id as string);
     const expect = (a.expect as Record<string, string> | undefined) ?? (() => { const h = pinHash(ws, block); return h ? { content_hash: h } : undefined; })();
     const attrs = a.checked !== undefined ? { checked: a.checked as boolean } : undefined;
     const ops: Op[] = [{ op: "update", block, ...(a.markdown !== undefined ? { markdown: a.markdown as string } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
@@ -260,7 +260,7 @@ const LEGACY: Record<string, Legacy> = {
   },
   blocks_remove: (ws, a) => legacyApply(ws, [{ op: "remove", blocks: (a.blocks as string[]).map((b) => resolveBlockRef(ws, b)) } as Op], "blocks_remove", a.dry_run),
   blocks_split: (ws, a) => {
-    const block = resolveBlockRef(ws, a.id as string);
+    const block = resolveBlockRef(ws, a._id as string);
     return legacyApply(ws, [{ op: "split", block, at: a.at as number[], expect: { content_hash: pinHash(ws, block) ?? "" } } as Op], "blocks_split", a.dry_run);
   },
   blocks_merge: (ws, a) => {
@@ -268,7 +268,7 @@ const LEGACY: Record<string, Legacy> = {
     return legacyApply(ws, [{ op: "merge", blocks, ...(a.separator !== undefined ? { separator: a.separator } : {}) } as Op], "blocks_merge", a.dry_run);
   },
   blocks_check: (ws, a) => {
-    const blocks = (a.ids as string[]).map((b) => resolveBlockRef(ws, b));
+    const blocks = (a._ids as string[]).map((b) => resolveBlockRef(ws, b));
     const checked = (a.checked as boolean | undefined) ?? true;
     const ops: Op[] = checked
       ? tasksComplete(ws.store, blocks)
@@ -276,21 +276,21 @@ const LEGACY: Record<string, Legacy> = {
     return legacyApply(ws, ops, "blocks_check", a.dry_run);
   },
   nodes_set: (ws, a) => {
-    const known = ws.store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(a.id, ws.repoId);
-    if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(a.id)}`, { data: { id: a.id } });
-    return legacyApply(ws, nodeSet(ws.store, a.id as string, a.prop as string, a.value as string), "nodes_set", a.dry_run);
+    const known = ws.store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(a._id, ws.repoId);
+    if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(a._id)}`, { data: { _id: a._id } });
+    return legacyApply(ws, nodeSet(ws.store, a._id as string, a.prop as string, a.value as string), "nodes_set", a.dry_run);
   },
   blocks_append: (ws, a) => {
-    const block = resolveBlockRef(ws, a.id as string);
+    const block = resolveBlockRef(ws, a._id as string);
     const row = ws.store.db
       .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
       .get(block) as { type: string; format: string | null; children: number } | undefined;
-    if (!row) throw blockMissing(a.id as string);
+    if (!row) throw blockMissing(a._id as string);
     let ops: Op[];
     if (row.type === "heading") ops = sectionsAppend(block, a.text as string);
     else if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) ops = [{ op: "insert", to: { parent: block, at: "end" }, markdown: a.text as string } as Op];
     else {
-      throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, { data: { id: block, type: row.type } });
+      throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, { data: { _id: block, _type: row.type } });
     }
     return legacyApply(ws, ops, "blocks_append", a.dry_run);
   },
@@ -350,14 +350,14 @@ const SCENARIOS: Scenario[] = [
   { tool: "blocks_insert", args: { to: "b_1", markdown: "x" } },
   { tool: "blocks_insert", args: { to: "processes/calcination.md", markdown: "x", expect: { parent_children_hash: "00" } } },
   { tool: "blocks_insert", args: { to: "nope.md", markdown: "x" } },
-  { tool: "blocks_update", args: { id: "b_1", markdown: "The art of transformation, revised." } },
-  { tool: "blocks_update", args: { id: "b_1", markdown: "First para.\n\nSecond para.\n" } },
-  { tool: "blocks_update", args: { id: "b_56", checked: true } },
-  { tool: "blocks_update", args: { id: "b_52", checked: false } },
-  { tool: "blocks_update", args: { id: "b_56", markdown: "- [ ] Pre-fire crucibles again", checked: true } },
-  { tool: "blocks_update", args: { id: "b_1", markdown: "x", expect: { content_hash: "00" } } },
-  { tool: "blocks_update", args: { id: "b_1", markdown: "Guarded.", expect: { content_hash: "cfe406f7c3a7fd71e90c28015168bc1cfee0111e5f624425d9c4223c6c5a11a7" } } },
-  { tool: "blocks_update", args: { id: "b_999", markdown: "x" } },
+  { tool: "blocks_update", args: { _id: "b_1", markdown: "The art of transformation, revised." } },
+  { tool: "blocks_update", args: { _id: "b_1", markdown: "First para.\n\nSecond para.\n" } },
+  { tool: "blocks_update", args: { _id: "b_56", checked: true } },
+  { tool: "blocks_update", args: { _id: "b_52", checked: false } },
+  { tool: "blocks_update", args: { _id: "b_56", markdown: "- [ ] Pre-fire crucibles again", checked: true } },
+  { tool: "blocks_update", args: { _id: "b_1", markdown: "x", expect: { content_hash: "00" } } },
+  { tool: "blocks_update", args: { _id: "b_1", markdown: "Guarded.", expect: { content_hash: "cfe406f7c3a7fd71e90c28015168bc1cfee0111e5f624425d9c4223c6c5a11a7" } } },
+  { tool: "blocks_update", args: { _id: "b_999", markdown: "x" } },
   { tool: "blocks_move", args: { blocks: ["b_7"], to: "b_4", at: "start" } },
   { tool: "blocks_move", args: { blocks: ["b_29", "b_30"], to: "index.md", at: { before: "b_2" } } },
   { tool: "blocks_move", args: { blocks: ["b_5"], to: "lab/2026-01-notes.md" } },
@@ -366,25 +366,25 @@ const SCENARIOS: Scenario[] = [
   { tool: "blocks_remove", args: { blocks: ["b_47", "b_58"] } },
   { tool: "blocks_remove", args: { blocks: ["b_4", "b_5", "b_5"] } },
   { tool: "blocks_remove", args: { blocks: ["b_999"] } },
-  { tool: "blocks_split", args: { id: "b_1", at: [98] } },
-  { tool: "blocks_split", args: { id: "b_1", at: [0] } },
+  { tool: "blocks_split", args: { _id: "b_1", at: [98] } },
+  { tool: "blocks_split", args: { _id: "b_1", at: [0] } },
   { tool: "blocks_merge", args: { blocks: ["b_43", "b_44"] } },
   { tool: "blocks_merge", args: { blocks: ["b_43", "b_44"], separator: "\n\n" } },
   { tool: "blocks_merge", args: { blocks: ["b_1", "b_43"] } },
-  { tool: "blocks_check", args: { ids: ["b_56", "b_57"] } },
-  { tool: "blocks_check", args: { ids: ["b_52"], checked: false } },
-  { tool: "blocks_check", args: { ids: ["b_1"] } },
-  { tool: "nodes_set", args: { id: "n_c7ebbf77d614", prop: "name", value: "Calcination" } },
-  { tool: "nodes_set", args: { id: "n_9e25b3a6f1e2", prop: "value", value: "substances/mercury.md" } },
-  { tool: "nodes_set", args: { id: "n_nope", prop: "name", value: "x" } },
-  { tool: "blocks_append", args: { id: "b_29", text: "Bench notes are dated by month.\n" } },
-  { tool: "blocks_append", args: { id: "b_4", text: "- quintessence\n" } },
-  { tool: "blocks_append", args: { id: "b_1", text: "x" } },
-  { tool: "docs_append", args: { path: "processes/calcination.md", section: "Products", text: "- calcined tin → white putty powder\n" } },
-  { tool: "docs_append", args: { path: "texts/mutus-liber.md", text: "## Addendum\n\nAppended text.\n" } },
-  { tool: "docs_append", args: { id: "d_16", text: "Trailing line.\n" } },
-  { tool: "docs_append", args: { path: "processes/calcination.md", section: "Nope", text: "x" } },
-  { tool: "docs_append", args: { path: "nope.md", text: "x" } },
+  { tool: "blocks_check", args: { _ids: ["b_56", "b_57"] } },
+  { tool: "blocks_check", args: { _ids: ["b_52"], checked: false } },
+  { tool: "blocks_check", args: { _ids: ["b_1"] } },
+  { tool: "nodes_set", args: { _id: "n_c7ebbf77d614", prop: "name", value: "Calcination" } },
+  { tool: "nodes_set", args: { _id: "n_9e25b3a6f1e2", prop: "value", value: "substances/mercury.md" } },
+  { tool: "nodes_set", args: { _id: "n_nope", prop: "name", value: "x" } },
+  { tool: "blocks_append", args: { _id: "b_29", text: "Bench notes are dated by month.\n" } },
+  { tool: "blocks_append", args: { _id: "b_4", text: "- quintessence\n" } },
+  { tool: "blocks_append", args: { _id: "b_1", text: "x" } },
+  { tool: "docs_append", args: { _path: "processes/calcination.md", section: "Products", text: "- calcined tin → white putty powder\n" } },
+  { tool: "docs_append", args: { _path: "texts/mutus-liber.md", text: "## Addendum\n\nAppended text.\n" } },
+  { tool: "docs_append", args: { _id: "d_16", text: "Trailing line.\n" } },
+  { tool: "docs_append", args: { _path: "processes/calcination.md", section: "Nope", text: "x" } },
+  { tool: "docs_append", args: { _path: "nope.md", text: "x" } },
   { tool: "links_retarget", args: { from_target: "nigredo", to_target: "processes/magnum-opus.md" } },
   { tool: "links_retarget", args: { from_target: "zzz-nothing", to_target: "a.md" } },
   { tool: "links_retarget", args: { from_target: "salt", to_target: "substances/salt.md", path_glob: "lab/*" } },
@@ -412,8 +412,8 @@ async function migratedSide(tool: string, args: Args): Promise<Snapshot> {
   return snapshot(b, seed, outcome);
 }
 
-type Receipt = { plan_id: string; commit: string | null; revisions: { id: string; path: string; hash: string }[]; new_ids: Record<string, string>; committed: true; hits?: unknown; pairs?: unknown };
-type LegacyResult = { results: { ids: string[] }[]; revisions: { id: string; path: string; hash: string }[]; diffs?: Record<string, { before: string; after: string }>; committed: boolean; hits?: unknown; pairs?: unknown };
+type Receipt = { plan_id: string; commit: string | null; revisions: { _id: string; _path: string; _hash: string }[]; new_ids: Record<string, string>; committed: true; hits?: unknown; pairs?: unknown };
+type LegacyResult = { results: { ids: string[] }[]; revisions: { _id: string; _path: string; _hash: string }[]; diffs?: Record<string, { before: string; after: string }>; committed: boolean; hits?: unknown; pairs?: unknown };
 
 function withoutFix(payload: unknown): unknown {
   const p = payload as { data?: Record<string, unknown> };
@@ -472,7 +472,7 @@ async function compare(s: Scenario): Promise<void> {
   const preview = legacyDry.outcome.payload as LegacyResult;
   expect(preview.committed).toBe(false);
   for (const [path, diff] of Object.entries(preview.diffs ?? {})) expect(migrated.files[path.replace(/^\//, "")], path).toBe(diff.after);
-  expect(preview.revisions.map((r) => [r.id, r.path, r.hash])).toEqual(receipt.revisions.map((r) => [r.id, r.path, r.hash]));
+  expect(preview.revisions.map((r) => [r._id, r._path, r._hash])).toEqual(receipt.revisions.map((r) => [r._id, r._path, r._hash]));
 }
 
 describe("ADR-021 retirement (surface 4.0): the Receipt path equals the pre-4.0 commit footprint over the alchemy corpus", () => {
@@ -483,16 +483,16 @@ describe("ADR-021 retirement (surface 4.0): the Receipt path equals the pre-4.0 
 
 describe("the preview is `plan` and mints nothing (spec/surface §9 'dry runs consume minted ids', closed at 4.0)", () => {
   const PLANS: { tool: string; args: Record<string, unknown>; effects: unknown[] }[] = [
-    { tool: "blocks_insert", args: { to: "processes/calcination.md", markdown: "## Notes\n\nInserted at the end.\n" }, effects: [{ op: "insert", into: { kind: "document", path: "processes/calcination.md" }, at: "end", markdown: "## Notes\n\nInserted at the end.\n" }] },
-    { tool: "blocks_update", args: { id: "b_1", markdown: "First para.\n\nSecond para.\n" }, effects: [{ op: "set", target: { kind: "block", id: "b_1" }, field: "markdown", value: "First para.\n\nSecond para.\n" }] },
+    { tool: "blocks_insert", args: { to: "processes/calcination.md", markdown: "## Notes\n\nInserted at the end.\n" }, effects: [{ op: "insert", into: { kind: "document", _path: "processes/calcination.md" }, at: "end", markdown: "## Notes\n\nInserted at the end.\n" }] },
+    { tool: "blocks_update", args: { _id: "b_1", markdown: "First para.\n\nSecond para.\n" }, effects: [{ op: "set", target: { kind: "block", _id: "b_1" }, field: "markdown", value: "First para.\n\nSecond para.\n" }] },
     { tool: "docs_create", args: { path: "substances/gold.md", markdown: "# Gold\n\nThe goal.\n", frontmatter: { type: "substance" } }, effects: [{ op: "create", path: "substances/gold.md", markdown: "# Gold\n\nThe goal.\n", frontmatter: { type: "substance" } }] },
-    { tool: "docs_move", args: { path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" }, effects: [{ op: "move", target: { kind: "document", path: "texts/mutus-liber.md" }, to: "texts/silent-book.md" }] },
+    { tool: "docs_move", args: { _path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" }, effects: [{ op: "move", target: { kind: "document", _path: "texts/mutus-liber.md" }, to: "texts/silent-book.md" }] },
   ];
   for (const p of PLANS) {
     it(`${p.tool}: the plan's preview is the legacy dry run's, under symbols; the commit then takes the ids the legacy dry run burned`, async () => {
       const planned = await migratedSide("plan", { effects: p.effects, diffs: true });
       expect(planned.outcome.ok, JSON.stringify(planned.outcome.payload)).toBe(true);
-      const plan = planned.outcome.payload as { new_ids: { symbol: string }[]; preview: { diffs: Record<string, { before: string; after: string }>; revisions: { id: string; path: string; hash: string }[] } };
+      const plan = planned.outcome.payload as { new_ids: { symbol: string }[]; preview: { diffs: Record<string, { before: string; after: string }>; revisions: { _id: string; _path: string; _hash: string }[] } };
       expect(planned.mints, "a plan mints nothing").toEqual([]);
       expect((planned.projection.commits as unknown[]).length).toBe(20); // the corpus observation only: nothing committed
       // The symbols stand where the ids will be.
@@ -502,7 +502,7 @@ describe("the preview is `plan` and mints nothing (spec/surface §9 'dry runs co
       const receipt = committed.outcome.payload as Receipt;
       // The preview's diffs are the files the commit wrote; its revision hashes the Receipt's.
       for (const [path, diff] of Object.entries(plan.preview.diffs)) expect(committed.files[path.replace(/^\//, "")] ?? "", path).toBe(diff.after);
-      expect(plan.preview.revisions.map((r) => r.hash)).toEqual(receipt.revisions.map((r) => r.hash));
+      expect(plan.preview.revisions.map((r) => r._hash)).toEqual(receipt.revisions.map((r) => r._hash));
       // A `$new.n` revision is the created document; every symbol of the plan is realized by the commit.
       expect(Object.keys(receipt.new_ids).sort()).toEqual(plan.new_ids.map((s) => s.symbol).sort());
       if (p.tool === "blocks_insert") {
@@ -518,22 +518,22 @@ describe("the retired inputs are refused by name (spec/surface §4; never silent
   const MINIMAL: Record<string, Record<string, unknown>> = {
     apply: { effects: [] },
     blocks_insert: { to: "index.md", markdown: "x" },
-    blocks_update: { id: "b_1", markdown: "x" },
+    blocks_update: { _id: "b_1", markdown: "x" },
     blocks_move: { blocks: ["b_7"], to: "b_4" },
     blocks_remove: { blocks: ["b_47"] },
-    blocks_split: { id: "b_1", at: [1] },
+    blocks_split: { _id: "b_1", at: [1] },
     blocks_merge: { blocks: ["b_43", "b_44"] },
-    blocks_check: { ids: ["b_56"] },
-    nodes_set: { id: "n_c7ebbf77d614", prop: "name", value: "x" },
-    blocks_append: { id: "b_4", text: "- x" },
-    docs_append: { path: "index.md", text: "x" },
+    blocks_check: { _ids: ["b_56"] },
+    nodes_set: { _id: "n_c7ebbf77d614", prop: "name", value: "x" },
+    blocks_append: { _id: "b_4", text: "- x" },
+    docs_append: { _path: "index.md", text: "x" },
     links_retarget: { from_target: "a", to_target: "b" },
     links_repair: { repairs: [{ from: "a", to: "b" }] },
     docs_create: { path: "new.md", markdown: "x" },
-    docs_move: { path: "index.md", to_path: "x.md" },
-    docs_delete: { path: "index.md" },
-    docs_set_meta: { path: "index.md", set: { a: 1 } },
-    docs_update: { path: "index.md", content: "x" },
+    docs_move: { _path: "index.md", to_path: "x.md" },
+    docs_delete: { _path: "index.md" },
+    docs_set_meta: { _path: "index.md", set: { a: 1 } },
+    docs_update: { _path: "index.md", content: "x" },
   };
 
   it("`dry_run` on every write tool is filter_invalid pointing at `plan`, and nothing is written", async () => {
@@ -558,10 +558,10 @@ describe("the retired inputs are refused by name (spec/surface §4; never silent
     expect((both.payload as { message: string }).message).toMatch(/^`ops` is no longer an argument/);
     const none = await viaServer(ws, "apply", {});
     expect(none.payload).toMatchObject({ error: "filter_invalid", message: "`effects` is required (apply takes effects, expect?, reason?, repo?, select?)" });
-    const attrs = await viaServer(ws, "blocks_update", { id: "b_56", attrs: { checked: true } });
-    expect(attrs.payload).toMatchObject({ error: "filter_invalid", message: "`attrs` is no longer an argument — pass `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)" });
-    const nothing = await viaServer(ws, "blocks_update", { id: "b_56" });
-    expect(nothing.payload).toMatchObject({ error: "filter_invalid", message: "pass `markdown` and/or `checked` (blocks_update takes checked?, expect?, id, markdown?, repo?)" });
+    const attrs = await viaServer(ws, "blocks_update", { _id: "b_56", attrs: { checked: true } });
+    expect(attrs.payload).toMatchObject({ error: "filter_invalid", message: "`attrs` is no longer an argument — pass `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)" });
+    const nothing = await viaServer(ws, "blocks_update", { _id: "b_56" });
+    expect(nothing.payload).toMatchObject({ error: "filter_invalid", message: "pass `markdown` and/or `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)" });
     const applied = await viaServer(ws, "links_retarget", { from_target: "a", to_target: "b", applied: true });
     expect((applied.payload as { message: string }).message).toMatch(/^unknown argument `applied`/);
     expect(ws.store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
@@ -570,34 +570,34 @@ describe("the retired inputs are refused by name (spec/surface §4; never silent
 
 describe("the pinned behaviours of the migration (spec/mutate §10; spec/surface §9)", () => {
   it("blocks_update with `expect: {}` is completed by the planner where the legacy kernel path refused it", async () => {
-    const legacy = await legacySide("blocks_update", { id: "b_1", markdown: "x", expect: {} });
+    const legacy = await legacySide("blocks_update", { _id: "b_1", markdown: "x", expect: {} });
     expect(legacy.outcome.ok).toBe(false);
     expect(legacy.outcome.payload).toMatchObject({ error: "stale_expectation", message: "expect.content_hash required" });
-    const migrated = await migratedSide("blocks_update", { id: "b_1", markdown: "x", expect: {} });
+    const migrated = await migratedSide("blocks_update", { _id: "b_1", markdown: "x", expect: {} });
     expect(migrated.outcome.ok).toBe(true);
-    expect(migrated.outcome.payload).toMatchObject({ revisions: [{ id: "d_0", path: "/index.md" }], new_ids: {}, committed: true });
+    expect(migrated.outcome.payload).toMatchObject({ revisions: [{ _id: "d_0", _path: "/index.md" }], new_ids: {}, committed: true });
     // … exactly as the unguarded call (the pin is the live hash either way; the plan ids differ — the empty guard is a digested effect member).
-    const unguarded = await migratedSide("blocks_update", { id: "b_1", markdown: "x" });
+    const unguarded = await migratedSide("blocks_update", { _id: "b_1", markdown: "x" });
     const sans = (o: unknown) => { const { plan_id: _p, ...rest } = o as Record<string, unknown>; return rest; };
     expect(sans(migrated.outcome.payload)).toEqual(sans(unguarded.outcome.payload));
     expect(migrated.projection).toEqual(unguarded.projection);
     expect(migrated.mints).toEqual(unguarded.mints);
     // An order-only guard with `markdown` is the same case; a given content hash is still checked as given.
-    const pch = await migratedSide("blocks_update", { id: "b_1", markdown: "x", expect: { parent_children_hash: "00" } });
+    const pch = await migratedSide("blocks_update", { _id: "b_1", markdown: "x", expect: { parent_children_hash: "00" } });
     expect(pch.outcome.payload).toMatchObject({ error: "stale_expectation", message: "parent_children_hash mismatch" });
-    const stale = await migratedSide("blocks_update", { id: "b_1", markdown: "x", expect: { content_hash: "00" } });
+    const stale = await migratedSide("blocks_update", { _id: "b_1", markdown: "x", expect: { content_hash: "00" } });
     expect(stale.outcome.payload).toMatchObject({ error: "stale_expectation", data: { op_index: 0, block: "b_1", expected_content_hash: "00" } });
     expect((stale.outcome.payload as { data: Record<string, unknown> }).data).not.toHaveProperty("effect_index");
   });
 
   it("blocks_check naming a block twice is one write where the legacy path failed the second op", async () => {
-    const legacy = await legacySide("blocks_check", { ids: ["b_56", "b_56"] });
+    const legacy = await legacySide("blocks_check", { _ids: ["b_56", "b_56"] });
     expect(legacy.outcome.ok).toBe(false);
     expect(legacy.outcome.payload).toMatchObject({ error: "stale_expectation", data: { op_index: 1, block: "b_56" } });
-    const migrated = await migratedSide("blocks_check", { ids: ["b_56", "b_56", "b_57"] });
+    const migrated = await migratedSide("blocks_check", { _ids: ["b_56", "b_56", "b_57"] });
     expect(migrated.outcome.ok).toBe(true);
     // … and projects exactly as the deduplicated call.
-    const once = await migratedSide("blocks_check", { ids: ["b_56", "b_57"] });
+    const once = await migratedSide("blocks_check", { _ids: ["b_56", "b_57"] });
     expect(once.outcome.payload).toEqual(migrated.outcome.payload);
     expect(once.projection).toEqual(migrated.projection);
     expect(once.mints).toEqual(migrated.mints);
@@ -606,7 +606,7 @@ describe("the pinned behaviours of the migration (spec/mutate §10; spec/surface
 
   it("an empty block list is an argument error, not a malformed kernel op", async () => {
     const ws = workspace();
-    for (const [tool, arg] of [["blocks_move", "blocks"], ["blocks_remove", "blocks"], ["blocks_merge", "blocks"], ["blocks_check", "ids"]] as const) {
+    for (const [tool, arg] of [["blocks_move", "blocks"], ["blocks_remove", "blocks"], ["blocks_merge", "blocks"], ["blocks_check", "_ids"]] as const) {
       const r = await viaServer(ws, tool, { [arg]: [], ...(tool === "blocks_move" ? { to: "index.md" } : {}) });
       expect(r.ok).toBe(false);
       expect(r.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
@@ -630,11 +630,11 @@ describe("the document operations return the Receipt and commit through the buil
     expect(snap.outcome.ok, JSON.stringify(snap.outcome.payload)).toBe(true);
     const receipt = snap.outcome.payload as Receipt;
     expect(receipt.revisions).toHaveLength(1);
-    expect(receipt.revisions[0]).toMatchObject({ id: "d_20", path: "/substances/gold.md" });
+    expect(receipt.revisions[0]).toMatchObject({ _id: "d_20", _path: "/substances/gold.md" });
     expect(receipt.new_ids["$new.0"]).toBe("d_20");
     expect(Object.values(receipt.new_ids).slice(1).every((id) => id.startsWith("b_"))).toBe(true);
-    expect(receipt).not.toHaveProperty("id");
-    expect(receipt).not.toHaveProperty("path");
+    expect(receipt).not.toHaveProperty("_id");
+    expect(receipt).not.toHaveProperty("_path");
     expect(snap.files["substances/gold.md"]).toBe(composeFile(md, fm));
     expect(snap.last).toMatchObject({ reason: "create substances/gold.md" });
     expect(snap.last!.ops).toMatch(/"op":"create"/);
@@ -647,10 +647,10 @@ describe("the document operations return the Receipt and commit through the buil
   });
 
   it("docs_set_meta: the Receipt's one revision is the patched document, the bytes are the per-entry patch (spec/mutate 3.6: every untouched key byte-identical, `tags: [...]` kept), no body dispositions (store 14.2: every body block is `same`), reason `set_meta <path>`", async () => {
-    const snap = await migratedSide("docs_set_meta", { path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
+    const snap = await migratedSide("docs_set_meta", { _path: "substances/salt.md", set: { verified: false, reviewed: "2026-09" }, unset: ["tradition"] });
     expect(snap.outcome.ok).toBe(true);
     const receipt = snap.outcome.payload as Receipt;
-    expect(receipt.revisions).toEqual([{ id: "d_14", path: "/substances/salt.md", hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
+    expect(receipt.revisions).toEqual([{ _id: "d_14", _path: "/substances/salt.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
     expect(receipt.new_ids).toEqual({});
     // Per-entry (spec/mutate §11.3, 3.6): `verified`'s line is re-rendered in
     // place, `reviewed` is a new part after the last entry, `tradition`'s part
@@ -671,45 +671,45 @@ describe("the document operations return the Receipt and commit through the buil
     expect([...new Set(dispositionsOf(snap, receipt.commit!))]).toEqual([]);
     // Neither the head write nor the legacy re-ingest minted a block: the commit and the revision only.
     expect(snap.mints).toEqual(["c_20", "r_20"]);
-    const empty = await migratedSide("docs_set_meta", { path: "index.md" });
+    const empty = await migratedSide("docs_set_meta", { _path: "index.md" });
     expect((empty.outcome.payload as { message: string }).message).toContain("pass `set` and/or `unset` (docs_set_meta takes");
   });
 
   it("docs_move: the Receipt carries the rewritten sources' revisions plus `retargeted` and `dangling`; `retarget_inbound: false` leaves them as written", async () => {
-    const snap = await migratedSide("docs_move", { path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" });
+    const snap = await migratedSide("docs_move", { _path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" });
     expect(snap.outcome.ok).toBe(true);
-    const r = snap.outcome.payload as Receipt & { retargeted: { blocks: string[]; docs: string[] } | null; dangling: { path: string; block_id: string | null; target: string }[] };
+    const r = snap.outcome.payload as Receipt & { retargeted: { blocks: string[]; docs: string[] } | null; dangling: { _path: string; _block_id: string | null; target: string }[] };
     expect(r.committed).toBe(true);
     expect(r.retargeted).toEqual({ blocks: [expect.stringMatching(/^b_/)], docs: ["d_0"] });
     expect(r.dangling).toEqual([]);
-    expect(r.revisions).toEqual([{ id: "d_0", path: "/index.md", hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
+    expect(r.revisions).toEqual([{ _id: "d_0", _path: "/index.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
     expect(snap.files["texts/silent-book.md"]).toBe(CORPUS["texts/mutus-liber.md"]);
     expect(snap.files).not.toHaveProperty("texts/mutus-liber.md");
     expect(snap.files["index.md"]).toContain("[Mutus Liber](/texts/silent-book.md)");
     expect(snap.last).toMatchObject({ reason: "move texts/mutus-liber.md -> texts/silent-book.md" });
-    const kept = await migratedSide("docs_move", { path: "texts/mutus-liber.md", to_path: "texts/silent-book.md", retarget_inbound: false });
+    const kept = await migratedSide("docs_move", { _path: "texts/mutus-liber.md", to_path: "texts/silent-book.md", retarget_inbound: false });
     const k = kept.outcome.payload as typeof r;
     expect(k.retargeted).toBeNull();
     expect(k.revisions).toEqual([]);
-    expect(k.dangling.map((l) => [l.path, l.block_id, l.target])).toEqual([["/index.md", r.retargeted!.blocks[0], "/texts/mutus-liber.md"]]);
+    expect(k.dangling.map((l) => [l._path, l._block_id, l.target])).toEqual([["/index.md", r.retargeted!.blocks[0], "/texts/mutus-liber.md"]]);
     expect(k.commit).toMatch(/^c_/);
-    const taken = await migratedSide("docs_move", { path: "index.md", to_path: "texts/mutus-liber.md" });
+    const taken = await migratedSide("docs_move", { _path: "index.md", to_path: "texts/mutus-liber.md" });
     expect(taken.outcome.payload).toEqual({ error: "path_taken", message: "a document already exists at texts/mutus-liber.md", retriable: false, data: {} });
   });
 
   it("docs_delete: a tombstone advances no revision — the Receipt has the commit and no revision; the file is gone; reason `delete <path>`", async () => {
-    const snap = await migratedSide("docs_delete", { id: "d_16" });
+    const snap = await migratedSide("docs_delete", { _id: "d_16" });
     expect(snap.outcome.ok).toBe(true);
     expect(snap.outcome.payload).toMatchObject({ commit: "c_20", revisions: [], new_ids: {}, committed: true });
     expect(snap.files).not.toHaveProperty("texts/emerald-tablet.md");
     expect(snap.last).toMatchObject({ reason: "delete texts/emerald-tablet.md" });
     expect(snap.last!.ops).toMatch(/"op":"remove"/);
-    const missing = await migratedSide("docs_delete", { path: "nope.md" });
-    expect(missing.outcome.payload).toMatchObject({ error: "doc_missing", data: { path: "nope.md" } });
+    const missing = await migratedSide("docs_delete", { _path: "nope.md" });
+    expect(missing.outcome.payload).toMatchObject({ error: "doc_missing", data: { _path: "nope.md" } });
   });
 
   it("N sequential frontmatter patches compose to the bytes of one merged patch over every corpus document (the YAML emitter is idempotent on its own output)", () => {
-    // `docs_set_meta` is one `set`/`unset frontmatter.<k>` effect per key; each
+    // `docs_set_meta` is one `set`/`unset _frontmatter.<k>` effect per key; each
     // lowers as `composeFile(body, parse(previous) patched)`, so the result equals
     // the legacy single `composeFile(body, { ...fm, ...set } minus unset)` iff
     // `stringify ∘ parse` is the identity on what `stringify` wrote.

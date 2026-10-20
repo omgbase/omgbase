@@ -2,7 +2,7 @@
 // of an ordinary omgbase workspace — and the pure text rules: the declaration
 // line (`#tags` become tags), slugs and dated paths, the clock, and the tiny
 // frontmatter reader the history needs (`docs_read { at }` returns a past
-// revision's raw bytes and no properties).
+// revision's bytes as `_raw` and no properties).
 //
 //   /attn/focus.md                                type: /terms/types/attn-state.md — the Focus pointer:
 //                                                 focused_intent (an intent path | null), since (ISO), return_stack

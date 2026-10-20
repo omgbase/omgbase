@@ -96,8 +96,8 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     result = oqxRun(ws.store, repo.repoId, source);
   }
 
-  // Same renderer as `omg query`, in every mode: `<id>  <path>` lines, or a
-  // column table when the fence projects (a selected `text` shows as its first line).
+  // Same renderer as `omg query`, in every mode: `<_id>  <_path>` lines, or a
+  // column table when the fence projects (a selected `_text` shows as its first line).
   return renderOqxResult(cli, result);
 }
 

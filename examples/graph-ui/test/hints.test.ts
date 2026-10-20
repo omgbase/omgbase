@@ -20,13 +20,16 @@ describe("queryHints", () => {
     expect(queryHints(q("before, refs(after), owner")).map((h) => h.field)).toEqual(["before", "owner"]);
   });
 
-  it("stays quiet for refs(), blocks, dotted paths, OQX's $-names and structural relations", () => {
+  it("stays quiet for refs(), blocks, dotted paths, OQX's $-names and structural relations (in both spellings)", () => {
     for (const follow of [
       "refs(before)", "refs(^before)", "refs(before), refs(after)",
       "out_links", "doc.in_links", "children", "subsections", "$it.out_links", "$it.before",
       "out_links collect { from dst }", "in_links collect { from doc depth 2 }",
       "^docs collect { where after.contains(^path) }",
       "distinct refs(before), in_links collect { from doc where ^path in list(after) }",
+      "_out_links", "_in_links", "_children", "_subsections", "$it._out_links",
+      "_out_links collect { from _dst }", "_in_links collect { from _doc depth 2 }",
+      "distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }",
     ]) {
       expect(queryHints(q(follow)), follow).toEqual([]);
     }
@@ -49,6 +52,12 @@ describe("queryHints", () => {
     expect(queryHints(parse(`select p: "/" + path from docs`))[0]!.message).toBe("`path` is already `/`-rooted; use `path`");
     expect(slashPrefixedPaths(parse(`select x from links where ("/" + dst_path) in ^before`)).map((m) => m.ref)).toEqual(["dst_path"]);
     expect(queryHints(parse(`select p: "/" + dst_path from links`))[0]!.message).toBe("`dst_path` is already `/`-rooted; use `dst_path`");
+    // The 5.0 spellings: `_path`, `^_path`, `_dst_path`.
+    expect(queryHints(parse(`select _path from docs follow refs(before), _in_links collect { from _doc where ("/" + ^_path) in list(after) }`))[0]!.message).toBe("`_path` is already `/`-rooted; use `^_path`");
+    expect(queryHints(parse(`select p: "/" + _path from docs`))[0]!.message).toBe("`_path` is already `/`-rooted; use `_path`");
+    expect(slashPrefixedPaths(parse(`select x from links where ("/" + _dst_path) in ^before`)).map((m) => m.ref)).toEqual(["_dst_path"]);
+    expect(queryHints(parse(`select p: "/" + _title from docs`))).toEqual([]);
+    expect(queryHints(parse(`select _path from docs where _path == "a.md" || _path == ^^_path`))).toEqual([]);
     // A slash prefixed to something else is not a path; a literal is the server's to root.
     expect(queryHints(parse(`select p: "/" + title from docs`))).toEqual([]);
     expect(queryHints(parse(`select path from docs where path == "a.md" || path == ^^path`))).toEqual([]);

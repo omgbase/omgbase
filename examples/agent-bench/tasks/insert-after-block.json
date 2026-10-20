@@ -15,7 +15,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select id from blocks where path == \"/processes/magnum-opus.md\" and type == \"table\""
+          "query": "from blocks where _path == \"/processes/magnum-opus.md\" and _type == \"table\""
         }
       },
       {
@@ -26,12 +26,12 @@
               "op": "insert",
               "into": {
                 "kind": "document",
-                "path": "/processes/magnum-opus.md"
+                "_path": "/processes/magnum-opus.md"
               },
               "at": {
                 "after": {
                   "$result": 0,
-                  "$get": "hits.0.id"
+                  "$get": "hits.0._id"
                 }
               },
               "markdown": "The colours are those of the vessel, not of the matter."
@@ -42,5 +42,5 @@
     ],
     "final_text": "Inserted the paragraph after the stages table."
   },
-  "notes": "A read-then-write that needs a block id for the anchor."
+  "notes": "A read-then-write that needs a block id for the anchor: the query's hit envelope carries it as `_id` (surface 5.0; `select _id` would collapse onto the envelope, so the query projects nothing)."
 }

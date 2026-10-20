@@ -44,15 +44,11 @@ export function rootTarget(source: Expr): Target | null {
  *   • any `call` node (a function or method: unknown name, bad regex, wrong target…)
  *   • any nested block whose consumer is `single` (raises on 0 or >1 rows)
  *   • any `^`-escaped name: an `outer` reference or a `^name:` lift
- *   • a bare reserved docs basename (`id path updated_at hash raw`): as
- *     an `ident` at the ROOT scope when the target is `docs`, or as `doc.<name>`
- *     on any target at any depth (the reach-through row is a doc)
  *   • a bare root name (`docs blocks nodes links revisions`, root-row.ts) read
- *     as a property: as an `ident` at the ROOT scope when it is not a relation
- *     of the target's rows (`blocks` on blocks, `nodes` on nodes, any on links),
- *     as an `ident` at any depth below (the rows there are unknown), or as
- *     `<head>.<name>` unless the head is a reach-through whose row has that
- *     relation (`doc.nodes`, `doc.blocks`, `block.nodes`, `section.blocks`)
+ *     as a property: as an `ident` at any depth (since 5.0 a bare root name is
+ *     never a relation — the relations are `_blocks`, `_nodes`, `_revisions`),
+ *     or as `<head>.<name>` (`_doc.blocks`, `_block.nodes`: the loud error of a
+ *     bare target name on the reached row)
  *
  * A residual made only of comparisons, logical operators, `in`/ranges, `!`,
  * literals, bindings and plain reads (including exists/none/count/collect/first
@@ -76,8 +72,8 @@ function opMayRaise(op: OpNode, target: Target, root: boolean): boolean {
   return exprMayRaise(op.receiver, target, root) || subMayRaise(op.sub, target);
 }
 
-// Inside a block the rows are a different scope (a relation's rows), so a bare
-// reserved name is an ordinary read there — only `doc.<reserved>` still raises.
+// Inside a block the rows are a different scope (a relation's rows); `root` is
+// false there, so a bare root name raises whatever the target.
 function subMayRaise(s: Subquery, target: Target): boolean {
   if (s.from.some((e) => exprMayRaise(e, target, false))) return true;
   if (s.where && whereMayRaise(s.where, target, false)) return true;

@@ -9,16 +9,17 @@
 //      follows the STRINGS, and the server refuses the hit (`filter_invalid`,
 //      "a hit must be a document, block, node or edge row"). `follow
 //      refs(before)` resolves the references to the documents. Not flagged:
-//      `refs(…)`, a destination block (`out_links collect { from dst }`), a
-//      dotted path (`doc.out_links`, `$it.out_links`), a `$`-name (OQX's own),
-//      and the structural relations (`out_links`, `in_links`, `children`,
-//      `subsections`, …) which yield rows by themselves.
+//      `refs(…)`, a destination block (`_out_links collect { from _dst }`), a
+//      dotted path (`$it._out_links`, 4.x's `doc.out_links`), a `$`-name
+//      (OQX's own), and the structural relations (`_out_links`, `_in_links`,
+//      `_children`, `_subsections`, … and their bare 4.x spellings) which
+//      yield rows by themselves.
 //   2. the path form: every path the server returns is `/`-rooted (spec/surface
-//      §1 "Paths"), so `"/" + path` (or `"/" + ^path`, `"/" + dst_path`) adds a
-//      second slash to an already rooted path and never matches an authored
-//      reference — use the attribute alone. A literal (`path == "a.md"`) and
-//      another attribute (`path == ^^path`) are not flagged: the server roots a
-//      literal itself.
+//      §1 "Paths"), so `"/" + _path` (or `"/" + ^_path`, `"/" + _dst_path`;
+//      the bare `path`/`dst_path` on 4.x) adds a second slash to an already
+//      rooted path and never matches an authored reference — use the attribute
+//      alone. A literal (`_path == "a.md"`) and another attribute (`_path ==
+//      ^^_path`) are not flagged: the server roots a literal itself.
 
 import type { Expr, Query, Span } from "@omgbase/oqx";
 import { visit } from "@omgbase/oqx";
@@ -29,7 +30,7 @@ export type HintKind = "follow-bare-field" | "path-already-rooted";
 export interface Hint {
   kind: HintKind;
   /** The code the hint is about: the field a destination names, or the path
-   * attribute as spelled (`path`, `^path`, `^^dst_path`). */
+   * attribute as spelled (`_path`, `^_path`, `^^_dst_path`). */
   field: string;
   /** Code-point span of the offending source. */
   span: Span;
@@ -70,22 +71,23 @@ export function queryHints(query: Query | null): Hint[] {
 // ---- the path form ---------------------------------------------------------
 
 interface PathMention {
-  /** The attribute as spelled (`path`, `^path`, `^^dst_path`). */
+  /** The attribute as spelled (`_path`, `^_path`, `^^_dst_path`). */
   ref: string;
   span: Span;
 }
 
-// The path reads: the row's `path` on every target; a link's destination path, `dst_path`.
-const PATH_ATTRIBUTES = new Set(["path", "dst_path"]);
+// The path reads: the row's `_path` on every target; a link's destination path,
+// `_dst_path` — and the bare 4.x spellings of both.
+const PATH_ATTRIBUTES = new Set(["_path", "_dst_path", "path", "dst_path"]);
 
-/** A bare path attribute (`path`, `^path`, `^^dst_path`, …) and its spelling, else null. */
+/** A bare path attribute (`_path`, `^_path`, `^^_dst_path`, …) and its spelling, else null. */
 export function pathRef(expr: Expr): string | null {
   if (expr.kind === "ident" && PATH_ATTRIBUTES.has(expr.name)) return expr.name;
   if (expr.kind === "outer" && PATH_ATTRIBUTES.has(expr.name)) return `${"^".repeat(expr.levels)}${expr.name}`;
   return null;
 }
 
-/** `"/" + path` (a `/` literal prefixed to a path attribute), else null. */
+/** `"/" + _path` (a `/` literal prefixed to a path attribute), else null. */
 export function slashPrefixedPath(expr: Expr): string | null {
   if (expr.kind !== "binary" || expr.op !== "+" || expr.left.kind !== "lit" || expr.left.value !== "/") return null;
   return pathRef(expr.right);

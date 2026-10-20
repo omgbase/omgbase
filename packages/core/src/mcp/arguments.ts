@@ -14,12 +14,14 @@ import { canonicalJson } from "../mutate/canonical.js";
 // order, optional ones marked `?`; a tool without arguments "takes no
 // arguments"):
 //   unknown argument `q`; did you mean `query`? (blocks_search takes limit?, q, repo?)
-//   `doc` is no longer an argument — pass `id` or `path` (docs_read takes …)
+//   `id` is not an argument — the engine field is `_id` (the bare namespace is the user's); pass `_id` (docs_read takes …)
+//     — with `data.fix` the same call respelled (spec/surface §4, 5.0: no tolerance for a bare `id`/`path`/`ids`)
+//   `doc` is no longer an argument — pass `_id` or `_path` (docs_read takes …)
 //   `dry_run` is no longer an argument — preview with `plan { effects: [...] }` (blocks_insert takes …)
 //   `query` is required (query takes …)
 //   `limit` must be an integer (query takes …)
-//   pass id or path (docs_read takes …)                     — a locator tool called with neither
-//   id "d_x" and path "/a.md" name different documents (…)   — both given, disagreeing
+//   pass _id or _path (docs_read takes …)                     — a locator tool called with neither
+//   _id "d_x" and _path "/a.md" name different documents (…)   — both given, disagreeing
 
 /** One tool's argument shape: the zod raw shape it was registered with. */
 export type ArgShape = Record<string, z.ZodTypeAny>;
@@ -101,7 +103,12 @@ export function validateArguments(tool: string, shape: ArgShape, raw: unknown): 
   if (typeof raw !== "object" || Array.isArray(raw)) throw argumentError(tool, "arguments must be an object", shape);
   const args = raw as Record<string, unknown>;
   for (const key of Object.keys(args).sort(cmpBytes)) {
-    if (!(key in shape)) throw argumentError(tool, unknownArgumentMessage(key, shape), shape);
+    if (key in shape) continue;
+    // (5.0) A bare engine-field name where the tool takes its `_` spelling:
+    // the error carries the corrected call (every bare `id`/`path`/`ids` the
+    // call holds respelled at once), never a silent acceptance.
+    const fix = bareEngineArgument(key, shape) ? canonicalJson(respellEngineArguments(args, shape)) : undefined;
+    throw argumentError(tool, unknownArgumentMessage(key, shape), shape, fix);
   }
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(shape).sort(cmpBytes)) {
@@ -153,10 +160,28 @@ function issueMessage(key: string, schema: z.ZodTypeAny, issues: readonly { code
   return `\`${at}\` must be ${issue.expected !== undefined ? (expected[issue.expected] ?? issue.expected) : "valid"}`;
 }
 
+/** The bare engine-field names a tool may be called with by mistake (spec/surface §4, 5.0): each has its `_` spelling in the shape. */
+const BARE_ENGINE_ARGUMENTS: readonly string[] = ["id", "path", "ids", "paths"];
+
+/** Whether `key` is a bare engine-field name whose `_` spelling the tool takes. */
+export function bareEngineArgument(key: string, shape: ArgShape): boolean {
+  return BARE_ENGINE_ARGUMENTS.includes(key) && `_${key}` in shape;
+}
+
+/** The call with every bare engine-field argument respelled to its `_` form (the `fix` of the no-tolerance error). */
+export function respellEngineArguments(args: Record<string, unknown>, shape: ArgShape): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) out[bareEngineArgument(k, shape) ? `_${k}` : k] = v;
+  return out;
+}
+
 /**
- * What to say about an argument name the tool does not take. The names 3.0
- * retired are called out with their replacement (`doc` → `id`/`path`,
- * `block`/`node` → `id`, `heading` → `section`, `markdown` → `text`) when the
+ * What to say about an argument name the tool does not take. A bare engine
+ * field (`id`, `path`, `ids`) where the tool takes its `_` spelling is the
+ * no-tolerance error of 5.0 (spec/surface §4 "Arguments": the bare namespace is
+ * the user's, an engine field is matched by its exact name). The names 3.0
+ * retired are called out with their replacement (`doc` → `_id`/`_path`,
+ * `block`/`node` → `_id`, `heading` → `section`, `markdown` → `text`) when the
  * tool has the replacement, and so are the inputs 4.0 retired (spec/surface
  * §4; ADR-021's retirement release): `ops` on a tool that takes `effects`
  * (the kernel ops are a library/fixture contract), `dry_run` on any tool (the
@@ -166,8 +191,9 @@ function issueMessage(key: string, schema: z.ZodTypeAny, issues: readonly { code
 export function unknownArgumentMessage(key: string, shape: ArgShape): string {
   const has = (n: string) => n in shape;
   const retired = (replacement: string) => `\`${key}\` is no longer an argument — pass ${replacement}`;
-  if (key === "doc" && has("id") && has("path")) return retired("`id` or `path`");
-  if ((key === "block" || key === "node") && has("id")) return retired("`id`");
+  if (bareEngineArgument(key, shape)) return `\`${key}\` is not an argument — the engine field is \`_${key}\` (the bare namespace is the user's); pass \`_${key}\``;
+  if (key === "doc" && has("_id") && has("_path")) return retired("`_id` or `_path`");
+  if ((key === "block" || key === "node") && has("_id")) return retired("`_id`");
   if (key === "heading" && has("section")) return retired("`section` (the heading's text), or blocks_append with the heading's `id`");
   if (key === "markdown" && has("text")) return retired("`text`");
   if (key === "ops" && has("effects")) return RETIRED_OPS;

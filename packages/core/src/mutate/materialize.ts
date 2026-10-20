@@ -98,8 +98,8 @@ export function priorRenderedHash(db: Database, revId: string | null): Buffer | 
 function renderedBytes(store: Store, row: PendingRow): string | null {
   if (row.revId === null) return null;
   const at = readDocumentAtRevision(store, row.docId, row.revId);
-  if (!at || !sha256(at.raw).equals(row.renderedHash)) return null;
-  return at.raw;
+  if (!at || !sha256(at._raw).equals(row.renderedHash)) return null;
+  return at._raw;
 }
 
 export interface MaterializeOptions {

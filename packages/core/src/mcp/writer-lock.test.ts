@@ -76,7 +76,7 @@ describe("MCP write tools under the workspace writer lock", () => {
     expect(writerLockHeld(ws.omgbaseDir)).toBe(false);
     const { payload, isError } = await ws.call("docs_create", { path: "a.md", markdown: "# A\n" });
     expect(isError).toBe(false);
-    expect((payload.revisions as { path: string }[])[0]!.path).toBe("/a.md");
+    expect((payload.revisions as { _path: string }[])[0]!._path).toBe("/a.md");
     expect(seen).toEqual({ held: true, file: true });
     expect(writerLockHeld(ws.omgbaseDir)).toBe(false);
     expect(writerLockFree(ws.omgbaseDir)).toBe(true);
@@ -84,7 +84,7 @@ describe("MCP write tools under the workspace writer lock", () => {
     // The kernel's inner lock (apply's commit phase) re-enters the tool's: one
     // acquire, and the same outcome for a block-level write.
     seen = null;
-    const r2 = await ws.call("docs_append", { path: "notes.md", text: "more\n" });
+    const r2 = await ws.call("docs_append", { _path: "notes.md", text: "more\n" });
     expect(r2.isError).toBe(false);
     expect(seen).toEqual({ held: true, file: true });
     expect(existsSync(join(ws.omgbaseDir, "writer.lock"))).toBe(false);
@@ -115,8 +115,8 @@ describe("MCP write tools under the workspace writer lock", () => {
     const stats = () => (ws.store.db.prepare("SELECT path FROM file_stats WHERE repo_id = ? ORDER BY path").all(ws.repoId) as { path: string }[]).map((r) => r.path);
     expect(stats()).toEqual(["notes.md"]);
     expect((await ws.call("docs_create", { path: "b.md", markdown: "# B\n" })).isError).toBe(false);
-    expect((await ws.call("docs_set_meta", { path: "notes.md", set: { status: "active" } })).isError).toBe(false);
-    expect((await ws.call("docs_move", { path: "b.md", to_path: "c.md" })).isError).toBe(false);
+    expect((await ws.call("docs_set_meta", { _path: "notes.md", set: { status: "active" } })).isError).toBe(false);
+    expect((await ws.call("docs_move", { _path: "b.md", to_path: "c.md" })).isError).toBe(false);
     expect(stats()).toEqual(["c.md", "notes.md"]); // the moved path's old row is gone, the new one recorded
     // The sweep that follows sees the engine's own writes as fresh: nothing to re-ingest.
     const swept = freshnessSweep(ws.store, ws.repoId, ws.root);
@@ -146,7 +146,7 @@ describe("MCP write tools under the workspace writer lock", () => {
     expect(dry.payload.message).toMatch(/^could not acquire writer lock/);
 
     // Reads are unaffected by the held lock.
-    const read = await ws.call("docs_read", { path: "notes.md" });
+    const read = await ws.call("docs_read", { _path: "notes.md" });
     expect(read.isError).toBe(false);
 
     // The foreign holder's record is left alone (never stolen) …

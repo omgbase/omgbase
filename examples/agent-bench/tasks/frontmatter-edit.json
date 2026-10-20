@@ -4,7 +4,7 @@
   "checks": [
     {
       "kind": "query",
-      "query": "select verified from docs where path == \"/substances/philosophers-stone.md\"",
+      "query": "select verified from docs where _path == \"/substances/philosophers-stone.md\"",
       "hits": [
         {
           "verified": true
@@ -32,9 +32,9 @@
               "op": "set",
               "target": {
                 "kind": "document",
-                "path": "/substances/philosophers-stone.md"
+                "_path": "/substances/philosophers-stone.md"
               },
-              "field": "frontmatter.verified",
+              "field": "_frontmatter.verified",
               "value": true
             }
           ],

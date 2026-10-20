@@ -1,8 +1,8 @@
 // Store-backed equality indexes for the OQX engine (`DataContext.indexFor`):
 // when a nested block's receiver is a ROOT SCAN (`^docs`, `^links`,
 // a bare `docs` at the root scope) and its correlated or constant equality is on
-// a column or property SQLite can look up — `where path == ^^path`,
-// `where customer == ^path`, `where dst_id == ^id`, `where type == "order"` —
+// a column or property SQLite can look up — `where _path == ^^_path`,
+// `where customer == ^_path`, `where _dst_id == ^_id`, `where _type == "order"` —
 // the probe runs ONE prepared statement against the store's indexes instead of
 // materializing every row of the target and hashing it. The rows come back
 // exactly as the root scan constructs them (same columns, same `__path`, same
@@ -12,11 +12,12 @@
 //
 // Typed equality (OQX SEMANTICS §5) is preserved by probing per VALUE KIND:
 //
-//   • a text column (`id`, `path`, `type`, `kind`, `name`, `doc_id`, `dst_id`, …)
-//     matches a string probe by `= ?` (TEXT = TEXT, exact); a number, boolean,
-//     object or any other non-string probe matches NO row (the column holds
-//     strings or NULL and `5 == "5"` is false); an absent probe (`null`,
-//     `undefined`: `name == null`) is answered by the in-memory fallback below;
+//   • a text column (`_id`, `_path`, `_type`, `_kind`, `_name`, `_doc_id`,
+//     `_dst_id`, …) matches a string probe by `= ?` (TEXT = TEXT, exact); a
+//     number, boolean, object or any other non-string probe matches NO row (the
+//     column holds strings or NULL and `5 == "5"` is false); an absent probe
+//     (`null`, `undefined`: `_name == null`) is answered by the in-memory
+//     fallback below;
 //   • a document property (`customer`, `title`) matches a string probe only on
 //     a `type = 'string'` row (`val_text = ?`), a number probe only on a
 //     `type = 'number'` row (`val_num = ?`), a boolean only on a `type = 'bool'`
@@ -42,7 +43,6 @@ import type { RowIndex } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
 import type Database from "better-sqlite3";
 import type { Target } from "./sql/translate.js";
-import { NON_PROPERTY_NAMES, ROW_ATTRIBUTES } from "./sql/translate.js";
 import { COLS, FROM, FROM_BY_DOC, ORDER, guards, guardsByDoc } from "./sql/scan.js";
 import { storagePath } from "../core/paths.js";
 
@@ -70,16 +70,16 @@ export interface StoreIndexDeps {
  * `idx_edges_dst (dst_node, …)`; `path` on a joined target reaches the docs
  * `(repo_id, path)` key and then the target's `doc_id`/`src_doc` index. */
 const COLUMN_PROBES: Record<Target, Record<string, string>> = {
-  docs: { id: "d.doc_id = ?", path: "d.path = ?" },
-  blocks: { id: "b.block_id = ?", doc_id: "b.doc_id = ?", type: "b.type = ?", path: "d.path = ?" },
-  nodes: { id: "n.node_id = ?", doc_id: "n.doc_id = ?", kind: "n.kind = ?", name: "n.name = ?", path: "d.path = ?" },
+  docs: { _id: "d.doc_id = ?", _path: "d.path = ?" },
+  blocks: { _id: "b.block_id = ?", _doc_id: "b.doc_id = ?", _type: "b.type = ?", _path: "d.path = ?" },
+  nodes: { _id: "n.node_id = ?", _doc_id: "n.doc_id = ?", _kind: "n.kind = ?", _name: "n.name = ?", _path: "d.path = ?" },
   links: {
-    id: "e.edge_id = ?", doc_id: "e.src_doc = ?", dst_id: "e.dst_node = ?", path: "d.path = ?",
-    // `dst_path` is the destination document's path (deleted or not — the
+    _id: "e.edge_id = ?", _doc_id: "e.src_doc = ?", _dst_id: "e.dst_node = ?", _path: "d.path = ?",
+    // `_dst_path` is the destination document's path (deleted or not — the
     // field reads `docs` by id without a liveness guard). A destination is
     // resolved within the edge's repo (spec/graph §3), where `(repo_id, path)`
     // is UNIQUE, so the probe is that one document; `?r` is the repo id.
-    dst_path: "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)",
+    _dst_path: "e.dst_node IN (SELECT doc_id FROM docs WHERE repo_id = ?r AND path = ?)",
   },
 };
 
@@ -95,15 +95,14 @@ function probeFor(target: Target, path: readonly string[]): Probe | null {
   const column = COLUMN_PROBES[target][key];
   if (column) return { kind: "column", sql: column };
   if (target !== "docs") return null;
-  // A docs property: any bare name the context reads through `docProp` — not a
-  // relation / handle (`out_links`, `data`, `frontmatter`, …), not the `format` column
-  // (not indexed), not an OQX `$` name, and of the engine attributes only
-  // `title` (the computed `$title` row, a scalar property the author's `title:`
-  // never reaches — `data.title` does): `raw`, `hash`, `updated_at`, `created_at` and `tags`
-  // (authored ∪ hashtags) have no index and are never property probes.
-  if (key === "title") return { kind: "property", key: "$title", source: "computed" };
-  if (key.startsWith("$") || key === "format") return null;
-  if (NON_PROPERTY_NAMES.docs.has(key) || ROW_ATTRIBUTES.docs.has(key)) return null;
+  // A docs property: any BARE name (spec/surface §1.2, 5.0: the author's data —
+  // `title`, `tags`, `layer`, …; an OQX `$` name is never a row read). Of the
+  // engine names only `_title` probes (the computed `$title` row, a scalar
+  // property): `_raw`, `_hash`, `_updated_at`, `_created_at`, `_tags` (authored
+  // ∪ hashtags), `_format` (an unindexed column), the handles and relations have
+  // no index and are never property probes.
+  if (key === "_title") return { kind: "property", key: "$title", source: "computed" };
+  if (key.startsWith("$") || key.startsWith("_")) return null;
   return { kind: "property", key, source: null };
 }
 
@@ -125,10 +124,10 @@ class StoreIndex implements RowIndex {
     if (v === null) return this.fallback(null);
     if (this.probe.kind === "column") {
       if (typeof v !== "string") return [];
-      // `path` / `dst_path` are the reference form in memory (`/a.md`,
+      // `_path` / `_dst_path` are the reference form in memory (`/a.md`,
       // spec/surface §1 "Paths"); the column holds the storage form. A rooted
       // probe is de-rooted; a bare one can equal no rooted path — no row.
-      if (this.path === "path" || this.path === "dst_path") return v.startsWith("/") ? this.column(storagePath(v)) : [];
+      if (this.path === "_path" || this.path === "_dst_path") return v.startsWith("/") ? this.column(storagePath(v)) : [];
       return this.column(v);
     }
     switch (typeof v) {
@@ -152,13 +151,13 @@ class StoreIndex implements RowIndex {
     return out.sort((a, b) => a - b);
   }
 
-  // A `path` probe on a joined target drives from the document (`FROM_BY_DOC`),
+  // A `_path` probe on a joined target drives from the document (`FROM_BY_DOC`),
   // every other column probe from the target's own index. `?r` in a probe is
   // the repo id, bound ahead of the value.
   private column(value: string): unknown[] {
     const t = this.target;
     const probe = (this.probe as { sql: string }).sql;
-    const byDoc = t !== "docs" && this.path === "path";
+    const byDoc = t !== "docs" && this.path === "_path";
     const g = byDoc ? guardsByDoc(t as Exclude<Target, "docs">, this.deps.repoId) : guards(t, this.deps.repoId);
     const from = byDoc ? FROM_BY_DOC[t as Exclude<Target, "docs">] : FROM[t];
     const params = probe.includes("?r") ? [this.deps.repoId, value] : [value];
@@ -200,7 +199,7 @@ class StoreIndex implements RowIndex {
 
 /** A store-backed `RowIndex` for the root scan of `target` on `path`, or
  * `undefined` when SQLite has no index for the path (per-target table above;
- * multi-segment paths; `format`, edge `predicate`/`field`, `tags`, …). */
+ * multi-segment paths; `_format`, edge `_predicate`/`_field`, `_tags`, …). */
 export function storeIndexFor(target: Target, path: readonly string[], deps: StoreIndexDeps): RowIndex | undefined {
   const probe = probeFor(target, path);
   return probe ? new StoreIndex(target, path[0]!, probe, deps) : undefined;
@@ -209,5 +208,5 @@ export function storeIndexFor(target: Target, path: readonly string[], deps: Sto
 /** The paths `storeIndexFor` answers from SQLite, per target (for tests and docs). */
 export function indexablePaths(target: Target): readonly string[] {
   const cols = Object.keys(COLUMN_PROBES[target]);
-  return target === "docs" ? [...cols, "title", "<property key>"] : cols;
+  return target === "docs" ? [...cols, "_title", "<property key>"] : cols;
 }

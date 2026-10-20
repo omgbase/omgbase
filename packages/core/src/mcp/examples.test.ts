@@ -52,15 +52,20 @@ const DESCRIPTION_BUDGET = 900;
  * `execute:0` (the same key, planned then executed by digest) — produce a
  * different head: `tags: [process, fire]` keeps its flow spelling instead of
  * being re-serialized as a block sequence, so those three digests moved once
- * more and are pinned here at their 3.6 values.
+ * more and were pinned at their 3.6 values. With spec/surface 5.0 / spec/mutate
+ * 4.0 ("underscore = engine") the rungs' effect fields are spelled
+ * `_frontmatter.<key>` / `_attrs.checked`, and the digest covers the effects as
+ * given — so `apply:0`, `apply:2`, `plan:0`, `plan:1` and `execute:0` moved
+ * again and are pinned here at their 5.0 values; `apply:1` (a pure `insert`)
+ * carries no attribute spelling and kept its digest.
  */
 export const PINNED_4_3: Record<string, string> = {
-  "apply:0": "a5cbfb807c865dc59e72fce0b9f9263d85d7b316a9e3c57f61886dac5cc72695",
-  "apply:1": "8b7827024a4569f93ca00b30ef6d1042302a81a2c85d88cce7137aa9a0487fdb",
-  "apply:2": "2cedd989a0b4ab67f54cc99e9673d6bb47c6906e43604cd674bd3bcb2aae0a65",
-  "plan:0": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
-  "plan:1": "70b41c26104eb9976be7691337c56f61bdae0512e73e69e161e8dd24a6b81979",
-  "execute:0": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
+  "apply:0": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
+  "apply:1": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
+  "apply:2": "28cc192bc8a37815a9120233f339bfad0e73b38747b40f06fa62ebdeda98336c",
+  "plan:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
+  "plan:1": "b6e46ff42fc70efe8204b91562ade768ec12c96d5b5de45b58d0ce52db9e95c5",
+  "execute:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
 };
 
 const PLACEHOLDER = /<[^>]*>/;

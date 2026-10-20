@@ -76,8 +76,8 @@ describe("the agent loop", () => {
       ...t,
       solution: {
         steps: [
-          { tool: "docs_append", args: { path: "/timeline/review.md", text: "Decisions deferred to spring are tracked in the March notes." }, expect_error: "sync_conflict" },
-          { tool: "docs_append", args: { path: "/timeline/review.md", text: "Decisions deferred to spring are tracked in the March notes." } },
+          { tool: "docs_append", args: { _path: "/timeline/review.md", text: "Decisions deferred to spring are tracked in the March notes." }, expect_error: "sync_conflict" },
+          { tool: "docs_append", args: { _path: "/timeline/review.md", text: "Decisions deferred to spring are tracked in the March notes." } },
         ],
         final_text: "appended after a retry",
       },
@@ -106,7 +106,7 @@ describe("the agent loop", () => {
 
   it("a check fails when the end state is wrong, naming what differs", async () => {
     const t = task("frontmatter-edit");
-    const wrong: Task = { ...t, solution: { steps: [{ tool: "docs_read", args: { path: "/index.md" } }], final_text: "did nothing" } };
+    const wrong: Task = { ...t, solution: { steps: [{ tool: "docs_read", args: { _path: "/index.md" } }], final_text: "did nothing" } };
     const { failures } = await drive(wrong);
     expect(failures.length).toBeGreaterThan(0);
     expect(failures[0]).toMatch(/hit 0\.verified = false ≠ true/);
@@ -121,9 +121,9 @@ describe("the agent loop", () => {
 });
 
 describe("substitute", () => {
-  it("replaces $result placeholders, with and without $get, anywhere in the args", () => {
-    const results = [{ plan_id: "p1", hits: [{ id: "b_1" }] }, "text"];
-    expect(substitute({ plan: { $result: 0 }, at: { after: { $result: 0, $get: "hits.0.id" } }, s: { $result: 1 }, list: [{ $result: 0, $get: "plan_id" }] }, results))
+  it("replaces $result placeholders, with and without $get (a hit's id is `hits.0._id`), anywhere in the args", () => {
+    const results = [{ plan_id: "p1", hits: [{ _id: "b_1", _path: "/a.md" }] }, "text"];
+    expect(substitute({ plan: { $result: 0 }, at: { after: { $result: 0, $get: "hits.0._id" } }, s: { $result: 1 }, list: [{ $result: 0, $get: "plan_id" }] }, results))
       .toEqual({ plan: results[0], at: { after: "b_1" }, s: "text", list: ["p1"] });
     expect(() => substitute({ $result: 3 }, results)).toThrow(/has not run/);
   });

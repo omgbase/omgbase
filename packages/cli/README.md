@@ -46,11 +46,11 @@ decisions.md  5 blocks  0s ago
 $ omg find sqlite
 b_v32ar6f  decisions.md#heading[3]  ADR-002 Embedded SQLite
 
-$ omg q 'from blocks where type == "task" && !attrs.checked'
+$ omg q 'from blocks where _type == "task" && !checked'
 b_24nr0y0  README.md
 b_36p2zw1  README.md
 
-$ omg q 'blocks count { where type == "task" && !attrs.checked }'
+$ omg q 'blocks count { where _type == "task" && !checked }'
 2
 
 $ omg outline README.md
@@ -72,7 +72,7 @@ ADR-002 Embedded SQLite
 `omg cat <path>` prints a document's exact bytes (frontmatter and all); given a block id it prints that block. Edits are structural mutations that update the file and the database together. The pipe is the changeset boundary — `--ids` emits block ids, `done -` reads them from stdin and completes them in one commit:
 
 ```console
-$ omg q 'from blocks where type == "task" && !attrs.checked' --ids | omg done -
+$ omg q 'from blocks where _type == "task" && !checked' --ids | omg done -
   ok committed · 1 document touched
 b_24nr0y0
 b_36p2zw1
@@ -182,7 +182,7 @@ The global `--server <cmd|url>` flag runs the same command against a **remote en
 Global flags are recognized anywhere on the line: `-C <dir>`, `--repo <slug>`, `--json`, `--jsonl`, `--ids`, `--stale`, `--no-color`, `--dry-run`, `--server <cmd|url>`, `-H <header>`, `--help`/`-h`, `--version`/`-V`.
 
 - Human output (default) is colorized on a TTY; `--no-color`, `NO_COLOR`, or a pipe degrades to plain text.
-- Query hits (`omg q`, `omg run`) print as `<id>  <path>` lines. When the query projects (`select …`), they print as an aligned table instead: a dim header row, the id first, then the path (unless the projection itself selects `path`), then the projected columns in `select` order. Strings and numbers are verbatim, an absent field is an empty cell, and a nested list/record is compact JSON clipped at 60 characters with `…`; `--jsonl` has the full values.
+- Query hits (`omg q`, `omg run`) print as `<_id>  <_path>` lines (the engine names are `_`-prefixed; a bare name is an authored key). When the query projects (`select …`), they print as an aligned table instead: a dim header row (`_id`, `_path`, then the projected keys), the id first, then the path (a projected `_id`/`_path` collapses onto the envelope), then the projected columns in `select` order. Strings and numbers are verbatim, an absent field is an empty cell, and a nested list/record is compact JSON clipped at 60 characters with `…`; `--jsonl` has the full values.
 - `--json` prints the library's result object verbatim as one JSON document (the same shape the MCP tools return). `--jsonl` flattens list results to one object per line; `--ids` prints bare ids/paths, one per line — pipe fuel for `omg cat -`, `omg show -`, `omg done -`.
 - `--dry-run` is global across every mutator: full validation and render, diffs printed, nothing committed.
 - Errors always go to stderr: `error[<code>]: <message>` plus any conflict payload, or the typed error object as JSON with `--json`.

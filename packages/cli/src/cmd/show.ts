@@ -28,14 +28,14 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
-    // The authored keys, merged (frontmatter + inline — the `data` view); the
-    // computed rows are rendered under their surface names (`title`/`tags`,
-    // spec/surface §1.2 — the store's `$title`/`$tags` keys never reach the
+    // The authored keys, merged (frontmatter + inline — the `_data` view); the
+    // computed rows are rendered under their surface names (`_title`/`_tags`,
+    // spec/surface §1.2, 5.0 — the store's `$title`/`$tags` keys never reach the
     // terminal) from the re-keyed `properties.computed` the read carries.
     const properties = Object.fromEntries(Object.entries(docPropertiesMerged(ws.store.db, resolved.docId)).filter(([k]) => !k.startsWith("$")));
     const computed = res.properties.computed ?? {};
     const payload = { kind: "document", ...res };
-    return { payload, render: () => renderDocCard(cli, res.path, properties, computed, links) };
+    return { payload, render: () => renderDocCard(cli, res._path, properties, computed, links) };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
@@ -87,8 +87,8 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, comp
     io.out(`  ${style.dim("properties")}`);
     for (const k of keys) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(fm[k])}`);
   }
-  // The computed rows under their surface names (`title`, `tags` — spec/surface
-  // §1.2), their own section so a computed title never masquerades as authored.
+  // The computed rows under their surface names (`_title`, `_tags` — spec/surface
+  // §1.2, 5.0), their own section so a computed title never masquerades as authored.
   const computedKeys = Object.keys(computed);
   if (computedKeys.length > 0) {
     io.out(`  ${style.dim("computed")}`);
@@ -96,25 +96,25 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, comp
   }
   if (links.out.length > 0) {
     io.out(`  ${style.dim("out links")}`);
-    for (const e of links.out) io.out(`    ${style.accent(e.predicate)} ${style.dim(render.g.arrow)} ${style.id(e.doc_id)} ${style.dim(`×${e.count}`)}`);
+    for (const e of links.out) io.out(`    ${style.accent(e._predicate)} ${style.dim(render.g.arrow)} ${style.id(e._doc_id)} ${style.dim(`×${e.count}`)}`);
   }
   if (links.in.length > 0) {
     io.out(`  ${style.dim("backlinks")}`);
-    for (const e of links.in) io.out(`    ${style.id(e.doc_id)} ${style.dim(render.g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
+    for (const e of links.in) io.out(`    ${style.id(e._doc_id)} ${style.dim(render.g.arrow)} ${style.accent(e._predicate)} ${style.dim(`×${e.count}`)}`);
   }
 }
 
 function renderBlockCard(cli: Cli, node: import("@omgbase/core").GetNode, history?: import("@omgbase/core").NodeChange[]): void {
   const { render, style, io } = cli;
-  io.out(`  ${render.typeGlyph(node.type)} ${style.bold(node.type)}  ${style.id(node.id)}`);
+  io.out(`  ${render.typeGlyph(node._type)} ${style.bold(node._type)}  ${style.id(node._id)}`);
   io.out(render.rule(40));
-  // The placement is flattened onto the row (3.0: `parent_id`/`ordinal`/`depth`); the line reads the same.
-  if (node.ordinal !== undefined) io.out(`  ${style.dim("placement")}  parent=${style.id(node.parent_id ?? "—")} ordinal=${node.ordinal} depth=${node.depth}`);
-  if (node.attrs && Object.keys(node.attrs).length > 0) {
+  // The placement is flattened onto the row (5.0: `parent_id`/`_ordinal`/`_depth`); the line reads the same.
+  if (node._ordinal !== undefined) io.out(`  ${style.dim("placement")}  parent=${style.id(node.parent_id ?? "—")} ordinal=${node._ordinal} depth=${node._depth}`);
+  if (node._attrs && Object.keys(node._attrs).length > 0) {
     io.out(`  ${style.dim("attrs")}`);
-    for (const [k, v] of Object.entries(node.attrs)) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(v)}`);
+    for (const [k, v] of Object.entries(node._attrs)) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(v)}`);
   }
-  if (node.text) io.out(`  ${style.dim("text")}  ${node.text}`);
+  if (node._text) io.out(`  ${style.dim("text")}  ${node._text}`);
   if (history && history.length > 0) {
     io.out(`  ${style.dim("history")}`);
     for (const h of history) io.out(`    ${style.dim(`#${h.seq}`)} ${style.accent(h.kind)} ${style.dim(h.origin)} ${style.dim(h.ts)}`);

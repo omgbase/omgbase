@@ -45,14 +45,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -270,14 +270,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -513,14 +513,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -788,14 +788,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1057,14 +1057,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1302,14 +1302,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e"
+                "_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1578,14 +1578,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -1818,14 +1818,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+                "_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -1847,13 +1847,13 @@
             },
             "apply": {
               "receipt": {
-                "plan_id": "3e79b916d470560323ab1203cecb9a97dd2b6f863c8ef58ccf6eb84bbb8ff462",
+                "plan_id": "b9e59cf0e10c8998b127cbcf58dd380b86641d3ff1ec6d87139621f22822a979",
                 "commit": "c_1",
                 "revisions": [
                   {
-                    "id": "d_0",
-                    "path": "a.md",
-                    "hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071"
+                    "_id": "d_0",
+                    "_path": "a.md",
+                    "_hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071"
                   }
                 ],
                 "new_ids": {},
@@ -1938,7 +1938,7 @@
             "actor": "agent:update",
             "reason": null,
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\ntags:\\n  - x\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"3e79b916d470560323ab1203cecb9a97dd2b6f863c8ef58ccf6eb84bbb8ff462\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"---\\ntitle: Changed\\ntags:\\n  - x\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"b9e59cf0e10c8998b127cbcf58dd380b86641d3ff1ec6d87139621f22822a979\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2033,14 +2033,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+                "_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -2210,14 +2210,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [],
@@ -2429,7 +2429,7 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "path": "a.md"
+                  "_path": "a.md"
                 },
                 "field": "content",
                 "value": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n"
@@ -2480,14 +2480,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -2532,8 +2532,8 @@
                   "op": "set",
                   "target": {
                     "kind": "document",
-                    "id": "d_0",
-                    "path": "a.md"
+                    "_id": "d_0",
+                    "_path": "a.md"
                   },
                   "field": "content",
                   "value": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n"
@@ -2558,10 +2558,10 @@
               "preconditions": {
                 "docs": [
                   {
-                    "id": "d_0",
-                    "path": "a.md",
+                    "_id": "d_0",
+                    "_path": "a.md",
                     "base_revision": "r_0",
-                    "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                    "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
                   }
                 ],
                 "blocks": [],
@@ -2574,7 +2574,7 @@
                   "kind": "block"
                 }
               ],
-              "plan_id": "a5feb3ca62990ef64548a1c9ded5d690860578ace6c4784aeb022c8404e9553b",
+              "plan_id": "bbd170d9251b2826889fc35ac9bccf5fa24b8a0bb70b8851c4d4908c787d4b59",
               "diagnostics": []
             }
           },
@@ -2598,10 +2598,10 @@
               "code": "stale_plan",
               "current": {
                 "revision": "r_1",
-                "hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
+                "_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
               },
               "retriable": true,
-              "fix": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning.\\n\\nBravo is the second paragraph, which talks about something else.\\n\\nCharlie really closes the note with a third paragraph.\\n\"}]}"
+              "fix": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning.\\n\\nBravo is the second paragraph, which talks about something else.\\n\\nCharlie really closes the note with a third paragraph.\\n\"}]}"
             }
           }
         ],
@@ -2839,14 +2839,14 @@
               "version": 1,
               "kind": "doc_update",
               "target": {
-                "id": "d_0",
-                "path": "a.md"
+                "_id": "d_0",
+                "_path": "a.md"
               },
               "precondition": {
-                "id": "d_0",
-                "path": "a.md",
+                "_id": "d_0",
+                "_path": "a.md",
                 "base_revision": "r_0",
-                "hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+                "_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
               },
               "matcher_v": "m2.3",
               "ops": [
@@ -2945,13 +2945,13 @@
             },
             "apply": {
               "receipt": {
-                "plan_id": "827cd509ca5d38d0d04e7e0459fea2e16be87ca7957b1dc19fdbf433e3eb8d62",
+                "plan_id": "f9e11305523fbbaefe94a681a0539461456cc359397ddba2056fe89aa245b405",
                 "commit": "c_1",
                 "revisions": [
                   {
-                    "id": "d_0",
-                    "path": "a.md",
-                    "hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f"
+                    "_id": "d_0",
+                    "_path": "a.md",
+                    "_hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f"
                   }
                 ],
                 "new_ids": {
@@ -3073,7 +3073,7 @@
             "actor": "agent:test",
             "reason": "whole-document update",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning, revised.\\n\\nDelta arrives as a new paragraph at the end of the note.\\n\\nCharlie closes the note with a third paragraph.\\n\"}],\"plan_id\":\"827cd509ca5d38d0d04e7e0459fea2e16be87ca7957b1dc19fdbf433e3eb8d62\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"# Title\\n\\nAlpha is the first paragraph of this note about planning, revised.\\n\\nDelta arrives as a new paragraph at the end of the note.\\n\\nCharlie closes the note with a third paragraph.\\n\"}],\"plan_id\":\"f9e11305523fbbaefe94a681a0539461456cc359397ddba2056fe89aa245b405\",\"v\":1}"
           }
         ],
         "revisions": [

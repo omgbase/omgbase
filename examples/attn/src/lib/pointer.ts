@@ -39,13 +39,13 @@ export function pointerStateOf(fm: Record<string, unknown>): PointerState {
 /** `docs_read` of the pointer → the state. */
 export function pointerOf(wire: Wire): FocusState {
   const fm = record(record(wire.properties).frontmatter);
-  return { exists: true, docId: str(wire.id) || null, rev: str(wire.rev) || null, ...pointerStateOf(fm) };
+  return { exists: true, docId: str(wire._id) || null, rev: str(wire.rev) || null, ...pointerStateOf(fm) };
 }
 
-/** `docs_read { path: "/attn/focus.md" }`; `doc_missing` is "never focused anything". */
+/** `docs_read { _path: "/attn/focus.md" }` (the argument addresses the row's `_path`, surface 5.0); `doc_missing` is "never focused anything". */
 export async function fetchPointer(caller: Caller, repo: string | null): Promise<FocusState> {
   try {
-    return pointerOf(await caller.call<Wire>("docs_read", { path: POINTER_PATH, ...repoArg(repo) }));
+    return pointerOf(await caller.call<Wire>("docs_read", { _path: POINTER_PATH, ...repoArg(repo) }));
   } catch (e) {
     if (e instanceof OmgError && e.code === "doc_missing") return NO_FOCUS;
     throw e;

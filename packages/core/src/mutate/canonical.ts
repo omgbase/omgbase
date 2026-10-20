@@ -113,9 +113,9 @@ export function fixTool(tool: string, args: unknown): string {
   return `${tool} ${canonicalJson(args)}`;
 }
 
-/** The selector that names exactly one row: the request narrowed to `from <root> where id == "<id>"` with `expect.max: 1` (the fix of a cross-hit collision or an ambiguous target under a selector). */
+/** The selector that names exactly one row: the request narrowed to `from <root> where _id == "<id>"` with `expect.max: 1` (the fix of a cross-hit collision or an ambiguous target under a selector). */
 export function narrowedTo(root: "docs" | "blocks" | "nodes", id: string): string {
-  return `from ${root} where id == ${JSON.stringify(id)}`;
+  return `from ${root} where _id == ${JSON.stringify(id)}`;
 }
 
 /** The root a row id belongs to, by its prefix (`d_` / `b_` / `n_`). */

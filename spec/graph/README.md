@@ -231,7 +231,7 @@ paths.
 
 ## 6. Reads this spec pins
 
-- **Document links** (`omg links`; at the query surface `out_links`/`in_links`): out = the doc's
+- **Document links** (`omg links`; at the query surface `_out_links`/`_in_links`, `spec/surface` 5.0): out = the doc's
   `doc_edges` (or its open `edges` at block grain), in = open `edges` whose
   `dst_node` is the doc, grouped by `(predicate, src_doc)`.
 - **Stale links**: an open edge whose `dst_node` starts with `phantom:` is
@@ -239,13 +239,20 @@ paths.
   not verified in this version.
 
 Both are projections a runner can recompute from the tables; the fixtures pin
-the tables. The surface renders them (`spec/surface` §4 `links_stale`, the
-`omg links` verb) under the `edges` target's field names of `spec/surface`
-§1.2 — `doc_id`/`block_id` for `src_doc`/`src_block`, `field` for the
-`src_field` column, `dst_id` for `dst_node`, `path` for the source
-document's path — so a reader of a tool result and a reader of a query see
-one vocabulary; the columns themselves (`spec/store`'s `edges` table, which
-these fixtures pin) keep their names.
+the tables. The surface renders them (`spec/surface` §4 `links_stale`,
+`docs_move`'s `dangling`, the `graph` tool, the `omg links` verb) under the
+`links` kind's **engine names** of `spec/surface` §1.2 (5.0: on every record
+a bare name is the user's and an underscore-prefixed name the engine's) —
+`_doc_id`/`_block_id` for `src_doc`/`src_block`, `_field` for the
+`src_field` column, `_dst_id` for `dst_node`, `_dst_path`, `_predicate`,
+`_provenance`, `_dst_kind`, `_anchor`, `_path` for the source document's
+path — so a reader of a tool result and a reader of a query (`follow
+_out_links collect { from _dst }`) see one vocabulary; the role keys of
+those results (`target`, `authored`, `reason`, `count`) stay bare. Through
+4.x the same names were rendered bare (`doc_id`, `dst_id`, `path`, …). The
+columns themselves (`spec/store`'s `edges` table, which these fixtures pin),
+the node kinds (`md:section`, `md:link`, …) and every value in a row keep
+their names: they are storage and data, not the surface's spelling.
 
 ## 7. Fixtures
 
@@ -350,6 +357,20 @@ different when duplicate open rows exist, which maintenance prevents.
 
 ## Decisions
 
+- 2026-10-20, graph 2.0 (`spec/surface` 5.0 "underscore = engine"): the
+  reads §6 pins are rendered under the `links` kind's engine names —
+  `_doc_id`, `_block_id`, `_field`, `_dst_id`, `_dst_path`, `_predicate`,
+  `_provenance`, `_dst_kind`, `_anchor`, `_path`; the relations
+  `_out_links`/`_in_links` — because the surface's row rule became one rule
+  for every record kind: a bare name is user-authored, an underscore-prefixed
+  name is engine-provided. Nothing this spec derives changed: the `nodes`,
+  `external_nodes`, `edges` and `doc_edges` rows, their columns, the node
+  kinds and the extraction are exactly 1.1's, and no fixture moved — the
+  fixtures pin tables, not renderings. The version moves with the surface
+  spelling of §6's reads so that a reader of this spec and a reader of
+  `spec/surface` 5.0 see one vocabulary, and because the crate line tracks
+  this file: the Rust `omgbase-graph` follows in a separate round with the
+  rest of the Rust twin.
 - 2026-09-26, graph 1.0 specified as built with one fix (byte spans). The
   crate is pure (descriptors and nodes from blocks); resolution, minting and
   the interval maintenance live in `omgbase-store` because they read and

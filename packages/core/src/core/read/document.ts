@@ -27,19 +27,19 @@ import { TreeResolver } from "../store/delta.js";
 // So leading_trivia + frontmatter + frontmatter_trivia + Σ(raw + trivia)
 // round-trips the file byte-for-byte (03 §2.1 coverage invariant).
 
-// The wire shape follows the surface's row rule (spec/surface §1.2, 3.0): the
-// document's identity and location under the row attributes' own names — `id`,
-// `path` — and the exact source bytes as `raw` (the same value the query
-// binding's `raw` reads); `rev`, `ids`, `hashes`, `parents` name roles.
+// The wire shape follows the surface's row rule (spec/surface §1.2, 5.0): the
+// document's identity and location under the row attributes' own names — `_id`,
+// `_path` — and the exact source bytes as `_raw` (the same value the query
+// binding's `_raw` reads); `rev`, `ids`, `hashes`, `parents` name roles.
 export interface DocsReadResult {
-  id: string;
+  _id: string;
   /** The reference form (`/a/b.md`, spec/surface §1 "Paths"). */
-  path: string;
+  _path: string;
   rev: string | null;
   /** Properties grouped by source: { frontmatter, inline, computed }. */
   properties: Record<string, Record<string, unknown>>;
   /** The reconstructed file bytes (spec/store §6.1) — the document's `raw`. */
-  raw: string;
+  _raw: string;
   /** Block ids in document order, for follow-up edits (include_ids). */
   ids?: string[];
   /**
@@ -136,16 +136,17 @@ export function reconstructContent(db: Database, docId: string): string | null {
 }
 
 /**
- * The surface's `properties` (spec/surface §2, 3.0): the `spec/properties` §5
+ * The surface's `properties` (spec/surface §2, 5.0): the `spec/properties` §5
  * grouped shape with the computed group's keys spelled as the attributes that
  * read them — the store writes the computed rows under `$title`/`$tags`
- * (spec/properties §3.3, unchanged), the surface has no `$` names, so
- * `properties.computed` is `{ title, tags }`. Authored groups are untouched (an
- * authored `$x:` key keeps its sigil, as `frontmatter.$x` reads it).
+ * (spec/properties §3.3, unchanged), the surface has no `$` names and its
+ * engine names are `_`-prefixed, so `properties.computed` is `{ _title, _tags }`.
+ * Authored groups are untouched (bare keys; an authored `$x:` key keeps its
+ * sigil, as `_frontmatter.$x` reads it).
  */
 export function surfaceProperties(grouped: Record<PropertySource, Record<string, unknown>>): Record<string, Record<string, unknown>> {
   const computed: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(grouped.computed)) computed[k.startsWith("$") ? k.slice(1) : k] = v;
+  for (const [k, v] of Object.entries(grouped.computed)) computed[k.startsWith("$") ? `_${k.slice(1)}` : k] = v;
   return { frontmatter: grouped.frontmatter, inline: grouped.inline, computed };
 }
 
@@ -157,11 +158,11 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   if (content === null) return null;
 
   const result: DocsReadResult = {
-    id: info.docId,
-    path: referencePath(info.path),
+    _id: info.docId,
+    _path: referencePath(info.path),
     rev: info.currentRev,
     properties: surfaceProperties(docPropertiesGrouped(store.db, docId)),
-    raw: content,
+    _raw: content,
   };
   if (opts.includeIds) {
     const ids: string[] = [];
@@ -277,13 +278,13 @@ export function docsReadMany(
  * the CURRENT bag flagged `propertiesAreCurrent: true`).
  */
 export interface DocsReadAtResult {
-  id: string;
+  _id: string;
   /** The path as of that revision, in the reference form. */
-  path: string;
+  _path: string;
   /** The revision travelled to (the argument, echoed for confirmation). */
   rev: string;
   /** The reconstructed file bytes at `rev` — the document's `raw` then. */
-  raw: string;
+  _raw: string;
   /** True when the reconstructed bytes' sha256 matched the revision's stored
    *  rendered_hash — a byte-faithful round-trip. False flags the fidelity gap
    *  described below (doc-level trivia may differ for an old revision). */
@@ -357,11 +358,11 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
   const renderedHashMatch = sha256(content).equals(rev.rendered_hash);
 
   return {
-    id: docId,
+    _id: docId,
     // The revision records the path as of that revision (docs may be moved).
-    path: referencePath(rev.path),
+    _path: referencePath(rev.path),
     rev: revId,
-    raw: content,
+    _raw: content,
     renderedHashMatch,
   };
 }

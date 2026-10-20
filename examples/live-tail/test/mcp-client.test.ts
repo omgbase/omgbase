@@ -7,7 +7,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { OmgClient, OmgError, isSessionLost, whoamiUrl } from "../src/lib/mcp-client.ts";
-import { docLocator } from "../src/lib/paths.ts";
+import { NAMES_4, docLocator } from "../src/lib/paths.ts";
 
 /** What the proxy's 404 looks like once the SDK has wrapped it. */
 class FakeStreamableHTTPError extends Error {
@@ -137,11 +137,15 @@ describe("OmgClient session recovery", () => {
 });
 
 describe("OmgClient.diffUnified — the tool and its locator", () => {
-  it("calls `docs_diff_unified { id | path, from_rev, to_rev }`", async () => {
+  it("calls `docs_diff_unified { _id | _path, from_rev, to_rev }` (the bare `id`/`path` under the 4.x names)", async () => {
     const h = harness();
     await h.client.diffUnified(docLocator("d_a"), "r_1", "r_2", "notes");
     await h.client.diffUnified(docLocator("/notes/alpha.md"), "r_1", "r_2", "notes");
+    await h.client.diffUnified(docLocator("d_a", NAMES_4), "r_1", "r_2", "notes");
+    await h.client.diffUnified(docLocator("/notes/alpha.md", NAMES_4), "r_1", "r_2", "notes");
     expect(h.transports[0]!.calls.filter((c) => c.method === "tools/call")).toEqual([
+      { method: "tools/call", name: "docs_diff_unified", args: { _id: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
+      { method: "tools/call", name: "docs_diff_unified", args: { _path: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
       { method: "tools/call", name: "docs_diff_unified", args: { id: "d_a", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
       { method: "tools/call", name: "docs_diff_unified", args: { path: "/notes/alpha.md", from_rev: "r_1", to_rev: "r_2", repo: "notes" } },
     ]);

@@ -53,12 +53,14 @@ import {
 // re-shaped here through `surface-paths.ts` — the same functions the `omg`
 // verbs call, so the two clients cannot drift.
 //
-// Arguments (spec/surface §4 "Arguments", 3.0): a tool's prefix names the row
-// kind it addresses, and `id` / `path` in its arguments are that kind's
-// attributes — `docs_read { id?, path? }`, `docs_diff { id?, path? }`,
-// `blocks_read { id }`, `nodes_set { id }`; list and mixed-reference arguments
-// keep role names (`ids`, `docs`, `roots`, `to`, `blocks`). One verb returns
-// the row: `read`. There is no bare `doc` argument any more. Every call is validated by
+// Arguments (spec/surface §4 "Arguments", 5.0 "underscore = engine"): a tool's
+// prefix names the row kind it addresses, and an argument that addresses one of
+// that kind's engine attributes is spelled as the attribute — `docs_read { _id?,
+// _path? }`, `docs_diff { _id?, _path? }`, `blocks_read { _id }`, `nodes_set
+// { _id }`, `blocks_read_many { _ids }`; role arguments keep their bare names
+// (`docs`, `roots`, `to`, `blocks`, `at`, `path_glob`, `docs_create.path`). One
+// verb returns the row: `read`. A bare `id`/`path`/`ids` is `filter_invalid` with
+// a `fix` (no tolerance); there is no bare `doc` argument. Every call is validated by
 // `validateArguments` ahead of its handler (the `tool` wrapper + the
 // CallTool handler below), so a wrong name is a `filter_invalid` naming the
 // nearest valid one, never the SDK's generic validation text.
@@ -182,7 +184,7 @@ function selectorArgs(args: { select?: string | undefined; expect?: { max: numbe
   return { ...(args.select !== undefined ? { select: args.select } : {}), ...(args.expect !== undefined ? { expect: args.expect } : {}) };
 }
 const effectSchema = z.looseObject({ op: z.enum(["create", "insert", "set", "unset", "move", "remove", "split", "merge", "retarget"]) }).describe(
-  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target: document, field: \"frontmatter.<key>\", expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }. Target: a bare document path, a block/node id, $new.<n> (an identity an earlier effect creates), or { kind: \"document\", id? | path? } | { kind: \"block\", id } | { kind: \"node\", id } | { kind: \"section\", heading_id }. at: \"start\" | \"end\" | { before: <block id> } | { after: <block id> } — a place among the children of `into`, so \"right after block X\" is into: X's parent (its parent block id, or the document path when X is top-level), at: { after: X }. field: a block's is \"markdown\" or \"attrs.checked\"; a document's \"frontmatter.<key>\" or (set only) \"content\"; a node's an editable property (value, name, checked). expect on a single-target op: { content_hash?, parent_children_hash?, revision? }; on remove/merge targets it is keyed by block id: { <block id>: { content_hash?, parent_children_hash? } }. expect: { max } is the request's top-level argument beside select, never inside an effect.",
+  "one effect: { op: \"create\", path, markdown, frontmatter? } | { op: \"insert\", into: Target, at?, markdown, expect? } | { op: \"set\", target, field, value, expect? } | { op: \"unset\", target: document, field: \"_frontmatter.<key>\", expect? } | { op: \"move\", target: document, to, retarget_inbound? } | { op: \"move\", targets: [block…], into, at?, expect? } | { op: \"remove\", target: document } | { op: \"remove\", targets: [block…], expect? } | { op: \"split\", target: block, at: [byte…], expect? } | { op: \"merge\", targets: [block…], separator?, expect? } | { op: \"retarget\", repairs: [{ from, to }], path_glob? }. Target: a bare document path, a block/node id, $new.<n> (an identity an earlier effect creates), or { kind: \"document\", _id? | _path? } | { kind: \"block\", _id } | { kind: \"node\", _id } | { kind: \"section\", heading_id }. at: \"start\" | \"end\" | { before: <block id> } | { after: <block id> } — a place among the children of `into`, so \"right after block X\" is into: X's parent (its parent block id, or the document path when X is top-level), at: { after: X }. field: a block's is \"markdown\" or \"_attrs.checked\"; a document's \"_frontmatter.<key>\" or (set only) \"content\"; a node's an editable property (value, name, checked). expect on a single-target op: { content_hash?, parent_children_hash?, revision? }; on remove/merge targets it is keyed by block id: { <block id>: { content_hash?, parent_children_hash? } }. expect: { max } is the request's top-level argument beside select, never inside an effect.",
 );
 
 // An example ladder (spec/surface §4 "Descriptions", 4.3): the description of
@@ -202,7 +204,7 @@ const ladder = (...lines: string[]): string => lines.join("\n");
 // The `docs_read` ladder's time-travel rung (4.7): the revision id is the one
 // the spec minter gives `/processes/calcination.md`'s ingest revision over the
 // alchemy corpus (`examples.json` runs the rung before any write).
-const REVISION_RUNG = "{\"path\":\"/processes/calcination.md\",\"at\":\"r_7\"}   as of a revision (rev ids: from revisions where path == \"/processes/calcination.md\")";
+const REVISION_RUNG = "{\"_path\":\"/processes/calcination.md\",\"at\":\"r_7\"}   as of a revision (rev ids: from revisions where _path == \"/processes/calcination.md\")";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: true };
 
@@ -313,7 +315,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   const REPO_ARG = { repo: z.string().optional() };
   // The document locator every `docs_*` tool takes (§4 "Arguments"): the row's
   // own attributes, at least one of them.
-  const DOC_ARGS = { id: z.string().optional(), path: z.string().optional() };
+  const DOC_ARGS = { _id: z.string().optional(), _path: z.string().optional() };
 
   // Wrap a successful write's result: notify the host so it can schedule a
   // background embed drain. onMutation must be cheap/non-blocking (see
@@ -322,17 +324,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     ctx.onMutation?.();
     return ok(payload);
   }
-
   // ---- the document locator (§4 "Arguments") ---------------------------------
-  // `id` is the document's id, `path` its path (either form, §1 "Paths"); at
+  // `_id` is the document's id, `_path` its path (either form, §1 "Paths"); at
   // least one is required, and when both are given they must name the same
-  // document. A miss is `doc_missing` "no document with id or path "<value>""
+  // document. A miss is `doc_missing` "no document with _id or _path "<value>""
   // with the arguments as given in `data`;
-  // neither given is `filter_invalid` "pass id or path"; a disagreement is
-  // `filter_invalid` "id "…" and path "…" name different documents". `findDoc`
-  // never falls through from an id to a path.
+  // neither given is `filter_invalid` "pass _id or _path"; a disagreement is
+  // `filter_invalid` "_id "…" and _path "…" name different documents". `findDoc`
+  // never falls through from an id to a path. A bare `id`/`path` never reaches
+  // here: `validateArguments` refuses it with the `_` spelling and a `fix` (5.0).
   function locateDoc(repoId: string, toolName: string, shape: ArgShape, args: Record<string, unknown>): string {
-    const [idKey, pathKey] = ["id", "path"] as const;
+    const [idKey, pathKey] = ["_id", "_path"] as const;
     const id = args[idKey] as string | undefined;
     const path = args[pathKey] as string | undefined;
     if (id === undefined && path === undefined) throw argumentError(toolName, `pass ${idKey} or ${pathKey}`, shape);
@@ -362,7 +364,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     return row.doc_id;
   }
   function blockMissing(value: string, hint?: string): EngineError {
-    return new EngineError("block_missing", `no block with id ${JSON.stringify(value)}${hint ? ` (${hint})` : ""}`, { data: { id: value } });
+    return new EngineError("block_missing", `no block with id ${JSON.stringify(value)}${hint ? ` (${hint})` : ""}`, { data: { _id: value } });
   }
   // `nodes_block_read`: the block a node was projected from — the node must
   // exist and name a live block (a block-less node, e.g. one derived from the
@@ -370,9 +372,9 @@ export function buildServer(ctx: ServerContext): McpServer {
   // the node.
   function blockOfNode(nodeId: string): { docId: string; blockId: string } {
     const node = store.db.prepare("SELECT doc_id, block_id FROM nodes WHERE node_id = ?").get(nodeId) as { doc_id: string; block_id: string | null } | undefined;
-    if (!node) throw new EngineError("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { id: nodeId } });
+    if (!node) throw new EngineError("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { _id: nodeId } });
     const live = node.block_id ? store.db.prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(node.block_id) : undefined;
-    if (!node.block_id || !live) throw new EngineError("block_missing", `node ${JSON.stringify(nodeId)} has no block`, { data: { id: nodeId, doc_id: node.doc_id } });
+    if (!node.block_id || !live) throw new EngineError("block_missing", `node ${JSON.stringify(nodeId)} has no block`, { data: { _id: nodeId, _doc_id: node.doc_id } });
     return { docId: node.doc_id, blockId: node.block_id };
   }
 
@@ -387,7 +389,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // Several matches → `blocks_append` with the first candidate's id; none → the
   // one heading whose text matches up to ASCII case, as `blocks_append`, else
   // the same `docs_append` without `section` (the document's end).
-  function resolveSectionHeading(docId: string, docPath: string, section: string, call: { id?: string; path?: string; text: string }): string {
+  function resolveSectionHeading(docId: string, docPath: string, section: string, call: { _id?: string; _path?: string; text: string }): string {
     const needle = /^[ \t]*#/.test(section) ? normalizeVisibleText(section, "heading") : normalizeText(section);
     const rows = store.db
       .prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL")
@@ -398,13 +400,13 @@ export function buildServer(ctx: ServerContext): McpServer {
       const fold = (t: string): string => t.replace(/[A-Z]/g, (c) => c.toLowerCase());
       const near = rows.filter((r) => fold(normalizeText(r.text)) === fold(needle));
       const fix = near.length === 1
-        ? fixTool("blocks_append", { id: near[0]!.block_id, text: call.text })
-        : fixTool("docs_append", { ...(call.id !== undefined ? { id: call.id } : {}), ...(call.path !== undefined ? { path: call.path } : {}), text: call.text });
-      throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, path: shown, fix } });
+        ? fixTool("blocks_append", { _id: near[0]!.block_id, text: call.text })
+        : fixTool("docs_append", { ...(call._id !== undefined ? { _id: call._id } : {}), ...(call._path !== undefined ? { _path: call._path } : {}), text: call.text });
+      throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, _path: shown, fix } });
     }
     if (matches.length > 1) {
       throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(section)} matches ${matches.length} headings in ${shown}; pass the heading's id to blocks_append`, {
-        data: { section, path: shown, candidates: matches.map((m) => ({ id: m.block_id, doc_id: m.doc_id })), fix: fixTool("blocks_append", { id: matches[0]!.block_id, text: call.text }) },
+        data: { section, _path: shown, candidates: matches.map((m) => ({ _id: m.block_id, _doc_id: m.doc_id })), fix: fixTool("blocks_append", { _id: matches[0]!.block_id, text: call.text }) },
       });
     }
     return matches[0]!.block_id;
@@ -459,10 +461,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   function sugar(repoId: string, rootPath: string, built: Sugar): ToolResult {
     return okMutated(surfaceReceipt(runSugar(repoId, rootPath, built).receipt));
   }
-  const blockTarget = (id: string): EffectTarget => ({ kind: "block", id });
+  const blockTarget = (id: string): EffectTarget => ({ kind: "block", _id: id });
   // A parent ref as an effect target: a document ref is the document's top level, a block ref the block.
   const parentTarget = (p: { parent: string | { doc: true }; docId: string }): EffectTarget =>
-    typeof p.parent === "object" ? { kind: "document", id: p.docId } : { kind: "block", id: p.parent };
+    typeof p.parent === "object" ? { kind: "document", _id: p.docId } : { kind: "block", _id: p.parent };
   // An empty block list is an argument error (3.2, §9) — it used to reach the
   // kernel as a malformed op (`block_missing "block undefined not found"`).
   function requireSome(tool: string, arg: string, list: unknown[]): void {
@@ -512,7 +514,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_outline",
     {
       description:
-        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Address the document by `id` or `path` (at least one; a `path` in either form). For the whole document body in one call, use docs_read.",
+        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Address the document by `_id` or `_path` (at least one; a `_path` in either form). For the whole document body in one call, use docs_read.",
       inputSchema: {
         ...DOC_ARGS,
         resolution: z.enum(["skeleton", "outline"]).optional(),
@@ -541,12 +543,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_read",
     {
       description: ladder(
-        "docs_read — One document, whole: raw bytes plus properties { frontmatter, inline, computed } and id/path/rev.",
-        "{\"path\":\"/processes/calcination.md\"}   by path (either form)",
-        "{\"path\":\"/processes/calcination.md\",\"include_ids\":true}   plus ids (pre-order), hashes (the CAS tokens expect.content_hash takes), parents (null = top level)",
-        "{\"id\":\"d_14\"}   by id (a query hit's id)",
+        "docs_read — One document, whole: _raw bytes plus properties { frontmatter, inline, computed } and _id/_path/rev.",
+        "{\"_path\":\"/processes/calcination.md\"}   by _path (either form)",
+        "{\"_path\":\"/processes/calcination.md\",\"include_ids\":true}   plus ids (pre-order), hashes (the CAS tokens expect.content_hash takes), parents (null = top level)",
+        "{\"_id\":\"d_14\"}   by _id (a query hit's _id)",
         REVISION_RUNG,
-        "Structure only: query md:section nodes. Many documents: a query with select raw. Grammar: query_syntax.",
+        "Structure only: query md:section nodes. Many documents: a query with select _raw. Grammar: query_syntax.",
       ),
       inputSchema: {
         ...DOC_ARGS,
@@ -568,7 +570,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           return ok(docsReadAt(docId, args.at));
         }
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
-        if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args.id ?? args.path)}`, { data: { id: docId } });
+        if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args._id ?? args._path)}`, { data: { _id: docId } });
         return ok(res);
       } catch (e) {
         return fail(e);
@@ -580,7 +582,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_read_many",
     {
       description:
-        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a document id OR a path, in either form), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`raw` = complete file bytes verbatim, `properties` grouped by source, plus `id`/`path`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block `id` → block `hash`} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/blocks_search/blocks_resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline (docs_get_many before surface 3.0).",
+        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a document id OR a path, in either form), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`_raw` = complete file bytes verbatim, `properties` grouped by source, plus `_id`/`_path`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block `_id` → block `_hash`} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/blocks_search/blocks_resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline (docs_get_many before surface 3.0).",
       inputSchema: {
         docs: stringList(),
         include_ids: z.boolean().optional(),
@@ -605,9 +607,9 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_read",
     {
-      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). `id` is the block's id (`b_…`) and its document is inferred from it; an `n_` node id is not a block id — nodes_block_read reads the block a node was projected from (nodes_get before surface 3.0: blocks used to be called nodes here, and `nodes` now names the extracted-entity rows). Every resolution carries the block's `id` and `type`; raw and full add `raw` (its source bytes) and `hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict; full adds `text`, `attrs`, `ordinal`, `depth` and `parent_id` (null at the top level). Use this to expand the lean ids returned by query/blocks_resolve. To read a whole document in one call, use docs_read (blocks_read on a heading's id returns only that block, not its section).",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). `_id` is the block's id (`b_…`) and its document is inferred from it; an `n_` node id is not a block id — nodes_block_read reads the block a node was projected from (nodes_get before surface 3.0: blocks used to be called nodes here, and `nodes` now names the extracted-entity rows). Every resolution carries the block's `_id` and `_type`; raw and full add `_raw` (its source bytes) and `_hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict; full adds `_text`, `_attrs`, `_ordinal`, `_depth` and `parent_id` (null at the top level). Use this to expand the lean ids returned by query/blocks_resolve. To read a whole document in one call, use docs_read (blocks_read on a heading's id returns only that block, not its section).",
       inputSchema: {
-        id: z.string(),
+        _id: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         ...REPO_ARG,
       },
@@ -618,9 +620,9 @@ export function buildServer(ctx: ServerContext): McpServer {
         // `id` is a block id, unambiguously the `blocks_` kind's (§4 "Names and
         // arguments"): an `n_` id names a NODE and is `block_missing` pointing at
         // `nodes_block_read` (the name pass had dereferenced it here, §9).
-        if (args.id.startsWith("n_")) throw blockMissing(args.id, "an n_ id names a node — nodes_block_read reads its block");
-        const node = nodesGet(store, docOfBlock(args.id), args.id, args.resolution ? { resolution: args.resolution } : {});
-        if (!node) throw blockMissing(args.id);
+        if (args._id.startsWith("n_")) throw blockMissing(args._id, "an n_ id names a node — nodes_block_read reads its block");
+        const node = nodesGet(store, docOfBlock(args._id), args._id, args.resolution ? { resolution: args.resolution } : {});
+        if (!node) throw blockMissing(args._id);
         return ok(node);
       } catch (e) {
         return fail(e);
@@ -632,9 +634,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "nodes_block_read",
     {
       description:
-        "Read the block a NODE was projected from: `id` is the node's id (`n_…`, from `query` over `from nodes`) and the result is exactly what blocks_read returns for that block — the same resolutions (skeleton|outline|text|raw|full, default full), the same `id`/`type`/`raw`/`hash`/`text`/`attrs`/`ordinal`/`depth`/`parent_id`. The hop from an occurrence (an `md:link`, `md:task`, `md:section`, … node) to the editable block that holds it, in one call; blocks_read itself takes a block id only. An unknown node, or a node that names no live block (a block-less node, such as one derived from the frontmatter), is block_missing.",
+        "Read the block a NODE was projected from: `_id` is the node's id (`n_…`, from `query` over `from nodes`) and the result is exactly what blocks_read returns for that block — the same resolutions (skeleton|outline|text|raw|full, default full), the same `_id`/`_type`/`_raw`/`_hash`/`_text`/`_attrs`/`_ordinal`/`_depth`/`parent_id`. The hop from an occurrence (an `md:link`, `md:task`, `md:section`, … node) to the editable block that holds it, in one call; blocks_read itself takes a block id only. An unknown node, or a node that names no live block (a block-less node, such as one derived from the frontmatter), is block_missing.",
       inputSchema: {
-        id: z.string(),
+        _id: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         ...REPO_ARG,
       },
@@ -642,9 +644,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         repoScope(args.repo);
-        const { docId, blockId } = blockOfNode(args.id);
+        const { docId, blockId } = blockOfNode(args._id);
         const node = nodesGet(store, docId, blockId, args.resolution ? { resolution: args.resolution } : {});
-        if (!node) throw new EngineError("block_missing", `node ${JSON.stringify(args.id)} has no block`, { data: { id: args.id, doc_id: docId } });
+        if (!node) throw new EngineError("block_missing", `node ${JSON.stringify(args._id)} has no block`, { data: { _id: args._id, _doc_id: docId } });
         return ok(node);
       } catch (e) {
         return fail(e);
@@ -656,9 +658,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_read_many",
     {
       description:
-        "Fetch up to 100 blocks by id (in request order) with budget truncation — the plural of blocks_read (nodes_get_many before surface 3.0). Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side. Result carries `nodes` (the hydrated blocks, one per resolved id), `truncated` (cap or `budget_tokens` hit — the first resolved block always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
+        "Fetch up to 100 blocks by id (in request order) with budget truncation — the plural of blocks_read (nodes_get_many before surface 3.0). Block ids are globally unique, so `_ids` may span ANY number of documents — each id is resolved to its owning doc server-side. Result carries `nodes` (the hydrated blocks, one per resolved id), `truncated` (cap or `budget_tokens` hit — the first resolved block always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
-        ids: stringList(),
+        _ids: stringList(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         budget_tokens: z.number().int().optional(),
         ...REPO_ARG,
@@ -667,7 +669,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         repoScope(args.repo);
-        const res = nodesGetMany(store, null, args.ids, {
+        const res = nodesGetMany(store, null, args._ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
         });
@@ -683,10 +685,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "docs_tree — Orientation: the shape of a repo in one small call, like tree -L depth with document and block counts per entry.",
-        "{}   the root at depth 1: one entry per directory (path ends in /) or shallow document, plus total",
-        "{\"path\":\"/processes/\",\"depth\":1}   descend into a directory entry",
+        "{}   the root at depth 1: one entry per directory (_path ends in /) or shallow document, plus total",
+        "{\"path\":\"/processes/\",\"depth\":1}   descend into a directory entry (path is the prefix argument)",
         "{\"depth\":2,\"limit\":5}   collapse deeper; limit/cursor page the entries, total always covers everything under path",
-        "Ranked or attribute-based discovery: blocks_resolve, or query (select path from docs where ...). Grammar: query_syntax.",
+        "Ranked or attribute-based discovery: blocks_resolve, or query (select _path from docs where ...). Grammar: query_syntax.",
       ),
       inputSchema: {
         path: z.string().optional(),
@@ -719,7 +721,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_list",
     {
       description:
-        "ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ id, path, updated_at, blocks }], truncated, cursor }` — the document's id, its path (`/`-rooted, as every path the surface returns), last-commit timestamp (ISO, or null) and live block count — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default " + DOCS_LIST_DEFAULT_LIMIT + ") caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `blocks_resolve`.",
+        "ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ _id, _path, _updated_at, blocks }], truncated, cursor }` — the document's `_id`, its `_path` (`/`-rooted, as every path the surface returns), last-commit timestamp (ISO, or null) and live block count — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default " + DOCS_LIST_DEFAULT_LIMIT + ") caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `blocks_resolve`.",
       inputSchema: {
         path_glob: z.string().optional(),
         limit: z.number().int().optional(),
@@ -762,13 +764,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query",
     {
       description: ladder(
-        "query — rows (id, path, projection) from docs, blocks, nodes or links.",
-        "{\"query\":\"select title, stage from docs where \\\"process\\\" in tags order by path limit 5\"}   frontmatter; membership; order, limit",
-        "{\"query\":\"select type, text from blocks where path == \\\"/processes/calcination.md\\\"\"}   a document's blocks in order",
-        "{\"query\":\"select block_id from nodes where kind == \\\"md:section\\\" and name == \\\"Tasks\\\" and path == \\\"/processes/calcination.md\\\"\"}   a heading's block id",
-        "{\"query\":\"select path, value from nodes where kind == \\\"md:task\\\" and not checked\"}   open tasks",
-        "{\"query\":\"select path, block_id from links where dst_path == \\\"/processes/calcination.md\\\"\"}   inbound links (path = source)",
-        "{\"query\":\"select path from docs where title ~* \\\"salt\\\"\"}   regex (~* ci, !~ not); substring: .contains(\\\"s\\\")",
+        "query — rows (_id, _path, projection) from docs, blocks, nodes or links.",
+        "{\"query\":\"select _title, stage from docs where \\\"process\\\" in tags order by _path limit 5\"}   frontmatter; in; order, limit",
+        "{\"query\":\"select _type, _text from blocks where _path == \\\"/processes/calcination.md\\\"\"}   a document's blocks in order",
+        "{\"query\":\"select _block_id from nodes where _kind == \\\"md:section\\\" and _name == \\\"Tasks\\\" and _path == \\\"/processes/calcination.md\\\"\"}   a heading's block id",
+        "{\"query\":\"select _path, _value from nodes where _kind == \\\"md:task\\\" and not checked\"}   open tasks",
+        "{\"query\":\"select _path, _block_id from links where _dst_path == \\\"/processes/calcination.md\\\"\"}   inbound links (_path = source)",
+        "{\"query\":\"select _path from docs where _title ~* \\\"salt\\\"\"}   regex (~* ci, !~ not); substring: .contains(\\\"s\\\")",
         "Also docs count { where … }, follow, ^docs joins, text()/semantic(): query_syntax.",
       ),
       inputSchema: {
@@ -802,7 +804,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "graph",
     {
       description:
-        "Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, links, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow out_links collect { from dst }` / `follow in_links collect { from doc }` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from links` — reach for the `query` tool directly when you need successor/frontier predicates, `$key`-keyed identity, `$ordinal` budgets, cross-document correlation, or the links scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow … collect { … depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the neighborhood to documents reachable from a root via edges of that predicate (both the documents and the edges are filtered). `select` adds document projections (OQX select expressions, e.g. \"layer\", \"path\"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `id`/`path`/`degree` = min hops from a root/`frontier` bool + your projections — a bare-name selection such as \"title\" is its own key, `id`/`path` land on the envelope keys, and any other expression is `sel_<i>`), `links` (the traversed links as rows of the `links` target under its own field names — `id`, `doc_id`/`block_id` (the source), `via_id`, `dst_id`, `dst_path`, `uri`, `dst_kind`, `predicate`, `provenance`, `anchor`, `field`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from links` surfaces them), and `frontier` (the documents on the outer boundary — `{ id, path, degree }`, min degree == degrees; at degrees 0 that is the roots themselves).",
+        "Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, links, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow _out_links collect { from _dst }` / `follow _in_links collect { from _doc }` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from links` — reach for the `query` tool directly when you need successor/frontier predicates, `$key`-keyed identity, `$ordinal` budgets, cross-document correlation, or the links scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow … collect { … depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the neighborhood to documents reachable from a root via edges of that predicate (both the documents and the edges are filtered). `select` adds document projections (OQX select expressions, e.g. \"layer\", \"_title\"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `_id`/`_path`/`degree` = min hops from a root/`frontier` bool + your projections — a name selection such as \"layer\" or \"_title\" is its own key, `_id`/`_path` land on the envelope keys, and any other expression is `sel_<i>`), `links` (the traversed links as rows of the `links` target under its own field names — `_id`, `_doc_id`/`_block_id` (the source), `_via_id`, `_dst_id`, `_dst_path`, `_uri`, `_dst_kind`, `_predicate`, `_provenance`, `_anchor`, `_field`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from links` surfaces them), and `frontier` (the documents on the outer boundary — `{ _id, _path, degree }`, min degree == degrees; at degrees 0 that is the roots themselves).",
       inputSchema: {
         roots: stringList({ min: 1 }),
         degrees: z.number().int().optional(),
@@ -829,7 +831,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_search",
     {
-      description: "Full-text (FTS5, bm25-ranked) keyword search over block text: `{ hits: [{ id (the block), doc_id, path, type, text, score }], truncated }`. Input is treated as a search box — plain words are ANDed, \"quoted phrases\" match adjacency, punctuation like / is safe (no query DSL). For structured filtering or frontmatter projection use `query` instead (see query_syntax). (text_search before surface 3.0.)",
+      description: "Full-text (FTS5, bm25-ranked) keyword search over block text: `{ hits: [{ _id (the block), _doc_id, _path, _type, _text, score }], truncated }`. Input is treated as a search box — plain words are ANDed, \"quoted phrases\" match adjacency, punctuation like / is safe (no query DSL). For structured filtering or frontmatter projection use `query` instead (see query_syntax). (text_search before surface 3.0.)",
       inputSchema: { q: z.string(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -846,9 +848,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_resolve",
     {
       description: ladder(
-        "blocks_resolve — \"the id of the thing I mean\": a title or term, ranked to blocks { id, locator, preview, evidence }.",
+        "blocks_resolve — \"the id of the thing I mean\": a title or term, ranked to blocks { _id, locator, preview, evidence }.",
         "{\"query\":\"calcination\"}   best on short, entity-shaped input",
-        "{\"query\":\"Emerald Tablet\",\"limit\":3}   use the returned id in the next call (docs_read, a plan target)",
+        "{\"query\":\"Emerald Tablet\",\"limit\":3}   use the returned _id in the next call (docs_read, a plan target)",
         "Open questions or passages: query with text(\"...\") or order by semantic(\"...\") desc. Grammar: query_syntax.",
       ),
       inputSchema: { query: z.string(), limit: z.number().int().optional(), ...REPO_ARG },
@@ -872,9 +874,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "apply — plan and commit in one call; returns the Receipt { plan_id, commit, revisions, new_ids, committed, summary }.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/substances/salt.md\",\"field\":\"frontmatter.verified\",\"value\":false}],\"reason\":\"re-check salt\"}   one scalar; a bare path is a document target",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/substances/salt.md\",\"field\":\"_frontmatter.verified\",\"value\":false}],\"reason\":\"re-check salt\"}   one scalar; a bare path is a document target",
         "{\"effects\":[{\"op\":\"insert\",\"into\":\"/lab/2026-02-notes.md\",\"at\":\"end\",\"markdown\":\"## Follow-ups\\n\\n- [ ] re-run cycle 4\"}]}   append at a document's end",
-        "{\"select\":\"from blocks where type == \\\"task\\\" and not checked and path == \\\"/processes/calcination.md\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"attrs.checked\",\"value\":true}],\"expect\":{\"max\":10}}   bulk check-off; expect.max is REQUIRED with select",
+        "{\"select\":\"from blocks where _type == \\\"task\\\" and not checked and _path == \\\"/processes/calcination.md\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"_attrs.checked\",\"value\":true}],\"expect\":{\"max\":10}}   bulk check-off; expect.max is REQUIRED with select",
         "Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax.",
       ),
       inputSchema: {
@@ -907,12 +909,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description: ladder(
-        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. Need file bodies? add diffs: true.",
-        "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   path = doc",
+        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. File bodies: add diffs: true.",
+        "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   path = doc",
         "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   in a section",
         "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fill it: $new.0",
-        "{\"select\":\"from docs where stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"frontmatter.ok\",\"value\":true}]}   no target: the hit",
-        "{\"select\":\"from docs where type == \\\"lab-note\\\"\",\"effects\":[{\"op\":\"insert\",\"into\":\"-> `/processes/${subject}.md`\",\"markdown\":\"-> `[${title}](${path})`\"}]}   -> reads the row",
+        "{\"select\":\"from docs where stage == \\\"nigredo\\\"\",\"effects\":[{\"op\":\"set\",\"field\":\"_frontmatter.ok\",\"value\":true}]}   no target: the hit",
+        "{\"select\":\"from docs where type == \\\"lab-note\\\"\",\"effects\":[{\"op\":\"insert\",\"into\":\"-> `/processes/${subject}.md`\",\"markdown\":\"-> `[${_title}](${_path})`\"}]}   -> reads the row",
         "Ops: create insert set unset move remove split merge retarget; grammar: query_syntax.",
       ),
       inputSchema: { effects: z.array(effectSchema), select: z.string().optional(), expect: selectionExpectSchema.optional(), diffs: z.boolean().optional(), ...REPO_ARG },
@@ -939,7 +941,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
-        "{\"plan_id\":\"ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
+        "{\"plan_id\":\"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
         "Or pass the whole object: {\"plan\": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
       ),
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), select: z.string().optional(), expect: selectionExpectSchema.optional(), reason: z.string().optional(), ...REPO_ARG },
@@ -998,14 +1000,14 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_update",
     {
-      description: "Replace a block's markdown and/or set a task's `checked` state, with compare-and-swap. `id` is the block's id (or any ref resolve accepts); `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the Receipt's `new_ids` lists them (`$new.0`, …). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), synced to the `[ ]`/`[x]` in the raw; every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown` (the 3.x `attrs` bag is retired and refused by name). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", id }, field: \"markdown\" | \"attrs.checked\", value, expect? }] }` (both when both are given) — returns the Receipt; preview with `plan`.",
-      inputSchema: { id: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), expect: expectSchema.optional(), ...REPO_ARG },
+      description: "Replace a block's markdown and/or set a task's `checked` state, with compare-and-swap. `_id` is the block's id (or any ref resolve accepts); `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the Receipt's `new_ids` lists them (`$new.0`, …). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), synced to the `[ ]`/`[x]` in the raw; every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown` (the 3.x `attrs` bag is retired and refused by name). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", _id }, field: \"markdown\" | \"_attrs.checked\", value, expect? }] }` (both when both are given) — returns the Receipt; preview with `plan`.",
+      inputSchema: { _id: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), expect: expectSchema.optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const block = resolveBlockRef(repoId, args.id);
+        const block = resolveBlockRef(repoId, args._id);
         const built = updateBlockEffects(block, { markdown: args.markdown, checked: args.checked, expect: args.expect });
         // Nothing to set is an argument error (4.0): there is no effect for "touch".
         if (built.effects.length === 0) throw argumentError("blocks_update", "pass `markdown` and/or `checked`", registry.get("blocks_update")!.shape);
@@ -1063,14 +1065,14 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_split",
     {
-      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `id` is the block's id (or a ref); `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. Sugar for `apply { effects: [{ op: \"split\", target, at }] }` — returns the Receipt (`new_ids` holds the new siblings); preview with `plan`.",
-      inputSchema: { id: z.string(), at: z.array(z.number().int()), ...REPO_ARG },
+      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `_id` is the block's id (or a ref); `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. Sugar for `apply { effects: [{ op: \"split\", target, at }] }` — returns the Receipt (`new_ids` holds the new siblings); preview with `plan`.",
+      inputSchema: { _id: z.string(), at: z.array(z.number().int()), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const block = resolveBlockRef(repoId, args.id);
+        const block = resolveBlockRef(repoId, args._id);
         // The planner pins the content CAS from the live row (the block is live: it resolved).
         return sugar(repoId, root, splitEffects(block, args.at));
       } catch (e) {
@@ -1101,15 +1103,15 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_check",
     {
-      description: "Macro: check (or uncheck with checked:false) the given task blocks. `ids` are the blocks' ids (or refs). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", id }, field: \"attrs.checked\", value }, …] }`, one per block, each CAS-pinned — returns the Receipt; preview with `plan` (tasks_complete { blocks } before surface 3.0).",
-      inputSchema: { ids: stringList(), checked: z.boolean().optional(), ...REPO_ARG },
+      description: "Macro: check (or uncheck with checked:false) the given task blocks. `_ids` are the blocks' ids (or refs). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"block\", _id }, field: \"_attrs.checked\", value }, …] }`, one per block, each CAS-pinned — returns the Receipt; preview with `plan` (tasks_complete { blocks } before surface 3.0).",
+      inputSchema: { _ids: stringList(), checked: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        requireSome("blocks_check", "ids", args.ids);
-        const blocks = args.ids.map((b) => resolveBlockRef(repoId, b));
+        requireSome("blocks_check", "_ids", args._ids);
+        const blocks = args._ids.map((b) => resolveBlockRef(repoId, b));
         // N × `set attrs.checked`, each CAS-pinned by the planner; a block named
         // twice is one write (the planner drops the identical duplicate, 3.2).
         return sugar(repoId, root, checkEffects(blocks, args.checked ?? true));
@@ -1123,16 +1125,16 @@ export function buildServer(ctx: ServerContext): McpServer {
     "nodes_set",
     {
       description:
-        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). `id` is the node's id (from `query` over `from nodes` — the one tool that addresses `nodes` rows), `prop` the property, `value` its new value. Resolves the node to its block and rewrites only that node's span. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor. Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"node\", id }, field: prop, value }] }` — returns the Receipt; preview with `plan` (node_set before surface 3.0).",
-      inputSchema: { id: z.string(), prop: z.string(), value: z.string(), ...REPO_ARG },
+        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). `_id` is the node's id (from `query` over `from nodes` — the one tool that addresses `nodes` rows), `prop` the property, `value` its new value. Resolves the node to its block and rewrites only that node's span. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor. Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"node\", _id }, field: prop, value }] }` — returns the Receipt; preview with `plan` (node_set before surface 3.0).",
+      inputSchema: { _id: z.string(), prop: z.string(), value: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const known = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(args.id, repoId);
-        if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(args.id)}`, { data: { id: args.id } });
-        return sugar(repoId, root, nodeSetEffects(args.id, args.prop, args.value));
+        const known = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(args._id, repoId);
+        if (!known) throw new EngineError("block_missing", `no node with id ${JSON.stringify(args._id)}`, { data: { _id: args._id } });
+        return sugar(repoId, root, nodeSetEffects(args._id, args.prop, args.value));
       } catch (e) {
         return fail(e);
       }
@@ -1143,18 +1145,18 @@ export function buildServer(ctx: ServerContext): McpServer {
     "blocks_append",
     {
       description:
-        "Macro: append markdown INTO a block, by what the block is. `id` is a block's id (or a ref). A HEADING: the `text` is inserted at the end of its section range (before the next heading of equal or higher level) — `insert into { kind: \"section\", heading_id }`. A CONTAINER (a list, list item, task, blockquote or table — anything the kernel accepts as a parent): inserted at the end of its children (`insert into { kind: \"block\", id } at end`). A LEAF (a paragraph, code fence, …) is `block_not_container` — append means \"into\", never a sibling insert; place after it with `blocks_insert { to: <its parent>, at: { after: <id> } }`. Sugar for that one `insert` effect — returns the Receipt; preview with `plan`. To append at a whole document's end, or inside a section named by its heading TEXT, use docs_append.",
-      inputSchema: { id: z.string(), text: z.string(), ...REPO_ARG },
+        "Macro: append markdown INTO a block, by what the block is. `_id` is a block's id (or a ref). A HEADING: the `text` is inserted at the end of its section range (before the next heading of equal or higher level) — `insert into { kind: \"section\", heading_id }`. A CONTAINER (a list, list item, task, blockquote or table — anything the kernel accepts as a parent): inserted at the end of its children (`insert into { kind: \"block\", _id } at end`). A LEAF (a paragraph, code fence, …) is `block_not_container` — append means \"into\", never a sibling insert; place after it with `blocks_insert { to: <its parent>, at: { after: <_id> } }`. Sugar for that one `insert` effect — returns the Receipt; preview with `plan`. To append at a whole document's end, or inside a section named by its heading TEXT, use docs_append.",
+      inputSchema: { _id: z.string(), text: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const block = resolveBlockRef(repoId, args.id);
+        const block = resolveBlockRef(repoId, args._id);
         const row = store.db
           .prepare("SELECT b.type AS type, d.format AS format, b.parent_block AS parent, d.path AS path, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
           .get(block) as { type: string; format: string | null; parent: string | null; path: string; children: number } | undefined;
-        if (!row) throw blockMissing(args.id);
+        if (!row) throw blockMissing(args._id);
         let into: EffectTarget;
         if (row.type === "heading") {
           into = { kind: "section", heading_id: block };
@@ -1163,7 +1165,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         } else {
           // The fix (4.4): the sibling insert spelled out — its parent block, or the document when it is top-level.
           throw new EngineError("block_not_container", `block ${block} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(block)} } }`, {
-            data: { id: block, type: row.type, fix: fixTool("blocks_insert", { to: row.parent ?? referencePath(row.path), at: { after: block }, markdown: args.text }) },
+            data: { _id: block, _type: row.type, fix: fixTool("blocks_insert", { to: row.parent ?? referencePath(row.path), at: { after: block }, markdown: args.text }) },
           });
         }
         return sugar(repoId, root, appendEffects(into, args.text));
@@ -1177,7 +1179,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_append",
     {
       description:
-        "Macro: append markdown to a document — at its END, or at the end of one of its sections when `section` names a heading by its TEXT (`\"Setup\"`; an ATX spelling `\"## Setup\"` is accepted). The journal/log/running-note primitive. ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW blocks after the existing ones (at the document's top level, or inside the section's range), so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Sugar for one `insert at end` effect into the document or the resolved section — returns the Receipt (`new_ids` the appended blocks); preview with `plan`. Address the document by `id` or `path` (at least one). The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this); a `section` matching no heading in it is `parent_missing`, one matching several is `ambiguous_heading` with `candidates[{ id, doc_id }]` — pass that heading's id to blocks_append, which appends into a block by its id.",
+        "Macro: append markdown to a document — at its END, or at the end of one of its sections when `section` names a heading by its TEXT (`\"Setup\"`; an ATX spelling `\"## Setup\"` is accepted). The journal/log/running-note primitive. ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW blocks after the existing ones (at the document's top level, or inside the section's range), so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Sugar for one `insert at end` effect into the document or the resolved section — returns the Receipt (`new_ids` the appended blocks); preview with `plan`. Address the document by `_id` or `_path` (at least one). The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this); a `section` matching no heading in it is `parent_missing`, one matching several is `ambiguous_heading` with `candidates[{ _id, _doc_id }]` — pass that heading's `_id` to blocks_append, which appends into a block by its id.",
       inputSchema: { ...DOC_ARGS, text: z.string(), section: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1192,9 +1194,9 @@ export function buildServer(ctx: ServerContext): McpServer {
         let into: EffectTarget;
         if (args.section !== undefined) {
           const info = findDoc(store, { docId })!;
-          into = { kind: "section", heading_id: resolveSectionHeading(docId, info.path, args.section, { ...(args.id !== undefined ? { id: args.id } : {}), ...(args.path !== undefined ? { path: args.path } : {}), text: args.text }) };
+          into = { kind: "section", heading_id: resolveSectionHeading(docId, info.path, args.section, { ...(args._id !== undefined ? { _id: args._id } : {}), ...(args._path !== undefined ? { _path: args._path } : {}), text: args.text }) };
         } else {
-          into = { kind: "document", id: docId };
+          into = { kind: "document", _id: docId };
         }
         return sugar(repoId, root, docsAppendEffects(into, args.text));
       } catch (e) {
@@ -1206,7 +1208,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "links_retarget",
     {
-      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs: [{ from, to }], path_glob? }] }`; returns `hits[{id,path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect: its `preview.retarget[0]` carries the same `hits` and `pairs` and `preview.diffs` the files, and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
+      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs: [{ from, to }], path_glob? }] }`; returns `hits[{_id,_path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect: its `preview.retarget[0]` carries the same `hits` and `pairs` and `preview.diffs` the files, and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
       inputSchema: { from_target: z.string(), to_target: z.string(), path_glob: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1229,7 +1231,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_stale",
     {
       description:
-        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each a link row under the `links` target's names: `doc_id`, `path` (the source document), `block_id` (null for a frontmatter edge), predicate, provenance, dst_kind, `target` = the canonical missing path, `/`-rooted like every path the surface returns (e.g. `/guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{path,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
+        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each a link row under the `links` target's names: `_doc_id`, `_path` (the source document), `_block_id` (null for a frontmatter edge), `_predicate`, `_provenance`, `_dst_kind`, `target` = the canonical missing path, `/`-rooted like every path the surface returns (e.g. `/guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `_anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{_path,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
       inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), summary: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1250,7 +1252,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_repair",
     {
       description:
-        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs, path_glob? }] }`; returns `hits[{id,path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched) plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect — its `preview.retarget[0]` carries the same `hits`/`pairs`, `preview.diffs` the files — and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
+        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. COMMITS: sugar for `apply { effects: [{ op: \"retarget\", repairs, path_glob? }] }`; returns `hits[{_id,_path,oldRaw,newRaw}]` (the rewritten block and its document) and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched) plus the Receipt (`commit` null when nothing matched). To PREVIEW first, call `plan` with that one effect — its `preview.retarget[0]` carries the same `hits`/`pairs`, `preview.diffs` the files — and it fails exactly where the commit would (through surface 3.x this tool was a dry run by default, with `applied`).",
       inputSchema: {
         repairs: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
         from_target: z.string().optional(),
@@ -1302,7 +1304,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_create",
     {
-      description: "Create a new document at `path` (the new document's path, either form) from complete file bytes (`markdown`), with optional structured `frontmatter`. Sugar for `apply { effects: [{ op: \"create\", path, markdown, frontmatter? }] }` — returns the Receipt: `revisions[0]` is the created document (its `id`, rooted `path`, `hash`), `new_ids[\"$new.0\"]` the same id and `$new.1…` its blocks in pre-order. Fails path_taken if it already exists. Preview with `plan` over that effect (`preview.diffs[path]` is `\"\" → the bytes`).",
+      description: "Create a new document at `path` (the new document's path, either form) from complete file bytes (`markdown`), with optional structured `frontmatter`. Sugar for `apply { effects: [{ op: \"create\", path, markdown, frontmatter? }] }` — returns the Receipt: `revisions[0]` is the created document (its `_id`, rooted `_path`, `_hash`), `new_ids[\"$new.0\"]` the same id and `$new.1…` its blocks in pre-order. Fails path_taken if it already exists. Preview with `plan` over that effect (`preview.diffs[path]` is `\"\" → the bytes`).",
       inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1322,7 +1324,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_move",
     {
       description:
-        "Rename a document to a new path (`to_path`, `/`-rooted or bare); the document is addressed by `id` or `path`. Block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked commit, so a move never leaves the graph broken. Fails path_taken if the destination exists. Sugar for `apply { effects: [{ op: \"move\", target: { kind: \"document\", id }, to, retarget_inbound? }] }` — returns the Receipt (one revision per rewritten source; the moved document's own revision does not advance unless it links to itself) plus `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc_id, path, block_id, target, anchor, field?} per occurrence — a link row under the `links` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. Preview with `plan` over that effect: `preview.diffs` holds the old path emptied, the new path filled and the rewritten sources.",
+        "Rename a document to a new path (`to_path`, `/`-rooted or bare); the document is addressed by `_id` or `_path`. Block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked commit, so a move never leaves the graph broken. Fails path_taken if the destination exists. Sugar for `apply { effects: [{ op: \"move\", target: { kind: \"document\", _id }, to, retarget_inbound? }] }` — returns the Receipt (one revision per rewritten source; the moved document's own revision does not advance unless it links to itself) plus `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (`_block_id` null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({_doc_id, _path, _block_id, target, _anchor, _field?} per occurrence — a link row under the `links` target's names) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. Preview with `plan` over that effect: `preview.diffs` holds the old path emptied, the new path filled and the rewritten sources.",
       inputSchema: { ...DOC_ARGS, to_path: z.string(), retarget_inbound: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1330,7 +1332,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_move", registry.get("docs_move")!.shape, args);
         const rootPath = requireRoot(scope.rootPath);
-        const doc = { id: docId, path: pathOfDoc(docId) };
+        const doc = { _id: docId, _path: pathOfDoc(docId) };
         const to = canonicalDocPath(args.to_path);
         requireAbsent(scope.repoId, rootPath, to, `a document already exists at ${to}`);
         const retargetInbound = args.retarget_inbound !== false;
@@ -1350,7 +1352,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_delete",
     {
-      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Address it by `id` or `path`. Sugar for `apply { effects: [{ op: \"remove\", target: { kind: \"document\", id } }] }` — returns the Receipt (a tombstone advances no revision: `revisions` is empty, `commit` the one commit). Preview with `plan` over that effect (`preview.diffs[path]` is `the bytes → \"\"`).",
+      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Address it by `_id` or `_path`. Sugar for `apply { effects: [{ op: \"remove\", target: { kind: \"document\", _id } }] }` — returns the Receipt (a tombstone advances no revision: `revisions` is empty, `commit` the one commit). Preview with `plan` over that effect (`preview.diffs[path]` is `the bytes → \"\"`).",
       inputSchema: { ...DOC_ARGS, ...REPO_ARG },
     },
     async (args) => {
@@ -1358,7 +1360,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_delete", registry.get("docs_delete")!.shape, args);
         const rootPath = requireRoot(scope.rootPath);
-        return sugar(scope.repoId, rootPath, deleteDocEffects({ id: docId, path: pathOfDoc(docId) }));
+        return sugar(scope.repoId, rootPath, deleteDocEffects({ _id: docId, _path: pathOfDoc(docId) }));
       } catch (e) {
         return fail(e);
       }
@@ -1368,7 +1370,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_set_meta",
     {
-      description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `id` or `path`. Other frontmatter and the whole body are preserved (every block keeps its id). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", id }, field: \"frontmatter.<key>\", value }, { op: \"unset\", …, field: \"frontmatter.<key>\" }, …] }`, one effect per key — returns the Receipt; at least one of `set`/`unset` is required. Preview with `plan` over those effects (`preview.diffs[path]` is the file before → after).",
+      description: "Surgical frontmatter patch: set the given keys and/or unset named keys on the document addressed by `_id` or `_path`. Other frontmatter and the whole body are preserved (every block keeps its id). Sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", _id }, field: \"_frontmatter.<key>\", value }, { op: \"unset\", …, field: \"_frontmatter.<key>\" }, …] }`, one effect per key — returns the Receipt; at least one of `set`/`unset` is required. Preview with `plan` over those effects (`preview.diffs[path]` is the file before → after).",
       inputSchema: { ...DOC_ARGS, set: z.record(z.string(), z.unknown()).optional(), unset: stringList().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1380,7 +1382,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // One scalar effect per key, `unset` winning over `set` for a shared key;
         // the planner drops a repeated `unset`. An empty patch is an argument
         // error (3.3, §9) — it used to rewrite the frontmatter through the emitter for nothing.
-        const built = setMetaEffects({ id: docId, path: pathOfDoc(docId) }, args.set, args.unset);
+        const built = setMetaEffects({ _id: docId, _path: pathOfDoc(docId) }, args.set, args.unset);
         if (built.effects.length === 0) throw argumentError("docs_set_meta", "pass `set` and/or `unset`", shape);
         return sugar(scope.repoId, rootPath, built);
       } catch (e) {
@@ -1393,7 +1395,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_update",
     {
       description:
-        "Whole-document update with smart identity preservation — sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", id }, field: \"content\", value: content }] }` (surface 4.0). Submit the complete proposed `content` for a document (`id` or `path`); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — frontmatter changes included — and commits the derived ops as ONE transaction. Returns the Receipt `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids, committed: true }`; content that already equals the document is a plan with nothing to do — no commit (`commit: null`, no revision). To INSPECT the identity consequences before committing, call `plan { effects: [that set] }`: its `preview.identity[<doc id>]` is `{ matcher_v, summary: { preserved, updated, moved, created, removed, split, merged, ambiguous }, ops: [{ op_index, disposition, blocks, confidence, reason }], diagnostics }` — each planned kernel op (`preview`'s `op_index` into the plan's `opset.ops`) annotated with the disposition it realizes — and the plan's `preconditions.docs` pin the document's revision and hash; then `execute` that plan, or call this tool. A document that changed since planning fails stale_plan (re-plan). Content the planner cannot reproduce byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`).",
+        "Whole-document update with smart identity preservation — sugar for `apply { effects: [{ op: \"set\", target: { kind: \"document\", _id }, field: \"content\", value: content }] }` (surface 4.0). Submit the complete proposed `content` for a document (`_id` or `_path`); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — frontmatter changes included — and commits the derived ops as ONE transaction. Returns the Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids, committed: true }`; content that already equals the document is a plan with nothing to do — no commit (`commit: null`, no revision). To INSPECT the identity consequences before committing, call `plan { effects: [that set] }`: its `preview.identity[<doc id>]` is `{ matcher_v, summary: { preserved, updated, moved, created, removed, split, merged, ambiguous }, ops: [{ op_index, disposition, blocks, confidence, reason }], diagnostics }` — each planned kernel op (`preview`'s `op_index` into the plan's `opset.ops`) annotated with the disposition it realizes — and the plan's `preconditions.docs` pin the document's revision and hash; then `execute` that plan, or call this tool. A document that changed since planning fails stale_plan (re-plan). Content the planner cannot reproduce byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`).",
       inputSchema: { ...DOC_ARGS, content: z.string(), reason: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1401,7 +1403,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const scope = repoScope(args.repo);
         const docId = locateDoc(scope.repoId, "docs_update", registry.get("docs_update")!.shape, args);
         const rootPath = requireRoot(scope.rootPath);
-        const { receipt } = runSugar(scope.repoId, rootPath, updateContentEffects({ id: docId }, args.content), args.reason);
+        const { receipt } = runSugar(scope.repoId, rootPath, updateContentEffects({ _id: docId }, args.content), args.reason);
         return okMutated(surfaceReceipt(receipt));
       } catch (e) {
         return fail(e);
@@ -1413,7 +1415,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "observe",
     {
       description:
-        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use `observe_delete` (an observed, resurrection-pooled tombstone — not `docs_delete`, which is an intentional api-origin removal that also unlinks the file). Returns `{ id, path, rev, commitId, converged, echo, conflicted, dispositions }` — the document's row attributes plus a disposition summary (how identity threaded). `path` is a FILE event's path from the store's layer, not a row locator, so it keeps its name.",
+        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use `observe_delete` (an observed, resurrection-pooled tombstone — not `docs_delete`, which is an intentional api-origin removal that also unlinks the file). Returns `{ _id, _path, rev, commitId, converged, echo, conflicted, dispositions }` — the document's row attributes plus a disposition summary (how identity threaded). The `path` ARGUMENT is a FILE event's path from the store's layer, not a row locator, so it keeps its bare name.",
       inputSchema: { path: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1463,12 +1465,12 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "blocks_history",
     {
-      description: "A block's biography: the commits that CHANGED the block `id` names — inserted, edited, moved, split/merge lineage, resurrected — with disposition kind/confidence/reason, newest first. A commit that rewrote the document but left this block byte-identical in place is not listed (store 14.2: `same` verdicts are not persisted; through 14.1 every commit to the document appeared here), so the newest entry's `ts` is the block's `updated_at`; to learn whether the block was present in some other commit, diff two revisions with docs_diff (history_node before surface 3.0 — it always took a block id and returned the block's changes). Not repo-scoped: block ids are global.",
-      inputSchema: { id: z.string(), limit: z.number().int().optional() },
+      description: "A block's biography: the commits that CHANGED the block `_id` names — inserted, edited, moved, split/merge lineage, resurrected — with disposition kind/confidence/reason, newest first. A commit that rewrote the document but left this block byte-identical in place is not listed (store 14.2: `same` verdicts are not persisted; through 14.1 every commit to the document appeared here), so the newest entry's `ts` is the block's `_updated_at`; to learn whether the block was present in some other commit, diff two revisions with docs_diff (history_node before surface 3.0 — it always took a block id and returned the block's changes). Not repo-scoped: block ids are global.",
+      inputSchema: { _id: z.string(), limit: z.number().int().optional() },
     },
     async (args) => {
       try {
-        return ok(historyNode(store, args.id, args.limit !== undefined ? { limit: args.limit } : {}));
+        return ok(historyNode(store, args._id, args.limit !== undefined ? { limit: args.limit } : {}));
       } catch (e) {
         return fail(e);
       }
@@ -1478,7 +1480,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   tool(
     "docs_diff",
     {
-      description: "Block-grain diff between two revisions of a document: `[{ kind: added|removed|changed, id (the block), before?, after? }]` in that order. Address the document by `id` or `path` (at least one); `from_rev`/`to_rev` are revision ids (from docs_history, changes_since or blocks_history). Contrast docs_diff_unified, the unified text diff. (diff before surface 3.0.)",
+      description: "Block-grain diff between two revisions of a document: `[{ kind: added|removed|changed, _id (the block), before?, after? }]` in that order. Address the document by `_id` or `_path` (at least one); `from_rev`/`to_rev` are revision ids (from docs_history, changes_since or blocks_history). Contrast docs_diff_unified, the unified text diff. (diff before surface 3.0.)",
       inputSchema: { ...DOC_ARGS, from_rev: z.string(), to_rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1500,7 +1502,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_diff_unified",
     {
       description:
-        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ id, path, from, to, diff }` where `diff` is a unified diff of the two revisions' file texts — for each revision exactly the bytes docs_read_at returns, so hunk line numbers are real file lines (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). Address the document by `id` or `path` (at least one). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `docs_diff`, which returns block-grain added/removed/changed entries. (diff_unified before surface 3.0.)",
+        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ _id, _path, from, to, diff }` where `diff` is a unified diff of the two revisions' file texts — for each revision exactly the bytes docs_read_at returns, so hunk line numbers are real file lines (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). Address the document by `_id` or `_path` (at least one). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `docs_diff`, which returns block-grain added/removed/changed entries. (diff_unified before surface 3.0.)",
       inputSchema: { ...DOC_ARGS, from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1510,7 +1512,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         return ok(docDiffUnified(store, docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
-          label: JSON.stringify(args.id ?? args.path),
+          label: JSON.stringify(args._id ?? args._path),
         }));
       } catch (e) {
         return fail(e);
@@ -1522,7 +1524,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_read_at",
     {
       description:
-        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `id`/`path` (the path as of that revision)/`rev`. Sugar for `docs_read { id | path, at: rev }` (surface 4.7) — the same result, byte for byte. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from `query` over the `revisions` target (`from revisions where path == … order by seq`), docs_diff, blocks_history, docs_history or changes_since. Contrast: docs_read = current bytes; docs_diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. No `properties`: the property table is current-state only (through 4.6 the current bag rode along flagged propertiesAreCurrent). Address the document by `id` or `path` plus a `rev` id. A revision whose bodies were moved to an archive segment (`archived` in docs_history / the revisions target) reads through the segment when it is attached; otherwise the call fails `revision_archived` with `data: { rev, archive, path? }` — an operator attaches the file with `omg history attach`.",
+        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `_raw` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `_id`/`_path` (the path as of that revision)/`rev`. Sugar for `docs_read { _id | _path, at: rev }` (surface 4.7) — the same result, byte for byte. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from `query` over the `revisions` target (`from revisions where _path == … order by _seq`), docs_diff, blocks_history, docs_history or changes_since. Contrast: docs_read = current bytes; docs_diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. No `properties`: the property table is current-state only (through 4.6 the current bag rode along flagged propertiesAreCurrent). Address the document by `_id` or `_path` plus a `rev` id. A revision whose bodies were moved to an archive segment (`_archived` in docs_history / the revisions target) reads through the segment when it is attached; otherwise the call fails `revision_archived` with `data: { rev, archive, path? }` — an operator attaches the file with `omg history attach`.",
       inputSchema: { ...DOC_ARGS, rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1540,7 +1542,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_history",
     {
       description:
-        "VERSION HISTORY of matching documents, grouped BY DOCUMENT: for each doc (`id`, `path`, `deleted`, `currentRev`), its ordered revision list (oldest→newest) with `rev`/`seq`/`commit`/`updated_at`/`origin`/`actor`/`hash`/`isCurrent`/`archived` (true when the revision's bodies live in an archive segment — the row stays, docs_read_at reads through the segment while it is attached). Give `path_glob` (e.g. \"journal/*\" — `*` matches ACROSS `/`, so journal/* and journal/** are equivalent) OR a single document by `id` or `path`; at least one is required. `hash` (hex of the revision's rendered file hash) lets you spot no-op vs real changes. Feed a returned `rev` into `docs_read_at` (whole doc AT that rev) or `docs_diff` (block-grain changes BETWEEN two revs). By default only live docs; `include_deleted:true` also returns tombstoned docs (their history is intact for audit). `limit` caps DOCUMENTS returned (default 50) with a `truncated` flag. Contrast `changes_since`: a repo-wide COMMIT feed, not this per-document view.",
+        "VERSION HISTORY of matching documents, grouped BY DOCUMENT: for each doc (`_id`, `_path`, `deleted`, `currentRev`), its ordered revision list (oldest→newest) — each version a `revisions` row under the row's names: `_rev`/`_seq`/`_commit`/`_ts`/`_origin`/`_actor`/`_hash`/`_is_current`/`_archived` (true when the revision's bodies live in an archive segment — the row stays, docs_read_at reads through the segment while it is attached). Give `path_glob` (e.g. \"journal/*\" — `*` matches ACROSS `/`, so journal/* and journal/** are equivalent) OR a single document by `_id` or `_path`; at least one is required. `_hash` (hex of the revision's rendered file hash) lets you spot no-op vs real changes. Feed a returned `_rev` into `docs_read_at` (whole doc AT that rev) or `docs_diff` (block-grain changes BETWEEN two revs). By default only live docs; `include_deleted:true` also returns tombstoned docs (their history is intact for audit). `limit` caps DOCUMENTS returned (default 50) with a `truncated` flag. Contrast `changes_since`: a repo-wide COMMIT feed, not this per-document view.",
       inputSchema: {
         path_glob: z.string().optional(),
         ...DOC_ARGS,
@@ -1552,17 +1554,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        if (!args.path_glob && args.id === undefined && args.path === undefined) {
-          throw new EngineError("target_missing", "docs_history requires one of path_glob, id or path");
+        if (!args.path_glob && args._id === undefined && args._path === undefined) {
+          throw new EngineError("target_missing", "docs_history requires one of path_glob, _id or _path");
         }
         let doc: string | undefined;
-        if (args.id !== undefined || args.path !== undefined) {
+        if (args._id !== undefined || args._path !== undefined) {
           // A live document resolves through the locator; with include_deleted a
           // tombstoned one is looked up by the same attribute.
           const tomb = args.include_deleted
-            ? (args.id !== undefined
-              ? store.db.prepare("SELECT doc_id FROM docs WHERE doc_id = ? AND repo_id = ?").get(args.id, repoId)
-              : store.db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, storagePath(args.path!))) as { doc_id: string } | undefined
+            ? (args._id !== undefined
+              ? store.db.prepare("SELECT doc_id FROM docs WHERE doc_id = ? AND repo_id = ?").get(args._id, repoId)
+              : store.db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, storagePath(args._path!))) as { doc_id: string } | undefined
             : undefined;
           doc = tomb ? tomb.doc_id : locateDoc(repoId, "docs_history", registry.get("docs_history")!.shape, args);
         }
@@ -1582,7 +1584,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "changes_since",
     {
       description: ladder(
-        "changes_since — Re-orient after time away: the commit feed after a cursor, each digest with its revisions [{ id, path, hash }].",
+        "changes_since — Re-orient after time away: the commit feed after a cursor, each digest with its revisions [{ _id, _path, _hash }].",
         "{}   everything from the start; head is the current max seq",
         "{\"cursor\":20,\"limit\":5}   commits after seq 20, five at a time (cursor pages while truncated)",
         "{\"origin\":\"api\"}   only the writes made through the engine (observed = edits on disk; import)",
@@ -1608,7 +1610,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "repos_status",
     {
       description:
-        "Repo counts (`{ id, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk }`): docs, blocks, commits, open edges, unconverged doc count, and on-disk drift. " +
+        "Repo counts (`{ _id, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk }` — `_id` is the root row's id): docs, blocks, commits, open edges, unconverged doc count, and on-disk drift. " +
         "`disk` reports a READ-ONLY scan of the working tree vs the DB: `changed` (files edited on disk but not re-ingested), " +
         "`deleted` (docs whose file is gone from disk), `untracked` (new *.md not yet ingested), and `checked` " +
         "(false when the server has no working-tree path — disk agreement is then UNVERIFIED, not clean).",

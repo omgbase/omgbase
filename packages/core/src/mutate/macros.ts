@@ -87,13 +87,13 @@ export function listsInsertItem(anchor: string, at: "start" | "end" | { before: 
   return [{ op: "insert", to: { parent: anchor, at }, markdown: item }];
 }
 
-/** One rewritten block of a retarget/repair (spec/surface §4, 3.0): the block's
- *  `id`, its document's `path` (the storage form here; the surface roots it),
- *  and the raw before/after. */
+/** One rewritten block of a retarget/repair (spec/surface §4, 3.0; 5.0 "underscore = engine"): the block's
+ *  `_id`, its document's `_path` (the storage form here; the surface roots it),
+ *  and the raw before/after (`oldRaw`/`newRaw` name roles). */
 export interface RetargetHit {
-  id: string;
+  _id: string;
   /** repo-relative path of the block's document */
-  path: string;
+  _path: string;
   oldRaw: string;
   newRaw: string;
 }
@@ -287,7 +287,7 @@ export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[],
     c.tally.forEach((n, i) => { effective[i]!.hits += n; });
     const hash = rawHashOfBlock(store, blockId);
     ops.push({ op: "update", block: blockId, markdown: c.newRaw, ...(hash ? { expect: { content_hash: hash } } : {}) } as Op);
-    hits.push({ id: blockId, path: c.path, oldRaw: c.oldRaw, newRaw: c.newRaw });
+    hits.push({ _id: blockId, _path: c.path, oldRaw: c.oldRaw, newRaw: c.newRaw });
   }
   return { ops, hits, pairs };
 }

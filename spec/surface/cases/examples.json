@@ -32,7 +32,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "path": "/processes/calcination.md"
+              "_path": "/processes/calcination.md"
             }
           }
         },
@@ -40,7 +40,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "path": "/processes/calcination.md",
+              "_path": "/processes/calcination.md",
               "include_ids": true
             }
           }
@@ -49,7 +49,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "id": "d_14"
+              "_id": "d_14"
             }
           }
         },
@@ -57,7 +57,7 @@
           "read": {
             "tool": "docs_read",
             "args": {
-              "path": "/processes/calcination.md",
+              "_path": "/processes/calcination.md",
               "at": "r_7"
             }
           }
@@ -96,7 +96,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select title, stage from docs where \"process\" in tags order by path limit 5"
+              "query": "select _title, stage from docs where \"process\" in tags order by _path limit 5"
             }
           }
         },
@@ -104,7 +104,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select type, text from blocks where path == \"/processes/calcination.md\""
+              "query": "select _type, _text from blocks where _path == \"/processes/calcination.md\""
             }
           }
         },
@@ -112,7 +112,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select block_id from nodes where kind == \"md:section\" and name == \"Tasks\" and path == \"/processes/calcination.md\""
+              "query": "select _block_id from nodes where _kind == \"md:section\" and _name == \"Tasks\" and _path == \"/processes/calcination.md\""
             }
           }
         },
@@ -120,7 +120,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select path, value from nodes where kind == \"md:task\" and not checked"
+              "query": "select _path, _value from nodes where _kind == \"md:task\" and not checked"
             }
           }
         },
@@ -128,7 +128,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select path, block_id from links where dst_path == \"/processes/calcination.md\""
+              "query": "select _path, _block_id from links where _dst_path == \"/processes/calcination.md\""
             }
           }
         },
@@ -136,7 +136,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "select path from docs where title ~* \"salt\""
+              "query": "select _path from docs where _title ~* \"salt\""
             }
           }
         },
@@ -165,7 +165,7 @@
                 {
                   "op": "set",
                   "target": "/substances/salt.md",
-                  "field": "frontmatter.verified",
+                  "field": "_frontmatter.verified",
                   "value": false
                 }
               ],
@@ -194,11 +194,11 @@
           "read": {
             "tool": "apply",
             "args": {
-              "select": "from blocks where type == \"task\" and not checked and path == \"/processes/calcination.md\"",
+              "select": "from blocks where _type == \"task\" and not checked and _path == \"/processes/calcination.md\"",
               "effects": [
                 {
                   "op": "set",
-                  "field": "attrs.checked",
+                  "field": "_attrs.checked",
                   "value": true
                 }
               ],
@@ -217,7 +217,7 @@
                 {
                   "op": "set",
                   "target": "/processes/calcination.md",
-                  "field": "frontmatter.verified",
+                  "field": "_frontmatter.verified",
                   "value": false
                 }
               ]
@@ -271,7 +271,7 @@
               "effects": [
                 {
                   "op": "set",
-                  "field": "frontmatter.ok",
+                  "field": "_frontmatter.ok",
                   "value": true
                 }
               ]
@@ -288,7 +288,7 @@
                 {
                   "op": "insert",
                   "into": "-> `/processes/${subject}.md`",
-                  "markdown": "-> `[${title}](${path})`"
+                  "markdown": "-> `[${_title}](${_path})`"
                 }
               ]
             },
@@ -299,12 +299,12 @@
           "read": {
             "tool": "execute",
             "args": {
-              "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
+              "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
               "effects": [
                 {
                   "op": "set",
                   "target": "/processes/calcination.md",
-                  "field": "frontmatter.verified",
+                  "field": "_frontmatter.verified",
                   "value": false
                 }
               ]
@@ -345,8 +345,8 @@
       "expect": {
         "steps": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "rev": "r_7",
             "properties": {
               "frontmatter": {
@@ -366,14 +366,14 @@
                 "reversible": "no"
               },
               "computed": {
-                "title": "Calcination"
+                "_title": "Calcination"
               }
             },
-            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
+            "_raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "rev": "r_7",
             "properties": {
               "frontmatter": {
@@ -393,10 +393,10 @@
                 "reversible": "no"
               },
               "computed": {
-                "title": "Calcination"
+                "_title": "Calcination"
               }
             },
-            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+            "_raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
             "ids": [
               "b_138",
               "b_139",
@@ -465,8 +465,8 @@
             }
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "rev": "r_14",
             "properties": {
               "frontmatter": {
@@ -487,16 +487,16 @@
                 "toxic": "no"
               },
               "computed": {
-                "title": "Salt"
+                "_title": "Salt"
               }
             },
-            "raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+            "_raw": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "rev": "r_7",
-            "raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+            "_raw": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
             "renderedHashMatch": true
           },
           {
@@ -508,54 +508,54 @@
             },
             "entries": [
               {
-                "id": "d_0",
-                "path": "/index.md",
+                "_id": "d_0",
+                "_path": "/index.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 31,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/lab/",
+                "_path": "/lab/",
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 51,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/practitioners/",
+                "_path": "/practitioners/",
                 "kind": "dir",
                 "docs": 4,
                 "blocks": 56,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/processes/",
+                "_path": "/processes/",
                 "kind": "dir",
                 "docs": 4,
                 "blocks": 71,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/substances/",
+                "_path": "/substances/",
                 "kind": "dir",
                 "docs": 5,
                 "blocks": 80,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/texts/",
+                "_path": "/texts/",
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 25,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "/timeline/",
+                "_path": "/timeline/",
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 13,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               }
             ],
             "truncated": false,
@@ -570,36 +570,36 @@
             },
             "entries": [
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
+                "_id": "d_7",
+                "_path": "/processes/calcination.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 20,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_8",
-                "path": "/processes/coagulation.md",
+                "_id": "d_8",
+                "_path": "/processes/coagulation.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 14,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md",
+                "_id": "d_9",
+                "_path": "/processes/dissolution.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 15,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md",
+                "_id": "d_10",
+                "_path": "/processes/magnum-opus.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 22,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               }
             ],
             "truncated": false,
@@ -614,76 +614,76 @@
             },
             "entries": [
               {
-                "id": "d_0",
-                "path": "/index.md",
+                "_id": "d_0",
+                "_path": "/index.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 31,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_1",
-                "path": "/lab/2026-01-notes.md",
+                "_id": "d_1",
+                "_path": "/lab/2026-01-notes.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 28,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_2",
-                "path": "/lab/2026-02-notes.md",
+                "_id": "d_2",
+                "_path": "/lab/2026-02-notes.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 23,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_3",
-                "path": "/practitioners/jabir-ibn-hayyan.md",
+                "_id": "d_3",
+                "_path": "/practitioners/jabir-ibn-hayyan.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 13,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               },
               {
-                "id": "d_4",
-                "path": "/practitioners/maria-prophetissa.md",
+                "_id": "d_4",
+                "_path": "/practitioners/maria-prophetissa.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 13,
-                "updated_at": "2026-09-27T00:00:00.000Z"
+                "_updated_at": "2026-09-27T00:00:00.000Z"
               }
             ],
             "truncated": true,
             "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCJd"
           },
           {
-            "syntax": "# query — OQX syntax reference\n\nThe `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`, and\n`bare: true` to drop the automatic `id`/`path` envelope — needs a `select`).\nThere is no {from, filter, order} envelope: every concern is a clause of the\nstring. Two rules tell the two syntaxes apart: DOT navigation belongs to the\nhost object model (`doc.layer`, `section.blocks`, `dst.title`); WHITESPACE\nquery directives belong to OQX — a nested query is `<receiver> collect|exists|\ncount|first|single { <block> }` (a postfix directive + a `{ … }` block), never a\nmethod. Its distinctive power is the receiver-constrained nested query that\ncorrelates to the current row: `from docs where nodes exists { where kind ==\n\"md:task\" }` returns only the docs that themselves contain a matching node.\n\n  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]\n                   [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]\n                   [order by <expr> [asc|desc], …] [limit N] [offset N]\n  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)\n\nCLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset —\neach at most once (`flatten` may repeat); an out-of-order clause is a parse error naming the order.\nOnly `select` may drop its keyword, and only as the first clause\n(`path, era from docs where …`). A top-level predicate needs `where`, because\n`where` follows `from` (`era > 1600 from docs` is the clause-order error); a\nblock may LEAD with a predicate (see Sugar), but a predicate after a projection\nstill needs the keyword (`{ name where kind == \"md:task\" }`, not\n`{ name, kind == \"md:task\" }`); `from docs count` is an error (write\n`docs count { … }`). `where` and later `select` items may use the same body's\n`select` aliases (`select path, old: era < 1000 from docs where old`; an alias\nshadows a same-named field there). `and` / `or` / `not` are the connectives;\nthe symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and\nwhat `print` writes).\n\n## Sugar (OQX 0.17)\n\nEvery form here is shorthand for an explicit directive (the AST is the explicit form):\n  nodes { kind == \"md:task\" }        ≡ nodes collect { where kind == \"md:task\" } — a receiver block with\n                                       no consumer is collect; a block whose LEADING expression is a predicate\n                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything\n                                       but a bare name, a dotted path or a ^lift) is where-first. Bare names still\n                                       project: nodes { name } ≡ nodes collect { name }; filter a bare field with\n                                       nodes { is checked }. Wherever a value stands (0.20), call arguments included:\n                                       size(children { is checked }); x distinct { … } ≡ x collect distinct { … }. After a\n                                       follow destination too: follow children { depth 2 } is that destination's block.\n  (a, b)                              a tuple (0.20): two or more expressions, concatenated one level flat — a value\n                                       (size((tags, aliases)), \"x\" in (tags, aliases)) and a receiver ((a, b) { … },\n                                       follow (before, after) { depth 2 }); (a) alone is grouping\n  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});\n                                       out of range ⇒ absent; refs(x)[0].path navigates the row\n  ^docs[path == ^company]             ≡ ^docs first { where path == ^company }   first match or absent\n  ^docs[path == ^company]!            ≡ … single { … } required: exactly one, else filter_invalid\n  title!                              required: title, or an error naming the expression (and the row's $key — its id)\n                                       — never a filter, never a coercion (0!, \"\"! are values); tightest: a!.b vs a.b!\n  is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)\n  x is y / x is not y                 identity ($key: a store row's id, else structural) — compares rows, which == does not;\n                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining\n  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: data.title or path coalesces)\n  boss: ^docs[path == ^manager], bossName: boss.title   a select item may use the items to its LEFT\n  Reserved words (never a bare field name): from where select is not and or, true false null.\n  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth group having\n  flatten as) parse as fields in expression position (select o: order from docs).\n\nResults are LEAN hits — { id, path } + whatever `select` projects (or `values`,\n`count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's\n`id` straight into `where id == \"…\"` (no translation); `select id, path` is simply\nthe envelope (no duplicate columns); any OTHER projection whose output key would\nbe `id` or `path` must be aliased — `select data.path` is refused (\"projection\n`path` collides with the hit envelope — alias it (`p: data.path`)\"); a row\nsurfacing as a value (an empty `collect { }`) is the same `{ id, path }`. Every\nother tool spells a row the same way (`docs_read` → `{ id, path, rev, properties,\nraw }`, `blocks_read` → `{ id, type, text, raw, hash, … }`, `docs_list` → `{ id,\npath, updated_at, blocks }`, a revision → `{ id, path, hash }`): hydrate by id via\nblocks_read/docs_read.\n\n## Paths\n\nEvery path the surface returns is `/`-rooted — the form a reference is\nwritten in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a\nhit's `path`, an edge's `dst_path`, every tool's paths. Every path it\naccepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,\n`within(...)`, and a string LITERAL compared with `path`/`dst_path` (bare, or\nthrough a row handle: `doc.path`) by `==`/`!=` or passed to their\n`.startsWith(...)` (it is rooted first, so `path == \"a.md\"` and `path == \"/a.md\"`\nboth match). A property holding a reference compares directly — and is never\nrooted: `where ^path in list(after)`, `where customer == ^path`,\n`where data.path == \"/x.md\"` (the author's `path:` key, as written) — no\n`\"/\" + ...` glue.\n\n## Targets & field namespaces\n\nTHE NAME RULE: `$` belongs to OQX — $it, $key, $depth, $stop, $leaf, $frontier,\n$ordinal are values the LANGUAGE injects into a scope; omgbase adds NO $ names\n(a `$id` in a query is an unknown name, absent). Every engine attribute is a BARE\nsnake_case name that WINS on collision — the convention the relations (children,\nblocks, out, in, doc, frontmatter, …) always followed: a bare name that is an\nengine attribute reads the engine's value, never yours. Your data is bare too;\nwhere a key of yours collides with an engine name, reach it through a source\nhandle: `data.<k>` (the merged authored view — frontmatter + inline, exactly the\nread a bare non-colliding key performs), `frontmatter.<k>`, `inline.<k>`. So\n`path` is the engine's /-rooted location and `data.path` your `path:` key;\n`tags` is your tags ∪ the body #hashtags and `data.tags` the authored list alone;\n`title` the computed title (the first H1) and `data.title` your `title:`;\n`entries(data)` lists every authored top-level key. Same value, same name\neverywhere: a hit's `id` is docs_read's `id` and the `id` argument of blocks_read.\n\n  Reserved bare names per kind (engine attributes; handles; self; relations):\n    docs    id path raw hash updated_at created_at title tags format | data frontmatter inline | doc | blocks nodes out_links in_links revisions\n    blocks  id path doc_id raw hash updated_at created_at type text attrs depth ordinal | block doc | children nodes out_links section\n    nodes   id path doc_id block_id kind name value attrs | section doc block | blocks subsections children\n    links   id path doc_id block_id via_id dst_id dst_path uri field dst_kind predicate provenance anchor | doc dst block\n    revisions  id path rev seq doc_id commit ts origin actor reason hash is_current archived | doc\n  A key of yours with any of these names is `data.<k>` (or frontmatter.<k> /\n  inline.<k> by source; attrs.<k> on a block or node).\n  UNKNOWN NAMES: a name that is none of the above AND that no object of the\n  kind in this repository carries is reported before any row is read — on\n  links as a filter_invalid error naming the fields; on docs/blocks/nodes the\n  result gains `hints` (one line per name, nearest match when there is one)\n  and the rows still come back; in a plan/apply/execute selector it is refused.\n  A property some objects carry is known (partial presence is normal).\n\ndocs:\n  - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,\n                       unioned; nested via dots: meta.owner). YAML/JSON docs\n                       expose the parsed object's keys the same way.\n  - source handles   = data.<k> (merged authored view) / frontmatter.<k> /\n                       inline.<k>; the whole bag as a collection via entries(data)\n                       / entries(frontmatter) / entries(inline) (see entries()).\n  - attributes       = id, path (/-rooted, see Paths), updated_at (ISO-8601,\n                       sorts chronologically), raw (the whole file, frontmatter\n                       included), hash (its sha256, 64 hex), title (the computed\n                       title: the first H1; data.title is the authored key), tags\n                       (authored tags ∪ body #hashtags, deduped, authored first;\n                       data.tags is the authored list), format (the doc's format —\n                       \"markdown\"/\"yaml\"/\"json\"; present on EVERY doc, so\n                       has(format) is always true and `format == \"yaml\"` is the\n                       filter).\n  - relations        = nodes, blocks, doc.out_links / doc.in_links (a doc's\n                       links as rows; the documents at their other end are\n                       out_links collect distinct { from dst } and\n                       in_links collect distinct { from doc } — there is no\n                       out / in relation), revisions (the document's stored\n                       revisions, oldest first — see revisions below).\n\nblocks:\n  - bare fields      = doc_id (the owning doc), type, text (normalized), ordinal\n                       (0-based among siblings), depth (0 at the top level), and\n                       every attrs key FLATTENED onto the row (bare `checked`\n                       reads attrs.checked; `attrs.<k>` still works; the\n                       structural fields win on collision; absent ⇒ false).\n  - attributes       = id, path (the owning doc's path), raw (the block's raw\n                       source — a container's raw holds its children), hash\n                       (its sha256 — the value update/split expect as\n                       expect.content_hash), updated_at.\n  - reach-through    = doc.<key> / doc.path / doc.id / doc.format = the\n                       CONTAINING doc (doc.id and doc.path cost nothing — they\n                       read the row's own doc_id / joined path, no lookup).\n  - relations        = block.children, block.nodes, block.out_links, section.\n  NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a\n  block's own nesting is `depth` / `ordinal` (no $) everywhere.\n\nnodes:\n  - bare fields      = doc_id, block_id (null for a block-less node), kind\n                       (md:task / md:link / md:section / yaml:…), name, value,\n                       + attrs keys flattened (checked, level).\n  - attributes       = id, path.\n  - reach-through    = doc.<key> / doc.id / doc.path, block.type / block.text\n                       / block.id / block.path.\n  - relations        = section.blocks, section.children, section.subsections.\n\nlinks:  (the authored link graph as rows — one per open link: the relation a link\n        establishes; the md:link NODE is its occurrence in the text and via_id\n        points at it — a frontmatter link has a row and no node)\n  - bare fields      = doc_id (the SOURCE doc), block_id (the source block; null\n                       for a frontmatter edge), via_id, dst_id (the destination\n                       node id: a doc id, an external node id or phantom:<path>),\n                       dst_path (target doc path, /-rooted; NULL when\n                       dangling/external), uri (external URL; NULL otherwise),\n                       predicate (\"references\"/\"embeds\"/freeform), provenance\n                       (\"link\"/\"frontmatter\"/\"inline_field\"/…), dst_kind\n                       (\"document\"/\"external\"/\"collection\"), anchor, field (the\n                       frontmatter key / inline field it was authored in).\n  - attributes       = id, path (the SOURCE doc's path); doc.<key> reaches the\n                       source document. There is no from_commit: a query sees\n                       open edges only (history is blocks_history/changes_since).\n  - text()/semantic() are N/A on links.\n\nrevisions:  (history as rows — one per stored revision of every document of the\n        repository, deleted documents included: what docs_history lists, queryable)\n  - bare fields      = rev (= id), seq (1, 2, … per document), doc_id, commit,\n                       ts (the commit's time, sorts chronologically), origin\n                       (\"observed\"/\"api\"/\"import\"/\"projection\"), actor, reason,\n                       hash (the rendered file's sha256 — docs_history's hash),\n                       is_current (true for the document's current revision),\n                       archived (true when the bodies moved to an archive segment:\n                       the row stays, docs_read { at } reads through the segment).\n  - attributes       = id (the revision id, r_…), path (the path the revision\n                       was committed under — a move re-paths only the current\n                       revision, so earlier ones keep the old path). doc.<key>\n                       reaches the document's CURRENT row; absent for a deleted\n                       document, so where doc == null is the revisions of deleted documents.\n  - on docs          = revisions is a relation (oldest first): a document with\n                       more than one version is docs { revisions count { } > 1 }.\n  - text()/semantic() are N/A on revisions. The body as of a revision is\n    docs_read { path, at: \"<rev>\" } (docs_read_at is the same call).\n\n## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL\n\n  name          the CURRENT row only — never falls through to an enclosing row\n                or the repository; an absent field is simply absent.\n  ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);\n                ^^name two scopes out. `^path` = the enclosing row's path.\n  ^docs ^nodes ^blocks ^links ^revisions\n                THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root\n                scope's row, one scope out from a top-level row, so ^docs there is\n                the whole documents scan (uncorrelated until you add a ^ predicate);\n                one caret per enclosing block (^^docs from depth two), or the\n                absolute 0^docs from ANY depth. ^id / 0^id = the repository id.\n                ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the\n                five collections. At the root scope itself a bare target is the scan\n                (docs count { … }, from docs, entries(docs)).\n                ERRORS: a bare `docs` INSIDE a block reads a property of the current\n                row, which has none — refused (\"did you mean ^docs\"); `^docs` AT THE\n                TOP LEVEL reaches past the root — refused (write the bare `docs`);\n                so is `$repo` (surface < 2.0; the message names the replacement).\n                nodes/blocks on a doc row are that doc's RELATIONS, not the root.\n  $it           the current item itself (a row, or each ELEMENT when the\n                receiver is a list property); ^$it = the enclosing row.\n                $value is NOT an intrinsic (since oqx 0.15): it reads a\n                property literally named $value, absent when there is none.\n  $key          the row's identity (0.20): a store row's id (doc/block/node/edge), an entries(x)\n                entry's key, a follow occurrence's walk identity; project $key: <expr> to rekey the\n                rows a block yields (a destination block's $key: is not a column).\n\n## Scalar semantics (@omgbase/oqx)\n\n  comparisons  ==  !=  <  <=  >  >=    strict & typed (5 == \"5\" is false); either\n                                       side may be a field (field-vs-field OK).\n  absence      null and a missing field are the same \"absent\" value; two absents\n               are EQUAL, so `absent != \"x\"` is TRUE and `absent == null` is TRUE.\n               Relational (< <= > >=) on an absent operand → FALSE. Bare `f` in\n               boolean position uses JS truthiness (absent/false/0/\"\" ⇒ false;\n               NOTE: \"false\", [] and {} are truthy). has(f) = explicit presence.\n  boolean      and  or  not    grouping ( … )   — && || ! are accepted synonyms\n  arithmetic   + - * / %    (+ concatenates if either side is a string)\n  membership   x in y       array → typed membership; string → substring;\n                            object → key exists; range → coverage. Any list\n                            property works directly: \"pricing\" in tags. list(f)\n                            coerces scalar-or-list (absent → []) — use it when a\n                            key is sometimes scalar, sometimes a list.\n  ranges       lo..hi (inclusive)  lo...hi (exclusive hi)  ..hi  lo..\n               era in 800..1680; works over ISO dates. range(prop) reads a\n               range-shaped STRING property as an interval: \"2026-01-15\" in range(window).\n  strings      x.contains(\"s\") x.startsWith(\"p\") x.endsWith(\"s\") x.matches(\"^re$\")\n               (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —\n               fold with .lower(): title.lower().contains(\"aurora\").\n               Infix regex: x ~ \"re\" is x.matches(\"re\"); x ~* \"re\" is the\n               case-insensitive match; x !~ \"re\" and x !~* \"re\" negate them.\n               Unanchored unless the pattern anchors; an absent x is false\n               under ~ and TRUE under !~ (not SQL's NULL).\n  functions    has(f)  size(x)  list(x)  entries(x)  range(s)\n  dates        a date is an ISO string, a duration a NUMBER OF SECONDS; arithmetic\n               is METHODS, never + or - (+ concatenates strings).\n               date(\"today\"|\"now\"|\"yesterday\"|\"tomorrow\"|\"sow\"|\"eow\"|\"som\"|\"eom\"|\n               \"soy\"|\"eoy\") — the host clock, UTC; date(\"2026-10-15\") canonical ISO\n               (absent if unparseable). dur(\"1h30m\") dur(\"2 days, 3 hours\")\n               dur(\"P1DT2H\") dur(90) → seconds (year = 365 d, month = 30 d).\n               d.plus(dur(\"30 days\"))  d.minus(86400)  d.plus(\"1 month\") (calendar:\n               Jan 31 → Feb 28)  a.until(b) → signed seconds  d.year() d.month()\n               d.day() d.weekday() (1 = Mon) d.hour() d.minute() d.second()\n               d.date()  d.format(\"EEE dd MMM yyyy\")  n.dur_text() → \"1h 30m\"\n               n.dur_iso() → \"PT1H30M\". Total: a non-date is absent, so\n               `where date(due) < date(\"today\").minus(dur(\"30 days\"))` just\n               filters. A datetime is never < its own date: compare\n               updated_at.date() == date(\"today\"), or < date(\"tomorrow\").\n  literals     \"str\" 'str' 123 1.5 true false null\n  determinism  no random; the only clock is date(\"today\"/\"now\"/…), read once per\n               query. Lists/structs are not literals; ternary is not supported.\n               Errors surface as filter_invalid.\n  scalars vs lists  a list-authored key never == a scalar (tags == \"x\" is false\n               when tags is a list) — use `\"x\" in tags` / `in list(tags)`.\n\n## Domain predicates (omgbase)\n\n  text(\"terms\")        FTS5 PRUNING predicate (docs match via their blocks, nodes\n                       via the node index); composes anywhere, incl. nested scopes.\n  semantic(\"phrase\")   embedding cosine SCORE (docs/blocks): threshold it\n                       (semantic(\"x\") > 0.6), project it, or `order by semantic(\"x\")\n                       desc` for top-K. Needs a provider that has embedded the repository; else provider_unavailable.\n  blocks target only:\n    under(id_or_heading)      block in the containment subtree / section range\n    under_heading(\"Launch\")   an ancestor section heading contains the text (ci)\n    under_kind(type[, name])  an ancestor block has that type (name: its text\n                              contains / its key equals name)\n    within(\"path\" | \"d_..\")   containing doc = id, exact path, or path glob (*);\n                              either path form\n    yaml_path(\"a.b\")          YAML docs: the block at that key path\n    json_pointer(\"#/a/b\")     JSON docs: the block at that pointer\n    has_edge(\"pred\"[, target])  an open authored edge with that predicate leaves here\n    has_anchor()              block carries an authored ^ref\n    parent_type() == \"x\"      parent block's type (must be compared)\n    child_count() > 0         number of direct children (must be compared)\n  refs(x)              the live documents a property's document references name:\n                       x is a string, a list or absent; each \"/a/b.md\", \"a/b.md\"\n                       or \"d_…\" element resolves to that doc's row; dangling and\n                       non-string elements are dropped. Yields docs rows, so it is\n                       a source, a receiver or a follow destination:\n                       follow refs(before), refs(after) walks a timeline both ways.\n                       The reverse direction needs no function: a document's\n                       path is already the reference form, so\n                       ^docs { where ^path in list(after) } is\n                       \"the documents whose `after` names me\".\n  A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails\n                       (filter_invalid). `follow before` over a list of paths\n                       reaches the STRINGS — write `follow refs(before)`.\n\n## Nested queries & consumers\n\n  <receiver> collect|exists|none|count|first|single { <block> }\n    receiver = a relation (nodes, blocks, doc.out_links, section.blocks, …), a\n               reach-through row (dst, doc: one row — dst { title }), a\n    list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).\n    block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]\n               — the same fixed order as the top level (`from` optional; the\n               receiver supplies the rows). A leading name/alias list is the\n               projection (`select` dropped); a predicate always needs `where`.\n               A `from E` inside a block RE-PROJECTS the rows through a relation\n               (a typed flatMap): `docs collect { from nodes where kind == \"md:task\" }`\n               starts at docs, projects each through `nodes`, and queries the\n               resulting nodes; a scalar relation (`from doc`) contributes one\n               row; a missing or non-navigable relation is a loud error, never a\n               global scan.\n  exists    ≥1 row      nodes exists { where kind == \"md:task\" and not checked }\n  none      0 rows      nodes none { where kind == \"md:task\" and not checked }  (\"every task done\")\n  count     a number    nodes count { where kind == \"md:task\" } >= 2\n  collect   rows (default) — in select for nested results; in where with a lift\n  first / single   zero-or-one (single errors on >1) — lookups in select\n  distinct  on any consumer: dedup by projected value — nodes count distinct { select kind }\n  limit/offset  bound the block's rows AFTER where/order/distinct, BEFORE the\n            consumer reduces: nodes exists { offset 1 } = at least two;\n            first { … offset 1 } = the second.\n  lift      `^name:` in a where-collect binds values outward:\n            select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not checked }\n  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;\n            ^nodes single { where kind == \"person\" and attrs.id == ^owner_id }  lookup;\n            x in ^keys  membership over a lifted set.\n\n## select — projection\n\n  select a, alias: expr, nested: nodes collect { … }\n  bare key → the attribute when it is one (id, path, title, …), else the property\n  (scalar-authored → scalar; list → array); data.<k> forces the property;\n  a call/arithmetic needs an alias (n: size(tags)) unless in values mode;\n  an output key of id/path other than the attribute itself needs an alias.\n  raw         whole file bytes (docs) — docs_read is cheaper for one doc.\n  distinct    select distinct type   (dedup hits by projected value)\n  values      select <ONE item> values → bare values instead of records:\n                select distinct type values from docs          → values: [\"hub\",\"lab-note\",…]\n                select path values from docs                   → values: [\"/index.md\", …]\n                tags: tags collect { $it values }             → a plain array\n                h: nodes first { name values where kind == \"md:section\" order by first_ordinal }\n  entries(x)  a record as a collection ($key / $it per entry), key order:\n                select fm: entries(data) collect { k: $key, v: $it }\n                where entries(frontmatter) exists { where $key == \"era\" and $it > 1600 }\n                entries(inline), entries(attrs), a nested map, or a list (index keys)\n  $semantic_score is not a field — project semantic(\"…\") under an alias instead.\n\n## flatten (OQX 0.25)\n\n  flatten <expr> [{ … }] [as <name>]      after follow, before group by; may repeat\n  Splits one value into rows. Every hit is still the PARENT row — its id/path\n  repeat per element, as Dataview's TABLE … FLATTEN — with <name> bound beside\n  its fields at the same depth: an array → one row per element (an empty list\n  yields none), a missing field → one row with the name absent (never dropped),\n  an object or a scalar → one row with the value. A plain navigation names\n  itself (flatten tags rebinds tags to each element); anything else needs as.\n  The block is the ordinary receiver block over the elements (where, a\n  projection, order by, limit, distinct), applied first. Later clauses read the\n  name — a later flatten (flatten jobs as j flatten j.tags as t), group by,\n  having, select, order by; where runs before it. A flattened query pages by\n  position (cursor null); as id / as path is refused (the envelope reads them).\n    select path, tags from docs where type == \"process\" flatten tags order by path, tags\n    select path, t: b.text from docs flatten blocks { where type == \"task\" and not checked } as b\n    select tags, n: count() from docs flatten tags group by tags order by count() desc\n\n## order by, limit/offset, pagination\n\n  order by era desc, path asc      absent values sort LAST (asc); ties → (path, id)\n  limit N / offset N               define the result SET (integer literals);\n                                   the tool's limit/cursor then page WITHIN it\n  cursor                           opaque keyset on (path,id); a custom order by\n                                   disables it (you get the top page + truncated)\n\n## Graph traversal (follow) and links\n\n  The citation graph is the LINK ROWS walked through a destination block:\n  dst is a link's destination document (absent for an external or dangling\n  link — it then contributes no successor), doc its source.\n  from docs where <seed> follow out_links collect { from dst }     docs the seed links TO\n  from docs where <seed> follow in_links collect { from doc }      backlinks\n    follow out_links collect { from dst depth 3 }                  bound (1..8, default 8) — a clause of the block\n    follow out_links collect { from dst where layer == \"canon\" }   keep only matching successors\n    follow in_links collect { from doc where ^path in list(before) }   ^ = the row being expanded\n                                                   (^^ = the walk's enclosing scope)\n    follow out_links collect { from dst where predicate == \"depends_on\" }   one predicate only\n    follow out_links collect { from dst }, in_links collect { from doc }\n                                                   several destinations: their union\n                                                   (one step dedups by identity)\n    follow ^docs { where out_links exists { where dst_path == ^^path } }\n                                                   a destination block over the root's\n                                                   documents, re-read per frontier row\n                                                   (^ = that row) = the backlinks walk\n    follow out_links collect { from dst frontier type == \"practitioner\" }   cut, keeping the frontier row\n    from docs where type == \"process\" frontier !verified follow out_links collect { from dst }\n                                                   the BODY's frontier applies to the seeds:\n                                                   an unverified seed is kept, not expanded\n    follow distinct out_links collect { from dst } / … { $key: group from dst }   identity control ($key)\n    follow refs(before), ^docs { where ^path in list(after) }    forward over `before`, backward\n                                                   over every doc whose `after` names me\n  Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|\n  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the\n  walk, ordered by depth then path — `order by $ordinal` for walk order,\n  `where $ordinal <= N` for a deterministic budget cut), $key — usable in\n  select/order by and the top-level post-walk where (a where conjunct that\n  reads one filters the walk's RESULT; the other conjuncts remain the seed\n  predicate), NOT metadata of the candidates a destination block's where reads,\n  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited\n  node is admitted once as a `$stop == \"cycle\"` occurrence and never\n  re-expanded. The default keeps one occurrence per distinct walk path;\n  `follow distinct` dedups reached rows by identity.\n  Destination blocks (OQX 0.20): a brace after ANY destination opens that\n  destination's block — children { depth 2 }, refs(x) { depth 2 }, out_links\n  collect { from dst depth 2 }, ^docs { where ^path in list(after) } — with the\n  0.17 body rules (where-first, projections) and two clauses of its own after\n  `where`: frontier <pred> (occurrences reached through this destination that\n  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>\n  (this destination expands a frontier row only while $depth < n). The body\n  that carries the follow may write frontier <pred> too, after its where and\n  before follow: it applies to the SEEDS (read like the body's where) — a\n  matching seed stays in the result with $stop == \"frontier\" and is not\n  expanded; each destination's frontier is its own. There is no options block;\n  the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an\n  error naming both block spellings.\n  Type-preserving relations: block.children, section.children, section.subsections;\n  the citation graph is out_links collect { from dst } / in_links collect { from doc }.\n  from links where dst_path == \"/notes/x.md\"       inbound links to a doc, as rows\n  select d: dst.title, k: dst_kind from links       the destination document's title\n  from docs where out_links exists { where dst.layer == \"draft\" }   links into drafts\n  select b: in_links collect distinct { from doc } from docs     backlinks as { id, path }\n  select doc_id, dst_path from links where predicate == \"depends_on\"\n  from docs where not doc.in_links exists { }      orphans (nothing links in)\n  (The `graph` tool is a convenience wrapper that compiles to a follow query.)\n\n## semantic grain\n\nfrom docs ranks whole DOCUMENTS (one hit per file); from blocks ranks PASSAGES.\ntext()/where prune the candidate set; only order by reweights.\n\n## Examples\n\n  from docs where layer == \"working\"\n  from docs where path.startsWith(\"/guides/\") and updated_at >= \"2026-08-01\"\n  select layer, tags from docs where \"pricing\" in list(tags)\n  from docs where inline.owner == \"alice\"\n  from docs where title.lower().contains(\"q3 plan\")\n  from docs where format == \"yaml\"\n  from docs where type == \"practitioner\" order by era desc limit 2\n  from docs where nodes none { where kind == \"md:task\" and not checked }\n  from docs where tags exists { where $it == \"tria-prima\" }\n  select fm: entries(data) collect { k: $key, v: $it } from docs where path == \"/x.md\"\n  select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs\n  from blocks where type == \"task\" and not checked and under_heading(\"Launch\") and doc.layer == \"working\"\n  from blocks where type == \"paragraph\" and has_edge(\"references\", \"d_92aaaaa\")\n  select path, $depth from docs where path == \"/timeline/review.md\" follow refs(before), refs(after)\n  select path, next: ^docs collect { path where ^path in list(before) } from docs where type == \"milestone\"\n  select path, n: size(^docs), repo: ^id from docs limit 1\n  select p: data.path, t: data.title from docs where has(data.path)\n  docs { type == \"substance\" and not verified }\n  select subject, process: ^docs[slug == ^subject]!.path from docs where type == \"lab-note\"\n  select path, back: nodes first { select p: 0^docs collect { path where ^^path in list(after) } values } from docs where type == \"milestone\"\n  select path, prior: refs(before) collect { path, when } from docs where type == \"milestone\"\n  from blocks order by semantic(\"identity preservation across edits\") desc limit 10\n  select uri from links where dst_kind == \"external\"\n  docs count { where layer == \"canon\" }\n  select seq, origin, ts, hash from revisions where path == \"/processes/calcination.md\" order by seq desc\n  from docs where revisions count { where origin == \"api\" } > 0\n  select p: path, d: doc.path from revisions where doc == null\n  select layer, n: count(), titles: collect(title), open: rows count { where nodes exists { where kind == \"md:task\" and not checked } } from docs group by layer having count() > 1 order by count() desc\n  select path, tag: tags from docs where \"process\" in tags flatten tags order by path, tags\n\nCommon mistake: `$path`/`$id` (the 2.x spelling) — omgbase has no $ names; write\n`path`/`id`. Another: `where tags == \"x\"` on a list-valued key is false — write\n`\"x\" in tags`. Another: `select data.path` — alias it (`p: data.path`).\n"
+            "syntax": "# query — OQX syntax reference\n\nThe `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`, and\n`bare: true` to drop the automatic `_id`/`_path` envelope — needs a `select`).\nThere is no {from, filter, order} envelope: every concern is a clause of the\nstring. Two rules tell the two syntaxes apart: DOT navigation belongs to the\nhost object model (`_doc.layer`, `_section._blocks`, `_dst._title`); WHITESPACE\nquery directives belong to OQX — a nested query is `<receiver> collect|exists|\ncount|first|single { <block> }` (a postfix directive + a `{ … }` block), never a\nmethod. Its distinctive power is the receiver-constrained nested query that\ncorrelates to the current row: `from docs where _nodes exists { where _kind ==\n\"md:task\" }` returns only the docs that themselves contain a matching node.\n\n  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]\n                   [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]\n                   [order by <expr> [asc|desc], …] [limit N] [offset N]\n  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)\n\nCLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset —\neach at most once (`flatten` may repeat); an out-of-order clause is a parse error naming the order.\nOnly `select` may drop its keyword, and only as the first clause\n(`_path, era from docs where …`). A top-level predicate needs `where`, because\n`where` follows `from` (`era > 1600 from docs` is the clause-order error); a\nblock may LEAD with a predicate (see Sugar), but a predicate after a projection\nstill needs the keyword (`{ _name where _kind == \"md:task\" }`, not\n`{ _name, _kind == \"md:task\" }`); `from docs count` is an error (write\n`docs count { … }`). `where` and later `select` items may use the same body's\n`select` aliases (`select _path, old: era < 1000 from docs where old`; an alias\nshadows a same-named field there). `and` / `or` / `not` are the connectives;\nthe symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and\nwhat `print` writes).\n\n## Sugar (OQX 0.17)\n\nEvery form here is shorthand for an explicit directive (the AST is the explicit form):\n  nodes { _kind == \"md:task\" }       ≡ nodes collect { where _kind == \"md:task\" } — a receiver block with\n                                       no consumer is collect; a block whose LEADING expression is a predicate\n                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything\n                                       but a bare name, a dotted path or a ^lift) is where-first. Names still\n                                       project: _nodes { _name } ≡ _nodes collect { _name }; filter a bare field with\n                                       _nodes { is checked }. Wherever a value stands (0.20), call arguments included:\n                                       size(_children { is checked }); x distinct { … } ≡ x collect distinct { … }. After a\n                                       follow destination too: follow _children { depth 2 } is that destination's block.\n  (a, b)                              a tuple (0.20): two or more expressions, concatenated one level flat — a value\n                                       (size((tags, aliases)), \"x\" in (tags, aliases)) and a receiver ((a, b) { … },\n                                       follow (before, after) { depth 2 }); (a) alone is grouping\n  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});\n                                       out of range ⇒ absent; refs(x)[0]._path navigates the row\n  ^docs[_path == ^company]            ≡ ^docs first { where _path == ^company }   first match or absent\n  ^docs[_path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid\n  _title!                             required: _title, or an error naming the expression (and the row's $key — its _id)\n                                       — never a filter, never a coercion (0!, \"\"! are values); tightest: a!.b vs a.b!\n  is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)\n  x is y / x is not y                 identity ($key: a store row's id, else structural) — compares rows, which == does not;\n                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining\n  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: title or _title coalesces)\n  boss: ^docs[_path == ^manager], bossName: boss._title   a select item may use the items to its LEFT\n  Reserved words (never a bare field name): from where select is not and or, true false null.\n  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth group having\n  flatten as) parse as fields in expression position (select o: order from docs).\n\nResults are LEAN hits — { _id, _path } + whatever `select` projects (or `values`,\n`count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's\n`_id` straight into `where _id == \"…\"` (no translation); `select _id, _path` is\nsimply the envelope (no duplicate columns); an alias `_id:`/`_path:` on any OTHER\nexpression is refused — `select _path: _doc._path from blocks` fails (\"projection\n`_path` collides with the hit envelope — alias it (`p: _doc._path`)\"); a row\nsurfacing as a value (an empty `collect { }`) is the same `{ _id, _path }`. Every\nother tool spells a row the same way (`docs_read` → `{ _id, _path, rev, properties,\n_raw }`, `blocks_read` → `{ _id, _type, _text, _raw, _hash, … }`, `docs_list` → `{ _id,\n_path, _updated_at, blocks }`, a revision → `{ _id, _path, _hash }`): hydrate by `_id`\nvia blocks_read/docs_read.\n\n## Paths\n\nEvery path the surface returns is `/`-rooted — the form a reference is\nwritten in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a\nhit's `_path`, an edge's `_dst_path`, every tool's paths. Every path it\naccepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,\n`within(...)`, and a string LITERAL compared with `_path`/`_dst_path` (on the row,\nor through a row handle: `_doc._path`, `_dst._path`, `$it._path`) by `==`/`!=` or\npassed to their `.startsWith(...)` (it is rooted first, so `_path == \"a.md\"` and\n`_path == \"/a.md\"` both match). A property holding a reference compares directly —\nand is never rooted: `where ^_path in list(after)`, `where customer == ^_path`,\n`where path == \"/x.md\"` (YOUR authored `path:` key — the bare name — compared as\nwritten) — no `\"/\" + ...` glue.\n\n## Targets & field namespaces\n\nTHE NAME RULE — one rule on every record kind: a BARE name is YOURS (an authored\nproperty: frontmatter + inline on a doc, an attrs key on a block or node), an\nUNDERSCORE-prefixed name is the ENGINE's (however derived: `_id`, `_path`,\n`_title`, `_updated_at`, `_doc`), and `$` belongs to OQX — $it, $key, $depth,\n$stop, $leaf, $frontier, $ordinal are values the LANGUAGE injects into a scope;\nomgbase adds NO $ names (a `$id` in a query is an unknown name, absent). Nothing\nbare is reserved: `title`, `tags`, `path`, `id`, `format`, `doc` are your keys\nwhen you wrote them. Collections stay bare (`from docs`, `^docs`, `docs count { … }`,\n`entries(^$it)`) — `from` names a collection, not a row property — and so do the\nrow functions in call position (`text(\"x\")`, `under(…)`, `refs(x)`): a call is\nnever an entry read. There is NO self alias (the 4.x `doc`/`block`/`section`):\n`$it` is the self, and `_doc`/`_block`/`_dst` reach ANOTHER row. So `_path` is the\nengine's /-rooted location and `path` your `path:` key; `_tags` is your tags ∪ the\nbody #hashtags and `tags` the authored list alone; `_title` the computed title (the\nfirst H1) and `title` your `title:`; `_data.<k>` ≡ `<k>` (the merged authored view —\nkept for `entries(_data)` and to reach an authored key that itself starts with\n`_`), `_frontmatter.<k>` / `_inline.<k>` one source each. Same value, same name\neverywhere: a hit's `_id` is docs_read's `_id` and the `_id` argument of blocks_read.\n\n  Engine names per kind (attributes | handles | relations):\n    docs    _id _path _raw _hash _updated_at _created_at _title _tags _format | _data _frontmatter _inline | _blocks _nodes _out_links _in_links _revisions\n    blocks  _id _path _doc_id _raw _hash _updated_at _created_at _type _text _attrs _depth _ordinal | _doc | _children _nodes _out_links _section\n    nodes   _id _path _doc_id _block_id _kind _name _value _attrs | _doc _block | _blocks _subsections _children\n    links   _id _path _doc_id _block_id _via_id _dst_id _dst_path _uri _field _dst_kind _predicate _provenance _anchor | _doc _dst _block | —\n    revisions  _id _path _rev _seq _doc_id _commit _ts _origin _actor _reason _hash _is_current _archived | _doc | —\n    root    _id (^_id, 0^_id) | — | docs blocks nodes links revisions\n  Every bare name is yours; `_attrs.<k>` on a block or node is the same read as\n  the bare attrs key `<k>`.\n  UNKNOWN NAMES: a bare name that no object of the kind in this repository\n  carries is a property read that yields absent — on docs/blocks/nodes the result\n  gains `hints` (one line per name, the nearest match drawn from your keys and the\n  engine names: \"no document in this repository carries a property `title`; did\n  you mean `_title`?\") and the rows still come back; in a plan/apply/execute\n  selector it is refused. On links and revisions (closed: no authored data reaches\n  them) a bare name is a filter_invalid error. A `_x` that is no engine name of\n  the kind is filter_invalid naming the kind's engine names. A property some\n  objects carry is known (partial presence is normal).\n\ndocs:\n  - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,\n                       unioned; nested via dots: meta.owner). YAML/JSON docs\n                       expose the parsed object's keys the same way. Nothing is\n                       reserved: `title`, `tags`, `path`, `id` are your keys.\n  - source handles   = _data.<k> (the merged authored view — the same read as the\n                       bare key) / _frontmatter.<k> / _inline.<k>; the whole bag\n                       as a collection via entries(_data) / entries(_frontmatter)\n                       / entries(_inline) (see entries()).\n  - attributes       = _id, _path (/-rooted, see Paths), _updated_at (ISO-8601,\n                       sorts chronologically), _created_at, _raw (the whole file,\n                       frontmatter included), _hash (its sha256, 64 hex), _title\n                       (the computed title: the first H1; `title` is the authored\n                       key), _tags (authored tags ∪ body #hashtags, deduped,\n                       authored first; `tags` is the authored list), _format (the\n                       doc's format — \"markdown\"/\"yaml\"/\"json\"; present on EVERY\n                       doc, so has(_format) is always true and `_format == \"yaml\"`\n                       is the filter).\n  - relations        = _nodes, _blocks, _out_links / _in_links (a doc's links as\n                       rows; the documents at their other end are\n                       _out_links collect distinct { from _dst } and\n                       _in_links collect distinct { from _doc } — there is no\n                       out / in relation), _revisions (the document's stored\n                       revisions, oldest first — see revisions below).\n\nblocks:\n  - bare fields      = every attrs key FLATTENED onto the row (bare `checked`;\n                       `_attrs.<k>` is the same read; absent ⇒ false) — a block's\n                       authored side.\n  - attributes       = _id, _path (the owning doc's path), _doc_id (the owning\n                       doc), _type, _text (normalized), _ordinal (0-based among\n                       siblings), _depth (0 at the top level), _raw (the block's\n                       raw source — a container's raw holds its children), _hash\n                       (its sha256 — the value update/split expect as\n                       expect.content_hash), _updated_at, _created_at, _attrs.\n  - reach-through    = _doc.<key> / _doc._path / _doc._id / _doc._format = the\n                       CONTAINING doc (_doc._id and _doc._path cost nothing — they\n                       read the row's own _doc_id / joined path, no lookup).\n  - relations        = _children, _nodes, _out_links, _section (no self alias:\n                       the 4.x `block.children` is `_children`).\n  NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a\n  block's own nesting is `_depth` / `_ordinal` everywhere.\n\nnodes:\n  - bare fields      = the attrs keys flattened onto the row (checked, level,\n                       first_ordinal; `_attrs.<k>` is the same read).\n  - attributes       = _id, _path, _doc_id, _block_id (null for a block-less\n                       node), _kind (md:task / md:link / md:section / yaml:…),\n                       _name, _value, _attrs.\n  - reach-through    = _doc.<key> / _doc._id / _doc._path, _block._type /\n                       _block._text / _block._id / _block._path.\n  - relations        = _blocks, _children, _subsections (a section node's; the\n                       4.x `section.blocks` is `_blocks`).\n\nlinks:  (the authored link graph as rows — one per open link: the relation a link\n        establishes; the md:link NODE is its occurrence in the text and _via_id\n        points at it — a frontmatter link has a row and no node)\n  - attributes       = _id, _path (the SOURCE doc's path), _doc_id (the SOURCE\n                       doc), _block_id (the source block; null for a frontmatter\n                       edge), _via_id, _dst_id (the destination node id: a doc id,\n                       an external node id or phantom:<path>), _dst_path (target\n                       doc path, /-rooted; NULL when dangling/external), _uri\n                       (external URL; NULL otherwise), _predicate\n                       (\"references\"/\"embeds\"/freeform), _provenance\n                       (\"link\"/\"frontmatter\"/\"inline_field\"/…), _dst_kind\n                       (\"document\"/\"external\"/\"collection\"), _anchor, _field (the\n                       frontmatter key / inline field it was authored in).\n  - reach-through    = _doc.<key> (the source document), _dst.<key> (the\n                       destination document; absent when dangling/external),\n                       _block.<key> (the source block). Closed: links carry no\n                       authored data, so a bare name is filter_invalid. There is\n                       no from_commit: a query sees open edges only (history is\n                       blocks_history/changes_since).\n  - text()/semantic() are N/A on links.\n\nrevisions:  (history as rows — one per stored revision of every document of the\n        repository, deleted documents included: what docs_history lists, queryable)\n  - attributes       = _id (the revision id, r_…), _rev (= _id), _seq (1, 2, … per\n                       document), _doc_id, _commit, _ts (the commit's time, sorts\n                       chronologically), _origin (\"observed\"/\"api\"/\"import\"/\n                       \"projection\"), _actor, _reason, _hash (the rendered file's\n                       sha256 — docs_history's _hash), _is_current (true for the\n                       document's current revision), _archived (true when the\n                       bodies moved to an archive segment: the row stays,\n                       docs_read { at } reads through the segment), _path (the\n                       path the revision was committed under — a move re-paths\n                       only the current revision, so earlier ones keep the old\n                       path).\n  - reach-through    = _doc.<key> reaches the document's CURRENT row; absent for\n                       a deleted document, so where _doc == null is the revisions\n                       of deleted documents. Closed: a bare name is filter_invalid.\n  - on docs          = _revisions is a relation (oldest first): a document with\n                       more than one version is docs { _revisions count { } > 1 }.\n  - text()/semantic() are N/A on revisions. The body as of a revision is\n    docs_read { _path, at: \"<rev>\" } (docs_read_at is the same call).\n\n## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL\n\n  name          the CURRENT row only — never falls through to an enclosing row\n                or the repository; an absent field is simply absent.\n  ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);\n                ^^name two scopes out. `^_path` = the enclosing row's path.\n  ^docs ^nodes ^blocks ^links ^revisions\n                THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root\n                scope's row, one scope out from a top-level row, so ^docs there is\n                the whole documents scan (uncorrelated until you add a ^ predicate);\n                one caret per enclosing block (^^docs from depth two), or the\n                absolute 0^docs from ANY depth. ^_id / 0^_id = the repository id.\n                ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the\n                five collections. At the root scope itself a bare target is the scan\n                (docs count { … }, from docs, entries(docs)).\n                ERRORS: a bare `docs` INSIDE a block reads a property of the current\n                row, which has none — refused (\"did you mean ^docs\"); so is a bare\n                `blocks`/`nodes`/`revisions` there (a doc's own relations are\n                `_blocks`/`_nodes`/`_revisions`); `^docs` AT THE TOP LEVEL reaches\n                past the root — refused (write the bare `docs`); so is `$repo`\n                (surface < 2.0; the message names the replacement).\n  $it           the current item itself (a row, or each ELEMENT when the\n                receiver is a list property); ^$it = the enclosing row, ^$it._id\n                its id. $value is NOT an intrinsic (since oqx 0.15): it reads a\n                property literally named $value, absent when there is none.\n  $key          the row's identity (0.20): a store row's id (doc/block/node/edge), an entries(x)\n                entry's key, a follow occurrence's walk identity; project $key: <expr> to rekey the\n                rows a block yields (a destination block's $key: is not a column).\n\n## Scalar semantics (@omgbase/oqx)\n\n  comparisons  ==  !=  <  <=  >  >=    strict & typed (5 == \"5\" is false); either\n                                       side may be a field (field-vs-field OK).\n  absence      null and a missing field are the same \"absent\" value; two absents\n               are EQUAL, so `absent != \"x\"` is TRUE and `absent == null` is TRUE.\n               Relational (< <= > >=) on an absent operand → FALSE. Bare `f` in\n               boolean position uses JS truthiness (absent/false/0/\"\" ⇒ false;\n               NOTE: \"false\", [] and {} are truthy). has(f) = explicit presence.\n  boolean      and  or  not    grouping ( … )   — && || ! are accepted synonyms\n  arithmetic   + - * / %    (+ concatenates if either side is a string)\n  membership   x in y       array → typed membership; string → substring;\n                            object → key exists; range → coverage. Any list\n                            property works directly: \"pricing\" in tags. list(f)\n                            coerces scalar-or-list (absent → []) — use it when a\n                            key is sometimes scalar, sometimes a list.\n  ranges       lo..hi (inclusive)  lo...hi (exclusive hi)  ..hi  lo..\n               era in 800..1680; works over ISO dates. range(prop) reads a\n               range-shaped STRING property as an interval: \"2026-01-15\" in range(window).\n  strings      x.contains(\"s\") x.startsWith(\"p\") x.endsWith(\"s\") x.matches(\"^re$\")\n               (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —\n               fold with .lower(): _title.lower().contains(\"aurora\").\n               Infix regex: x ~ \"re\" is x.matches(\"re\"); x ~* \"re\" is the\n               case-insensitive match; x !~ \"re\" and x !~* \"re\" negate them.\n               Unanchored unless the pattern anchors; an absent x is false\n               under ~ and TRUE under !~ (not SQL's NULL).\n  functions    has(f)  size(x)  list(x)  entries(x)  range(s)\n  dates        a date is an ISO string, a duration a NUMBER OF SECONDS; arithmetic\n               is METHODS, never + or - (+ concatenates strings).\n               date(\"today\"|\"now\"|\"yesterday\"|\"tomorrow\"|\"sow\"|\"eow\"|\"som\"|\"eom\"|\n               \"soy\"|\"eoy\") — the host clock, UTC; date(\"2026-10-15\") canonical ISO\n               (absent if unparseable). dur(\"1h30m\") dur(\"2 days, 3 hours\")\n               dur(\"P1DT2H\") dur(90) → seconds (year = 365 d, month = 30 d).\n               d.plus(dur(\"30 days\"))  d.minus(86400)  d.plus(\"1 month\") (calendar:\n               Jan 31 → Feb 28)  a.until(b) → signed seconds  d.year() d.month()\n               d.day() d.weekday() (1 = Mon) d.hour() d.minute() d.second()\n               d.date()  d.format(\"EEE dd MMM yyyy\")  n.dur_text() → \"1h 30m\"\n               n.dur_iso() → \"PT1H30M\". Total: a non-date is absent, so\n               `where date(due) < date(\"today\").minus(dur(\"30 days\"))` just\n               filters. A datetime is never < its own date: compare\n               _updated_at.date() == date(\"today\"), or < date(\"tomorrow\").\n  literals     \"str\" 'str' 123 1.5 true false null\n  determinism  no random; the only clock is date(\"today\"/\"now\"/…), read once per\n               query. Lists/structs are not literals; ternary is not supported.\n               Errors surface as filter_invalid.\n  scalars vs lists  a list-authored key never == a scalar (tags == \"x\" is false\n               when tags is a list) — use `\"x\" in tags` / `in list(tags)`.\n\n## Domain predicates (omgbase)\n\n  text(\"terms\")        FTS5 PRUNING predicate (docs match via their blocks, nodes\n                       via the node index); composes anywhere, incl. nested scopes.\n  semantic(\"phrase\")   embedding cosine SCORE (docs/blocks): threshold it\n                       (semantic(\"x\") > 0.6), project it, or `order by semantic(\"x\")\n                       desc` for top-K. Needs a provider that has embedded the repository; else provider_unavailable.\n  blocks target only:\n    under(id_or_heading)      block in the containment subtree / section range\n    under_heading(\"Launch\")   an ancestor section heading contains the text (ci)\n    under_kind(type[, name])  an ancestor block has that type (name: its text\n                              contains / its key equals name)\n    within(\"path\" | \"d_..\")   containing doc = id, exact path, or path glob (*);\n                              either path form\n    yaml_path(\"a.b\")          YAML docs: the block at that key path\n    json_pointer(\"#/a/b\")     JSON docs: the block at that pointer\n    has_edge(\"pred\"[, target])  an open authored edge with that predicate leaves here\n    has_anchor()              block carries an authored ^ref\n    parent_type() == \"x\"      parent block's type (must be compared)\n    child_count() > 0         number of direct children (must be compared)\n  refs(x)              the live documents a property's document references name:\n                       x is a string, a list or absent; each \"/a/b.md\", \"a/b.md\"\n                       or \"d_…\" element resolves to that doc's row; dangling and\n                       non-string elements are dropped. Yields docs rows, so it is\n                       a source, a receiver or a follow destination:\n                       follow refs(before), refs(after) walks a timeline both ways.\n                       The reverse direction needs no function: a document's\n                       _path is already the reference form, so\n                       ^docs { where ^_path in list(after) } is\n                       \"the documents whose `after` names me\".\n  A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails\n                       (filter_invalid). `follow before` over a list of paths\n                       reaches the STRINGS — write `follow refs(before)`.\n\n## Nested queries & consumers\n\n  <receiver> collect|exists|none|count|first|single { <block> }\n    receiver = a relation (_nodes, _blocks, _doc._out_links, _section._blocks, …), a\n               reach-through row (_dst, _doc: one row — _dst { _title }), a\n    list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).\n    block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]\n               — the same fixed order as the top level (`from` optional; the\n               receiver supplies the rows). A leading name/alias list is the\n               projection (`select` dropped); a predicate always needs `where`.\n               A `from E` inside a block RE-PROJECTS the rows through a relation\n               (a typed flatMap): `docs collect { from _nodes where _kind == \"md:task\" }`\n               starts at docs, projects each through `_nodes`, and queries the\n               resulting nodes; a scalar relation (`from _doc`) contributes one\n               row; a missing or non-navigable relation is a loud error, never a\n               global scan.\n  exists    ≥1 row      _nodes exists { where _kind == \"md:task\" and not checked }\n  none      0 rows      _nodes none { where _kind == \"md:task\" and not checked }  (\"every task done\")\n  count     a number    _nodes count { where _kind == \"md:task\" } >= 2\n  collect   rows (default) — in select for nested results; in where with a lift\n  first / single   zero-or-one (single errors on >1) — lookups in select\n  distinct  on any consumer: dedup by projected value — _nodes count distinct { select _kind }\n  limit/offset  bound the block's rows AFTER where/order/distinct, BEFORE the\n            consumer reduces: _nodes exists { offset 1 } = at least two;\n            first { … offset 1 } = the second.\n  lift      `^name:` in a where-collect binds values outward:\n            select _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" and not checked }\n  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;\n            ^nodes single { where _kind == \"person\" and _attrs.id == ^owner_id }  lookup;\n            x in ^keys  membership over a lifted set.\n\n## select — projection\n\n  select a, alias: expr, nested: _nodes collect { … }\n  bare key → your property (scalar-authored → scalar; list → array); _name →\n  the engine's field (_id, _path, _title, …); _data.<k> is the bare key's read;\n  a call/arithmetic needs an alias (n: size(tags)) unless in values mode;\n  an output key of _id/_path other than the attribute itself needs an alias.\n  _raw        whole file bytes (docs) — docs_read is cheaper for one doc.\n  distinct    select distinct _type   (dedup hits by projected value)\n  values      select <ONE item> values → bare values instead of records:\n                select distinct type values from docs          → values: [\"hub\",\"lab-note\",…]\n                select _path values from docs                  → values: [\"/index.md\", …]\n                tags: tags collect { $it values }             → a plain array\n                h: _nodes first { _name values where _kind == \"md:section\" order by first_ordinal }\n  entries(x)  a record as a collection ($key / $it per entry), key order:\n                select fm: entries(_data) collect { k: $key, v: $it }\n                where entries(_frontmatter) exists { where $key == \"era\" and $it > 1600 }\n                entries(_inline), entries(_attrs), a nested map, or a list (index keys)\n  $semantic_score is not a field — project semantic(\"…\") under an alias instead.\n\n## flatten (OQX 0.25)\n\n  flatten <expr> [{ … }] [as <name>]      after follow, before group by; may repeat\n  Splits one value into rows. Every hit is still the PARENT row — its _id/_path\n  repeat per element, as Dataview's TABLE … FLATTEN — with <name> bound beside\n  its fields at the same depth: an array → one row per element (an empty list\n  yields none), a missing field → one row with the name absent (never dropped),\n  an object or a scalar → one row with the value. A plain navigation names\n  itself (flatten tags rebinds tags to each element); anything else needs as.\n  The block is the ordinary receiver block over the elements (where, a\n  projection, order by, limit, distinct), applied first. Later clauses read the\n  name — a later flatten (flatten jobs as j flatten j.tags as t), group by,\n  having, select, order by; where runs before it. A flattened query pages by\n  position (cursor null); as _id / as _path is refused (the envelope reads them).\n    select _path, tags from docs where type == \"process\" flatten tags order by _path, tags\n    select _path, t: b._text from docs flatten _blocks { where _type == \"task\" and not checked } as b\n    select tags, n: count() from docs flatten tags group by tags order by count() desc\n\n## order by, limit/offset, pagination\n\n  order by era desc, _path asc     absent values sort LAST (asc); ties → (_path, _id)\n  limit N / offset N               define the result SET (integer literals);\n                                   the tool's limit/cursor then page WITHIN it\n  cursor                           opaque keyset on (_path, _id); a custom order by\n                                   disables it (you get the top page + truncated)\n\n## Graph traversal (follow) and links\n\n  The citation graph is the LINK ROWS walked through a destination block:\n  _dst is a link's destination document (absent for an external or dangling\n  link — it then contributes no successor), _doc its source.\n  from docs where <seed> follow _out_links collect { from _dst }     docs the seed links TO\n  from docs where <seed> follow _in_links collect { from _doc }      backlinks\n    follow _out_links collect { from _dst depth 3 }                  bound (1..8, default 8) — a clause of the block\n    follow _out_links collect { from _dst where layer == \"canon\" }   keep only matching successors\n    follow _in_links collect { from _doc where ^_path in list(before) }   ^ = the row being expanded\n                                                   (^^ = the walk's enclosing scope)\n    follow _out_links collect { from _dst where _predicate == \"depends_on\" }   one predicate only\n    follow _out_links collect { from _dst }, _in_links collect { from _doc }\n                                                   several destinations: their union\n                                                   (one step dedups by identity)\n    follow ^docs { where _out_links exists { where _dst_path == ^^_path } }\n                                                   a destination block over the root's\n                                                   documents, re-read per frontier row\n                                                   (^ = that row) = the backlinks walk\n    follow _out_links collect { from _dst frontier type == \"practitioner\" }   cut, keeping the frontier row\n    from docs where type == \"process\" frontier !verified follow _out_links collect { from _dst }\n                                                   the BODY's frontier applies to the seeds:\n                                                   an unverified seed is kept, not expanded\n    follow distinct _out_links collect { from _dst } / … { $key: group from _dst }   identity control ($key)\n    follow refs(before), ^docs { where ^_path in list(after) }    forward over `before`, backward\n                                                   over every doc whose `after` names me\n  Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|\n  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the\n  walk, ordered by depth then path — `order by $ordinal` for walk order,\n  `where $ordinal <= N` for a deterministic budget cut), $key — usable in\n  select/order by and the top-level post-walk where (a where conjunct that\n  reads one filters the walk's RESULT; the other conjuncts remain the seed\n  predicate), NOT metadata of the candidates a destination block's where reads,\n  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited\n  node is admitted once as a `$stop == \"cycle\"` occurrence and never\n  re-expanded. The default keeps one occurrence per distinct walk path;\n  `follow distinct` dedups reached rows by identity.\n  Destination blocks (OQX 0.20): a brace after ANY destination opens that\n  destination's block — _children { depth 2 }, refs(x) { depth 2 }, _out_links\n  collect { from _dst depth 2 }, ^docs { where ^_path in list(after) } — with the\n  0.17 body rules (where-first, projections) and two clauses of its own after\n  `where`: frontier <pred> (occurrences reached through this destination that\n  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>\n  (this destination expands a frontier row only while $depth < n). The body\n  that carries the follow may write frontier <pred> too, after its where and\n  before follow: it applies to the SEEDS (read like the body's where) — a\n  matching seed stays in the result with $stop == \"frontier\" and is not\n  expanded; each destination's frontier is its own. There is no options block;\n  the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an\n  error naming both block spellings.\n  Type-preserving relations: a block's _children; a section node's _children and\n  _subsections; the citation graph is _out_links collect { from _dst } / _in_links collect { from _doc }.\n  from links where _dst_path == \"/notes/x.md\"       inbound links to a doc, as rows\n  select d: _dst._title, k: _dst_kind from links       the destination document's title\n  from docs where _out_links exists { where _dst.layer == \"draft\" }   links into drafts\n  select b: _in_links collect distinct { from _doc } from docs     backlinks as { _id, _path }\n  select _doc_id, _dst_path from links where _predicate == \"depends_on\"\n  from docs where not _in_links exists { }      orphans (nothing links in)\n  (The `graph` tool is a convenience wrapper that compiles to a follow query.)\n\n## semantic grain\n\nfrom docs ranks whole DOCUMENTS (one hit per file); from blocks ranks PASSAGES.\ntext()/where prune the candidate set; only order by reweights.\n\n## Examples\n\n  from docs where layer == \"working\"\n  from docs where _path.startsWith(\"/guides/\") and _updated_at >= \"2026-08-01\"\n  select layer, tags from docs where \"pricing\" in list(tags)\n  from docs where _inline.owner == \"alice\"\n  from docs where _title.lower().contains(\"q3 plan\")\n  from docs where _format == \"yaml\"\n  from docs where type == \"practitioner\" order by era desc limit 2\n  from docs where _nodes none { where _kind == \"md:task\" and not checked }\n  from docs where tags exists { where $it == \"tria-prima\" }\n  select fm: entries(_data) collect { k: $key, v: $it } from docs where _path == \"/x.md\"\n  select owner_id, owner: ^nodes single { where _kind == \"person\" and _attrs.id == ^owner_id } from docs\n  from blocks where _type == \"task\" and not checked and under_heading(\"Launch\") and _doc.layer == \"working\"\n  from blocks where _type == \"paragraph\" and has_edge(\"references\", \"d_92aaaaa\")\n  select _path, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)\n  select _path, next: ^docs collect { _path where ^_path in list(before) } from docs where type == \"milestone\"\n  select _path, n: size(^docs), repo: ^_id from docs limit 1\n  select path, title from docs where has(path)\n  docs { type == \"substance\" and not verified }\n  select subject, process: ^docs[slug == ^subject]!._path from docs where type == \"lab-note\"\n  select _path, back: _nodes first { select p: 0^docs collect { _path where ^^_path in list(after) } values } from docs where type == \"milestone\"\n  select _path, prior: refs(before) collect { _path, when } from docs where type == \"milestone\"\n  from blocks order by semantic(\"identity preservation across edits\") desc limit 10\n  select _uri from links where _dst_kind == \"external\"\n  docs count { where layer == \"canon\" }\n  select _seq, _origin, _ts, _hash from revisions where _path == \"/processes/calcination.md\" order by _seq desc\n  from docs where _revisions count { where _origin == \"api\" } > 0\n  select p: _path, d: _doc._path from revisions where _doc == null\n  select layer, n: count(), titles: collect(_title), open: rows count { where _nodes exists { where _kind == \"md:task\" and not checked } } from docs group by layer having count() > 1 order by count() desc\n  select _path, tag: tags from docs where \"process\" in tags flatten tags order by _path, tags\n\nCommon mistake: `$path`/`$id` — omgbase has no $ names; the engine's location and\nidentity are `_path`/`_id`. Another: the 4.x bare `path`/`id`/`title`/`tags` — a\nbare `path` is now YOUR `path:` key (absent when you wrote none, with a hint\npointing at `_path`); the engine's are `_path`/`_id`/`_title`/`_tags`; `select\ndata.path` is gone — write `path`. Another: `where tags == \"x\"` on a list-valued\nkey is false — write `\"x\" in tags`. Another: `select _path: _doc._path` — alias it\n(`p: _doc._path`).\n"
           },
           {
             "hits": [
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
-                "title": "Calcination",
+                "_id": "d_7",
+                "_path": "/processes/calcination.md",
+                "_title": "Calcination",
                 "stage": "nigredo"
               },
               {
-                "id": "d_8",
-                "path": "/processes/coagulation.md",
-                "title": "Coagulation",
+                "_id": "d_8",
+                "_path": "/processes/coagulation.md",
+                "_title": "Coagulation",
                 "stage": "rubedo"
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md",
-                "title": "Dissolution",
+                "_id": "d_9",
+                "_path": "/processes/dissolution.md",
+                "_title": "Dissolution",
                 "stage": "nigredo"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md",
-                "title": "The magnum opus"
+                "_id": "d_10",
+                "_path": "/processes/magnum-opus.md",
+                "_title": "The magnum opus"
               }
             ],
             "truncated": false,
@@ -693,124 +693,124 @@
           {
             "hits": [
               {
-                "id": "b_138",
-                "path": "/processes/calcination.md",
-                "type": "heading",
-                "text": "Calcination"
+                "_id": "b_138",
+                "_path": "/processes/calcination.md",
+                "_type": "heading",
+                "_text": "Calcination"
               },
               {
-                "id": "b_139",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "Heating a substance in air until it is reduced to a friable powder — a *calx*. The first of the twelve gates and, in practice, the first thing anyone does."
+                "_id": "b_139",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "Heating a substance in air until it is reduced to a friable powder — a *calx*. The first of the twelve gates and, in practice, the first thing anyone does."
               },
               {
-                "id": "b_140",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "element:: fire reversible:: no"
+                "_id": "b_140",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "element:: fire reversible:: no"
               },
               {
-                "id": "b_141",
-                "path": "/processes/calcination.md",
-                "type": "heading",
-                "text": "Procedure"
+                "_id": "b_141",
+                "_path": "/processes/calcination.md",
+                "_type": "heading",
+                "_text": "Procedure"
               },
               {
-                "id": "b_142",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "Grind the material, spread it thinly in an open crucible, and heat steadily below the melting point. Stir to expose fresh surface. Continue until no further weight is lost and no fumes come off."
+                "_id": "b_142",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "Grind the material, spread it thinly in an open crucible, and heat steadily below the melting point. Stir to expose fresh surface. Continue until no further weight is lost and no fumes come off."
               },
               {
-                "id": "b_143",
-                "path": "/processes/calcination.md",
-                "type": "code_fence",
-                "text": "crucible → grind → thin layer → moderate heat → stir → constant weight"
+                "_id": "b_143",
+                "_path": "/processes/calcination.md",
+                "_type": "code_fence",
+                "_text": "crucible → grind → thin layer → moderate heat → stir → constant weight"
               },
               {
-                "id": "b_144",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "The endpoint is the constant weight, not the colour. Colour tells you which oxide you have; weight tells you that you are finished."
+                "_id": "b_144",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "The endpoint is the constant weight, not the colour. Colour tells you which oxide you have; weight tells you that you are finished."
               },
               {
-                "id": "b_145",
-                "path": "/processes/calcination.md",
-                "type": "heading",
-                "text": "What is actually happening"
+                "_id": "b_145",
+                "_path": "/processes/calcination.md",
+                "_type": "heading",
+                "_text": "What is actually happening"
               },
               {
-                "id": "b_146",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in weight when calcining a metal is the observation that eventually broke the phlogiston theory — the calx weighs more than the metal, which a theory of escaping substance cannot accommodate."
+                "_id": "b_146",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in weight when calcining a metal is the observation that eventually broke the phlogiston theory — the calx weighs more than the metal, which a theory of escaping substance cannot accommodate."
               },
               {
-                "id": "b_147",
-                "path": "/processes/calcination.md",
-                "type": "paragraph",
-                "text": "Alchemical practice recorded this gain for centuries without drawing the inference. The data were sound; the framework could not use them."
+                "_id": "b_147",
+                "_path": "/processes/calcination.md",
+                "_type": "paragraph",
+                "_text": "Alchemical practice recorded this gain for centuries without drawing the inference. The data were sound; the framework could not use them."
               },
               {
-                "id": "b_148",
-                "path": "/processes/calcination.md",
-                "type": "heading",
-                "text": "Products"
+                "_id": "b_148",
+                "_path": "/processes/calcination.md",
+                "_type": "heading",
+                "_text": "Products"
               },
               {
-                "id": "b_149",
-                "path": "/processes/calcination.md",
-                "type": "list",
-                "text": "calcined lead → yellow massicot, then red minium calcined copper → black tenorite plant matter → ash, source of the [[salt]]"
+                "_id": "b_149",
+                "_path": "/processes/calcination.md",
+                "_type": "list",
+                "_text": "calcined lead → yellow massicot, then red minium calcined copper → black tenorite plant matter → ash, source of the [[salt]]"
               },
               {
-                "id": "b_150",
-                "path": "/processes/calcination.md",
-                "type": "list_item",
-                "text": "calcined lead → yellow massicot, then red minium"
+                "_id": "b_150",
+                "_path": "/processes/calcination.md",
+                "_type": "list_item",
+                "_text": "calcined lead → yellow massicot, then red minium"
               },
               {
-                "id": "b_151",
-                "path": "/processes/calcination.md",
-                "type": "list_item",
-                "text": "calcined copper → black tenorite"
+                "_id": "b_151",
+                "_path": "/processes/calcination.md",
+                "_type": "list_item",
+                "_text": "calcined copper → black tenorite"
               },
               {
-                "id": "b_152",
-                "path": "/processes/calcination.md",
-                "type": "list_item",
-                "text": "plant matter → ash, source of the [[salt]]"
+                "_id": "b_152",
+                "_path": "/processes/calcination.md",
+                "_type": "list_item",
+                "_text": "plant matter → ash, source of the [[salt]]"
               },
               {
-                "id": "b_153",
-                "path": "/processes/calcination.md",
-                "type": "heading",
-                "text": "Tasks"
+                "_id": "b_153",
+                "_path": "/processes/calcination.md",
+                "_type": "heading",
+                "_text": "Tasks"
               },
               {
-                "id": "b_154",
-                "path": "/processes/calcination.md",
-                "type": "list",
-                "text": "Verify the weight gain on lead with a balance Repeat with copper and record the colour sequence Chase down the earliest recorded weight-gain measurement"
+                "_id": "b_154",
+                "_path": "/processes/calcination.md",
+                "_type": "list",
+                "_text": "Verify the weight gain on lead with a balance Repeat with copper and record the colour sequence Chase down the earliest recorded weight-gain measurement"
               },
               {
-                "id": "b_155",
-                "path": "/processes/calcination.md",
-                "type": "task",
-                "text": "Verify the weight gain on lead with a balance"
+                "_id": "b_155",
+                "_path": "/processes/calcination.md",
+                "_type": "task",
+                "_text": "Verify the weight gain on lead with a balance"
               },
               {
-                "id": "b_156",
-                "path": "/processes/calcination.md",
-                "type": "task",
-                "text": "Repeat with copper and record the colour sequence"
+                "_id": "b_156",
+                "_path": "/processes/calcination.md",
+                "_type": "task",
+                "_text": "Repeat with copper and record the colour sequence"
               },
               {
-                "id": "b_157",
-                "path": "/processes/calcination.md",
-                "type": "task",
-                "text": "Chase down the earliest recorded weight-gain measurement"
+                "_id": "b_157",
+                "_path": "/processes/calcination.md",
+                "_type": "task",
+                "_text": "Chase down the earliest recorded weight-gain measurement"
               }
             ],
             "truncated": false,
@@ -820,9 +820,9 @@
           {
             "hits": [
               {
-                "id": "n_494a3234acfd",
-                "path": "/processes/calcination.md",
-                "block_id": "b_153"
+                "_id": "n_494a3234acfd",
+                "_path": "/processes/calcination.md",
+                "_block_id": "b_153"
               }
             ],
             "truncated": false,
@@ -832,94 +832,94 @@
           {
             "hits": [
               {
-                "id": "n_6647b1c32a15",
-                "path": "/lab/2026-01-notes.md",
-                "value": "Tabulate the metal sulphides by colour"
+                "_id": "n_6647b1c32a15",
+                "_path": "/lab/2026-01-notes.md",
+                "_value": "Tabulate the metal sulphides by colour"
               },
               {
-                "id": "n_7d73d8ff9294",
-                "path": "/lab/2026-01-notes.md",
-                "value": "Repeat the series with copper"
+                "_id": "n_7d73d8ff9294",
+                "_path": "/lab/2026-01-notes.md",
+                "_value": "Repeat the series with copper"
               },
               {
-                "id": "n_95a191326d69",
-                "path": "/lab/2026-01-notes.md",
-                "value": "Plot mass gain against heating time"
+                "_id": "n_95a191326d69",
+                "_path": "/lab/2026-01-notes.md",
+                "_value": "Plot mass gain against heating time"
               },
               {
-                "id": "n_1b6ff200b17c",
-                "path": "/lab/2026-02-notes.md",
-                "value": "Write the plateau result up for the coagulation note"
+                "_id": "n_1b6ff200b17c",
+                "_path": "/lab/2026-02-notes.md",
+                "_value": "Write the plateau result up for the coagulation note"
               },
               {
-                "id": "n_3f352718a47e",
-                "path": "/lab/2026-02-notes.md",
-                "value": "Assay cycle 1 and cycle 4 crops for iron"
+                "_id": "n_3f352718a47e",
+                "_path": "/lab/2026-02-notes.md",
+                "_value": "Assay cycle 1 and cycle 4 crops for iron"
               },
               {
-                "id": "n_15a04ea1e3a1",
-                "path": "/practitioners/jabir-ibn-hayyan.md",
-                "value": "Separate the Jabirian corpus into strata by vocabulary"
+                "_id": "n_15a04ea1e3a1",
+                "_path": "/practitioners/jabir-ibn-hayyan.md",
+                "_value": "Separate the Jabirian corpus into strata by vocabulary"
               },
               {
-                "id": "n_a66412ae8a33",
-                "path": "/practitioners/newton.md",
-                "value": "Read the Index Chemicus entries on [[mercury]]"
+                "_id": "n_a66412ae8a33",
+                "_path": "/practitioners/newton.md",
+                "_value": "Read the Index Chemicus entries on [[mercury]]"
               },
               {
-                "id": "n_de814ec1a223",
-                "path": "/practitioners/newton.md",
-                "value": "Cross-check the furnace dates against the Principia years"
+                "_id": "n_de814ec1a223",
+                "_path": "/practitioners/newton.md",
+                "_value": "Cross-check the furnace dates against the Principia years"
               },
               {
-                "id": "n_b4cb245daced",
-                "path": "/practitioners/paracelsus.md",
-                "value": "Check which mineral remedies survived into the 18th-century pharmacopoeia"
+                "_id": "n_b4cb245daced",
+                "_path": "/practitioners/paracelsus.md",
+                "_value": "Check which mineral remedies survived into the 18th-century pharmacopoeia"
               },
               {
-                "id": "n_a4b26917634c",
-                "path": "/processes/calcination.md",
-                "value": "Chase down the earliest recorded weight-gain measurement"
+                "_id": "n_a4b26917634c",
+                "_path": "/processes/calcination.md",
+                "_value": "Chase down the earliest recorded weight-gain measurement"
               },
               {
-                "id": "n_c047d5a4f7e3",
-                "path": "/processes/calcination.md",
-                "value": "Repeat with copper and record the colour sequence"
+                "_id": "n_c047d5a4f7e3",
+                "_path": "/processes/calcination.md",
+                "_value": "Repeat with copper and record the colour sequence"
               },
               {
-                "id": "n_0696803c8b06",
-                "path": "/processes/coagulation.md",
-                "value": "Measure purity gain per cycle to find where it plateaus"
+                "_id": "n_0696803c8b06",
+                "_path": "/processes/coagulation.md",
+                "_value": "Measure purity gain per cycle to find where it plateaus"
               },
               {
-                "id": "n_93d794e3364b",
-                "path": "/processes/dissolution.md",
-                "value": "Write up the alkahest arguments and their rebuttals"
+                "_id": "n_93d794e3364b",
+                "_path": "/processes/dissolution.md",
+                "_value": "Write up the alkahest arguments and their rebuttals"
               },
               {
-                "id": "n_ad668f58c7c4",
-                "path": "/processes/magnum-opus.md",
-                "value": "Decide whether citrinitas is dropped or absorbed"
+                "_id": "n_ad668f58c7c4",
+                "_path": "/processes/magnum-opus.md",
+                "_value": "Decide whether citrinitas is dropped or absorbed"
               },
               {
-                "id": "n_e99bb706e00e",
-                "path": "/processes/magnum-opus.md",
-                "value": "Map the twelve gates onto the four stages across three sources"
+                "_id": "n_e99bb706e00e",
+                "_path": "/processes/magnum-opus.md",
+                "_value": "Map the twelve gates onto the four stages across three sources"
               },
               {
-                "id": "n_5ebb7234aa44",
-                "path": "/texts/mutus-liber.md",
-                "value": "Obtain a facsimile with plate numbering"
+                "_id": "n_5ebb7234aa44",
+                "_path": "/texts/mutus-liber.md",
+                "_value": "Obtain a facsimile with plate numbering"
               },
               {
-                "id": "n_cb80a4290986",
-                "path": "/texts/mutus-liber.md",
-                "value": "Compare the 1677 and 1702 plate sequences"
+                "_id": "n_cb80a4290986",
+                "_path": "/texts/mutus-liber.md",
+                "_value": "Compare the 1677 and 1702 plate sequences"
               },
               {
-                "id": "n_d547e97aa408",
-                "path": "/texts/mutus-liber.md",
-                "value": "Decide whether the dew operation is literal"
+                "_id": "n_d547e97aa408",
+                "_path": "/texts/mutus-liber.md",
+                "_value": "Decide whether the dew operation is literal"
               }
             ],
             "truncated": false,
@@ -929,29 +929,29 @@
           {
             "hits": [
               {
-                "id": "e_6",
-                "path": "/index.md",
-                "block_id": "b_15"
+                "_id": "e_6",
+                "_path": "/index.md",
+                "_block_id": "b_15"
               },
               {
-                "id": "e_15",
-                "path": "/lab/2026-01-notes.md",
-                "block_id": "b_32"
+                "_id": "e_15",
+                "_path": "/lab/2026-01-notes.md",
+                "_block_id": "b_32"
               },
               {
-                "id": "e_35",
-                "path": "/processes/magnum-opus.md",
-                "block_id": "b_202"
+                "_id": "e_35",
+                "_path": "/processes/magnum-opus.md",
+                "_block_id": "b_202"
               },
               {
-                "id": "e_49",
-                "path": "/substances/prima-materia.md",
-                "block_id": "b_256"
+                "_id": "e_49",
+                "_path": "/substances/prima-materia.md",
+                "_block_id": "b_256"
               },
               {
-                "id": "e_53",
-                "path": "/substances/salt.md",
-                "block_id": "b_270"
+                "_id": "e_53",
+                "_path": "/substances/salt.md",
+                "_block_id": "b_270"
               }
             ],
             "truncated": false,
@@ -961,8 +961,8 @@
           {
             "hits": [
               {
-                "id": "d_14",
-                "path": "/substances/salt.md"
+                "_id": "d_14",
+                "_path": "/substances/salt.md"
               }
             ],
             "truncated": false,
@@ -971,7 +971,7 @@
           },
           [
             {
-              "id": "b_138",
+              "_id": "b_138",
               "locator": "/processes/calcination.md#heading[0]",
               "preview": "Calcination",
               "evidence": {
@@ -985,7 +985,7 @@
               }
             },
             {
-              "id": "b_151",
+              "_id": "b_151",
               "locator": "/processes/calcination.md#list_item[1]",
               "preview": "calcined copper → black tenorite",
               "evidence": {
@@ -999,7 +999,7 @@
               }
             },
             {
-              "id": "b_150",
+              "_id": "b_150",
               "locator": "/processes/calcination.md#list_item[0]",
               "preview": "calcined lead → yellow massicot, then red minium",
               "evidence": {
@@ -1013,7 +1013,7 @@
               }
             },
             {
-              "id": "b_146",
+              "_id": "b_146",
               "locator": "/processes/calcination.md#paragraph[8]",
               "preview": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in…",
               "evidence": {
@@ -1027,7 +1027,7 @@
               }
             },
             {
-              "id": "b_15",
+              "_id": "b_15",
               "locator": "/index.md#list_item[0]",
               "preview": "[calcination](/processes/calcination.md)",
               "evidence": {
@@ -1039,7 +1039,7 @@
               }
             },
             {
-              "id": "b_202",
+              "_id": "b_202",
               "locator": "/processes/magnum-opus.md#list_item[0]",
               "preview": "[calcination](/processes/calcination.md) — nigredo",
               "evidence": {
@@ -1051,7 +1051,7 @@
               }
             },
             {
-              "id": "b_270",
+              "_id": "b_270",
               "locator": "/substances/salt.md#list_item[0]",
               "preview": "Incinerate the material completely — see [calcination](/processes/calcination.md).",
               "evidence": {
@@ -1063,7 +1063,7 @@
               }
             },
             {
-              "id": "b_256",
+              "_id": "b_256",
               "locator": "/substances/prima-materia.md#paragraph[8]",
               "preview": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening…",
               "evidence": {
@@ -1075,7 +1075,7 @@
               }
             },
             {
-              "id": "b_32",
+              "_id": "b_32",
               "locator": "/lab/2026-01-notes.md#paragraph[1]",
               "preview": "Bench work on [calcination](/processes/calcination.md), chasing the weight gain.",
               "evidence": {
@@ -1087,7 +1087,7 @@
               }
             },
             {
-              "id": "b_322",
+              "_id": "b_322",
               "locator": "/timeline/review.md#paragraph[1]",
               "preview": "Two months in: the calcination series is tabulated, the dissolution trials are…",
               "evidence": {
@@ -1101,7 +1101,7 @@
           ],
           [
             {
-              "id": "b_289",
+              "_id": "b_289",
               "locator": "/texts/emerald-tablet.md#heading[0]",
               "preview": "The Emerald Tablet",
               "evidence": {
@@ -1115,7 +1115,7 @@
               }
             },
             {
-              "id": "b_27",
+              "_id": "b_27",
               "locator": "/index.md#list_item[0]",
               "preview": "[The Emerald Tablet](/texts/emerald-tablet.md)",
               "evidence": {
@@ -1127,7 +1127,7 @@
               }
             },
             {
-              "id": "b_254",
+              "_id": "b_254",
               "locator": "/substances/prima-materia.md#paragraph[6]",
               "preview": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
               "evidence": {
@@ -1140,29 +1140,29 @@
             }
           ],
           {
-            "plan_id": "a5cbfb807c865dc59e72fce0b9f9263d85d7b316a9e3c57f61886dac5cc72695",
+            "plan_id": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
             "commit": "c_20",
             "revisions": [
               {
-                "id": "d_14",
-                "path": "/substances/salt.md",
-                "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                "_id": "d_14",
+                "_path": "/substances/salt.md",
+                "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
               }
             ],
             "new_ids": {},
             "committed": true,
             "summary": [
-              "set frontmatter.verified = false in /substances/salt.md"
+              "set _frontmatter.verified = false in /substances/salt.md"
             ]
           },
           {
-            "plan_id": "8b7827024a4569f93ca00b30ef6d1042302a81a2c85d88cce7137aa9a0487fdb",
+            "plan_id": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
             "commit": "c_21",
             "revisions": [
               {
-                "id": "d_2",
-                "path": "/lab/2026-02-notes.md",
-                "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                "_id": "d_2",
+                "_path": "/lab/2026-02-notes.md",
+                "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
               }
             ],
             "new_ids": {
@@ -1176,13 +1176,13 @@
             ]
           },
           {
-            "plan_id": "2cedd989a0b4ab67f54cc99e9673d6bb47c6906e43604cd674bd3bcb2aae0a65",
+            "plan_id": "28cc192bc8a37815a9120233f339bfad0e73b38747b40f06fa62ebdeda98336c",
             "commit": "c_22",
             "revisions": [
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
-                "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                "_id": "d_7",
+                "_path": "/processes/calcination.md",
+                "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
               }
             ],
             "new_ids": {},
@@ -1200,10 +1200,10 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_7",
-                  "path": "processes/calcination.md"
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md"
                 },
-                "field": "frontmatter.verified",
+                "field": "_frontmatter.verified",
                 "value": false
               }
             ],
@@ -1222,10 +1222,10 @@
             "preconditions": {
               "docs": [
                 {
-                  "id": "d_7",
-                  "path": "processes/calcination.md",
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md",
                   "base_revision": "r_22",
-                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                 }
               ],
               "blocks": [],
@@ -1233,19 +1233,19 @@
               "absent_paths": []
             },
             "new_ids": [],
-            "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
+            "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
             "diagnostics": [],
             "preview": {
               "results": [],
               "revisions": [
                 {
-                  "id": "d_7",
-                  "path": "/processes/calcination.md",
-                  "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                  "_id": "d_7",
+                  "_path": "/processes/calcination.md",
+                  "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                 }
               ],
               "summary": [
-                "set frontmatter.verified = false in /processes/calcination.md"
+                "set _frontmatter.verified = false in /processes/calcination.md"
               ]
             }
           },
@@ -1285,10 +1285,10 @@
             "preconditions": {
               "docs": [
                 {
-                  "id": "d_7",
-                  "path": "processes/calcination.md",
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md",
                   "base_revision": "r_22",
-                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                 }
               ],
               "blocks": [],
@@ -1305,7 +1305,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "70b41c26104eb9976be7691337c56f61bdae0512e73e69e161e8dd24a6b81979",
+            "plan_id": "b6e46ff42fc70efe8204b91562ade768ec12c96d5b5de45b58d0ce52db9e95c5",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -1317,9 +1317,9 @@
               ],
               "revisions": [
                 {
-                  "id": "d_7",
-                  "path": "/processes/calcination.md",
-                  "hash": "6be53fc5be75c7dcf7aaf0fdd22fc74965f847c3508ec9e89afae6142679c956"
+                  "_id": "d_7",
+                  "_path": "/processes/calcination.md",
+                  "_hash": "6be53fc5be75c7dcf7aaf0fdd22fc74965f847c3508ec9e89afae6142679c956"
                 }
               ],
               "summary": [
@@ -1340,8 +1340,8 @@
                 "op": "insert",
                 "into": {
                   "kind": "document",
-                  "id": "$new.0",
-                  "path": "lab/march.md"
+                  "_id": "$new.0",
+                  "_path": "lab/march.md"
                 },
                 "at": "end",
                 "markdown": "Hi."
@@ -1395,7 +1395,7 @@
                 "kind": "block"
               }
             ],
-            "plan_id": "c87c675f4e7e239757237a5f5e786e2f85fd0f31df96e62aafdcea3b3ab3ba16",
+            "plan_id": "895459ef53f80ede8fe6f0321246d969f0a280876dad5c87510dc5d8595e6b90",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -1407,9 +1407,9 @@
               ],
               "revisions": [
                 {
-                  "id": "$new.0",
-                  "path": "/lab/march.md",
-                  "hash": "13c05605e536802ce8b199cd5eb752e23787f2efcdd25312d3b7b3d27ae1deea"
+                  "_id": "$new.0",
+                  "_path": "/lab/march.md",
+                  "_hash": "13c05605e536802ce8b199cd5eb752e23787f2efcdd25312d3b7b3d27ae1deea"
                 }
               ],
               "summary": [
@@ -1426,20 +1426,20 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_7",
-                  "path": "processes/calcination.md"
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md"
                 },
-                "field": "frontmatter.ok",
+                "field": "_frontmatter.ok",
                 "value": true
               },
               {
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_9",
-                  "path": "processes/dissolution.md"
+                  "_id": "d_9",
+                  "_path": "processes/dissolution.md"
                 },
-                "field": "frontmatter.ok",
+                "field": "_frontmatter.ok",
                 "value": true
               }
             ],
@@ -1462,16 +1462,16 @@
             "preconditions": {
               "docs": [
                 {
-                  "id": "d_7",
-                  "path": "processes/calcination.md",
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md",
                   "base_revision": "r_22",
-                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                 },
                 {
-                  "id": "d_9",
-                  "path": "processes/dissolution.md",
+                  "_id": "d_9",
+                  "_path": "processes/dissolution.md",
                   "base_revision": "r_9",
-                  "hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
+                  "_hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
                 }
               ],
               "blocks": [],
@@ -1484,7 +1484,7 @@
               "templates": [
                 {
                   "op": "set",
-                  "field": "frontmatter.ok",
+                  "field": "_frontmatter.ok",
                   "value": true
                 }
               ],
@@ -1494,25 +1494,25 @@
                 "d_9"
               ]
             },
-            "plan_id": "a63db538219f2834ba5146da74c77c1bbba36c76ad4e6259761027b4a9e401fe",
+            "plan_id": "de0f66a04b2e189dbbeea896becb185a196797d40c0df36ac8749110b98f2446",
             "diagnostics": [],
             "preview": {
               "results": [],
               "revisions": [
                 {
-                  "id": "d_7",
-                  "path": "/processes/calcination.md",
-                  "hash": "022e852023324ddd6c8a7dde87f4acd9d2aa545f9793ce5f911bde3c48e92ab9"
+                  "_id": "d_7",
+                  "_path": "/processes/calcination.md",
+                  "_hash": "022e852023324ddd6c8a7dde87f4acd9d2aa545f9793ce5f911bde3c48e92ab9"
                 },
                 {
-                  "id": "d_9",
-                  "path": "/processes/dissolution.md",
-                  "hash": "3f485f45895dda766d3c49c6128bf735932031ba70c060787552d1435be7b3d0"
+                  "_id": "d_9",
+                  "_path": "/processes/dissolution.md",
+                  "_hash": "3f485f45895dda766d3c49c6128bf735932031ba70c060787552d1435be7b3d0"
                 }
               ],
               "summary": [
-                "set frontmatter.ok = true in /processes/calcination.md",
-                "set frontmatter.ok = true in /processes/dissolution.md"
+                "set _frontmatter.ok = true in /processes/calcination.md",
+                "set _frontmatter.ok = true in /processes/dissolution.md"
               ]
             }
           },
@@ -1524,8 +1524,8 @@
                 "op": "insert",
                 "into": {
                   "kind": "document",
-                  "id": "d_7",
-                  "path": "processes/calcination.md"
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md"
                 },
                 "at": "end",
                 "markdown": "[Laboratory notes — January](/lab/2026-01-notes.md)"
@@ -1534,8 +1534,8 @@
                 "op": "insert",
                 "into": {
                   "kind": "document",
-                  "id": "d_8",
-                  "path": "processes/coagulation.md"
+                  "_id": "d_8",
+                  "_path": "processes/coagulation.md"
                 },
                 "at": "end",
                 "markdown": "[Laboratory notes — February](/lab/2026-02-notes.md)"
@@ -1574,16 +1574,16 @@
             "preconditions": {
               "docs": [
                 {
-                  "id": "d_7",
-                  "path": "processes/calcination.md",
+                  "_id": "d_7",
+                  "_path": "processes/calcination.md",
                   "base_revision": "r_22",
-                  "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                  "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                 },
                 {
-                  "id": "d_8",
-                  "path": "processes/coagulation.md",
+                  "_id": "d_8",
+                  "_path": "processes/coagulation.md",
                   "base_revision": "r_8",
-                  "hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                  "_hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
                 }
               ],
               "blocks": [],
@@ -1606,7 +1606,7 @@
                 {
                   "op": "insert",
                   "into": "-> `/processes/${subject}.md`",
-                  "markdown": "-> `[${title}](${path})`"
+                  "markdown": "-> `[${_title}](${_path})`"
                 }
               ],
               "cardinality": 2,
@@ -1615,7 +1615,7 @@
                 "d_2"
               ]
             },
-            "plan_id": "6bf8830b0fc7fba8166c5b3033f035dc104de129d7d8a143e1359daa27ddc659",
+            "plan_id": "2ca5997deaed015289be4d3888d2eb1c8f0dd47feddff5ada73b29a593ea2fea",
             "diagnostics": [],
             "preview": {
               "results": [
@@ -1632,14 +1632,14 @@
               ],
               "revisions": [
                 {
-                  "id": "d_7",
-                  "path": "/processes/calcination.md",
-                  "hash": "7bf770efda8c1d9e57101d1fb0cda599849083d1178793165c401b722ea2ac93"
+                  "_id": "d_7",
+                  "_path": "/processes/calcination.md",
+                  "_hash": "7bf770efda8c1d9e57101d1fb0cda599849083d1178793165c401b722ea2ac93"
                 },
                 {
-                  "id": "d_8",
-                  "path": "/processes/coagulation.md",
-                  "hash": "9d3b9f51a3f77a639161931db340e908030bb9a6392e43625b6bbe158afee82e"
+                  "_id": "d_8",
+                  "_path": "/processes/coagulation.md",
+                  "_hash": "9d3b9f51a3f77a639161931db340e908030bb9a6392e43625b6bbe158afee82e"
                 }
               ],
               "summary": [
@@ -1649,19 +1649,19 @@
             }
           },
           {
-            "plan_id": "ab416d8686fe527fd13439fcf0c7accb9e23307c0730edc17149c8b46f0f032a",
+            "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
             "commit": "c_23",
             "revisions": [
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md",
-                "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                "_id": "d_7",
+                "_path": "/processes/calcination.md",
+                "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
               }
             ],
             "new_ids": {},
             "committed": true,
             "summary": [
-              "set frontmatter.verified = false in /processes/calcination.md"
+              "set _frontmatter.verified = false in /processes/calcination.md"
             ]
           },
           {
@@ -1674,9 +1674,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_0",
-                    "path": "/index.md",
-                    "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
+                    "_id": "d_0",
+                    "_path": "/index.md",
+                    "_hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
                   }
                 ]
               },
@@ -1688,9 +1688,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_1",
-                    "path": "/lab/2026-01-notes.md",
-                    "hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480"
+                    "_id": "d_1",
+                    "_path": "/lab/2026-01-notes.md",
+                    "_hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480"
                   }
                 ]
               },
@@ -1702,9 +1702,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_2",
-                    "path": "/lab/2026-02-notes.md",
-                    "hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa"
+                    "_id": "d_2",
+                    "_path": "/lab/2026-02-notes.md",
+                    "_hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa"
                   }
                 ]
               },
@@ -1716,9 +1716,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_3",
-                    "path": "/practitioners/jabir-ibn-hayyan.md",
-                    "hash": "346dd857fb0acc23191d10939cde5d9c8b58317f2073968ea2cabbc5a6536ddc"
+                    "_id": "d_3",
+                    "_path": "/practitioners/jabir-ibn-hayyan.md",
+                    "_hash": "346dd857fb0acc23191d10939cde5d9c8b58317f2073968ea2cabbc5a6536ddc"
                   }
                 ]
               },
@@ -1730,9 +1730,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_4",
-                    "path": "/practitioners/maria-prophetissa.md",
-                    "hash": "2041503c1ff937ac1e30e76153cb145d6033faa9bc828f02b68fbcb3d25370f5"
+                    "_id": "d_4",
+                    "_path": "/practitioners/maria-prophetissa.md",
+                    "_hash": "2041503c1ff937ac1e30e76153cb145d6033faa9bc828f02b68fbcb3d25370f5"
                   }
                 ]
               },
@@ -1744,9 +1744,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_5",
-                    "path": "/practitioners/newton.md",
-                    "hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
+                    "_id": "d_5",
+                    "_path": "/practitioners/newton.md",
+                    "_hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
                   }
                 ]
               },
@@ -1758,9 +1758,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_6",
-                    "path": "/practitioners/paracelsus.md",
-                    "hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d"
+                    "_id": "d_6",
+                    "_path": "/practitioners/paracelsus.md",
+                    "_hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d"
                   }
                 ]
               },
@@ -1772,9 +1772,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
                   }
                 ]
               },
@@ -1786,9 +1786,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_8",
-                    "path": "/processes/coagulation.md",
-                    "hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                    "_id": "d_8",
+                    "_path": "/processes/coagulation.md",
+                    "_hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
                   }
                 ]
               },
@@ -1800,9 +1800,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_9",
-                    "path": "/processes/dissolution.md",
-                    "hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
+                    "_id": "d_9",
+                    "_path": "/processes/dissolution.md",
+                    "_hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
                   }
                 ]
               },
@@ -1814,9 +1814,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_10",
-                    "path": "/processes/magnum-opus.md",
-                    "hash": "500f49be074b792b89fddd9661e93dc5afc9948c1506c67b23c2b4c006f9a85e"
+                    "_id": "d_10",
+                    "_path": "/processes/magnum-opus.md",
+                    "_hash": "500f49be074b792b89fddd9661e93dc5afc9948c1506c67b23c2b4c006f9a85e"
                   }
                 ]
               },
@@ -1828,9 +1828,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_11",
-                    "path": "/substances/mercury.md",
-                    "hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f"
+                    "_id": "d_11",
+                    "_path": "/substances/mercury.md",
+                    "_hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f"
                   }
                 ]
               },
@@ -1842,9 +1842,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_12",
-                    "path": "/substances/philosophers-stone.md",
-                    "hash": "fdcdf3fe4c43caadb8fa3535c705b274c2dc6e1a3ee5dcd0a27e62c2ff6512e3"
+                    "_id": "d_12",
+                    "_path": "/substances/philosophers-stone.md",
+                    "_hash": "fdcdf3fe4c43caadb8fa3535c705b274c2dc6e1a3ee5dcd0a27e62c2ff6512e3"
                   }
                 ]
               },
@@ -1856,9 +1856,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_13",
-                    "path": "/substances/prima-materia.md",
-                    "hash": "11f1d67bf403bbae11bd9904d2679f534a2315a058b6f6bc7da043b9ab3e4c19"
+                    "_id": "d_13",
+                    "_path": "/substances/prima-materia.md",
+                    "_hash": "11f1d67bf403bbae11bd9904d2679f534a2315a058b6f6bc7da043b9ab3e4c19"
                   }
                 ]
               },
@@ -1870,9 +1870,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_14",
-                    "path": "/substances/salt.md",
-                    "hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                    "_id": "d_14",
+                    "_path": "/substances/salt.md",
+                    "_hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
                   }
                 ]
               },
@@ -1884,9 +1884,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_15",
-                    "path": "/substances/sulphur.md",
-                    "hash": "0531f667b6f371786055f368fc3b036cf51d31f63fd09c2437546d7255dd1ec0"
+                    "_id": "d_15",
+                    "_path": "/substances/sulphur.md",
+                    "_hash": "0531f667b6f371786055f368fc3b036cf51d31f63fd09c2437546d7255dd1ec0"
                   }
                 ]
               },
@@ -1898,9 +1898,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_16",
-                    "path": "/texts/emerald-tablet.md",
-                    "hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b"
+                    "_id": "d_16",
+                    "_path": "/texts/emerald-tablet.md",
+                    "_hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b"
                   }
                 ]
               },
@@ -1912,9 +1912,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_17",
-                    "path": "/texts/mutus-liber.md",
-                    "hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
+                    "_id": "d_17",
+                    "_path": "/texts/mutus-liber.md",
+                    "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
                   }
                 ]
               },
@@ -1926,9 +1926,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_18",
-                    "path": "/timeline/kickoff.md",
-                    "hash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                    "_id": "d_18",
+                    "_path": "/timeline/kickoff.md",
+                    "_hash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
                   }
                 ]
               },
@@ -1940,9 +1940,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "id": "d_19",
-                    "path": "/timeline/review.md",
-                    "hash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                    "_id": "d_19",
+                    "_path": "/timeline/review.md",
+                    "_hash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
                   }
                 ]
               },
@@ -1954,9 +1954,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_14",
-                    "path": "/substances/salt.md",
-                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_id": "d_14",
+                    "_path": "/substances/salt.md",
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -1968,9 +1968,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_2",
-                    "path": "/lab/2026-02-notes.md",
-                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_id": "d_2",
+                    "_path": "/lab/2026-02-notes.md",
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
                   }
                 ]
               },
@@ -1982,9 +1982,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                   }
                 ]
               },
@@ -1996,9 +1996,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }
@@ -2017,9 +2017,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_14",
-                    "path": "/substances/salt.md",
-                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_id": "d_14",
+                    "_path": "/substances/salt.md",
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -2031,9 +2031,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_2",
-                    "path": "/lab/2026-02-notes.md",
-                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_id": "d_2",
+                    "_path": "/lab/2026-02-notes.md",
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
                   }
                 ]
               },
@@ -2045,9 +2045,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                   }
                 ]
               },
@@ -2059,9 +2059,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }
@@ -2080,9 +2080,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_14",
-                    "path": "/substances/salt.md",
-                    "hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_id": "d_14",
+                    "_path": "/substances/salt.md",
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
                   }
                 ]
               },
@@ -2094,9 +2094,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_2",
-                    "path": "/lab/2026-02-notes.md",
-                    "hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_id": "d_2",
+                    "_path": "/lab/2026-02-notes.md",
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
                   }
                 ]
               },
@@ -2108,9 +2108,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
                   }
                 ]
               },
@@ -2122,9 +2122,9 @@
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "id": "d_7",
-                    "path": "/processes/calcination.md",
-                    "hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_id": "d_7",
+                    "_path": "/processes/calcination.md",
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
                   }
                 ]
               }

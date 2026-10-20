@@ -9,7 +9,7 @@ import { checkNames, editDistance, nearest, vocabulary } from "./names.js";
 
 // Unknown names (spec/surface §1.5, 4.6). The fixtures (`query-unknown.json`)
 // pin the messages over the alchemy corpus; this file pins the rules at the
-// unit — the vocabulary and its cache, the tiers on a tiny repository, the
+// unit — the vocabulary and its cache, the name rule on a tiny repository, the
 // empty-vocabulary edge, the dotted-prefix rule, the nearest-match rule, and
 // the two entry points' defaults.
 let store: Store;
@@ -46,67 +46,95 @@ describe("the vocabulary (§1.5)", () => {
   });
 });
 
-describe("the three tiers (§1.5)", () => {
+describe("the name rule (§1.5, 5.0: a bare name is the author's, an underscore name the engine's)", () => {
   const hints = (q: string): string[] | undefined => checkNamesHints(q);
   const checkNamesHints = (q: string): string[] | undefined => {
     const h = checkNames(store, repoId, parse(q), "hint");
     return h.length === 0 ? undefined : h;
   };
 
-  it("tier 1: attributes, handles and relations are silent", () => {
-    expect(hints("select title, tags, path, blocks, d: doc.id from docs where nodes exists { where kind == \"md:task\" }")).toBeUndefined();
-    expect(hints("select type, text, attrs, children, section.level, doc.title from blocks")).toBeUndefined();
-    expect(hints("select dst_path, s: doc.title, t: dst.title from links")).toBeUndefined();
+  it("engine names — attributes, handles and relations — are silent", () => {
+    expect(hints("select _title, _tags, _path, _blocks, d: $it._id from docs where _nodes exists { where _kind == \"md:task\" }")).toBeUndefined();
+    expect(hints("select _type, _text, _attrs, _children, _section.level, _doc._title from blocks")).toBeUndefined();
+    expect(hints("select _dst_path, s: _doc._title, t: _dst._title from links")).toBeUndefined();
   });
 
-  it("tier 2: a property some objects carry is silent; a dotted prefix of a key is known", () => {
+  it("a bare property some objects carry is silent; a dotted prefix of a key is known", () => {
     expect(hints("select stage, kind from docs where meta.owner == \"bb\"")).toBeUndefined();
     expect(hints("select meta from docs")).toBeUndefined();
     expect(hints("select checked from blocks where lang == \"js\"")).toBeUndefined();
   });
 
-  it("tier 3: a name no object carries is one hint per name, first-reference order, deduplicated", () => {
+  it("a bare name no object carries is one hint per name, first-reference order, deduplicated", () => {
     expect(hints("select stag, kynd from docs where stag == \"x\" order by kynd")).toEqual([
-      "`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?",
-      "`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?",
+      "no document in this repository carries a property `stag`; did you mean `stage`?",
+      "no document in this repository carries a property `kynd`; did you mean `kind`?",
     ]);
     expect(hints("select meta.ownr, stage.x from docs")).toEqual([
-      "`meta.ownr` is not a field of docs and no document in this repository carries a property by that name; did you mean `meta.owner`?",
-      "`stage.x` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?",
+      "no document in this repository carries a property `meta.ownr`; did you mean `meta.owner`?",
+      "no document in this repository carries a property `stage.x`; did you mean `stage`?",
     ]);
   });
 
-  it("a name under a source handle is the handle form, with authored keys as candidates", () => {
-    expect(hints("select p: data.path, k: frontmatter.kynd from docs")).toEqual([
-      "no document in this repository carries a property `path` (`data.path`)",
-      "no document in this repository carries a property `kynd` (`frontmatter.kynd`); did you mean `kind`?",
+  it("a bare name that spells an engine attribute without its prefix is pointed at the engine name outright", () => {
+    expect(hints("select id, title, path, tags, format from docs")).toEqual([
+      "no document in this repository carries a property `id`; did you mean `_id`?",
+      "no document in this repository carries a property `title`; did you mean `_title`?",
+      "no document in this repository carries a property `path`; did you mean `_path`?",
+      "no document in this repository carries a property `tags`; did you mean `_tags`?",
+      "no document in this repository carries a property `format`; did you mean `_format`?",
+    ]);
+    expect(hints("select text, preview from blocks")).toEqual([
+      "no block in this repository carries a property `text`; did you mean `_text`?",
+      "no block in this repository carries a property `preview`",
     ]);
   });
 
-  it("a name on links is the error in either mode; a name reached through dst is a docs hint", () => {
-    const err = "`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)";
+  it("an underscore name that is no engine name of the kind is filter_invalid naming the kind's engine names, in either mode", () => {
+    const docsErr = "`_nope` is not an engine name of docs (engine names: _id, _path, _raw, _hash, _updated_at, _created_at, _title, _tags, _format, _data, _frontmatter, _inline, _blocks, _nodes, _out_links, _in_links, _revisions); did you mean `_nodes`?";
+    expect(() => checkNames(store, repoId, parse("select _nope from docs"), "hint")).toThrow(docsErr);
+    expect(() => checkNames(store, repoId, parse("select _nope from docs"), "refuse")).toThrow(docsErr);
+    expect(() => oqxRun(store, repoId, "select _nope from docs")).toThrow(FilterInvalid);
+    // the nearest match is drawn from the engine names and the authored keys: a `_kind` written for the authored `kind` is pointed at it
+    expect(() => checkNames(store, repoId, parse("from docs where _kind == \"x\""), "hint")).toThrow("`_kind` is not an engine name of docs (engine names: _id, _path, _raw, _hash, _updated_at, _created_at, _title, _tags, _format, _data, _frontmatter, _inline, _blocks, _nodes, _out_links, _in_links, _revisions); did you mean `kind`?");
+    expect(() => checkNames(store, repoId, parse("select _tittle from blocks"), "hint")).toThrow("`_tittle` is not an engine name of blocks (engine names: _id, _path, _raw, _hash, _updated_at, _created_at, _doc_id, _type, _text, _attrs, _depth, _ordinal, _doc, _children, _nodes, _out_links, _section)");
+    // behind a reach-through the name is judged against the reached kind
+    expect(() => checkNames(store, repoId, parse("select _doc._nope from blocks"), "hint")).toThrow("`_nope` is not an engine name of docs");
+  });
+
+  it("a name under a source handle is shown with the handle, with the authored keys alone as candidates", () => {
+    expect(hints("select p: _data.path, k: _frontmatter.kynd from docs")).toEqual([
+      "no document in this repository carries a property `path` (`_data.path`)",
+      "no document in this repository carries a property `kynd` (`_frontmatter.kynd`); did you mean `kind`?",
+    ]);
+  });
+
+  it("a bare name on links is the closed-kind error in either mode; a name reached through _dst is a docs hint", () => {
+    const err = "`target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)";
     expect(() => checkNames(store, repoId, parse("select target from links"), "hint")).toThrow(err);
-    expect(() => checkNames(store, repoId, parse("from docs where out_links exists { where target == \"x\" }"), "hint")).toThrow(err);
-    expect(hints("select dst.kynd from links")).toEqual(["`kynd` is not a field of docs and no document in this repository carries a property by that name; did you mean `kind`?"]);
+    expect(() => checkNames(store, repoId, parse("from docs where _out_links exists { where target == \"x\" }"), "hint")).toThrow(err);
+    expect(() => checkNames(store, repoId, parse("select dst_path from links"), "hint")).toThrow("`dst_path` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block); did you mean `_dst_path`?");
+    expect(() => checkNames(store, repoId, parse("select rev from revisions"), "hint")).toThrow("`rev` reads an authored property, and a revision carries none (engine names: _id, _path, _rev, _seq, _doc_id, _commit, _ts, _origin, _actor, _reason, _hash, _is_current, _archived, _doc); did you mean `_rev`?");
+    expect(hints("select _dst.kynd from links")).toEqual(["no document in this repository carries a property `kynd`; did you mean `kind`?"]);
   });
 
   it("refuse mode throws the hint text as filter_invalid before any row is read", () => {
     let thrown: unknown;
     try { checkNames(store, repoId, parse("select stag from docs"), "refuse"); } catch (e) { thrown = e; }
     expect(thrown).toBeInstanceOf(FilterInvalid);
-    expect((thrown as FilterInvalid).message).toBe("`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?");
+    expect((thrown as FilterInvalid).message).toBe("no document in this repository carries a property `stag`; did you mean `stage`?");
     expect((thrown as FilterInvalid).hint).toBe("OQX");
   });
 
   it("what is not judged: aliases where resolved, lifts, $-names, function names, attribute tails, unknown-kind scopes", () => {
     expect(hints("select s: stage, n: s from docs where s == \"x\"")).toBeUndefined();
-    expect(hints("select p: path, open from docs where nodes collect { ^open: value where kind == \"md:task\" }")).toBeUndefined();
-    expect(hints("select $key: id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0")).toBeUndefined();
-    expect(hints("select a: attrs.whatever from blocks")).toBeUndefined();
-    expect(hints("select n: tags.size() from docs")).toBeUndefined();
+    expect(hints("select p: _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" }")).toBeUndefined();
+    expect(hints("select $key: _id from docs where $depth > 0 and has(stage) and size(list(kind)) > 0")).toBeUndefined();
+    expect(hints("select a: _attrs.whatever from blocks")).toBeUndefined();
+    expect(hints("select n: _tags.size() from docs")).toBeUndefined();
     // `refs(before)` yields documents (judged); a tuple receiver has no one kind (not judged).
     expect(hints("select r: refs(stage) collect { select kynd } from docs")).toHaveLength(1);
-    expect(hints("select t: (blocks, nodes) collect { select kynd } from docs")).toBeUndefined();
+    expect(hints("select t: (_blocks, _nodes) collect { select kynd } from docs")).toBeUndefined();
   });
 
   it("a repository with no object of a kind has no vocabulary: the check is skipped for that kind", () => {
@@ -116,7 +144,7 @@ describe("the three tiers (§1.5)", () => {
       expect(oqxRun(empty, r, "select titel from docs where layr == \"x\"").hints).toBeUndefined();
       expect(oqxRun(empty, r, "select preview from blocks").hints).toBeUndefined();
       // links stay closed even in an empty repository
-      expect(() => oqxRun(empty, r, "select target from links")).toThrow("is not a field of links");
+      expect(() => oqxRun(empty, r, "select target from links")).toThrow("reads an authored property, and a link carries none");
     } finally {
       empty.close();
     }
@@ -132,17 +160,22 @@ describe("the nearest match (§1.5)", () => {
     expect(editDistance("x", "id")).toBe(2);
   });
 
-  it("distance ≤ 2 or a substring of ≥ 3 characters, case-insensitive; one typo first, then a substring, then distance 2; shorter, alphabetical; under 3 characters or none → null", () => {
-    const links = ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"];
-    expect(nearest("dst_pth", links)).toBe("dst_path");
+  it("distance ≤ 2 or a substring of ≥ 3 characters, case-insensitive; the exact `_`-prefixed/unprefixed twin first, then one typo, then a substring, then distance 2; shorter, alphabetical; under 3 characters or none → null", () => {
+    const links = ["_id", "_path", "_doc_id", "_block_id", "_via_id", "_dst_id", "_dst_path", "_uri", "_field", "_dst_kind", "_predicate", "_provenance", "_anchor"];
+    // the one certain hint: a name that is a candidate with the engine prefix added or removed wins outright, whatever its length
+    expect(nearest("id", links)).toBe("_id"); // under three characters, but the twin rule comes first
+    expect(nearest("dst_path", links)).toBe("_dst_path");
+    expect(nearest("title", ["titel", "_title"])).toBe("_title"); // beats the one-typo `titel`
+    expect(nearest("_kind", ["kinds", "kind"])).toBe("kind"); // the reverse: an engine spelling of an authored key
+    expect(nearest("dst_pth", links)).toBe("_dst_path");
     expect(nearest("target", links)).toBeNull();
-    expect(nearest("DST", links)).toBe("dst_id"); // three prefix matches at distance 3, 5, 5 — the lowest distance
-    expect(nearest("via", links)).toBe("via_id"); // the substring outranks `id` at distance 2
+    expect(nearest("DST", links)).toBe("_dst_id"); // three substring matches at distance 4, 6, 6 — the lowest distance
+    expect(nearest("via", links)).toBe("_via_id"); // the substring outranks `_id` at distance 2
     expect(nearest("x", links)).toBeNull(); // under three characters: no suggestion
-    expect(nearest("in", ["id", "in_links", "out_links"])).toBeNull();
-    expect(nearest("tag", ["id", "path", "tags", "title"])).toBe("tags");
-    expect(nearest("preview", ["id", "path", "type", "text", "attrs", "depth", "ordinal", "children"])).toBeNull();
-    expect(nearest("predicat", links)).toBe("predicate");
+    expect(nearest("in", ["_id", "_in_links", "_out_links"])).toBeNull();
+    expect(nearest("tag", ["_id", "_path", "_tags", "_title"])).toBe("_tags");
+    expect(nearest("preview", ["_id", "_path", "_type", "_text", "_attrs", "_depth", "_ordinal", "_children"])).toBeNull();
+    expect(nearest("predicat", links)).toBe("_predicate");
     expect(nearest("abc", ["acb", "abc_x", "abd"])).toBe("abd"); // one typo (two of them, alphabetical) beats the substring
     expect(nearest("abcd", ["abxy", "abcd_x"])).toBe("abcd_x");
     expect(nearest("abc", ["abcd", "xabc"])).toBe("abcd"); // equal distance: alphabetical
@@ -151,7 +184,7 @@ describe("the nearest match (§1.5)", () => {
 
 describe("the two entry points", () => {
   it("the source entry hints and appends `hints` last; the AST entry refuses", () => {
-    const res = oqxRun(store, repoId, "select stag from docs order by path");
+    const res = oqxRun(store, repoId, "select stag from docs order by _path");
     expect(Object.keys(res)).toEqual(["hits", "truncated", "cursor", "consumer", "hints"]);
     expect(res.hits).toHaveLength(2);
     expect(oqxRun(store, repoId, "docs count { where stag == \"x\" }")).toMatchObject({ consumer: "count", count: 0, hints: [expect.stringContaining("`stag`")] });

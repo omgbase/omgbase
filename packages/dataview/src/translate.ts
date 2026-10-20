@@ -23,7 +23,7 @@
 //     Dataview applies commands sequentially, but a page predicate holds the
 //     same before and after the fan-out, so moving it is semantics-preserving;
 //   - a conjunct that reads only ONE bound element → that flatten's block
-//     (`flatten blocks collect { where type == "task" and checked } as t`):
+//     (`flatten _blocks collect { where _type == "task" and checked } as t`):
 //     filtering the elements before the fan-out is filtering the flattened rows
 //     by the element, and a parent whose elements all fail yields no row —
 //     Dataview's result for the same WHERE;
@@ -31,7 +31,7 @@
 //     (`t.completed & status = "open"` as one `|`-joined predicate, `a.x = b.y`)
 //     → `unsupported` naming the construct: it has no spelling.
 // Two refinements: an implicit list field (`file.tags`, `file.aliases`) always
-// gets a block (`tags collect { }`), because Dataview's value is `[]` on a page
+// gets a block (`_tags collect { }`), because Dataview's value is `[]` on a page
 // without tags — no row — while OQX fans an absent value out to one row (§25);
 // an authored field with an element conjunct is read through `list(…)` (a block
 // over a scalar is an eval error; `list` makes a scalar a one-row collection and
@@ -43,7 +43,7 @@ import type { Command, DqlQuery, Expr as DExpr, Field, Node, SortKey } from "./a
 import { at, nested, warn, type Bound, type Ctx, type ElementKind } from "./context.ts";
 import { DqlError, unsupported } from "./errors.ts";
 import {
-  BLOCK_ENGINE_NAMES, DOC_ENGINE_NAMES, TASK_ID_ALIAS, deriveField, rowsCollect, segments, taskSelect, toValue, toWhere, type Typed,
+  TASK_ID_ALIAS, deriveField, rowsCollect, segments, taskSelect, toValue, toWhere, type Typed,
 } from "./expressions.ts";
 import { TASK_FIELDS, type Derive } from "./fields.ts";
 import { assemble, conjoin, identsOf, isUsableAlias, type GroupKey } from "./oqx.ts";
@@ -73,7 +73,7 @@ export interface TranslateOptions {
 
 /** One output column: Dataview's header text, the OQX alias to read the value
  * under, and — for `file.name` / `file.folder` / `file.link` / `file.ext` —
- * the client-side derivation from the `path` the alias holds. */
+ * the client-side derivation from the `_path` the alias holds. */
 export interface Column {
   name: string;
   alias: string;
@@ -82,15 +82,15 @@ export interface Column {
 
 /** The aliases of a task row: the block id, the text, the checkbox, the
  * document. On a plain TASK query every hit is a task block and the aliases
- * are the attributes themselves (`id`, `text`, `checked`, `path`); on a TASK
- * query re-rooted at the page by `FLATTEN file.tasks`, `id`/`path` are the
+ * are the attributes themselves (`_id`, `_text`, `checked`, `_path`); on a TASK
+ * query re-rooted at the page by `FLATTEN file.tasks`, `_id`/`_path` are the
  * page's envelope, so the task's id is projected as `task_id` and its text and
  * checkbox as `text` / `checked`. */
 export interface TaskShape {
   id: string;
   text: string;
   checked: string;
-  path: "path";
+  path: "_path";
 }
 
 export type RenderShape =
@@ -107,12 +107,12 @@ export interface Translation {
   warnings: string[];
 }
 
-const TASK: TaskShape = { id: "id", text: "text", checked: "checked", path: "path" };
-const TASK_FLATTENED: TaskShape = { id: TASK_ID_ALIAS, text: "text", checked: "checked", path: "path" };
+const TASK: TaskShape = { id: "_id", text: "_text", checked: "checked", path: "_path" };
+const TASK_FLATTENED: TaskShape = { id: TASK_ID_ALIAS, text: "text", checked: "checked", path: "_path" };
 
-/** Names a `FLATTEN … AS` may not take: the hit envelope (the engine refuses
- * `as id` / `as path`), and the translator's own words. */
-const UNBINDABLE: ReadonlySet<string> = new Set(["id", "path", "file", "this", "rows", "key"]);
+/** Names a `FLATTEN … AS` may not take beside the engine's `_` namespace (see
+ * `bindName`): the translator's own words. */
+const UNBINDABLE: ReadonlySet<string> = new Set(["file", "this", "rows", "key"]);
 
 export function translate(dql: string, options: TranslateOptions = {}): Translation {
   const query = parseDql(dql);
@@ -190,9 +190,9 @@ class Translator {
 
   run(): Translation {
     const { q, ctx } = this;
-    this.aliases.add("id").add("path");
+    this.aliases.add("_id").add("_path");
     if (q.type === "TASK" && q.fields.length > 0) throw new DqlError("parse", "TASK takes no fields", at(ctx, q.fields[0]!));
-    if (q.type === "TASK") { this.aliases.add("text"); this.aliases.add("checked"); this.rerootTask(); }
+    if (q.type === "TASK") { this.aliases.add("_text").add("text").add("checked"); this.rerootTask(); }
     if (this.taskFlatten) this.aliases.add(TASK_ID_ALIAS);
     if (q.from) {
       const w = sourceWhere(q.from, ctx);
@@ -207,8 +207,8 @@ class Translator {
     const grouped = this.group !== null;
     const idColumn: Column | null = grouped
       ? { name: "Group", alias: this.group!.alias, ...(this.groupDerive ? { derive: this.groupDerive } : {}) }
-      : { name: "File", alias: "path", derive: "link" };
-    select.push(grouped ? build.field(this.group!.alias, build.ident(this.group!.alias)) : build.field("path", build.ident("path")));
+      : { name: "File", alias: "_path", derive: "link" };
+    select.push(grouped ? build.field(this.group!.alias, build.ident(this.group!.alias)) : build.field("_path", build.ident("_path")));
 
     switch (q.type) {
       case "TABLE": {
@@ -235,11 +235,11 @@ class Translator {
           render = { type: "task", grouped: true, id: idColumn, rows: "tasks", task: shape };
         } else {
           if (this.taskFlatten) select.push(...taskSelect(this.taskFlatten.bound.name).slice(1));
-          else for (const n of ["id", "text", "checked"]) select.push(build.field(n, build.ident(n)));
+          else for (const n of ["_id", "_text", "checked"]) select.push(build.field(n, build.ident(n)));
           render = { type: "task", grouped: false, id: idColumn, rows: null, task: shape };
         }
         // Every row of a plain TASK query is a task block; re-rooted at the page, the flatten's block says so.
-        if (!this.taskFlatten) this.where.unshift(build.scalar(build.binary("==", build.ident("type"), build.lit("task"))));
+        if (!this.taskFlatten) this.where.unshift(build.scalar(build.binary("==", build.ident("_type"), build.lit("task"))));
         break;
       }
       case "CALENDAR": {
@@ -332,7 +332,7 @@ class Translator {
         }
         let alias = "key";
         if (c.alias !== null) {
-          if (!isUsableAlias(c.alias) || this.aliases.has(c.alias)) throw unsupported(`GROUP BY … AS ${c.alias}`, "the key's name must be an OQX identifier other than id/path", at(ctx, c));
+          if (!isUsableAlias(c.alias) || c.alias.startsWith("_") || this.aliases.has(c.alias)) throw unsupported(`GROUP BY … AS ${c.alias}`, "the key's name must be an OQX identifier outside the engine's `_` namespace (and not _id/_path)", at(ctx, c));
           alias = c.alias;
         }
         this.aliases.add(alias);
@@ -360,48 +360,50 @@ class Translator {
       ? this.taskFlatten.bound
       : { name: this.bindName(c), kind: "value", block: [] };
     const spec = this.flattenValue(c, bound);
-    const engine = ctx.target === "blocks" ? BLOCK_ENGINE_NAMES : DOC_ENGINE_NAMES;
-    if (engine.has(bound.name)) {
-      warn(ctx, `FLATTEN … AS ${bound.name} shadows the engine's \`${bound.name}\`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)`);
-    }
     this.flattens.push(spec);
     ctx.bound.set(bound.name, bound);
   }
 
   /** The name a FLATTEN binds: its `AS`, else the last segment of a field path
-   * (Dataview names `FLATTEN file.tasks` `tasks`); anything else needs `AS`. */
+   * (Dataview names `FLATTEN file.tasks` `tasks`); anything else needs `AS`. A
+   * name in the engine's `_` namespace is refused: the hit envelope (`_id`,
+   * `_path`) cannot be rebound, and a bound `_x` would shadow (or pose as) an
+   * engine field. Bare names are the user's, so `tags`, `id`, `path` bind as
+   * any authored key would (a `FLATTEN file.tags` binds `tags` beside `_tags`). */
   private bindName(c: Command & { kind: "flatten" }): string {
     const { ctx } = this;
     const name = flattenName(c);
     if (name === null) throw unsupported(`FLATTEN ${sourceOf(ctx, c.expr)}`, "an expression that is not a field path needs AS <name> — Dataview names a field after its last segment, nothing else has a name", at(ctx, c));
     if (!isUsableAlias(name)) throw unsupported(`FLATTEN … AS ${name}`, "the name must be an OQX identifier", at(ctx, c));
-    if (UNBINDABLE.has(name)) throw unsupported(`FLATTEN … AS ${name}`, name === "id" || name === "path" ? "the hit envelope's names cannot be rebound" : "a name the translator reads specially (file, this, rows, key)", at(ctx, c));
+    if (name.startsWith("_")) throw unsupported(`FLATTEN … AS ${name}`, "a name in the engine's `_` namespace cannot be bound (the hit envelope `_id`/`_path` included); the bare namespace is the user's — write AS <a bare name>", at(ctx, c));
+    if (UNBINDABLE.has(name)) throw unsupported(`FLATTEN … AS ${name}`, "a name the translator reads specially (file, this, rows, key)", at(ctx, c));
     if (ctx.bound.has(name) || (ctx.taskBound !== null && ctx.taskBound.name === name && this.taskFlatten?.command !== c)) throw unsupported(`FLATTEN … AS ${name}`, "the name is already bound by an earlier FLATTEN", at(ctx, c));
     if (this.aliases.has(name)) throw unsupported(`FLATTEN … AS ${name}`, "the name is a column the query selects", at(ctx, c));
     return name;
   }
 
   /** The value a FLATTEN splits, as the element kind decides (see the header):
-   * `file.tasks` / `file.lists` → `blocks collect { where type == … }`;
-   * `file.outlinks` / `file.inlinks` → `out_links collect { from dst }` /
-   * `in_links collect { from doc }`; `file.tags` / `file.etags` / `file.aliases`
-   * → `tags collect { }` (the block makes the value a collection, Dataview's
-   * `[]`); anything else — an authored field, a bound name's member, a computed
-   * value — the expression itself, a block added only for an element WHERE. */
+   * `file.tasks` / `file.lists` → `_blocks collect { where _type == … }`;
+   * `file.outlinks` / `file.inlinks` → `_out_links collect { from _dst }` /
+   * `_in_links collect { from _doc }`; `file.tags` / `file.etags` → `_tags
+   * collect { }`, `file.aliases` → `aliases collect { }` (the block makes the
+   * value a collection, Dataview's `[]`); anything else — an authored field, a
+   * bound name's member, a computed value — the expression itself, a block
+   * added only for an element WHERE. */
   private flattenValue(c: Command & { kind: "flatten" }, bound: Bound): FlattenSpec {
     const { ctx } = this;
-    const doc = (name: string): Expr => (ctx.target === "blocks" ? build.member(build.ident("doc"), name) : build.ident(name));
+    const doc = (name: string): Expr => (ctx.target === "blocks" ? build.member(build.ident("_doc"), name) : build.ident(name));
     const segs = segments(c.expr);
     if (segs && segs[0] === "file" && segs.length === 2) {
       switch (segs[1]) {
         case "tasks": case "lists": {
           bound.kind = segs[1] === "tasks" ? "task" : "list_item";
-          const sub = build.subquery({ where: build.scalar(build.binary("==", build.ident("type"), build.lit(segs[1] === "tasks" ? "task" : "list_item"))) });
-          return { bound, receiver: doc("blocks"), sub, node: c };
+          const sub = build.subquery({ where: build.scalar(build.binary("==", build.ident("_type"), build.lit(segs[1] === "tasks" ? "task" : "list_item"))) });
+          return { bound, receiver: doc("_blocks"), sub, node: c };
         }
-        case "outlinks": bound.kind = "doc"; return { bound, receiver: doc("out_links"), sub: build.subquery({ from: [build.ident("dst")] }), node: c };
-        case "inlinks": bound.kind = "doc"; return { bound, receiver: doc("in_links"), sub: build.subquery({ from: [build.ident("doc")] }), node: c };
-        case "tags": case "etags": bound.kind = "scalar"; return { bound, receiver: doc("tags"), sub: build.subquery(), node: c };
+        case "outlinks": bound.kind = "doc"; return { bound, receiver: doc("_out_links"), sub: build.subquery({ from: [build.ident("_dst")] }), node: c };
+        case "inlinks": bound.kind = "doc"; return { bound, receiver: doc("_in_links"), sub: build.subquery({ from: [build.ident("_doc")] }), node: c };
+        case "tags": case "etags": bound.kind = "scalar"; return { bound, receiver: doc("_tags"), sub: build.subquery(), node: c };
         case "aliases": bound.kind = "scalar"; return { bound, receiver: doc("aliases"), sub: build.subquery(), node: c };
         default: break;
       }
@@ -490,12 +492,15 @@ class Translator {
    * (spec/oqx GRAMMAR §3) — so an `AS` name never takes a name the query reads
    * elsewhere, and a bare field keeps its own name only when no earlier item
    * read it (`due, due` is `due, c1: due`; `file.mtime AS mtime, file.mtime` is
-   * `mtime: updated_at, c1: updated_at`). A FLATTEN-bound name selected bare
+   * `mtime: _updated_at, c1: _updated_at`). A FLATTEN-bound name selected bare
    * keeps its name (`tag` for `TABLE tag … FLATTEN file.tags AS tag`): the
-   * alias and the bound name are the same value. */
+   * alias and the bound name are the same value. An `AS` name in the engine's
+   * `_` namespace is not taken (the hit would carry a `_` key that is not the
+   * engine's); an engine attribute selected bare keeps its own name
+   * (`_updated_at`) — the alias is the attribute itself. */
   private alias(f: Field, v: Typed, i: number): string {
     const free = (c: string): boolean => isUsableAlias(c) && !c.startsWith("$") && !this.aliases.has(c) && !this.seenIdents.has(c);
-    if (f.alias !== null && free(f.alias) && !this.referenced.has(f.alias)) { this.aliases.add(f.alias); return f.alias; }
+    if (f.alias !== null && !f.alias.startsWith("_") && free(f.alias) && !this.referenced.has(f.alias)) { this.aliases.add(f.alias); return f.alias; }
     if (v.expr.kind === "ident" && !v.derive && free(v.expr.name)) { this.aliases.add(v.expr.name); return v.expr.name; }
     let n = i;
     while (this.aliases.has(`c${n}`) || this.referenced.has(`c${n}`) || this.seenIdents.has(`c${n}`)) n++;
@@ -505,7 +510,7 @@ class Translator {
 }
 
 /** A select item for a translated value: a `collect` item when the value is a
- * directive (`rows collect { … }`, `in_links collect { from doc }`), else a field. */
+ * directive (`rows collect { … }`, `_in_links collect { from _doc }`), else a field. */
 function item(alias: string, v: Typed): SelectItem {
   const e: Expr = v.expr;
   if (e.kind === "op" && (e.op === "collect" || e.op === "first" || e.op === "single")) return build.collect(alias, e);

@@ -6,10 +6,11 @@
 // Rules:
 //   1. `select` items, in source order, keyed by the item's `name` (the alias, or
 //      the navigation's last segment — the key the row carries):
-//        - a `field` item whose expression is a bare engine ATTRIBUTE (`path`,
-//          `title`, `id`, `updated_at`, … — spec/surface §1.2; aliased or not)
-//          → kind `intrinsic`; a `$`-name (OQX's own `$depth`, `$ordinal`, …)
-//          is one too;
+//        - a `field` item whose expression is a bare engine ATTRIBUTE (`_path`,
+//          `_title`, `_id`, `_updated_at`, … — spec/surface §1.2, `_` = the
+//          engine's; the bare 4.x `path`, `title`, … read the same; aliased or
+//          not) → kind `intrinsic`; a `$`-name (OQX's own `$depth`, `$ordinal`,
+//          …) is one too;
 //        - any other `field` item (a frontmatter field, a navigation, an
 //          arithmetic alias) → kind `field`;
 //        - a `collect` item (a `collect` / `first` / `single` block — the only
@@ -21,16 +22,18 @@
 //      Under `values` the projection is a single unnamed value: one field of
 //      kind `values` (the item's name when it has one, else `value`).
 //   2. An empty projection, or no parsable query: the union of the keys the
-//      rows carry, in first-seen order — `$`-prefixed keys are `intrinsic`,
+//      rows carry, in first-seen order — `$`-prefixed keys (a walk's
+//      `$depth`) and `_`-prefixed keys (a 5.0 row's engine values, `_title`)
+//      are `intrinsic`,
 //      arrays and records `nested`, everything else `field`.
-//   3. Defaults: the LABEL (the card's title line) is the first of `title` (the
-//      computed title attribute), `name` that is projected, else null (= the
+//   3. Defaults: the LABEL (the card's title line) is the first of `_title` (the
+//      computed title attribute; 4.x's `title`), `name` that is projected, else null (= the
 //      de-rooted document path, which is always available); SHOWN is the label
 //      alone, so cards stay small until a field is asked for.
 
 import type { Expr, Query, SelectItem, Span } from "@omgbase/oqx";
 import type { Row } from "./candidates.ts";
-import { DOC_ATTRIBUTES, HIT_ENVELOPE_KEYS } from "./paths.ts";
+import { HIT_ENVELOPE_KEYS, isEngineAttribute } from "./paths.ts";
 
 export type ProjectedKind = "intrinsic" | "field" | "nested" | "values";
 
@@ -56,8 +59,9 @@ export interface Projection {
   defaults: ProjectionChoice;
 }
 
-/** The names tried, in order, for the default label. */
-export const LABEL_PREFERENCE = ["title", "name"];
+/** The names tried, in order, for the default label: the computed title
+ * (`_title`; a 4.x server's `title`), then an authored `name`. */
+export const LABEL_PREFERENCE = ["_title", "title", "name"];
 
 export const EMPTY_PROJECTION: Projection = { fields: [], defaults: { label: null, shown: [] } };
 
@@ -94,17 +98,18 @@ export function selectKind(item: SelectItem): ProjectedKind | null {
   return isIntrinsic(item.expr) ? "intrinsic" : "field";
 }
 
-/** A bare read of an engine attribute: one of the bare docs attributes (`path`,
- * `title`, `updated_at`, …) or a `$name` of OQX's own (`$depth`, `$ordinal`) —
- * not `$it` itself, nor `$it.title` (a navigation). */
+/** A bare read of an engine attribute: a `_`-name (`_path`, `_title`,
+ * `_updated_at`, … — spec/surface 5.0 §1.2), one of the bare 4.x docs
+ * attributes (`path`, `title`, …) or a `$name` of OQX's own (`$depth`,
+ * `$ordinal`) — not `$it` itself, nor `$it._title` (a navigation). */
 export function isIntrinsic(expr: Expr): boolean {
   if (expr.kind !== "ident") return false;
   if (expr.name.startsWith("$")) return expr.name !== "$it";
-  return DOC_ATTRIBUTES.has(expr.name);
+  return isEngineAttribute(expr.name);
 }
 
 /** The keys the rows carry, in first-seen order, kinded by their values — minus
- * the hit envelope (`id`/`path`): the row's identity is not a projected field. */
+ * the hit envelope (`_id`/`_path`; 4.x's `id`/`path`): the row's identity is not a projected field. */
 export function rowFields(rows: readonly Row[]): ProjectedField[] {
   const byName = new Map<string, ProjectedField>();
   for (const row of rows) {
@@ -121,7 +126,7 @@ export function rowFields(rows: readonly Row[]): ProjectedField[] {
 }
 
 function valueKind(name: string, value: unknown): ProjectedKind | null {
-  if (name.startsWith("$")) return "intrinsic";
+  if (name.startsWith("$") || name.startsWith("_")) return "intrinsic";
   if (value === null || value === undefined) return null;
   if (Array.isArray(value) || typeof value === "object") return "nested";
   return "field";

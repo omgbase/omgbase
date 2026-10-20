@@ -25,11 +25,11 @@ $ omg cat lab/2026-02-notes.md | grep '^- \['
 - [ ] Write the plateau result up for the coagulation note
 ```
 
-A query counts the open ones directly — a task is a projected node, and
-`attrs.checked` is false while it's open:
+A query counts the open ones directly — a task is a block whose `checked` attr
+is false while it's open (`_type` is the engine's, `checked` the author's):
 
 ```console
-$ omg query 'blocks count { where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md" }'
+$ omg query 'blocks count { where _type == "task" and not checked and _path == "/lab/2026-02-notes.md" }'
 2
 ```
 
@@ -41,7 +41,7 @@ reads them from stdin and completes them. The pipe is the changeset boundary —
 It says what it did, one line per effect, then echoes the ids it changed:
 
 ```console
-$ omg query 'from blocks where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md"' --ids | omg done -
+$ omg query 'from blocks where _type == "task" and not checked and _path == "/lab/2026-02-notes.md"' --ids | omg done -
   ok committed · 1 document touched
     check task b_as1y4cr in /lab/2026-02-notes.md
     check task b_wp3t2ax in /lab/2026-02-notes.md
@@ -58,7 +58,7 @@ $ omg cat lab/2026-02-notes.md | grep '^- \['
 - [x] Note crystal quality per cycle
 - [x] Assay cycle 1 and cycle 4 crops for iron
 - [x] Write the plateau result up for the coagulation note
-$ omg query 'blocks count { where type == "task" and not attrs.checked and path == "/lab/2026-02-notes.md" }'
+$ omg query 'blocks count { where _type == "task" and not checked and _path == "/lab/2026-02-notes.md" }'
 0
 ```
 

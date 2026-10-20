@@ -52,7 +52,7 @@ export interface Selection {
  *  expressions (3.2) have a row but no template. */
 export interface EffectOrigin {
   template_index?: number;
-  row: { id: string; path: string };
+  row: { _id: string; _path: string };
 }
 
 export interface CompiledSelection {
@@ -92,9 +92,9 @@ function isOqx(v: unknown): v is { oqx: string } {
   return isRecord(v) && Object.keys(v).length === 1 && typeof v.oqx === "string";
 }
 
-/** A row rendered as a value by the runner (`{ id, path }` and nothing else, spec/surface §1.4). */
-function isRowRef(v: unknown): v is { id: string; path: string } {
-  return isRecord(v) && Object.keys(v).length === 2 && typeof v.id === "string" && typeof v.path === "string";
+/** A row rendered as a value by the runner (`{ _id, _path }` and nothing else, spec/surface §1.4). */
+function isRowRef(v: unknown): v is { _id: string; _path: string } {
+  return isRecord(v) && Object.keys(v).length === 2 && typeof v._id === "string" && typeof v._path === "string";
 }
 
 function describeValue(v: unknown): string {
@@ -188,8 +188,8 @@ function refuseLeader(v: unknown, here: string, path: string[], fix: ((path: str
  * Desugar one effect or template as written (§11.8 "Sugar"), before the shape
  * check and the admission: in every slot that admits an expression — the
  * strings `markdown`, `to`, `path`, `separator`, `at.before` / `at.after`,
- * the JSON `value`, each top-level `create.frontmatter` value, a target's `id`
- * / `path`, and a whole target (`into`, `target`, `targets[k]`) — a string
+ * the JSON `value`, each top-level `create.frontmatter` value, a target's `_id`
+ * / `_path`, and a whole target (`into`, `target`, `targets[k]`) — a string
  * beginning `-> ` becomes `{ oqx }` (or folds to its literal); a `-> ` string
  * anywhere else (`expect`, `field`, `op`, a section's `heading_id`, …) is
  * refused. Every other string is literal data, with no escaping and no `${`
@@ -215,8 +215,8 @@ export function desugarEffect(raw: unknown, index: number, request?: FixRequest)
     // A bare `-> expr` target: the whole target is the directive (a folded literal stays a bare string for the shape check).
     if (isLeader(t)) out[key] = desugarLeader(t, `${here}.${key}`);
     else if (isRecord(t)) {
-      for (const member of ["id", "path"] as const) if (isLeader(t[member])) t[member] = desugarLeader(t[member], `${here}.${key}.${member}`);
-      for (const k of Object.keys(t)) if (k !== "id" && k !== "path") refuse(t[k], `${here}.${key}.${k}`, [key, k]);
+      for (const member of ["_id", "_path"] as const) if (isLeader(t[member])) t[member] = desugarLeader(t[member], `${here}.${key}.${member}`);
+      for (const k of Object.keys(t)) if (k !== "_id" && k !== "_path") refuse(t[k], `${here}.${key}.${k}`, [key, k]);
     }
   };
   const targets = (): void => {
@@ -226,8 +226,8 @@ export function desugarEffect(raw: unknown, index: number, request?: FixRequest)
     list.forEach((t, k) => {
       if (isLeader(t)) list[k] = desugarLeader(t, `${here}.targets[${k}]`);
       else if (isRecord(t)) {
-        if (isLeader(t.id)) t.id = desugarLeader(t.id, `${here}.targets[${k}].id`);
-        for (const m of Object.keys(t)) if (m !== "id") refuse(t[m], `${here}.targets[${k}].${m}`, ["targets", String(k), m]);
+        if (isLeader(t._id)) t._id = desugarLeader(t._id, `${here}.targets[${k}]._id`);
+        for (const m of Object.keys(t)) if (m !== "_id") refuse(t[m], `${here}.targets[${k}].${m}`, ["targets", String(k), m]);
       }
     });
   };
@@ -374,7 +374,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
     probe[key] = null;
     slots.push({ name: key, kind: "json", here: `${here}.${key}`, path: [key], expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
   };
-  // A target member: `{ kind, id: { oqx } }` or `{ kind: "document", path: { oqx } }`, or (3.2) the whole target
+  // A target member: `{ kind, _id: { oqx } }` or `{ kind: "document", _path: { oqx } }`, or (3.2) the whole target
   // `{ oqx }` — the identity the value names; absent → the hit when `defaultable` (never on a plain effect).
   // `probeKind` is a kind the slot admits, standing in for the whole-target expression's unknown kind.
   const targetSlot = (key: string, defaultable: boolean, probeKind: EffectTarget["kind"], primary: boolean): { key: string; list: false } | null => {
@@ -382,24 +382,24 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
     const t = raw[key];
     if (t === undefined) {
       if (!defaultable || plain) return null;
-      probe[key] = { kind: HIT_KIND[root], id: "$sel" };
+      probe[key] = { kind: HIT_KIND[root], _id: "$sel" };
       return { key, list: false };
     }
     if (isOqx(t)) {
       if (plain && primary) throw needsSelector(`${here}.${key}`);
       const src = t.oqx;
       delete base[key];
-      probe[key] = { kind: probeKind, id: "$sel" };
+      probe[key] = { kind: probeKind, _id: "$sel" };
       slots.push({ name: key, kind: "target", here: `${here}.${key}`, path: [key], expression: src, item: expr(src, key), put: (e, v) => { e[key] = v; } });
       return null;
     }
     if (isRecord(t)) {
-      const idX = isOqx(t.id);
-      const pathX = isOqx(t.path);
-      if (idX && pathX) throw selectionInvalid(`${here}.${key}: give \`id\` or \`path\` as an expression, not both`);
+      const idX = isOqx(t._id);
+      const pathX = isOqx(t._path);
+      if (idX && pathX) throw selectionInvalid(`${here}.${key}: give \`_id\` or \`_path\` as an expression, not both`);
       if (idX || pathX) {
         if (plain && primary) throw needsSelector(`${here}.${key}`);
-        const member = idX ? "id" : "path";
+        const member = idX ? "_id" : "_path";
         const src = (t[member] as { oqx: string }).oqx;
         const literal = { ...t };
         delete literal[member];
@@ -410,18 +410,18 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
           put: (e, v) => { e[key] = { ...(e[key] as Record<string, unknown>), ...identityMember(member, v) }; },
         });
       }
-      for (const k of Object.keys(t)) if (k !== "id" && k !== "path" && containsOqx(t[k])) throw selectionInvalid(`${here}.${key}.${k}: \`{ oqx }\` is not allowed here`);
+      for (const k of Object.keys(t)) if (k !== "_id" && k !== "_path" && containsOqx(t[k])) throw selectionInvalid(`${here}.${key}.${k}: \`{ oqx }\` is not allowed here`);
     }
     return null;
   };
-  // A `targets` list: each element `{ kind: "block", id: { oqx } }` (or, 3.2, a whole `{ oqx }`) yields one block;
+  // A `targets` list: each element `{ kind: "block", _id: { oqx } }` (or, 3.2, a whole `{ oqx }`) yields one block;
   // absent → `[the hit]` when `defaultable`. The list is always the primary target of its op.
   const targetsSlot = (defaultable: boolean): { key: "targets"; list: true } | null => {
     slotKeys.add("targets");
     const list = raw.targets;
     if (list === undefined) {
       if (!defaultable || plain) return null;
-      probe.targets = [{ kind: HIT_KIND[root], id: "$sel" }];
+      probe.targets = [{ kind: HIT_KIND[root], _id: "$sel" }];
       return { key: "targets", list: true };
     }
     if (Array.isArray(list)) {
@@ -430,7 +430,7 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
           if (plain) throw needsSelector(`${here}.targets[${k}]`);
           const src = t.oqx;
           (base.targets as unknown[])[k] = {};
-          (probe.targets as unknown[])[k] = { kind: "block", id: "$sel" };
+          (probe.targets as unknown[])[k] = { kind: "block", _id: "$sel" };
           slots.push({
             name: `targets_${k}`, kind: "target", here: `${here}.targets[${k}]`, path: ["targets", String(k)], expression: src, item: expr(src, `targets[${k}]`),
             put: (e, v) => { (e.targets as unknown[])[k] = v; },
@@ -438,20 +438,20 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
           return;
         }
         if (!isRecord(t)) return;
-        if (isOqx(t.path)) throw selectionInvalid(`${here}.targets[${k}]: a block target has \`id\`, not \`path\``);
-        if (isOqx(t.id)) {
-          if (plain) throw needsSelector(`${here}.targets[${k}].id`);
-          const src = t.id.oqx;
+        if (isOqx(t._path)) throw selectionInvalid(`${here}.targets[${k}]: a block target has \`_id\`, not \`_path\``);
+        if (isOqx(t._id)) {
+          if (plain) throw needsSelector(`${here}.targets[${k}]._id`);
+          const src = t._id.oqx;
           const literal = { ...t };
-          delete literal.id;
+          delete literal._id;
           (base.targets as unknown[])[k] = literal;
-          ((probe.targets as unknown[])[k] as Record<string, unknown>).id = "$sel";
+          ((probe.targets as unknown[])[k] as Record<string, unknown>)._id = "$sel";
           slots.push({
-            name: `targets_${k}`, kind: "identity", here: `${here}.targets[${k}].id`, path: ["targets", String(k), "id"], expression: src, item: expr(src, `targets[${k}].id`),
-            put: (e, v) => { const arr = e.targets as Record<string, unknown>[]; arr[k] = { ...arr[k], ...identityMember("id", v) }; },
+            name: `targets_${k}`, kind: "identity", here: `${here}.targets[${k}]._id`, path: ["targets", String(k), "_id"], expression: src, item: expr(src, `targets[${k}]._id`),
+            put: (e, v) => { const arr = e.targets as Record<string, unknown>[]; arr[k] = { ...arr[k], ...identityMember("_id", v) }; },
           });
         }
-        for (const key of Object.keys(t)) if (key !== "id" && containsOqx(t[key])) throw selectionInvalid(`${here}.targets[${k}].${key}: \`{ oqx }\` is not allowed here`);
+        for (const key of Object.keys(t)) if (key !== "_id" && containsOqx(t[key])) throw selectionInvalid(`${here}.targets[${k}].${key}: \`{ oqx }\` is not allowed here`);
       });
     }
     return null;
@@ -533,9 +533,9 @@ function admitTemplate(raw: unknown, index: number, root: Root, plain: boolean, 
   return { index, base, slots, defaultTarget };
 }
 
-/** The `id`/`path` member a bound identity value supplies: a string as given, a row ref by its id. */
-function identityMember(member: "id" | "path", v: unknown): Record<string, unknown> {
-  if (isRowRef(v)) return { id: v.id };
+/** The `_id`/`_path` member a bound identity value supplies: a string as given, a row ref by its id. */
+function identityMember(member: "_id" | "_path", v: unknown): Record<string, unknown> {
+  if (isRowRef(v)) return { _id: v._id };
   return { [member]: v };
 }
 
@@ -641,7 +641,7 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
 
   // Row → effects: hits in result order × templates in order (k = h·T + t). A
   // selector with `flatten` (oqx 0.25; §11.8) fans out per FLATTENED row: each
-  // hit is the parent row (its `id`/`path`), the slot items read the bound name
+  // hit is the parent row (its `_id`/`_path`), the slot items read the bound name
   // (`-> tag`) in the flattened scope, and `expect.max` — the page bound above —
   // counts the flattened hits.
   const effects: Effect[] = [];
@@ -649,7 +649,7 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
   hits.forEach((hit) => {
     for (const t of templates) {
       const k = effects.length;
-      const row = { id: hit.id, path: hit.path };
+      const row = { _id: hit._id, _path: hit._path };
       const origin: EffectOrigin = { template_index: t.index, row };
       effects.push(bind(hit, t, k, origin, root, request));
       origins.push(origin);
@@ -660,7 +660,7 @@ export function compileSelection(store: Store, repoId: string, select: unknown, 
     ...(expect !== undefined ? { expect } : {}),
     templates: templatesRaw as unknown[],
     cardinality: hits.length,
-    identities: hits.map((h) => h.id),
+    identities: hits.map((h) => h._id),
   };
   return { effects, selection, origins };
 }
@@ -698,11 +698,11 @@ function slotName(t: number, slot: string): string {
  */
 function ambiguousFix(request: FixRequest, t: Template, s: Slot, hit: OqxHit, root: Root, list: unknown[]): Record<string, unknown> {
   const head = list[0];
-  const first = isRowRef(head) ? head.id : head;
+  const first = isRowRef(head) ? head._id : head;
   if (typeof first !== "string") return {};
   const effects = withMember(request.effects, [String(t.index), ...s.path], first);
   if (request.select === undefined) return { fix: fixRequest({ effects }) };
-  return { fix: fixRequest({ select: narrowedTo(root, hit.id), effects, expect: { max: 1 } }) };
+  return { fix: fixRequest({ select: narrowedTo(root, hit._id), effects, expect: { max: 1 } }) };
 }
 
 /** One hit × one template → the concrete effect (the binding table of §11.8). */
@@ -710,7 +710,7 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
   const e: Record<string, unknown> = clone(t.base);
   const data = { effect_index: k, ...(origin.template_index !== undefined ? { template_index: origin.template_index } : {}), row: origin.row };
   if (t.defaultTarget !== null) {
-    const target = { kind: HIT_KIND[root], id: hit.id };
+    const target = { kind: HIT_KIND[root], _id: hit._id };
     e[t.defaultTarget.key] = t.defaultTarget.list ? [target] : target;
   }
   for (const s of t.slots) {
@@ -720,10 +720,10 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
       case "identity":
       case "target": {
         if (absent || (Array.isArray(v) && v.length === 0)) {
-          throw new MutationError("target_missing", `${s.here}: the expression yielded no identity for row ${hit.id}`, { ...data, expression: s.expression });
+          throw new MutationError("target_missing", `${s.here}: the expression yielded no identity for row ${hit._id}`, { ...data, expression: s.expression });
         }
         if (Array.isArray(v)) {
-          throw new MutationError("ambiguous_target", `${s.here}: the expression yielded ${v.length} identities for row ${hit.id}; a target resolves to exactly one`, { ...data, expression: s.expression, count: v.length, ...ambiguousFix(request, t, s, hit, root, v) });
+          throw new MutationError("ambiguous_target", `${s.here}: the expression yielded ${v.length} identities for row ${hit._id}; a target resolves to exactly one`, { ...data, expression: s.expression, count: v.length, ...ambiguousFix(request, t, s, hit, root, v) });
         }
         if (typeof v !== "string" && !isRowRef(v)) throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a string or a row)`, { ...data, expression: s.expression });
         if (s.kind === "identity") {
@@ -731,7 +731,7 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
           break;
         }
         // (3.2) a whole target: a row by its id's prefix, a string as a bare target (a path → document, an id → its kind).
-        const ref = isRowRef(v) ? v.id : v;
+        const ref = isRowRef(v) ? v._id : v;
         if (!isRowRef(v) && !looksLikePath(ref) && !isTargetId(ref) && !isNewSymbol(ref)) {
           throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, not an identity (a document path, an id or a row)`, { ...data, expression: s.expression });
         }
@@ -739,12 +739,12 @@ function bind(hit: OqxHit, t: Template, k: number, origin: EffectOrigin, root: R
         break;
       }
       case "string":
-        if (absent) throw selectionInvalid(`${s.here}: the expression yielded absent for row ${hit.id}`, { ...data, expression: s.expression });
+        if (absent) throw selectionInvalid(`${s.here}: the expression yielded absent for row ${hit._id}`, { ...data, expression: s.expression });
         if (typeof v !== "string") throw selectionInvalid(`${s.here}: the expression yielded ${describeValue(v)}, expected a string`, { ...data, expression: s.expression });
         s.put(e, v);
         break;
       case "json":
-        if (absent) throw selectionInvalid(`${s.here}: the expression yielded absent for row ${hit.id}${s.name === "value" ? " — use `unset` to remove a key" : ""}`, { ...data, expression: s.expression });
+        if (absent) throw selectionInvalid(`${s.here}: the expression yielded absent for row ${hit._id}${s.name === "value" ? " — use `unset` to remove a key" : ""}`, { ...data, expression: s.expression });
         s.put(e, v);
         break;
     }
@@ -814,24 +814,24 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
       validateEffect(e, i); // an unknown op (or `retarget`): the shape check refuses it
       throw effectInvalid(`${here}: \`op\` ${JSON.stringify(e.op)} is not row-shaped`);
   }
-  if (isOqx(v) || (isRecord(v) && (isOqx(v.id) || isOqx(v.path)))) throw needsSelector(`${here}.${key!}`);
+  if (isOqx(v) || (isRecord(v) && (isOqx(v._id) || isOqx(v._path)))) throw needsSelector(`${here}.${key!}`);
   const t = validateTarget(v, `${here}.${key!}`, kinds!);
   switch (t.kind) {
     case "symbol":
-      throw selectionInvalid(`${here}.${key!}: ${t.id} has no row yet — it is created by this plan; use a literal target or a selector`);
+      throw selectionInvalid(`${here}.${key!}: ${t._id} has no row yet — it is created by this plan; use a literal target or a selector`);
     case "document": {
       const d = findDocumentTarget(store, repoId, t);
-      return { root: "docs", id: d.id, missing: () => new MutationError("doc_missing", `doc ${d.id} not found`, { doc: d.id }) };
+      return { root: "docs", id: d._id, missing: () => new MutationError("doc_missing", `doc ${d._id} not found`, { doc: d._id }) };
     }
     case "block":
       return {
-        root: "blocks", id: t.id,
-        missing: () => (placement ? new MutationError("parent_missing", `parent ${t.id} not found`) : new MutationError("block_missing", `block ${t.id} not found`, { block: t.id })),
+        root: "blocks", id: t._id,
+        missing: () => (placement ? new MutationError("parent_missing", `parent ${t._id} not found`) : new MutationError("block_missing", `block ${t._id} not found`, { block: t._id })),
       };
     case "section":
       return { root: "blocks", id: t.heading_id, missing: () => new MutationError("parent_missing", `parent ${t.heading_id} not found`) };
     case "node":
-      return { root: "nodes", id: t.id, missing: () => new MutationError("block_missing", `node ${t.id} not found`, {}) };
+      return { root: "nodes", id: t._id, missing: () => new MutationError("block_missing", `node ${t._id} not found`, {}) };
   }
 }
 
@@ -840,7 +840,7 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
  * then — when nothing is an expression — the shape check as before (3.0
  * byte-identical). Otherwise each effect with expressions is admitted as a
  * template over its own primary target's row: the effects are grouped by that
- * row's identity, one synthetic query per identity — `from <root> where id ==
+ * row's identity, one synthetic query per identity — `from <root> where _id ==
  * "<id>"` with the slot items appended, named `__omg_sel_<effectIndex>_<slot>`
  * — runs, and the row binds the slots exactly as a selector's hit would. The
  * concrete effects feed the lowering unchanged; `templates` is the list as
@@ -893,14 +893,14 @@ export function compilePlain(store: Store, repoId: string, raw: unknown): Compil
     g.members.push(t);
   });
   for (const g of scopes.values()) {
-    const q = parse(`from ${g.root} where id == ${JSON.stringify(g.id)}`);
+    const q = parse(`from ${g.root} where _id == ${JSON.stringify(g.id)}`);
     const items: SelectItem[] = [];
     for (const t of g.members) for (const s of t.slots) items.push({ ...s.item, name: slotName(t.index, s.name) } as SelectItem);
     const { hits } = runQuery(store, repoId, { ...q, select: items }, 2);
     const hit = hits[0];
     if (hit === undefined) throw g.missing();
     for (const t of g.members) {
-      const origin: EffectOrigin = { row: { id: hit.id, path: hit.path } };
+      const origin: EffectOrigin = { row: { _id: hit._id, _path: hit._path } };
       effects[t.index] = bind(hit, t, t.index, origin, g.root, request);
       origins[t.index] = origin;
     }

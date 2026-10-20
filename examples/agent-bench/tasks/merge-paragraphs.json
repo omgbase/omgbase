@@ -11,7 +11,7 @@
     },
     {
       "kind": "query",
-      "query": "blocks count { where path == \"/processes/coagulation.md\" and type == \"paragraph\" }",
+      "query": "blocks count { where _path == \"/processes/coagulation.md\" and _type == \"paragraph\" }",
       "count": 5
     }
   ],
@@ -26,11 +26,11 @@
               "targets": [
                 {
                   "kind": "block",
-                  "id": "b_162"
+                  "_id": "b_162"
                 },
                 {
                   "kind": "block",
-                  "id": "b_163"
+                  "_id": "b_163"
                 }
               ],
               "separator": " "

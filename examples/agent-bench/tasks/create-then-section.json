@@ -4,7 +4,7 @@
   "checks": [
     {
       "kind": "query",
-      "query": "select type, layer from docs where path == \"/processes/sublimation.md\"",
+      "query": "select type, layer from docs where _path == \"/processes/sublimation.md\"",
       "hits": [
         {
           "type": "process",
@@ -14,13 +14,13 @@
     },
     {
       "kind": "query",
-      "query": "select name from nodes where kind == \"md:section\" and path == \"/processes/sublimation.md\" order by name",
+      "query": "select _name from nodes where _kind == \"md:section\" and _path == \"/processes/sublimation.md\" order by _name",
       "hits": [
         {
-          "name": "Procedure"
+          "_name": "Procedure"
         },
         {
-          "name": "Sublimation"
+          "_name": "Sublimation"
         }
       ]
     },
@@ -53,7 +53,7 @@
               "op": "insert",
               "into": {
                 "kind": "document",
-                "id": "$new.0"
+                "_id": "$new.0"
               },
               "at": "end",
               "markdown": "## Procedure\n\nHeat the material gently in a closed vessel with a cool head and collect the deposit."

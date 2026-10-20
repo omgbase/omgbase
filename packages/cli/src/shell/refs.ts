@@ -28,9 +28,9 @@ export interface Captured {
   rows: Row[] | null;
 }
 
-// `.field` reads any projected key (`@1.id`, `@t[1].path`, `@1.layer` —
-// spec/surface §1.4, 3.0 spells the envelope as the bare attributes); a leading
-// `$` is admitted for an OQX-named projection (`$depth`).
+// `.field` reads any projected key (`@1._id`, `@t[1]._path`, `@1.layer` —
+// spec/surface §1.2, 5.0: an engine field is `_`-prefixed, a bare name is an
+// authored key); a leading `$` is admitted for an OQX-named projection (`$depth`).
 const REF_RE = /^@(\d+|_|[A-Za-z][\w-]*)(?:\[(\d+)\])?(?:\.(\$?[A-Za-z_]\w*))?$/;
 
 export interface ParsedRef {
@@ -67,7 +67,7 @@ export function deriveRows(value: unknown): Row[] | null {
       return (o.ids as unknown[]).filter((id): id is string => typeof id === "string").map((id) => ({ ref: id, label: id, value: id }));
     }
     if (Array.isArray(o.in) || Array.isArray(o.out)) {
-      // links: both directions, each edge's far node is the selectable ref.
+      // links: both directions, each edge's far node (`_doc_id`) is the selectable ref.
       const edges = [...((o.out as unknown[]) ?? []), ...((o.in as unknown[]) ?? [])];
       return edges.map(rowOf);
     }
@@ -80,7 +80,7 @@ function rowOf(el: unknown): Row {
   if (el && typeof el === "object") {
     const o = el as Record<string, unknown>;
     const ref = firstString(o, REF_KEYS);
-    const label = firstString(o, ["path", "locator", "name", "id", "node", "doc_id"]) ?? ref ?? preview(o);
+    const label = firstString(o, LABEL_KEYS) ?? ref ?? preview(o);
     return { ref: ref ?? label ?? "", label: label ?? "", value: el };
   }
   const s = String(el);
@@ -88,12 +88,18 @@ function rowOf(el: unknown): Row {
 }
 
 // The keys that make an object an entity ref, in precedence order: a row's
-// `id` (spec/surface §1.2, 3.0 — every tool result spells a row's identity as
-// the attribute; a 2.x server's `id` is the same key), a `links` row's far node
-// (`doc_id`) and an edge's `block_id`, then the pre-3.0 envelopes (`node`,
-// `block`) — kept so a remote 2.x server's results still address — then
-// `locator` and a path.
-const REF_KEYS = ["id", "doc_id", "block_id", "node", "block", "locator", "path"];
+// `_id` (spec/surface §1.2, 5.0 — every tool result spells a row's identity as
+// the engine attribute, `_`-prefixed), a `links` row's far node (`_doc_id`) and
+// an edge's `_block_id`, then the role names `node` and `block` (a `node props`
+// card's `node`; a role key that names a block), then `locator` and the
+// document's `_path`. The
+// bare `id`/`path` (4.x) and `$id`/`$path` tolerance is gone (spec/cli 5.0): a
+// bare key is an authored property, never the row's identity.
+const REF_KEYS = ["_id", "_doc_id", "_block_id", "node", "block", "locator", "_path"];
+
+// The human label of a row, in precedence order: its `_path`, a `locator`, a
+// `name` (a repo, a source), then the id-like keys.
+const LABEL_KEYS = ["_path", "locator", "name", "_id", "node", "_doc_id"];
 
 function firstString(o: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) if (typeof o[k] === "string") return o[k] as string;
@@ -123,7 +129,7 @@ export function coerce(value: unknown): string {
     if (ref) return ref;
     // A collection-shaped result object (e.g. {hits:[…]}) can't be one arg.
     if (deriveRows(value)) throw new RefError("reference is a collection; select one with [i]");
-    throw new RefError("reference has no id/locator to use as an argument");
+    throw new RefError("reference has no _id/locator to use as an argument");
   }
   throw new RefError("reference is not usable as an argument");
 }

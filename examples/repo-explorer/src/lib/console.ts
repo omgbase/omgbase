@@ -1,6 +1,6 @@
 // The query console's pure side: the result table's columns and cells (an
-// `id`/`path` cell is a link into the explorer), the scalar consumers' one-line
-// answers, paging, the engine's errors with their `data.fix`, and the
+// `_id`/`_path` cell is a link into the explorer), the scalar consumers'
+// one-line answers, paging, the engine's errors with their `data.fix`, and the
 // keyboard shortcut. The `query` tool is the only call; `query_syntax` feeds
 // the drawer once.
 
@@ -10,9 +10,10 @@ import { runQuery, type QueryOptions, type QueryResult } from "./query.ts";
 
 export const DEFAULT_LIMIT = 50;
 
-export const STARTER_QUERY = "select title, layer, tags from docs order by path";
+/** `_title` is the computed title (an engine attribute); `layer` and `tags` the authored keys (spec/surface §1.2, 5.0). */
+export const STARTER_QUERY = "select _title, layer, tags from docs order by _path";
 
-/** The table's columns: `id` and `path` first (the envelope), then every other key in first-seen order. */
+/** The table's columns: `_id` and `_path` first (the envelope, spec/surface §1.4), then every other key in first-seen order. */
 export function columnsOf(hits: readonly Record<string, unknown>[]): string[] {
   const seen = new Set<string>();
   const rest: string[] = [];
@@ -20,12 +21,12 @@ export function columnsOf(hits: readonly Record<string, unknown>[]): string[] {
   let hasPath = false;
   for (const hit of hits) {
     for (const k of Object.keys(hit)) {
-      if (k === "id") { hasId = true; continue; }
-      if (k === "path") { hasPath = true; continue; }
+      if (k === "_id") { hasId = true; continue; }
+      if (k === "_path") { hasPath = true; continue; }
       if (!seen.has(k)) { seen.add(k); rest.push(k); }
     }
   }
-  return [...(hasId ? ["id"] : []), ...(hasPath ? ["path"] : []), ...rest];
+  return [...(hasId ? ["_id"] : []), ...(hasPath ? ["_path"] : []), ...rest];
 }
 
 export type CellLink =
@@ -47,10 +48,10 @@ export function cellOf(value: unknown): Cell {
     return { text: value, link: null };
   }
   if (typeof value === "object") {
-    // A row as a value is `{ id, path }` (spec/surface §1.4): link it as its path.
+    // A row as a value is `{ _id, _path }` (spec/surface §1.4): link it as its path.
     const o = value as Record<string, unknown>;
-    if (!Array.isArray(value) && typeof o.path === "string" && typeof o.id === "string" && Object.keys(o).length === 2) {
-      return { text: o.path, link: { kind: "doc", path: o.path } };
+    if (!Array.isArray(value) && typeof o._path === "string" && typeof o._id === "string" && Object.keys(o).length === 2) {
+      return { text: o._path, link: { kind: "doc", path: o._path } };
     }
     return { text: JSON.stringify(value), link: null };
   }
@@ -122,14 +123,14 @@ export async function fetchSyntax(caller: Caller): Promise<string> {
 }
 
 /** The query that finds where an id lives, so a clicked id cell can open its
- * document: a block's or node's `path`, a revision's `path` + `doc_id`; a doc id
- * needs no query (docs_read takes it); a link's source `path`. */
+ * document: a block's or node's `_path`, a revision's `_path` + `_doc_id`; a doc
+ * id needs no query (docs_read takes it); a link's source `_path`. */
 export function locatorQuery(id: string): string | null {
   switch (idKind(id)) {
-    case "block": return `select path from blocks where id == ${JSON.stringify(id)}`;
-    case "node": return `select path from nodes where id == ${JSON.stringify(id)}`;
-    case "link": return `select path from links where id == ${JSON.stringify(id)}`;
-    case "revision": return `select path, doc_id from revisions where rev == ${JSON.stringify(id)}`;
+    case "block": return `select _path from blocks where _id == ${JSON.stringify(id)}`;
+    case "node": return `select _path from nodes where _id == ${JSON.stringify(id)}`;
+    case "link": return `select _path from links where _id == ${JSON.stringify(id)}`;
+    case "revision": return `select _path, _doc_id from revisions where _rev == ${JSON.stringify(id)}`;
     default: return null;
   }
 }

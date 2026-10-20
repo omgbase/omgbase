@@ -32,14 +32,14 @@ export interface Sugar {
   reason?: string;
 }
 
-/** A live document as the builders address it: its id and its storage-form path (the reasons spell the path). */
+/** A live document as the builders address it: its row attributes `_id` and `_path` (the storage-form path; the reasons spell it). */
 export interface SugarDoc {
-  id: string;
-  path: string;
+  _id: string;
+  _path: string;
 }
 
-const documentTarget = (id: string): EffectTarget => ({ kind: "document", id });
-const blockTarget = (id: string): EffectTarget => ({ kind: "block", id });
+const documentTarget = (id: string): EffectTarget => ({ kind: "document", _id: id });
+const blockTarget = (id: string): EffectTarget => ({ kind: "block", _id: id });
 
 /** A caller's guard as an effect guard: absent stays absent, an empty object stays an empty guard (the planner then pins what it needs). */
 export function guardOf(e: { content_hash?: string | undefined; parent_children_hash?: string | undefined } | undefined): { expect?: EffectExpect } {
@@ -75,33 +75,33 @@ export function createEffects(path: string, markdown: string, frontmatter?: Reco
 /** `docs_move` / `omg mv`: one `move { target: document, to, retarget_inbound }`; reason `move <from> -> <to>`. */
 export function moveDocEffects(doc: SugarDoc, toPath: string, retargetInbound = true): Sugar {
   const to = canonicalDocPath(toPath);
-  return { effects: [{ op: "move", target: documentTarget(doc.id), to, ...(retargetInbound ? {} : { retarget_inbound: false }) }], reason: `move ${doc.path} -> ${to}` };
+  return { effects: [{ op: "move", target: documentTarget(doc._id), to, ...(retargetInbound ? {} : { retarget_inbound: false }) }], reason: `move ${doc._path} -> ${to}` };
 }
 
 /** `docs_delete` / `omg rm --doc`: one `remove { target: document }`; reason `delete <path>`. */
 export function deleteDocEffects(doc: SugarDoc): Sugar {
-  return { effects: [{ op: "remove", target: documentTarget(doc.id) }], reason: `delete ${doc.path}` };
+  return { effects: [{ op: "remove", target: documentTarget(doc._id) }], reason: `delete ${doc._path}` };
 }
 
 /**
- * `docs_set_meta` / `omg meta`: one `set`/`unset frontmatter.<k>` per key, `unset`
+ * `docs_set_meta` / `omg meta`: one `set`/`unset _frontmatter.<k>` per key, `unset`
  * winning a key named in both (the legacy merge spread `set` then deleted `unset`);
  * reason `set_meta <path>`. An empty patch yields no effect — the caller refuses
  * it (`filter_invalid` "pass `set` and/or `unset`", spec/surface §9).
  */
 export function setMetaEffects(doc: SugarDoc, set: Record<string, unknown> | undefined, unset: readonly string[] | undefined): Sugar {
   const gone = unset ?? [];
-  const target = documentTarget(doc.id);
+  const target = documentTarget(doc._id);
   const effects: Effect[] = [
-    ...Object.entries(set ?? {}).filter(([k]) => !gone.includes(k)).map(([k, value]): Effect => ({ op: "set", target, field: `frontmatter.${k}`, value })),
-    ...gone.map((k): Effect => ({ op: "unset", target, field: `frontmatter.${k}` })),
+    ...Object.entries(set ?? {}).filter(([k]) => !gone.includes(k)).map(([k, value]): Effect => ({ op: "set", target, field: `_frontmatter.${k}`, value })),
+    ...gone.map((k): Effect => ({ op: "unset", target, field: `_frontmatter.${k}` })),
   ];
-  return { effects, reason: `set_meta ${doc.path}` };
+  return { effects, reason: `set_meta ${doc._path}` };
 }
 
 /** `docs_update` / `omg update <doc>`: one `set { document, content }`; the reason is the caller's. */
-export function updateContentEffects(doc: Pick<SugarDoc, "id">, content: string, reason?: string): Sugar {
-  return { effects: [{ op: "set", target: documentTarget(doc.id), field: "content", value: content }], ...(reason !== undefined ? { reason } : {}) };
+export function updateContentEffects(doc: Pick<SugarDoc, "_id">, content: string, reason?: string): Sugar {
+  return { effects: [{ op: "set", target: documentTarget(doc._id), field: "content", value: content }], ...(reason !== undefined ? { reason } : {}) };
 }
 
 // ---- the block-level tools (spec/surface §4) ----------------------------------------------
@@ -113,7 +113,7 @@ export function insertEffects(into: EffectTarget, at: EffectAt, markdown: string
 
 /**
  * `blocks_update` / `omg update <block>` / `omg edit`: `set markdown` and/or `set
- * attrs.checked`. The caller's `expect` guards the FIRST effect (the content CAS
+ * _attrs.checked`. The caller's `expect` guards the FIRST effect (the content CAS
  * is checked once, against the bytes the caller saw); a second effect is pinned
  * by the planner to the block as the first left it. Nothing to set → no effect
  * (the caller refuses it).
@@ -123,7 +123,7 @@ export function updateBlockEffects(id: string, patch: { markdown?: string | unde
   const expect = guardOf(patch.expect);
   const effects: Effect[] = [];
   if (patch.markdown !== undefined) effects.push({ op: "set", target, field: "markdown", value: patch.markdown, ...expect });
-  if (patch.checked !== undefined) effects.push({ op: "set", target, field: "attrs.checked", value: patch.checked, ...(effects.length === 0 ? expect : {}) });
+  if (patch.checked !== undefined) effects.push({ op: "set", target, field: "_attrs.checked", value: patch.checked, ...(effects.length === 0 ? expect : {}) });
   return { effects, reason: "blocks_update" };
 }
 
@@ -147,14 +147,14 @@ export function mergeEffects(ids: readonly string[], separator?: string): Sugar 
   return { effects: [{ op: "merge", targets: ids.map(blockTarget), ...(separator !== undefined ? { separator } : {}) }], reason: "blocks_merge" };
 }
 
-/** `blocks_check` / `omg done`: N × `set attrs.checked` (a block named twice is one write — the planner drops the duplicate). */
+/** `blocks_check` / `omg done`: N × `set _attrs.checked` (a block named twice is one write — the planner drops the duplicate). */
 export function checkEffects(ids: readonly string[], checked: boolean): Sugar {
-  return { effects: ids.map((id): Effect => ({ op: "set", target: blockTarget(id), field: "attrs.checked", value: checked })), reason: "blocks_check" };
+  return { effects: ids.map((id): Effect => ({ op: "set", target: blockTarget(id), field: "_attrs.checked", value: checked })), reason: "blocks_check" };
 }
 
 /** `nodes_set` / `omg node set`: one `set { node, field: prop, value }`. */
 export function nodeSetEffects(nodeId: string, prop: string, value: string): Sugar {
-  return { effects: [{ op: "set", target: { kind: "node", id: nodeId }, field: prop, value }], reason: "nodes_set" };
+  return { effects: [{ op: "set", target: { kind: "node", _id: nodeId }, field: prop, value }], reason: "nodes_set" };
 }
 
 /** `blocks_append` / `omg append`: `insert at end` into a heading's section or a container block (the caller decided which by the block's kind). */
@@ -196,22 +196,22 @@ export function applySugar(store: Store, request: SugarRequest & { dryRun?: bool
 
 // ---- adapters over the Receipt -----------------------------------------------------------------
 
-/** The document-operation result the `omg` document verbs and the fixture `docs` step record (`spec/mutate` §9): `{ id, path, committed }`, the path in the storage form. */
+/** The document-operation result the `omg` document verbs and the fixture `docs` step record (`spec/mutate` §9): `{ _id, _path, committed }`, the path in the storage form. */
 export interface DocOpOutcome {
-  id: string;
-  path: string;
+  _id: string;
+  _path: string;
   committed: true;
 }
 
 /** `docs_create`'s document is the receipt's first revision (`new_ids["$new.0"]` is the same id); every other operation's is the one addressed. */
 export function createdDoc(receipt: Receipt, path: string): DocOpOutcome {
-  const id = receipt.new_ids["$new.0"] ?? receipt.revisions[0]?.id;
+  const id = receipt.new_ids["$new.0"] ?? receipt.revisions[0]?._id;
   if (id === undefined) throw new Error("createdDoc: the receipt names no created document");
-  return { id, path, committed: true };
+  return { _id: id, _path: path, committed: true };
 }
 
-export function docOutcome(doc: SugarDoc, path = doc.path): DocOpOutcome {
-  return { id: doc.id, path, committed: true };
+export function docOutcome(doc: SugarDoc, path = doc._path): DocOpOutcome {
+  return { _id: doc._id, _path: path, committed: true };
 }
 
 /** What a move reports about the inbound links (spec/mutate §6 `docs_move`; the `retargeted`/`dangling` extras of the tool and the verb). */
@@ -229,8 +229,8 @@ export interface MoveLinks {
  */
 export function moveLinks(store: Store, repoId: string, doc: SugarDoc, toPath: string, retargetInbound = true): MoveLinks {
   const to = canonicalDocPath(toPath);
-  const inbound = inboundLinksTo(store, repoId, doc.id, doc.path);
+  const inbound = inboundLinksTo(store, repoId, doc._id, doc._path);
   if (!retargetInbound || inbound.length === 0) return { dangling: inbound, retargeted: null };
-  const plan = planInboundRetarget(store, doc.id, doc.path, to, inbound);
+  const plan = planInboundRetarget(store, doc._id, doc._path, to, inbound);
   return { dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
 }

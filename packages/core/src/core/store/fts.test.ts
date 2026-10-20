@@ -46,7 +46,7 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
     ingestFile(store, repoId, "a.md", `# Reef\n\n- corals build reefs\n  - polyps secrete calcium\n    - zooxanthellae photosynthesize here\n- fish shelter\n\n${FILLER}`);
     expectIndexIsLeaves();
     const { hits } = textSearch(store, repoId, "zooxanthellae");
-    expect(hits.map((h) => h.type)).toEqual(["list_item"]);
+    expect(hits.map((h) => h._type)).toEqual(["list_item"]);
     // Every container (list, item-with-children) is live but unindexed.
     const containers = store.db.prepare(`SELECT count(*) AS n FROM blocks b WHERE b.deleted_commit IS NULL AND NOT (${LIVE_LEAF_SQL})`).get() as { n: number };
     expect(containers.n).toBe(5); // list, item "corals…", sublist, item "polyps…", sub-sublist
@@ -58,7 +58,7 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
     // The single-item list becomes a two-item list with a nested sublist.
     ingestFile(store, repoId, "a.md", `# A\n\n- one item alone\n  - nested under one\n- two\n\n${FILLER}`);
     expectIndexIsLeaves();
-    expect(textSearch(store, repoId, "alone").hits.map((h) => h.type)).toEqual(["paragraph"]);
+    expect(textSearch(store, repoId, "alone").hits.map((h) => h._type)).toEqual(["paragraph"]);
     // Rebuild is 'delete-all' + leaves: same rows.
     const before = indexedRowids();
     store.db.exec("INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')"); // the wholesale FTS5 command indexes containers…
@@ -88,8 +88,8 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
     const moved = blockIds("b.md").filter((b) => b.type !== "heading" || b.parent_block !== null).filter((b) => b.text !== "quiet paragraph about quails.");
     // The ids carried across (the move was recognized), so eviction ran.
     expect(moved.map((b) => b.block_id).sort()).toEqual([...listIds].sort());
-    expect(textSearch(store, repoId, "kelp").hits.map((h) => `${h.path}#${h.type}`).sort()).toEqual(["b.md#list_item", "b.md#paragraph"]);
-    expect(textSearch(store, repoId, "urchins").hits.map((h) => h.path)).toEqual(["b.md"]);
+    expect(textSearch(store, repoId, "kelp").hits.map((h) => `${h._path}#${h._type}`).sort()).toEqual(["b.md#list_item", "b.md#paragraph"]);
+    expect(textSearch(store, repoId, "urchins").hits.map((h) => h._path)).toEqual(["b.md"]);
   });
 
   it("evicting a list's only live child re-indexes the parent so the source's delete pass stays symmetric", () => {
@@ -106,7 +106,7 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
       { path: "a.md", content: `# A\n\n- a fresh replacement item about harbors\n\n${FILLER}` },
     ], "2026-09-26T10:01:00.000Z");
     expectIndexIsLeaves();
-    expect(textSearch(store, repoId, "lighthouses").hits.map((h) => [h.path, h.type])).toEqual([["b.md", "list_item"]]);
-    expect(textSearch(store, repoId, "harbors").hits.map((h) => [h.path, h.type])).toEqual([["a.md", "list_item"]]);
+    expect(textSearch(store, repoId, "lighthouses").hits.map((h) => [h._path, h._type])).toEqual([["b.md", "list_item"]]);
+    expect(textSearch(store, repoId, "harbors").hits.map((h) => [h._path, h._type])).toEqual([["a.md", "list_item"]]);
   });
 });

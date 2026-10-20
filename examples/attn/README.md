@@ -99,12 +99,15 @@ as last read at `r_35bctb5`:
 
 ```json
 [
-  { "op": "set", "target": "/attn/focus.md", "field": "frontmatter.focused_intent", "value": "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md", "expect": { "revision": "r_35bctb5" } },
-  { "op": "set", "target": "/attn/focus.md", "field": "frontmatter.since", "value": "2026-10-13T16:10:00.000Z" }
+  { "op": "set", "target": "/attn/focus.md", "field": "_frontmatter.focused_intent", "value": "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md", "expect": { "revision": "r_35bctb5" } },
+  { "op": "set", "target": "/attn/focus.md", "field": "_frontmatter.since", "value": "2026-10-13T16:10:00.000Z" }
 ]
 ```
 
-`interrupt` adds `{ "op": "set", "target": "/attn/focus.md", "field": "frontmatter.return_stack", "value": [...stack, displaced] }`;
+(Names follow surface 5.0's rule, "underscore = engine": the field is
+`_frontmatter.<key>` — the handle is the engine's, the key under it attn's own
+— a bare rooted path is the document target, and `expect.revision` is a role.)
+`interrupt` adds `{ "op": "set", "target": "/attn/focus.md", "field": "_frontmatter.return_stack", "value": [...stack, displaced] }`;
 `back` sets `focused_intent` to the top of the stack and pops it; `stop` sets
 `focused_intent: null` (the stack is kept). When the workspace never focused
 anything the pointer's `set`s become one `create` of `/attn/focus.md`. **Add
@@ -115,27 +118,27 @@ create plus the pointer, one request:
 ```json
 [
   { "op": "create", "path": "/attn/intents/2026/10/2026-10-14-talk-with-natalie.md", "markdown": "# Talk with Natalie\n", "frontmatter": { "type": "/terms/types/intent.md", "layer": "draft", "status": "active", "title": "Talk with Natalie", "tags": ["people"] } },
-  { "op": "set", "target": "/attn/focus.md", "field": "frontmatter.focused_intent", "value": "/attn/intents/2026/10/2026-10-14-talk-with-natalie.md", "expect": { "revision": "r_35bctb5" } },
-  { "op": "set", "target": "/attn/focus.md", "field": "frontmatter.since", "value": "2026-10-14T08:00:00.000Z" }
+  { "op": "set", "target": "/attn/focus.md", "field": "_frontmatter.focused_intent", "value": "/attn/intents/2026/10/2026-10-14-talk-with-natalie.md", "expect": { "revision": "r_35bctb5" } },
+  { "op": "set", "target": "/attn/focus.md", "field": "_frontmatter.since", "value": "2026-10-14T08:00:00.000Z" }
 ]
 ```
 
-**Define a cue** is `set frontmatter.cues` with the intent's **whole list**
+**Define a cue** is `set _frontmatter.cues` with the intent's **whole list**
 (every query given a trailing newline so the engine composes a `query: |`
 block), previewed with `plan { diffs: true }` and committed with `execute`;
 removing a cue is the same `set` with the list minus it (`unset
-frontmatter.cues` when none remain):
+_frontmatter.cues` when none remain):
 
 ```json
-[{ "op": "set", "target": "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md", "field": "frontmatter.cues", "value": [
+[{ "op": "set", "target": "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md", "field": "_frontmatter.cues", "value": [
   { "id": "after-the-salt", "on": "focus", "query": "from docs\nwhere \"fire\" in tags\n" },
   { "id": "review-tomorrow", "on": "time", "at": "2026-10-15T09:00:00Z" }
 ] }]
 ```
 
-Release / reactivate is `set frontmatter.status = "released" | "active"`;
+Release / reactivate is `set _frontmatter.status = "released" | "active"`;
 editing an intent is `set content` of the whole document (a textarea over its
-`raw`) — the one edit that legitimately moves its `updated_at`.
+`_raw`) — the one edit that legitimately moves its `_updated_at`.
 
 **CAS**: the pointer's first `set` carries `expect.revision` = the pointer's
 `rev` as last read (`docs_read`), so two devices cannot both switch blindly —
@@ -151,8 +154,8 @@ The feed is a list of intent documents, never of cue firings:
 - **Cued** — the active intents a cue lifted, each once however many cues
   matched, with its "why now" lines; above everything else.
 - **Recent** — the other active intents, **most recently edited first**
-  (`order by updated_at desc`): a genuinely edited intent rises, a newly added
-  one lands on top. Focusing an intent does **not** change its `updated_at`
+  (`order by _updated_at desc`): a genuinely edited intent rises, a newly added
+  one lands on top. Focusing an intent does **not** change its `_updated_at`
   (only the pointer is written — `test/intents.test.ts` asserts it).
 - The **current focus** is in the bar, never sorted into the feed.
 - **Released** intents are hidden behind a toggle, with reactivate.
@@ -163,8 +166,8 @@ Nothing is logged on a switch. The sequence of pointer states **is** the
 episode history, and the open episode's start is the current `since`:
 
 ```
-select rev, seq, ts from revisions where path == "/attn/focus.md" order by seq
-docs_read { path: "/attn/focus.md", at: <rev> }        — per revision not yet cached → raw → focused_intent / since / return_stack
+select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq
+docs_read { _path: "/attn/focus.md", at: <rev> }       — per revision not yet cached → _raw → focused_intent / since / return_stack
 ```
 
 Each state's `since` is when the switch happened (the client clock at the
@@ -185,18 +188,18 @@ design note's position, left for later.
 
 | feature | tool(s) | call |
 | --- | --- | --- |
-| connect: the surface gate (≥ 4.7), the profile label | `version`, `tools/list` | `version {}` → `specs.surface`, `profile`; the listing decides whether a repo picker is offered (`repos`, the one tool beyond the ten, only when listed) |
-| the focus bar: the pointer (and the CAS token) | `docs_read` | `{ path: "/attn/focus.md" }` → `properties.frontmatter.focused_intent / since / return_stack`, `rev`; `doc_missing` = never focused anything |
-| the feed: every intent with its cues, most recently edited first, the **virtual `#focus`** | `query` | `select path, title, status, tags, project, updated_at, cues, focus: ^docs first { select since where path == "/attn/focus.md" and focused_intent == ^path } from docs where type == "/terms/types/intent.md" and path.startsWith("/attn/intents/") order by updated_at desc` — `focus` is `{ since }` on the focused row, null on every other; no intent is ever tagged |
-| the one intent in focus (the where-form of the same join) | `query` | `select path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where path == "/attn/focus.md" and focused_intent == ^path }` |
-| an `on: focus` cue, on every focus change | `query` (one per cue) | the cue's `query` **as authored**, every page; matched when the focused intent's path (or id) is among the hits; a query that does not parse is the engine's `filter_invalid` (`data.hint: "OQX"`), shown under the feed per cue, never a crash |
+| connect: the surface gate (≥ 5.0), the profile label | `version`, `tools/list` | `version {}` → `specs.surface`, `profile`; the listing decides whether a repo picker is offered (`repos`, the one tool beyond the ten, only when listed) |
+| the focus bar: the pointer (and the CAS token) | `docs_read` | `{ _path: "/attn/focus.md" }` → `properties.frontmatter.focused_intent / since / return_stack`, `rev`, `_id`; `doc_missing` = never focused anything |
+| the feed: every intent with its cues, most recently edited first, the **virtual `#focus`** | `query` | `select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } from docs where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc` — `focus` is `{ since }` on the focused row, null on every other; no intent is ever tagged. `_path` / `_updated_at` are the engine's names; `title`, `tags`, `status`, `project`, `cues`, `focused_intent` are attn's frontmatter keys (bare — an intent always carries an authored `title`, so the bare key is the one meant, not the computed `_title`) |
+| the one intent in focus (the where-form of the same join) | `query` | `select _path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where _path == "/attn/focus.md" and focused_intent == ^_path }` |
+| an `on: focus` cue, on every focus change | `query` (one per cue) | the cue's `query` **as authored**, every page; matched when the focused intent's `_path` (or `_id`) is among the hits; a query that does not parse is the engine's `filter_invalid` (`data.hint: "OQX"`), shown under the feed per cue, never a crash |
 | an `on: time` cue | — | `at` ≤ the client clock, on open and every 30 s |
 | an `on: query-enter` / `query-exit` cue, after each poll | `query` | the cue's `query` as authored, every page (`limit: 500`, the cursor followed); the hit ids diffed against the checkpoint in `localStorage`; ids entering (or leaving) fire the cue, the first run only takes the checkpoint |
-| the Stream: the pointer's history | `query`, `docs_read` | `select rev, seq, ts from revisions where path == "/attn/focus.md" order by seq`, then `{ path: "/attn/focus.md", at: "<rev>" }` per revision not cached → `raw`; episodes, durations and `#tag` totals computed in the browser; the day picker over the days the history covers |
-| switch / interrupt / back / stop / add / add + focus | `apply` | the effect lists above, `reason: "attn switch"` etc.; `stale_plan` → the fix shown, the pointer reloaded |
-| release / reactivate / edit / remove a cue | `apply` | one `set frontmatter.status`, one `set content`, one `set frontmatter.cues` (the list minus the cue) |
-| define a cue | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<intent>", field: "frontmatter.cues", value: [...] }], diffs: true }` → the summary and the document after; `execute { plan_id, effects }` |
-| the intent editor | `docs_read` | `{ path: "<intent>" }` → `raw` into the textarea |
+| the Stream: the pointer's history | `query`, `docs_read` | `select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq`, then `{ _path: "/attn/focus.md", at: "<rev>" }` per revision not cached → `_raw`; episodes, durations and `#tag` totals computed in the browser; the day picker over the days the history covers |
+| switch / interrupt / back / stop / add / add + focus | `apply` | the effect lists above, `reason: "attn switch"` etc.; the Receipt's `revisions[{ _id, _path, _hash }]`; `stale_plan` → the fix shown, the pointer reloaded |
+| release / reactivate / edit / remove a cue | `apply` | one `set _frontmatter.status`, one `set content`, one `set _frontmatter.cues` (the list minus the cue) |
+| define a cue | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<intent>", field: "_frontmatter.cues", value: [...] }], diffs: true }` → the summary and the document after; `execute { plan_id, effects }` |
+| the intent editor | `docs_read` | `{ _path: "<intent>" }` → `_raw` into the textarea |
 | live: other windows and the CLI | `changes_since` | `{ limit: 1 }` once for `head`, then `{ cursor, limit: 50 }` every 3 s; a digest touching `/attn/` reloads everything and re-runs the cue engine |
 
 Not used: `blocks_resolve`, `docs_tree`, `query_syntax` (linked from the cue
@@ -235,8 +238,8 @@ salt is a work of the Opus) and "Tend the garden" (a due time cue) in **Cued**.
 ```sh
 pnpm --filter attn dev --full                               # the same workspace, the whole catalog
 pnpm --filter attn dev --remote https://mcp.example.com/omg     # a real server (your notes); the proxy signs in for you
-omg -C examples/attn/.dev-workspace query 'select focused_intent, since from docs where path == "/attn/focus.md"'
-omg -C examples/attn/.dev-workspace query 'select rev, seq, ts from revisions where path == "/attn/focus.md" order by seq'
+omg -C examples/attn/.dev-workspace query 'select focused_intent, since from docs where _path == "/attn/focus.md"'
+omg -C examples/attn/.dev-workspace query 'select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq'
 ```
 
 The proxy is the [`webdevproxy`](../webdevproxy/README.md) workspace package;
@@ -264,7 +267,7 @@ Concrete friction with omgbase for this kind of app, each met while building
 the page against `omg mcp --tools minimal` — refreshed for the revised model
 (the first build's items about the stream log and cue documents are moot):
 
-1. **`set frontmatter.cues` of a list of maps round-trips.** The engine
+1. **`set _frontmatter.cues` of a list of maps round-trips.** The engine
    composes it as block YAML with the keys in the order given, and a query
    string ending in a newline becomes a `query: |` block scalar — the authored
    multi-line shape survives a `set` (verified on disk). But the whole
@@ -281,9 +284,9 @@ the page against `omg mcp --tools minimal` — refreshed for the revised model
 3. **History from `revisions` + `docs_read { at }` costs one round trip per
    revision**: a `query` for the revision list plus a `docs_read` per revision
    (7 revisions → 8 calls on first open; the cache makes later loads 1 + the
-   new revisions). `docs_read { at }` carries `raw` and no `properties`, so the
+   new revisions). `docs_read { at }` carries `_raw` and no `properties`, so the
    pointer's frontmatter at a revision is read from the bytes by a small
-   grammar (`frontmatterOf`), not by the engine. A `select raw` over the
+   grammar (`frontmatterOf`), not by the engine. A `select _raw` over the
    `revisions` target (or `properties` as of a revision) would make the whole
    history one query.
 4. **Reconstruction is not a log.** Two switches between two reads collapse to
@@ -293,8 +296,8 @@ the page against `omg mcp --tools minimal` — refreshed for the revised model
    when precise tracking matters.
 5. **CAS across a read and a write needs `docs_read`.** The pointer's guard is
    `expect.revision`, and the only way to learn its `rev` is `docs_read` — a
-   `docs` query row has no `rev`, and the Receipt returns the new `hash` but
-   not the new `rev`, so every switch is `docs_read` + `apply`. A `rev` on
+   `docs` query row has no `rev`, and the Receipt returns the new `_hash` but
+   not the new `rev`, so every switch is `docs_read` + `apply`. A `_rev` on
    docs rows (and in Receipt `revisions[]`), or `expect.hash`, would let one
    query feed both the feed and the guard.
 6. **`stale_plan`'s `fix` is the wrong move for a pointer.** The fix re-pins
@@ -314,10 +317,10 @@ the page against `omg mcp --tools minimal` — refreshed for the revised model
    kept the paths in its checkpoint — a small cost moved to the app.
 10. **Delivery state is per browser by design**, so two windows each lift a
     cue once; a shared "seen" would cost a document write per firing.
-11. **`updated_at` is the feed's order, and it tells the truth**: focusing is
+11. **`_updated_at` is the feed's order, and it tells the truth**: focusing is
     a pointer write, so the focused intent did not move (asserted on the real
     stack); defining or removing a cue does move it, as the note accepts. But
-    an ingest stamps every document with the same `updated_at`, so a freshly
+    an ingest stamps every document with the same `_updated_at`, so a freshly
     attached corpus orders by title until something is edited.
 12. **Three round trips to open** (pointer, feed, revisions) plus one
     `docs_read` per uncached revision. `docs_read_many` is not in the ten, and
@@ -326,14 +329,26 @@ the page against `omg mcp --tools minimal` — refreshed for the revised model
 What worked without comment: a bare path as an effect target, `set` with a
 `null` value to clear `focused_intent`, `set` of a list value for
 `return_stack`, `unset` to drop an empty `cues`, `create` + pointer `set`s as
-one commit, the `revisions` target's `order by seq`, `changes_since` as the
+one commit, the `revisions` target's `order by _seq`, `changes_since` as the
 only sync primitive, and the error envelope's `hint: "OQX"` for a user-typed
 cue query so the app can blame the cue, not itself.
+
+13. **Surface 5.0's "underscore = engine" rule suits a frontmatter-heavy app.**
+    attn's own keys — `focused_intent`, `since`, `return_stack`, `status`,
+    `title`, `tags`, `project`, `cues` — are bare everywhere (a query, a `set`
+    field's key, a `create`'s `frontmatter`) and can never collide with an
+    engine attribute; what the engine provides reads as what it is (`_path`,
+    `_updated_at`, `_rev`, `_raw`). The one thing to watch: a 5.0 server has
+    no tolerance for the 4.x spellings (`docs_read { path }` is refused with
+    the corrected call in `data.fix`), so the surface gate is exact about the
+    major (`REQUIRED_SURFACE = "5.0"`), and `title` in the feed query is
+    deliberately the authored key — every intent carries one — where `_title`
+    would be the computed title (the H1 when no key is authored).
 
 ## Layout
 
 - `src/app.ts` — the page element (`<attn-app>`, Lit 3 + `@lit-labs/signals`): connect, load, the cue engine, the poll loop, the writes.
-- `src/elements/` — `focus-bar` (the title, the live elapsed time, the input, the chooser, back/stop), `intent-feed` (Cued / Recent / Released, each intent's cues, the cue editor with `plan` → `execute`, the intent editor over `raw`), `stream-view` (episodes, `#tag` totals, the day picker).
+- `src/elements/` — `focus-bar` (the title, the live elapsed time, the input, the chooser, back/stop), `intent-feed` (Cued / Recent / Released, each intent's cues, the cue editor with `plan` → `execute`, the intent editor over `_raw`), `stream-view` (episodes, `#tag` totals, the day picker).
 - `src/lib/model.ts` — the paths under `/attn/`, the type paths, the declaration line (`#tags`), slugs and dated intent paths, the clock, the small frontmatter reader for past revisions.
 - `src/lib/pointer.ts` — the Focus pointer (`docs_read`, the CAS token, the episode key).
 - `src/lib/intents.ts` — the feed query with the virtual `#focus` and the cues, the feed's sections (the Cued lift), the chooser's ranking, the status / content edits.
@@ -343,14 +358,16 @@ cue query so the app can blame the cue, not itself.
 - `src/lib/feed.ts` — `changes_since` polling; `src/lib/mcp-client.ts`, `tools.ts`, `paths.ts`, `query.ts`, `effect.ts` — after repo-explorer's.
 - `scripts/` — `dev.mjs`, `dev-args.mjs`, `dev-workspace.mjs` (the sample workspace + the seeded history), `omg-minimal.mjs` (the `--tools minimal` stand-in).
 - `corpus/attn/` — the sample.
-- `test/` — vitest over the pure parts and the data paths through a scripted MCP server (`test/scripted.ts`, which refuses anything outside the ten): the exact `apply` payloads for switch / add / add + focus / interrupt / back / stop / define-cue / remove-cue / release / edit, the stale CAS, plan → execute; cues (reading the list, the membership test, time, enter / exit with checkpoints, dedupe and snooze); the stream from a scripted `revisions` + `docs_read { at }` sequence (kinds, episodes, a day's clip, the cache); the feed order and the Cued lift; the `updated_at`-unchanged assertion; the pointer, the chooser, the client's session recovery, the dev arguments, and `minimal-profile.test.ts` — 62 tests, no live server.
+- `test/` — vitest over the pure parts and the data paths through a scripted MCP server (`test/scripted.ts`, which refuses anything outside the ten): the exact `apply` payloads for switch / add / add + focus / interrupt / back / stop / define-cue / remove-cue / release / edit, the stale CAS, plan → execute; cues (reading the list, the membership test, time, enter / exit with checkpoints, dedupe and snooze); the stream from a scripted `revisions` + `docs_read { at }` sequence (kinds, episodes, a day's clip, the cache); the feed order and the Cued lift; the `_updated_at`-unchanged assertion; the pointer, the chooser, the client's session recovery, the dev arguments, and `minimal-profile.test.ts` — 62 tests, no live server.
 
 ## Verified against the real stack
 
 Over `.dev-workspace` built and seeded by `scripts/dev-workspace.mjs`, and
 `omg mcp -C … --tools minimal` on stdio driven through the app's own lib
 modules (a Caller decoding the envelope as `OmgClient.call` does): `tools/list`
-was the ten; `version` said `surface 4.7`, `profile minimal`. The pointer read
+was the ten; `version` said `surface 4.7`, `profile minimal` (the run predates
+surface 5.0 — the names below are as the 4.7 server spelled them; the app now
+speaks 5.0, `_frontmatter.<key>`, `_path`, `_updated_at`, `_raw`). The pointer read
 the salt in focus with the dew on the stack; the feed query returned the nine
 intents with their `cues` lists and `focus: { since }` on the one in focus. The
 cue engine lifted "Distil the May dew" (its `on: focus` query ran as authored

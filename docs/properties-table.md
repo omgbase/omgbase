@@ -25,13 +25,13 @@ document-level properties, uniformly and index-fast:
    parsed YAML fence (`layer: canon`, `tags: [a, b]`), or — since properties
    1.2 (2026-10-17) — a **YAML or JSON document's whole top-level mapping**.
    The same `source = 'frontmatter'` rows, because it is the same thing (the
-   authored key/value mapping), so `select focused_intent from docs where path
-   == "/attn/focus.yaml"`, `data.<k>`, `entries(frontmatter)`, the pushdown
+   authored key/value mapping), so `select focused_intent from docs where _path
+   == "/attn/focus.yaml"`, `_data.<k>`, `entries(_frontmatter)`, the pushdown
    and `docs_read.properties.frontmatter` work on a `.yaml`/`.json` file
    exactly as on a fence. A YAML stream's first document is the mapping; a
    non-mapping root, a parse error or an empty file yields no rows. No inline
    rows and no computed rows for these formats (`spec/properties` §3.4). The
-   write side — `set frontmatter.<k>` on a YAML/JSON document — is a
+   write side — `set _frontmatter.<k>` on a YAML/JSON document — is a
    `type_mismatch` refusal for now; `set content` edits the whole file.
 2. **Inline properties** — dataview-style `key:: value` fields in body text.
 3. **Computed properties** — derived facts the engine synthesizes (e.g. a
@@ -59,7 +59,7 @@ expression) but every docs-target frontmatter filter scans the table.
 Traced across the codebase, the JSON column is the **sole query+projection
 surface for frontmatter**, used by:
 
-- Query filters + `doc.<key>` reach-through (then the CEL `compile.ts`; as-built
+- Query filters + the `doc.<key>` reach-through (now `_doc.<key>`; then the CEL `compile.ts`; as-built
   `oqx-js/context.ts` `docProp` + `owningDoc`, pushed down by
   `oqx-js/sql/translate.ts`) — the only path frontmatter filtering exists on.
 - `query` select projection (`query.ts`), semantic-path projection.
@@ -156,9 +156,9 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
 - **`source` is the provenance delineation.** `frontmatter` / `inline` /
   `computed` as a filterable column — no reserved keys in content-space. Bare
   keys span the *authored* sources; computed values are stored under `$`-keyed
-  rows (`$title`/`$tags`) and surfaced as the engine attributes `title`/`tags`
-  (see §4), the authored `title:`/`tags:` staying reachable as `data.title` /
-  `data.tags`.
+  rows (`$title`/`$tags`) and surfaced as the engine attributes `_title`/`_tags`
+  (see §4), the authored `title:`/`tags:` being the bare `title` / `tags`
+  (surface 5.0: a bare name is always the author's).
 - **Block scope retained.** Inline props keep their authoring `block_id`, so
   "which paragraph asserted `owner:: alice`" is still answerable, and computed
   props can be doc- or block-scoped.
@@ -216,7 +216,7 @@ and its one row is **scalar-authored** and equal to the literal." Two independen
 gates, both required:
 
 1. **Single-value in scope.** `COUNT(*)` of the key's rows in the scope
-   (a `(doc, key)`, narrowed by `source` for `frontmatter.`/`inline.`) must be 1.
+   (a `(doc, key)`, narrowed by `source` for `_frontmatter.`/`_inline.`) must be 1.
    A list of two elements, a repeated inline field, or a **bare key that collides
    across frontmatter + inline** all have ≥2 rows, so scalar `==` cannot match —
    you use `list()`. This is what makes a frontmatter/inline collision behave as a
@@ -235,33 +235,39 @@ A source-qualified accessor narrows to one provenance; same operators, same
 scalar/list rules, just filtered by `source`:
 
 ```
-from: docs  filter: frontmatter.layer == "canon"    # only the fence
-from: docs  filter: inline.job == "janitor"         # only key:: fields
+from: docs  filter: _frontmatter.layer == "canon"   # only the fence
+from: docs  filter: _inline.job == "janitor"        # only key:: fields
 from: docs  filter: "farmer" in list(job)           # any authored source
 ```
 
-Bare `<k>` spans authored sources (`frontmatter` + `inline`); `frontmatter.<k>`
-/ `inline.<k>` narrow to one; `data.<k>` is the authored union by name (surface
-3.0) — the way to an authored key whose bare name is an engine attribute.
+Bare `<k>` spans authored sources (`frontmatter` + `inline`); `_frontmatter.<k>`
+/ `_inline.<k>` narrow to one; `_data.<k>` is the same authored union, named
+(`_data.<k>` ≡ `<k>`). The handles are engine names (`_`-prefixed, surface 5.0)
+and the one way to an authored key whose own name begins with `_`; since 5.0 no
+bare name is reserved, so an authored `title:`/`path:`/`id:` is simply the bare
+`title`/`path`/`id` (before 5.0 it had to be reached as `data.<k>`).
 
-### Computed properties are stored `$`-keyed and read as the `title`/`tags` attributes
+### Computed properties are stored `$`-keyed and read as the `_title`/`_tags` attributes
 
 The rows are stored under `$`-prefixed keys (`source='computed'`, key `$title` /
-`$tags` — `spec/properties` §3.3, unchanged), so they never collide with an
-authored `title:`/`tags:` row in the table. **The query surface (spec/surface
-§1.2, 3.0) has no `$` names:** it reads them as the engine attributes `title`
-and `tags`, which win on collision like every attribute:
+`$tags` — `spec/properties` §3.3, unchanged: the stored keys are storage, not
+surface spelling), so they never collide with an authored `title:`/`tags:` row
+in the table. **The query surface (spec/surface §1.2, 5.0) has no `$` names:**
+it reads them as the engine attributes `_title` and `_tags` — the `_` prefix
+marks every engine-provided field, and the bare `title`/`tags` are the author's:
 
 ```
-title                 # the computed title: the first H1 (null when none); data.title is the authored key
-tags                  # authored tags ∪ body #hashtags, deduped, authored first; data.tags is the authored list
+_title                # the computed title: the first H1 (null when none); title is the authored key
+_tags                 # authored tags ∪ body #hashtags, deduped, authored first; tags is the authored list
 ```
 
-So `title == "x"` matches the *computed* H1-derived title and `data.title == "x"`
-the *authored* frontmatter/inline one; `"urgent" in tags` sees both the authored
-list and the body hashtags. **[was, surface < 3.0 (batch 3): the attributes were
-`$title`/`$tags`, bare `title`/`tags` read the authored keys, and `$tags` was the
-body hashtags alone.]**
+So `_title == "x"` matches the *computed* H1-derived title and `title == "x"`
+the *authored* frontmatter/inline one; `"urgent" in _tags` sees both the authored
+list and the body hashtags, `"urgent" in list(tags)` the authored list alone.
+**[was, surface 3.0–4.11: the attributes were the bare `title`/`tags`, winning
+on collision, and the authored keys were reached as `data.title`/`data.tags`;
+before 3.0 the attributes were `$title`/`$tags`, bare `title`/`tags` read the
+authored keys, and `$tags` was the body hashtags alone.]**
 
 ### `docs_read` and projection
 
@@ -270,20 +276,20 @@ vs. computed provenance:
 
 ```jsonc
 {
-  "id": "...", "path": "...", "rev": "...",
-  "raw": "...",                         // byte-exact file (unchanged)
+  "_id": "...", "_path": "...", "rev": "...",   // row attributes `_`-prefixed (5.0); `rev` names a role
+  "_raw": "...",                        // byte-exact file (unchanged)
   "properties": {
-    "frontmatter": { "layer": "canon", "tags": ["a","b"] },   // scalar stays scalar
+    "frontmatter": { "layer": "canon", "tags": ["a","b"] },   // scalar stays scalar; authored groups stay bare
     "inline":      { "job": ["janitor","salesman"] },
-    "computed":    { "title": "Q3 Plan", "tags": ["urgent"] } // the stored `$title`/`$tags` rows, re-keyed at the surface (3.0)
+    "computed":    { "_title": "Q3 Plan", "_tags": ["urgent"] } // the stored `$title`/`$tags` rows, under the attribute names the query reads (5.0)
   }
 }
 ```
 
 There is no `metadata` field — the JSON column is gone (§5). Scalar-authored keys
 render as scalars, list-authored as arrays (honest to `card`). `query` select
-gains `frontmatter.<k>` / `inline.<k>` / `data.<k>` / bare `<k>` / the computed
-attributes `title`/`tags`.
+gains `_frontmatter.<k>` / `_inline.<k>` / `_data.<k>` / bare `<k>` / the computed
+attributes `_title`/`_tags`.
 
 ## 5. `docs.metadata` is removed (decided)
 
@@ -298,9 +304,9 @@ Every current reader of `docs.metadata` is repointed at `properties`:
 
 | Site | Today | After |
 |---|---|---|
-| Query filter / `doc.<k>` (then CEL `compile.ts`; now `oqx-js/context.ts` + `oqx-js/sql/translate.ts`) | `json_extract(d.metadata,…)` | `properties` seek (§4) |
+| Query filter / `_doc.<k>` (then CEL `compile.ts`; now `oqx-js/context.ts` + `oqx-js/sql/translate.ts`) | `json_extract(d.metadata,…)` | `properties` seek (§4) |
 | `query` select (`query.ts`) | parse `metadata` JSON | `properties` projection |
-| RRF hydrate (`rrf.ts`), task title (`tasks.ts`) | parse `metadata` | `properties` lookup / `computed.title` |
+| RRF hydrate (`rrf.ts`), task title (`tasks.ts`) | parse `metadata` | `properties` lookup / `computed._title` |
 | `findDoc`/`docs_read`/`show` (`reader.ts`) | `metadata` object | `properties` grouped-by-source |
 
 `findDoc`'s `DocInfo.metadata` field is removed; callers that need properties
@@ -309,7 +315,7 @@ object that hid provenance. `show`/`docs_read` render the grouped shape.
 
 The frontmatter object as authored is still fully recoverable — it's the
 `source='frontmatter'` rows (or, byte-exact, the frontmatter blob via
-`docs_read`'s `content`). Nothing is lost; the redundant, misleading store is.
+`docs_read`'s `_raw`). Nothing is lost; the redundant, misleading store is.
 
 ## 6. Ingest changes
 
@@ -396,8 +402,8 @@ not an index rebuild.
   authored query changes behavior. Multi-source additivity applies only to the
   *authored union* (frontmatter + inline) a bare key already spans.
 - Computed props stored `$`-keyed never collide with authored rows; at the
-  surface they are the `title`/`tags` attributes and the authored keys are
-  `data.title`/`data.tags` (surface 3.0).
+  surface they are the `_title`/`_tags` attributes and the authored keys are
+  the bare `title`/`tags` (surface 5.0).
 
 **Costs / risks**
 - **Compiler rework is the bulk of the work.** `list()`, membership, `size()`,
@@ -442,8 +448,8 @@ not an index rebuild.
   scope, not just authored shape, gates scalar comparison.) YAML duplicate-key
   rules apply within a fence before storage.
 - **Computed props are stored `$`-keyed (`$title`, `$tags`) and surfaced as the
-  `title`/`tags` attributes** (surface 3.0, §4); the authored `title`/`tags`
-  rows are untouched in the table and read as `data.title`/`data.tags`.
+  `_title`/`_tags` attributes** (surface 5.0, §4); the authored `title`/`tags`
+  rows are untouched in the table and read by their bare names.
 - **Inline fields move fully to `properties`** (clean move, nothing deployed).
 
 ### Deterministic ordering (decided)
@@ -480,7 +486,7 @@ grammar leaves room (the `*` suffix/prefix on relops is currently unused).
 **Still open:**
 - [ ] Which computed properties ship first — `$title` (first H1) and `$tags`
   (body #hashtags) are the named two; `$word_count`/`$task_count` candidates
-  (each would surface as a bare attribute, `word_count`).
+  (each would surface as an engine attribute, `_word_count`).
 - [x] Array-of-objects in frontmatter: straight to `val_json` — one
   `card='list'` row (`ord` 0, `type='json'`) carrying the whole array
   (spec/properties §2.3; note the read shape then wraps it in another array,

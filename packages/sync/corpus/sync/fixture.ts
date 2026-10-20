@@ -173,7 +173,7 @@ class RecordingEngine implements EngineClient {
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);
     if (!res) return Promise.resolve(null);
-    return Promise.resolve({ content: res.raw, contentHash: row.file_hash?.toString("hex") ?? "" });
+    return Promise.resolve({ content: res._raw, contentHash: row.file_hash?.toString("hex") ?? "" });
   }
   close(): Promise<void> {
     return Promise.resolve();
@@ -243,7 +243,8 @@ function runEngineStep(store: Store, repoId: string, s: EngineStep): Record<stri
   if (s.create) {
     const built = createEffects(s.create.path, s.create.markdown, {});
     const { receipt } = applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.create.actor ?? null }, built);
-    return { doc: createdDoc(receipt!, (built.effects[0] as { path: string }).path).id, committed: true };
+    // A `DocOpOutcome` is a row ref under the 5.0 names (`_id`, `_path`); the fixture's `doc` key is the sync spec's own and stays bare.
+    return { doc: createdDoc(receipt!, (built.effects[0] as { path: string }).path)._id, committed: true };
   }
   if (s.import) {
     const res = ingestFile(store, repoId, s.import.path, s.import.content, { ts: s.ts, origin: "import" });
@@ -252,7 +253,7 @@ function runEngineStep(store: Store, repoId: string, s: EngineStep): Record<stri
   if (s.delete) {
     const info = findDocByRef(store, repoId, s.delete.path);
     if (!info) throw new Error(`delete: no document ${s.delete.path}`);
-    applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.delete.actor ?? null }, deleteDocEffects({ id: info.docId, path: info.path }));
+    applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.delete.actor ?? null }, deleteDocEffects({ _id: info.docId, _path: info.path }));
     return { doc: info.docId, committed: true };
   }
   const out = observeMany(store, repoId, s.observe ?? [], { ts: s.ts });

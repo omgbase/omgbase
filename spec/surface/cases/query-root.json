@@ -26,12 +26,12 @@
     {
       "name": "root-docs-depth-1",
       "notes": "§1.1: the repository is the root row — `^docs` from a top-level row is the documents scan (20).",
-      "query": "select n: size(^docs) from docs where path == \"/index.md\" && ^docs count { } == 20",
+      "query": "select n: size(^docs) from docs where _path == \"/index.md\" && ^docs count { } == 20",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20
           }
         ],
@@ -43,12 +43,12 @@
     {
       "name": "root-docs-depth-2-carets",
       "notes": "§1.1: two carets from a block's rows (depth 2) reach the root.",
-      "query": "select n: nodes first { select c: size(^^docs) values } from docs where path == \"/index.md\"",
+      "query": "select n: _nodes first { select c: size(^^docs) values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20
           }
         ],
@@ -60,12 +60,12 @@
     {
       "name": "root-docs-depth-2-absolute",
       "notes": "§1.1: `0^docs` is the absolute spelling of the same scan.",
-      "query": "select n: nodes first { select c: size(0^docs) values } from docs where path == \"/index.md\"",
+      "query": "select n: _nodes first { select c: size(0^docs) values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20
           }
         ],
@@ -77,12 +77,12 @@
     {
       "name": "root-targets-depth-1",
       "notes": "§1.1: every target is a root-row collection.",
-      "query": "select b: size(^blocks), n: size(^nodes), e: size(^links) from docs where path == \"/index.md\"",
+      "query": "select b: size(^blocks), n: size(^nodes), e: size(^links) from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "b": 327,
             "n": 214,
             "e": 69
@@ -96,12 +96,12 @@
     {
       "name": "root-id-is-repo-id",
       "notes": "§1.1: `^id` / `0^id` at the root is the repository id (`rp_0` under the fixture minter); the two spellings are one value.",
-      "query": "select r: ^id, a: 0^id, same: ^id is 0^id from docs where path == \"/index.md\"",
+      "query": "select r: ^_id, a: 0^_id, same: ^_id is 0^_id from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "r": "rp_0",
             "a": "rp_0",
             "same": true
@@ -115,12 +115,12 @@
     {
       "name": "root-id-depth-2",
       "notes": "§1.1: `^^id` from depth two.",
-      "query": "select r: nodes first { select r: ^^id values } from docs where path == \"/index.md\"",
+      "query": "select r: _nodes first { select r: ^^_id values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "r": "rp_0"
           }
         ],
@@ -132,12 +132,12 @@
     {
       "name": "root-object-entries-names",
       "notes": "§1.1: the root object exposes exactly the five collections as entries, in target order (`revisions` since 4.7); `id` is an intrinsic, not an entry.",
-      "query": "select ks: entries(^$it) collect { $key values } from docs where path == \"/index.md\"",
+      "query": "select ks: entries(^$it) collect { $key values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "ks": [
               "docs",
               "blocks",
@@ -154,68 +154,79 @@
     },
     {
       "name": "root-object-collection-is-the-root-name",
-      "notes": "§1.1: `^$it.docs` is `^docs` (one handle per run) and `^$it.id` the repository id.",
-      "query": "select a: size(^$it.docs), b: size(^docs), same: ^$it.docs == ^docs, id: ^$it.id from docs where path == \"/index.md\"",
+      "notes": "§1.1: `^$it.docs` is `^docs` (one handle per run) and `^$it._id` the repository id (5.0: the root row's `_id`).",
+      "query": "select a: size(^$it.docs), b: size(^docs), same: ^$it.docs == ^docs, rid: ^$it._id from docs where _path == \"/index.md\"",
       "expect": {
-        "error": "filter_invalid",
-        "message_includes": "projection `id` collides with the hit envelope — alias it (`i: data.id`)"
+        "hits": [
+          {
+            "_id": "d_0",
+            "_path": "/index.md",
+            "a": 20,
+            "b": 20,
+            "same": true,
+            "rid": "rp_0"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
       }
     },
     {
       "name": "root-object-collection-as-receiver-probe",
       "notes": "§1.1, §9: `^$it.docs` serves as a correlated receiver (the lazy handle reaches the store index) exactly like `^docs`.",
-      "query": "select cited: ^$it.docs collect { path where out_links exists { where dst.path == ^^path } } from docs where type == \"substance\"",
+      "query": "select cited: ^$it.docs collect { _path where _out_links exists { where _dst._path == ^^_path } } from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "cited": []
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "cited": [
               {
-                "path": "/index.md"
+                "_path": "/index.md"
               },
               {
-                "path": "/lab/2026-02-notes.md"
+                "_path": "/lab/2026-02-notes.md"
               },
               {
-                "path": "/processes/coagulation.md"
+                "_path": "/processes/coagulation.md"
               },
               {
-                "path": "/processes/magnum-opus.md"
+                "_path": "/processes/magnum-opus.md"
               }
             ]
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "cited": [
               {
-                "path": "/index.md"
+                "_path": "/index.md"
               },
               {
-                "path": "/processes/magnum-opus.md"
+                "_path": "/processes/magnum-opus.md"
               },
               {
-                "path": "/substances/philosophers-stone.md"
+                "_path": "/substances/philosophers-stone.md"
               },
               {
-                "path": "/texts/mutus-liber.md"
+                "_path": "/texts/mutus-liber.md"
               }
             ]
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "cited": []
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "cited": []
           }
         ],
@@ -227,12 +238,12 @@
     {
       "name": "root-object-absolute-depth-2",
       "notes": "§1.1: `0^$it` from depth two is the root object.",
-      "query": "select n: nodes first { select c: size(0^$it.docs) values } from docs where path == \"/index.md\"",
+      "query": "select n: _nodes first { select c: size(0^$it.docs) values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20
           }
         ],
@@ -244,12 +255,12 @@
     {
       "name": "relations-spelled-like-targets-still-relations",
       "notes": "§1.1: `nodes`/`blocks` on a doc row and `section.blocks` on a node row are the §1.2 relations, not bare-target reads.",
-      "query": "select n: size(nodes), b: size(blocks), s: nodes first { select k: size(section.blocks) values where kind == \"md:section\" } from docs where path == \"/index.md\"",
+      "query": "select n: size(_nodes), b: size(_blocks), s: _nodes first { select k: size($it._blocks) values where _kind == \"md:section\" } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 22,
             "b": 31,
             "s": 31
@@ -263,17 +274,17 @@
     {
       "name": "destination-block-rooted-paths-are-live",
       "notes": "§1 Paths, §1.1: a destination block over the root's documents, correlated by the frontier row's rooted `path` against the authored `after` references — kickoff names review, nothing names kickoff.",
-      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow ^docs collect { where ^path in list(after) depth 3 }",
+      "query": "select _path, $depth from docs where _path == \"/timeline/review.md\" follow ^docs collect { where ^_path in list(after) depth 3 }",
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "$depth": 1
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "$depth": 2
           }
         ],
@@ -285,17 +296,17 @@
     {
       "name": "destination-block-absolute-root",
       "notes": "§1.1: the `0^docs` spelling of the destination block, two scopes below the root.",
-      "query": "select path, $depth from docs where path == \"/timeline/review.md\" follow 0^docs collect { where ^path in list(after) depth 3 }",
+      "query": "select _path, $depth from docs where _path == \"/timeline/review.md\" follow 0^docs collect { where ^_path in list(after) depth 3 }",
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "$depth": 1
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "$depth": 2
           }
         ],
@@ -310,7 +321,7 @@
       "query": "from docs where $repo",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
@@ -318,7 +329,7 @@
       "query": "select r: size($repo.docs) from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
@@ -326,23 +337,23 @@
       "query": "select r: $repo.id from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
       "name": "repo-removed-outer",
-      "query": "select r: nodes first { select x: ^$repo.id values } from docs",
+      "query": "select r: _nodes first { select x: ^$repo.id values } from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
       "name": "repo-removed-absolute",
-      "query": "select r: nodes first { select x: 0^$repo values } from docs",
+      "query": "select r: _nodes first { select x: 0^$repo values } from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
@@ -351,16 +362,16 @@
       "query": "$repo.docs count { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
       "name": "repo-removed-in-unreached-branch",
       "notes": "static: no row reaches the conjunct, the query still fails.",
-      "query": "from docs where path == \"nope\" && $repo.docs exists { }",
+      "query": "from docs where _path == \"nope\" && $repo.docs exists { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`"
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`"
       }
     },
     {
@@ -383,7 +394,7 @@
     {
       "name": "bare-target-docs-depth-2",
       "notes": "the hint counts the carets: `^^docs` from depth two.",
-      "query": "select x: nodes collect { select y: size(docs) } from docs",
+      "query": "select x: _nodes collect { select y: size(docs) } from docs",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^^docs` (the repository's documents)?"
@@ -400,7 +411,7 @@
     },
     {
       "name": "bare-target-from-in-block",
-      "query": "select x: nodes collect { from docs } from docs",
+      "query": "select x: _nodes collect { from docs } from docs",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^^docs` (the repository's documents)?"
@@ -408,7 +419,7 @@
     },
     {
       "name": "bare-target-follow-destination",
-      "query": "from docs where path == \"/index.md\" follow docs",
+      "query": "from docs where _path == \"/index.md\" follow docs",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
@@ -417,7 +428,7 @@
     {
       "name": "bare-target-in-unreached-branch",
       "notes": "static for `docs`/`links`: no row reaches the conjunct, the query still fails.",
-      "query": "from docs where path == \"nope\" && docs exists { }",
+      "query": "from docs where _path == \"nope\" && docs exists { }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
@@ -429,15 +440,15 @@
       "query": "from blocks where blocks exists { }",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"
+        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks)?"
       }
     },
     {
       "name": "bare-target-nodes-on-node-row",
-      "query": "select x: nodes from nodes where kind == \"md:section\"",
+      "query": "select x: nodes from nodes where _kind == \"md:section\"",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes; one caret per enclosing block, or the absolute `0^nodes`)?"
+        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes)?"
       }
     },
     {
@@ -445,13 +456,13 @@
       "query": "select x: nodes from links limit 1",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes; one caret per enclosing block, or the absolute `0^nodes`)?"
+        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes)?"
       }
     },
     {
       "name": "bare-target-blocks-via-reach-through",
       "notes": "`block.blocks` reaches a block row, which has no `blocks` relation.",
-      "query": "select x: block.blocks from nodes where kind == \"md:task\"",
+      "query": "select x: _block.blocks from nodes where _kind == \"md:task\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"
@@ -468,7 +479,7 @@
     },
     {
       "name": "root-caret-past-the-root-from-a-row",
-      "query": "select path from docs where ^^links exists { }",
+      "query": "select _path from docs where ^^links exists { }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "`^^links` reaches past the root — there is no enclosing row at this depth; at the top level the repository's links are the bare `links` (`links count { … }`, `from links`, `entries(links)`)"

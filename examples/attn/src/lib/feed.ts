@@ -2,13 +2,16 @@
 // repo-explorer's lib/feed.ts this app needs). A digest that touched anything
 // under `/attn/` makes the page reload the pointer, the intents, the cues and
 // today's stream, so two windows (or the CLI) agree within one poll. The tool
-// (spec/surface §3): `{ digests: [{ commit, seq, ts, origin, actor, summary,
-// revisions: [{ id, path, hash }] }], cursor, truncated, head }`.
+// (spec/surface §3, 5.0): `{ digests: [{ commit, seq, ts, origin, actor, summary,
+// revisions: [{ _id, _path, _hash }] }], cursor, truncated, head }` — a revision
+// is a row, so its keys are the row's engine names; the digest's own keys
+// describe a commit and stay bare.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { ATTN_ROOT } from "./model.ts";
 
-export interface Revision { id: string; path: string; hash: string }
+/** A revision as the wire spells it (surface 5.0). */
+export interface Revision { _id: string; _path: string; _hash: string }
 export interface Digest { commit: string; seq: number; ts: string; summary: string; revisions: Revision[] }
 export interface ChangesSince { digests: Digest[]; cursor: number; truncated: boolean; head: number }
 
@@ -21,7 +24,7 @@ export function changesOf(page: Wire): ChangesSince {
     seq: num(d.seq),
     ts: str(d.ts),
     summary: str(d.summary),
-    revisions: Array.isArray(d.revisions) ? (d.revisions as Wire[]).map((r) => ({ id: str(r.id), path: str(r.path), hash: str(r.hash) })) : [],
+    revisions: Array.isArray(d.revisions) ? (d.revisions as Wire[]).map((r) => ({ _id: str(r._id), _path: str(r._path), _hash: str(r._hash) })) : [],
   })) : [];
   return { digests, cursor: num(page.cursor), truncated: page.truncated === true, head: num(page.head) };
 }
@@ -47,12 +50,12 @@ export function advanceCursor(r: Pick<ChangesSince, "cursor" | "head">): { curso
 
 /** The documents a page of digests touched (deduped). */
 export function touchedPaths(digests: readonly Digest[]): string[] {
-  return [...new Set(digests.flatMap((d) => d.revisions.map((r) => r.path)))];
+  return [...new Set(digests.flatMap((d) => d.revisions.map((r) => r._path)))];
 }
 
 /** Did a page of digests touch the attn folder (or delete/move something — a digest without revisions)? */
 export function touchesAttn(digests: readonly Digest[]): boolean {
-  return digests.some((d) => d.revisions.length === 0 || d.revisions.some((r) => r.path.startsWith(`${ATTN_ROOT}/`)));
+  return digests.some((d) => d.revisions.length === 0 || d.revisions.some((r) => r._path.startsWith(`${ATTN_ROOT}/`)));
 }
 
 /** The poll interval the user typed, in milliseconds: whole seconds, 1..3600, else the fallback. */

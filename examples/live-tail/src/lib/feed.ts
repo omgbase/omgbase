@@ -4,13 +4,20 @@
 // and what it hides), and the diff's lines. Nothing here touches the network
 // or the DOM.
 //
-// Tool shapes (surface 3.0, spec/surface §3–§4; coerced from the wire by lib/shapes.ts):
-//   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ id, path, hash }] }], cursor, truncated, head }
-//   docs_history  → { docs: [{ id, path, deleted, currentRev, versions: [{ rev, seq, commit, updated_at, origin, actor, hash, isCurrent }] }], truncated }
-//   docs_diff_unified → { id, path, from, to, diff }
-//   docs_read_at  → { id, path, rev, raw, … }
+// Tool shapes (surface 5.0, spec/surface §3–§4; coerced from the wire by lib/shapes.ts,
+// which also reads the bare 3.x/4.x spelling — `id`, `path`, `hash`, `raw`, a version's
+// `rev seq commit updated_at origin actor hash isCurrent`):
+//   changes_since → { digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ _id, _path, _hash }] }], cursor, truncated, head }
+//   docs_history  → { docs: [{ _id, _path, deleted, currentRev, versions: [{ _rev, _seq, _commit, _ts, _origin, _actor, _hash, _is_current, _archived }] }], truncated }
+//   docs_diff_unified → { _id, _path, from, to, diff }
+//   docs_read_at  → { _id, _path, rev, _raw, … }
+//
+// The queries the page sends spell the engine names for the connected server
+// (lib/paths.ts `EngineNames`: `_path`/`_title`/`_updated_at` from surface 5.0,
+// bare before); every builder below takes the names and defaults to 5.0's.
+// The typed shapes keep the demo's own field names whatever the wire said.
 
-import { hitId, hitPath, rooted } from "./paths.ts";
+import { NAMES_5, hitId, hitPath, rooted, type EngineNames } from "./paths.ts";
 
 export interface Revision { id: string; path: string; hash: string }
 export interface Digest {
@@ -29,27 +36,40 @@ export interface DocVersions { id: string; path: string; deleted: boolean; curre
 
 export const RECENT_LIMIT = 25;
 
-/** The recent query's first line — the projection (`title` is the computed
- * title attribute, spec/surface §1.2). */
-export const RECENT_SELECT = "select path, title, updated_at from docs";
+/** The recent query's first line — the projection (`_title` is the computed
+ * title attribute, spec/surface §1.2; the bare `title` under the 4.x names). */
+export function recentSelect(names: EngineNames = NAMES_5): string {
+  return `select ${names.path}, ${names.title}, ${names.updated_at} from docs`;
+}
 /** Its last line — newest first, the page's cap. */
-export const RECENT_TAIL = `order by updated_at desc limit ${RECENT_LIMIT}`;
+export function recentTail(names: EngineNames = NAMES_5): string {
+  return `order by ${names.updated_at} desc limit ${RECENT_LIMIT}`;
+}
+/** The two lines in the demo's native (5.0) spelling. */
+export const RECENT_SELECT = recentSelect();
+export const RECENT_TAIL = recentTail();
 
 /** The query behind the initial view, narrowed by the filter (an OQX `where`
  * predicate over `docs`) when there is one; one line. With a filter its tokens
  * are exactly the framed field's (`frameFor`, which lays the same text out on
  * three lines); without one the `where` clause is omitted (an empty `where`
  * would not parse). */
-export function recentQuery(filter = ""): string {
+export function recentQuery(filter = "", names: EngineNames = NAMES_5): string {
   const f = filter.trim();
-  return f ? `${RECENT_SELECT} where ${f} ${RECENT_TAIL}` : `${RECENT_SELECT} ${RECENT_TAIL}`;
+  const select = recentSelect(names);
+  const tail = recentTail(names);
+  return f ? `${select} where ${f} ${tail}` : `${select} ${tail}`;
 }
 
 /** The read-only frame the field shows around the hole when there is a `where`
  * line — the `select … from docs` line, `where ` + the hole, the `order by …
  * limit` line. */
-export const FRAME_BEFORE = `${RECENT_SELECT}\nwhere `;
-export const FRAME_AFTER = `\n${RECENT_TAIL}`;
+export function frameParts(names: EngineNames = NAMES_5): { before: string; after: string } {
+  return { before: `${recentSelect(names)}\nwhere `, after: `\n${recentTail(names)}` };
+}
+/** The frame in the native (5.0) spelling. */
+export const FRAME_BEFORE = frameParts().before;
+export const FRAME_AFTER = frameParts().after;
 
 export interface Frame {
   text: string;
@@ -64,15 +84,17 @@ export interface Frame {
  * `FRAME_AFTER`, so the second line is `where <filter>` (an empty filter is an
  * empty hole after `where `, where the caret waits). Idle and empty, two lines
  * with no `where` at all and a closed, zero-width hole at the end of the first.
- * Joined with spaces instead of its newlines the text is `recentQuery(filter)`
- * in every state. */
-export function frameFor(filter: string, { editing = false }: { editing?: boolean } = {}): Frame {
+ * Joined with spaces instead of its newlines the text is `recentQuery(filter,
+ * names)` in every state. */
+export function frameFor(filter: string, { editing = false, names = NAMES_5 }: { editing?: boolean; names?: EngineNames } = {}): Frame {
+  const select = recentSelect(names);
+  const { before, after } = frameParts(names);
   if (filter === "" && !editing) {
-    const at = RECENT_SELECT.length;
-    return { text: `${RECENT_SELECT}${FRAME_AFTER}`, hole: { from: at, to: at }, where: false };
+    const at = select.length;
+    return { text: `${select}${after}`, hole: { from: at, to: at }, where: false };
   }
-  const from = FRAME_BEFORE.length;
-  return { text: `${FRAME_BEFORE}${filter}${FRAME_AFTER}`, hole: { from, to: from + filter.length }, where: true };
+  const from = before.length;
+  return { text: `${before}${filter}${after}`, hole: { from, to: from + filter.length }, where: true };
 }
 
 // ---- the cursor --------------------------------------------------------------------
@@ -194,9 +216,10 @@ export function latestChange(versions: readonly DocVersion[]): LatestChange | nu
   return v ? { seq: v.seq, commit: v.commit, origin: v.origin, actor: v.actor } : null;
 }
 
-/** The projected `title` of a hit (the recent and lookup queries project it); null when blank or absent. */
+/** The projected title of a hit (the recent and lookup queries project it —
+ * `_title`, or `title` under the 4.x names); null when blank or absent. */
 function hitTitle(hit: Record<string, unknown>): string | null {
-  const title = hit.title;
+  const title = hit[NAMES_5.title] ?? hit.title;
   return typeof title === "string" && title.trim() ? title : null;
 }
 
@@ -206,7 +229,7 @@ export function recentFromHits(hits: readonly Record<string, unknown>[]): Recent
   for (const hit of hits) {
     const path = hitPath(hit);
     if (path === null) continue;
-    const updated = hit.updated_at;
+    const updated = hit[NAMES_5.updated_at] ?? hit.updated_at;
     out.push({
       id: hitId(hit),
       path: rooted(path),
@@ -326,18 +349,18 @@ export function filterStateAfter(filter: string, error: { code?: string; message
 }
 
 /** ONE query per poll over the documents a page of digests touches: their
- * `path` and `title` — the title lookup for the cards — narrowed to the
+ * `_path` and `_title` — the title lookup for the cards — narrowed to the
  * documents the filter admits when there is one (the filter and-ed with the
  * paths or-ed together; OQX has no array literal). Paths are `/`-rooted and
  * deduped; null when there is nothing to ask about. Read the hits with
  * `hitPath`/`titlesByPath`. A deleted or moved-away document is not in `docs`
  * and so is not returned. */
-export function matchQuery(filter: string, paths: readonly string[]): string | null {
+export function matchQuery(filter: string, paths: readonly string[], names: EngineNames = NAMES_5): string | null {
   const unique = [...new Set(paths.map(rooted))];
   if (unique.length === 0) return null;
-  const alternatives = unique.map((p) => `path == ${JSON.stringify(p)}`).join(" or ");
+  const alternatives = unique.map((p) => `${names.path} == ${JSON.stringify(p)}`).join(" or ");
   const f = filter.trim();
-  return `select path, title from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
+  return `select ${names.path}, ${names.title} from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
 }
 
 /** The lookup query's hits as rooted path → title (null for a blank or

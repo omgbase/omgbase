@@ -103,6 +103,9 @@ describe("editability (rule 1)", () => {
     expect(editability(cand("doc.out_links", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" });
     expect(editability(cand("doc.in_links", "backlinks"), rows)).toEqual({ writable: false, reason: "links live in the body" });
     expect(editability(cand("out_links", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" }); // the walk's own spelling
+    expect(editability(cand("_out_links", "links"), rows)).toEqual({ writable: false, reason: "links live in the body" }); // the 5.0 spelling
+    expect(editability(cand("_in_links", "backlinks"), rows)).toEqual({ writable: false, reason: "links live in the body" });
+    expect(editability(cand("_tags"), rows)).toEqual({ writable: false, reason: "not a frontmatter field" }); // an engine attribute is never written
     expect(editability(cand("arc_order", "sequence"), rows)).toEqual({ writable: false, reason: "derived from order by arc_order" });
     expect(editability(cand("meta.rel"), rows)).toEqual({ writable: false, reason: "not a frontmatter field" });
     expect(editability(cand("phase"), rows)).toEqual({ writable: false, reason: "values are not document references" });

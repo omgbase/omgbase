@@ -15,7 +15,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select slug, stage from docs where type == \"process\" and stage != null order by path"
+          "query": "select slug, stage from docs where type == \"process\" and stage != null order by _path"
         }
       },
       {

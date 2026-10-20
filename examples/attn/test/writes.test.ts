@@ -1,7 +1,10 @@
 // The exact `apply` payloads: switching focus writes the pointer ONLY (set
 // focused_intent under expect.revision, set since, set return_stack when the
 // stack changes); add is one create; add + focus is the create plus the
-// pointer; define-cue is one `set frontmatter.cues` with the whole list.
+// pointer; define-cue is one `set _frontmatter.cues` with the whole list. Fields
+// are `_frontmatter.<key>` (surface 5.0 / mutate 4.0: the handle is the
+// engine's, the key attn's); a bare rooted path stays the document target;
+// `expect.revision` is a role; a Receipt's revisions are `{ _id, _path, _hash }`.
 import { describe, expect, it } from "vitest";
 import { setCuesEffect, wireCue } from "../src/lib/cues.ts";
 import { setContentEffect, setStatusEffect } from "../src/lib/intents.ts";
@@ -18,9 +21,9 @@ const LETTER = "/attn/intents/2026/10/2026-10-10-write-to-nicolas.md";
 const POINTER: FocusState = { exists: true, docId: "d_avkm6zx", rev: "r_35bctb5", focused: SALT, since: "2026-10-13T15:02:00.000Z", returnStack: [DEW] };
 const ctx = (over: Partial<SwitchContext> = {}): SwitchContext => ({ pointer: POINTER, now: NOW, ...over });
 
-const SET_FOCUSED = (value: string | null) => ({ op: "set", target: "/attn/focus.md", field: "frontmatter.focused_intent", value, expect: { revision: "r_35bctb5" } });
-const SET_SINCE = { op: "set", target: "/attn/focus.md", field: "frontmatter.since", value: NOW };
-const SET_STACK = (value: string[]) => ({ op: "set", target: "/attn/focus.md", field: "frontmatter.return_stack", value });
+const SET_FOCUSED = (value: string | null) => ({ op: "set", target: "/attn/focus.md", field: "_frontmatter.focused_intent", value, expect: { revision: "r_35bctb5" } });
+const SET_SINCE = { op: "set", target: "/attn/focus.md", field: "_frontmatter.since", value: NOW };
+const SET_STACK = (value: string[]) => ({ op: "set", target: "/attn/focus.md", field: "_frontmatter.return_stack", value });
 
 describe("a focus switch", () => {
   it("is set focused_intent (under CAS) + set since on the pointer, nothing else; the return stack is untouched", () => {
@@ -33,7 +36,7 @@ describe("a focus switch", () => {
   });
   it("omits expect.revision only when the pointer has no rev", () => {
     const e = switchEffects(ctx({ pointer: { ...POINTER, rev: null } }), LUNCH);
-    expect(e[0]).toEqual({ op: "set", target: "/attn/focus.md", field: "frontmatter.focused_intent", value: LUNCH });
+    expect(e[0]).toEqual({ op: "set", target: "/attn/focus.md", field: "_frontmatter.focused_intent", value: LUNCH });
   });
   it("never addresses an intent document", () => {
     for (const effects of [switchEffects(ctx(), LUNCH), interruptEffects(ctx(), LETTER), backEffects(ctx())!, stopEffects(ctx())]) {
@@ -79,50 +82,52 @@ describe("add an intent", () => {
 
 describe("the intent edits", () => {
   it("release / reactivate / edit are one set each", () => {
-    expect(setStatusEffect(LUNCH, "released")).toEqual({ op: "set", target: LUNCH, field: "frontmatter.status", value: "released" });
-    expect(setStatusEffect(LUNCH, "active")).toEqual({ op: "set", target: LUNCH, field: "frontmatter.status", value: "active" });
+    expect(setStatusEffect(LUNCH, "released")).toEqual({ op: "set", target: LUNCH, field: "_frontmatter.status", value: "released" });
+    expect(setStatusEffect(LUNCH, "active")).toEqual({ op: "set", target: LUNCH, field: "_frontmatter.status", value: "active" });
     expect(setContentEffect(LUNCH, "---\ntitle: Lunch\n---\n# Lunch\n")).toEqual({ op: "set", target: LUNCH, field: "content", value: "---\ntitle: Lunch\n---\n# Lunch\n" });
   });
-  it("define-cue is set frontmatter.cues with the WHOLE list; queries end in a newline (a `query: |` block); no cues left is unset", () => {
+  it("define-cue is set _frontmatter.cues with the WHOLE list; queries end in a newline (a `query: |` block); no cues left is unset", () => {
     const cues = [
       { id: "when-opus-focused", on: "focus" as const, query: 'from docs\nwhere project == "/projects/magnum-opus.md"', at: null },
       { id: "review-tomorrow", on: "time" as const, query: null, at: "2026-10-15T09:00:00Z" },
       { id: "new-rest", on: "query-enter" as const, query: 'from docs where "rest" in tags\n\n', at: null },
     ];
-    expect(setCuesEffect(SALT, cues)).toEqual({ op: "set", target: SALT, field: "frontmatter.cues", value: [
+    expect(setCuesEffect(SALT, cues)).toEqual({ op: "set", target: SALT, field: "_frontmatter.cues", value: [
       { id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' },
       { id: "review-tomorrow", on: "time", at: "2026-10-15T09:00:00Z" },
       { id: "new-rest", on: "query-enter", query: 'from docs where "rest" in tags\n' },
     ] });
-    expect(setCuesEffect(SALT, [])).toEqual({ op: "unset", target: SALT, field: "frontmatter.cues" });
+    expect(setCuesEffect(SALT, [])).toEqual({ op: "unset", target: SALT, field: "_frontmatter.cues" });
     expect(wireCue({ id: "t", on: "time", query: "ignored", at: null })).toEqual({ id: "t", on: "time" });
   });
 });
 
 describe("the calls", () => {
-  const RECEIPT = { plan_id: "p1", commit: "c_9", revisions: [{ id: "d_avkm6zx", path: "/attn/focus.md", hash: "h" }], new_ids: {}, committed: true, summary: ["set frontmatter.focused_intent = … in /attn/focus.md"] };
-  it("applyEffects is one `apply { effects, reason }`; the Receipt is decoded", async () => {
+  const RECEIPT = { plan_id: "p1", commit: "c_9", revisions: [{ _id: "d_avkm6zx", _path: "/attn/focus.md", _hash: "h" }], new_ids: {}, committed: true, summary: ["set _frontmatter.focused_intent = … in /attn/focus.md"] };
+  it("applyEffects is one `apply { effects, reason }`; the Receipt is decoded (revisions under the row's names: _id, _path, _hash)", async () => {
     const s = new ScriptedCaller({ apply: () => RECEIPT });
     const effects = switchEffects(ctx(), LUNCH);
     const r = await applyEffects(s, effects, null, "attn switch");
     expect(s.calls).toEqual([{ name: "apply", args: { effects, reason: "attn switch" } }]);
-    expect(r).toEqual({ planId: "p1", commit: "c_9", revisions: [{ id: "d_avkm6zx", path: "/attn/focus.md", hash: "h" }], newIds: {}, committed: true, summary: ["set frontmatter.focused_intent = … in /attn/focus.md"] });
+    expect(r).toEqual({ planId: "p1", commit: "c_9", revisions: [{ _id: "d_avkm6zx", _path: "/attn/focus.md", _hash: "h" }], newIds: {}, committed: true, summary: ["set _frontmatter.focused_intent = … in /attn/focus.md"] });
+    expect(r.revisions[0]!._hash).toBe("h");
     expect(receiptOf({ plan_id: "p", commit: null, revisions: [], committed: true, summary: [] }).commit).toBeNull();
   });
   it("a pointer that moved under us: stale_plan with the engine's fix (the request re-pinned), retriable", async () => {
     const s = new ScriptedCaller({
-      apply: () => new OmgError("stale_plan", "document d_avkm6zx is at revision r_next, not r_35bctb5; re-plan", { doc: "d_avkm6zx", expected_revision: "r_35bctb5", current: { revision: "r_next", hash: "h2" }, retriable: true, effect_index: 0, fix: '{"effects":[…]}' }, false),
+      apply: () => new OmgError("stale_plan", "document d_avkm6zx is at revision r_next, not r_35bctb5; re-plan", { doc: "d_avkm6zx", expected_revision: "r_35bctb5", current: { revision: "r_next", _hash: "h2" }, retriable: true, effect_index: 0, fix: '{"effects":[…]}' }, false),
     });
     await expect(applyEffects(s, switchEffects(ctx(), LUNCH), null, "attn switch")).rejects.toMatchObject({ code: "stale_plan", data: { current: { revision: "r_next" }, fix: '{"effects":[…]}' } });
   });
   it("a new cue is plan { effects, diffs: true } then execute { plan_id, effects } with the same effects", async () => {
     const s = new ScriptedCaller({
-      plan: () => ({ plan_id: "p7", preview: { revisions: [{ id: "d_1", path: SALT, hash: "h" }], summary: [`set frontmatter.cues = [{"id":"a","on":"focus","query":"from docs\\n"}] in ${SALT}`], diffs: { [SALT]: { before: "---\n…", after: "---\ncues:\n  - id: a\n…" } } } }),
+      plan: () => ({ plan_id: "p7", preview: { revisions: [{ _id: "d_1", _path: SALT, _hash: "h" }], summary: [`set _frontmatter.cues = [{"id":"a","on":"focus","query":"from docs\\n"}] in ${SALT}`], diffs: { [SALT]: { before: "---\n…", after: "---\ncues:\n  - id: a\n…" } } } }),
       execute: (a) => ({ ...RECEIPT, plan_id: a.plan_id }),
     });
     const effects = [setCuesEffect(SALT, [{ id: "a", on: "focus", query: "from docs", at: null }])];
     const plan = await planEffects(s, effects, "attn");
-    expect(plan.summary[0]).toMatch(/^set frontmatter\.cues = /);
+    expect(plan.summary[0]).toMatch(/^set _frontmatter\.cues = /);
+    expect(plan.revisions).toEqual([{ _id: "d_1", _path: SALT, _hash: "h" }]);
     expect(plan.diffs[SALT]!.after).toContain("- id: a");
     await executePlan(s, plan, "attn", "attn define cue");
     expect(s.calls).toEqual([

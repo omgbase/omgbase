@@ -9,15 +9,17 @@ import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
 
 // `omg query <source>` — OQX composable query. Dot navigation belongs to the host
-// object model (`doc.layer`, `section.blocks`); whitespace query directives
-// belong to OQX (`<receiver> collect|exists|count|first|single { <block> }`).
+// object model (`_doc.layer`, `$it._blocks`; spec/surface §1.2, 5.0: an engine
+// name is `_`-prefixed, a bare name is an authored key, `$it` is the self);
+// whitespace query directives belong to OQX (`<receiver>
+// collect|exists|count|first|single { <block> }`).
 // `from E` selects + flattens a relation relative to the current source scope
 // (top-level `from docs` = the repository's docs; `docs collect { from
 // nodes … }` re-projects each doc through its nodes). Clause order is fixed
 // (ADR-020): `select … from … where … follow … order by … limit … offset …`,
 // each at most once, at the top level and inside every block. Only `select` may
-// drop its keyword, and only as the first clause (`nodes collect { attrs.text }`
-// projects); a predicate always needs `where` (`nodes exists { where kind ==
+// drop its keyword, and only as the first clause (`_nodes collect { _name }`
+// projects); a predicate always needs `where` (`_nodes exists { where _kind ==
 // "md:task" }`), so a bare boolean property projects rather than filters.
 // `where` may use the body's select aliases. Features: a boolean where
 // tree over scalar predicates and consumer directives, count comparisons
@@ -32,13 +34,13 @@ import { readStdin } from "./_mutate.js";
 // `docs count { … }` / `docs exists { … }` reduce to a scalar,
 // `docs first { … }` / `docs single { … }` to zero-or-one row (bare
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
-// string or -f file|-. Human output: one hit per line (id + path), or an aligned
-// id/path/columns table when the query projects (`select`), or the scalar for
-// count/exists/none (see output.ts renderHits); --json/--jsonl/--ids. `--bare`
-// is the tool's `bare` passed through (ADR-012: a thin client; spec/surface
-// §1.4, 4.2): every hit is its projection alone, rendered as a table without
-// the id/path columns (`--json`/`--jsonl` the bare hits; `--ids` has no id to
-// print and falls back to the document, like a scalar result).
+// string or -f file|-. Human output: one hit per line (_id + _path), or an
+// aligned _id/_path/columns table when the query projects (`select`), or the
+// scalar for count/exists/none (see output.ts renderHits); --json/--jsonl/--ids.
+// `--bare` is the tool's `bare` passed through (ADR-012: a thin client;
+// spec/surface §1.4, 4.2): every hit is its projection alone, rendered as a
+// table without the _id/_path columns (`--json`/`--jsonl` the bare hits;
+// `--ids` has no id to print and falls back to the document, like a scalar result).
 
 async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -62,39 +64,40 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
         ["-f <file|->", "read the query from a file, or stdin with `-`"],
         ["-n <N>", "page size"],
         ["--cursor <c>", "continue a truncated result"],
-        ["--bare", "hits as the projection only — no automatic id/path columns (needs a `select`; `values` is the bare-values form)"],
+        ["--bare", "hits as the projection only — no automatic _id/_path columns (needs a `select`; `values` is the bare-values form)"],
         ["--ids", `bare ids, one per line — pipe fuel (\`… --ids | ${cli.prog} cat -\`)`],
       ],
       notes: [
         `semantic ranking: \`order by semantic("phrase") desc\` or \`where semantic("phrase") > 0.6\` (needs embedding.provider; see \`${cli.prog} embed --help\`).`,
         "full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.",
+        "names: an engine field is `_`-prefixed (_id _path _title _tags _updated_at _type _text _doc …); a bare name is an authored key (title, tags, layer); `$it` is the row itself.",
         "examples:",
       ],
     });
-    cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
-    cli.io.out("       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'");
-    cli.io.out("       query 'select path, open from docs where nodes collect { ^open: value where kind == \"md:task\" and not attrs.checked }'");
-    cli.io.out("       query 'select owner_id, owner: ^nodes single { where kind == \"person\" and attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^id / 0^id = the repository id");
+    cli.io.out("  e.g. query 'from docs where _nodes count { where _kind == \"md:task\" } >= 2'");
+    cli.io.out("       query 'select items: _blocks collect { where _type == \"list_item\" } from nodes where _kind == \"md:section\"'");
+    cli.io.out("       query 'select _title, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" and not checked }'");
+    cli.io.out("       query 'select owner_id, owner: ^nodes single { where _kind == \"person\" and id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^_id / 0^_id = the repository id");
     cli.io.out("       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
-    cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
+    cli.io.out("       query 'from docs where _nodes none { where _kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent");
-    cli.io.out("       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow children { depth 2 } is its block");
-    cli.io.out("       query 'select subject, process: ^docs[slug == ^subject].path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; title! = the value or a loud error; a select item may use the items to its left");
-    cli.io.out("       query 'select path, $depth from docs where path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination");
-    cli.io.out("       query 'select path, next: ^docs { ^path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^path directly");
+    cli.io.out("       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow _children { depth 2 } is its block");
+    cli.io.out("       query 'select subject, process: ^docs[slug == ^subject]._path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; _title! = the value or a loud error; a select item may use the items to its left");
+    cli.io.out("       query 'select _title, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination");
+    cli.io.out("       query 'select _title, next: ^docs { ^_path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (_path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^_path directly");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
-    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
-    cli.io.out("       query 'select path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
-    cli.io.out("       query 'select path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)");
-    cli.io.out("       query 'docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
+    cli.io.out("       query 'select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(_data), entries(_attrs), entries(_inline)");
+    cli.io.out("       query 'select _path values from docs where layer == \"canon\"'   # `values`: bare values, no {_id,_path} hits (one item only)");
+    cli.io.out("       query 'select _title, tags: _tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag); _tags = authored tags ∪ #hashtags, bare `tags` the authored key alone");
+    cli.io.out("       query 'docs collect { from _nodes where _kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") and layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
-    cli.io.out("       query 'select t: text, d: $depth, s: $stop from blocks where id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)");
-    cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)");
-    cli.io.out("       query 'select p: path, d: $depth, s: $stop from docs where path == \"/index.md\" follow out_links collect { from dst }'   # citation graph (cyclic-safe: $stop=cycle)");
-    cli.io.out("       query 'from blocks where type == \"list_item\" and $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
-    cli.io.out("       query 'select src: doc_id, to: dst_path from links where predicate == \"depends_on\"'   # the links target: predicate/provenance/dst_kind + doc_id/dst_path/uri");
+    cli.io.out("       query 'select t: _text, d: $depth, s: $stop from blocks where _id == \"b_x\" follow _children'   # recursive walk ($depth/$stop metadata)");
+    cli.io.out("       query 'from nodes where _name == \"Overview\" follow _subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)");
+    cli.io.out("       query 'select p: _doc._path, d: $depth, s: $stop from docs where _path == \"/index.md\" follow _out_links collect { from _dst }'   # citation graph (cyclic-safe: $stop=cycle)");
+    cli.io.out("       query 'from blocks where _type == \"list_item\" and $leaf follow _children'   # $leaf/$depth/$stop filter the walk result post-walk");
+    cli.io.out("       query 'select src: _doc_id, to: _dst_path from links where _predicate == \"depends_on\"'   # the links target: _predicate/_provenance/_dst_kind + _doc_id/_dst_path/_uri");
     return EXIT_OK;
   }
 
@@ -158,8 +161,8 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
  * Render an `OqxResult` in the current mode (shared with `run`). `--json` is the
  * whole result verbatim (incl. consumer + any scalar), so count/exists round-trip
  * without special-casing; `--jsonl` streams the hits (or the values, as JSON);
- * `--ids` the hit ids — a scalar result has neither, so those modes print the
- * document, and so does a `bare` result (its hits carry no envelope). The
+ * `--ids` the hits' `_id`s — a scalar result has neither, so those modes print
+ * the document, and so does a `bare` result (its hits carry no envelope). The
  * truncation footer prints in every mode but `--json`.
  */
 export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): number {
@@ -168,7 +171,7 @@ export function renderOqxResult(cli: Cli, result: OqxResult, bare = false): numb
     const list = result.values ?? (result.consumer === "collect" || result.consumer === "first" || result.consumer === "single" ? result.hits : undefined);
     return emitMachine(cli, result, {
       ...(list ? { items: list } : {}),
-      ...(list && !result.values && !bare ? { ids: result.hits.map((h) => h.id) } : {}),
+      ...(list && !result.values && !bare ? { ids: result.hits.map((h) => h._id) } : {}),
       cursor,
     });
   }

@@ -65,9 +65,12 @@ export class McpEngineClient implements EngineClient {
     return body as T;
   }
 
-  // The wire spells a document's identity `id`/`path` (spec/surface §1.2,
-  // 3.0); the engine-client contract keeps the library's `docId`/`path`
-  // (spec/store's observe outcome), so the two are mapped back here.
+  // The wire spells a document's identity `_id`/`_path` (spec/surface §1.2,
+  // 5.0: an underscore-prefixed name is an engine field); the engine-client
+  // contract keeps the library's `docId`/`path` (spec/store's observe
+  // outcome), so the two are mapped back here. The `observe*` ARGUMENTS keep
+  // `path` and `files[].path`: a file event's path is a role, not a row
+  // attribute (§4 "Arguments").
   async observeMany(files: { path: string; content: string }[]): Promise<ObserveResult[]> {
     const out = await this.callTool<SurfaceObserveResult<ObserveResult>[]>("observe_many", { files });
     return out.map(fromWireObserve);
@@ -87,8 +90,11 @@ export class McpEngineClient implements EngineClient {
 
   async readDoc(path: string): Promise<DocBytes | null> {
     try {
-      const res = await this.callTool<{ raw: string }>("docs_read", { path });
-      return { content: res.raw, contentHash: createHash("sha256").update(res.raw, "utf8").digest("hex") };
+      // `docs_read { _path }` — the argument addresses the row's `_path`
+      // (5.0; a bare `path` is refused, no tolerance) — and `_raw` is the
+      // document's reconstructed bytes.
+      const res = await this.callTool<{ _raw: string }>("docs_read", { _path: path });
+      return { content: res._raw, contentHash: createHash("sha256").update(res._raw, "utf8").digest("hex") };
     } catch {
       // doc_missing (or any read failure) → treat as absent.
       return null;
@@ -100,10 +106,10 @@ export class McpEngineClient implements EngineClient {
   }
 }
 
-/** A wire observe outcome (`{ id, path, … }`) as the library's `{ docId, path, … }`. */
-function fromWireObserve<T extends { docId: string | null; path: string }>(w: SurfaceObserveResult<T>): T {
-  const { id, path, ...rest } = w;
-  return { docId: id, path: path, ...rest } as unknown as T;
+/** A wire observe outcome (`{ _id, _path, … }`, spec/surface §3, 5.0) as the library's `{ docId, path, … }`. */
+export function fromWireObserve<T extends { docId: string | null; path: string }>(w: SurfaceObserveResult<T>): T {
+  const { _id, _path, ...rest } = w;
+  return { docId: _id, path: _path, ...rest } as unknown as T;
 }
 
 /** Connect to an omgbase MCP server over stdio by spawning `command args`

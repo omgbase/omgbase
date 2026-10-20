@@ -25,7 +25,7 @@
   "cases": [
     {
       "name": "kinds",
-      "query": "select distinct kind values from nodes",
+      "query": "select distinct _kind values from nodes",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -43,7 +43,7 @@
     },
     {
       "name": "task-node-count",
-      "query": "nodes count { where kind == \"md:task\" }",
+      "query": "nodes count { where _kind == \"md:task\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -54,40 +54,40 @@
     },
     {
       "name": "fields",
-      "query": "select kind, name, value, attrs from nodes where kind == \"md:inline_field\" && name == \"known_for\"",
+      "query": "select _kind, _name, _value, _attrs from nodes where _kind == \"md:inline_field\" && _name == \"known_for\"",
       "expect": {
         "hits": [
           {
-            "id": "n_c8938748c6bc",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
-            "kind": "md:inline_field",
-            "name": "known_for",
-            "value": "mercury-sulphur theory",
-            "attrs": {}
+            "_id": "n_c8938748c6bc",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
+            "_kind": "md:inline_field",
+            "_name": "known_for",
+            "_value": "mercury-sulphur theory",
+            "_attrs": {}
           },
           {
-            "id": "n_ccd1a2e55dde",
-            "path": "/practitioners/maria-prophetissa.md",
-            "kind": "md:inline_field",
-            "name": "known_for",
-            "value": "balneum mariae",
-            "attrs": {}
+            "_id": "n_ccd1a2e55dde",
+            "_path": "/practitioners/maria-prophetissa.md",
+            "_kind": "md:inline_field",
+            "_name": "known_for",
+            "_value": "balneum mariae",
+            "_attrs": {}
           },
           {
-            "id": "n_99628e4624a0",
-            "path": "/practitioners/newton.md",
-            "kind": "md:inline_field",
-            "name": "known_for",
-            "value": "unpublished alchemical corpus",
-            "attrs": {}
+            "_id": "n_99628e4624a0",
+            "_path": "/practitioners/newton.md",
+            "_kind": "md:inline_field",
+            "_name": "known_for",
+            "_value": "unpublished alchemical corpus",
+            "_attrs": {}
           },
           {
-            "id": "n_4907bf2dff57",
-            "path": "/practitioners/paracelsus.md",
-            "kind": "md:inline_field",
-            "name": "known_for",
-            "value": "tria prima",
-            "attrs": {}
+            "_id": "n_4907bf2dff57",
+            "_path": "/practitioners/paracelsus.md",
+            "_kind": "md:inline_field",
+            "_name": "known_for",
+            "_value": "tria prima",
+            "_attrs": {}
           }
         ],
         "truncated": false,
@@ -98,12 +98,12 @@
     {
       "name": "intrinsics-and-fields",
       "notes": "§1.2 (3.0): a node's `$` names are id/path; doc_id and block_id are plain fields (the `$node_id` synonym is gone).",
-      "query": "select i: id, d: doc_id, b: block_id from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select i: _id, d: _doc_id, b: _block_id from nodes where _kind == \"md:section\" && _name == \"Supplies\"",
       "expect": {
         "hits": [
           {
-            "id": "n_de68e55098c0",
-            "path": "/substances/salt.md",
+            "_id": "n_de68e55098c0",
+            "_path": "/substances/salt.md",
             "i": "n_de68e55098c0",
             "d": "d_14",
             "b": "b_276"
@@ -116,40 +116,40 @@
     },
     {
       "name": "attrs-flattening",
-      "query": "select level, f: first_ordinal, l: last_ordinal from nodes where kind == \"md:section\" && path == \"processes/magnum-opus.md\"",
+      "query": "select level, f: first_ordinal, l: last_ordinal from nodes where _kind == \"md:section\" && _path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_57b863562c5f",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_57b863562c5f",
+            "_path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 5,
             "l": 6
           },
           {
-            "id": "n_650d0569f2a8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_650d0569f2a8",
+            "_path": "/processes/magnum-opus.md",
             "level": 1,
             "f": 0,
             "l": 11
           },
           {
-            "id": "n_7dd6472a3b76",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_7dd6472a3b76",
+            "_path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 7,
             "l": 9
           },
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 10,
             "l": 11
           },
           {
-            "id": "n_fae9f964b318",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_fae9f964b318",
+            "_path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 2,
             "l": 4
@@ -162,16 +162,16 @@
     },
     {
       "name": "checked-flat-filter",
-      "query": "from nodes where kind == \"md:task\" && checked && path == \"substances/salt.md\"",
+      "query": "from nodes where _kind == \"md:task\" && checked && _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_0ddcacdef653",
-            "path": "/substances/salt.md"
+            "_id": "n_0ddcacdef653",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "n_6d35d6b1d52b",
-            "path": "/substances/salt.md"
+            "_id": "n_6d35d6b1d52b",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -181,12 +181,12 @@
     },
     {
       "name": "section-is-the-row",
-      "query": "from nodes where section.name == \"Supplies\"",
+      "query": "from nodes where $it._name == \"Supplies\"",
       "expect": {
         "hits": [
           {
-            "id": "n_de68e55098c0",
-            "path": "/substances/salt.md"
+            "_id": "n_de68e55098c0",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -196,24 +196,24 @@
     },
     {
       "name": "doc-reach-through",
-      "query": "from nodes where kind == \"md:task\" && !attrs.checked && doc.type == \"practitioner\"",
+      "query": "from nodes where _kind == \"md:task\" && !_attrs.checked && _doc.type == \"practitioner\"",
       "expect": {
         "hits": [
           {
-            "id": "n_15a04ea1e3a1",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "n_15a04ea1e3a1",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "n_a66412ae8a33",
-            "path": "/practitioners/newton.md"
+            "_id": "n_a66412ae8a33",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "n_de814ec1a223",
-            "path": "/practitioners/newton.md"
+            "_id": "n_de814ec1a223",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "n_b4cb245daced",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "n_b4cb245daced",
+            "_path": "/practitioners/paracelsus.md"
           }
         ],
         "truncated": false,
@@ -223,24 +223,24 @@
     },
     {
       "name": "block-reach-through",
-      "query": "select bt: block.type, bx: block.text from nodes where kind == \"md:wikilink\" && path == \"index.md\"",
+      "query": "select bt: _block._type, bx: _block._text from nodes where _kind == \"md:wikilink\" && _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_2b97e0669ebf",
-            "path": "/index.md",
+            "_id": "n_2b97e0669ebf",
+            "_path": "/index.md",
             "bt": "list_item",
             "bx": "[[sulphur]] — the combustible soul"
           },
           {
-            "id": "n_9e25b3a6f1e2",
-            "path": "/index.md",
+            "_id": "n_9e25b3a6f1e2",
+            "_path": "/index.md",
             "bt": "list_item",
             "bx": "[[mercury]] — the volatile spirit"
           },
           {
-            "id": "n_a3da662b7b99",
-            "path": "/index.md",
+            "_id": "n_a3da662b7b99",
+            "_path": "/index.md",
             "bt": "list_item",
             "bx": "[[salt]] — the fixed body"
           }
@@ -252,31 +252,31 @@
     },
     {
       "name": "task-nodes-in-a-doc",
-      "query": "select value, checked from nodes where kind == \"md:task\" && path == \"lab/2026-02-notes.md\"",
+      "query": "select _value, checked from nodes where _kind == \"md:task\" && _path == \"lab/2026-02-notes.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_1b6ff200b17c",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Write the plateau result up for the coagulation note",
+            "_id": "n_1b6ff200b17c",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Write the plateau result up for the coagulation note",
             "checked": false
           },
           {
-            "id": "n_2e8a5838db6b",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Note crystal quality per cycle",
+            "_id": "n_2e8a5838db6b",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Note crystal quality per cycle",
             "checked": true
           },
           {
-            "id": "n_3f352718a47e",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Assay cycle 1 and cycle 4 crops for iron",
+            "_id": "n_3f352718a47e",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Assay cycle 1 and cycle 4 crops for iron",
             "checked": false
           },
           {
-            "id": "n_5a13cfab2180",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Four recrystallization cycles with weights",
+            "_id": "n_5a13cfab2180",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Four recrystallization cycles with weights",
             "checked": true
           }
         ],
@@ -287,18 +287,18 @@
     },
     {
       "name": "wikilink-values",
-      "query": "select value from nodes where kind == \"md:wikilink\" && path == \"substances/philosophers-stone.md\"",
+      "query": "select _value from nodes where _kind == \"md:wikilink\" && _path == \"substances/philosophers-stone.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_3747edffcbc9",
-            "path": "/substances/philosophers-stone.md",
-            "value": "mercury"
+            "_id": "n_3747edffcbc9",
+            "_path": "/substances/philosophers-stone.md",
+            "_value": "mercury"
           },
           {
-            "id": "n_4e111a41e73c",
-            "path": "/substances/philosophers-stone.md",
-            "value": "magnum-opus"
+            "_id": "n_4e111a41e73c",
+            "_path": "/substances/philosophers-stone.md",
+            "_value": "magnum-opus"
           }
         ],
         "truncated": false,
@@ -308,32 +308,32 @@
     },
     {
       "name": "link-nodes",
-      "query": "select name, value from nodes where kind == \"md:link\" && path == \"texts/emerald-tablet.md\"",
+      "query": "select _name, _value from nodes where _kind == \"md:link\" && _path == \"texts/emerald-tablet.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_61739bf1dc49",
-            "path": "/texts/emerald-tablet.md",
-            "name": "dissolution",
-            "value": "/processes/dissolution.md"
+            "_id": "n_61739bf1dc49",
+            "_path": "/texts/emerald-tablet.md",
+            "_name": "dissolution",
+            "_value": "/processes/dissolution.md"
           },
           {
-            "id": "n_865466f87c70",
-            "path": "/texts/emerald-tablet.md",
-            "name": "Jabir",
-            "value": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "n_865466f87c70",
+            "_path": "/texts/emerald-tablet.md",
+            "_name": "Jabir",
+            "_value": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "n_98cb2af27d5e",
-            "path": "/texts/emerald-tablet.md",
-            "name": "Newton",
-            "value": "/practitioners/newton.md"
+            "_id": "n_98cb2af27d5e",
+            "_path": "/texts/emerald-tablet.md",
+            "_name": "Newton",
+            "_value": "/practitioners/newton.md"
           },
           {
-            "id": "n_c278d7c5021b",
-            "path": "/texts/emerald-tablet.md",
-            "name": "coagulation",
-            "value": "/processes/coagulation.md"
+            "_id": "n_c278d7c5021b",
+            "_path": "/texts/emerald-tablet.md",
+            "_name": "coagulation",
+            "_value": "/processes/coagulation.md"
           }
         ],
         "truncated": false,
@@ -343,26 +343,26 @@
     },
     {
       "name": "inline-field-nodes",
-      "query": "select name, value from nodes where kind == \"md:inline_field\" && path == \"substances/mercury.md\"",
+      "query": "select _name, _value from nodes where _kind == \"md:inline_field\" && _path == \"substances/mercury.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_4f9fa959500f",
-            "path": "/substances/mercury.md",
-            "name": "melting_point",
-            "value": "-38.8"
+            "_id": "n_4f9fa959500f",
+            "_path": "/substances/mercury.md",
+            "_name": "melting_point",
+            "_value": "-38.8"
           },
           {
-            "id": "n_6693c8b54920",
-            "path": "/substances/mercury.md",
-            "name": "symbol",
-            "value": "☿"
+            "_id": "n_6693c8b54920",
+            "_path": "/substances/mercury.md",
+            "_name": "symbol",
+            "_value": "☿"
           },
           {
-            "id": "n_adcc9beaf658",
-            "path": "/substances/mercury.md",
-            "name": "toxic",
-            "value": "yes"
+            "_id": "n_adcc9beaf658",
+            "_path": "/substances/mercury.md",
+            "_name": "toxic",
+            "_value": "yes"
           }
         ],
         "truncated": false,
@@ -372,20 +372,20 @@
     },
     {
       "name": "section-nodes-named",
-      "query": "from nodes where kind == \"md:section\" && name == \"Open questions\"",
+      "query": "from nodes where _kind == \"md:section\" && _name == \"Open questions\"",
       "expect": {
         "hits": [
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md"
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "n_3275c6657f79",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "n_3275c6657f79",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "n_567d150d3910",
-            "path": "/substances/prima-materia.md"
+            "_id": "n_567d150d3910",
+            "_path": "/substances/prima-materia.md"
           }
         ],
         "truncated": false,
@@ -396,17 +396,17 @@
     {
       "name": "section-blocks",
       "notes": "§1.2: `section.blocks` is the live blocks whose top-level ancestor ordinal lies in the range.",
-      "query": "select items: section.blocks collect { select t: text where type == \"list_item\" } from nodes where kind == \"md:section\" && name == \"Open questions\"",
+      "query": "select items: $it._blocks collect { select t: _text where _type == \"list_item\" } from nodes where _kind == \"md:section\" && _name == \"Open questions\"",
       "expect": {
         "hits": [
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md",
             "items": []
           },
           {
-            "id": "n_3275c6657f79",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "n_3275c6657f79",
+            "_path": "/substances/philosophers-stone.md",
             "items": [
               {
                 "t": "The surviving transmutation claims have never been gathered in one place with dates and provenance attached."
@@ -417,8 +417,8 @@
             ]
           },
           {
-            "id": "n_567d150d3910",
-            "path": "/substances/prima-materia.md",
+            "_id": "n_567d150d3910",
+            "_path": "/substances/prima-materia.md",
             "items": [
               {
                 "t": "Whether the \"chaos\" and the \"lead of the philosophers\" readings can be reconciled, or whether they simply belong to different schools."
@@ -436,31 +436,31 @@
     },
     {
       "name": "section-blocks-includes-nested",
-      "query": "select b: section.blocks collect { type, d: depth } from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select b: $it._blocks collect { _type, d: _depth } from nodes where _kind == \"md:section\" && _name == \"Supplies\"",
       "expect": {
         "hits": [
           {
-            "id": "n_de68e55098c0",
-            "path": "/substances/salt.md",
+            "_id": "n_de68e55098c0",
+            "_path": "/substances/salt.md",
             "b": [
               {
-                "type": "heading",
+                "_type": "heading",
                 "d": 0
               },
               {
-                "type": "paragraph",
+                "_type": "paragraph",
                 "d": 0
               },
               {
-                "type": "list",
+                "_type": "list",
                 "d": 0
               },
               {
-                "type": "task",
+                "_type": "task",
                 "d": 1
               },
               {
-                "type": "task",
+                "_type": "task",
                 "d": 1
               }
             ]
@@ -475,27 +475,27 @@
     {
       "name": "section-subsections",
       "notes": "§1.2: contained sections with a greater level, (first_ordinal, node_id) order.",
-      "query": "select s: section.subsections collect { name, level } from nodes where kind == \"md:section\" && name == \"The magnum opus\"",
+      "query": "select s: $it._subsections collect { _name, level } from nodes where _kind == \"md:section\" && _name == \"The magnum opus\"",
       "expect": {
         "hits": [
           {
-            "id": "n_650d0569f2a8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_650d0569f2a8",
+            "_path": "/processes/magnum-opus.md",
             "s": [
               {
-                "name": "The four stages",
+                "_name": "The four stages",
                 "level": 2
               },
               {
-                "name": "Why colour",
+                "_name": "Why colour",
                 "level": 2
               },
               {
-                "name": "Operations",
+                "_name": "Operations",
                 "level": 2
               },
               {
-                "name": "Open questions",
+                "_name": "Open questions",
                 "level": 2
               }
             ]
@@ -508,12 +508,12 @@
     },
     {
       "name": "section-children",
-      "query": "select c: section.children collect { name values } from nodes where kind == \"md:section\" && name == \"The magnum opus\"",
+      "query": "select c: $it._children collect { _name values } from nodes where _kind == \"md:section\" && _name == \"The magnum opus\"",
       "expect": {
         "hits": [
           {
-            "id": "n_650d0569f2a8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_650d0569f2a8",
+            "_path": "/processes/magnum-opus.md",
             "c": [
               "The four stages",
               "Why colour",
@@ -529,12 +529,12 @@
     },
     {
       "name": "section-children-of-a-leaf",
-      "query": "from nodes where kind == \"md:section\" && name == \"Operations\" && section.children none { }",
+      "query": "from nodes where _kind == \"md:section\" && _name == \"Operations\" && $it._children none { }",
       "expect": {
         "hits": [
           {
-            "id": "n_7dd6472a3b76",
-            "path": "/processes/magnum-opus.md"
+            "_id": "n_7dd6472a3b76",
+            "_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -545,20 +545,20 @@
     {
       "name": "section-relations-empty-for-non-sections",
       "notes": "§1.2: a node without first_ordinal has no section range.",
-      "query": "from nodes where kind == \"md:wikilink\" && path == \"index.md\" && section.blocks none { } && section.subsections none { } && section.children none { }",
+      "query": "from nodes where _kind == \"md:wikilink\" && _path == \"index.md\" && $it._blocks none { } && $it._subsections none { } && $it._children none { }",
       "expect": {
         "hits": [
           {
-            "id": "n_2b97e0669ebf",
-            "path": "/index.md"
+            "_id": "n_2b97e0669ebf",
+            "_path": "/index.md"
           },
           {
-            "id": "n_9e25b3a6f1e2",
-            "path": "/index.md"
+            "_id": "n_9e25b3a6f1e2",
+            "_path": "/index.md"
           },
           {
-            "id": "n_a3da662b7b99",
-            "path": "/index.md"
+            "_id": "n_a3da662b7b99",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
@@ -568,60 +568,60 @@
     },
     {
       "name": "entries-attrs",
-      "query": "from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $it }",
+      "query": "from nodes where _kind == \"md:task\" && entries(_attrs) exists { where $key == \"checked\" && $it }",
       "expect": {
         "hits": [
           {
-            "id": "n_76ca98c76e72",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "n_76ca98c76e72",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "n_8ba7a99b8dc8",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "n_8ba7a99b8dc8",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "n_a38c158ec928",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "n_a38c158ec928",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "n_a529ba23cf73",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "n_a529ba23cf73",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "n_2e8a5838db6b",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "n_2e8a5838db6b",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "n_5a13cfab2180",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "n_5a13cfab2180",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "n_357046fac2d7",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "n_357046fac2d7",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "n_8de6e5be907a",
-            "path": "/processes/calcination.md"
+            "_id": "n_8de6e5be907a",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "n_be4921dc65fb",
-            "path": "/processes/coagulation.md"
+            "_id": "n_be4921dc65fb",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "n_5748b042ed66",
-            "path": "/processes/dissolution.md"
+            "_id": "n_5748b042ed66",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "n_97bfcde79e87",
-            "path": "/processes/dissolution.md"
+            "_id": "n_97bfcde79e87",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "n_0ddcacdef653",
-            "path": "/substances/salt.md"
+            "_id": "n_0ddcacdef653",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "n_6d35d6b1d52b",
-            "path": "/substances/salt.md"
+            "_id": "n_6d35d6b1d52b",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -631,12 +631,12 @@
     },
     {
       "name": "entries-attrs-keys",
-      "query": "select ks: entries(attrs) collect { $key values } from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select ks: entries(_attrs) collect { $key values } from nodes where _kind == \"md:section\" && _name == \"Supplies\"",
       "expect": {
         "hits": [
           {
-            "id": "n_de68e55098c0",
-            "path": "/substances/salt.md",
+            "_id": "n_de68e55098c0",
+            "_path": "/substances/salt.md",
             "ks": [
               "level",
               "first_ordinal",
@@ -651,18 +651,18 @@
     },
     {
       "name": "text",
-      "query": "select value from nodes where kind == \"md:task\" && text(\"recrystallization\")",
+      "query": "select _value from nodes where _kind == \"md:task\" && text(\"recrystallization\")",
       "expect": {
         "hits": [
           {
-            "id": "n_5a13cfab2180",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Four recrystallization cycles with weights"
+            "_id": "n_5a13cfab2180",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Four recrystallization cycles with weights"
           },
           {
-            "id": "n_be4921dc65fb",
-            "path": "/processes/coagulation.md",
-            "value": "Recrystallize alum three times and weigh each crop"
+            "_id": "n_be4921dc65fb",
+            "_path": "/processes/coagulation.md",
+            "_value": "Recrystallize alum three times and weigh each crop"
           }
         ],
         "truncated": false,
@@ -673,59 +673,59 @@
     {
       "name": "no-relations-beyond-section",
       "notes": "an unknown navigation resolves to no rows / undefined, not an error — unless it is spelled like a target (`nodes` on a node row is the §1.1 bare-target error: `query-root::bare-target-nodes-on-node-row`).",
-      "query": "select x: out_links from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "query": "select x: out_links from nodes where _kind == \"md:section\" && _name == \"Supplies\"",
       "expect": {
         "hits": [
           {
-            "id": "n_de68e55098c0",
-            "path": "/substances/salt.md"
+            "_id": "n_de68e55098c0",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`out_links` is not a field of nodes and no node in this repository carries a property by that name"
+          "no node in this repository carries a property `out_links`"
         ]
       }
     },
     {
       "name": "nodes-page",
-      "query": "from nodes where kind == \"md:section\"",
+      "query": "from nodes where _kind == \"md:section\"",
       "limit": 8,
       "expect": {
         "hits": [
           {
-            "id": "n_02a726d87530",
-            "path": "/index.md"
+            "_id": "n_02a726d87530",
+            "_path": "/index.md"
           },
           {
-            "id": "n_954c2a2e7827",
-            "path": "/index.md"
+            "_id": "n_954c2a2e7827",
+            "_path": "/index.md"
           },
           {
-            "id": "n_9a4ee5d86524",
-            "path": "/index.md"
+            "_id": "n_9a4ee5d86524",
+            "_path": "/index.md"
           },
           {
-            "id": "n_ae30b4dd2bc4",
-            "path": "/index.md"
+            "_id": "n_ae30b4dd2bc4",
+            "_path": "/index.md"
           },
           {
-            "id": "n_af1ccbb7f166",
-            "path": "/index.md"
+            "_id": "n_af1ccbb7f166",
+            "_path": "/index.md"
           },
           {
-            "id": "n_e8c37ec9c6b9",
-            "path": "/index.md"
+            "_id": "n_e8c37ec9c6b9",
+            "_path": "/index.md"
           },
           {
-            "id": "n_f6c01f1f689a",
-            "path": "/index.md"
+            "_id": "n_f6c01f1f689a",
+            "_path": "/index.md"
           },
           {
-            "id": "n_029183976096",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "n_029183976096",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": true,
@@ -736,12 +736,12 @@
     {
       "name": "reach-through-identity-is-the-foreign-key",
       "notes": "§1 foreign-key elimination (3.0): `block.id`, `block.path` and `block.doc_id` on a node are the node's own block_id / path / doc_id — no block lookup; `block.type` still reaches the block.",
-      "query": "select a: block.id, b: block_id, c: block.path, d: block.doc_id, e: doc_id, t: block.type from nodes where kind == \"md:task\" && path == \"substances/salt.md\"",
+      "query": "select a: _block._id, b: _block_id, c: _block._path, d: _block._doc_id, e: _doc_id, t: _block._type from nodes where _kind == \"md:task\" && _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "n_0ddcacdef653",
-            "path": "/substances/salt.md",
+            "_id": "n_0ddcacdef653",
+            "_path": "/substances/salt.md",
             "a": "b_279",
             "b": "b_279",
             "c": "/substances/salt.md",
@@ -750,8 +750,8 @@
             "t": "task"
           },
           {
-            "id": "n_6d35d6b1d52b",
-            "path": "/substances/salt.md",
+            "_id": "n_6d35d6b1d52b",
+            "_path": "/substances/salt.md",
             "a": "b_280",
             "b": "b_280",
             "c": "/substances/salt.md",

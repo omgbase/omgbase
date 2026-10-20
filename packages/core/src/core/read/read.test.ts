@@ -60,8 +60,8 @@ describe("docsRead — whole-document read", () => {
   it("returns the complete file bytes verbatim (fences, tables, frontmatter)", () => {
     const { docId } = ingest(WITH_FM);
     const res = docsRead(store!, docId);
-    expect(res?.raw).toBe(WITH_FM);
-    expect(res?.path).toBe("/a.md");
+    expect(res?._raw).toBe(WITH_FM);
+    expect(res?._path).toBe("/a.md");
     expect(res?.rev).toMatch(/^r/);
   });
 
@@ -78,7 +78,7 @@ describe("docsRead — whole-document read", () => {
     const yaml = "database:\n  host: localhost\n  port: 5432\nauth: token\n";
     const { docId } = ingest(yaml, "config.yaml");
     const res = docsRead(store!, docId);
-    expect(res?.raw).toBe(yaml);
+    expect(res?._raw).toBe(yaml);
     const fm = res!.properties.frontmatter!;
     expect(fm["database.host"]).toBe("localhost");
     expect(fm["auth"]).toBe("token");
@@ -117,7 +117,7 @@ describe("docsRead — whole-document read", () => {
 
   it("round-trips a document with no frontmatter byte-for-byte", () => {
     const { docId } = ingest(SAMPLE);
-    expect(docsRead(store!, docId)?.raw).toBe(SAMPLE);
+    expect(docsRead(store!, docId)?._raw).toBe(SAMPLE);
   });
 });
 
@@ -139,8 +139,8 @@ describe("docsReadMany — batch whole-document read", () => {
     const res = docsReadMany(store!, repoId, ["a.md", "b.md"]);
     expect(res.errors).toEqual([]);
     expect(res.truncated).toBe(false);
-    expect(res.items.map((i) => i.path)).toEqual(["/a.md", "/b.md"]);
-    expect(res.items[0]!.raw).toBe("# A\n\nalpha body\n");
+    expect(res.items.map((i) => i._path)).toEqual(["/a.md", "/b.md"]);
+    expect(res.items[0]!._raw).toBe("# A\n\nalpha body\n");
     expect(res.items[1]!.properties.frontmatter).toEqual({ layer: "canon" });
   });
 
@@ -149,7 +149,7 @@ describe("docsReadMany — batch whole-document read", () => {
     const docId = (store!.db.prepare("SELECT doc_id FROM docs WHERE path='a.md'").get() as { doc_id: string }).doc_id;
     const res = docsReadMany(store!, repoId, [docId], { includeIds: true });
     expect(res.items).toHaveLength(1);
-    expect(res.items[0]!.id).toBe(docId);
+    expect(res.items[0]!._id).toBe(docId);
     expect(res.items[0]!.ids!.length).toBeGreaterThan(0);
     expect(res.items[0]!.ids![0]).toMatch(/^b_/);
   });
@@ -157,7 +157,7 @@ describe("docsReadMany — batch whole-document read", () => {
   it("puts unresolvable refs in errors without failing the call", () => {
     const { repoId } = ingestMany([{ path: "a.md", content: "# A\n\nalpha body\n" }]);
     const res = docsReadMany(store!, repoId, ["a.md", "missing.md", "d_0000000"]);
-    expect(res.items.map((i) => i.path)).toEqual(["/a.md"]);
+    expect(res.items.map((i) => i._path)).toEqual(["/a.md"]);
     expect(res.errors).toEqual([
       { ref: "missing.md", error: "doc_not_found" },
       { ref: "d_0000000", error: "doc_not_found" },
@@ -170,7 +170,7 @@ describe("docsReadMany — batch whole-document read", () => {
       { path: "b.md", content: "# B\n\nbeta body\n" },
     ]);
     const res = docsReadMany(store!, repoId, ["a.md", "b.md", "a.md", "a.md"]);
-    expect(res.items.map((i) => i.path)).toEqual(["/a.md", "/b.md"]);
+    expect(res.items.map((i) => i._path)).toEqual(["/a.md", "/b.md"]);
   });
 
   it("caps the ref list and flags truncation", () => {
@@ -196,7 +196,7 @@ describe("docsReadMany — batch whole-document read", () => {
     // spec/surface §2 (1.2): the first item ships even when it alone exceeds the
     // budget (the budget is checked before the second item onward).
     expect(res.items.length).toBe(1);
-    expect(res.items[0]!.path).toBe("/a.md");
+    expect(res.items[0]!._path).toBe("/a.md");
   });
 });
 
@@ -206,10 +206,10 @@ describe("nodesGet — resolution ladder", () => {
     const roots = loadDocBlocks(store!, docId);
     const heading = roots[0]!;
     const node = nodesGet(store!, docId, heading.blockId, { resolution: "full" });
-    expect(node?.raw).toBe("# Risks");
-    expect(node?.text).toBe("Risks");
-    expect(node?.attrs?.level).toBe(1);
-    expect(node?.depth).toBe(0);
+    expect(node?._raw).toBe("# Risks");
+    expect(node?._text).toBe("Risks");
+    expect(node?._attrs?.level).toBe(1);
+    expect(node?._depth).toBe(0);
   });
 
   it("raw resolution returns exact source bytes", () => {
@@ -217,7 +217,7 @@ describe("nodesGet — resolution ladder", () => {
     const roots = loadDocBlocks(store!, docId);
     const para = roots[1]!;
     const node = nodesGet(store!, docId, para.blockId, { resolution: "raw" });
-    expect(node?.raw).toBe("Stable block identity is quite difficult to achieve in practice.");
+    expect(node?._raw).toBe("Stable block identity is quite difficult to achieve in practice.");
   });
 
   it("raw/full resolutions expose the block's hash (the CAS value)", () => {
@@ -226,10 +226,10 @@ describe("nodesGet — resolution ladder", () => {
     const para = roots[1]!;
     const rawNode = nodesGet(store!, docId, para.blockId, { resolution: "raw" });
     const fullNode = nodesGet(store!, docId, para.blockId, { resolution: "full" });
-    expect(rawNode?.hash).toBe(para.rawHashHex);
-    expect(fullNode?.hash).toBe(para.rawHashHex);
+    expect(rawNode?._hash).toBe(para.rawHashHex);
+    expect(fullNode?._hash).toBe(para.rawHashHex);
     // Lean resolutions stay lean — no hash.
-    expect(nodesGet(store!, docId, para.blockId, { resolution: "text" })?.hash).toBeUndefined();
+    expect(nodesGet(store!, docId, para.blockId, { resolution: "text" })?._hash).toBeUndefined();
   });
 
   it("returns null for unknown block", () => {
@@ -267,7 +267,7 @@ describe("nodesGetMany", () => {
     const ids = [c2!, a1!, "b_nope", b2!, a2!, c1!, b1!];
 
     const res = nodesGetMany(store!, null, ids, { resolution: "text" });
-    expect(res.nodes.map((n) => n.id)).toEqual([c2, a1, b2, a2, c1, b1]);
+    expect(res.nodes.map((n) => n._id)).toEqual([c2, a1, b2, a2, c1, b1]);
     expect(res.unresolved).toEqual(["b_nope"]);
     expect(res.truncated).toBe(false);
   });
@@ -280,7 +280,7 @@ describe("nodesGetMany", () => {
     const bIds = loadDocBlocks(store!, b).map((r) => r.blockId);
 
     const res = nodesGetMany(store!, a, [...aIds, ...bIds]);
-    expect(res.nodes.map((n) => n.id)).toEqual(aIds);
+    expect(res.nodes.map((n) => n._id)).toEqual(aIds);
     expect(res.unresolved).toEqual(bIds);
   });
 });
@@ -315,15 +315,15 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     const { docId, revs, hashes } = ingestRevs("guide.md", [V1, V2, V3]);
     const res = readDocumentAtRevision(store!, docId, revs[0]!);
     expect(res).not.toBeNull();
-    expect(res!.raw).toBe(V1);
+    expect(res!._raw).toBe(V1);
     expect(res!.renderedHashMatch).toBe(true);
-    expect(sha256(res!.raw).equals(hashes[0]!)).toBe(true);
+    expect(sha256(res!._raw).equals(hashes[0]!)).toBe(true);
   });
 
   it("reconstructs a middle revision byte-for-byte", () => {
     const { docId, revs } = ingestRevs("guide.md", [V1, V2, V3]);
     const res = readDocumentAtRevision(store!, docId, revs[1]!);
-    expect(res!.raw).toBe(V2);
+    expect(res!._raw).toBe(V2);
     expect(res!.renderedHashMatch).toBe(true);
   });
 
@@ -331,8 +331,8 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     const { docId, revs } = ingestRevs("guide.md", [V1, V2, V3]);
     const current = docsRead(store!, docId)!;
     const at = readDocumentAtRevision(store!, docId, revs[2]!)!;
-    expect(at.raw).toBe(current.raw);
-    expect(at.raw).toBe(V3);
+    expect(at._raw).toBe(current._raw);
+    expect(at._raw).toBe(V3);
     expect(at.renderedHashMatch).toBe(true);
   });
 
@@ -341,10 +341,10 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     const nestedV2 = nestedV1 + "\n> a trailing blockquote\n> spanning two lines\n";
     const { docId, revs } = ingestRevs("tasks.md", [nestedV1, nestedV2]);
     const res = readDocumentAtRevision(store!, docId, revs[0]!)!;
-    expect(res.raw).toBe(nestedV1);
+    expect(res._raw).toBe(nestedV1);
     // The top-level-only walk still yields the nested children verbatim.
-    expect(res.raw).toContain("  - child a");
-    expect(res.raw).toContain("  - child b");
+    expect(res._raw).toContain("  - child a");
+    expect(res._raw).toContain("  - child b");
     expect(res.renderedHashMatch).toBe(true);
   });
 
@@ -366,7 +366,7 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
   it("carries no properties (spec/surface 4.7: the table is current-state only; through 4.6 the current bag rode along flagged propertiesAreCurrent)", () => {
     const { docId, revs } = ingestRevs("guide.md", [V1, V2]);
     const res = readDocumentAtRevision(store!, docId, revs[0]!)!;
-    expect(Object.keys(res).sort()).toEqual(["id", "path", "raw", "renderedHashMatch", "rev"]);
+    expect(Object.keys(res).sort()).toEqual(["_id", "_path", "_raw", "renderedHashMatch", "rev"]);
   });
 });
 

@@ -26,24 +26,24 @@
     {
       "name": "tier-1-attributes-handles-and-relations-are-silent",
       "notes": "§1.5: every engine attribute, handle and relation of the kind is known — no `hints` member at all (never `[]`).",
-      "query": "select title, tags, path, l: out_links count { } from docs where blocks exists { where type == \"task\" and checked } order by path limit 2",
+      "query": "select _title, _tags, _path, l: _out_links count { } from docs where _blocks exists { where _type == \"task\" and checked } order by _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
-            "title": "Laboratory notes — January",
-            "tags": [
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_title": "Laboratory notes — January",
+            "_tags": [
               "lab",
               "calcination"
             ],
             "l": 3
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
-            "title": "Laboratory notes — February",
-            "tags": [
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_title": "Laboratory notes — February",
+            "_tags": [
               "lab",
               "coagulation"
             ],
@@ -58,23 +58,23 @@
     {
       "name": "tier-2-a-property-some-documents-carry-is-silent",
       "notes": "§1.5: `stage` is authored on three processes only; partial presence is the data model working, not a mistake.",
-      "query": "select title, stage from docs order by path limit 3",
+      "query": "select _title, stage from docs order by _path limit 3",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
-            "title": "Alchemy"
+            "_id": "d_0",
+            "_path": "/index.md",
+            "_title": "Alchemy"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
-            "title": "Laboratory notes — January"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_title": "Laboratory notes — January"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
-            "title": "Laboratory notes — February"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_title": "Laboratory notes — February"
           }
         ],
         "truncated": false,
@@ -85,12 +85,12 @@
     {
       "name": "tier-2-an-attrs-key-some-blocks-carry-is-silent",
       "notes": "§1.5: `lang` is an attrs key only code fences carry; a block's bare name reads `attrs`, so the vocabulary is the attrs keys live blocks hold.",
-      "query": "select lang from blocks where type == \"code_fence\" limit 1",
+      "query": "select lang from blocks where _type == \"code_fence\" limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_36",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "b_36",
+            "_path": "/lab/2026-01-notes.md",
             "lang": "text"
           }
         ],
@@ -102,37 +102,37 @@
     {
       "name": "tier-3-in-select-is-a-hint-and-the-rows-still-come-back",
       "notes": "§1.5: `titel` is no field and no document carries it — the projection is absent in every hit, and `hints` says why, with the nearest match (distance 1).",
-      "query": "select titel from docs order by path limit 2",
+      "query": "select titel from docs order by _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "tier-3-in-where-matches-nothing-and-is-a-hint",
       "notes": "§1.5: a misspelled name in `where` is invisible without the hint — `layr == \"canon\"` is false of every row.",
-      "query": "select path from docs where layr == \"canon\"",
+      "query": "select _path from docs where layr == \"canon\"",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
@@ -147,44 +147,44 @@
         "consumer": "count",
         "count": 20,
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
     {
       "name": "tier-3-in-order-by-is-a-hint",
       "notes": "§1.5: `order by` reads the row like `where`; `stag` is the prefix of `stage` (length ≥ 3) — the nearest match by distance 1.",
-      "query": "select path from docs order by stag, path limit 2",
+      "query": "select _path from docs order by stag, _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?"
+          "no document in this repository carries a property `stag`; did you mean `stage`?"
         ]
       }
     },
     {
       "name": "tier-3-in-a-nested-block-is-judged-against-the-block-receiver-kind",
       "notes": "§1.5: `txt` inside `blocks exists { … }` is judged against blocks, not docs; a method's receiver is a reference, its name is not.",
-      "query": "select path from docs where blocks exists { where txt.contains(\"fire\") }",
+      "query": "select _path from docs where _blocks exists { where txt.contains(\"fire\") }",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`txt` is not a field of blocks and no block in this repository carries a property by that name; did you mean `text`?"
+          "no block in this repository carries a property `txt`; did you mean `_text`?"
         ]
       }
     },
@@ -198,147 +198,147 @@
         "consumer": "count",
         "count": 0,
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "tier-3-dotted-name-no-key-or-prefix-matches",
       "notes": "§1.5: `meta.owner` is judged as the flattened key the properties table would store; no key equals it or extends it, and nothing is near it.",
-      "query": "select owner: meta.owner from docs order by path limit 1",
+      "query": "select owner: meta.owner from docs order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`meta.owner` is not a field of docs and no document in this repository carries a property by that name"
+          "no document in this repository carries a property `meta.owner`"
         ]
       }
     },
     {
       "name": "tier-3-a-dotted-tail-under-a-known-scalar-key",
       "notes": "§1.5: `stage.x` is unknown as a whole (`stage` is a scalar key, not a map); the nearest match is the key it extends.",
-      "query": "select s: stage.x from docs order by path limit 1",
+      "query": "select s: stage.x from docs order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`stage.x` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?"
+          "no document in this repository carries a property `stage.x`; did you mean `stage`?"
         ]
       }
     },
     {
       "name": "tier-3-under-a-source-handle-is-the-handle-form-of-the-hint",
       "notes": "§1.5: `data.path` is the author's `path:` key by construction, so the hint does not call it a non-field; the nearest match comes from the authored keys alone (none here).",
-      "query": "select p: data.path from docs order by path limit 1",
+      "query": "select p: _data.path from docs order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "no document in this repository carries a property `path` (`data.path`)"
+          "no document in this repository carries a property `path` (`_data.path`)"
         ]
       }
     },
     {
       "name": "tier-3-through-a-reach-through-handle-is-judged-against-the-reached-kind",
       "notes": "§1.5: `doc.layr` on a block row reaches the owning document, so `layr` is judged against docs.",
-      "query": "select doc.layr from blocks order by path limit 1",
+      "query": "select _doc.layr from blocks order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_0",
-            "path": "/index.md"
+            "_id": "b_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
     {
       "name": "tier-3-through-a-relation-is-judged-against-the-relation-kind",
-      "query": "select children.txt from blocks where type == \"list\" order by path limit 1",
+      "query": "select _children.txt from blocks where _type == \"list\" order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_14",
-            "path": "/index.md"
+            "_id": "b_14",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`txt` is not a field of blocks and no block in this repository carries a property by that name; did you mean `text`?"
+          "no block in this repository carries a property `txt`; did you mean `_text`?"
         ]
       }
     },
     {
       "name": "tier-3-in-a-follow-destination-block-after-from-dst",
       "notes": "§1.5: inside `out_links collect { from dst … }` the rows are documents again (`dst`), so `layr` is judged against docs.",
-      "query": "select path from docs where path == \"/index.md\" follow out_links collect { from dst where layr == \"canon\" }",
+      "query": "select _path from docs where _path == \"/index.md\" follow _out_links collect { from _dst where layr == \"canon\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
     {
       "name": "tier-3-outer-reference-is-judged-in-its-own-scope",
       "notes": "§1.5: `^titel` from the blocks block reads the enclosing document row — judged against docs.",
-      "query": "select path from docs where blocks exists { where text == ^titel }",
+      "query": "select _path from docs where _blocks exists { where _text == ^titel }",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "tier-3-in-a-root-lookup-is-judged-against-the-looked-up-kind",
-      "query": "select path from docs where ^docs exists { where layr == ^layer }",
+      "query": "select _path from docs where ^docs exists { where layr == ^layer }",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
@@ -352,156 +352,156 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?",
-          "`stag` is not a field of docs and no document in this repository carries a property by that name; did you mean `stage`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?",
+          "no document in this repository carries a property `stag`; did you mean `stage`?"
         ]
       }
     },
     {
       "name": "no-nearest-match-no-suggestion-clause",
       "notes": "§1.5: `preview` is within distance 2 of nothing a block knows and is no substring — the hint ends at the noun.",
-      "query": "select id, type, preview from blocks order by path limit 1",
+      "query": "select _id, _type, preview from blocks order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_0",
-            "path": "/index.md",
-            "type": "heading"
+            "_id": "b_0",
+            "_path": "/index.md",
+            "_type": "heading"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`preview` is not a field of blocks and no block in this repository carries a property by that name"
+          "no block in this repository carries a property `preview`"
         ]
       }
     },
     {
       "name": "value-on-blocks-has-no-suggestion",
       "notes": "§1.5: pinned truth — `value` is not within the rule's reach of `text` (distance 5, no substring), so no clause; a YAML repository would know `value` as an attrs key.",
-      "query": "select type, value from blocks order by path limit 1",
+      "query": "select _type, value from blocks order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_0",
-            "path": "/index.md",
-            "type": "heading"
+            "_id": "b_0",
+            "_path": "/index.md",
+            "_type": "heading"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`value` is not a field of blocks and no block in this repository carries a property by that name"
+          "no block in this repository carries a property `value`"
         ]
       }
     },
     {
       "name": "nearest-match-by-transposition",
-      "query": "select ttile from docs order by path limit 1",
+      "query": "select ttile from docs order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`ttile` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `ttile`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "nearest-match-a-one-letter-name-reaches-id",
       "notes": "§1.5: pinned truth of the rule as decided — `x` is within distance 2 of `id` (the shortest, alphabetically first candidate at that distance).",
-      "query": "select x from docs order by path limit 1",
+      "query": "select x from docs order by _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`x` is not a field of docs and no document in this repository carries a property by that name"
+          "no document in this repository carries a property `x`"
         ]
       }
     },
     {
       "name": "tier-3-on-nodes-is-a-hint",
       "notes": "§1.5: nodes read `attrs` by bare name like blocks; `checked` is carried by the task nodes, `checkd` by none.",
-      "query": "select path from docs where nodes exists { where kind == \"md:task\" and not checkd }",
+      "query": "select _path from docs where _nodes exists { where _kind == \"md:task\" and not checkd }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`checkd` is not a field of nodes and no node in this repository carries a property by that name; did you mean `checked`?"
+          "no node in this repository carries a property `checkd`; did you mean `checked`?"
         ]
       }
     },
     {
       "name": "order-by-an-alias-reads-the-row-and-is-a-hint",
       "notes": "§1.5 / spec/oqx SEMANTICS §17: `order by n` is never rewritten against the select — it reads the node row's `n`, which no node carries.",
-      "query": "select n: name from nodes order by n, path limit 1",
+      "query": "select n: _name from nodes order by n, _path limit 1",
       "expect": {
         "hits": [
           {
-            "id": "n_02a726d87530",
-            "path": "/index.md",
+            "_id": "n_02a726d87530",
+            "_path": "/index.md",
             "n": "Alchemy"
           }
         ],
@@ -509,7 +509,7 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`n` is not a field of nodes and no node in this repository carries a property by that name"
+          "no node in this repository carries a property `n`"
         ]
       }
     },
@@ -523,13 +523,13 @@
         "consumer": "exists",
         "exists": false,
         "hints": [
-          "`layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?"
+          "no document in this repository carries a property `layr`; did you mean `layer`?"
         ]
       }
     },
     {
       "name": "bare-hits-carry-hints",
-      "query": "select titel from docs order by path limit 1",
+      "query": "select titel from docs order by _path limit 1",
       "bare": true,
       "expect": {
         "hits": [
@@ -539,13 +539,13 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "values-carry-hints",
-      "query": "select titel values from docs order by path limit 1",
+      "query": "select titel values from docs order by _path limit 1",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -555,25 +555,25 @@
           null
         ],
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
     {
       "name": "links-tier-3-in-select-is-an-error",
       "notes": "§1.5: links have a closed row shape; the error lists the fields in the binding's order. `target` is near nothing — pinned truth: `dst_path` is not reachable by the rule.",
-      "query": "select path, target from links",
+      "query": "select _path, target from links",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)"
+        "message_includes": "`target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)"
       }
     },
     {
       "name": "links-tier-3-in-where-is-an-error",
-      "query": "select path from links where target == \"/index.md\"",
+      "query": "select _path from links where target == \"/index.md\"",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)"
+        "message_includes": "`target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)"
       }
     },
     {
@@ -581,7 +581,7 @@
       "query": "select dst_pth from links",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`dst_pth` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `dst_path`?"
+        "message_includes": "`dst_pth` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block); did you mean `_dst_path`?"
       }
     },
     {
@@ -590,28 +590,28 @@
       "query": "select via from links",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`via` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor); did you mean `via_id`?"
+        "message_includes": "`via` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block); did you mean `_via_id`?"
       }
     },
     {
       "name": "links-nested-in-a-docs-query-is-an-error",
-      "query": "select l: out_links collect { select dst_path, target } from docs order by path limit 1",
+      "query": "select l: _out_links collect { select _dst_path, target } from docs order by _path limit 1",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)"
+        "message_includes": "`target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)"
       }
     },
     {
       "name": "links-reached-through-dst-judge-against-docs",
       "notes": "§1.5: `dst.titel` on a link reaches the destination document, so it is a docs hint, not a links error.",
-      "query": "select dst_path from links where dst.titel == \"x\"",
+      "query": "select _dst_path from links where _dst.titel == \"x\"",
       "expect": {
         "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     },
@@ -621,22 +621,22 @@
       "query": "select commited from revisions",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`commited` is not a field of revisions (fields: id, path, rev, seq, doc_id, commit, ts, origin, actor, reason, hash, is_current, archived); did you mean `commit`?"
+        "message_includes": "`commited` reads an authored property, and a revision carries none (engine names: _id, _path, _rev, _seq, _doc_id, _commit, _ts, _origin, _actor, _reason, _hash, _is_current, _archived, _doc)"
       }
     },
     {
       "name": "revisions-relation-and-doc-handle-are-known",
       "notes": "§1.5 tier 1 on the new kind: `revisions` is a relation of docs and `is_current`/`origin` attributes of a revision row — nothing to say.",
-      "query": "select path from docs where revisions exists { where is_current and origin == \"observed\" } order by path limit 2",
+      "query": "select _path from docs where _revisions exists { where _is_current and _origin == \"observed\" } order by _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -647,20 +647,20 @@
     {
       "name": "revisions-doc-handle-reaches-the-docs-vocabulary",
       "notes": "§1.5: through `doc` a revision row reads a document, so a tier-3 name there is the docs hint.",
-      "query": "select rev, t: doc.titel from revisions order by path, id limit 1",
+      "query": "select _rev, t: _doc.titel from revisions order by _path, _id limit 1",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "rev": "r_0"
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_rev": "r_0"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?"
+          "no document in this repository carries a property `titel`; did you mean `title`?"
         ]
       }
     }

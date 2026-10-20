@@ -8,8 +8,9 @@ import { remoteCall } from "./_remote.js";
 
 type FindHit = ReturnType<typeof resolveThing>[number];
 
-// `omg find <text>` (11 §5.2) — resolve: ranked {id, locator, preview,
-// evidence}. `-1` prints the top hit's id alone (pipe fuel: omg cat $(omg find … -1)).
+// `omg find <text>` (11 §5.2) — resolve: ranked {_id, locator, preview,
+// evidence} (spec/surface §4 `blocks_resolve`, 5.0). `-1` prints the top hit's
+// id alone (pipe fuel: omg cat $(omg find … -1)).
 
 async function runFind(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -70,10 +71,10 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
 
   // -1: bare top id.
   if (values.one) {
-    if (hits[0]) cli.io.out(hits[0].id);
+    if (hits[0]) cli.io.out(hits[0]._id);
     return EXIT_OK;
   }
-  if (cli.flags.mode !== "human") return emitMachine(cli, hits, { items: hits, ids: hits.map((h) => h.id) });
+  if (cli.flags.mode !== "human") return emitMachine(cli, hits, { items: hits, ids: hits.map((h) => h._id) });
 
   const { style, io } = cli;
   if (hits.length === 0) {
@@ -81,7 +82,7 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
   for (const h of hits) {
-    io.out(`${style.id(h.id)}  ${style.accent(h.locator)}  ${h.preview}`);
+    io.out(`${style.id(h._id)}  ${style.accent(h.locator)}  ${h.preview}`);
     if (values.verbose) io.err(style.dim(`    ${JSON.stringify(h.evidence)}`));
   }
   return EXIT_OK;

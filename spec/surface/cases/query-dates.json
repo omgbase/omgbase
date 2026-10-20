@@ -26,7 +26,7 @@
     {
       "name": "named-points-under-the-corpus-clock",
       "notes": "§1.3 (4.8): every named point against the host clock, UTC — the corpus clock 2026-09-27T00:00:00.000Z (a Sunday). `now` is the instant with milliseconds, as the store stamps commits; the rest are date-only; `sow`/`eow` are Monday/Sunday.",
-      "query": "select now: date(\"now\"), today: date(\"today\"), yesterday: date(\"yesterday\"), tomorrow: date(\"tomorrow\"), sow: date(\"sow\"), eow: date(\"eow\"), som: date(\"som\"), eom: date(\"eom\"), soy: date(\"soy\"), eoy: date(\"eoy\") from docs where path == \"/index.md\"",
+      "query": "select now: date(\"now\"), today: date(\"today\"), yesterday: date(\"yesterday\"), tomorrow: date(\"tomorrow\"), sow: date(\"sow\"), eow: date(\"eow\"), som: date(\"som\"), eom: date(\"eom\"), soy: date(\"soy\"), eoy: date(\"eoy\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -51,7 +51,7 @@
     {
       "name": "named-points-case-and-space-insensitive",
       "notes": "§1.3: a named point is matched trimmed and case-insensitively.",
-      "query": "select a: date(\"Today\"), b: date(\" now \"), c: date(\"EOM\") from docs where path == \"/index.md\"",
+      "query": "select a: date(\"Today\"), b: date(\" now \"), c: date(\"EOM\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -69,7 +69,7 @@
     {
       "name": "canonical-forms",
       "notes": "§1.3: an ISO-8601 string comes back canonical — date-only stays date-only; a time gains its seconds, keeps a fraction as three digits, `+00:00` and a missing offset become `Z`, another offset is kept as written, a space separator becomes `T`; a canonical input is unchanged.",
-      "query": "select a: date(\"2026-10-15\"), b: date(\"2026-10-15T09:00:00Z\"), c: date(\"2026-10-15T09:00:00+00:00\"), d: date(\"2026-10-15T09:00:00+02:00\"), e: date(\"2026-10-15T09:00\"), f: date(\"2026-10-15 09:00:00\"), g: date(\"2026-10-15T09:00:00.5Z\"), h: date(\"2026-09-27T00:00:00.000Z\"), i: date(\"2026-10-15T09:00:00-0500\") from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-10-15\"), b: date(\"2026-10-15T09:00:00Z\"), c: date(\"2026-10-15T09:00:00+00:00\"), d: date(\"2026-10-15T09:00:00+02:00\"), e: date(\"2026-10-15T09:00\"), f: date(\"2026-10-15 09:00:00\"), g: date(\"2026-10-15T09:00:00.5Z\"), h: date(\"2026-09-27T00:00:00.000Z\"), i: date(\"2026-10-15T09:00:00-0500\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -93,7 +93,7 @@
     {
       "name": "date-absent-on-bad-input",
       "notes": "§1.3: anything that is not an ISO date or a named point is absent — a non-ISO spelling, an out-of-range field (month 13, Feb 30, hour 24), a number, null, an absent property, a boolean.",
-      "query": "select a: date(\"15/10/2026\"), b: date(\"2026-13-01\"), c: date(\"2026-02-30\"), d: date(\"2026-10-15T24:00:00Z\"), e: date(5), f: date(null), g: date(nope), h: date(true), i: date(\"\") from docs where path == \"/index.md\"",
+      "query": "select a: date(\"15/10/2026\"), b: date(\"2026-13-01\"), c: date(\"2026-02-30\"), d: date(\"2026-10-15T24:00:00Z\"), e: date(5), f: date(null), g: date(nope), h: date(true), i: date(\"\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -113,24 +113,24 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "date-of-a-property",
       "notes": "§1.3: `date(when)` over the two timeline milestones' authored `when` (YAML strings) — canonical, and absent for the eighteen documents without one.",
-      "query": "select path, when: date(when) from docs where has(when) order by path",
+      "query": "select _path, when: date(when) from docs where has(when) order by _path",
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "when": "2026-01-05"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "when": "2026-02-27"
           }
         ],
@@ -142,7 +142,7 @@
     {
       "name": "dur-grammar",
       "notes": "§1.3: Dataview's `<number> <unit>` pairs — no spaces, spaces, commas, every unit family, abbreviations, case-insensitive, decimals; a month is 30 days and a year 365 here.",
-      "query": "select a: dur(\"1h30m\"), b: dur(\"1 hour 30 minutes\"), c: dur(\"2 days, 3 hours\"), d: dur(\"1 week\"), e: dur(\"1 month\"), f: dur(\"1 year\"), g: dur(\"90 seconds\"), h: dur(\"1.5h\"), i: dur(\"2 YRS\"), j: dur(\"3 wks 2 d\"), k: dur(\"5 mins\"), l: dur(\"10 secs\"), m: dur(\"2mo\") from docs where path == \"/index.md\"",
+      "query": "select a: dur(\"1h30m\"), b: dur(\"1 hour 30 minutes\"), c: dur(\"2 days, 3 hours\"), d: dur(\"1 week\"), e: dur(\"1 month\"), f: dur(\"1 year\"), g: dur(\"90 seconds\"), h: dur(\"1.5h\"), i: dur(\"2 YRS\"), j: dur(\"3 wks 2 d\"), k: dur(\"5 mins\"), l: dur(\"10 secs\"), m: dur(\"2mo\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -170,7 +170,7 @@
     {
       "name": "dur-iso-and-number",
       "notes": "§1.3: an ISO-8601 duration (`PnW`, `PnDTnHnMnS`) parses too, with the same month convention; a number is already seconds.",
-      "query": "select a: dur(\"PT1H30M\"), b: dur(\"P1DT2H\"), c: dur(\"P2W\"), d: dur(\"P1M\"), e: dur(\"PT0S\"), f: dur(\"P1Y2M3DT4H5M6S\"), g: dur(90), h: dur(1.5), i: dur(-60) from docs where path == \"/index.md\"",
+      "query": "select a: dur(\"PT1H30M\"), b: dur(\"P1DT2H\"), c: dur(\"P2W\"), d: dur(\"P1M\"), e: dur(\"PT0S\"), f: dur(\"P1Y2M3DT4H5M6S\"), g: dur(90), h: dur(1.5), i: dur(-60) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -194,7 +194,7 @@
     {
       "name": "dur-absent-on-bad-input",
       "notes": "§1.3: an empty string, an unknown unit, a bare number STRING (a unit is required), a bare `P`, null, a boolean, an absent property — all absent.",
-      "query": "select a: dur(\"\"), b: dur(\"abc\"), c: dur(\"3 fortnights\"), d: dur(\"90\"), e: dur(\"P\"), f: dur(null), g: dur(true), h: dur(nope), i: dur(\"1h 2x\") from docs where path == \"/index.md\"",
+      "query": "select a: dur(\"\"), b: dur(\"abc\"), c: dur(\"3 fortnights\"), d: dur(\"90\"), e: dur(\"P\"), f: dur(null), g: dur(true), h: dur(nope), i: dur(\"1h 2x\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -214,14 +214,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "plus-seconds-date-only",
       "notes": "§1.3: `plus(seconds)` — a date-only receiver shifted by whole days stays date-only (`dur(\"1 month\")` is 30 days here, so Jan 31 + 1 month is Mar 2); any other shift makes it a UTC datetime.",
-      "query": "select a: date(\"2026-01-31\").plus(86400), b: date(\"2026-01-31\").plus(dur(\"2 days\")), c: date(\"2026-01-31\").plus(3600), d: date(\"2026-01-31\").plus(dur(\"1 month\")), e: date(\"2026-01-31\").plus(0) from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-01-31\").plus(86400), b: date(\"2026-01-31\").plus(dur(\"2 days\")), c: date(\"2026-01-31\").plus(3600), d: date(\"2026-01-31\").plus(dur(\"1 month\")), e: date(\"2026-01-31\").plus(0) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -241,7 +241,7 @@
     {
       "name": "plus-duration-string-is-calendar-aware",
       "notes": "§1.3: a duration STRING argument moves the month/year field and clamps the day — Jan 31 + 1 month is Feb 28 (Feb 29 in a leap year), Feb 29 + 1 year is Feb 28; the fixed-length part is added after the calendar part; an ISO duration string is calendar-aware too.",
-      "query": "select a: date(\"2026-01-31\").plus(\"1 month\"), b: date(\"2024-01-31\").plus(\"1 month\"), c: date(\"2026-03-31\").minus(\"1 month\"), d: date(\"2026-02-28\").plus(\"1 year\"), e: date(\"2024-02-29\").plus(\"1 year\"), f: date(\"2026-01-31\").plus(\"1 month 1 day\"), g: date(\"2026-01-31\").plus(\"P1M\"), h: date(\"2026-11-15\").plus(\"3 months\"), i: date(\"2026-01-31T09:00:00Z\").plus(\"1 month\") from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-01-31\").plus(\"1 month\"), b: date(\"2024-01-31\").plus(\"1 month\"), c: date(\"2026-03-31\").minus(\"1 month\"), d: date(\"2026-02-28\").plus(\"1 year\"), e: date(\"2024-02-29\").plus(\"1 year\"), f: date(\"2026-01-31\").plus(\"1 month 1 day\"), g: date(\"2026-01-31\").plus(\"P1M\"), h: date(\"2026-11-15\").plus(\"3 months\"), i: date(\"2026-01-31T09:00:00Z\").plus(\"1 month\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -265,7 +265,7 @@
     {
       "name": "plus-datetime",
       "notes": "§1.3: a datetime receiver shifts by instant and keeps its written offset; a fractional second shows as `.fff`.",
-      "query": "select a: date(\"2026-10-15T09:00:00Z\").plus(dur(\"1h30m\")), b: date(\"2026-10-15T09:00:00+02:00\").plus(86400), c: date(\"2026-10-15T23:30:00Z\").plus(3600), d: date(\"2026-10-15T09:00:00Z\").plus(0.5), e: date(\"2026-10-15T09:00:00.000Z\").plus(60) from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-10-15T09:00:00Z\").plus(dur(\"1h30m\")), b: date(\"2026-10-15T09:00:00+02:00\").plus(86400), c: date(\"2026-10-15T23:30:00Z\").plus(3600), d: date(\"2026-10-15T09:00:00Z\").plus(0.5), e: date(\"2026-10-15T09:00:00.000Z\").plus(60) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -285,7 +285,7 @@
     {
       "name": "minus-and-negative-durations",
       "notes": "§1.3: `minus` is `plus` of the negation; a negative seconds count or a negative duration string goes the other way.",
-      "query": "select a: date(\"2026-01-01\").minus(dur(\"1 day\")), b: date(\"2026-01-01\").plus(-86400), c: date(\"2026-01-01\").minus(\"-1 day\"), d: date(\"2026-01-01T00:00:00Z\").minus(1) from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-01-01\").minus(dur(\"1 day\")), b: date(\"2026-01-01\").plus(-86400), c: date(\"2026-01-01\").minus(\"-1 day\"), d: date(\"2026-01-01T00:00:00Z\").minus(1) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -304,7 +304,7 @@
     {
       "name": "plus-absent-on-bad-input",
       "notes": "§1.3: an absent or non-date receiver, a non-duration argument, or a null argument is absent, never an error.",
-      "query": "select a: date(\"x\").plus(1), b: date(\"2026-01-01\").plus(\"bogus\"), c: date(\"2026-01-01\").plus(null), d: nope.plus(1), e: dur(5).plus(1), f: \"hello\".minus(3) from docs where path == \"/index.md\"",
+      "query": "select a: date(\"x\").plus(1), b: date(\"2026-01-01\").plus(\"bogus\"), c: date(\"2026-01-01\").plus(null), d: nope.plus(1), e: dur(5).plus(1), f: \"hello\".minus(3) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -321,14 +321,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "until",
       "notes": "§1.3: seconds from the receiver to the argument by instant — negative when the argument is earlier, zero when equal, across offsets, a date-only is its midnight UTC, a fraction survives, an absent side is absent.",
-      "query": "select a: date(\"2026-01-01\").until(date(\"2026-01-02\")), b: date(\"2026-01-02\").until(date(\"2026-01-01\")), c: date(\"2026-01-01\").until(date(\"2026-01-01\")), d: date(\"2026-10-15T09:00:00Z\").until(date(\"2026-10-15T10:30:00Z\")), e: date(\"2026-01-01T10:00:00+02:00\").until(date(\"2026-01-01T10:00:00Z\")), f: date(\"2026-01-01\").until(date(\"2026-01-01T06:00:00Z\")), g: date(\"2026-01-01T00:00:00Z\").until(date(\"2026-01-01T00:00:00.500Z\")), h: date(\"2026-01-01\").until(nope), i: nope.until(date(\"2026-01-01\")) from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-01-01\").until(date(\"2026-01-02\")), b: date(\"2026-01-02\").until(date(\"2026-01-01\")), c: date(\"2026-01-01\").until(date(\"2026-01-01\")), d: date(\"2026-10-15T09:00:00Z\").until(date(\"2026-10-15T10:30:00Z\")), e: date(\"2026-01-01T10:00:00+02:00\").until(date(\"2026-01-01T10:00:00Z\")), f: date(\"2026-01-01\").until(date(\"2026-01-01T06:00:00Z\")), g: date(\"2026-01-01T00:00:00Z\").until(date(\"2026-01-01T00:00:00.500Z\")), h: date(\"2026-01-01\").until(nope), i: nope.until(date(\"2026-01-01\")) from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -348,14 +348,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "fields",
       "notes": "§1.3: the fields in the written offset — `weekday` 1 = Monday … 7 = Sunday (2026-10-15 is a Thursday; 2026-09-21 a Monday; 2026-09-27 a Sunday); a date-only value's time fields are 0; `date()` is the date part as written (23:30 at -05:00 is still the 15th).",
-      "query": "select y: date(\"2026-10-15T09:05:07Z\").year(), mo: date(\"2026-10-15T09:05:07Z\").month(), d: date(\"2026-10-15T09:05:07Z\").day(), wd: date(\"2026-10-15T09:05:07Z\").weekday(), h: date(\"2026-10-15T09:05:07Z\").hour(), mi: date(\"2026-10-15T09:05:07Z\").minute(), s: date(\"2026-10-15T09:05:07Z\").second(), h0: date(\"2026-10-15\").hour(), mon: date(\"2026-09-21\").weekday(), sun: date(\"2026-09-27\").weekday(), dt: date(\"2026-10-15T09:05:07Z\").date(), dd: date(\"2026-10-15\").date(), off: date(\"2026-10-15T23:30:00-05:00\").date(), offh: date(\"2026-10-15T23:30:00-05:00\").hour(), frac: date(\"2026-10-15T09:05:07.900Z\").second() from docs where path == \"/index.md\"",
+      "query": "select y: date(\"2026-10-15T09:05:07Z\").year(), mo: date(\"2026-10-15T09:05:07Z\").month(), d: date(\"2026-10-15T09:05:07Z\").day(), wd: date(\"2026-10-15T09:05:07Z\").weekday(), h: date(\"2026-10-15T09:05:07Z\").hour(), mi: date(\"2026-10-15T09:05:07Z\").minute(), s: date(\"2026-10-15T09:05:07Z\").second(), h0: date(\"2026-10-15\").hour(), mon: date(\"2026-09-21\").weekday(), sun: date(\"2026-09-27\").weekday(), dt: date(\"2026-10-15T09:05:07Z\").date(), dd: date(\"2026-10-15\").date(), off: date(\"2026-10-15T23:30:00-05:00\").date(), offh: date(\"2026-10-15T23:30:00-05:00\").hour(), frac: date(\"2026-10-15T09:05:07.900Z\").second() from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -385,7 +385,7 @@
     {
       "name": "fields-absent-on-non-dates",
       "notes": "§1.3: a field of an absent, non-ISO or numeric receiver is absent.",
-      "query": "select a: nope.year(), b: \"abc\".year(), c: date(\"2026-13-01\").month(), d: dur(5).year(), e: nope.date(), f: \"2026-10\".day() from docs where path == \"/index.md\"",
+      "query": "select a: nope.year(), b: \"abc\".year(), c: date(\"2026-13-01\").month(), d: dur(5).year(), e: nope.date(), f: \"2026-10\".day() from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -402,14 +402,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "format",
       "notes": "§1.3: the tokens `yyyy MM dd HH mm ss MMM EEE`, longest match first, everything else literal (`MMMM` is `MMM` + a literal `M`; quotes are literal); a non-string pattern or a non-date receiver is absent.",
-      "query": "select a: date(\"2026-10-15T09:05:07Z\").format(\"yyyy-MM-dd HH:mm:ss\"), b: date(\"2026-10-15T09:05:07Z\").format(\"EEE dd MMM yyyy\"), c: date(\"2026-10-15T09:05:07Z\").format(\"dd/MM/yyyy\"), d: date(\"2026-10-15T09:05:07Z\").format(\"MMMM\"), e: date(\"2026-10-15T09:05:07Z\").format(\"yyyy 'at' HH\"), f: date(\"2026-01-05\").format(\"EEE\"), g: date(\"2026-01-05\").format(\"HH:mm\"), h: date(\"2026-10-15T09:05:07Z\").format(5), i: nope.format(\"yyyy\"), j: date(\"2026-10-15T09:05:07Z\").format(\"\"), k: date(\"2026-10-15T23:30:00-05:00\").format(\"dd HH\") from docs where path == \"/index.md\"",
+      "query": "select a: date(\"2026-10-15T09:05:07Z\").format(\"yyyy-MM-dd HH:mm:ss\"), b: date(\"2026-10-15T09:05:07Z\").format(\"EEE dd MMM yyyy\"), c: date(\"2026-10-15T09:05:07Z\").format(\"dd/MM/yyyy\"), d: date(\"2026-10-15T09:05:07Z\").format(\"MMMM\"), e: date(\"2026-10-15T09:05:07Z\").format(\"yyyy 'at' HH\"), f: date(\"2026-01-05\").format(\"EEE\"), g: date(\"2026-01-05\").format(\"HH:mm\"), h: date(\"2026-10-15T09:05:07Z\").format(5), i: nope.format(\"yyyy\"), j: date(\"2026-10-15T09:05:07Z\").format(\"\"), k: date(\"2026-10-15T23:30:00-05:00\").format(\"dd HH\") from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -431,14 +431,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "dur-text",
       "notes": "§1.3: `dur_text` on a number of seconds — days/hours/minutes/seconds, zero parts omitted, `0s` for zero, a leading `-`, a fractional second kept; absent for a non-number.",
-      "query": "select a: dur(\"1h30m\").dur_text(), b: dur(\"2 days 3 hours\").dur_text(), c: dur(45).dur_text(), d: dur(0).dur_text(), e: dur(-90).dur_text(), f: dur(1.5).dur_text(), g: dur(\"1 week\").dur_text(), h: dur(\"1 month\").dur_text(), i: \"x\".dur_text(), j: nope.dur_text(), k: dur(86400).dur_text(), l: dur(\"1d 1s\").dur_text() from docs where path == \"/index.md\"",
+      "query": "select a: dur(\"1h30m\").dur_text(), b: dur(\"2 days 3 hours\").dur_text(), c: dur(45).dur_text(), d: dur(0).dur_text(), e: dur(-90).dur_text(), f: dur(1.5).dur_text(), g: dur(\"1 week\").dur_text(), h: dur(\"1 month\").dur_text(), i: \"x\".dur_text(), j: nope.dur_text(), k: dur(86400).dur_text(), l: dur(\"1d 1s\").dur_text() from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -461,14 +461,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "dur-iso",
       "notes": "§1.3: `dur_iso` on a number of seconds — `P[nD][T[nH][nM][nS]]`, `PT0S` for zero, a leading `-`; absent for a non-number.",
-      "query": "select a: dur(\"1h30m\").dur_iso(), b: dur(\"2d3h\").dur_iso(), c: dur(45).dur_iso(), d: dur(0).dur_iso(), e: dur(-90).dur_iso(), f: dur(\"1 month\").dur_iso(), g: dur(86400).dur_iso(), h: dur(1.5).dur_iso(), i: \"x\".dur_iso(), j: nope.dur_iso() from docs where path == \"/index.md\"",
+      "query": "select a: dur(\"1h30m\").dur_iso(), b: dur(\"2d3h\").dur_iso(), c: dur(45).dur_iso(), d: dur(0).dur_iso(), e: dur(-90).dur_iso(), f: dur(\"1 month\").dur_iso(), g: dur(86400).dur_iso(), h: dur(1.5).dur_iso(), i: \"x\".dur_iso(), j: nope.dur_iso() from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -489,14 +489,14 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`nope` is not a field of docs and no document in this repository carries a property by that name; did you mean `type`?"
+          "no document in this repository carries a property `nope`; did you mean `type`?"
         ]
       }
     },
     {
       "name": "dur-round-trips",
       "notes": "§1.3: `dur(d.dur_iso())` and `dur(d.dur_text())` give the seconds back.",
-      "query": "select a: dur(dur(\"1h30m\").dur_iso()), b: dur(dur(\"2 days 3 hours\").dur_text()), c: dur(\"P2DT3H\").dur_iso() from docs where path == \"/index.md\"",
+      "query": "select a: dur(dur(\"1h30m\").dur_iso()), b: dur(dur(\"2 days 3 hours\").dur_text()), c: dur(\"P2DT3H\").dur_iso() from docs where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
@@ -550,7 +550,7 @@
     {
       "name": "arity-error-only-when-evaluated",
       "notes": "§1.3 / spec/oqx §11: a call with the wrong arity raises when evaluated; an empty source never evaluates it.",
-      "query": "select d: date() from docs where path == \"/nope.md\"",
+      "query": "select d: date() from docs where _path == \"/nope.md\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -561,17 +561,17 @@
     {
       "name": "older-than-thirty-days",
       "notes": "§1.3: the Dataview idiom — the milestones whose `when` is more than 30 days before today (2026-09-27): both.",
-      "query": "select path, when from docs where date(when) < date(\"today\").minus(dur(\"30 days\")) order by path",
+      "query": "select _path, when from docs where date(when) < date(\"today\").minus(dur(\"30 days\")) order by _path",
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "when": "2026-01-05"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "when": "2026-02-27"
           }
         ],
@@ -583,18 +583,18 @@
     {
       "name": "age-in-days",
       "notes": "§1.3: `until` to today over 86400 is an age in days — 2026-01-05 → 2026-09-27 is 265 days, 2026-02-27 → 2026-09-27 is 212.",
-      "query": "select path, when, days: date(when).until(date(\"today\")) / 86400 from docs where has(when) order by when",
+      "query": "select _path, when, days: date(when).until(date(\"today\")) / 86400 from docs where has(when) order by when",
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "when": "2026-01-05",
             "days": 265
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "when": "2026-02-27",
             "days": 212
           }
@@ -607,17 +607,17 @@
     {
       "name": "due-next-month-formatted",
       "notes": "§1.3: calendar `plus` and `format` in a projection.",
-      "query": "select path, due: date(when).plus(\"1 month\").format(\"EEE dd MMM yyyy\") from docs where has(when) order by path",
+      "query": "select _path, due: date(when).plus(\"1 month\").format(\"EEE dd MMM yyyy\") from docs where has(when) order by _path",
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "due": "Thu 05 Feb 2026"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "due": "Fri 27 Mar 2026"
           }
         ],
@@ -629,17 +629,17 @@
     {
       "name": "order-by-date-of-property",
       "notes": "§1.3: a date is a string, so `order by date(when) desc` is the chronological order, newest first.",
-      "query": "select path, when from docs where has(when) order by date(when) desc",
+      "query": "select _path, when from docs where has(when) order by date(when) desc",
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "when": "2026-02-27"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "when": "2026-01-05"
           }
         ],
@@ -651,20 +651,20 @@
     {
       "name": "updated-since-start-of-month",
       "notes": "§1.3: `updated_at >= date(\"som\")` — `date(\"som\")` folds to the literal `2026-09-01` before planning, so the comparison is a plain text comparison the planner pushes down (both engines must agree whether or not they push). Every document was observed on 2026-09-27.",
-      "query": "select path from docs where updated_at >= date(\"som\") order by path limit 3",
+      "query": "select _path from docs where _updated_at >= date(\"som\") order by _path limit 3",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -675,7 +675,7 @@
     {
       "name": "updated-before-tomorrow-count",
       "notes": "§1.3: a datetime orders against a date-only string by code point — `2026-09-27T…` < `2026-09-28`.",
-      "query": "docs count { where updated_at < date(\"tomorrow\") }",
+      "query": "docs count { where _updated_at < date(\"tomorrow\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -687,7 +687,7 @@
     {
       "name": "datetime-is-not-less-than-its-own-date",
       "notes": "§1.3 (the prefix trap): `2026-09-27T00:00:00.000Z` is NOT `<` `2026-09-27` — a longer string with an equal prefix sorts after it — so this counts nothing; compare the date part (`updated_at.date()`) or use `tomorrow`.",
-      "query": "docs count { where updated_at < date(\"today\") }",
+      "query": "docs count { where _updated_at < date(\"today\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -699,7 +699,7 @@
     {
       "name": "updated-today-via-date-part",
       "notes": "§1.3: `.date()` on the engine's timestamp against today's date-only point.",
-      "query": "docs count { where updated_at.date() == date(\"today\") }",
+      "query": "docs count { where _updated_at.date() == date(\"today\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -711,13 +711,13 @@
     {
       "name": "revisions-ts-fields",
       "notes": "§1.3: the methods on the revisions target's commit timestamp.",
-      "query": "select rev, day: ts.date(), wd: ts.weekday(), hhmm: ts.format(\"HH:mm\") from revisions where path == \"/index.md\"",
+      "query": "select _rev, day: _ts.date(), wd: _ts.weekday(), hhmm: _ts.format(\"HH:mm\") from revisions where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "rev": "r_0",
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_rev": "r_0",
             "day": "2026-09-27",
             "wd": 7,
             "hhmm": "00:00"
@@ -735,8 +735,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -747,19 +747,19 @@
     {
       "name": "nested-block-until-absent-propagates",
       "notes": "§1.3: inside a block, `^when` is the outer milestone's date; `dissolution.md` has no `when`, so its gap is absent while kickoff's is the 53 days between the two milestones (negative: kickoff is earlier).",
-      "query": "select path, gaps: refs(before) collect { path, days: date(^when).until(date(when)) / 86400 } from docs where path == \"/timeline/review.md\"",
+      "query": "select _path, gaps: refs(before) collect { _path, days: date(^when).until(date(when)) / 86400 } from docs where _path == \"/timeline/review.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_19",
-            "path": "/timeline/review.md",
+            "_id": "d_19",
+            "_path": "/timeline/review.md",
             "gaps": [
               {
-                "path": "/timeline/kickoff.md",
+                "_path": "/timeline/kickoff.md",
                 "days": -53
               },
               {
-                "path": "/processes/dissolution.md"
+                "_path": "/processes/dissolution.md"
               }
             ]
           }

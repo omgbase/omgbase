@@ -118,7 +118,7 @@ describe("delta nodes in the store", () => {
     expect(roots[2]!.entries).toContain('],["+",[');
     for (let i = 0; i < docs.length; i++) {
       const at = readDocumentAtRevision(s, "d_0", `r_${i}`)!;
-      expect(at.raw).toBe(docs[i]);
+      expect(at._raw).toBe(docs[i]);
       expect(at.renderedHashMatch).toBe(true);
     }
     expect(reconstructContent(s.db, "d_0")).toBe(docs[2]);

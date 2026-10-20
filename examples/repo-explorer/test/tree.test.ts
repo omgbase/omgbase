@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import { dirBadge, entryLabel, entryOf, fetchLevel, levelOf, prefixesToOpen, treeArgs } from "../src/lib/tree.ts";
 import { ScriptedCaller } from "./scripted.ts";
 
-// The docs_tree page as spec/surface §2 spells it (the examples.json fixture).
+// The docs_tree page as spec/surface §2 (5.0) spells it: the row attributes `_id`/`_path`/`_updated_at` prefixed, `kind`/`docs`/`blocks` and the page's `prefix`/`depth`/`total` bare roles.
 const ROOT = {
   prefix: "/", depth: 1, total: { docs: 20, blocks: 327 },
   entries: [
-    { id: "d_0", path: "/index.md", kind: "doc", docs: 1, blocks: 31, updated_at: "2026-09-27T00:00:00.000Z" },
-    { path: "/lab/", kind: "dir", docs: 2, blocks: 51, updated_at: "2026-09-27T00:00:00.000Z" },
-    { path: "/processes/", kind: "dir", docs: 4, blocks: 71, updated_at: "2026-09-27T00:00:00.000Z" },
+    { _id: "d_0", _path: "/index.md", kind: "doc", docs: 1, blocks: 31, _updated_at: "2026-09-27T00:00:00.000Z" },
+    { _path: "/lab/", kind: "dir", docs: 2, blocks: 51, _updated_at: "2026-09-27T00:00:00.000Z" },
+    { _path: "/processes/", kind: "dir", docs: 4, blocks: 71, _updated_at: "2026-09-27T00:00:00.000Z" },
   ],
   truncated: false, cursor: null,
 };
 
 describe("docs_tree → the level", () => {
-  it("reads dir and doc entries, roots paths, keeps total/truncated/cursor", () => {
+  it("reads dir and doc entries (5.0 keys), roots paths, keeps total/truncated/cursor", () => {
     const level = levelOf(ROOT);
     expect(level.prefix).toBe("/");
     expect(level.total).toEqual({ docs: 20, blocks: 327 });
@@ -23,9 +23,11 @@ describe("docs_tree → the level", () => {
       { kind: "dir", path: "/lab/", docs: 2, blocks: 51, updatedAt: "2026-09-27T00:00:00.000Z" },
       { kind: "dir", path: "/processes/", docs: 4, blocks: 71, updatedAt: "2026-09-27T00:00:00.000Z" },
     ]);
-    expect(entryOf({ path: "lab", kind: "dir", docs: 1, blocks: 1 })).toMatchObject({ kind: "dir", path: "/lab/" });
+    expect(entryOf({ _path: "lab", kind: "dir", docs: 1, blocks: 1 })).toMatchObject({ kind: "dir", path: "/lab/" });
     expect(entryOf({ kind: "doc" })).toBeNull();
-    expect(entryOf({ path: "/x", kind: "other" })).toBeNull();
+    expect(entryOf({ _path: "/x", kind: "other" })).toBeNull();
+    // A 4.x entry (bare `path`) carries no `_path`: not an entry.
+    expect(entryOf({ path: "/lab/", kind: "dir", docs: 1, blocks: 1 })).toBeNull();
   });
   it("labels entries by their last segment and badges a directory", () => {
     expect(entryLabel({ path: "/processes/" })).toBe("processes");

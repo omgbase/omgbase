@@ -236,4 +236,15 @@ export const CORPUS: Sample[] = [
     tokens:
       "identifier(id) keyword(from) identifier(docs) keyword(where) number(1) lift(^) identifier(k) operator(==) number(2)",
   },
+  {
+    // omgbase surface 5.0 ("underscore = engine"): an engine name's leading `_`
+    // is part of the identifier — `_id` lexes as a plain identifier, `_doc._title`
+    // as an identifier and a member, and a bare authored key (`title`, `status`)
+    // and a collection (`docs`) look exactly the same to the grammar.
+    name: "surface 5.0 engine names: `_`-prefixed identifiers, members and relations beside bare keys",
+    valid: true,
+    source: "_id, _path, title, t: _title, kids: _blocks collect { _text, d: _doc._title } from docs where status == \"active\" follow _out_links collect { from _dst } order by _updated_at desc",
+    tokens:
+      "identifier(_id) comma(,) identifier(_path) comma(,) identifier(title) comma(,) alias(t) colon(:) identifier(_title) comma(,) alias(kids) colon(:) identifier(_blocks) consumer(collect) braceOpen({) identifier(_text) comma(,) alias(d) colon(:) identifier(_doc) accessor(.) member(_title) braceClose(}) keyword(from) identifier(docs) keyword(where) identifier(status) operator(==) string(\"active\") clause(follow) identifier(_out_links) consumer(collect) braceOpen({) keyword(from) identifier(_dst) braceClose(}) clause(order) clause(by) identifier(_updated_at) modifier(desc)",
+  },
 ];

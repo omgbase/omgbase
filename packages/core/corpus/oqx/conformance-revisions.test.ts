@@ -28,8 +28,8 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function paths(q: string, plan?: boolean): string[] {
-  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { path: string }[] };
-  return r.hits.map((h) => h.path).sort();
+  const r = oqxRun(store, repoId, q, { limit: 100, ...(plan === false ? { plan: false } : {}) }) as { hits: { _path: string }[] };
+  return r.hits.map((h) => h._path).sort();
 }
 function both(q: string): { planned: string[]; memory: string[] } {
   return { planned: paths(q), memory: paths(q, false) };
@@ -48,7 +48,7 @@ beforeAll(() => {
   save("creative/flip-observed.md", `---\ntype: ${IDEA}\ntitle: Flip O\n---\n\n# Flip O\n\nBody.\n`);
   save("creative/flip-api.md", `---\ntype: ${PROJECT}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n`);
   // The api write: the `set content` effect (mutate 3.0; `docs_update`'s sugar).
-  const r = applyEffects(store, { repoId, rootPath: dir, origin: { actor: "agent:test" }, effects: [{ op: "set", target: { kind: "document", path: "creative/flip-api.md" }, field: "content", value: `---\ntype: ${IDEA}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n` }] }) as Receipt;
+  const r = applyEffects(store, { repoId, rootPath: dir, origin: { actor: "agent:test" }, effects: [{ op: "set", target: { kind: "document", _path: "creative/flip-api.md" }, field: "content", value: `---\ntype: ${IDEA}\ntitle: Flip A\n---\n\n# Flip A\n\nBody.\n` }] }) as Receipt;
   if (!r.committed || r.commit === null) throw new Error("api flip did not commit");
   save("creative/list.md", `---\ntype:\n  - ${PROJECT}\n  - ${IDEA}\n---\n\n# List\n\nBody.\n`);
   save("creative/list-to-scalar.md", `---\ntype:\n  - ${IDEA}\n  - ${PROJECT}\n---\n\n# LTS\n\nBody.\n`);
@@ -59,17 +59,17 @@ beforeAll(() => {
 afterAll(() => { store.close(); rmSync(dir, { recursive: true, force: true }); });
 
 const QUERIES = [
-  `from docs where path.startsWith("creative/") && type == "${PROJECT}"`,
-  `from docs where path.startsWith("creative/") && type == "${IDEA}"`,
-  `from docs where type == "${PROJECT}" && path.startsWith("creative/")`,
-  `from docs where path.startsWith("creative/") && type != "${PROJECT}"`,
-  `from docs where path == "creative/flip-observed.md" && type == "${PROJECT}"`,
-  `from docs where path == "creative/flip-api.md" && type == "${PROJECT}"`,
-  `from docs where path == "creative/flip-api.md" && type == "${IDEA}"`,
-  `select path, type from docs where path.startsWith("creative/") && type == "${PROJECT}"`,
-  `from docs where path.startsWith("creative/") && "${PROJECT}" in list(type)`,
+  `from docs where _path.startsWith("creative/") && type == "${PROJECT}"`,
+  `from docs where _path.startsWith("creative/") && type == "${IDEA}"`,
+  `from docs where type == "${PROJECT}" && _path.startsWith("creative/")`,
+  `from docs where _path.startsWith("creative/") && type != "${PROJECT}"`,
+  `from docs where _path == "creative/flip-observed.md" && type == "${PROJECT}"`,
+  `from docs where _path == "creative/flip-api.md" && type == "${PROJECT}"`,
+  `from docs where _path == "creative/flip-api.md" && type == "${IDEA}"`,
+  `select _path, type from docs where _path.startsWith("creative/") && type == "${PROJECT}"`,
+  `from docs where _path.startsWith("creative/") && "${PROJECT}" in list(type)`,
   `from docs where type == "${PROJECT}"`,
-  `from docs where path.startsWith("creative/") && frontmatter.type == "${PROJECT}"`,
+  `from docs where _path.startsWith("creative/") && _frontmatter.type == "${PROJECT}"`,
 ];
 
 describe("OQX conformance — type changed across revisions (planned == in-memory)", () => {
@@ -90,19 +90,19 @@ describe("OQX conformance — type changed across revisions (planned == in-memor
   });
 
   it("a flipped doc matches only its CURRENT type, regardless of the surrounding predicate", () => {
-    const wide = both(`from docs where path.startsWith("creative/") && type == "${PROJECT}"`);
+    const wide = both(`from docs where _path.startsWith("creative/") && type == "${PROJECT}"`);
     // Hits carry the reference form (spec/surface §1 "Paths"); the bare literals
     // in the queries still match (a literal compared with `path` is rooted first).
     expect(wide.planned).toEqual(["/creative/proj.md"]);
     expect(wide.memory).toEqual(["/creative/proj.md"]);
     for (const p of ["creative/flip-observed.md", "creative/flip-api.md", "creative/list-to-scalar.md"]) {
-      expect(both(`from docs where path == "${p}" && type == "${PROJECT}"`)).toEqual({ planned: [], memory: [] });
-      expect(both(`from docs where path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: ["/" + p], memory: ["/" + p] });
+      expect(both(`from docs where _path == "${p}" && type == "${PROJECT}"`)).toEqual({ planned: [], memory: [] });
+      expect(both(`from docs where _path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: ["/" + p], memory: ["/" + p] });
     }
     // The wide and narrowed forms agree doc-by-doc.
-    const all = paths('from docs where path.startsWith("creative/")');
+    const all = paths('from docs where _path.startsWith("creative/")');
     for (const p of all) {
-      const narrow = paths(`from docs where path == "${p}" && type == "${PROJECT}"`);
+      const narrow = paths(`from docs where _path == "${p}" && type == "${PROJECT}"`);
       expect(wide.planned.includes(p)).toBe(narrow.length === 1);
     }
   });

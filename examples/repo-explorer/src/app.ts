@@ -1,6 +1,6 @@
 // The page: one element composing the panes with module-level signals.
 //
-//   connect → (whoami: proxy mode + sign-in state) → version (surface ≥ 4.7, the
+//   connect → (whoami: proxy mode + sign-in state) → version (surface ≥ 5.0, the
 //   profile) + tools/list (what is served) → [repos, when listed] → the tree's
 //   root level → the route (#doc=…) → the document (docs_read include_ids),
 //   its links (two queries over `links`), its history (`from revisions`), the
@@ -243,7 +243,7 @@ async function loadAt(rev: string, gen: number): Promise<void> {
   atLoading.set(true);
   at.set(null);
   try {
-    const r = await fetchDocumentAt(client, { id: d.id }, rev, repoArgValue.get());
+    const r = await fetchDocumentAt(client, { _id: d.id }, rev, repoArgValue.get());
     if (gen === docGeneration) at.set(r);
   } catch (e) {
     if (gen === docGeneration) historyError.set(describe(e));
@@ -466,8 +466,9 @@ async function connect(): Promise<void> {
     return;
   }
   try {
-    // The surface first (one `version` call): this demo speaks 4.7 — the
-    // revisions target and docs_read { at } — and says so loudly otherwise.
+    // The surface first (one `version` call): this demo speaks 5.0 — the
+    // underscore engine names (`_id`/`_path` arguments, `_title`, `_doc_id`,
+    // …) — and says so loudly otherwise (lib/paths.ts `surfaceProblem`).
     const [versionResult, names] = await Promise.all([
       client.call<Wire>("version", {}).catch(() => null),
       client.tools().catch(() => null),
@@ -604,7 +605,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     return html`<div class="deleted" data-deleted>
       <h2>deleted documents</h2>
       <div class="query">${deletedRevisionsQuery()}</div>
-      <div class="note">history is history: a deleted document's revisions stay queryable rows (<code>doc</code> is absent on them), but <code>docs_read { at }</code> needs a live document — the body of a deleted revision is <code>doc_missing</code> on every profile, so this list is read-only.</div>
+      <div class="note">history is history: a deleted document's revisions stay queryable rows (<code>_doc</code> is absent on them), but <code>docs_read { at }</code> needs a live document — the body of a deleted revision is <code>doc_missing</code> on every profile, so this list is read-only.</div>
       ${deletedError.get() ? html`<div class="err">${deletedError.get()}</div>` : nothing}
       ${list === null ? html`<div>loading…</div>` : list.length === 0 ? html`<div>none — every revision belongs to a live document</div>` : html`<table>
         <thead><tr><th>path (as of the revision)</th><th>doc</th><th>seq</th><th>when</th><th>by</th><th>reason</th><th>rev</th></tr></thead>
@@ -687,7 +688,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
             <repo-tree .levels=${levels.get()} .open=${open.get()} .selected=${r.doc}
               @tree-toggle=${(e: CustomEvent<TreeToggleDetail>) => toggleLevel(e.detail.prefix, e.detail.open)}
               @tree-open=${(e: CustomEvent<TreeOpenDetail>) => openDoc(e.detail.path)}></repo-tree>
-            <a class="deleted-link" href="#deleted" @click=${(e: Event) => { e.preventDefault(); setRoute({ ...DEFAULT_ROUTE, deleted: true }); }}>deleted documents (from revisions where doc == null)</a>
+            <a class="deleted-link" href="#deleted" @click=${(e: Event) => { e.preventDefault(); setRoute({ ...DEFAULT_ROUTE, deleted: true }); }}>deleted documents (from revisions where _doc == null)</a>
           </div>
           <div class="right" slot="end">
             <div class="main">${this.renderMain()}</div>

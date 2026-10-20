@@ -5,7 +5,7 @@
 // bar, never here. Every row offers focus / cue… / edit / release; each
 // intent's cues are listed under it (id · on · query or at) with remove. The
 // cue editor adds one entry to an intent's `cues` list — id, on, query or at —
-// and the page previews the WHOLE list as `set frontmatter.cues` with `plan`
+// and the page previews the WHOLE list as `set _frontmatter.cues` with `plan`
 // (summary + the file after) and commits with `execute`. The intent editor is
 // a textarea over the document's raw bytes (`set content`). Events:
 // `intent-focus { path }`, `intent-status { path, status }`, `cue-plan { path,
@@ -131,7 +131,7 @@ export class IntentFeed extends LitElement {
   private renderCue(intent: Intent, c: Cue) {
     const how = c.on === "time" ? html`at <code>${c.at ?? "?"}</code>` : html`<code>${(c.query ?? "?").trim()}</code>`;
     return html`<div class="c" data-cue=${`${intent.path}#${c.id}`}>↳ <b>${c.id}</b> · ${c.on} · ${how}
-      <button type="button" class="tiny" ?disabled=${this.busy} title="remove this cue from the intent's cues list (set frontmatter.cues)" @click=${() => this.emit<CueRemoveDetail>("cue-remove", { path: intent.path, id: c.id })}>remove</button></div>`;
+      <button type="button" class="tiny" ?disabled=${this.busy} title="remove this cue from the intent's cues list (set _frontmatter.cues)" @click=${() => this.emit<CueRemoveDetail>("cue-remove", { path: intent.path, id: c.id })}>remove</button></div>`;
   }
 
   private renderCueEditor(intent: Intent) {

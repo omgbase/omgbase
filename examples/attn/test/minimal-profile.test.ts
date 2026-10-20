@@ -1,7 +1,9 @@
 // The claim the README makes — everything works on `omg mcp --tools minimal`
 // — as a test: run each feature's data path against a scripted server that
 // lists exactly the ten minimal tools and refuses every other name, and assert
-// the tools it was asked for.
+// the tools it was asked for. The server answers in surface 5.0's shapes
+// ("underscore = engine"): hits `{ _id, _path, … }`, `docs_read` → `{ _id,
+// _path, rev, properties, _raw }`, revision rows `_rev / _seq / _ts`.
 import { describe, expect, it } from "vitest";
 import { evaluateFocusCues, queryTransitionDelta, setCuesEffect } from "../src/lib/cues.ts";
 import { fetchChanges } from "../src/lib/feed.ts";
@@ -16,25 +18,30 @@ import { ScriptedCaller, page } from "./scripted.ts";
 const A = "/attn/intents/2026/10/2026-10-12-a.md";
 const B = "/attn/intents/2026/10/2026-10-11-b.md";
 const POINTER_RAW = `---\ntype: /terms/types/attn-state.md\nlayer: draft\nfocused_intent: ${A}\nsince: 2026-10-13T15:02:00.000Z\nreturn_stack:\n  - ${B}\n---\n\n# Current focus\n`;
-const POINTER_WIRE = { id: "d_7", path: "/attn/focus.md", rev: "r_7", properties: { frontmatter: { type: "/terms/types/attn-state.md", layer: "draft", focused_intent: A, since: "2026-10-13T15:02:00.000Z", return_stack: [B] }, inline: {}, computed: {} }, raw: POINTER_RAW };
+const POINTER_WIRE = { _id: "d_7", _path: "/attn/focus.md", rev: "r_7", properties: { frontmatter: { type: "/terms/types/attn-state.md", layer: "draft", focused_intent: A, since: "2026-10-13T15:02:00.000Z", return_stack: [B] }, inline: {}, computed: {} }, _raw: POINTER_RAW };
 
 function minimalServer(): ScriptedCaller {
   return new ScriptedCaller({
-    docs_read: (a) => (a.at ? { id: "d_7", path: "/attn/focus.md", rev: a.at, raw: POINTER_RAW, renderedHashMatch: true } : a.path === "/attn/focus.md" ? POINTER_WIRE : { id: "d_a", path: a.path, rev: "r_1", raw: "---\ntitle: A\n---\n# A\n" }),
+    docs_read: (a) => {
+      // 5.0: the document is addressed by `_path`; a bare `path` is refused with the corrected call in `data.fix`.
+      if ("path" in a) throw new Error("docs_read: `path` is not an argument — the document's path is `_path`");
+      if (a.at) return { _id: "d_7", _path: "/attn/focus.md", rev: a.at, _raw: POINTER_RAW, renderedHashMatch: true };
+      return a._path === "/attn/focus.md" ? POINTER_WIRE : { _id: "d_a", _path: a._path, rev: "r_1", _raw: "---\ntitle: A\n---\n# A\n" };
+    },
     query: (a) => {
       const q = String(a.query);
-      if (q.startsWith("select rev, seq, ts from revisions")) return page([{ id: "r_1", rev: "r_1", seq: 1, ts: "2026-10-13T15:02:01.000Z" }, { id: "r_7", rev: "r_7", seq: 2, ts: "2026-10-13T15:30:01.000Z" }]);
+      if (q.startsWith("select _rev, _seq, _ts from revisions")) return page([{ _id: "r_1", _path: "/attn/focus.md", _rev: "r_1", _seq: 1, _ts: "2026-10-13T15:02:01.000Z" }, { _id: "r_7", _path: "/attn/focus.md", _rev: "r_7", _seq: 2, _ts: "2026-10-13T15:30:01.000Z" }]);
       if (q.includes('"/terms/types/intent.md"')) return page([
-        { id: "d_a", path: A, title: "A", status: "active", tags: ["fire"], updated_at: "2026-10-13T08:00:00.000Z", cues: [[{ id: "f", on: "focus", query: 'from docs where "fire" in tags' }, { id: "n", on: "query-enter", query: 'from docs where type == "/terms/types/intent.md"' }, { id: "x", on: "query-exit", query: 'from docs where status == "active"' }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
-        { id: "d_b", path: B, title: "B", status: "active", tags: [], updated_at: "2026-10-12T08:00:00.000Z", focus: null },
+        { _id: "d_a", _path: A, title: "A", status: "active", tags: ["fire"], _updated_at: "2026-10-13T08:00:00.000Z", cues: [[{ id: "f", on: "focus", query: 'from docs where "fire" in tags' }, { id: "n", on: "query-enter", query: 'from docs where type == "/terms/types/intent.md"' }, { id: "x", on: "query-exit", query: 'from docs where status == "active"' }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
+        { _id: "d_b", _path: B, title: "B", status: "active", tags: [], _updated_at: "2026-10-12T08:00:00.000Z", focus: null },
       ]);
-      return page([{ id: "d_a", path: A }]); // a cue's own query
+      return page([{ _id: "d_a", _path: A }]); // a cue's own query
     },
     changes_since: () => ({ digests: [], cursor: 1, truncated: false, head: 1 }),
     apply: () => ({ plan_id: "p", commit: "c_1", revisions: [], new_ids: {}, committed: true, summary: [] }),
     plan: () => ({ plan_id: "p2", preview: { revisions: [], summary: [], diffs: {} } }),
     execute: () => ({ plan_id: "p2", commit: "c_2", revisions: [], new_ids: {}, committed: true, summary: [] }),
-    version: () => ({ specs: { surface: "4.7" }, profile: "minimal" }),
+    version: () => ({ specs: { surface: "5.0" }, profile: "minimal" }),
   });
 }
 
@@ -42,13 +49,18 @@ describe("every feature over exactly the minimal ten", () => {
   it("pointer, feed (virtual #focus + cues), the four cue variants, the stream from revisions, live, every write", async () => {
     const s = minimalServer();
     const pointer = await fetchPointer(s, null);                                            // 1. the focus bar: the pointer
+    expect(pointer).toMatchObject({ docId: "d_7", rev: "r_7", focused: A, returnStack: [B] });
     const intents = await fetchIntents(s, null);                                            // 2. the feed: one query
+    expect(intents.map((i) => [i.id, i.path])).toEqual([["d_a", A], ["d_b", B]]);
     const cues = activeCues(intents);
-    await evaluateFocusCues(s, cues, { path: pointer.focused!, id: intents[0]!.id }, null); //    focus cues (one query each, membership)
+    const focus = await evaluateFocusCues(s, cues, { path: pointer.focused!, id: intents[0]!.id }, null); //    focus cues (one query each, membership)
+    expect(focus[0]).toMatchObject({ matched: true, error: null });
     await queryTransitionDelta(s, cues[1]!, null, null);                                    //    an enter cue
-    await queryTransitionDelta(s, cues[2]!, ["d_a", "d_z"], null);                          //    an exit cue
+    const exit = await queryTransitionDelta(s, cues[2]!, ["d_a", "d_z"], null);            //    an exit cue
+    expect(exit).toMatchObject({ ids: ["d_a"], exited: ["d_z"], fires: [{ id: "d_z", path: null }] });
     const states = await fetchPointerHistory(s, null);                                      // 3. the stream: revisions + docs_read { at }
     expect(states).toHaveLength(2);
+    expect(states[1]).toMatchObject({ rev: "r_7", seq: 2, focused: A, returnStack: [B] });
     await fetchChanges(s, null, null, 1);                                                   // 4. live
     const ctx = { pointer, now: "2026-10-13T16:00:00.000Z" };
     await applyEffects(s, switchEffects(ctx, B), null, "switch");                           // writes: switch
@@ -66,7 +78,11 @@ describe("every feature over exactly the minimal ten", () => {
     for (const name of used) expect(MINIMAL_TOOLS).toContain(name);
     expect([...used].sort()).toEqual(["apply", "changes_since", "docs_read", "execute", "plan", "query"]);
     // `blocks_resolve`, `docs_tree` and `query_syntax` are not needed; `version` is the page's gate.
-    expect(s.calls.filter((c) => c.name === "docs_read" && c.args.at).map((c) => c.args.path)).toEqual(["/attn/focus.md", "/attn/focus.md"]);
+    expect(s.calls.filter((c) => c.name === "docs_read" && c.args.at).map((c) => c.args._path)).toEqual(["/attn/focus.md", "/attn/focus.md"]);
+    // Every effect field under a frontmatter key is `_frontmatter.<key>` (mutate 4.0); `content` is a role and stays bare.
+    const fields = s.calls.filter((c) => c.name === "apply" || c.name === "plan").flatMap((c) => (c.args.effects as { field?: string }[]).map((e) => e.field)).filter((f): f is string => f !== undefined);
+    expect(fields.every((f) => f === "content" || f.startsWith("_frontmatter."))).toBe(true);
+    expect(fields).toContain("_frontmatter.focused_intent");
   });
   it("the scripted server refuses what the real minimal server refuses", async () => {
     const s = minimalServer();
@@ -80,9 +96,12 @@ describe("every feature over exactly the minimal ten", () => {
     expect(profileLabel(null, c)).toBe("minimal (by its listing)");
     expect(missingToolsText(capabilities(MINIMAL_TOOLS.filter((t) => t !== "apply")))).toMatch(/`apply` \(every focus switch/);
     expect(capabilities(null).minimal).toBe(true);
-    expect(surfaceProblem("4.7")).toBeNull();
     expect(surfaceProblem("5.0")).toBeNull();
-    expect(surfaceProblem("4.6")).toMatch(/needs omgbase surface ≥ 4\.7 .* the server reports 4\.6/);
+    expect(surfaceProblem("5.3")).toBeNull();
+    expect(surfaceProblem("6.0")).toBeNull();
+    // A 4.x server spells the names bare and refuses `_path`; the gate is exact about the major.
+    expect(surfaceProblem("4.11")).toMatch(/needs omgbase surface ≥ 5\.0 .* the server reports 4\.11/);
+    expect(surfaceProblem("4.7")).toMatch(/needs omgbase surface ≥ 5\.0/);
     expect(surfaceProblem(null)).toMatch(/no surface version/);
   });
 });

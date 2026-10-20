@@ -37,7 +37,7 @@ describe("mutation write path with a headless NullDocStore", () => {
 
     // The change is in the DB and reconstructs byte-for-byte from it — no file.
     const read = docsRead(store, ing.docId);
-    expect(read!.raw).toContain("New tail paragraph.");
+    expect(read!._raw).toContain("New tail paragraph.");
   });
 
   it("docsCreate / setMeta / move / delete all work headless", () => {
@@ -50,7 +50,7 @@ describe("mutation write path with a headless NullDocStore", () => {
     const meta = docsSetMeta(store, ctx, "notes/x.md", { set: { layer: "working" } });
     expect(meta.committed).toBe(true);
     const afterMeta = docsRead(store, meta.docId);
-    expect(afterMeta!.raw).toContain("layer: working");
+    expect(afterMeta!._raw).toContain("layer: working");
 
     const moved = docsMove(store, ctx, "notes/x.md", "notes/y.md");
     expect(moved.path).toBe("notes/y.md");

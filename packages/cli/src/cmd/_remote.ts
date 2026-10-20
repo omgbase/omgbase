@@ -93,11 +93,13 @@ export async function remoteSugar<T>(cli: Cli, tool: string, toolArgs: Record<st
   return remoteCall<T>(cli, "apply", { effects: await effects(), reason });
 }
 
-/** A document ref as the surface's locator (spec/surface §4 "Arguments", 3.0):
- *  a `d_` id is the `id` argument, anything else the `path` — the two names a
- *  `docs_*` tool takes (one of them required). */
-export function docLocator(ref: string): { id: string } | { path: string } {
-  return isValidId(ref, "d") ? { id: ref } : { path: ref };
+/** A document ref as the surface's locator (spec/surface §4 "Arguments", 5.0):
+ *  a `d_` id is the `_id` argument, anything else the `_path` — the two names a
+ *  `docs_*` tool takes (one of them required; the bare `id`/`path` are refused
+ *  there as `filter_invalid`). The same pair is a document effect target's
+ *  address (`{ kind: "document", _id | _path }`, spec/mutate §11). */
+export function docLocator(ref: string): { _id: string } | { _path: string } {
+  return isValidId(ref, "d") ? { _id: ref } : { _path: ref };
 }
 
 /** The live document a ref names, for a LOCAL verb, or the surface's own
@@ -113,7 +115,7 @@ export function requireDoc(store: Store, repoId: string, ref: string): string {
 /** The live node a ref names, or the surface's `block_missing` ("no node with id "<ref>""). */
 export function requireNode(store: Store, repoId: string, nodeId: string): string {
   const row = store.db.prepare("SELECT 1 FROM nodes WHERE node_id = ? AND repo_id = ?").get(nodeId, repoId);
-  if (!row) throw new EngineErrorLike("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { id: nodeId } });
+  if (!row) throw new EngineErrorLike("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { _id: nodeId } });
   return nodeId;
 }
 

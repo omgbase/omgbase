@@ -38,9 +38,9 @@ describe("linksStale (dangling internal link detector)", () => {
     expect(health.stale).toHaveLength(1);
     const s = health.stale[0]!;
     expect(s.target).toBe("/b.md");
-    expect(s.path).toBe("/a.md");
+    expect(s._path).toBe("/a.md");
     expect(s.reason).toBe("dangling_doc");
-    expect(s.predicate).toBe("references");
+    expect(s._predicate).toBe("references");
 
     // Creating b.md resolves the phantom (adoptPhantoms), so it is no longer stale.
     save("b.md", "# B\n");
@@ -62,7 +62,7 @@ describe("linksStale (dangling internal link detector)", () => {
 
     const scoped = linksStale(store, repoId, { pathGlob: "journal/*" });
     expect(scoped.stale).toHaveLength(1);
-    expect(scoped.stale[0]!.path).toBe("/journal/day1.md");
+    expect(scoped.stale[0]!._path).toBe("/journal/day1.md");
     expect(scoped.stale[0]!.target).toBe("/missing-j.md");
 
     const all = linksStale(store, repoId);
@@ -127,9 +127,9 @@ describe("linksStale reports the destination AS AUTHORED next to the canonical t
     save("a.md", "# A\n\nSee [b](/b.md#Setup) and [[wiki-page]].\n");
     const { stale } = linksStale(store, repoId);
     const byTarget = new Map(stale.map((s) => [s.target, s]));
-    expect(byTarget.get("/b.md")).toMatchObject({ target: "/b.md", anchor: "Setup", authored: "/b.md#Setup" });
+    expect(byTarget.get("/b.md")).toMatchObject({ target: "/b.md", _anchor: "Setup", authored: "/b.md#Setup" });
     // a wikilink slug resolves by path (spec/graph §3.2), so its phantom target is reported as a (rooted) path too
-    expect(byTarget.get("/wiki-page")).toMatchObject({ target: "/wiki-page", anchor: null, authored: "wiki-page" });
+    expect(byTarget.get("/wiki-page")).toMatchObject({ target: "/wiki-page", _anchor: null, authored: "wiki-page" });
   });
 
   it("a relative destination canonicalizes against the source dir but is reported as written", () => {
@@ -162,13 +162,13 @@ describe("linksStaleSummary (counts only)", () => {
     expect(s).not.toHaveProperty("stale");
     expect(s.staleCount).toBe(linksStale(store, repoId).stale.length);
     expect(s.byTarget).toEqual([{ target: "/gone-a.md", count: 3 }, { target: "/gone-b.md", count: 1 }]);
-    expect(s.bySource).toEqual([{ path: "/j/one.md", count: 3 }, { path: "/g/two.md", count: 1 }]);
+    expect(s.bySource).toEqual([{ _path: "/j/one.md", count: 3 }, { _path: "/g/two.md", count: 1 }]);
     expect(s.externalCount).toBe(1);
     expect(s.totalOpenEdges).toBe(5);
 
     const scoped = linksStaleSummary(store, repoId, { pathGlob: "g/*" });
     expect(scoped.staleCount).toBe(1);
     expect(scoped.byTarget).toEqual([{ target: "/gone-a.md", count: 1 }]);
-    expect(scoped.bySource).toEqual([{ path: "/g/two.md", count: 1 }]);
+    expect(scoped.bySource).toEqual([{ _path: "/g/two.md", count: 1 }]);
   });
 });

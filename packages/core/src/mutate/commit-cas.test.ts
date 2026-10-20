@@ -115,7 +115,7 @@ describe("commit preconditions — the row triple, re-validated inside the trans
     expect(err.data).toEqual({
       doc: b,
       expected_revision: expectedRev,
-      current: { revision: "r_elsewhere", hash: row(b).hash },
+      current: { revision: "r_elsewhere", _hash: row(b).hash },
       retriable: true,
     });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n");
@@ -151,7 +151,7 @@ describe("commit preconditions — the row triple, re-validated inside the trans
 
     const err = fail(() => commitChangeset(store, repoId, head, plan.effects, new Date().toISOString(), { docStore: new FsDocStore(dir) }));
     expect(err.code).toBe("stale_plan");
-    expect(err.data).toMatchObject({ doc: a, current: { revision: row(a).current_rev, hash: sha256(human).toString("hex") } });
+    expect(err.data).toMatchObject({ doc: a, current: { revision: row(a).current_rev, _hash: sha256(human).toString("hex") } });
     expect(commits()).toEqual(before);
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe(human);
   });

@@ -1,6 +1,8 @@
 // Every mutation attn makes is ONE `apply { effects }` (or `plan` → `execute`),
 // so it is atomic. SWITCHING FOCUS WRITES THE POINTER ONLY: `set
-// frontmatter.focused_intent` / `since` (/ `return_stack`) on `/attn/focus.md`
+// _frontmatter.focused_intent` / `since` (/ `return_stack`) on `/attn/focus.md`
+// (the field is `_frontmatter.<key>` since surface 5.0 / mutate 4.0 — the
+// handle is the engine's, the key under it attn's)
 // — no intent is touched, no log is appended (the history is the pointer's own
 // revisions, lib/history.ts). Declaring an intent is its `create`; declaring
 // and focusing it is the `create` plus the pointer's `set`s in the same
@@ -48,10 +50,10 @@ export function pointerEffects(ctx: SwitchContext, patch: PointerPatch): Effect[
   }
   const expect = p.rev ? { expect: { revision: p.rev } } : {};
   const out: Effect[] = [
-    { op: "set", target: POINTER_PATH, field: "frontmatter.focused_intent", value: patch.focused, ...expect },
-    { op: "set", target: POINTER_PATH, field: "frontmatter.since", value: patch.since },
+    { op: "set", target: POINTER_PATH, field: "_frontmatter.focused_intent", value: patch.focused, ...expect },
+    { op: "set", target: POINTER_PATH, field: "_frontmatter.since", value: patch.since },
   ];
-  if (patch.returnStack !== undefined) out.push({ op: "set", target: POINTER_PATH, field: "frontmatter.return_stack", value: patch.returnStack });
+  if (patch.returnStack !== undefined) out.push({ op: "set", target: POINTER_PATH, field: "_frontmatter.return_stack", value: patch.returnStack });
   return out;
 }
 
@@ -118,7 +120,8 @@ export interface Plan {
   effects: Effect[];
   summary: string[];
   diffs: Record<string, { before: string; after: string }>;
-  revisions: { id: string; path: string; hash: string }[];
+  /** `preview.revisions[]` as the wire spells a row (surface 5.0): `{ _id, _path, _hash }`. */
+  revisions: { _id: string; _path: string; _hash: string }[];
   wire: Wire;
 }
 
@@ -126,7 +129,8 @@ export interface Receipt {
   planId: string;
   /** Null when the plan had nothing to commit. */
   commit: string | null;
-  revisions: { id: string; path: string; hash: string }[];
+  /** The documents the commit wrote, each under the row's engine names: `{ _id, _path, _hash }`. */
+  revisions: { _id: string; _path: string; _hash: string }[];
   newIds: Record<string, string>;
   committed: boolean;
   summary: string[];
@@ -135,7 +139,7 @@ export interface Receipt {
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const record = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const strings = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).filter((s): s is string => typeof s === "string") : []);
-const revisions = (v: unknown) => (Array.isArray(v) ? (v as Wire[]).map((r) => ({ id: str(r.id), path: str(r.path), hash: str(r.hash) })) : []);
+const revisions = (v: unknown) => (Array.isArray(v) ? (v as Wire[]).map((r) => ({ _id: str(r._id), _path: str(r._path), _hash: str(r._hash) })) : []);
 
 export function planOf(wire: Wire, effects: Effect[]): Plan {
   const preview = record(wire.preview);

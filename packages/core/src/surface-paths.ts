@@ -8,12 +8,14 @@
 // `spec/sync`'s sweep — keep their storage-form paths in the library (their
 // own fixtures pin them) and are re-shaped HERE.
 //
-// Row names (spec/surface §1.2, 3.0): a result that renders a document, block
-// or edge row spells it the way the query binding does — `id`, `path`,
-// `hash`, `raw`, `updated_at`, plain `doc_id`/`block_id` foreign keys. The
-// shapes other specs own under their own names — `spec/store`'s observe
-// outcome, a move's dangling inbound links — are re-shaped HERE too
-// (`SurfaceObserveResult`, `surfaceInboundLink`, …).
+// Row names (spec/surface §1.2, 5.0 "underscore = engine"): a result that
+// renders a document, block or link row spells it the way the query binding
+// does — `_id`, `_path`, `_hash`, `_raw`, `_updated_at`, the foreign keys
+// `_doc_id`/`_block_id`; a key naming a ROLE (`rev`, `target`, `locator`,
+// `commitId`, `oldRaw`/`newRaw`) keeps its name. The shapes other specs own
+// under their own names — `spec/store`'s observe outcome, a move's dangling
+// inbound links — are re-shaped HERE too (`SurfaceObserveResult`,
+// `surfaceInboundLink`, …).
 //
 // Both the MCP server and the `omg` verbs call these, so the two clients
 // cannot drift. Each function returns a new value; the input is not mutated.
@@ -28,52 +30,53 @@ import type { TextSearchResult } from "./search/text.js";
 import type { ResolveHit } from "./search/resolve.js";
 import { referencePath, referenceKeyed } from "./core/paths.js";
 
-/** `spec/mutate` §4's kernel result (the library's `apply`; no tool returns it since 4.0): `revisions[].path` and the dry-run `diffs` keys. */
+/** `spec/mutate` §4's kernel result (the library's `apply`; no tool returns it since 4.0): `revisions[]._path` and the dry-run `diffs` keys. */
 export function surfaceApplyResult<T extends ApplyResult>(res: T): T {
   return {
     ...res,
-    revisions: res.revisions.map((r) => ({ ...r, path: referencePath(r.path) })),
+    revisions: res.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })),
     ...(res.diffs ? { diffs: referenceKeyed(res.diffs) } : {}),
   };
 }
 
 /** An inbound link on the wire (`docs_move.dangling[]`, `omg mv`): a link row
- *  under the `links` target's names (spec/surface §1.2) — `doc_id`, `path`
- *  (rooted), `block_id`, `target` (as authored), `anchor`, `field?`. */
+ *  under the `links` target's names (spec/surface §1.2, 5.0) — `_doc_id`,
+ *  `_path` (rooted), `_block_id`, `target` (as authored; a role), `_anchor`,
+ *  `_field?`. */
 export interface SurfaceInboundLink {
-  doc_id: string;
-  path: string;
-  block_id: string | null;
+  _doc_id: string;
+  _path: string;
+  _block_id: string | null;
   target: string;
-  anchor: string | null;
-  field?: string;
+  _anchor: string | null;
+  _field?: string;
 }
 
 export function surfaceInboundLink(l: InboundLink): SurfaceInboundLink {
-  const { path, ...rest } = l;
-  return { doc_id: rest.doc_id, path: referencePath(path), block_id: rest.block_id, target: rest.target, anchor: rest.anchor, ...(rest.field !== undefined ? { field: rest.field } : {}) };
+  const { _path, ...rest } = l;
+  return { _doc_id: rest._doc_id, _path: referencePath(_path), _block_id: rest._block_id, target: rest.target, _anchor: rest._anchor, ...(rest._field !== undefined ? { _field: rest._field } : {}) };
 }
 
-/** An observe outcome on the wire (spec/surface §4, 3.0): `spec/store` §5's
+/** An observe outcome on the wire (spec/surface §4, 5.0): `spec/store` §5's
  *  `{ docId, path, … }` (unchanged there) renamed to the document's row
- *  attributes `id`/`path`, the path rooted. */
-export type SurfaceObserveResult<T extends { docId: string | null; path: string }> = Omit<T, "docId" | "path"> & { id: T["docId"]; path: string };
+ *  attributes `_id`/`_path`, the path rooted. */
+export type SurfaceObserveResult<T extends { docId: string | null; path: string }> = Omit<T, "docId" | "path"> & { _id: T["docId"]; _path: string };
 
 /** `observe` / `observe_many` outcomes. */
 export function surfaceObserveResult<T extends ObserveResult>(res: T): SurfaceObserveResult<T> {
   const { docId, path, ...rest } = res;
-  return { id: docId, path: referencePath(path), ...rest };
+  return { _id: docId, _path: referencePath(path), ...rest };
 }
 
 /** `observe_delete`. */
 export function surfaceObserveDeleteResult(res: ObserveDeleteResult): SurfaceObserveResult<ObserveDeleteResult> {
   const { docId, path, ...rest } = res;
-  return { id: docId, path: referencePath(path), ...rest };
+  return { _id: docId, _path: referencePath(path), ...rest };
 }
 
-/** `blocks_search` hits (`path` rooted). */
+/** `blocks_search` hits (`_path` rooted). */
 export function surfaceTextSearch(res: TextSearchResult): TextSearchResult {
-  return { ...res, hits: res.hits.map((h) => ({ ...h, path: referencePath(h.path) })) };
+  return { ...res, hits: res.hits.map((h) => ({ ...h, _path: referencePath(h._path) })) };
 }
 
 /** `resolve` hits: the locator is `<path>#<type>[<ordinal>]`; its path half is
@@ -85,9 +88,9 @@ export function surfaceResolveHits(hits: ResolveHit[]): ResolveHit[] {
   });
 }
 
-/** `links_retarget` / `links_repair` hits (`path` is the block's document). */
+/** `links_retarget` / `links_repair` hits (`_path` is the block's document). */
 export function surfaceRetargetHits(hits: RetargetHit[]): RetargetHit[] {
-  return hits.map((h) => ({ ...h, path: referencePath(h.path) }));
+  return hits.map((h) => ({ ...h, _path: referencePath(h._path) }));
 }
 
 /**
@@ -96,8 +99,8 @@ export function surfaceRetargetHits(hits: RetargetHit[]): RetargetHit[] {
  * storage form, because `plan_id` digests exactly those bytes and the client
  * hands the object back to `execute` (spec/mutate §11.5; the one result the
  * path rule exempts, like `dangling[].target`). Only the un-digested `preview`
- * is rooted: its `revisions[].path`, `diffs` keys and `retarget[].hits[].path`
- * (3.0; `identity` is keyed by document id and carries no path).
+ * is rooted: its `revisions[]._path`, `diffs` keys and `retarget[].hits[]._path`
+ * (`identity` is keyed by document id and carries no path).
  */
 export function surfacePlan(plan: Plan): Plan {
   if (!plan.preview) return plan;
@@ -105,16 +108,16 @@ export function surfacePlan(plan: Plan): Plan {
     ...plan,
     preview: {
       ...plan.preview,
-      revisions: plan.preview.revisions.map((r) => ({ ...r, path: referencePath(r.path) })),
+      revisions: plan.preview.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })),
       diffs: referenceKeyed(plan.preview.diffs),
       ...(plan.preview.retarget !== undefined ? { retarget: plan.preview.retarget.map((r) => ({ ...r, hits: surfaceRetargetHits(r.hits) })) } : {}),
     },
   };
 }
 
-/** A Receipt on the wire: `revisions[].path` rooted (the same shape as an apply revision). */
+/** A Receipt on the wire: `revisions[]._path` rooted (the same shape as an apply revision). */
 export function surfaceReceipt(receipt: Receipt): Receipt {
-  return { ...receipt, revisions: receipt.revisions.map((r) => ({ ...r, path: referencePath(r.path) })) };
+  return { ...receipt, revisions: receipt.revisions.map((r) => ({ ...r, _path: referencePath(r._path) })) };
 }
 
 /** `omg sync`'s one-shot sweep: the ingested / suppressed / deleted / conflicted paths. */

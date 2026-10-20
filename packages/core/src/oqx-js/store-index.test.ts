@@ -61,30 +61,32 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     const ctx = makeStoreContext(store, repoId);
     const repo = ctx.rootObject!();
     const docs = ctx.get(repo, "docs");
-    expect(ctx.indexFor!(docs, ["path"])?.lookupRows).toBeTypeOf("function");
-    expect(ctx.indexFor!(docs, ["path"])).toBe(ctx.indexFor!(docs, ["path"])); // one index per (target, path)
+    expect(ctx.indexFor!(docs, ["_path"])?.lookupRows).toBeTypeOf("function");
+    expect(ctx.indexFor!(docs, ["_path"])).toBe(ctx.indexFor!(docs, ["_path"])); // one index per (target, path)
     expect(ctx.get(repo, "docs")).toBe(docs); // one handle per target per context
-    expect(ctx.indexFor!(docs, ["id"])).toBeDefined();
+    expect(ctx.indexFor!(docs, ["_id"])).toBeDefined();
     expect(ctx.indexFor!(docs, ["type"])).toBeDefined(); // a property
-    expect(ctx.indexFor!(docs, ["title"])).toBeDefined(); // the computed scalar
-    expect(ctx.indexFor!(docs, ["format"])).toBeUndefined(); // a column without an index
-    expect(ctx.indexFor!(docs, ["tags"])).toBeUndefined(); // list-valued
-    expect(ctx.indexFor!(docs, ["out_links"])).toBeUndefined(); // a relation
-    expect(ctx.indexFor!(docs, ["raw"])).toBeUndefined(); // an attribute without an index, never a property probe
-    expect(ctx.indexFor!(docs, ["data"])).toBeUndefined(); // a source handle
+    expect(ctx.indexFor!(docs, ["_title"])).toBeDefined(); // the computed scalar (the `$title` property row)
+    expect(ctx.indexFor!(docs, ["title"])).toBeDefined(); // a bare name is an authored-property probe (5.0: nothing is reserved)
+    expect(ctx.indexFor!(docs, ["_format"])).toBeUndefined(); // a column without an index
+    expect(ctx.indexFor!(docs, ["_tags"])).toBeUndefined(); // list-valued
+    expect(ctx.indexFor!(docs, ["_out_links"])).toBeUndefined(); // a relation
+    expect(ctx.indexFor!(docs, ["_raw"])).toBeUndefined(); // an attribute without an index, never a property probe
+    expect(ctx.indexFor!(docs, ["_data"])).toBeUndefined(); // a source handle
     expect(ctx.indexFor!(docs, ["meta", "id"])).toBeUndefined(); // multi-segment
-    expect(ctx.indexFor!(ctx.root("links"), ["dst_id"])).toBeDefined(); // a bare root at the root scope
-    expect(ctx.indexFor!(ctx.get(repo, "links"), ["predicate"])).toBeUndefined(); // no leading index
-    expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["doc_id"])).toBeDefined();
-    expect(ctx.indexFor!(ctx.get(repo, "nodes"), ["name"])).toBeDefined();
+    expect(ctx.indexFor!(ctx.root("links"), ["_dst_id"])).toBeDefined(); // a bare root at the root scope
+    expect(ctx.indexFor!(ctx.get(repo, "links"), ["_predicate"])).toBeUndefined(); // no leading index
+    expect(ctx.indexFor!(ctx.get(repo, "blocks"), ["_doc_id"])).toBeDefined();
+    expect(ctx.indexFor!(ctx.get(repo, "nodes"), ["_name"])).toBeDefined();
     // a relation's rows are an ordinary array: the engine indexes those itself
-    const index = ctx.get((docs as unknown[])[0], "out_links");
-    expect(ctx.indexFor!(index, ["path"])).toBeUndefined();
-    expect(indexablePaths("links")).toEqual(["id", "doc_id", "dst_id", "path", "dst_path"]);
+    const index = ctx.get((docs as unknown[])[0], "_out_links");
+    expect(ctx.indexFor!(index, ["_path"])).toBeUndefined();
+    expect(indexablePaths("links")).toEqual(["_id", "_doc_id", "_dst_id", "_path", "_dst_path"]);
+    expect(indexablePaths("docs")).toEqual(["_id", "_path", "_title", "<property key>"]);
   });
 
   it("a correlated block over ^docs probes SQLite per outer row and never runs the docs scan", () => {
-    const q = 'select path, same_type: ^docs collect { path values where type == ^type && path != ^path } from docs';
+    const q = 'select _path, same_type: ^docs collect { _path values where type == ^type && _path != ^_path } from docs';
     let out!: { result: OqxResult; events: TraceEvent[] };
     const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
     const rows = out.result.consumer === "collect" ? out.result.rows : [];
@@ -102,7 +104,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     const probes = sql.filter((s) => /FROM properties p CROSS JOIN docs d ON d\.doc_id = p\.doc_id WHERE p\.repo_id = \? AND p\.key = \? AND p\.type = 'string' AND p\.val_text = \?/.test(s));
     expect(probes).toHaveLength(1);
     // substances see the other four substances, in (path, id) order
-    const salt = rows.find((r) => (r as { path: string }).path === "/substances/salt.md") as { same_type: string[] };
+    const salt = rows.find((r) => (r as { _path: string })._path === "/substances/salt.md") as { same_type: string[] };
     expect(salt.same_type).toEqual(["/substances/mercury.md", "/substances/philosophers-stone.md", "/substances/prima-materia.md", "/substances/sulphur.md"]);
     // and the whole thing equals the naive engine
     expect(out.result).toEqual(engineRun(store, repoId, q, { naive: true }).result);
@@ -110,9 +112,9 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("an edges-target correlated block is answered from idx_edges_dst; blocks from idx_blocks_doc; nodes from idx_nodes_kind", () => {
     const cases: [string, RegExp][] = [
-      ['select path, inbound: ^links collect { doc_id values where dst_id == ^id } from docs', /e\.dst_node = \? ORDER BY/],
-      ['select id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
-      ['select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
+      ['select _path, inbound: ^links collect { _doc_id values where _dst_id == ^_id } from docs', /e\.dst_node = \? ORDER BY/],
+      ['select _id, paragraphs: ^blocks collect { _ordinal values where _doc_id == ^_doc_id && _type == "paragraph" } from blocks where _type == "heading"', /b\.doc_id = \? ORDER BY/],
+      ['select _name, same_kind: ^nodes collect { _name values where _kind == ^_kind && _doc_id == ^_doc_id } from nodes where _kind == "md:section"', /n\.kind = \? ORDER BY/],
     ];
     for (const [q, probe] of cases) {
       let out!: { result: OqxResult; events: TraceEvent[] };
@@ -129,7 +131,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     const ctx = makeStoreContext(store, repoId);
     const docs = ctx.get(ctx.rootObject!(), "docs");
     const era = ctx.indexFor!(docs, ["era"])!;
-    const paths = (rows: Iterable<unknown>): unknown[] => Array.from(rows, (r) => ctx.get(r, "path"));
+    const paths = (rows: Iterable<unknown>): unknown[] => Array.from(rows, (r) => ctx.get(r, "_path"));
     expect(paths(era.lookupRows!(800))).toEqual(["/practitioners/jabir-ibn-hayyan.md", "/texts/emerald-tablet.md"]);
     expect(paths(era.lookupRows!(-0))).toEqual([]);
     expect(paths(era.lookupRows!("800"))).toEqual([]); // §5: a string never equals a number
@@ -141,7 +143,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(paths(type.lookupRows!(1))).toEqual([]);
     // a column probe: only strings — and for `path` only the reference form
     // (spec/surface §1 "Paths"): `path` reads `/index.md`, so a bare probe equals no row
-    const path = ctx.indexFor!(docs, ["path"])!;
+    const path = ctx.indexFor!(docs, ["_path"])!;
     expect(paths(path.lookupRows!("/index.md"))).toEqual(["/index.md"]);
     expect(paths(path.lookupRows!("index.md"))).toEqual([]);
     expect(paths(path.lookupRows!(5))).toEqual([]);
@@ -155,12 +157,12 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     });
     expect(scan.filter(isScan)).toHaveLength(0); // the handle was already read above; the fallback reuses it
     // `lookup` (positions) agrees with `lookupRows`
-    expect(era.lookup(800).map((i) => ctx.get(all[i], "path"))).toEqual(paths(era.lookupRows!(800)));
+    expect(era.lookup(800).map((i) => ctx.get(all[i], "_path"))).toEqual(paths(era.lookupRows!(800)));
     expect(type.lookup("nope")).toEqual([]);
   });
 
   it("the runner path: planned and in-memory agree and the in-memory run uses the indexes", () => {
-    const q = 'select path, cited: ^docs collect { path where out_links exists { where dst_path == ^^path } } from docs where type == "substance"';
+    const q = 'select _path, cited: ^docs collect { _path where _out_links exists { where _dst_path == ^^_path } } from docs where type == "substance"';
     const planned = oqxRun(store, repoId, q, { limit: 100 });
     const memory = oqxRun(store, repoId, q, { limit: 100, plan: false });
     expect(planned).toEqual(memory);
@@ -184,34 +186,34 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — the owner's identi
   const ownerLoad = /^SELECT \* FROM docs WHERE doc_id = \?$/;
   const blockLoad = /^SELECT b\.\*, d\.path AS __path FROM blocks b JOIN docs d ON d\.doc_id = b\.doc_id WHERE b\.block_id = \?$/;
 
-  it("doc.id / doc.path on blocks and edges read the row's own columns; doc.<column> still loads the document", () => {
+  it("_doc._id / _doc._path on blocks and edges read the row's own columns; _doc.<column> still loads the document", () => {
     for (const target of ["blocks", "links"]) {
-      const q = `select a: doc.id, b: doc_id, c: doc.path, d: path from ${target}`;
+      const q = `select a: _doc._id, b: _doc_id, c: _doc._path, d: _path from ${target}`;
       let out!: { result: OqxResult; events: TraceEvent[] };
       const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
       const rows = (out.result.consumer === "collect" ? out.result.rows : []) as { a: string; b: string; c: string; d: string }[];
       expect(rows.length, target).toBeGreaterThan(10);
       expect(rows.every((r) => r.a === r.b && r.c === r.d), target).toBe(true);
       expect(sql.filter((s) => ownerLoad.test(s)), target).toHaveLength(0);
-      const viaOwner = prepared(store, () => engineRun(store, repoId, `select f: doc.format from ${target}`)); // a document COLUMN loads the owner (a property read needs only the id)
+      const viaOwner = prepared(store, () => engineRun(store, repoId, `select f: _doc._format from ${target}`)); // a document COLUMN loads the owner (a property read needs only the id)
       expect(viaOwner.filter((s) => ownerLoad.test(s)).length, target).toBeGreaterThan(0);
     }
   });
 
-  it("block.id / block.path / block.doc_id on nodes read the node's own columns; block.text still loads the block", () => {
-    const q = 'select a: block.id, b: block_id, c: block.path, d: path, e: block.doc_id, f: doc_id from nodes where kind == "md:task"';
+  it("_block._id / _block._path / _block._doc_id on nodes read the node's own columns; _block._text still loads the block", () => {
+    const q = 'select a: _block._id, b: _block_id, c: _block._path, d: _path, e: _block._doc_id, f: _doc_id from nodes where _kind == "md:task"';
     let out!: { result: OqxResult; events: TraceEvent[] };
     const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
     const rows = (out.result.consumer === "collect" ? out.result.rows : []) as Record<string, string>[];
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.a === r.b && r.c === r.d && r.e === r.f)).toBe(true);
     expect(sql.filter((s) => blockLoad.test(s))).toHaveLength(0);
-    const viaOwner = prepared(store, () => engineRun(store, repoId, 'select t: block.text from nodes where kind == "md:task"'));
+    const viaOwner = prepared(store, () => engineRun(store, repoId, 'select t: _block._text from nodes where _kind == "md:task"'));
     expect(viaOwner.filter((s) => blockLoad.test(s)).length).toBeGreaterThan(0);
   });
 
   it("planned and in-memory agree over the reach-through identity", () => {
-    const q = 'select a: doc.id, p: doc.path from blocks where doc.id == "d_0" && doc.path == "/index.md"';
+    const q = 'select a: _doc._id, p: _doc._path from blocks where _doc._id == "d_0" && _doc._path == "/index.md"';
     expect(oqxRun(store, repoId, q, { limit: 200 })).toEqual(oqxRun(store, repoId, q, { limit: 200, plan: false }));
   });
 });
@@ -237,7 +239,7 @@ describe.skipIf(!!process.env.CI)("perf: a correlated block over ~5k documents",
   afterAll(() => store.close());
 
   it("orders per customer: 500 outer rows × 4,500 candidates in well under a second (indexed probe, no scan)", () => {
-    const q = 'select name, orders: ^docs collect { path where type == "order" && customer == ^path } from docs where type == "customer"';
+    const q = 'select name, orders: ^docs collect { _path where type == "order" && customer == ^_path } from docs where type == "customer"';
     let out!: { result: OqxResult; events: TraceEvent[] };
     const t0 = performance.now();
     const sql = prepared(store, () => { out = engineRun(store, repoId, q); });

@@ -23,8 +23,10 @@ export function isWriteTool(name: string): boolean {
 /**
  * `query`: run the OQX `query` through the `query` tool. With `hits`, the result must
  * have exactly that many hits, in order, and hit i must carry every key of `hits[i]`
- * with a deep-equal value (the envelope keys `id`/`path` are ignored unless named).
+ * with a deep-equal value (the envelope keys `_id`/`_path` are ignored unless named).
  * With `count`, the result's `count` must equal it (use a `… count { … }` query).
+ * Queries speak surface 5.0: an engine attribute is `_`-prefixed (`_path`, `_kind`,
+ * `_type`), an authored frontmatter key or `attrs` key is bare (`verified`, `checked`).
  */
 export interface QueryCheck {
   kind: "query";
@@ -33,7 +35,7 @@ export interface QueryCheck {
   count?: number;
 }
 
-/** `read`: `docs_read { path }` → the raw bytes must equal `equals` and/or match every `matches` regex and none of `not_matches` (JavaScript regexes, flags "s"). */
+/** `read`: `docs_read { _path }` → the `_raw` bytes must equal `equals` and/or match every `matches` regex and none of `not_matches` (JavaScript regexes, flags "s"). (The check's own `path` member is the harness's role name, not the tool argument.) */
 export interface ReadCheck {
   kind: "read";
   path: string;
@@ -79,8 +81,9 @@ export type Hook = DiskEditHook;
 
 /**
  * One scripted tool call. Any value inside `args` may be `{ "$result": i }` (the
- * parsed result of step i) or `{ "$result": i, "$get": "a.b" }` (a member of it).
- * `expect_error` names the error code the step is expected to fail with.
+ * parsed result of step i) or `{ "$result": i, "$get": "a.b" }` (a member of it —
+ * a hit's id is `hits.0._id`, surface 5.0). `expect_error` names the error code
+ * the step is expected to fail with.
  */
 export interface SolutionStep {
   tool: string;

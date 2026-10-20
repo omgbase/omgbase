@@ -25,48 +25,48 @@
   "cases": [
     {
       "name": "doc-out-distinct-closure",
-      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
+      "query": "from docs where _path == \"substances/philosophers-stone.md\" follow distinct _out_links collect { from _dst }",
       "expect": {
         "hits": [
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -76,75 +76,75 @@
     },
     {
       "name": "doc-out-distinct-with-depth-and-stop",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
+      "query": "select p: _path, d: $depth, s: $stop from docs where _path == \"substances/philosophers-stone.md\" follow distinct _out_links collect { from _dst }",
       "expect": {
         "hits": [
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 2,
             "s": "interior"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 2,
             "s": "interior"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 3,
             "s": "leaf"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 3,
             "s": "interior"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 3,
             "s": "leaf"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "d": 3,
             "s": "interior"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "p": "/lab/2026-02-notes.md",
             "d": 4,
             "s": "interior"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 4,
             "s": "interior"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 4,
             "s": "interior"
@@ -158,28 +158,28 @@
     {
       "name": "doc-in-direct-citers",
       "notes": "seed is $depth 1; a post-walk `$depth == 2` keeps the direct backlinks.",
-      "query": "from docs where path == \"processes/magnum-opus.md\" && $depth == 2 follow in_links collect { from doc depth 2 }",
+      "query": "from docs where _path == \"processes/magnum-opus.md\" && $depth == 2 follow _in_links collect { from _doc depth 2 }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -189,12 +189,12 @@
     },
     {
       "name": "cycle-admitted-once",
-      "query": "select p: path, s: $stop from docs where path == \"practitioners/paracelsus.md\" && $stop == \"cycle\" follow out_links collect { from dst depth 3 }",
+      "query": "select p: _path, s: $stop from docs where _path == \"practitioners/paracelsus.md\" && $stop == \"cycle\" follow _out_links collect { from _dst depth 3 }",
       "expect": {
         "hits": [
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "s": "cycle"
           }
@@ -207,7 +207,7 @@
     {
       "name": "occurrences-count",
       "notes": "default follow keeps one occurrence per distinct walk path.",
-      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow out_links collect { from dst } }",
+      "query": "docs count { where _path == \"substances/philosophers-stone.md\" follow _out_links collect { from _dst } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -218,7 +218,7 @@
     },
     {
       "name": "distinct-count",
-      "query": "docs count { where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst } }",
+      "query": "docs count { where _path == \"substances/philosophers-stone.md\" follow distinct _out_links collect { from _dst } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -229,103 +229,103 @@
     },
     {
       "name": "frontier-cuts-the-walk",
-      "query": "select p: path, ty: type, s: $stop from docs where path == \"index.md\" follow distinct out_links collect { from dst frontier type == \"practitioner\" }",
+      "query": "select p: _path, ty: type, s: $stop from docs where _path == \"index.md\" follow distinct _out_links collect { from _dst frontier type == \"practitioner\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "ty": "hub",
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "ty": "process",
             "s": "interior"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "ty": "substance",
             "s": "interior"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "ty": "substance",
             "s": "interior"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "ty": "text",
             "s": "interior"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "p": "/texts/mutus-liber.md",
             "ty": "text",
             "s": "interior"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "ty": "practitioner",
             "s": "frontier"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "p": "/practitioners/maria-prophetissa.md",
             "ty": "practitioner",
             "s": "frontier"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "ty": "practitioner",
             "s": "frontier"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "ty": "practitioner",
             "s": "frontier"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "ty": "process",
             "s": "leaf"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "ty": "process",
             "s": "interior"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "ty": "process",
             "s": "leaf"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "p": "/lab/2026-02-notes.md",
             "ty": "lab-note",
             "s": "interior"
@@ -339,52 +339,52 @@
     {
       "name": "body-frontier-keeps-seeds-unexpanded",
       "notes": "oqx 0.20: the body that carries the `follow` may write `frontier <pred>` too; it applies to the SEEDS, read in the seed's scope like `where`. The unverified process (`magnum-opus`) stays in the result with `$stop == \"frontier\"` and is not expanded; the verified processes expand through their links (bounded by the destination's `depth 2`). The destination block's own `frontier` is independent (see `frontier-cuts-the-walk`).",
-      "query": "select p: path, s: $stop, d: $depth, v: verified from docs where type == \"process\" frontier !verified follow distinct out_links collect { from dst depth 2 }",
+      "query": "select p: _path, s: $stop, d: $depth, v: verified from docs where type == \"process\" frontier !verified follow distinct _out_links collect { from _dst depth 2 }",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "s": "frontier",
             "d": 1,
             "v": false
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "s": "leaf",
             "d": 1,
             "v": true
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "s": "interior",
             "d": 1,
             "v": true
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "s": "leaf",
             "d": 1,
             "v": true
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "s": "depth",
             "d": 2,
             "v": false
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "p": "/lab/2026-02-notes.md",
             "s": "depth",
             "d": 2,
@@ -399,75 +399,75 @@
     {
       "name": "follow-local-where",
       "notes": "successors failing the follow-local `where` drop out of the walk.",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"index.md\" follow distinct out_links collect { from dst where layer == \"canon\" depth 2 }",
+      "query": "select p: _path, d: $depth, s: $stop from docs where _path == \"index.md\" follow distinct _out_links collect { from _dst where layer == \"canon\" depth 2 }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "p": "/practitioners/maria-prophetissa.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 2,
             "s": "depth"
@@ -480,90 +480,90 @@
     },
     {
       "name": "key-rekeys-identity",
-      "query": "select p: path, s: $stop from docs where path == \"substances/philosophers-stone.md\" follow out_links collect { $key: type from dst }",
+      "query": "select p: _path, s: $stop from docs where _path == \"substances/philosophers-stone.md\" follow _out_links collect { $key: type from _dst }",
       "expect": {
         "hits": [
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "s": "interior"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "s": "interior"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "s": "cycle"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "s": "interior"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "s": "interior"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "s": "cycle"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "s": "cycle"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "s": "cycle"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "s": "cycle"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "s": "interior"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "s": "leaf"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "s": "leaf"
           }
@@ -576,36 +576,36 @@
     },
     {
       "name": "depth-bound",
-      "query": "select p: path, d: $depth from docs where path == \"texts/emerald-tablet.md\" follow distinct out_links collect { from dst depth 2 }",
+      "query": "select p: _path, d: $depth from docs where _path == \"texts/emerald-tablet.md\" follow distinct _out_links collect { from _dst depth 2 }",
       "expect": {
         "hits": [
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "d": 1
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 2
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 2
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 2
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 2
           }
@@ -617,18 +617,18 @@
     },
     {
       "name": "leaf-sugar",
-      "query": "select p: path, s: $stop from docs where path == \"substances/salt.md\" && $leaf follow distinct out_links collect { from dst }",
+      "query": "select p: _path, s: $stop from docs where _path == \"substances/salt.md\" && $leaf follow distinct _out_links collect { from _dst }",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "s": "leaf"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "s": "leaf"
           }
@@ -640,26 +640,26 @@
     },
     {
       "name": "ordinal-over-the-walk",
-      "query": "select p: path, o: $ordinal, d: $depth from docs where path == \"substances/sulphur.md\" follow distinct out_links collect { from dst depth 2 } order by $ordinal",
+      "query": "select p: _path, o: $ordinal, d: $depth from docs where _path == \"substances/sulphur.md\" follow distinct _out_links collect { from _dst depth 2 } order by $ordinal",
       "expect": {
         "hits": [
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "p": "/substances/sulphur.md",
             "o": 1,
             "d": 1
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "p": "/lab/2026-01-notes.md",
             "o": 2,
             "d": 2
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "o": 3,
             "d": 2
@@ -672,47 +672,47 @@
     },
     {
       "name": "doc-in-with-stop",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/calcination.md\" follow distinct in_links collect { from doc depth 2 }",
+      "query": "select p: _path, d: $depth, s: $stop from docs where _path == \"processes/calcination.md\" follow distinct _in_links collect { from _doc depth 2 }",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "p": "/lab/2026-01-notes.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 2,
             "s": "depth"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "p": "/substances/salt.md",
             "d": 2,
             "s": "depth"
@@ -725,40 +725,40 @@
     },
     {
       "name": "section-children-outline",
-      "query": "select n: name, d: $depth, s: $stop from nodes where kind == \"md:section\" && name == \"The magnum opus\" follow section.children",
+      "query": "select n: _name, d: $depth, s: $stop from nodes where _kind == \"md:section\" && _name == \"The magnum opus\" follow $it._children",
       "expect": {
         "hits": [
           {
-            "id": "n_650d0569f2a8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_650d0569f2a8",
+            "_path": "/processes/magnum-opus.md",
             "n": "The magnum opus",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "n_57b863562c5f",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_57b863562c5f",
+            "_path": "/processes/magnum-opus.md",
             "n": "Why colour",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_7dd6472a3b76",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_7dd6472a3b76",
+            "_path": "/processes/magnum-opus.md",
             "n": "Operations",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md",
             "n": "Open questions",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_fae9f964b318",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_fae9f964b318",
+            "_path": "/processes/magnum-opus.md",
             "n": "The four stages",
             "d": 2,
             "s": "leaf"
@@ -771,27 +771,27 @@
     },
     {
       "name": "section-children-leaves",
-      "query": "select n: name from nodes where kind == \"md:section\" && name == \"The magnum opus\" && $leaf follow section.children",
+      "query": "select n: _name from nodes where _kind == \"md:section\" && _name == \"The magnum opus\" && $leaf follow $it._children",
       "expect": {
         "hits": [
           {
-            "id": "n_57b863562c5f",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_57b863562c5f",
+            "_path": "/processes/magnum-opus.md",
             "n": "Why colour"
           },
           {
-            "id": "n_7dd6472a3b76",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_7dd6472a3b76",
+            "_path": "/processes/magnum-opus.md",
             "n": "Operations"
           },
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md",
             "n": "Open questions"
           },
           {
-            "id": "n_fae9f964b318",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_fae9f964b318",
+            "_path": "/processes/magnum-opus.md",
             "n": "The four stages"
           }
         ],
@@ -802,36 +802,36 @@
     },
     {
       "name": "section-children-ordinal",
-      "query": "select n: name, o: $ordinal from nodes where kind == \"md:section\" && name == \"The magnum opus\" follow section.children order by $ordinal",
+      "query": "select n: _name, o: $ordinal from nodes where _kind == \"md:section\" && _name == \"The magnum opus\" follow $it._children order by $ordinal",
       "expect": {
         "hits": [
           {
-            "id": "n_650d0569f2a8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_650d0569f2a8",
+            "_path": "/processes/magnum-opus.md",
             "n": "The magnum opus",
             "o": 1
           },
           {
-            "id": "n_57b863562c5f",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_57b863562c5f",
+            "_path": "/processes/magnum-opus.md",
             "n": "Why colour",
             "o": 2
           },
           {
-            "id": "n_7dd6472a3b76",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_7dd6472a3b76",
+            "_path": "/processes/magnum-opus.md",
             "n": "Operations",
             "o": 3
           },
           {
-            "id": "n_d9f53e34d1f8",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_d9f53e34d1f8",
+            "_path": "/processes/magnum-opus.md",
             "n": "Open questions",
             "o": 4
           },
           {
-            "id": "n_fae9f964b318",
-            "path": "/processes/magnum-opus.md",
+            "_id": "n_fae9f964b318",
+            "_path": "/processes/magnum-opus.md",
             "n": "The four stages",
             "o": 5
           }
@@ -844,47 +844,47 @@
     {
       "name": "section-subsections-flattens",
       "notes": "`subsections` reaches every contained section, so the walk flattens to depth 2.",
-      "query": "select n: name, d: $depth, s: $stop from nodes where kind == \"md:section\" && name == \"Laboratory notes — January\" follow section.subsections",
+      "query": "select n: _name, d: $depth, s: $stop from nodes where _kind == \"md:section\" && _name == \"Laboratory notes — January\" follow $it._subsections",
       "expect": {
         "hits": [
           {
-            "id": "n_7524a6e40952",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_7524a6e40952",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Laboratory notes — January",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "n_029183976096",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_029183976096",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Safety",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_77e3ce3ba5b4",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_77e3ce3ba5b4",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Tasks",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_bb79db8efff5",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_bb79db8efff5",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Setup",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_c1aeadb4fbdc",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_c1aeadb4fbdc",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Results",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "n_ed254f66e363",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "n_ed254f66e363",
+            "_path": "/lab/2026-01-notes.md",
             "n": "Side work",
             "d": 2,
             "s": "leaf"
@@ -897,54 +897,54 @@
     },
     {
       "name": "block-children-list",
-      "query": "select t: type, d: $depth, o: $ordinal from blocks where path == \"substances/salt.md\" && type == \"list\" follow block.children order by $ordinal",
+      "query": "select t: _type, d: $depth, o: $ordinal from blocks where _path == \"substances/salt.md\" && _type == \"list\" follow $it._children order by $ordinal",
       "expect": {
         "hits": [
           {
-            "id": "b_269",
-            "path": "/substances/salt.md",
+            "_id": "b_269",
+            "_path": "/substances/salt.md",
             "t": "list",
             "d": 1,
             "o": 1
           },
           {
-            "id": "b_278",
-            "path": "/substances/salt.md",
+            "_id": "b_278",
+            "_path": "/substances/salt.md",
             "t": "list",
             "d": 1,
             "o": 2
           },
           {
-            "id": "b_270",
-            "path": "/substances/salt.md",
+            "_id": "b_270",
+            "_path": "/substances/salt.md",
             "t": "list_item",
             "d": 2,
             "o": 3
           },
           {
-            "id": "b_271",
-            "path": "/substances/salt.md",
+            "_id": "b_271",
+            "_path": "/substances/salt.md",
             "t": "list_item",
             "d": 2,
             "o": 4
           },
           {
-            "id": "b_272",
-            "path": "/substances/salt.md",
+            "_id": "b_272",
+            "_path": "/substances/salt.md",
             "t": "list_item",
             "d": 2,
             "o": 5
           },
           {
-            "id": "b_279",
-            "path": "/substances/salt.md",
+            "_id": "b_279",
+            "_path": "/substances/salt.md",
             "t": "task",
             "d": 2,
             "o": 6
           },
           {
-            "id": "b_280",
-            "path": "/substances/salt.md",
+            "_id": "b_280",
+            "_path": "/substances/salt.md",
             "t": "task",
             "d": 2,
             "o": 7
@@ -957,68 +957,68 @@
     },
     {
       "name": "block-children-open-questions",
-      "query": "select t: type, d: $depth, s: $stop from blocks where type == \"list\" && under_heading(\"Open questions\") follow block.children",
+      "query": "select t: _type, d: $depth, s: $stop from blocks where _type == \"list\" && under_heading(\"Open questions\") follow $it._children",
       "expect": {
         "hits": [
           {
-            "id": "b_206",
-            "path": "/processes/magnum-opus.md",
+            "_id": "b_206",
+            "_path": "/processes/magnum-opus.md",
             "t": "list",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "b_244",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "b_244",
+            "_path": "/substances/philosophers-stone.md",
             "t": "list",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "b_258",
-            "path": "/substances/prima-materia.md",
+            "_id": "b_258",
+            "_path": "/substances/prima-materia.md",
             "t": "list",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "b_207",
-            "path": "/processes/magnum-opus.md",
+            "_id": "b_207",
+            "_path": "/processes/magnum-opus.md",
             "t": "task",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "b_208",
-            "path": "/processes/magnum-opus.md",
+            "_id": "b_208",
+            "_path": "/processes/magnum-opus.md",
             "t": "task",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "b_245",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "b_245",
+            "_path": "/substances/philosophers-stone.md",
             "t": "list_item",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "b_246",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "b_246",
+            "_path": "/substances/philosophers-stone.md",
             "t": "list_item",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "b_259",
-            "path": "/substances/prima-materia.md",
+            "_id": "b_259",
+            "_path": "/substances/prima-materia.md",
             "t": "list_item",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "b_260",
-            "path": "/substances/prima-materia.md",
+            "_id": "b_260",
+            "_path": "/substances/prima-materia.md",
             "t": "list_item",
             "d": 2,
             "s": "leaf"
@@ -1031,12 +1031,12 @@
     },
     {
       "name": "nested-follow-collect",
-      "query": "select p: path, outline: nodes collect { select n: name, d: $depth where kind == \"md:section\" && attrs.level == 1 follow section.children } from docs where type == \"process\"",
+      "query": "select p: _path, outline: _nodes collect { select n: _name, d: $depth where _kind == \"md:section\" && _attrs.level == 1 follow $it._children } from docs where type == \"process\"",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "outline": [
               {
@@ -1062,8 +1062,8 @@
             ]
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "outline": [
               {
@@ -1085,8 +1085,8 @@
             ]
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "outline": [
               {
@@ -1108,8 +1108,8 @@
             ]
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "outline": [
               {
@@ -1142,7 +1142,7 @@
     },
     {
       "name": "consumer-over-a-walk",
-      "query": "blocks count { where path == \"index.md\" && type == \"list\" follow block.children }",
+      "query": "blocks count { where _path == \"index.md\" && _type == \"list\" follow $it._children }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1154,25 +1154,25 @@
     {
       "name": "follow-page-limit",
       "notes": "§1.4: a follow's rows page like any collect (default order, keyset cursor).",
-      "query": "from docs where path == \"substances/philosophers-stone.md\" follow distinct out_links collect { from dst }",
+      "query": "from docs where _path == \"substances/philosophers-stone.md\" follow distinct _out_links collect { from _dst }",
       "limit": 4,
       "expect": {
         "hits": [
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           }
         ],
         "truncated": true,
@@ -1182,34 +1182,34 @@
     },
     {
       "name": "correlated-follow-where-same-type",
-      "query": "select p: path, d: $depth, s: $stop from docs where path == \"processes/magnum-opus.md\" follow out_links collect { from dst where type == ^type }",
+      "query": "select p: _path, d: $depth, s: $stop from docs where _path == \"processes/magnum-opus.md\" follow _out_links collect { from _dst where type == ^type }",
       "notes": "`spec/oqx` 0.14: `^` in the follow-local `where` is the frontier row (`^^` the walk's enclosing scope), so the walk steps only into citations of the citer's own type.",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 1,
             "s": "interior"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 2,
             "s": "leaf"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 2,
             "s": "leaf"
@@ -1222,307 +1222,307 @@
     },
     {
       "name": "two-destinations-union",
-      "query": "select p: path, d: $depth from docs where path == \"substances/prima-materia.md\" follow out_links collect { from dst }, in_links collect { from doc depth 2 }",
+      "query": "select p: _path, d: $depth from docs where _path == \"substances/prima-materia.md\" follow _out_links collect { from _dst }, _in_links collect { from _doc depth 2 }",
       "notes": "a destination list walks the union of its relations; within one step the successors are deduplicated by identity (magnum-opus is both cited and a citer). Since oqx 0.20 each destination block carries its own `depth`.",
       "expect": {
         "hits": [
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 1
           },
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": 2
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 2
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 2
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "d": 2
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "p": "/texts/mutus-liber.md",
             "d": 2
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 2
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 3
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 3
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 3
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "p": "/texts/emerald-tablet.md",
             "d": 3
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "p": "/texts/mutus-liber.md",
             "d": 3
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 3
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "p": "/practitioners/maria-prophetissa.md",
             "d": 3
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 3
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "d": 3
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 3
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 3
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 3
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 3
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 3
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 3
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 3
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 3
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 3
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 3
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 3
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 3
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 3
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 3
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 3
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 4
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 4
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "d": 4
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 4
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 4
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 4
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 4
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "d": 4
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 4
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "d": 4
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 4
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 4
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "d": 4
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 4
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 4
           },
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": 4
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 4
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "p": "/lab/2026-02-notes.md",
             "d": 4
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 4
           }
@@ -1534,43 +1534,43 @@
     },
     {
       "name": "destination-block-equals-doc-in",
-      "query": "select p: path, d: $depth from docs where path == \"processes/magnum-opus.md\" follow ^docs collect { where out_links exists { where dst_path == ^^path } depth 2 }",
+      "query": "select p: _path, d: $depth from docs where _path == \"processes/magnum-opus.md\" follow ^docs collect { where _out_links exists { where _dst_path == ^^_path } depth 2 }",
       "notes": "a destination block is re-evaluated per frontier row with `^` bound to it (`^docs` from the frontier row is the root's documents); backlinks computed as a block over the root's documents equal `follow in_links collect { from doc depth 2 }` (`doc-in-direct-citers`).",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "d": 1
           },
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": 2
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "d": 2
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "d": 2
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "p": "/practitioners/maria-prophetissa.md",
             "d": 2
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "d": 2
           }

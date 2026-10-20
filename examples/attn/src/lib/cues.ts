@@ -15,7 +15,9 @@
 // changes focus and never writes anything. Delivery state (fired, snoozed,
 // checkpoints) is app-local, in `Delivery`; a firing is deduplicated per
 // (intent, cue id, focus episode). Editing the cue DEFINITIONS is the one
-// write: `set frontmatter.cues` with the whole list (lib/writes.ts uses it).
+// write: `set _frontmatter.cues` with the whole list (lib/writes.ts uses it) —
+// the field is `_frontmatter.<key>` (surface 5.0 / mutate 4.0: the handle is an
+// engine name, the key under it attn's own).
 
 import { OmgError, type Caller } from "./mcp-client.ts";
 import { CUE_ONS, record, str, strOrNull, type CueOn } from "./model.ts";
@@ -66,10 +68,10 @@ export function wireCue(cue: Pick<Cue, "id" | "on" | "query" | "at">): Record<st
   return out;
 }
 
-/** The one cue write: the intent's WHOLE `cues` list (`set frontmatter.cues`), or `unset` when none remain. */
+/** The one cue write: the intent's WHOLE `cues` list (`set _frontmatter.cues`), or `unset` when none remain. */
 export function setCuesEffect(intent: string, cues: readonly Pick<Cue, "id" | "on" | "query" | "at">[]): Effect {
-  if (cues.length === 0) return { op: "unset", target: intent, field: "frontmatter.cues" };
-  return { op: "set", target: intent, field: "frontmatter.cues", value: cues.map(wireCue) };
+  if (cues.length === 0) return { op: "unset", target: intent, field: "_frontmatter.cues" };
+  return { op: "set", target: intent, field: "_frontmatter.cues", value: cues.map(wireCue) };
 }
 
 // ---- evaluation ------------------------------------------------------------------------------
@@ -91,9 +93,9 @@ export function cueErrorOf(e: unknown): CueError {
 
 export interface FocusedRef { path: string; id: string | null }
 
-/** Is the focused intent a member of a cue query's result set? By path, or by id when the row carries no path. */
+/** Is the focused intent a member of a cue query's result set? By the hit's `_path`, or by its `_id` when the row carries no path (the hit envelope, spec/surface §1.4, 5.0). */
 export function isMember(hits: readonly Record<string, unknown>[], focused: FocusedRef): boolean {
-  return hits.some((h) => str(h.path) === focused.path || (focused.id !== null && str(h.id) === focused.id));
+  return hits.some((h) => str(h._path) === focused.path || (focused.id !== null && str(h._id) === focused.id));
 }
 
 export interface FocusEvaluation {
@@ -149,8 +151,8 @@ export async function queryTransitionDelta(caller: Caller, cue: Cue, checkpoint:
   if (!cue.query) return { cue, ids: kept, entered: [], exited: [], fires: [], error: { code: "no_query", message: "the cue has no `query`", hint: null } };
   try {
     const hits = await queryAll(caller, cue.query, repo);
-    const paths = new Map(hits.map((h) => [str(h.id), strOrNull(h.path)]));
-    const ids = [...new Set(hits.map((h) => str(h.id)).filter(Boolean))].sort();
+    const paths = new Map(hits.map((h) => [str(h._id), strOrNull(h._path)]));
+    const ids = [...new Set(hits.map((h) => str(h._id)).filter(Boolean))].sort();
     if (checkpoint === null) return { cue, ids, entered: [], exited: [], fires: [], error: null };
     const before = new Set(checkpoint);
     const now = new Set(ids);

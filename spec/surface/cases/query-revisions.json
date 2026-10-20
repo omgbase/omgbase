@@ -26,22 +26,42 @@
     {
       "name": "shape",
       "notes": "§1.2 the revisions row: every plain field under docs_history's names; the envelope id is the revision id and path the document's path as of the revision.",
-      "query": "select rev, seq, doc_id, commit, ts, origin, actor, reason, hash, is_current from revisions where path == \"/processes/calcination.md\"",
+      "query": "select _rev, _seq, _doc_id, _commit, _ts, _origin, _actor, _reason, _hash, _is_current from revisions where _path == \"/processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_7",
-            "path": "/processes/calcination.md",
-            "rev": "r_7",
-            "seq": 1,
-            "doc_id": "d_7",
-            "commit": "c_7",
-            "ts": "2026-09-27T00:00:00.000Z",
-            "origin": "observed",
-            "actor": null,
-            "reason": null,
-            "hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2",
-            "is_current": true
+            "_id": "r_7",
+            "_path": "/processes/calcination.md",
+            "_rev": "r_7",
+            "_seq": 1,
+            "_doc_id": "d_7",
+            "_commit": "c_7",
+            "_ts": "2026-09-27T00:00:00.000Z",
+            "_origin": "observed",
+            "_actor": null,
+            "_reason": null,
+            "_hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2",
+            "_is_current": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "engine-names-seq-actor-origin",
+      "notes": "§1.2 (5.0): a revision row's columns under their engine names — `_seq`, `_actor`, `_origin`, `_commit`; the one-revision corpus has one row per document, each `_seq` 1, `_actor` null (an observed commit has no actor).",
+      "query": "select _seq, _actor, _origin, _commit from revisions where _path == \"/index.md\" order by _seq",
+      "expect": {
+        "hits": [
+          {
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_seq": 1,
+            "_actor": null,
+            "_origin": "observed",
+            "_commit": "c_0"
           }
         ],
         "truncated": false,
@@ -52,12 +72,12 @@
     {
       "name": "rev-is-id",
       "notes": "`rev` is the envelope `id` (symmetry with docs_history).",
-      "query": "select same: rev == id from revisions where path == \"/processes/calcination.md\"",
+      "query": "select same: _rev == _id from revisions where _path == \"/processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_7",
-            "path": "/processes/calcination.md",
+            "_id": "r_7",
+            "_path": "/processes/calcination.md",
             "same": true
           }
         ],
@@ -69,12 +89,12 @@
     {
       "name": "hash-is-the-documents-hash",
       "notes": "the rendered hash of the current revision is the document's `hash`.",
-      "query": "select same: hash == doc.hash from revisions where path == \"/processes/calcination.md\"",
+      "query": "select same: _hash == _doc._hash from revisions where _path == \"/processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_7",
-            "path": "/processes/calcination.md",
+            "_id": "r_7",
+            "_path": "/processes/calcination.md",
             "same": true
           }
         ],
@@ -98,38 +118,38 @@
     {
       "name": "root-order",
       "notes": "the scan's default order is (path as of the revision, rev_id) — the keyset of every target.",
-      "query": "select seq, doc_id from revisions limit 5",
+      "query": "select _seq, _doc_id from revisions limit 5",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "seq": 1,
-            "doc_id": "d_0"
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_seq": 1,
+            "_doc_id": "d_0"
           },
           {
-            "id": "r_1",
-            "path": "/lab/2026-01-notes.md",
-            "seq": 1,
-            "doc_id": "d_1"
+            "_id": "r_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_seq": 1,
+            "_doc_id": "d_1"
           },
           {
-            "id": "r_2",
-            "path": "/lab/2026-02-notes.md",
-            "seq": 1,
-            "doc_id": "d_2"
+            "_id": "r_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_seq": 1,
+            "_doc_id": "d_2"
           },
           {
-            "id": "r_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
-            "seq": 1,
-            "doc_id": "d_3"
+            "_id": "r_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
+            "_seq": 1,
+            "_doc_id": "d_3"
           },
           {
-            "id": "r_4",
-            "path": "/practitioners/maria-prophetissa.md",
-            "seq": 1,
-            "doc_id": "d_4"
+            "_id": "r_4",
+            "_path": "/practitioners/maria-prophetissa.md",
+            "_seq": 1,
+            "_doc_id": "d_4"
           }
         ],
         "truncated": false,
@@ -140,26 +160,26 @@
     {
       "name": "order-by-seq-desc",
       "notes": "a custom order: no cursor, the top page.",
-      "query": "select seq, ts from revisions order by seq desc, path limit 3",
+      "query": "select _seq, _ts from revisions order by _seq desc, _path limit 3",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "seq": 1,
-            "ts": "2026-09-27T00:00:00.000Z"
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_seq": 1,
+            "_ts": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "r_1",
-            "path": "/lab/2026-01-notes.md",
-            "seq": 1,
-            "ts": "2026-09-27T00:00:00.000Z"
+            "_id": "r_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_seq": 1,
+            "_ts": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "r_2",
-            "path": "/lab/2026-02-notes.md",
-            "seq": 1,
-            "ts": "2026-09-27T00:00:00.000Z"
+            "_id": "r_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_seq": 1,
+            "_ts": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
@@ -169,18 +189,18 @@
     },
     {
       "name": "order-by-ts",
-      "query": "select ts from revisions order by ts desc, path limit 2",
+      "query": "select _ts from revisions order by _ts desc, _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "ts": "2026-09-27T00:00:00.000Z"
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_ts": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "r_1",
-            "path": "/lab/2026-01-notes.md",
-            "ts": "2026-09-27T00:00:00.000Z"
+            "_id": "r_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_ts": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
@@ -196,16 +216,16 @@
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md"
+            "_id": "r_0",
+            "_path": "/index.md"
           },
           {
-            "id": "r_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "r_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "r_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "r_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": true,
@@ -222,16 +242,16 @@
       "expect": {
         "hits": [
           {
-            "id": "r_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "r_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "r_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "r_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "r_5",
-            "path": "/practitioners/newton.md"
+            "_id": "r_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": true,
@@ -242,7 +262,7 @@
     {
       "name": "is-current-after-ingest",
       "notes": "every revision is its document's current one on a one-commit corpus.",
-      "query": "revisions none { where not is_current }",
+      "query": "revisions none { where not _is_current }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -253,12 +273,12 @@
     },
     {
       "name": "is-current-is-a-boolean",
-      "query": "select c: is_current == true from revisions where path == \"/index.md\"",
+      "query": "select c: _is_current == true from revisions where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
+            "_id": "r_0",
+            "_path": "/index.md",
             "c": true
           }
         ],
@@ -270,12 +290,12 @@
     {
       "name": "doc-reach-through",
       "notes": "`doc` is the document's current row.",
-      "query": "select t: doc.title, p: doc.path, l: doc.layer from revisions where path == \"/index.md\"",
+      "query": "select t: _doc._title, p: _doc._path, l: _doc.layer from revisions where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
+            "_id": "r_0",
+            "_path": "/index.md",
             "t": "Alchemy",
             "p": "/index.md",
             "l": "canon"
@@ -288,12 +308,12 @@
     },
     {
       "name": "doc-identity-reads-the-foreign-key",
-      "query": "select a: doc.id, b: doc_id from revisions where path == \"/index.md\"",
+      "query": "select a: _doc._id, b: _doc_id from revisions where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
+            "_id": "r_0",
+            "_path": "/index.md",
             "a": "d_0",
             "b": "d_0"
           }
@@ -306,14 +326,14 @@
     {
       "name": "doc-block-sugar",
       "notes": "`doc` as a receiver: one row.",
-      "query": "select d: doc { title } from revisions where path == \"/substances/salt.md\"",
+      "query": "select d: _doc { _title } from revisions where _path == \"/substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_14",
-            "path": "/substances/salt.md",
+            "_id": "r_14",
+            "_path": "/substances/salt.md",
             "d": {
-              "title": "Salt"
+              "_title": "Salt"
             }
           }
         ],
@@ -325,24 +345,24 @@
     {
       "name": "doc-filter",
       "notes": "a filter through the reach-through.",
-      "query": "select path from revisions where doc.type == \"practitioner\"",
+      "query": "select _path from revisions where _doc.type == \"practitioner\"",
       "expect": {
         "hits": [
           {
-            "id": "r_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "r_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "r_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "r_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "r_5",
-            "path": "/practitioners/newton.md"
+            "_id": "r_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "r_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "r_6",
+            "_path": "/practitioners/paracelsus.md"
           }
         ],
         "truncated": false,
@@ -353,7 +373,7 @@
     {
       "name": "no-deleted-documents-yet",
       "notes": "`doc` is absent for a tombstoned document's revisions; the corpus has none (reads::revisions has).",
-      "query": "from revisions where doc == null",
+      "query": "from revisions where _doc == null",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -363,7 +383,7 @@
     },
     {
       "name": "doc-never-null-here",
-      "query": "revisions none { where doc == null }",
+      "query": "revisions none { where _doc == null }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -374,12 +394,12 @@
     },
     {
       "name": "commit-and-ts",
-      "query": "select c: commit, t: ts, o: origin from revisions where path == \"/index.md\"",
+      "query": "select c: _commit, t: _ts, o: _origin from revisions where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
+            "_id": "r_0",
+            "_path": "/index.md",
             "c": "c_0",
             "t": "2026-09-27T00:00:00.000Z",
             "o": "observed"
@@ -393,13 +413,13 @@
     {
       "name": "path-literal-rooted",
       "notes": "a bare literal compared with `path` is rooted (§1 Paths).",
-      "query": "select seq from revisions where path == \"processes/calcination.md\"",
+      "query": "select _seq from revisions where _path == \"processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "r_7",
-            "path": "/processes/calcination.md",
-            "seq": 1
+            "_id": "r_7",
+            "_path": "/processes/calcination.md",
+            "_seq": 1
           }
         ],
         "truncated": false,
@@ -409,7 +429,7 @@
     },
     {
       "name": "distinct-origin-values",
-      "query": "select distinct origin values from revisions",
+      "query": "select distinct _origin values from revisions",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -423,13 +443,13 @@
     {
       "name": "bare-projection",
       "notes": "`bare` drops the envelope on revisions as on every target.",
-      "query": "select rev, seq from revisions where path == \"/index.md\"",
+      "query": "select _rev, _seq from revisions where _path == \"/index.md\"",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "rev": "r_0",
-            "seq": 1
+            "_rev": "r_0",
+            "_seq": 1
           }
         ],
         "truncated": false,
@@ -439,13 +459,13 @@
     },
     {
       "name": "single-consumer",
-      "query": "revisions single { select seq where path == \"/index.md\" }",
+      "query": "revisions single { select _seq where _path == \"/index.md\" }",
       "expect": {
         "hits": [
           {
-            "id": "r_0",
-            "path": "/index.md",
-            "seq": 1
+            "_id": "r_0",
+            "_path": "/index.md",
+            "_seq": 1
           }
         ],
         "truncated": false,
@@ -477,7 +497,7 @@
       "query": "select x: blocks from revisions limit 1",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"
+        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks)?"
       }
     },
     {
@@ -486,22 +506,22 @@
       "query": "from blocks where revisions count { } > 0 limit 1",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`revisions` inside a block reads a property of the current row, which has none — did you mean `^revisions` (the repository's revisions; one caret per enclosing block, or the absolute `0^revisions`)?"
+        "message_includes": "`revisions` inside a block reads a property of the current row, which has none — did you mean `^revisions` (the repository's revisions)?"
       }
     },
     {
       "name": "docs-relation-count",
       "notes": "`revisions` on a document: its revision list (oldest first).",
-      "query": "from docs where revisions count { where origin == \"observed\" } == 1 limit 2",
+      "query": "from docs where _revisions count { where _origin == \"observed\" } == 1 limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -511,17 +531,17 @@
     },
     {
       "name": "docs-relation-collect",
-      "query": "select r: revisions collect { seq, origin, hash } from docs where path == \"/index.md\"",
+      "query": "select r: _revisions collect { _seq, _origin, _hash } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "r": [
               {
-                "seq": 1,
-                "origin": "observed",
-                "hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
+                "_seq": 1,
+                "_origin": "observed",
+                "_hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
               }
             ]
           }
@@ -534,16 +554,16 @@
     {
       "name": "docs-relation-rows-as-values",
       "notes": "rows as values render { id, path } (§1.4).",
-      "query": "select r: revisions from docs where path == \"/index.md\"",
+      "query": "select r: _revisions from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "r": [
               {
-                "id": "r_0",
-                "path": "/index.md"
+                "_id": "r_0",
+                "_path": "/index.md"
               }
             ]
           }
@@ -556,12 +576,12 @@
     {
       "name": "docs-relation-from-a-block-row",
       "notes": "`doc.revisions` from a block reaches the owning document's list.",
-      "query": "select v: doc.revisions collect { seq values } from blocks limit 1",
+      "query": "select v: _doc._revisions collect { _seq values } from blocks limit 1",
       "expect": {
         "hits": [
           {
-            "id": "b_0",
-            "path": "/index.md",
+            "_id": "b_0",
+            "_path": "/index.md",
             "v": [
               1
             ]
@@ -574,12 +594,12 @@
     },
     {
       "name": "docs-relation-from-a-link-row",
-      "query": "select v: doc.revisions collect { rev values } from links where path == \"/index.md\" limit 1",
+      "query": "select v: _doc._revisions collect { _rev values } from links where _path == \"/index.md\" limit 1",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "_id": "e_0",
+            "_path": "/index.md",
             "v": [
               "r_0"
             ]
@@ -597,8 +617,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20
           }
         ],
@@ -610,16 +630,16 @@
     {
       "name": "correlated-probe",
       "notes": "a correlated block over the root scan (no store index: the scan is materialized once per query).",
-      "query": "from docs where ^revisions exists { where doc_id == ^id and is_current } limit 2",
+      "query": "from docs where ^revisions exists { where _doc_id == ^_id and _is_current } limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -629,13 +649,13 @@
     },
     {
       "name": "absolute-root",
-      "query": "select n: size(blocks collect { where 0^revisions exists { where doc_id == ^doc_id and is_current } }) from docs where path == \"/index.md\"",
+      "query": "select n: size(_blocks collect { where 0^revisions exists { where _doc_id == ^_doc_id and _is_current } }) from docs where _path == \"/index.md\"",
       "notes": "the absolute root from depth two: every block of the document has a current revision row for its document.",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 31
           }
         ],
@@ -646,12 +666,12 @@
     },
     {
       "name": "select-on-a-docs-relation-reach",
-      "query": "select p: revisions first { doc.path values } from docs where path == \"/index.md\"",
+      "query": "select p: _revisions first { _doc._path values } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md"
           }
         ],

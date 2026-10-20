@@ -215,7 +215,7 @@ export function runHistoryStep(store: Store, repoId: string, step: HistoryStep, 
   try {
     const at = readDocumentAtRevision(store, doc, rev);
     if (!at) return { error: "target_missing" };
-    return { raw: at.raw, rendered_hash_match: at.renderedHashMatch };
+    return { raw: at._raw, rendered_hash_match: at.renderedHashMatch };
   } catch (e) {
     if (e instanceof RevisionArchived) return { error: "revision_archived", rev: e.rev, archive: e.archive, ...(e.path !== null ? { path: `${DEST_TOKEN}/${segmentBasename(e.path)}` } : {}) };
     throw e;
@@ -804,7 +804,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       const atRev = readDocumentAtRevision(store, d.doc_id, d.current_rev);
       if (!atRev) problems.push(`I1: ${at} reconstruct at ${d.current_rev} returned nothing`);
       else {
-        if (atRev.raw !== source) problems.push(`I1: ${at} reconstruct at ${d.current_rev} != source`);
+        if (atRev._raw !== source) problems.push(`I1: ${at} reconstruct at ${d.current_rev} != source`);
         if (!atRev.renderedHashMatch) problems.push(`I1: ${at} rendered_hash_match is false at the current revision`);
       }
     }

@@ -56,7 +56,7 @@ describe("trace suite", () => {
     save("proj.md", "# Project\n\n## Open Questions\n\nshould identity be engine-local\n\n## Decisions\n\nuse sqlite for storage\n");
     await connect();
     // 1. read to get the block ids inline (no alias table anymore)
-    const { payload: read } = await call("docs_read", { path: "proj.md", include_ids: true });
+    const { payload: read } = await call("docs_read", { _path: "proj.md", include_ids: true });
     const ids = read.ids as string[];
     const qId = ids.find((id) => {
       const row = store.db.prepare("SELECT text FROM blocks WHERE block_id=?").get(id) as { text: string } | undefined;
@@ -68,7 +68,7 @@ describe("trace suite", () => {
     })!;
     // 2. apply the move
     const { payload: res } = await call("apply", {
-      effects: [{ op: "move", targets: [{ kind: "block", id: qId }], into: { kind: "section", heading_id: decHeading }, at: "end" }],
+      effects: [{ op: "move", targets: [{ kind: "block", _id: qId }], into: { kind: "section", heading_id: decHeading }, at: "end" }],
       reason: "promote decision",
     });
     expect(res.committed).toBe(true);
@@ -80,10 +80,10 @@ describe("trace suite", () => {
   it("T2 — complete unchecked tasks under a heading (≤ 2 turns)", async () => {
     save("tasks.md", "# Work\n\n## Launch\n\n- [ ] deploy the service now\n- [ ] write the launch docs\n");
     await connect();
-    const { payload: q } = await call("query", { query: 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' });
-    const hits = q.hits as { id: string }[];
+    const { payload: q } = await call("query", { query: 'from blocks where _type == "task" && !_attrs.checked && under_heading("Launch")' });
+    const hits = q.hits as { _id: string }[];
     expect(hits.length).toBe(2);
-    const { payload: res } = await call("blocks_check", { ids: hits.map((h) => h.id) });
+    const { payload: res } = await call("blocks_check", { _ids: hits.map((h) => h._id) });
     expect(res.committed).toBe(true);
     expect(turns).toBeLessThanOrEqual(2);
     expect(readFileSync(join(dir, "tasks.md"), "utf8")).toContain("- [x] deploy");
@@ -102,9 +102,9 @@ describe("trace suite", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\ncites [target](/target.md) in this paragraph\n");
     await connect();
-    // Backlinks via OQX `follow in_links collect { from doc }`: seed the target, walk incoming edges.
-    const { payload } = await call("query", { query: 'from docs where path == "target.md" follow in_links collect { from doc }' });
-    expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("/src.md");
+    // Backlinks via OQX `follow _in_links collect { from _doc }`: seed the target, walk incoming edges.
+    const { payload } = await call("query", { query: 'from docs where _path == "target.md" follow _in_links collect { from _doc }' });
+    expect((arr(payload.hits) as { _path: string }[]).map((h) => h._path)).toContain("/src.md");
     expect(turns).toBe(1);
   });
 
@@ -126,7 +126,7 @@ describe("trace suite", () => {
     await connect();
     const bId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=(SELECT doc_id FROM docs WHERE path='c.md') AND text LIKE 'body%'").get() as { block_id: string }).block_id;
     const { payload, isError } = await call("apply", {
-      effects: [{ op: "set", target: { kind: "block", id: bId }, field: "markdown", value: "new", expect: { content_hash: "deadbeef" } }],
+      effects: [{ op: "set", target: { kind: "block", _id: bId }, field: "markdown", value: "new", expect: { content_hash: "deadbeef" } }],
     });
     expect(isError).toBe(true);
     expect(payload.error).toBe("stale_expectation");

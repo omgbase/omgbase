@@ -1,13 +1,17 @@
 // Paths and the surface gate (the subset of repo-explorer's lib/paths.ts this
-// app needs). attn speaks omgbase surface 4.7 (spec/surface): a bare path as an
-// effect's target (spec/mutate 3.2), `expect.revision` on an effect, the
-// Receipt's `summary` and the error `fix` (4.4), and — for the Stream — the
-// `revisions` query target and `docs_read { at }` (4.7). The connected server's
-// version comes from the `version` tool's `specs.surface` and is checked once
-// per connection (`surfaceProblem`).
+// app needs). attn speaks omgbase surface 5.0 (spec/surface): "underscore =
+// engine" — `_id`, `_path`, `_updated_at` on a row, `_rev`/`_seq`/`_ts` on a
+// revision, `docs_read { _path }`, the effect field `_frontmatter.<key>`, hits
+// `{ _id, _path, … }` — on top of what 4.x gave it: a bare path as an effect's
+// target (spec/mutate 3.2), `expect.revision` on an effect, the Receipt's
+// `summary` and the error `fix` (4.4), the `revisions` query target and
+// `docs_read { at }` (4.7). A 4.x server refuses `_path` and a 5.0 server
+// refuses a bare `path` (no tolerance), so the gate is exact about the major.
+// The connected server's version comes from the `version` tool's
+// `specs.surface` and is checked once per connection (`surfaceProblem`).
 
 /** The surface this app is written against. */
-export const REQUIRED_SURFACE = "4.7";
+export const REQUIRED_SURFACE = "5.0";
 
 /** The `version` tool's `specs.surface` ("major.minor"), or null when the result does not carry one. */
 export function surfaceOf(versionResult: unknown): string | null {
@@ -35,15 +39,15 @@ export function surfaceAtLeast(surface: string | null, required: string = REQUIR
   return a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]);
 }
 
-/** Null when the server speaks a surface this app understands (≥ 4.7); else the message to show instead of connecting. */
+/** Null when the server speaks a surface this app understands (≥ 5.0); else the message to show instead of connecting. */
 export function surfaceProblem(surface: string | null): string | null {
   if (surfaceAtLeast(surface)) return null;
-  return `attn needs omgbase surface ≥ ${REQUIRED_SURFACE} (bare-path effect targets, expect.revision, the revisions target and docs_read { at }) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
+  return `attn needs omgbase surface ≥ ${REQUIRED_SURFACE} (the engine names _id / _path / _updated_at, docs_read { _path }, the _frontmatter.<key> effect field, the revisions target and docs_read { at }) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
 }
 
-/** A query hit's document path as returned (`/`-rooted), else null. */
+/** A query hit's document path as returned (`_path`, `/`-rooted — the hit envelope, spec/surface §1.4, 5.0), else null. */
 export function hitPath(hit: Record<string, unknown> | null | undefined): string | null {
-  const v = hit?.path;
+  const v = hit?._path;
   return typeof v === "string" ? v : null;
 }
 

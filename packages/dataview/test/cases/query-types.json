@@ -2,20 +2,20 @@
   {
     "name": "table-with-columns",
     "dql": "TABLE file.mtime, due FROM \"projects\" WHERE due < date(today) SORT due DESC LIMIT 10",
-    "oqx": "select path, updated_at, due from docs where (path.startsWith(\"/projects/\") or path == \"/projects.md\") and date(due) < date(\"today\") order by due desc limit 10",
+    "oqx": "select _path, _updated_at, due from docs where (_path.startsWith(\"/projects/\") or _path == \"/projects.md\") and date(due) < date(\"today\") order by due desc limit 10",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
         {
           "name": "file.mtime",
-          "alias": "updated_at"
+          "alias": "_updated_at"
         },
         {
           "name": "due",
@@ -28,7 +28,7 @@
   {
     "name": "table-without-id",
     "dql": "TABLE WITHOUT ID file.link AS \"Note\", rating FROM \"games\" WHERE rating >= 8 SORT rating DESC",
-    "oqx": "select path, Note: path, rating from docs where (path.startsWith(\"/games/\") or path == \"/games.md\") and rating >= 8 order by rating desc",
+    "oqx": "select _path, Note: _path, rating from docs where (_path.startsWith(\"/games/\") or _path == \"/games.md\") and rating >= 8 order by rating desc",
     "render": {
       "type": "table",
       "withoutId": true,
@@ -51,14 +51,14 @@
   {
     "name": "table-no-columns",
     "dql": "TABLE FROM \"inbox\"",
-    "oqx": "select path from docs where path.startsWith(\"/inbox/\") or path == \"/inbox.md\"",
+    "oqx": "select _path from docs where _path.startsWith(\"/inbox/\") or _path == \"/inbox.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": []
@@ -68,14 +68,14 @@
   {
     "name": "table-as-alias-ident",
     "dql": "TABLE due AS deadline, pages * 2 AS doubled FROM \"books\"",
-    "oqx": "select path, deadline: due, doubled: pages * 2 from docs where path.startsWith(\"/books/\") or path == \"/books.md\"",
+    "oqx": "select _path, deadline: due, doubled: pages * 2 from docs where _path.startsWith(\"/books/\") or _path == \"/books.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -94,14 +94,14 @@
   {
     "name": "table-duplicate-field-names-get-generated-aliases",
     "dql": "TABLE due, due, file.mtime AS mtime, file.mtime AS mtime FROM \"a\"",
-    "oqx": "select path, due, c1: due, mtime: updated_at, c3: updated_at from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, due, c1: due, mtime: _updated_at, c3: _updated_at from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -126,26 +126,56 @@
     "warnings": []
   },
   {
-    "name": "table-column-named-like-the-envelope",
+    "name": "table-column-named-path-and-id-are-authored-names",
     "dql": "TABLE file.path AS path, blockId AS id FROM \"a\"",
-    "oqx": "select path, c0: path, blockId from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, path: _path, id: blockId from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
         {
           "name": "path",
-          "alias": "c0"
+          "alias": "path"
         },
         {
           "name": "id",
-          "alias": "blockId"
+          "alias": "id"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "table-column-as-underscore-is-not-taken",
+    "dql": "TABLE file.path AS _path, due AS _due, file.mtime FROM \"a\"",
+    "oqx": "select _path, c0: _path, due, _updated_at from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "_path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "_path",
+          "alias": "c0"
+        },
+        {
+          "name": "_due",
+          "alias": "due"
+        },
+        {
+          "name": "file.mtime",
+          "alias": "_updated_at"
         }
       ]
     },
@@ -154,14 +184,14 @@
   {
     "name": "list-bare",
     "dql": "LIST",
-    "oqx": "select path from docs",
+    "oqx": "select _path from docs",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -171,14 +201,14 @@
   {
     "name": "list-with-expression",
     "dql": "LIST file.mtime FROM \"journal\"",
-    "oqx": "select path, value: updated_at from docs where path.startsWith(\"/journal/\") or path == \"/journal.md\"",
+    "oqx": "select _path, value: _updated_at from docs where _path.startsWith(\"/journal/\") or _path == \"/journal.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -191,7 +221,7 @@
   {
     "name": "list-without-id",
     "dql": "LIST WITHOUT ID title FROM \"a\"",
-    "oqx": "select path, value: data.title from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, value: title from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "list",
       "withoutId": true,
@@ -207,21 +237,21 @@
   {
     "name": "task-bare",
     "dql": "TASK",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\"",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\"",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -229,21 +259,21 @@
   {
     "name": "task-open-in-folder",
     "dql": "TASK FROM \"work\" WHERE !completed",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\" and (doc.path.startsWith(\"/work/\") or doc.path == \"/work.md\") and !checked",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and (_doc._path.startsWith(\"/work/\") or _doc._path == \"/work.md\") and !checked",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -251,45 +281,45 @@
   {
     "name": "task-due-today",
     "dql": "TASK WHERE !completed AND due <= date(today)",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\" and !checked and date(doc.due) <= date(\"today\")",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and !checked and date(_doc.due) <= date(\"today\")",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": [
-      "due: a task's inline fields are not indexed per task; read as the page's property doc.due"
+      "due: a task's inline fields are not indexed per task; read as the page's property _doc.due"
     ]
   },
   {
     "name": "task-text-contains",
     "dql": "TASK WHERE contains(text, \"urgent\") SORT file.mtime DESC",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\" and \"urgent\" in text order by doc.updated_at desc",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and \"urgent\" in _text order by _doc._updated_at desc",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -297,13 +327,13 @@
   {
     "name": "calendar",
     "dql": "CALENDAR file.mtime FROM \"journal\"",
-    "oqx": "select path, date: updated_at from docs where (path.startsWith(\"/journal/\") or path == \"/journal.md\") and has(date)",
+    "oqx": "select _path, date: _updated_at from docs where (_path.startsWith(\"/journal/\") or _path == \"/journal.md\") and has(date)",
     "render": {
       "type": "calendar",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "date": {
@@ -316,13 +346,13 @@
   {
     "name": "calendar-field",
     "dql": "CALENDAR due WHERE status != \"done\"",
-    "oqx": "select path, date: due from docs where status != \"done\" and has(date)",
+    "oqx": "select _path, date: due from docs where status != \"done\" and has(date)",
     "render": {
       "type": "calendar",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "date": {
@@ -335,20 +365,20 @@
   {
     "name": "keywords-are-case-insensitive",
     "dql": "table file.mtime from \"a\" where due sort due desc limit 3",
-    "oqx": "select path, updated_at from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and due order by due desc limit 3",
+    "oqx": "select _path, _updated_at from docs where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and due order by due desc limit 3",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
         {
           "name": "file.mtime",
-          "alias": "updated_at"
+          "alias": "_updated_at"
         }
       ]
     },
@@ -357,14 +387,14 @@
   {
     "name": "multiline",
     "dql": "TABLE\n  due,\n  status\nFROM \"projects\"\nWHERE status = \"open\"\nSORT due ASC",
-    "oqx": "select path, due, status from docs where (path.startsWith(\"/projects/\") or path == \"/projects.md\") and status == \"open\" order by due",
+    "oqx": "select _path, due, status from docs where (_path.startsWith(\"/projects/\") or _path == \"/projects.md\") and status == \"open\" order by due",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [

@@ -126,43 +126,62 @@ export const LANGUAGE = {
 
 /**
  * The omgbase host vocabulary — names the omgbase surface (`spec/surface`
- * §1.2–1.3) binds on top of OQX. They are **not** part of the language:
+ * §1.2–1.3, 5.0) binds on top of OQX. They are **not** part of the language:
  * `@omgbase/oqx` knows nothing of them, and another host may bind different
  * names. The grammar highlights the row functions (`text("…")`, `semantic("…")`,
  * …) as host functions; the attributes, handles and relations are listed for
  * consumers such as completion providers and highlight as plain identifiers
  * (the `$`-identifier rule covers OQX's own intrinsics only).
+ *
+ * The rule since surface 5.0 ("underscore = engine"): on every record kind a
+ * BARE name is a user-authored entry (a frontmatter or inline key on a
+ * document, an `attrs` key on a block or node) and an UNDERSCORE-prefixed name
+ * is engine-provided — the attributes, the source handles, the reach-throughs
+ * and the relations below all start with `_`. The collections stay bare
+ * (`from docs`, `^docs`) because `from` names a collection, not a row property,
+ * and so do the row functions in call position (a call is never an entry
+ * read). `$` stays OQX's (`$it`, `$key`, `$depth`, …): omgbase adds no `$`
+ * names, and the self aliases of 4.x (`doc`, `block`, `section`) are gone —
+ * `$it` is the self, and a bare `doc` is an authored key like any other.
+ * Lexically nothing changes: `_id` is an identifier (`IDENTIFIER` admits a
+ * leading `_`), `_doc._title` an identifier and a member.
  */
 export const OMGBASE = {
-  /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). */
+  /** The named roots of the repository (the root row: `^docs` from a row, bare `docs` at the top). Collections, not row properties — bare. */
   roots: ["docs", "blocks", "nodes", "links", "revisions"],
-  /** Row functions written as free calls, evaluated against the current row. */
+  /** Row functions written as free calls, evaluated against the current row. A call is never an entry read — bare. */
   rowFunctions: [
     "text", "semantic",
     "under", "under_heading", "within", "under_kind", "yaml_path", "json_pointer",
     "has_edge", "has_anchor", "child_count", "parent_type",
   ],
   /**
-   * The engine attributes by target — bare snake_case names that win on
-   * collision with an authored key (spec/surface §1.2, 3.0: `$` belongs to
-   * OQX — `$it`, `$key`, `$depth`, … — and omgbase adds no `$` names; an
-   * authored key with an attribute's name is reached through a source handle,
-   * `data.<k>` / `frontmatter.<k>` / `inline.<k>`). They highlight as plain
-   * identifiers; the list exists for completion providers.
+   * The engine attributes by target (spec/surface §1.2, 5.0) — `_`-prefixed,
+   * so an authored key never collides with one: a document's bare `title`,
+   * `tags`, `id` or `path` is the authored key alone, `_title` the computed
+   * title, `_tags` the authored tags plus the body's `#hashtags`, `_id` /
+   * `_path` the row's identity. `links` and `revisions` are closed (no authored
+   * data reaches them); the root row has `_id` (`^_id`, `0^_id`) beside the
+   * five collections. They highlight as plain identifiers; the list exists for
+   * completion providers.
    */
   attributes: {
-    docs: ["id", "path", "raw", "hash", "updated_at", "title", "tags", "format"],
-    blocks: ["id", "path", "doc_id", "raw", "hash", "updated_at", "type", "text", "attrs", "depth", "ordinal"],
-    nodes: ["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"],
-    links: ["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"],
+    docs: ["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_title", "_tags", "_format"],
+    blocks: ["_id", "_path", "_doc_id", "_raw", "_hash", "_updated_at", "_created_at", "_type", "_text", "_attrs", "_depth", "_ordinal"],
+    nodes: ["_id", "_path", "_doc_id", "_block_id", "_kind", "_name", "_value", "_attrs"],
+    links: ["_id", "_path", "_doc_id", "_block_id", "_via_id", "_dst_id", "_dst_path", "_uri", "_field", "_dst_kind", "_predicate", "_provenance", "_anchor"],
+    revisions: ["_id", "_path", "_rev", "_seq", "_doc_id", "_commit", "_ts", "_origin", "_actor", "_reason", "_hash", "_is_current", "_archived"],
+    root: ["_id"],
   },
-  /** The source handles of a document (`data.<k>` the merged authored view, `frontmatter.<k>` / `inline.<k>` one source; `entries(x)` over any). */
-  handles: ["data", "frontmatter", "inline"],
-  /** Relations and reach-throughs of a row (`follow children`, `nodes exists { … }`,
-   * a link's `dst` — its destination document — and `doc`, its source). */
+  /** The source handles of a document: `_data.<k>` the merged authored view (≡ the bare `<k>`), `_frontmatter.<k>` / `_inline.<k>` one source each — and the one way to an authored key that itself begins with `_`; `entries(x)` over any. */
+  handles: ["_data", "_frontmatter", "_inline"],
+  /** Reach-throughs: `_doc` (a block's, node's, link's or revision's document), `_block` (a node's or link's block), `_dst` (a link's destination document). */
+  reachThroughs: ["_doc", "_block", "_dst"],
+  /** Relations and reach-throughs of a row (`follow _children`, `_nodes exists { … }`,
+   * `follow _out_links collect { from _dst }`, `follow _in_links collect { from _doc }`). */
   relations: [
-    "nodes", "blocks", "out_links", "in_links",
-    "children", "section", "subsections", "doc", "block", "dst",
+    "_nodes", "_blocks", "_out_links", "_in_links", "_revisions",
+    "_children", "_section", "_subsections", "_doc", "_block", "_dst",
   ],
 } as const;
 

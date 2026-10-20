@@ -28,8 +28,8 @@
 //     KINDS of its two operands are provably compared the same way — see
 //     `comparable` (the spec/surface §1 decline (a)) — and a name that is a relation, reach-through
 //     or WHOLE source handle is never read as a property (decline (b),
-//     `NON_PROPERTY_NAMES`; a key read THROUGH a handle — `data.k`,
-//     `frontmatter.k` — is a property read, `handleRead`). A bool or num literal against a JSON or property
+//     `NON_PROPERTY_NAMES`; a key read THROUGH a handle — `_data.k`,
+//     `_frontmatter.k` — is a property read, `handleRead`). A bool or num literal against a JSON or property
 //     read is a TYPED push (the 1.2 patch): the stored type is tested in SQL
 //     before the value (`json_type(x) = 'true'`, `p.type = 'number' AND
 //     p.val_num >= ?`) and the whole test is wrapped `(…) IS 1` / `IS NOT 1`,
@@ -106,38 +106,38 @@ export interface Operand extends Frag {
 // ---- names that are never property reads ------------------------------------
 
 /**
- * Per target, the bare identifiers (and `doc.<k>` keys, via the docs set) that
+ * Per target, the engine names (and `_doc.<k>` keys, via the docs set) that
  * `context.ts` resolves to something other than a scalar field or property: the
- * self alias, the reach-through handles, the relations, the property source
- * handles and (blocks/nodes) the whole `attrs` object. A comparison naming one of
- * these is declined (spec/surface §1 decline (b)) — read as a property it would
- * be `NULL`, where in memory the value is a row, an array or an object.
+ * reach-through handles, the relations, the property source handles and
+ * (blocks/nodes) the whole `_attrs` object. A comparison naming one of these is
+ * declined (spec/surface §1 decline (b)) — read as a property it would be
+ * `NULL`, where in memory the value is a row, an array or an object.
  * `translate.test.ts` asserts this set against the store context.
  */
 export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["doc", "nodes", "blocks", "out_links", "in_links", "revisions", "data", "frontmatter", "inline"]),
-  blocks: new Set(["block", "doc", "children", "nodes", "out_links", "section", "attrs"]),
-  nodes: new Set(["section", "doc", "block", "blocks", "subsections", "children", "attrs"]),
-  links: new Set(["doc", "dst", "block"]),
+  docs: new Set(["_nodes", "_blocks", "_out_links", "_in_links", "_revisions", "_data", "_frontmatter", "_inline"]),
+  blocks: new Set(["_doc", "_children", "_nodes", "_out_links", "_section", "_attrs"]),
+  nodes: new Set(["_doc", "_block", "_blocks", "_subsections", "_children", "_attrs"]),
+  links: new Set(["_doc", "_dst", "_block"]),
 };
 
 // ---- engine attributes ------------------------------------------------------
 
-// The engine attributes (spec/surface §1.2, 3.0: bare, snake_case, winning on
-// collision — `id`, `path`, `raw`, `hash`, `updated_at`, `created_at` on docs
-// and blocks, `title`/`tags` on docs, `id`/`path` on nodes and edges) → a param-free SQL
-// scalar, per target, with its kind. The structural columns and foreign keys are
-// translated in `translateOperand`. Anything not mapped (`raw`, reconstructed or
-// a blob; `title`, computed; `tags`, the union of the authored list and the
-// computed hashtags) returns null → residual, and the caller must NOT fall
-// through to a property read of the same name (the attribute wins in memory).
-// `updated_at` and `created_at` (4.10) are correlated subqueries over the
-// document's revisions (`current_rev` / `seq = 1`); a block's are residual, as
-// before. `path` (and the edge field `dst_path`)
-// is the REFERENCE form on the surface (spec/surface §1 "Paths", 2.0) — `'/' ||
-// <storage column>` in SQL — so every comparison, `startsWith`, `contains`,
-// `lower()`… sees exactly the string the in-memory attribute yields;
-// `pathColumn` keeps the bare indexed column at hand for the equality fast path.
+// The engine attributes (spec/surface §1.2, 5.0: `_`-prefixed, snake_case —
+// `_id`, `_path`, `_raw`, `_hash`, `_updated_at`, `_created_at` on docs and
+// blocks, `_title`/`_tags` on docs, `_id`/`_path` on nodes and edges) → a
+// param-free SQL scalar, per target, with its kind. The structural columns and
+// foreign keys are translated in `translateOperand`. Anything not mapped
+// (`_raw`, reconstructed or a blob; `_title`, computed; `_tags`, the union of
+// the authored list and the computed hashtags) returns null → residual, and the
+// caller must NOT fall through to a property read (an engine name is never the
+// author's). `_updated_at` and `_created_at` (4.10) are correlated subqueries
+// over the document's revisions (`current_rev` / `seq = 1`); a block's are
+// residual, as before. `_path` (and the edge field `_dst_path`) is the REFERENCE
+// form on the surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage
+// column>` in SQL — so every comparison, `startsWith`, `contains`, `lower()`…
+// sees exactly the string the in-memory attribute yields; `pathColumn` keeps
+// the bare indexed column at hand for the equality fast path.
 /** The rooted path read over a storage path column. */
 export function pathColumn(col: string): Operand {
   return { sql: `('/' || ${col})`, params: [], kind: "text", pathCol: col };
@@ -145,51 +145,51 @@ export function pathColumn(col: string): Operand {
 /** The identity/bytes/time attributes per kind — the names `attributeSql` owns
  * (the structural columns are handled per target in `translateOperand`). */
 export const ROW_ATTRIBUTES: Readonly<Record<Target, ReadonlySet<string>>> = {
-  docs: new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "title", "tags"]),
-  blocks: new Set(["id", "path", "raw", "hash", "updated_at", "created_at"]),
-  nodes: new Set(["id", "path"]),
-  links: new Set(["id", "path"]),
+  docs: new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_title", "_tags"]),
+  blocks: new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at"]),
+  nodes: new Set(["_id", "_path"]),
+  links: new Set(["_id", "_path"]),
 };
 function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
   const { self, doc, target } = ctx;
   const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
   if (target === "docs") switch (name) {
-    case "id": return text(`${self}.doc_id`);
-    case "path": return pathColumn(`${doc}.path`);
-    case "hash": return text(`lower(hex(${self}.file_hash))`);
-    case "updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
-    case "created_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${self}.doc_id AND r.seq = 1)`);
+    case "_id": return text(`${self}.doc_id`);
+    case "_path": return pathColumn(`${doc}.path`);
+    case "_hash": return text(`lower(hex(${self}.file_hash))`);
+    case "_updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
+    case "_created_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${self}.doc_id AND r.seq = 1)`);
   }
   else if (target === "blocks") switch (name) {
-    case "id": return text(`${self}.block_id`);
-    case "path": return pathColumn(`${doc}.path`);
-    case "hash": return text(`lower(hex(${self}.raw_hash))`);
+    case "_id": return text(`${self}.block_id`);
+    case "_path": return pathColumn(`${doc}.path`);
+    case "_hash": return text(`lower(hex(${self}.raw_hash))`);
   }
   else if (target === "nodes") switch (name) {
-    case "id": return text(`${self}.node_id`);
-    case "path": return pathColumn(`${doc}.path`);
+    case "_id": return text(`${self}.node_id`);
+    case "_path": return pathColumn(`${doc}.path`);
   }
   else if (target === "links") switch (name) {
-    case "id": return text(`${self}.edge_id`);
-    case "path": return pathColumn(`${doc}.path`);
+    case "_id": return text(`${self}.edge_id`);
+    case "_path": return pathColumn(`${doc}.path`);
   }
   return null;
 }
 
-/** The links target's plain fields → the store's columns (spec/surface §1.2,
- * 3.0: a foreign key is named for what it is, never `$`-prefixed). `dst_path`
- * and `uri` are correlated subqueries; `dst_path` is the reference form. */
+/** The links target's plain fields → the store's columns (spec/surface §1.2:
+ * a foreign key is named for what it is, `_`-prefixed since 5.0). `_dst_path`
+ * and `_uri` are correlated subqueries; `_dst_path` is the reference form. */
 function edgeField(name: string, self: string): Operand | null {
   const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
   switch (name) {
-    case "doc_id": return text(`${self}.src_doc`);
-    case "block_id": return text(`${self}.src_block`);
-    case "via_id": return text(`${self}.via_node`);
-    case "dst_id": return text(`${self}.dst_node`);
-    case "dst_path": return text(`(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
-    case "uri": return text(`(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)`);
-    case "field": return text(`${self}.src_field`);
-    case "predicate": case "provenance": case "dst_kind": case "anchor": return text(`${self}.${name}`);
+    case "_doc_id": return text(`${self}.src_doc`);
+    case "_block_id": return text(`${self}.src_block`);
+    case "_via_id": return text(`${self}.via_node`);
+    case "_dst_id": return text(`${self}.dst_node`);
+    case "_dst_path": return text(`(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
+    case "_uri": return text(`(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)`);
+    case "_field": return text(`${self}.src_field`);
+    case "_predicate": case "_provenance": case "_dst_kind": case "_anchor": return text(`${self}.${name.slice(1)}`);
     default: return null;
   }
 }
@@ -200,14 +200,14 @@ const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 // rule): the row for `key` on the document only when the key has exactly one
 // row in scope and it is card='scalar' — a list-valued or nested key has none.
 // `select` is the projected expression over the alias `p`. `source` narrows
-// the scope to one authored source — the read `frontmatter.<k>` / `inline.<k>`
+// the scope to one authored source — the read `_frontmatter.<k>` / `_inline.<k>`
 // performs (spec/surface §1.2; the in-memory `docProp(docId, key, source)`):
 // both the row and the count are of that source's rows only. The merged
-// `data.<k>` read is the bare read, so it passes no source. `docId` is the SQL
+// `_data.<k>` read is the bare read, so it passes no source. `docId` is the SQL
 // expression naming the document: the scan's `d.doc_id`, or a link's
-// `e.dst_node` for a `dst.<k>` read (the destination's rows by its id — a
+// `e.dst_node` for a `_dst.<k>` read (the destination's rows by its id — a
 // non-document or phantom destination has none, so the read is NULL exactly
-// where `dst` is absent in memory).
+// where `_dst` is absent in memory).
 function propSubquery(docId: string, key: string, select: string, source?: string): string {
   const src = source ? ` AND p.source = '${source}'` : "";
   const src2 = source ? ` AND p2.source = '${source}'` : "";
@@ -234,12 +234,12 @@ function propScalarOf(docId: string, key: string, source?: string): Operand | nu
   };
 }
 
-// A key read through a source handle (spec/surface §1.2, 3.0): `data.<k>` is
-// the merged authored read — exactly the bare property `<k>`; `frontmatter.<k>`
-// / `inline.<k>` the same read scoped to one source. Pushed since 3.0 (batch 3;
+// A key read through a source handle (spec/surface §1.2): `_data.<k>` is the
+// merged authored read — exactly the bare property `<k>`; `_frontmatter.<k>` /
+// `_inline.<k>` the same read scoped to one source. Pushed since 3.0 (batch 3;
 // before, every handle member was residual). A whole-handle reference
-// (`frontmatter == null`) and `entries(<handle>)` still decline.
-const SOURCE_HANDLES: Readonly<Record<string, string | undefined>> = { data: undefined, frontmatter: "frontmatter", inline: "inline" };
+// (`_frontmatter == null`) and `entries(<handle>)` still decline.
+const SOURCE_HANDLES: Readonly<Record<string, string | undefined>> = { _data: undefined, _frontmatter: "frontmatter", _inline: "inline" };
 function handleRead(docAlias: string, handle: string, key: string): Operand | null {
   return handleReadOf(`${docAlias}.doc_id`, handle, key);
 }
@@ -269,8 +269,8 @@ function constOperand(v: unknown): Operand | null {
   }
 }
 
-// The dotted `attrs.a.b` / `doc.x` receiver chain as segments, or null if it is
-// not a plain identifier navigation.
+// The dotted `_attrs.a.b` / `_doc.x` receiver chain as segments, or null if it
+// is not a plain identifier navigation.
 function memberSegments(e: Expr): string[] | null {
   if (e.kind === "ident") return [e.name];
   if (e.kind === "member") {
@@ -295,118 +295,118 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       return constOperand(ctx.params[e.index]);
     case "ident": {
       // An OQX `$` name (`$it`, `$key`, the follow intrinsics) is the language's,
-      // never a column; omgbase adds no `$` names (spec/surface §1.2, 3.0).
+      // never a column; omgbase adds no `$` names (spec/surface §1.2).
       if (e.name.startsWith("$")) return null;
-      // The row's own attributes win on collision (§1.2): translated or declined
-      // (`raw`, `title`, `tags`), never read as a property or an attr.
-      if (ROW_ATTRIBUTES[target].has(e.name)) return attributeSql(e.name, ctx);
-      // A relation, reach-through, source handle or the whole attrs object is not a
-      // scalar read (decline (b)); a bare target name is a relation or a loud
+      // An engine name (§1.2, 5.0: `_`-prefixed) is translated or declined
+      // (`_raw`, `_title`, `_tags`; a relation, a reach-through, a source handle,
+      // the whole `_attrs` object — decline (b)); never read as a property or
+      // an attr. A `_x` that is no engine name of the kind is refused before
+      // planning (names.ts), so it declines here. A bare target name is a loud
       // error (root-row.ts), never a property.
-      if (NON_PROPERTY_NAMES[target].has(e.name) || TARGETS.has(e.name)) return null;
-      // Bare field per target.
-      if (target === "docs") {
-        if (e.name === "format") return text(`${self}.format`); // a column, not a property
-        return propScalar(doc, e.name);
+      if (e.name.startsWith("_")) {
+        if (ROW_ATTRIBUTES[target].has(e.name)) return attributeSql(e.name, ctx);
+        if (NON_PROPERTY_NAMES[target].has(e.name)) return null;
+        if (target === "docs") return e.name === "_format" ? text(`${self}.format`) : null; // a column
+        if (target === "blocks") {
+          if (e.name === "_doc_id" || e.name === "_type" || e.name === "_text") return text(`${self}.${e.name.slice(1)}`);
+          if (e.name === "_ordinal" || e.name === "_depth") return { sql: `${self}.${e.name.slice(1)}`, params: [], kind: "int" };
+          return null;
+        }
+        if (target === "nodes") return ["_doc_id", "_block_id", "_kind", "_name", "_value"].includes(e.name) ? text(`${self}.${e.name.slice(1)}`) : null;
+        if (target === "links") return edgeField(e.name, self);
+        return null;
       }
-      if (target === "blocks") {
-        if (e.name === "doc_id" || e.name === "type" || e.name === "text") return text(`${self}.${e.name}`);
-        if (e.name === "ordinal" || e.name === "depth") return { sql: `${self}.${e.name}`, params: [], kind: "int" };
-        // Bare non-structural identifier flattens into attrs — same pushdown as
-        // the `attrs.<k>` member form (json_extract), so `checked` == `attrs.checked`.
-        return jsonExtract(`${self}.attrs`, [e.name]);
-      }
-      if (target === "nodes") {
-        if (["doc_id", "block_id", "kind", "name", "value"].includes(e.name)) return text(`${self}.${e.name}`);
-        // Bare non-structural identifier flattens into attrs (see blocks above).
-        return jsonExtract(`${self}.attrs`, [e.name]);
-      }
-      if (target === "links") return edgeField(e.name, self);
+      if (TARGETS.has(e.name)) return null;
+      // A bare name is the author's (§1.2): a document property, or on blocks
+      // and nodes an `attrs` key — the same pushdown as the `_attrs.<k>` member
+      // form (json_extract), so `checked` == `_attrs.checked`. A link row
+      // carries no authored data (names.ts refuses the read).
+      if (target === "docs") return propScalar(doc, e.name);
+      if (target === "blocks" || target === "nodes") return jsonExtract(`${self}.attrs`, [e.name]);
       return null;
     }
     case "member": {
       const segs = memberSegments(e);
       if (!segs || segs.length < 2) return null;
       const [head, ...rest] = segs as [string, ...string[]];
-      // attrs.<path> → json_extract on the row's attrs (blocks/nodes).
-      if (head === "attrs" && (target === "blocks" || target === "nodes")) {
+      // _attrs.<path> → json_extract on the row's attrs (blocks/nodes).
+      if (head === "_attrs" && (target === "blocks" || target === "nodes")) {
         return jsonExtract(`${self}.attrs`, rest);
       }
-      // <handle>.<k> on docs — `data.layer`, `frontmatter.layer`, `inline.element`
-      // — and `doc.<handle>.<k>` through the owning document on the other
-      // targets: a property read, scoped to the handle's source.
+      // <handle>.<k> on docs — `_data.layer`, `_frontmatter.layer`,
+      // `_inline.element` — and `_doc.<handle>.<k>` through the owning document
+      // on the other targets: a property read, scoped to the handle's source.
       if (target === "docs" && head in SOURCE_HANDLES && rest.length === 1) return handleRead(doc, head, rest[0]!);
-      if (head === "doc" && rest.length === 2 && rest[0]! in SOURCE_HANDLES) return handleRead(doc, rest[0]!, rest[1]!);
-      // doc.<x> reach-through — the owning doc (alias `doc`, which is `d`). On the
-      // docs target `doc` is the row itself; either way it resolves against `doc`.
-      // FOREIGN-KEY ELIMINATION (spec/surface §1, 3.0): `doc.id` is the row's
-      // own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and `doc.path` /
-      // `doc.hash` / `doc.updated_at` the scan's already-joined document
-      // columns — no extra join, the same SQL as the bare `doc_id`.
-      if (head === "doc") {
+      if (head === "_doc" && target !== "docs" && rest.length === 2 && rest[0]! in SOURCE_HANDLES) return handleRead(doc, rest[0]!, rest[1]!);
+      // _doc.<x> reach-through — the owning doc (alias `doc`, which is `d`) on
+      // blocks, nodes and links (a document has no `_doc` since 5.0: `$it` is
+      // the self). FOREIGN-KEY ELIMINATION (spec/surface §1, 3.0): `_doc._id` is
+      // the row's own FK column (`b.doc_id`, `n.doc_id`, `e.src_doc`) and
+      // `_doc._path` / `_doc._hash` / `_doc._updated_at` the scan's
+      // already-joined document columns — no extra join, the same SQL as the
+      // bare `_doc_id`.
+      if (head === "_doc" && target !== "docs") {
         if (rest.length !== 1) return null;
         const k = rest[0]!;
-        if (k === "id") return text(target === "links" ? `${self}.src_doc` : `${self}.doc_id`);
-        if (k === "path") return pathColumn(`${doc}.path`);
-        if (k === "hash") return text(`lower(hex(${doc}.file_hash))`);
-        if (k === "updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
-        if (k === "created_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${doc}.doc_id AND r.seq = 1)`);
-        if (k === "format") return text(`${doc}.format`);
-        if (k.startsWith("$")) return null;
-        if (ROW_ATTRIBUTES.docs.has(k)) return null; // `doc.raw`, `doc.title`, `doc.tags`: the attribute, not pushable
-        if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.data`, `doc.docs` … (decline (b))
+        if (k === "_id") return text(target === "links" ? `${self}.src_doc` : `${self}.doc_id`);
+        if (k === "_path") return pathColumn(`${doc}.path`);
+        if (k === "_hash") return text(`lower(hex(${doc}.file_hash))`);
+        if (k === "_updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
+        if (k === "_created_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${doc}.doc_id AND r.seq = 1)`);
+        if (k === "_format") return text(`${doc}.format`);
+        if (k.startsWith("$") || k.startsWith("_")) return null; // `_doc._raw`, `_doc._title`, `_doc._nodes`, an unknown engine name: not pushable (decline (b))
+        if (TARGETS.has(k)) return null; // a bare target name: the loud error, never a property
         return propScalar(doc, k);
       }
-      // dst.<x> reach-through from a link (spec/surface §1.2, 3.0 follow-up): the
-      // destination DOCUMENT, keyed by the row's own `dst_node` — the lookup
-      // `dst_path` already runs. A property read scopes `properties` by
+      // _dst.<x> reach-through from a link (spec/surface §1.2, 3.0 follow-up):
+      // the destination DOCUMENT, keyed by the row's own `dst_node` — the lookup
+      // `_dst_path` already runs. A property read scopes `properties` by
       // `e.dst_node` directly; the document's own columns are a primary-key
       // probe `(SELECT … FROM docs dd WHERE dd.doc_id = e.dst_node)` — NULL
-      // wherever `dst` is absent in memory (a block or external destination, a
-      // phantom). `dst.raw` / `dst.title` / `dst.tags` and the relations stay
-      // residual, as `doc.*`'s do.
-      if (head === "dst" && target === "links") {
+      // wherever `_dst` is absent in memory (a block or external destination, a
+      // phantom). `_dst._raw` / `_dst._title` / `_dst._tags` and the relations
+      // stay residual, as `_doc.*`'s do.
+      if (head === "_dst" && target === "links") {
         const dstId = `${self}.dst_node`;
         if (rest.length === 2 && rest[0]! in SOURCE_HANDLES) return handleReadOf(dstId, rest[0]!, rest[1]!);
         if (rest.length !== 1) return null;
         const k = rest[0]!;
         const probe = (col: string): Operand => text(`(SELECT ${col} FROM docs dd WHERE dd.doc_id = ${dstId})`);
-        if (k === "id") return probe("dd.doc_id");
-        if (k === "path") return probe("'/' || dd.path");
-        if (k === "hash") return probe("lower(hex(dd.file_hash))");
-        if (k === "updated_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)");
-        if (k === "created_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)");
-        if (k === "format") return probe("dd.format");
-        if (k.startsWith("$")) return null;
-        if (ROW_ATTRIBUTES.docs.has(k) || NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null;
+        if (k === "_id") return probe("dd.doc_id");
+        if (k === "_path") return probe("'/' || dd.path");
+        if (k === "_hash") return probe("lower(hex(dd.file_hash))");
+        if (k === "_updated_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)");
+        if (k === "_created_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)");
+        if (k === "_format") return probe("dd.format");
+        if (k.startsWith("$") || k.startsWith("_") || TARGETS.has(k)) return null;
         return propScalarOf(dstId, k);
       }
-      // block.<x> reach-through from a node: the block's identity is the node's
-      // FK (`block.id` → `n.block_id`, `block.path` → the joined `d.path`,
-      // `block.doc_id` → `n.doc_id` — FK elimination again); `type`/`text` are
-      // a correlated read of the block row.
-      if (head === "block" && target === "nodes" && rest.length === 1) {
+      // _block.<x> reach-through from a node: the block's identity is the node's
+      // FK (`_block._id` → `n.block_id`, `_block._path` → the joined `d.path`,
+      // `_block._doc_id` → `n.doc_id` — FK elimination again); `_type`/`_text`
+      // are a correlated read of the block row.
+      if (head === "_block" && target === "nodes" && rest.length === 1) {
         const k = rest[0]!;
-        if (k === "id") return text(`${self}.block_id`);
-        if (k === "path") return pathColumn(`${doc}.path`);
-        if (k === "doc_id") return text(`${self}.doc_id`);
-        if (k === "type" || k === "text") return text(`(SELECT bb.${k} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
+        if (k === "_id") return text(`${self}.block_id`);
+        if (k === "_path") return pathColumn(`${doc}.path`);
+        if (k === "_doc_id") return text(`${self}.doc_id`);
+        if (k === "_type" || k === "_text") return text(`(SELECT bb.${k.slice(1)} FROM blocks bb WHERE bb.block_id = ${self}.block_id)`);
         return null;
       }
-      // block.<x> reach-through from a link (spec/surface §1.2, 4.11): the SOURCE
-      // block, keyed by the row's own `src_block` — `block.id` is that FK column
-      // (NULL for a frontmatter link, exactly where `block` is absent in memory);
-      // everything else is a primary-key probe of the block row, NULL for the
-      // same rows (`block.path` reads the scan's joined source document inside
-      // the probe, so it too is NULL when there is no block). `raw`, `hash`,
-      // `updated_at`, `attrs` and the relations stay residual.
-      if (head === "block" && target === "links" && rest.length === 1) {
+      // _block.<x> reach-through from a link (spec/surface §1.2, 4.11): the
+      // SOURCE block, keyed by the row's own `src_block` — `_block._id` is that
+      // FK column (NULL for a frontmatter link, exactly where `_block` is absent
+      // in memory); everything else is a primary-key probe of the block row,
+      // NULL for the same rows (`_block._path` reads the scan's joined source
+      // document inside the probe, so it too is NULL when there is no block).
+      // `_raw`, `_hash`, `_updated_at`, `_attrs` and the relations stay residual.
+      if (head === "_block" && target === "links" && rest.length === 1) {
         const k = rest[0]!;
         const probe = (col: string): Operand => text(`(SELECT ${col} FROM blocks bb WHERE bb.block_id = ${self}.src_block)`);
-        if (k === "id") return text(`${self}.src_block`);
-        if (k === "path") return probe(`'/' || ${doc}.path`);
-        if (k === "doc_id") return probe("bb.doc_id");
-        if (k === "type" || k === "text") return probe(`bb.${k}`);
+        if (k === "_id") return text(`${self}.src_block`);
+        if (k === "_path") return probe(`'/' || ${doc}.path`);
+        if (k === "_doc_id") return probe("bb.doc_id");
+        if (k === "_type" || k === "_text") return probe(`bb.${k.slice(1)}`);
         return null;
       }
       return null;
@@ -562,7 +562,7 @@ function translateComparison(e: Extract<Expr, { kind: "binary" }>, ctx: Translat
 const FLIP: Record<string, string> = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
 
 /**
- * The path equality fast path: `path == "/a.md"` (or `!=`, either side) against
+ * The path equality fast path: `_path == "/a.md"` (or `!=`, either side) against
  * a rooted text constant is `d.path IS ?` with the constant's storage form, so
  * the `(repo_id, path)` index serves it; `'/' || d.path IS ?` — what the general
  * form would emit — is the same predicate without the index. Only a constant

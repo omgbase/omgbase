@@ -2,7 +2,7 @@
 // boolean, `contains`; "Functions") → OQX expressions, built as `@omgbase/oqx`
 // AST nodes. Two entry points: `toValue` for a value position (a column, a sort
 // key, an operand) and `toWhere` for a predicate position (WHERE, HAVING, a
-// source), where the consumer tests `in_links exists { … }` live — they have no
+// source), where the consumer tests `_in_links exists { … }` live — they have no
 // value form in OQX.
 //
 // Every expression carries a static `kind` (fields.ts) so date/duration
@@ -10,20 +10,30 @@
 // `+` in OQX (string `+` concatenates) — and a field compared with a date is
 // wrapped in `date()` so an authored `2026-10-15` and a canonical ISO instant
 // compare as dates.
+//
+// Names follow surface 5.0 ("underscore = engine", spec/surface §1.2): a bare
+// OQX name is an authored entry — a frontmatter/inline key on a document, an
+// `attrs` key such as `checked` on a block — and an underscore-prefixed name is
+// the engine's (`_path`, `_tags`, `_updated_at`, `_in_links`, …). A Dataview
+// bare field is the author's value, so it stays bare (`title` is the authored
+// `title`, never the computed `_title`); `file.*` and the task fields are the
+// engine's, so they take the `_` spelling (fields.ts). The self aliases are
+// gone: a docs row reads its own fields with no handle, and a block reaches its
+// document through `_doc` (`_doc.due`, `_doc._tags`).
 
 import { build, type Expr, type OpNode, type SelectItem, type TemplatePart, type Where } from "@omgbase/oqx";
 import type { Expr as DExpr, Node } from "./ast.ts";
 import { at, linkPath, nested, rootPath, warn, type Bound, type Ctx } from "./context.ts";
 import { DqlError, unsupported } from "./errors.ts";
 import {
-  DATE_MEMBERS, DATE_MEMBERS_UNSUPPORTED, DURATION_MEMBERS, FILE_FIELDS, TASK_FIELDS, type Derive, type Kind,
+  DATE_MEMBERS, DATE_MEMBERS_UNSUPPORTED, DURATION_MEMBERS, FILE_FIELDS, TASK_FIELDS, type CollectBody, type Derive, type Kind,
 } from "./fields.ts";
 import { FUNCTIONS } from "./functions.ts";
 import { conjoin, disjoin, isOqxIdent, regexEscape } from "./oqx.ts";
 
 /** A translated value: the OQX expression, its static kind, and — for
  * `file.name` / `file.folder` / `file.link` / `file.ext` — the client-side
- * derivation from `path` the expression stands for (`derive`). `literal` is the
+ * derivation from `_path` the expression stands for (`derive`). `literal` is the
  * string value when the expression is a string literal (the rewrites of a
  * derived field against a literal need it). */
 export interface Typed {
@@ -34,21 +44,6 @@ export interface Typed {
   /** The bare `rows` collection after GROUP BY (a value, not a scalar). */
   rows?: boolean;
 }
-
-/** Engine names on a docs row (spec/surface §1.2): an authored key with one of
- * these names is reached through `data.<k>`, which is what a Dataview bare
- * field means — the author's value, never the engine's. */
-export const DOC_ENGINE_NAMES: ReadonlySet<string> = new Set([
-  "id", "path", "raw", "hash", "updated_at", "title", "tags", "format", "data", "frontmatter", "inline", "doc",
-  "blocks", "nodes", "out_links", "in_links", "revisions",
-]);
-
-/** Engine names on a blocks row (spec/surface §1.2): a `FLATTEN … AS <one of these>`
- * on a TASK query shadows the row's attribute for the rest of the query. */
-export const BLOCK_ENGINE_NAMES: ReadonlySet<string> = new Set([
-  "id", "path", "doc_id", "raw", "hash", "updated_at", "type", "text", "attrs", "depth", "ordinal", "block", "doc",
-  "children", "nodes", "out_links", "section",
-]);
 
 const lit = build.lit;
 const ident = build.ident;
@@ -88,25 +83,39 @@ function bareField(name: string, node: Node, ctx: Ctx): Typed {
     }
     // Dataview reads a task's own inline fields here; omgbase indexes inline
     // fields per document, so the page's property is what is available.
-    warn(ctx, `${name}: a task's inline fields are not indexed per task; read as the page's property doc.${name}`);
-    return { expr: DOC_ENGINE_NAMES.has(name) ? member(member(ident("doc"), "data"), name) : member(ident("doc"), name), kind: "unknown" };
+    warn(ctx, `${name}: a task's inline fields are not indexed per task; read as the page's property _doc.${name}`);
+    return { expr: authoredKey(ident("_doc"), name, ctx), kind: "unknown" };
   }
-  return { expr: DOC_ENGINE_NAMES.has(name) ? member(ident("data"), name) : ident(name), kind: "unknown" };
+  return { expr: authoredKey(null, name, ctx), kind: "unknown" };
 }
 
-/** A relation rendered as a collect: `in_links collect { from doc }`, `blocks collect { where type == "task" }`. */
-function collectOf(receiver: Expr, body: "from doc" | "from dst" | 'where type == "task"' | 'where type == "list_item"'): Expr {
+/** An authored key on a document (`recv` null: the row itself; else the handle
+ * it is reached through, `_doc` on a block or the `this` row). A bare name IS
+ * the authored key (surface 5.0: nothing bare is reserved) — except a key that
+ * itself begins with `_`, which the bare namespace cannot spell (the engine
+ * would judge `_x` an unknown engine name); it is read through the `_data`
+ * handle, the merged authored view (`_data._x`, spec/surface §1.2), warned. */
+function authoredKey(recv: Expr | null, name: string, ctx: Ctx): Expr {
+  if (name.startsWith("_")) {
+    warn(ctx, `${name}: an authored key beginning with \`_\` is read as _data.${name} (a bare \`_\` name is the engine's)`);
+    return member(recv ? member(recv, "_data") : ident("_data"), name);
+  }
+  return recv ? member(recv, name) : ident(name);
+}
+
+/** A relation rendered as a collect: `_in_links collect { from _doc }`, `_blocks collect { where _type == "task" }`. */
+function collectOf(receiver: Expr, body: CollectBody): Expr {
   switch (body) {
-    case "from doc": return build.op(receiver, "collect", build.subquery({ from: [ident("doc")] }));
-    case "from dst": return build.op(receiver, "collect", build.subquery({ from: [ident("dst")] }));
-    case 'where type == "task"': return build.op(receiver, "collect", build.subquery({ where: build.scalar(build.binary("==", ident("type"), lit("task"))) }));
-    case 'where type == "list_item"': return build.op(receiver, "collect", build.subquery({ where: build.scalar(build.binary("==", ident("type"), lit("list_item"))) }));
+    case "from _doc": return build.op(receiver, "collect", build.subquery({ from: [ident("_doc")] }));
+    case "from _dst": return build.op(receiver, "collect", build.subquery({ from: [ident("_dst")] }));
+    case 'where _type == "task"': return build.op(receiver, "collect", build.subquery({ where: build.scalar(build.binary("==", ident("_type"), lit("task"))) }));
+    case 'where _type == "list_item"': return build.op(receiver, "collect", build.subquery({ where: build.scalar(build.binary("==", ident("_type"), lit("list_item"))) }));
   }
 }
 
-/** The document the row belongs to: the row itself on docs, `doc.` on a task. */
+/** An engine name of the row's document: bare on docs, through the `_doc` handle on a task. */
 function docAttr(ctx: Ctx, name: string): Expr {
-  return ctx.target === "blocks" ? member(ident("doc"), name) : ident(name);
+  return ctx.target === "blocks" ? member(ident("_doc"), name) : ident(name);
 }
 
 /** `file.<name>[.rest…]` ("Metadata on Pages"). */
@@ -118,21 +127,22 @@ function fileField(rest: string[], node: Node, ctx: Ctx): Typed {
   let value: Typed;
   switch (f.read) {
     case "unsupported": throw unsupported(`file.${name}`, f.reason, at(ctx, node));
-    case "derive": value = { expr: ident("path"), kind: "string", derive: f.derive }; break;
+    // A block carries its document's `_path` too, so the derived fields read it bare on either target.
+    case "derive": value = { expr: ident("_path"), kind: "string", derive: f.derive }; break;
     case "frontmatter": {
-      const handle = docAttr(ctx, "frontmatter");
+      const handle = docAttr(ctx, "_frontmatter");
       if (rest.length === 1) return { expr: call(null, "entries", [handle]), kind: "list" };
       return trailing({ expr: member(handle, rest[1]!), kind: "unknown" }, rest.slice(2), node, ctx);
     }
     case "collect": {
-      const receiver = ctx.target === "blocks" ? member(ident("doc"), f.relation) : ident(f.relation);
-      value = { expr: collectOf(receiver, f.body), kind: f.kind };
+      value = { expr: collectOf(docAttr(ctx, f.relation), f.body), kind: f.kind };
       break;
     }
     case "attr": {
       if (f.warning) warn(ctx, f.warning);
-      if (name === "size") value = { expr: call(null, "size", [docAttr(ctx, "raw")]), kind: "number" };
-      else if (name === "mday") { ctx.features.add("dates"); value = { expr: call(docAttr(ctx, "updated_at"), "date", []), kind: "date" }; }
+      if (name === "size") value = { expr: call(null, "size", [docAttr(ctx, "_raw")]), kind: "number" };
+      else if (name === "mday") { ctx.features.add("dates"); value = { expr: call(docAttr(ctx, "_updated_at"), "date", []), kind: "date" }; }
+      else if (name === "cday") { ctx.features.add("dates"); value = { expr: call(docAttr(ctx, "_created_at"), "date", []), kind: "date" }; }
       else value = { expr: docAttr(ctx, f.attr), kind: f.kind };
       break;
     }
@@ -160,9 +170,8 @@ function thisField(rest: string[], node: Node, ctx: Ctx): Typed {
     }
   }
   // this.<property>: the current document's row, looked up from the root scan.
-  const row = build.op(build.outer(ctx.depth, "docs"), "first", build.subquery({ where: build.scalar(build.binary("==", ident("path"), lit(path))) }));
-  const key = DOC_ENGINE_NAMES.has(name) ? member(member(row, "data"), name) : member(row, name);
-  return trailing({ expr: key, kind: "unknown" }, rest.slice(1), node, ctx);
+  const row = build.op(build.outer(ctx.depth, "docs"), "first", build.subquery({ where: build.scalar(build.binary("==", ident("_path"), lit(path))) }));
+  return trailing({ expr: authoredKey(row, name, ctx), kind: "unknown" }, rest.slice(1), node, ctx);
 }
 
 /** `rows[.…]` after GROUP BY: the group's rows as an aggregate. */
@@ -189,9 +198,9 @@ function rowRead(segs: string[], node: Node, ctx: Ctx): Typed {
  * the flatten's own block (`ctx.element === b`) the element is the row — bare
  * names and `$it` — so the read is spelled as the element's own row reads it; on
  * the flattened row the same spelling is re-read through the bound name
- * (`rebase`: `checked` → `t.checked`, `doc.due` → `t.doc.due`, `$it` → `t`). A
+ * (`rebase`: `checked` → `t.checked`, `_doc.due` → `t._doc.due`, `$it` → `t`). A
  * block element (a task, a list item) reads by the task-field table, a document
- * element by the page's (`o.file.mtime` → `o.updated_at`), a scalar or authored
+ * element by the page's (`o.file.mtime` → `o._updated_at`), a scalar or authored
  * element by plain navigation. */
 function boundValue(b: Bound, rest: string[], node: Node, ctx: Ctx): Typed {
   const inBlock = ctx.element === b;
@@ -264,26 +273,26 @@ function aggregateOf(ctx: Ctx, fn: "collect" | "sum" | "min" | "max" | "avg" | "
   return call(null, fn, [value]);
 }
 
-/** The group's rows as records: `rows collect { select path }` (docs) or
- * `rows collect { select id, text, checked, path }` (tasks), ordered by the
+/** The group's rows as records: `rows collect { select _path }` (docs) or
+ * `rows collect { select _id, _text, checked, _path }` (tasks), ordered by the
  * pre-group SORT when there was one. */
 export function rowsCollect(ctx: Ctx): Expr {
   if (ctx.rowsOrder) ctx.rowsOrderUsed = true;
   const select = ctx.taskBound ? taskSelect(ctx.taskBound.name)
-    : (ctx.target === "blocks" ? ["id", "text", "checked", "path"] : ["path"]).map((n) => build.field(n, ident(n)));
+    : (ctx.target === "blocks" ? ["_id", "_text", "checked", "_path"] : ["_path"]).map((n) => build.field(n, ident(n)));
   return build.op(ident("rows"), "collect", build.subquery({ select, orderBy: ctx.rowsOrder }));
 }
 
 /** The alias of the task's block id on a TASK query re-rooted at the page
- * (`id` and `path` are the page's envelope, so the task's id needs another name). */
+ * (`_id` and `_path` are the page's envelope, so the task's id needs another name). */
 export const TASK_ID_ALIAS = "task_id";
 
-/** The task shape read through a bound task: `path, task_id: t.id, text: t.text, checked: t.checked`. */
+/** The task shape read through a bound task: `_path, task_id: t._id, text: t._text, checked: t.checked`. */
 export function taskSelect(bound: string): SelectItem[] {
   return [
-    build.field("path", ident("path")),
-    build.field(TASK_ID_ALIAS, member(ident(bound), "id")),
-    build.field("text", member(ident(bound), "text")),
+    build.field("_path", ident("_path")),
+    build.field(TASK_ID_ALIAS, member(ident(bound), "_id")),
+    build.field("text", member(ident(bound), "_text")),
     build.field("checked", member(ident(bound), "checked")),
   ];
 }
@@ -405,8 +414,10 @@ function containsWhere(e: DExpr & { kind: "call" }, ctx: Ctx): Where | null {
   if ((name !== "contains" && name !== "econtains") || e.args.length !== 2) return null;
   const [haystack, needle] = e.args as [DExpr, DExpr];
   const h = toValue(haystack, ctx);
-  if (h.kind === "inlinks") return build.op(ctx.target === "blocks" ? member(ident("doc"), "in_links") : ident("in_links"), "exists", build.subquery({ where: build.scalar(linkTest(member(ident("doc"), "path"), needle, nested(ctx))) }));
-  if (h.kind === "outlinks") return build.op(ident("out_links"), "exists", build.subquery({ where: build.scalar(linkTest(member(ident("dst"), "path"), needle, nested(ctx))) }));
+  // The links are the collect's receiver (`_in_links`, `_doc._in_links`, a task's own `_out_links`, `t._out_links`).
+  const links = (): Expr => (h.expr.kind === "op" ? h.expr.receiver : h.expr);
+  if (h.kind === "inlinks") return build.op(links(), "exists", build.subquery({ where: build.scalar(linkTest(member(ident("_doc"), "_path"), needle, nested(ctx))) }));
+  if (h.kind === "outlinks") return build.op(links(), "exists", build.subquery({ where: build.scalar(linkTest(member(ident("_dst"), "_path"), needle, nested(ctx))) }));
   if (h.kind === "tags" && name === "contains") {
     const n = toValue(needle, ctx);
     if (n.literal === undefined) throw unsupported("contains(file.tags, x)", "x must be a string literal (\"#tag\")", at(ctx, needle));
@@ -446,7 +457,7 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
       arity(2);
       const s = toValue(args[0]!, ctx);
       const p = toValue(args[1]!, ctx);
-      if (s.derive) return { expr: derivedTest(s.derive, name, p, e, ctx), kind: "boolean" };
+      if (s.derive) return { expr: derivedTest(s, name, p, e, ctx), kind: "boolean" };
       return { expr: call(s.expr, name === "startswith" ? "startsWith" : "endsWith", [p.expr]), kind: "boolean" };
     }
     case "length": {
@@ -454,7 +465,8 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
       const r = rowsArg(args[0]!);
       if (r?.rows) return { expr: call(null, "count", []), kind: "number" };
       const v = toValue(args[0]!, ctx);
-      if (v.kind === "inlinks" || v.kind === "outlinks") return { expr: call(null, "size", [docRelation(ctx, v.kind === "inlinks" ? "in_links" : "out_links")]), kind: "number" };
+      // `size(<relation>)`: the collect's receiver (`_in_links`, `_doc._in_links`, `t._out_links`).
+      if (v.kind === "inlinks" || v.kind === "outlinks") return { expr: call(null, "size", [v.expr.kind === "op" ? v.expr.receiver : v.expr]), kind: "number" };
       return { expr: call(null, "size", [v.expr]), kind: "number" };
     }
     case "contains": case "econtains": {
@@ -462,7 +474,7 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
       const h = toValue(args[0]!, ctx);
       if (h.kind === "inlinks" || h.kind === "outlinks") throw unsupported(`${e.name}(file.${h.kind}, …)`, "a link test is a predicate: use it in WHERE", at(ctx, e));
       const n = toValue(args[1]!, ctx);
-      if (h.derive) return { expr: derivedTest(h.derive, "contains", n, e, ctx), kind: "boolean" };
+      if (h.derive) return { expr: derivedTest(h, "contains", n, e, ctx), kind: "boolean" };
       if (h.kind === "tags" && name === "contains") warn(ctx, "contains(file.tags, …) in value position tests the exact tag; nested tags match only in WHERE");
       const needle = (h.kind === "tags" || h.kind === "etags") && n.literal !== undefined ? lit(n.literal.replace(/^#/, "")) : n.expr;
       return { expr: build.inOp(needle, h.expr), kind: "boolean" };
@@ -524,29 +536,26 @@ function callValue(e: DExpr & { kind: "call" }, ctx: Ctx): Typed {
   }
 }
 
-/** `in_links` / `out_links` of the row's document. */
-function docRelation(ctx: Ctx, rel: "in_links" | "out_links"): Expr {
-  return ctx.target === "blocks" ? member(ident("doc"), rel) : ident(rel);
-}
-
 /** A value known or assumed to be a date, wrapped in `date()` unless it already is one. */
 function dateOf(v: Typed): Expr {
   return v.kind === "date" ? v.expr : call(null, "date", [v.expr]);
 }
 
-/** A test on a path-derived field (`file.name`, `file.folder`, `file.link`,
- * `file.ext`) against a literal, rewritten over `path` — OQX has no basename
- * or dirname, so the literal moves into the test instead. */
 /** The Dataview field a derivation stands for. */
 export function deriveField(derive: Derive): string {
   return derive === "basename" ? "file.name" : derive === "dirname" ? "file.folder" : derive === "link" ? "file.link" : "file.ext";
 }
 
-function derivedTest(derive: Derive, op: "==" | "!=" | "contains" | "startswith" | "endswith", other: Typed, node: Node, ctx: Ctx): Expr {
+/** A test on a path-derived field (`file.name`, `file.folder`, `file.link`,
+ * `file.ext`) against a literal, rewritten over the path the derived value
+ * reads (`_path`, `_doc._path`, `o._path`) — OQX has no basename or dirname,
+ * so the literal moves into the test instead. */
+function derivedTest(derived: Typed, op: "==" | "!=" | "contains" | "startswith" | "endswith", other: Typed, node: Node, ctx: Ctx): Expr {
+  const derive = derived.derive!;
   const field = deriveField(derive);
-  if (other.literal === undefined) throw unsupported(`${field} ${op === "==" ? "=" : op} x`, `${field} is derived from path on the client; it compares only with a string literal (or this.file.*)`, at(ctx, node));
+  if (other.literal === undefined) throw unsupported(`${field} ${op === "==" ? "=" : op} x`, `${field} is derived from _path on the client; it compares only with a string literal (or this.file.*)`, at(ctx, node));
   const v = other.literal;
-  const path = ident("path");
+  const path = derived.expr;
   const esc = regexEscape(v);
   switch (derive) {
     case "basename":
@@ -598,7 +607,7 @@ function binaryValue(e: DExpr & { kind: "binary" }, ctx: Ctx): Typed {
       if (oqxOp !== "==" && oqxOp !== "!=") throw unsupported(`${deriveField((l.derive ?? r.derive)!)} ${op}`, "a path-derived field orders only by path (SORT); compare it with = or !=", at(ctx, e));
       const [d, other] = l.derive ? [l, r] : [r, l];
       // `this.file.link == file.link` style: both derived → both literal-less; use the literal side.
-      return { expr: derivedTest(d.derive!, oqxOp, other.literal !== undefined ? other : d, e, ctx), kind: "boolean" };
+      return { expr: derivedTest(d, oqxOp, other.literal !== undefined ? other : d, e, ctx), kind: "boolean" };
     }
     // A date against anything not statically a date: read the other side as a date.
     let left = l.expr;

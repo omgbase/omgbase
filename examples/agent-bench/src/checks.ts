@@ -17,10 +17,11 @@ function describe(v: unknown, max = 300): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+/** `docs_read { _path }` → `_raw` (spec/surface 5.0: a row attribute is `_`-prefixed in the argument and the result alike). */
 async function readRaw(server: OmgServer, path: string): Promise<string | null> {
-  const r = await server.call("docs_read", { path });
+  const r = await server.call("docs_read", { _path: path });
   if (!r.ok) return null;
-  return (r.result as { raw: string }).raw;
+  return (r.result as { _raw: string })._raw;
 }
 
 export async function runCheck(check: Check, ctx: CheckContext): Promise<string[]> {
@@ -60,8 +61,9 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<string[
       if (raw !== fixtureBytes(check.path)) failures.push(`${check.path}: bytes differ from the fixture`);
       const r = await server.call("changes_since", { origin: "api", limit: 500 });
       if (!r.ok) return [...failures, `changes_since failed: ${describe(r.result)}`];
-      const digests = (r.result as { digests: { commit: string; revisions: { path: string }[] }[] }).digests;
-      const touched = digests.filter((d) => d.revisions.some((rev) => rev.path === check.path));
+      // A digest's `revisions` are rows: `{ _id, _path, _hash }` (spec/sync 3.0).
+      const digests = (r.result as { digests: { commit: string; revisions: { _path: string }[] }[] }).digests;
+      const touched = digests.filter((d) => d.revisions.some((rev) => rev._path === check.path));
       if (touched.length > 0) failures.push(`${check.path}: ${touched.length} api commit(s) touched it (${touched.map((d) => d.commit).join(", ")})`);
       return failures;
     }

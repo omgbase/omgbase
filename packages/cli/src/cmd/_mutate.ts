@@ -160,11 +160,13 @@ export async function runSugarRemote(cli: Cli, tool: string, toolArgs: Record<st
   return renderReceipt(cli, await remoteSugar<Receipt>(cli, tool, toolArgs, effects, refs));
 }
 
-/** A ref as an effect target for a remote `plan`: a `b_` id is the block, a `d_` id the document, anything else a document path. */
+/** A ref as an effect target for a remote `plan` (spec/mutate §11, 4.0: the address is the
+ *  row's engine attribute): a `b_` id is the block (`_id`), a `d_` id the document (`_id`),
+ *  anything else a document path (`_path`). */
 export function targetOf(ref: string): EffectTarget {
-  if (isValidId(ref, "b")) return { kind: "block", id: ref };
-  if (isValidId(ref, "d")) return { kind: "document", id: ref };
-  return { kind: "document", path: ref };
+  if (isValidId(ref, "b")) return { kind: "block", _id: ref };
+  if (isValidId(ref, "d")) return { kind: "document", _id: ref };
+  return { kind: "document", _path: ref };
 }
 
 // ---- the Effect layer (ADR-021; spec/cli 3.2 `apply -f { effects }`, `execute`) ----

@@ -31,84 +31,84 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md"
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "_id": "d_19",
+            "_path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -119,12 +119,12 @@
     {
       "name": "intrinsics",
       "notes": "§1.2: id/path/hash/updated_at/title/tags and the `format` column.",
-      "query": "select i: id, p: path, h: hash, u: updated_at, t: title, tg: tags, format from docs where path == \"substances/salt.md\"",
+      "query": "select i: _id, p: _path, h: _hash, u: _updated_at, t: _title, tg: _tags, _format from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "i": "d_14",
             "p": "/substances/salt.md",
             "h": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3",
@@ -134,7 +134,7 @@
               "substance",
               "tria-prima"
             ],
-            "format": "markdown"
+            "_format": "markdown"
           }
         ],
         "truncated": false,
@@ -145,12 +145,12 @@
     {
       "name": "title-and-tags-computed",
       "notes": "title comes from the computed properties (frontmatter title or the first heading), tags from the computed tag list — null when absent.",
-      "query": "select t: title, tg: tags from docs where type == \"practitioner\" || type == \"hub\"",
+      "query": "select t: _title, tg: _tags from docs where type == \"practitioner\" || type == \"hub\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "t": "Alchemy",
             "tg": [
               "alchemy",
@@ -158,8 +158,8 @@
             ]
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "t": "Jabir ibn Hayyan",
             "tg": [
               "practitioner",
@@ -168,8 +168,8 @@
             ]
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "t": "Maria Prophetissa",
             "tg": [
               "practitioner",
@@ -177,8 +177,8 @@
             ]
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "t": "Isaac Newton",
             "tg": [
               "practitioner",
@@ -186,8 +186,8 @@
             ]
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "t": "Paracelsus",
             "tg": [
               "practitioner",
@@ -204,12 +204,12 @@
     {
       "name": "raw-intrinsic",
       "notes": "§1.2: raw is the reconstructed file (spec/store §6.1), frontmatter included; hash (the `intrinsics` case) is its sha256.",
-      "query": "select b: raw from docs where path == \"substances/mercury.md\"",
+      "query": "select b: _raw from docs where _path == \"substances/mercury.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "b": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n"
           }
         ],
@@ -221,12 +221,12 @@
     {
       "name": "repo-id-intrinsic",
       "notes": "§1.1: `^id` from a top-level row is the repo id (the root scope's `id`).",
-      "query": "select r: ^id from docs where path == \"index.md\"",
+      "query": "select r: ^_id from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "r": "rp_0"
           }
         ],
@@ -238,12 +238,12 @@
     {
       "name": "doc-is-the-row",
       "notes": "§1.2: `doc.<k>` on a doc row is the row itself.",
-      "query": "from docs where doc.type == \"hub\"",
+      "query": "from docs where $it.type == \"hub\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
@@ -257,24 +257,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -285,45 +285,45 @@
     {
       "name": "property-list-vs-scalar",
       "notes": "§1.2: one card=scalar row decodes to the scalar (mercury's `tags: substance`); a list-authored key to the array.",
-      "query": "select tags from docs where type == \"substance\"",
+      "query": "select _tags from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
-            "tags": [
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
+            "_tags": [
               "substance"
             ]
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
-            "tags": [
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
+            "_tags": [
               "substance",
               "goal",
               "legendary"
             ]
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
-            "tags": [
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
+            "_tags": [
               "substance",
               "theory"
             ]
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
-            "tags": [
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
+            "_tags": [
               "substance",
               "tria-prima"
             ]
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
-            "tags": [
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
+            "_tags": [
               "substance",
               "tria-prima"
             ]
@@ -336,28 +336,28 @@
     },
     {
       "name": "list-spans-cardinalities",
-      "query": "from docs where \"substance\" in list(tags)",
+      "query": "from docs where \"substance\" in list(_tags)",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -371,16 +371,16 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -395,24 +395,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "_id": "d_19",
+            "_path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -427,23 +427,23 @@
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "stage": "nigredo"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "stage": "rubedo"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "stage": "nigredo"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -458,26 +458,26 @@
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "element": "fire",
             "reversible": "no"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "element": "earth",
             "reversible": "yes"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "element": "water",
             "reversible": "yes"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -491,8 +491,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           }
         ],
         "truncated": false,
@@ -507,45 +507,45 @@
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "element": "fire"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "element": "earth"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "element": "water"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "element": "mercury"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "element": "salt"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "element": "sulphur"
           }
         ],
@@ -557,12 +557,12 @@
     {
       "name": "source-handle-frontmatter",
       "notes": "§1.2: `frontmatter.<k>` reads that source only.",
-      "query": "select fm: frontmatter.tags, il: inline.tags from docs where path == \"substances/salt.md\"",
+      "query": "select fm: _frontmatter.tags, il: _inline.tags from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "fm": [
               "substance",
               "tria-prima"
@@ -576,12 +576,12 @@
     },
     {
       "name": "source-handle-inline",
-      "query": "select fm: frontmatter.element, il: inline.element from docs where path == \"processes/calcination.md\"",
+      "query": "select fm: _frontmatter.element, il: _inline.element from docs where _path == \"processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "il": "fire"
           }
         ],
@@ -593,12 +593,12 @@
     {
       "name": "data-handle-is-the-merged-authored-view",
       "notes": "§1.2 (3.0): `data.<k>` is exactly the read a bare non-colliding key performs (frontmatter + inline by the property rule) — `data.element` is the inline field, `data.layer` the frontmatter key; `title`/`tags` are the attributes and `data.title`/`data.tags` the authored values alone (no body hashtags here, so `tags` equals `data.tags`).",
-      "query": "select e: data.element, l: data.layer, at: data.title, t: title, atg: data.tags, tags from docs where path == \"/processes/calcination.md\"",
+      "query": "select e: _data.element, l: _data.layer, at: _data.title, t: _title, atg: _data.tags, _tags from docs where _path == \"/processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "e": "fire",
             "l": "canon",
             "t": "Calcination",
@@ -606,7 +606,7 @@
               "process",
               "fire"
             ],
-            "tags": [
+            "_tags": [
               "process",
               "fire"
             ]
@@ -620,33 +620,33 @@
     {
       "name": "source-handles-reach-an-authored-key-of-an-attributes-name",
       "notes": "§1.2 (3.0): `data.path` / `frontmatter.path` read the author's `path:` key (absent here — `reads::bare-attributes` authors one) while the bare `path` is the engine's.",
-      "query": "select p: data.path, fp: frontmatter.path, ip: inline.path from docs where path == \"index.md\"",
+      "query": "select p: _data.path, fp: _frontmatter.path, ip: _inline.path from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "no document in this repository carries a property `path` (`data.path`)",
-          "no document in this repository carries a property `path` (`frontmatter.path`)",
-          "no document in this repository carries a property `path` (`inline.path`)"
+          "no document in this repository carries a property `path` (`_data.path`)",
+          "no document in this repository carries a property `path` (`_frontmatter.path`)",
+          "no document in this repository carries a property `path` (`_inline.path`)"
         ]
       }
     },
     {
       "name": "entries-frontmatter-key-order",
       "notes": "§9: entries(frontmatter) is in key order, valued like the bare reads.",
-      "query": "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == \"substances/salt.md\"",
+      "query": "select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "fm": [
               {
                 "k": "element",
@@ -690,12 +690,12 @@
     {
       "name": "entries-data-unions-the-sources",
       "notes": "§1.2 (3.0): `entries(data)` lists every authored top-level key — frontmatter ∪ inline, deduped, in key order — each valued by the merged read (`element` is inline-only here).",
-      "query": "select d: entries(data) collect { k: $key, v: $it } from docs where path == \"/processes/calcination.md\"",
+      "query": "select d: entries(_data) collect { k: $key, v: $it } from docs where _path == \"/processes/calcination.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "d": [
               {
                 "k": "element",
@@ -751,24 +751,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -779,28 +779,28 @@
     {
       "name": "source-handle-pushdown-data-equals-bare",
       "notes": "§1 (3.0, batch 3): `data.<k>` is exactly the bare read — same hits, same SQL (the planner pushes it; the differential proves planned == in-memory).",
-      "query": "from docs where data.layer == \"canon\" && data.type == \"substance\"",
+      "query": "from docs where _data.layer == \"canon\" && _data.type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -811,28 +811,28 @@
     {
       "name": "source-handle-pushdown-frontmatter",
       "notes": "§1 (3.0, batch 3): `frontmatter.<k>` pushes as the property subquery scoped to `p.source = 'frontmatter'`.",
-      "query": "from docs where frontmatter.tradition == \"western\" && frontmatter.type == \"substance\"",
+      "query": "from docs where _frontmatter.tradition == \"western\" && _frontmatter.type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -843,12 +843,12 @@
     {
       "name": "source-handle-pushdown-inline",
       "notes": "§1 (3.0, batch 3): `inline.<k>` likewise; `element` is authored inline on calcination only.",
-      "query": "from docs where inline.element == \"fire\"",
+      "query": "from docs where _inline.element == \"fire\"",
       "expect": {
         "hits": [
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           }
         ],
         "truncated": false,
@@ -859,7 +859,7 @@
     {
       "name": "source-handle-pushdown-inline-misses-other-source",
       "notes": "§1 (3.0, batch 3): the scoped read sees that source only — `tradition` is frontmatter-authored, so `inline.tradition` is absent everywhere (planned and in memory alike).",
-      "query": "from docs where inline.tradition == \"western\"",
+      "query": "from docs where _inline.tradition == \"western\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -870,17 +870,17 @@
     {
       "name": "source-handle-pushdown-typed",
       "notes": "§1 (3.0, batch 3): a typed push through a handle keeps the source scope (`frontmatter.era`, a number).",
-      "query": "select era from docs where frontmatter.era >= 1600 order by era asc",
+      "query": "select era from docs where _frontmatter.era >= 1600 order by era asc",
       "expect": {
         "hits": [
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "era": 1677
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "era": 1680
           }
         ],
@@ -892,36 +892,36 @@
     {
       "name": "contextual-words-are-fields-in-expression-position",
       "notes": "§1.2 (3.0): `order`, `limit`, `offset`, `count`, … are contextual words — in expression position they are plain property reads (absent in this corpus; `reads::bare-attributes` authors them).",
-      "query": "select o: order, l: limit, c: count from docs where path == \"/index.md\"",
+      "query": "select o: order, l: limit, c: count from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`order` is not a field of docs and no document in this repository carries a property by that name",
-          "`limit` is not a field of docs and no document in this repository carries a property by that name",
-          "`count` is not a field of docs and no document in this repository carries a property by that name"
+          "no document in this repository carries a property `order`",
+          "no document in this repository carries a property `limit`",
+          "no document in this repository carries a property `count`"
         ]
       }
     },
     {
       "name": "entries-frontmatter-as-receiver",
-      "query": "from docs where entries(frontmatter) exists { where $key == \"era\" && $it > 1600 }",
+      "query": "from docs where entries(_frontmatter) exists { where $key == \"era\" && $it > 1600 }",
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -931,16 +931,16 @@
     },
     {
       "name": "entries-frontmatter-list-value",
-      "query": "from docs where entries(frontmatter) exists { where $key == \"tags\" && \"tria-prima\" in $it }",
+      "query": "from docs where entries(_frontmatter) exists { where $key == \"tags\" && \"tria-prima\" in $it }",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -950,7 +950,7 @@
     },
     {
       "name": "entries-frontmatter-none",
-      "query": "from docs where entries(frontmatter) none { where $key == \"type\" }",
+      "query": "from docs where entries(_frontmatter) none { where $key == \"type\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -960,12 +960,12 @@
     },
     {
       "name": "entries-inline-keys",
-      "query": "select ks: entries(inline) collect { $key values } from docs where path == \"practitioners/jabir-ibn-hayyan.md\"",
+      "query": "select ks: entries(_inline) collect { $key values } from docs where _path == \"practitioners/jabir-ibn-hayyan.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "ks": [
               "century",
               "known_for"
@@ -979,12 +979,12 @@
     },
     {
       "name": "entries-inline-empty",
-      "query": "select ks: entries(inline) collect { $key values } from docs where path == \"index.md\"",
+      "query": "select ks: entries(_inline) collect { $key values } from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "ks": []
           }
         ],
@@ -995,72 +995,72 @@
     },
     {
       "name": "entries-inline-exists-equals-inline-field-nodes",
-      "query": "from docs where entries(inline) exists { }",
+      "query": "from docs where entries(_inline) exists { }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -1070,12 +1070,12 @@
     },
     {
       "name": "entries-list-property-numeric-keys",
-      "query": "select t: entries(tags) collect { k: $key, v: $it } from docs where path == \"substances/salt.md\"",
+      "query": "select t: entries(_tags) collect { k: $key, v: $it } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "t": [
               {
                 "k": 0,
@@ -1099,13 +1099,13 @@
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "w": "2026-01-01..2026-01-31"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "w": "2026-02-01..2026-02-28"
           }
         ],
@@ -1116,13 +1116,13 @@
     },
     {
       "name": "format-column",
-      "query": "select format from docs where path == \"index.md\"",
+      "query": "select _format from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
-            "format": "markdown"
+            "_id": "d_0",
+            "_path": "/index.md",
+            "_format": "markdown"
           }
         ],
         "truncated": false,
@@ -1132,18 +1132,18 @@
     },
     {
       "name": "relation-nodes-count",
-      "query": "select n: size(nodes) from docs where type == \"lab-note\"",
+      "query": "select n: size(_nodes) from docs where type == \"lab-note\"",
       "notes": "§1.2: a relation is a collection — size() counts its rows (a select-position count { } is an OQX error).",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "n": 18
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "n": 13
           }
         ],
@@ -1155,112 +1155,112 @@
     {
       "name": "relation-blocks-in-document-order",
       "notes": "§1.2: `blocks` is the live blocks in DOCUMENT order (pre-order over the tree): each block's `ordinal` restarts at 0 under its parent and `depth` is its nesting depth (the list items and tasks are 0..N at depth 1 after their list at depth 0). Plain fields since 3.0 (before, the `$`-spelled columns collided with the follow intrinsics, §9).",
-      "query": "select b: blocks collect { o: ordinal, d: depth, type } from docs where path == \"substances/salt.md\"",
+      "query": "select b: _blocks collect { o: _ordinal, d: _depth, _type } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "b": [
               {
                 "o": 0,
                 "d": 0,
-                "type": "heading"
+                "_type": "heading"
               },
               {
                 "o": 1,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 2,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 3,
                 "d": 0,
-                "type": "heading"
+                "_type": "heading"
               },
               {
                 "o": 4,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 5,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 6,
                 "d": 0,
-                "type": "heading"
+                "_type": "heading"
               },
               {
                 "o": 7,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 8,
                 "d": 0,
-                "type": "list"
+                "_type": "list"
               },
               {
                 "o": 0,
                 "d": 1,
-                "type": "list_item"
+                "_type": "list_item"
               },
               {
                 "o": 1,
                 "d": 1,
-                "type": "list_item"
+                "_type": "list_item"
               },
               {
                 "o": 2,
                 "d": 1,
-                "type": "list_item"
+                "_type": "list_item"
               },
               {
                 "o": 9,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 10,
                 "d": 0,
-                "type": "heading"
+                "_type": "heading"
               },
               {
                 "o": 11,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 12,
                 "d": 0,
-                "type": "heading"
+                "_type": "heading"
               },
               {
                 "o": 13,
                 "d": 0,
-                "type": "paragraph"
+                "_type": "paragraph"
               },
               {
                 "o": 14,
                 "d": 0,
-                "type": "list"
+                "_type": "list"
               },
               {
                 "o": 0,
                 "d": 1,
-                "type": "task"
+                "_type": "task"
               },
               {
                 "o": 1,
                 "d": 1,
-                "type": "task"
+                "_type": "task"
               }
             ]
           }
@@ -1273,12 +1273,12 @@
     {
       "name": "linked-docs-through-out-links",
       "notes": "§1.2 (3.0 follow-up): there is no `out` relation — the documents a doc links TO are its link rows' destinations, `out_links collect distinct { from dst }`; `from dst` coerces an absent `dst` (a phantom [[wikilink]], an external link) to no row, and `distinct` collapses the targets linked twice. Projected here as paths in path order.",
-      "query": "select o: out_links collect distinct { select path values from dst order by path } from docs where path == \"index.md\"",
+      "query": "select o: _out_links collect distinct { select _path values from _dst order by _path } from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "o": [
               "/practitioners/jabir-ibn-hayyan.md",
               "/practitioners/maria-prophetissa.md",
@@ -1302,12 +1302,12 @@
     },
     {
       "name": "linking-docs-through-in-links",
-      "query": "select i: in_links collect distinct { select path values from doc order by path } from docs where path == \"processes/magnum-opus.md\"",
+      "query": "select i: _in_links collect distinct { select _path values from _doc order by _path } from docs where _path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "i": [
               "/index.md",
               "/practitioners/maria-prophetissa.md",
@@ -1326,24 +1326,24 @@
     {
       "name": "linked-docs-as-rows-as-values",
       "notes": "§1.2 / §1.4: `out_links collect distinct { from dst }` with no projection yields the destination documents as rows-as-values `{ id, path }`; the dangling [[nigredo]] has no `dst` and contributes no row.",
-      "query": "select o: out_links collect distinct { from dst } from docs where path == \"substances/prima-materia.md\"",
+      "query": "select o: _out_links collect distinct { from _dst } from docs where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "o": [
               {
-                "id": "d_16",
-                "path": "/texts/emerald-tablet.md"
+                "_id": "d_16",
+                "_path": "/texts/emerald-tablet.md"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md"
+                "_id": "d_10",
+                "_path": "/processes/magnum-opus.md"
               },
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md"
+                "_id": "d_7",
+                "_path": "/processes/calcination.md"
               }
             ]
           }
@@ -1356,24 +1356,24 @@
     {
       "name": "dst-values-absent-is-null",
       "notes": "§1.2: `dst` projected as a value is the document row (rendered `{ id, path }`) or null where the link has no destination document — here the dangling [[nigredo]].",
-      "query": "select o: out_links collect { dst values } from docs where path == \"substances/prima-materia.md\"",
+      "query": "select o: _out_links collect { _dst values } from docs where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "o": [
               {
-                "id": "d_16",
-                "path": "/texts/emerald-tablet.md"
+                "_id": "d_16",
+                "_path": "/texts/emerald-tablet.md"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md"
+                "_id": "d_10",
+                "_path": "/processes/magnum-opus.md"
               },
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md"
+                "_id": "d_7",
+                "_path": "/processes/calcination.md"
               },
               null
             ]
@@ -1387,24 +1387,24 @@
     {
       "name": "exists-through-dst",
       "notes": "§1.2: a link row's `dst` reaches the destination document, so a doc-level filter on what is linked TO needs no second query.",
-      "query": "from docs where out_links exists { where dst.type == \"practitioner\" }",
+      "query": "from docs where _out_links exists { where _dst.type == \"practitioner\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -1415,51 +1415,51 @@
     {
       "name": "out-and-in-are-plain-properties",
       "notes": "§9 (3.0 follow-up): `out` and `in` are no relations — on a doc they read an authored property like any other unknown name (absent here); `in` parses as a field in expression position.",
-      "query": "select o: out, i: in from docs where path == \"index.md\"",
+      "query": "select o: out, i: in from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`out` is not a field of docs and no document in this repository carries a property by that name; did you mean `out_links`?",
-          "`in` is not a field of docs and no document in this repository carries a property by that name"
+          "no document in this repository carries a property `out`; did you mean `_out_links`?",
+          "no document in this repository carries a property `in`"
         ]
       }
     },
     {
       "name": "relation-out-edges",
       "notes": "§1.2: `out_links` in (predicate, edge_id) order; the dangling [[nigredo]] has no dst_path.",
-      "query": "select oe: out_links collect { predicate, provenance, dp: dst_path } from docs where path == \"substances/prima-materia.md\"",
+      "query": "select oe: _out_links collect { _predicate, _provenance, dp: _dst_path } from docs where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "oe": [
               {
-                "predicate": "references",
-                "provenance": "link",
+                "_predicate": "references",
+                "_provenance": "link",
                 "dp": "/texts/emerald-tablet.md"
               },
               {
-                "predicate": "references",
-                "provenance": "link",
+                "_predicate": "references",
+                "_provenance": "link",
                 "dp": "/processes/magnum-opus.md"
               },
               {
-                "predicate": "references",
-                "provenance": "link",
+                "_predicate": "references",
+                "_provenance": "link",
                 "dp": "/processes/calcination.md"
               },
               {
-                "predicate": "references",
-                "provenance": "link",
+                "_predicate": "references",
+                "_provenance": "link",
                 "dp": null
               }
             ]
@@ -1472,32 +1472,32 @@
     },
     {
       "name": "relation-in-edges-count",
-      "query": "select n: size(in_links) from docs where type == \"substance\"",
+      "query": "select n: size(_in_links) from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "n": 0
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "n": 4
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "n": 4
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "n": 0
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "n": 0
           }
         ],
@@ -1512,20 +1512,20 @@
       "expect": {
         "hits": [
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -1539,20 +1539,20 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           }
         ],
         "truncated": false,
@@ -1567,40 +1567,40 @@
       "expect": {
         "hits": [
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "era": 250
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "era": 800
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "era": 1530
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "era": 1680
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -1614,12 +1614,12 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           }
         ],
         "truncated": false,
@@ -1633,12 +1633,12 @@
       "expect": {
         "hits": [
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           }
         ],
         "truncated": false,
@@ -1652,8 +1652,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -1678,38 +1678,38 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "type": "hub"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "type": "lab-note"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "type": "practitioner"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "type": "process"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "type": "substance"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "type": "text"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "type": "milestone"
           }
         ],
@@ -1789,7 +1789,7 @@
     {
       "name": "values-page-1",
       "notes": "§1.4: values page like hits — truncated + cursor.",
-      "query": "select path values from docs",
+      "query": "select _path values from docs",
       "limit": 5,
       "expect": {
         "hits": [],
@@ -1808,7 +1808,7 @@
     {
       "name": "values-page-2",
       "notes": "the cursor `values-page-1` issued: (path, id) of its last value.",
-      "query": "select path values from docs",
+      "query": "select _path values from docs",
       "limit": 100,
       "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd",
       "expect": {
@@ -1843,24 +1843,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           }
         ],
         "truncated": true,
@@ -1876,24 +1876,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           }
         ],
         "truncated": true,
@@ -1909,24 +1909,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md"
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "_id": "d_19",
+            "_path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -1941,84 +1941,84 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md"
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "_id": "d_19",
+            "_path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -2034,12 +2034,12 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": true,
@@ -2055,8 +2055,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -2072,24 +2072,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": true,
@@ -2100,22 +2100,22 @@
     {
       "name": "custom-order-ignores-cursor",
       "notes": "a cursor passed with a custom order is not applied.",
-      "query": "from docs order by path",
+      "query": "from docs order by _path",
       "limit": 3,
       "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": true,
@@ -2130,13 +2130,13 @@
       "expect": {
         "hits": [
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "t": "text"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "t": "text"
           }
         ],
@@ -2148,17 +2148,17 @@
     {
       "name": "alias-in-where",
       "notes": "spec/oqx: `where` may reference the body's select aliases (inlined before planning).",
-      "query": "select path, old: era < 1000 from docs where old && type == \"practitioner\"",
+      "query": "select _path, old: era < 1000 from docs where old && type == \"practitioner\"",
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "old": true
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "old": true
           }
         ],
@@ -2169,36 +2169,36 @@
     },
     {
       "name": "string-methods",
-      "query": "select u: type.upper(), l: path.lower(), c: path.contains(\"lab/\"), m: path.matches(\"^/texts/\") from docs where type == \"text\" || type == \"lab-note\"",
+      "query": "select u: type.upper(), l: _path.lower(), c: _path.contains(\"lab/\"), m: _path.matches(\"^/texts/\") from docs where type == \"text\" || type == \"lab-note\"",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "u": "LAB-NOTE",
             "l": "/lab/2026-01-notes.md",
             "c": true,
             "m": false
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "u": "LAB-NOTE",
             "l": "/lab/2026-02-notes.md",
             "c": true,
             "m": false
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "u": "TEXT",
             "l": "/texts/emerald-tablet.md",
             "c": false,
             "m": true
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "u": "TEXT",
             "l": "/texts/mutus-liber.md",
             "c": false,
@@ -2214,89 +2214,89 @@
     {
       "name": "planned-null-vs-list-property",
       "notes": "§1 planner decline (a): `null` against a property read is declined — `tags` is list-valued on 17 docs (a scalar only on substances/mercury.md); the scalar-in-scope subquery reads NULL for a list, so a pushed `tags != null` kept only mercury where in memory the array is not null. Every doc.",
-      "query": "select path from docs where tags != null",
+      "query": "select _path from docs where _tags != null",
       "limit": 100,
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md"
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md"
           },
           {
-            "id": "d_19",
-            "path": "/timeline/review.md"
+            "_id": "d_19",
+            "_path": "/timeline/review.md"
           }
         ],
         "truncated": false,
@@ -2307,7 +2307,7 @@
     {
       "name": "planned-null-vs-list-property-negative",
       "notes": "§1 planner decline (a): the complement: a pushed `tags == null` was NULL IS NULL on the 17 list-valued docs; in memory no doc lacks tags. Zero hits.",
-      "query": "from docs where tags == null",
+      "query": "from docs where _tags == null",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2329,7 +2329,7 @@
     {
       "name": "planned-source-handle-is-not-a-property",
       "notes": "§1 planner decline (b): `frontmatter` is a source handle, not a property key — a pushed read was the scalar-property subquery for key 'frontmatter' (NULL) IS NULL on every doc; in memory the handle is an object. Zero hits.",
-      "query": "from docs where frontmatter == null",
+      "query": "from docs where _frontmatter == null",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2340,7 +2340,7 @@
     {
       "name": "planned-doc-relation-is-not-a-property",
       "notes": "§1 planner decline (b): `nodes` on docs is a relation (§9: `nodes == null` was NULL IS NULL, every row). Zero hits.",
-      "query": "from docs where nodes == null",
+      "query": "from docs where _nodes == null",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2351,7 +2351,7 @@
     {
       "name": "planned-relational-text-vs-num",
       "notes": "§1 planner decline (a), the relational shape: a relational comparison between a text column and a number literal is declined — a pushed `path > 5` kept every doc (text sorts after integers in SQLite); in memory mixed kinds never order. Zero hits.",
-      "query": "from docs where path > 5",
+      "query": "from docs where _path > 5",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2362,83 +2362,83 @@
     {
       "name": "planned-typed-bool-property",
       "notes": "§1 typed pushes (1.2): a boolean literal against a property read pushes as `(SELECT p.type = 'bool' AND p.val_bool = ? … LIMIT 1) IS 1` over the same single-scalar-row subquery (bound 1) — the 14 `verified: true` documents; the 4 `verified: false` and any doc without the key read 0/NULL → not 1.",
-      "query": "select path, verified from docs where verified == true",
+      "query": "select _path, verified from docs where verified == true",
       "limit": 100,
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "verified": true
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "verified": true
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "verified": true
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "verified": true
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "verified": true
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "verified": true
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "verified": true
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "verified": true
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "verified": true
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "verified": true
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "verified": true
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "verified": true
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "verified": true
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "verified": true
           },
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "verified": true
           }
         ],
@@ -2450,33 +2450,33 @@
     {
       "name": "planned-typed-number-property",
       "notes": "§1 typed pushes (1.2): a number literal against a property read pushes as `(SELECT p.type = 'number' AND p.val_num >= ? … LIMIT 1) IS 1` — the five documents whose `era` is 800 or later (maria-prophetissa at 250 and the 12 documents without `era` are out; a non-number `era` would fail the type test rather than order).",
-      "query": "select path, era from docs where era >= 800",
+      "query": "select _path, era from docs where era >= 800",
       "limit": 100,
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "era": 800
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "era": 1680
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "era": 1530
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md",
             "era": 800
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "era": 1677
           }
         ],
@@ -2500,12 +2500,12 @@
     {
       "name": "path-literal-rooted",
       "notes": "§1 Paths (2.0): `path` is the reference form (`/index.md`); a rooted literal matches it.",
-      "query": "from docs where path == \"/index.md\"",
+      "query": "from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
@@ -2516,12 +2516,12 @@
     {
       "name": "path-literal-bare",
       "notes": "§1 Paths (2.0): a bare literal compared with `path` is rooted first, so both spellings match the same document — the migration costs nothing.",
-      "query": "from docs where path == \"index.md\"",
+      "query": "from docs where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           }
         ],
         "truncated": false,
@@ -2532,7 +2532,7 @@
     {
       "name": "path-literal-not-equal",
       "notes": "§1 Paths: `!=` roots its literal too; every document but the one named.",
-      "query": "select path values from docs where path != \"index.md\"",
+      "query": "select _path values from docs where _path != \"index.md\"",
       "limit": 100,
       "expect": {
         "hits": [],
@@ -2565,28 +2565,28 @@
     {
       "name": "path-starts-with-rooted",
       "notes": "§1 Paths: `path.startsWith(\"/dir/\")` — the natural spelling under the reference form.",
-      "query": "from docs where path.startsWith(\"/substances/\")",
+      "query": "from docs where _path.startsWith(\"/substances/\")",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -2597,28 +2597,28 @@
     {
       "name": "path-starts-with-bare",
       "notes": "§1 Paths: the `startsWith` literal is rooted first, so the 1.x spelling keeps working.",
-      "query": "from docs where path.startsWith(\"substances/\")",
+      "query": "from docs where _path.startsWith(\"substances/\")",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -2629,12 +2629,12 @@
     {
       "name": "path-reach-through-rooted",
       "notes": "§1 Paths: `doc.path` and a projected `path` are the reference form; the literal tolerance applies to the member read too.",
-      "query": "select p: path, d: doc.path from docs where doc.path == \"index.md\"",
+      "query": "select p: _path, d: $it._path from docs where $it._path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "d": "/index.md"
           }
@@ -2647,15 +2647,15 @@
     {
       "name": "path-compared-with-a-property-is-not-rewritten",
       "notes": "§1 Paths: only a LITERAL is rooted. A property's value is the author's: `kickoff.md`'s `after` is written rooted and matches review.md's `path` directly; `see_also` holds the bare `processes/calcination.md`, which equals no rooted path (`refs(x)` is the tolerant read for references).",
-      "query": "select hit: ^docs collect { path where path == ^after }, miss: ^docs collect { path where path == ^see_also } from docs where path == \"/timeline/kickoff.md\"",
+      "query": "select hit: ^docs collect { _path where _path == ^after }, miss: ^docs collect { _path where _path == ^see_also } from docs where _path == \"/timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_18",
-            "path": "/timeline/kickoff.md",
+            "_id": "d_18",
+            "_path": "/timeline/kickoff.md",
             "hit": [
               {
-                "path": "/timeline/review.md"
+                "_path": "/timeline/review.md"
               }
             ],
             "miss": []
@@ -2669,12 +2669,12 @@
     {
       "name": "hit-envelope-is-the-intrinsics",
       "notes": "§1.4 (3.0): every hit is `{ id, path, ...projection }` — the envelope keys are the intrinsics the expression language reads, so a key copied from a hit is valid in the next `where` unchanged.",
-      "query": "select layer from docs where path == \"/substances/salt.md\"",
+      "query": "select layer from docs where _path == \"/substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "layer": "canon"
           }
         ],
@@ -2686,12 +2686,12 @@
     {
       "name": "hit-envelope-round-trip",
       "notes": "§1.4 (3.0): the envelope keys are the attributes, so a key copied from a hit is valid in the next `where` with no translation.",
-      "query": "select id from docs where id == \"d_14\"",
+      "query": "select _id from docs where _id == \"d_14\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -2702,16 +2702,16 @@
     {
       "name": "bare-path-is-the-attribute",
       "notes": "§1.2 (3.0): a bare `path` is the engine's attribute — it wins on collision and there is no loud-error set (before this batch of 3.0 the bare spelling was \"did you mean `$path`?\").",
-      "query": "from docs where path.startsWith(\"/lab/\")",
+      "query": "from docs where _path.startsWith(\"/lab/\")",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -2722,12 +2722,12 @@
     {
       "name": "bare-updated-at-hash-raw-are-the-attributes",
       "notes": "§1.2 (3.0): the other docs attributes by their bare names — `hash` is 64 hex, `updated_at` the commit time (the fixture clock), `raw` the exact file bytes.",
-      "query": "select h: hash.size(), u: updated_at, r: raw.startsWith(\"---\\ntype: hub\") from docs where path == \"/index.md\"",
+      "query": "select h: _hash.size(), u: _updated_at, r: _raw.startsWith(\"---\\ntype: hub\") from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "h": 64,
             "u": "2026-09-27T00:00:00.000Z",
             "r": true
@@ -2741,12 +2741,12 @@
     {
       "name": "select-id-path-is-the-envelope",
       "notes": "§1.4 (3.0): `select id, path` is simply the envelope — the attribute collapses onto its own key, never a duplicate column.",
-      "query": "select id, path from docs where path == \"/substances/salt.md\"",
+      "query": "select _id, _path from docs where _path == \"/substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -2757,10 +2757,12 @@
     {
       "name": "aliases-onto-the-envelope-of-the-attribute-itself-collapse",
       "notes": "§1.4 (3.0): `id: id` / `path: path` name the envelope's own selections (allowed, they collapse); `p: path` is an ordinary column carrying the same value.",
-      "query": "select id: id, path: path, p: path from docs where id == \"d_14\"",
+      "query": "select id: _id, path: _path, p: _path from docs where _id == \"d_14\"",
       "expect": {
         "hits": [
           {
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "id": "d_14",
             "path": "/substances/salt.md",
             "p": "/substances/salt.md"
@@ -2774,19 +2776,19 @@
     {
       "name": "rows-as-values-are-id-path-refs",
       "notes": "§1.4 rows as values (1.2; keys renamed in 3.0): a row surfacing as a VALUE — a nested `first { }` / `collect { }` with an empty projection — renders as the same `{ id, path }` a hit leads with; one notation for a document or block reference everywhere a row shape appears.",
-      "query": "select first_block: blocks first { }, hub: ^docs first { where path == \"/index.md\" } from docs where id == \"d_14\"",
+      "query": "select first_block: _blocks first { }, hub: ^docs first { where _path == \"/index.md\" } from docs where _id == \"d_14\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "first_block": {
-              "id": "b_261",
-              "path": "/substances/salt.md"
+              "_id": "b_261",
+              "_path": "/substances/salt.md"
             },
             "hub": {
-              "id": "d_0",
-              "path": "/index.md"
+              "_id": "d_0",
+              "_path": "/index.md"
             }
           }
         ],
@@ -2798,7 +2800,7 @@
     {
       "name": "values-mode-is-unchanged-by-the-envelope",
       "notes": "§1.4 (3.0): `values` returns no hits, so the envelope rename does not touch it — the bare `path` strings, `hits` empty.",
-      "query": "select path values from docs where path.startsWith(\"/substances/\")",
+      "query": "select _path values from docs where _path.startsWith(\"/substances/\")",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2816,24 +2818,24 @@
     {
       "name": "bare-projection",
       "notes": "§1.4 (4.2): `bare` returns each hit as its projection only — no automatic `id`/`path` — so a `select title, era` is `{ title, era }` rows, in the query's order.",
-      "query": "select title, era from docs where type == \"practitioner\" order by era",
+      "query": "select _title, era from docs where type == \"practitioner\" order by era",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "title": "Maria Prophetissa",
+            "_title": "Maria Prophetissa",
             "era": 250
           },
           {
-            "title": "Jabir ibn Hayyan",
+            "_title": "Jabir ibn Hayyan",
             "era": 800
           },
           {
-            "title": "Paracelsus",
+            "_title": "Paracelsus",
             "era": 1530
           },
           {
-            "title": "Isaac Newton",
+            "_title": "Isaac Newton",
             "era": 1680
           }
         ],
@@ -2855,7 +2857,7 @@
     {
       "name": "bare-with-values-refused",
       "notes": "§1.4 (4.2): `values` is already the bare-values form; `bare` beside it is refused (the two name the same thing).",
-      "query": "select path values from docs where type == \"text\"",
+      "query": "select _path values from docs where type == \"text\"",
       "bare": true,
       "expect": {
         "error": "filter_invalid",
@@ -2865,12 +2867,12 @@
     {
       "name": "bare-select-id-is-the-intrinsic",
       "notes": "§1.4 (4.2): `id` in a projection reads the row's intrinsic as everywhere (3.0 name rule); under `bare` it is an ordinary column — `{ id }`, nothing injected beside it. `data.id` stays the authored key.",
-      "query": "select id from docs where path == \"/substances/salt.md\"",
+      "query": "select _id from docs where _path == \"/substances/salt.md\"",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "id": "d_14"
+            "_id": "d_14"
           }
         ],
         "truncated": false,
@@ -2898,16 +2900,16 @@
     {
       "name": "bare-paging-keeps-cursor",
       "notes": "§1.4 (4.2): the keyset page runs on identity the runner keeps internally and the envelope is stripped last, so `truncated` and `cursor` are exactly the enveloped query's (`select title from docs limit 2` without `bare` issues the same cursor).",
-      "query": "select title from docs",
+      "query": "select _title from docs",
       "limit": 2,
       "bare": true,
       "expect": {
         "hits": [
           {
-            "title": "Alchemy"
+            "_title": "Alchemy"
           },
           {
-            "title": "Laboratory notes — January"
+            "_title": "Laboratory notes — January"
           }
         ],
         "truncated": true,
@@ -2918,17 +2920,17 @@
     {
       "name": "bare-paging-continues-from-cursor",
       "notes": "§1.4 (4.2): the cursor `bare-paging-keeps-cursor` issued (`[\"/lab/2026-01-notes.md\", \"d_1\"]`) continues the bare page sequence.",
-      "query": "select title from docs",
+      "query": "select _title from docs",
       "limit": 2,
       "cursor": "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "title": "Laboratory notes — February"
+            "_title": "Laboratory notes — February"
           },
           {
-            "title": "Jabir ibn Hayyan"
+            "_title": "Jabir ibn Hayyan"
           }
         ],
         "truncated": true,
@@ -2939,16 +2941,16 @@
     {
       "name": "bare-distinct-counts-a-projected-id",
       "notes": "§1.4 (4.2): a top-level `distinct` dedups by the projection; under `bare` a projected `id` is part of it (every row distinct), where the default mode's envelope would collapse it (one hit).",
-      "query": "select distinct id, type from docs where type == \"text\"",
+      "query": "select distinct _id, type from docs where type == \"text\"",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "id": "d_16",
+            "_id": "d_16",
             "type": "text"
           },
           {
-            "id": "d_17",
+            "_id": "d_17",
             "type": "text"
           }
         ],
@@ -2973,12 +2975,12 @@
     {
       "name": "bare-first-is-the-projection",
       "notes": "§1.4 (4.2): `first`/`single` return the one hit bare too.",
-      "query": "docs first { select title, era where type == \"practitioner\" order by era desc }",
+      "query": "docs first { select _title, era where type == \"practitioner\" order by era desc }",
       "bare": true,
       "expect": {
         "hits": [
           {
-            "title": "Isaac Newton",
+            "_title": "Isaac Newton",
             "era": 1680
           }
         ],
@@ -2990,14 +2992,14 @@
     {
       "name": "created-at",
       "notes": "§1.2 (4.10): `created_at` is the commit `ts` of the document's first revision (`seq = 1`) — when omgbase first observed it, not a filesystem time. Over the one-batch corpus it equals `updated_at`.",
-      "query": "select created_at, updated_at from docs where path == \"/substances/salt.md\"",
+      "query": "select _created_at, _updated_at from docs where _path == \"/substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
-            "created_at": "2026-09-27T00:00:00.000Z",
-            "updated_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
+            "_created_at": "2026-09-27T00:00:00.000Z",
+            "_updated_at": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
@@ -3008,7 +3010,7 @@
     {
       "name": "created-at-equals-first-revision",
       "notes": "§1.2 (4.10): the attribute is exactly `revisions first { ts values }` (the 4.7 spelling) on every document of the repository (`^docs`, §1.1).",
-      "query": "select n: ^docs count { where created_at == revisions first { ts values } }, total: ^docs count {} from docs limit 1",
+      "query": "select n: ^docs count { where _created_at == _revisions first { _ts values } }, total: ^docs count {} from docs limit 1",
       "bare": true,
       "expect": {
         "hits": [
@@ -3025,7 +3027,7 @@
     {
       "name": "created-at-where-pushdown",
       "notes": "§1.2 (4.10): `where created_at < date(…)` pushes down as `updated_at` does (a correlated subquery over `revisions` at `seq = 1`); the reference runs the case planned and in-memory alike. Nothing was observed before 2026-09-27.",
-      "query": "select path from docs where created_at < date(\"2026-01-01\")",
+      "query": "select _path from docs where _created_at < date(\"2026-01-01\")",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -3036,23 +3038,23 @@
     {
       "name": "created-at-where-pushdown-hits",
       "notes": "§1.2 (4.10): the same predicate the other way round — every document was first observed on the corpus day.",
-      "query": "select path, created_at from docs where created_at >= date(\"2026-09-27\") && created_at < date(\"2026-09-28\") order by path limit 3",
+      "query": "select _path, _created_at from docs where _created_at >= date(\"2026-09-27\") && _created_at < date(\"2026-09-28\") order by _path limit 3",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_0",
+            "_path": "/index.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
@@ -3063,23 +3065,23 @@
     {
       "name": "created-at-order-by",
       "notes": "§1.2 (4.10): `order by created_at` — the Dataview `file.ctime` sort key — behaves exactly as `order by updated_at`: the scan is planned and the order applied over the pushed rows; ties (one batch) break on `path`.",
-      "query": "select path, created_at from docs order by created_at desc, path limit 3",
+      "query": "select _path, _created_at from docs order by _created_at desc, _path limit 3",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_0",
+            "_path": "/index.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
@@ -3090,33 +3092,33 @@
     {
       "name": "created-at-wins-on-collision",
       "notes": "§1.2 (4.10): `created_at` is an engine attribute — bare, winning on collision; an authored `created_at:` key is `data.created_at`. No alchemy document authors one, so the handle read is absent (the key is omitted from the hit) while the bare name is the engine's value.",
-      "query": "select created_at, authored: data.created_at, fm: frontmatter.created_at from docs where path == \"/index.md\"",
+      "query": "select _created_at, authored: _data.created_at, fm: _frontmatter.created_at from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
-            "created_at": "2026-09-27T00:00:00.000Z"
+            "_id": "d_0",
+            "_path": "/index.md",
+            "_created_at": "2026-09-27T00:00:00.000Z"
           }
         ],
         "truncated": false,
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "no document in this repository carries a property `created_at` (`data.created_at`)",
-          "no document in this repository carries a property `created_at` (`frontmatter.created_at`)"
+          "no document in this repository carries a property `created_at` (`_data.created_at`)",
+          "no document in this repository carries a property `created_at` (`_frontmatter.created_at`)"
         ]
       }
     },
     {
       "name": "doc-created-at-reach-through",
       "notes": "§1.2 (4.10): `doc.created_at` on a document is the row's own attribute (the same subquery over the scan's document).",
-      "query": "select same: doc.created_at == created_at from docs where path == \"/index.md\"",
+      "query": "select same: $it._created_at == _created_at from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "same": true
           }
         ],

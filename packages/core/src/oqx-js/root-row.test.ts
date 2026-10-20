@@ -11,11 +11,11 @@ describe("root-row spellings", () => {
     for (const q of [
       "from docs where $repo",
       "select r: size($repo.docs) from docs",
-      "select r: $repo.id from docs",
-      "select r: nodes first { select x: ^$repo.id values } from docs",
-      "select r: nodes first { select x: 0^$repo values } from docs",
+      "select r: $repo._id from docs",
+      "select r: _nodes first { select x: ^$repo._id values } from docs",
+      "select r: _nodes first { select x: 0^$repo values } from docs",
       "$repo.docs count { }",
-      'from docs where path == "nope" && $repo.docs exists { }',
+      'from docs where _path == "nope" && $repo.docs exists { }',
     ]) {
       expect(() => checkRootSpellings(parse(q)), q).toThrow(REPO_REMOVED_MESSAGE);
     }
@@ -24,9 +24,12 @@ describe("root-row spellings", () => {
   it("refuses a bare docs/links at depth ≥ 1, the hint counting the carets", () => {
     expect(() => checkRootSpellings(parse("select x: docs collect { } from docs"))).toThrow(bareTargetMessage("docs", 1));
     expect(bareTargetMessage("docs", 1)).toBe("`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?");
-    expect(() => checkRootSpellings(parse("select x: nodes collect { select y: size(links) } from docs"))).toThrow("did you mean `^^links` (the repository's links)?");
+    expect(() => checkRootSpellings(parse("select x: _nodes collect { select y: size(links) } from docs"))).toThrow("did you mean `^^links` (the repository's links)?");
     expect(() => checkRootSpellings(parse("docs collect { from docs }"))).toThrow("`^docs`");
-    expect(() => checkRootSpellings(parse('from docs where path == "/index.md" follow docs'))).toThrow("`^docs`");
+    expect(() => checkRootSpellings(parse('from docs where _path == "/index.md" follow docs'))).toThrow("`^docs`");
+    // since 5.0 the relations are `_blocks`/`_nodes`/`_revisions`: a bare `blocks` inside a block is always this error, on every row kind
+    expect(() => checkRootSpellings(parse("from blocks where blocks exists { }"))).toThrow("`^blocks`");
+    expect(() => checkRootSpellings(parse("from nodes where nodes exists { }"))).toThrow("`^nodes`");
     // the read-time message spells out the rule
     expect(bareTargetMessage("blocks", null)).toBe("`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?");
   });
@@ -34,17 +37,16 @@ describe("root-row spellings", () => {
   it("refuses a ^target that reaches past the root", () => {
     expect(() => checkRootSpellings(parse("^docs count { }"))).toThrow(pastRootMessage("docs", 1));
     expect(pastRootMessage("docs", 1)).toBe("`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)");
-    expect(() => checkRootSpellings(parse("select path from docs where ^^links exists { }"))).toThrow("`^^links` reaches past the root");
+    expect(() => checkRootSpellings(parse("select _path from docs where ^^links exists { }"))).toThrow("`^^links` reaches past the root");
     expect(() => checkRootSpellings(parse("select n: size(^docs) from docs"))).not.toThrow();
   });
 
   it("leaves the root scope and the relations alone", () => {
     for (const q of [
       "docs count { }",
-      "from docs where nodes exists { }",
+      "from docs where _nodes exists { }",
       "entries(docs) first { }",
-      "select n: size(^docs), id: ^id, k: size(0^links) from docs",
-      "from blocks where blocks exists { }", // blocks/nodes are judged by the context at read time
+      "select n: size(^docs), id: ^_id, k: size(0^links) from docs",
     ]) {
       expect(() => checkRootSpellings(parse(q)), q).not.toThrow();
     }

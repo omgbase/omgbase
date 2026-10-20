@@ -99,10 +99,11 @@ Expect { content_hash?: hex(raw_hash), parent_children_hash?: hex(sha256(child i
 
 `check_content_hash(block, expect)`: a **missing** `content_hash` and a
 mismatched one both raise `stale_expectation` with `{ op_index, block,
-expected_content_hash?, current: { hash, markdown: raw }, retriable:
-true }` — the caller can retry from the error without a read (`current.hash`
-is the block's current hash under the row rule of `spec/surface` §1.2, 2.0;
-`expected_content_hash` echoes the caller's argument and keeps its name).
+expected_content_hash?, current: { _hash, markdown: raw }, retriable:
+true }` — the caller can retry from the error without a read (`current._hash`
+is the block's current hash under the row rule of `spec/surface` §1.2 — the
+engine's name, 4.0; `current.hash` 2.0–3.x; `expected_content_hash` echoes
+the caller's argument and keeps its name, as do `op_index` and `block`).
 `check_parent_children_hash(parent, expect)`: when `expect.parent_children_hash`
 is given, the parent's **live direct children** (ids in order, joined by
 `,`, sha256, hex; the document top level when `parent` is null) must hash to
@@ -267,7 +268,7 @@ Op   insert | update | move | remove | split | merge   (fields as §2; string
      fields `block`, `blocks[]`, `to.parent`, `to.at.before/after` may be
      placeholders "$<n>.ids[<i>]" naming an earlier op's result)
 Request  { repo, ops, origin: { actor, reason? }, dry_run? }
-Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, hash }], diffs?: { path: { before, after } }, committed }
+Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path, _hash }], diffs?: { path: { before, after } }, committed }
 ```
 
 1. Resolve placeholders against earlier results (`target_missing` when the
@@ -286,16 +287,20 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
 2. (3.0) The request has no frontmatter side channel. A document's **head**
    — everything before its first block: the leading trivia and the
    frontmatter with its fences and separator — is set by the effect planner
-   (`set`/`unset frontmatter.<key>`, `set content`, §11.3; the plan's
+   (`set`/`unset _frontmatter.<key>`, `set content`, §11.3; the plan's
    `opset.set_frontmatter[]`) and replayed by `execute` before the ops.
    Through 2.x `set_frontmatter: [{ doc, raw | null }]` on the request
    replaced `frontmatter_raw` before any op (§10).
 3. Apply the ops in order (§2); any error aborts the whole request with
    nothing written.
 4. For every loaded document: `diffs[path] = { before, after: render }`,
-   `revisions` gets `{ id, path, hash }` — the document, its path (this
+   `revisions` gets `{ _id, _path, _hash }` — the document, its path (this
    spec's storage form; the surface roots it) and `hex(sha256(render))`, the
-   hash the committed revision will carry (2.0; `{ doc, path }` before).
+   hash the committed revision will carry, spelled as the `revisions` row's
+   engine names (4.0, `spec/surface` §1.2: on every record a bare name is
+   the user's, an underscore-prefixed name the engine's; `{ id, path, hash }`
+   2.0–3.x, `{ doc, path }` before). `diffs` is keyed by the path as a map
+   key, not a row attribute, and `committed` is a role: both stay bare.
    `dry_run` returns here with `committed: false`.
 5. **Commit**, under the writer lock when a workspace is given (2.1; per
    document before). Database first, files after, nothing written before
@@ -313,7 +318,7 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ id, path, h
      — for every loaded document re-read `(path, current_rev, file_hash)`
      through the transaction and compare with the values the plan loaded in
      step 1; a document that moved on → ROLLBACK before anything is minted,
-     `stale_plan { doc, expected_revision, current: { revision, hash } }`
+     `stale_plan { doc, expected_revision, current: { revision, _hash } }`
      (retriable); a `file_hash` that does not equal the hash of the bytes
      read in (a) → ROLLBACK, `sync_conflict` (retriable; the bytes are then
      ingested as `observed` in their own transaction, with any pending row
@@ -384,10 +389,10 @@ finishes`): no atomicity across the database and the disk is claimed.
 
 Each expands to kernel ops, deterministically, and the expansion is what
 runs and what the caller sees. The names below are the macros'; the MCP tools
-rendering them (surface 3.0) are `blocks_check { ids }` for `tasks_complete`,
-`nodes_set { id }` for `node_set`, and — `sections_append` has no tool of its
-own since 3.0 — `docs_append { section }` and `blocks_append { id }` for
-`sections_append`:
+rendering them (surface 3.0; the argument spellings surface 5.0) are
+`blocks_check { _ids }` for `tasks_complete`, `nodes_set { _id }` for
+`node_set`, and — `sections_append` has no tool of its own since 3.0 —
+`docs_append { section }` and `blocks_append { _id }` for `sections_append`:
 
 | Macro | Expansion |
 | --- | --- |
@@ -397,22 +402,27 @@ own since 3.0 — `docs_append { section }` and `blocks_append { id }` for
 | `sections_rename { heading, title }` | `update { block: heading, markdown: "#"×level + " " + title, expect }` — level from the live raw's leading `#` run (1 when none) |
 | `sections_move { heading, to }` | `move { blocks: the heading's section run (top-level ids from the heading to before the next heading of level ≤ its own), to }`; `[]` when the heading is unknown |
 | `lists_insert_item { anchor, at, markdown }` | `insert { to: { parent: anchor, at }, markdown: markdown if it starts with "- " after trimming else "- " + markdown }` |
-| `node_set { node, prop, value }` | the adapter's editor for `(kind, prop)` applied to the block's raw and the node's span (byte span → the host's indices) → one `update` (markdown or attrs) with the CAS; unknown node → `block_missing`; no block / no editor → `node_not_editable` (`{ kind, prop, editable }`). Editors: `md:link.name` (retype the text), `md:link.value` (retarget), `md:task.checked` (attrs) |
-| `links_repair { repairs: [{ from, to }], path_glob? }` | for every live non-`code_fence` block of the repo whose raw contains a slash-less `from`, visited in `(path, depth, ordinal, block_id)` order, rewrite each **whole link destination** (Markdown link/image, wikilink, bare-path inline field; a trailing `#…`/`^…` fragment re-appended; leading `/` ignored in matching; first matching pair wins; never inside code spans) → one `update { markdown, expect }` per changed **top-most** block (a hit whose ancestor also hit is dropped); returns `{ ops, hits: [{ block, path, old_raw, new_raw }], pairs: [{ from, to, hits }] }`. `links_retarget { from, to }` is the one-pair form |
+| `node_set { node, prop, value }` | the adapter's editor for `(kind, prop)` applied to the block's raw and the node's span (byte span → the host's indices) → one `update` (markdown or attrs) with the CAS; unknown node → `block_missing`; no block / no editor → `node_not_editable` (`{ kind, prop, editable }`). Editors: `md:link.name` (retype the text), `md:link.value` (retarget), `md:task.checked` (attrs) — `prop` is the editor's property name, never a surface attribute (`name`, `value`, `checked` stay bare under 4.0) |
+| `links_repair { repairs: [{ from, to }], path_glob? }` | for every live non-`code_fence` block of the repo whose raw contains a slash-less `from`, visited in `(path, depth, ordinal, block_id)` order, rewrite each **whole link destination** (Markdown link/image, wikilink, bare-path inline field; a trailing `#…`/`^…` fragment re-appended; leading `/` ignored in matching; first matching pair wins; never inside code spans) → one `update { markdown, expect }` per changed **top-most** block (a hit whose ancestor also hit is dropped); returns `{ ops, hits: [{ _id, _path, old_raw, new_raw }], pairs: [{ from, to, hits }] }` (a hit names the block row and its document's path under the row's engine names, 4.0; the surface's `links_retarget`/`links_repair` render the same hits as `{ _id, _path, oldRaw, newRaw }`). `links_retarget { from, to }` is the one-pair form |
 
 ## 6. Document operations
 
 All are `api` commits with a generated `reason`. Since 3.0 the four
 operations ARE effects of §11 — `docs_create` one `create`, `docs_move` one
 `move` of a document, `docs_delete` one `remove` of a document,
-`docs_set_meta` one `set`/`unset frontmatter.<key>` per key (`unset` winning
+`docs_set_meta` one `set`/`unset _frontmatter.<key>` per key (`unset` winning
 a key named in both) — planned and committed by the effect planner under the
 reasons below (the surface's tools since `spec/surface` 3.3; the library's
 functions and the `docs` fixture step at 3.0). Two consequences of the planner
 (§11.3): a created document commits with **known ids** (`inserted / api`, no
 matcher), and a `set_meta` is a head write (`edited / api` for every block of
 the document) — §10. This section states what each operation does and the
-rows and files it leaves.
+rows and files it leaves. The arguments below are the library builders'
+and the `docs` fixture step's (§9): `path`, `to_path` and `doc` are roles —
+where to create, where to move, which document — and stay bare; the surface
+tools over them take `_id?`/`_path?` for the document they address
+(`spec/surface` §4, 5.0) and `docs_create.path`/`docs_move.to_path` as the
+roles they are.
 
 - **`docs_create { path, markdown, frontmatter? }`**: canonicalize the path
   (strip leading `/`, `\` → `/`); a live doc there → `path_taken`; compose
@@ -468,7 +478,7 @@ rows and files it leaves.
   2.1 the unlink ran unconditionally after the transaction, and a crash
   between the two left a file no sweep healed.
 - **`docs_set_meta { doc, set?, unset? }`**: one `set`/`unset
-  frontmatter.<key>` effect per key (§11.3): each edits **one entry** of the
+  _frontmatter.<key>` effect per key (§11.3): each edits **one entry** of the
   frontmatter (§11.10 — the key's own lines re-rendered, every other key's
   bytes untouched; 3.6) and the result is the document's **head**, committed
   over the document's blocks (the body blocks keep their ids and bytes, each
@@ -494,8 +504,8 @@ rows and files it leaves.
 `plan_update(doc, content)` → `Opset`:
 
 ```text
-Opset { version: 1, kind: "doc_update", target: { id, path },
-        precondition: { id, path, base_revision, hash },
+Opset { version: 1, kind: "doc_update", target: { _id, _path },
+        precondition: { _id, _path, base_revision, _hash },
         matcher_v, ops: [PlanOp], frontmatter?: { raw | null },
         summary: { preserved, updated, moved, created, removed, split, merged, ambiguous },
         converges, diagnostics: [string] }
@@ -510,11 +520,13 @@ reason, detail? }], diagnostics }`, `op_index` the op's index in the plan's
 `opset.ops`; `converges: false` is `plan_not_convergent`. No request accepts
 or returns an opset (2.x: `apply_opset`, the surface's `docs_update { opset,
 plan, result }`). The `plan` fixture step (§9) still records it, so the
-lowering stays pinned on its own.
+lowering stays pinned on its own — under the 4.0 spellings above.
 
-1. Load the doc (`doc_missing`); `precondition.hash = sha256(render(doc))`
-   (the document's current `hash`), `base_revision = current_rev` (2.0:
-   `target`/`precondition` spelled `doc`/`path`/`base_content_hash` before).
+1. Load the doc (`doc_missing`); `precondition._hash = sha256(render(doc))`
+   (the document's current `_hash`), `base_revision = current_rev` — the
+   document's row attributes under the engine names, the role `base_revision`
+   bare (4.0; `id`/`path`/`hash` 2.0–3.x; `target`/`precondition` spelled
+   `doc`/`path`/`base_content_hash` before 2.0).
 2. Parse `content` per the doc's format; split off the frontmatter block;
    reconcile the body against the doc's stored tree (`spec/reconcile`, the
    configured matcher, **no pool**).
@@ -575,7 +587,7 @@ The opset is committed only as the `set content` effect's lowering (§11.3):
 plan (placeholders shifted), `frontmatter` as the document's head; the
 document's triple in `preconditions.docs` — a document that moved on is
 `stale_plan` (retriable, `{ doc, expected_revision, current: { revision,
-hash } }`) when the plan executes. An opset with no ops and no frontmatter
+_hash } }`) when the plan executes. An opset with no ops and no frontmatter
 change loads nothing: the plan has nothing to commit and `execute` records
 no commit (§11.7, the zero-effects rule). `apply_opset` (2.x: `doc_missing`
 / `stale_plan` on `base_revision` + `hash`, then `apply` with the ops and
@@ -590,7 +602,7 @@ Codes: `stale_expectation`, `block_missing`, `target_missing`,
 (`{ effects: [i, j], focus: { kind, target, field? }, retriable: false }`),
 `unsupported_plan_version` (`{ version, supported: [1] }`), `plan_mismatch`
 (`{ expected, actual }`, two plan ids), and (3.1, §11.8) `ambiguous_target`
-(`{ effect_index, template_index, row: { id, path }, expression, count }` —
+(`{ effect_index, template_index, row: { _id, _path }, expression, count }` —
 a target expression yielded a list), `selection_too_large` (`{ cardinality,
 max, implicit? }` — more hits than the bound). A malformed effect or plan
 object is the surface's argument-shape error `filter_invalid { reason, hint:
@@ -603,7 +615,13 @@ the index of the effect a planner error arose from, added to every error the
 planner or its kernel ops raise — `effects`, `focus`, `symbol`, `version`,
 `supported`, `expected`, `actual`, since 3.1 `template_index`, `row`,
 `expression`, `count`, `cardinality`, `max`, `implicit`, and since 3.3
-`fix`); messages are not pinned.
+`fix`); messages are not pinned. Inside those fields a row attribute is
+spelled as the row spells it (4.0): `current: { _hash, markdown }` for a
+content-hash miss and `current: { parent_children_hash }` for a parent miss
+(the guard names are roles), `row: { _id, _path }`, a `focus.target`'s
+`_id`/`_path`; `op_index`, `block` (the op's operand as given),
+`expected_content_hash`, `expected_revision`, `doc`, `symbol`, `rev` are
+roles and stay bare.
 
 **`fix` (3.3).** An error the engine can correct mechanically carries
 `data.fix`: a **literal corrected call** — the arguments the caller should
@@ -621,9 +639,9 @@ list whose first identity is not a string or a row), carries no `fix`:
 | Error | `fix` |
 | --- | --- |
 | `conflicting_effects` on a plain request | the same `effects` minus the **earlier** of the two (keep the later effect, as written) |
-| `conflicting_effects` under a selector, two hits | the request narrowed to the later effect's hit: `select` = `from <root> where id == "<hit id>"` (`<root>` by the id's prefix), the templates as written, `expect: { max: 1 }` |
+| `conflicting_effects` under a selector, two hits | the request narrowed to the later effect's hit: `select` = `from <root> where _id == "<hit id>"` (`<root>` by the id's prefix), the templates as written, `expect: { max: 1 }` |
 | `conflicting_effects` under a selector, one hit | the request minus the earlier effect's template |
-| `ambiguous_target` | the slot's member spelled as the **first** identity the expression yielded (a row by its `id`); under a selector the `select` is narrowed to the hit as above with `expect: { max: 1 }` |
+| `ambiguous_target` | the slot's member spelled as the **first** identity the expression yielded (a row by its `_id`); under a selector the `select` is narrowed to the hit as above with `expect: { max: 1 }` |
 | `selection_too_large` | the same request with `expect: { max: <count> }`, `<count>` the selection's exact size — the page the engine refused when it was `bound + 1` rows, else a second, unbounded run of the same compiled query |
 | `filter_invalid` "`expect.max` is required on `apply` with `select`" | the same request with `expect: { max: <cardinality> }`, the selector compiled (reads only) to count it — a selection the compile refuses reports its own error and fix |
 | `filter_invalid` on a refused selector source (§11.8 step 1: `links`, or a source that is not a bare root) | the same request with the source spliced over its span in the written query: `links` → `blocks` (a link lives in a block), anything else → `docs` |
@@ -633,10 +651,10 @@ list whose first identity is not a string or a row), carries no `fix`:
 | `stale_plan` at execute; `plan_mismatch` on the plan form | re-plan and commit in one call: `apply` over the plan's selector form `{ select: selection.query, effects: selection.templates, expect: selection.expect or { max: selection.cardinality } }` when it has a `selection`, else `{ effects: <the plan's effects> }` (none when the plan has no effects — `apply` takes at least one) |
 | `plan_mismatch` on the digest form | `apply` over the request as given: `{ select?, effects, expect? }` |
 | `target_missing { symbol }` for a `$new.n` no earlier effect created, on a plain request with a later `create` | the next `create` moved before the effect that uses the symbol, that symbol renamed to the one the create will then allocate (`$new.<symbols allocated so far>`) |
-| `filter_invalid` (3.4) "`at` must be … — "after block X" is into: X's parent …": `at` given as the bare string `"after"` / `"before"` on an `insert` or a block `move` whose `into` is a block | the same request with that effect's `into` replaced by the block's **parent** — `{ kind: "block", id: <parent id> }`, or the document's rooted path (`"/a.md"`) when the block is top-level — and `at: { after: <the block id> }` / `{ before: … }`. The one shape fix that reads the store (the block's live `blocks` row: `parent_block`, its document's path); an `into` that is not a live block (a `$new.n`, an unknown id, a document) gets no `fix` |
+| `filter_invalid` (3.4) "`at` must be … — "after block X" is into: X's parent …": `at` given as the bare string `"after"` / `"before"` on an `insert` or a block `move` whose `into` is a block | the same request with that effect's `into` replaced by the block's **parent** — `{ kind: "block", _id: <parent id> }`, or the document's rooted path (`"/a.md"`) when the block is top-level — and `at: { after: <the block id> }` / `{ before: … }`. The one shape fix that reads the store (the block's live `blocks` row: `parent_block`, its document's path); an `into` that is not a live block (a `$new.n`, an unknown id, a document) gets no `fix` |
 | `filter_invalid` (3.4) "a plural-target `expect` is keyed by block id — { <block id>: { content_hash?, parent_children_hash? }, … }": a `remove`/`merge` `expect` whose every key is a guard name (`content_hash` / `parent_children_hash`) and every value a map of strings | the same request with the nesting inverted: `{ <id>: { <guard>: <value> }, … }` (the guards of one id merged into its object) |
 | `filter_invalid` (3.4) "`expect.max` bounds a selection — it is the request's top-level `expect`, beside `select`, not an effect's": `max` inside an effect's `expect` (any op) | the same request with `max` dropped from that effect's `expect` (the other guards stay; an emptied `expect` goes) and, when the request has a `select`, `expect.max` set at the top level to that value — unless the request already has a top-level `expect.max`, which is kept as written; without a `select` nothing is added (a top-level `expect` alone would itself be refused) |
-| `filter_invalid` (3.4) "a block's `field` is `markdown` or `attrs.checked` (got …)" with `field` one of `text`, `content`, `body`, `raw` on a literal block target | the same request with that effect's `field: "markdown"`; any other block field (a `title`) gets the error and no `fix` |
+| `filter_invalid` (3.4) "a block's `field` is `markdown` or `_attrs.checked` (got …)" with `field` one of `text`, `content`, `body`, `raw` on a literal block target | the same request with that effect's `field: "markdown"`; any other block field (a `title`) gets the error and no `fix` |
 
 The four shape fixes (3.4) are built by the shape check itself — the
 reference's `effects.ts` `validateEffect` given a `ShapeFixContext { request,
@@ -695,9 +713,30 @@ a file operation and records its error as usual.
 `ts` (spec/store §2.4 format) is required on every committing step: the
 implementations expose a clock seam (`ts` on the apply request, the doc-op
 context and the opset request) so commit timestamps are pinned. Ops use the
-spec spelling `child_ids`; the opset uses `base_revision`, `hash`,
+spec spelling `child_ids`; the opset uses `base_revision`, `_hash`,
 `matcher_v`; plan ops keep their placeholders;
 `diagnostics` strings are pinned verbatim.
+
+**Spellings (4.0).** The fixtures carry the §11 shapes as the surface spells
+them (`spec/surface` §1.2, 5.0 — a bare name is the user's, an
+underscore-prefixed name the engine's): every effect inside a
+`plan_effects` / `execute` / `apply_effects` step and every `fix` targets
+`{ kind: "document", _id | _path }`, `{ kind: "block", _id }`, `{ kind:
+"node", _id }` (a bare path, id or `$new.n`, and `{ kind: "section",
+heading_id }`, as before) and names the fields `_frontmatter.<key>`,
+`_attrs.checked`, `content`, `markdown` and a node's `value`/`name`/`checked`;
+a recorded Plan spells `preconditions.docs[{ _id, _path, base_revision,
+_hash }]`, `preconditions.blocks[{ _id, content_hash }]`, `opset.moves[{ _id,
+from, to }]`, `opset.tombstones[{ _id, _path }]`, `effects[].target { kind,
+_id, _path }`; a Receipt and an `apply` outcome `revisions[{ _id, _path,
+_hash }]`; an error `row: { _id, _path }` and `current: { _hash, markdown }`.
+The kernel `apply` step's ops (`block`, `blocks`, `to`, `doc`, `at`,
+`expect.content_hash`), the `docs` step's arguments (`doc`, `path`, `to_path`,
+`set`, `unset`) and its own record `{ doc, path, committed }` (the §6
+builders' result, which the surface re-shapes), `set_frontmatter[{ doc, raw
+}]`, `preconditions.parents[{ doc, parent, parent_children_hash }]`,
+`new_ids`, `plan_id`, `commit` and the `disk`/`materialize` paths are roles
+and keep their names.
 
 `expect.steps` records per step: `apply` → `{ results, revisions, diffs?,
 committed }` or `{ error: { code, op_index?, block?, current?, retriable? } }`
@@ -962,9 +1001,9 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   tool builds its effects through the shared builders (`sugar.ts` in the
   reference — one builder per operation, the same table the `omg` verbs and
   the fixture `docs` step use: `insert` / `set markdown` / `set
-  attrs.checked` / `move` / `remove` / `split` / `merge` / `set` on a node /
+  _attrs.checked` / `move` / `remove` / `split` / `merge` / `set` on a node /
   `retarget` / `create` / `move document` / `remove document` / `set`+`unset
-  frontmatter.<k>` / `set content`, with the tool's name — or the §6 reason —
+  _frontmatter.<k>` / `set content`, with the tool's name — or the §6 reason —
   as `origin.reason`), plans and executes them as one §11.7 request and
   returns the Receipt; a planner error loses its `effect_index` (the tool
   built the effects) and keeps the kernel's data. Every such commit carries
@@ -1028,8 +1067,8 @@ the Receipt — and a correctable error a **`fix`**, a literal corrected call
 ### 11.1 Vocabulary
 
 ```text
-Target  { kind: "document", id? | path? }        at least one; a path in either form (spec/surface §1)
-        { kind: "block", id } | { kind: "node", id }
+Target  { kind: "document", _id? | _path? }      at least one; a path in either form (spec/surface §1)
+        { kind: "block", _id } | { kind: "node", _id }
         { kind: "section", heading_id }           the heading's section range (§1.1), never a stored id
 At      "start" | "end" | { before: <block id> } | { after: <block id> }
 Expect  { content_hash?, parent_children_hash?, revision? }   revision = the document's current_rev
@@ -1037,7 +1076,7 @@ Expect  { content_hash?, parent_children_hash?, revision? }   revision = the doc
 Effect  { op: "create",   path, markdown, frontmatter? }
         { op: "insert",   into: Target(document|section|block), at? = "end", markdown, expect? }
         { op: "set",      target: Target(document|block|node), field, value, expect? }
-        { op: "unset",    target: Target(document), field: "frontmatter.<key>", expect? }
+        { op: "unset",    target: Target(document), field: "_frontmatter.<key>", expect? }
         { op: "move",     target: Target(document), to, retarget_inbound? = true }
         { op: "move",     targets: [Target(block)…], into: Target(document|section|block), at? = "end", expect? }
         { op: "remove",   target: Target(document) }
@@ -1047,7 +1086,12 @@ Effect  { op: "create",   path, markdown, frontmatter? }
         { op: "retarget", repairs: [{ from, to }], path_glob? }
 ```
 
-Any `id` — a target's, an anchor's, a `targets[]` member's, a section's
+A target's `_id` and `_path` are the row's attributes under the engine
+names of `spec/surface` §1.2 (4.0: a bare name is the user's on every
+record, an underscore-prefixed name the engine's — so `{ kind: "document",
+id }` is a shape error naming `_id`); `kind`, `heading_id`, `at`, `to`,
+`into`, `field`, `value`, `expect` and the rest are roles and stay bare. Any
+id — a target's `_id`, an anchor's, a `targets[]` member's, a section's
 `heading_id` — may be **`$new.<n>`**, an identity an earlier effect of the
 same request creates (§11.4): a created document, each block of its parsed
 tree (3.0, pre-order), the blocks an `insert`/`split`/`update` mints. A
@@ -1069,11 +1113,15 @@ block `field` of `text`/`content`/`body`/`raw` (`markdown`).
 
 | Target | `field` | `value` |
 | --- | --- | --- |
-| document | `frontmatter.<key>` (`<key>` is everything after the dot; one flat key) | any JSON (`unset` takes none) |
+| document | `_frontmatter.<key>` (`<key>` is everything after the dot; one flat key — the frontmatter handle of `spec/surface` §1.2, so a key that itself begins `_` is reached the same way) | any JSON (`unset` takes none) |
 | document | `content` (`set` only) | the complete proposed document, a string |
 | block | `markdown` | a string |
-| block | `attrs.checked` | a boolean |
-| node | an editable property of the node's kind (`value`, `name`, `checked` — §5 `node_set`) | a string, else its canonical JSON (§11.5) |
+| block | `_attrs.checked` (the engine's attrs handle; the attr key `checked` under it is the author's) | a boolean |
+| node | an editable property of the node's kind (`value`, `name`, `checked` — §5 `node_set`; the editor's property name, bare) | a string, else its canonical JSON (§11.5) |
+
+Through 3.x the fields were spelled `frontmatter.<key>` and `attrs.checked`
+(4.0 — Decisions). `content` and `markdown` name what is written, not a row
+attribute, and stay bare.
 
 `expect.content_hash` and `expect.parent_children_hash` go to the lowered
 op (§1.2); a mismatch at plan time is the kernel's `stale_expectation`
@@ -1083,32 +1131,32 @@ is **pinned from the live row** for every block an effect targets (`set`,
 pins are the plan's `preconditions.blocks`. `expect.revision` is compared
 with the target document's `current_rev` when the effect is planned; a
 difference is `stale_plan { doc, expected_revision, current: { revision,
-hash }, retriable }` (`effects::plan-rejects-stale-revision`).
+_hash }, retriable }` (`effects::plan-rejects-stale-revision`).
 
 ### 11.3 Lowering and conflicts
 
 Effects are lowered **in order**; later effects see earlier ones (an anchor
 may be a block an earlier insert created; a second frontmatter key patches
-the first's result). Resolution: a document target → its `{ id, path }`
-(`doc_missing { doc }`; `filter_invalid` when `id` and `path` disagree); a
+the first's result). Resolution: a document target → its `{ _id, _path }`
+(`doc_missing { doc }`; `filter_invalid` when `_id` and `_path` disagree); a
 `$new.n` document → the create's path. Each effect lowers per this table —
 the TypeScript reference's `mutate/effects.ts`, the port's
 `omgbase-mutate::effects`:
 
 | Effect | Lowers to |
 | --- | --- |
-| `create` | a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; the document symbol is allocated (kind `document`), then `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) is **parsed into the planner's working tree** per the path's format — the frontmatter block as the head, each body block minted in pre-order (the next `$new.k`, kind `block`) with its exact trivia — and **adopted** as a loaded document with no row behind it (3.0): no triple, an empty `before`, no prior ids. `opset.creates[] = { symbol, path, source, before_op }`, `before_op` the number of kernel ops planned so far (where `execute` re-adopts it, §11.7); `preconditions.absent_paths += path`. Every later effect addresses the document (`into`/`target` `{ kind: "document", id: "$new.n" }` — its `doc` in the kernel op) and its blocks (`$new.k`, kept literally in the ops) like any other; `set`/`unset frontmatter.<key>` on it is a head (the row below), `set content` on it is `target_missing { symbol }` (its content is the create's markdown), `move`/`remove` of the document itself are `target_missing` too. At commit: `ingest_known` with no triple — the `path_taken` guard re-checked, §4 step 5 (b) — so every block is `inserted / api`. Through 2.x the create was a reconciling ingest at commit and a later frontmatter patch was folded into its composition (§10 "Changed (3.0)") |
+| `create` | a live document at `path`, a path an earlier effect of the plan already creates or moves to, or a file on disk → `path_taken`; the document symbol is allocated (kind `document`), then `source = composeFile(markdown, frontmatter)` (§6 `docs_create`) is **parsed into the planner's working tree** per the path's format — the frontmatter block as the head, each body block minted in pre-order (the next `$new.k`, kind `block`) with its exact trivia — and **adopted** as a loaded document with no row behind it (3.0): no triple, an empty `before`, no prior ids. `opset.creates[] = { symbol, path, source, before_op }`, `before_op` the number of kernel ops planned so far (where `execute` re-adopts it, §11.7); `preconditions.absent_paths += path`. Every later effect addresses the document (`into`/`target` `{ kind: "document", _id: "$new.n" }` — its `doc` in the kernel op) and its blocks (`$new.k`, kept literally in the ops) like any other; `set`/`unset _frontmatter.<key>` on it is a head (the row below), `set content` on it is `target_missing { symbol }` (its content is the create's markdown), `move`/`remove` of the document itself are `target_missing` too. At commit: `ingest_known` with no triple — the `path_taken` guard re-checked, §4 step 5 (b) — so every block is `inserted / api`. Through 2.x the create was a reconciling ingest at commit and a later frontmatter patch was folded into its composition (§10 "Changed (3.0)") |
 | `insert into document` | kernel `insert { doc, to: { parent: { doc: true }, at }, markdown, expect? }` |
 | `insert into section` | `insert { to: { parent: { heading: heading_id, scope: "section" }, at }, markdown, expect? }` (§1.1; an unknown heading is `parent_missing`) |
 | `insert into block` | `insert { to: { parent: id, at }, markdown, expect? }` (the container rule → `type_mismatch`) |
-| `set`/`unset frontmatter.<key>` on a document | the frontmatter is edited **by entry** (3.6; the split rule is §11.10): the document's `frontmatter_raw` is cut at the closing fence (the first line after the opening one that is `---` plus optional spaces/tabs) into the block's raw and the separator, and the raw into its parts — `set`: the first part whose key is `<key>` has its entry lines replaced by `stringify({ <key>: value })` (in the fence's line endings: `\r\n` when the opening fence ends so), its lead lines (the comment that documents it) kept, and every further part of the same key removed; a key with no part gains one inserted after the last entry part (before the trailing comments and the closing fence), or, when no part has a key, immediately before the closing fence — `unset`: every part of the key is removed. Every other part is byte-identical. The new head is the parts joined + the separator, or — when nothing but the two fences would remain — the separator minus its first line ending (§6: the body's leading blank line stays). The head becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`) and replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes. A document **without** frontmatter (or whose head the fence rule does not recognise) composes as 3.5 did — `split(render(doc))`, the key set or deleted, `after = composeFile(body, merged)`, the head `after` minus the rendered body blocks (a file without a trailing newline gains one on its last block's trivia). Byte parity with `set_meta` (itself this effect since 3.0) is pinned by `effects::set-fm-matches-set-meta-bytes`; the untouched entries by `effects::set-fm-leaves-other-parts-byte-identical` and the §11.10 cases |
+| `set`/`unset _frontmatter.<key>` on a document | the frontmatter is edited **by entry** (3.6; the split rule is §11.10): the document's `frontmatter_raw` is cut at the closing fence (the first line after the opening one that is `---` plus optional spaces/tabs) into the block's raw and the separator, and the raw into its parts — `set`: the first part whose key is `<key>` has its entry lines replaced by `stringify({ <key>: value })` (in the fence's line endings: `\r\n` when the opening fence ends so), its lead lines (the comment that documents it) kept, and every further part of the same key removed; a key with no part gains one inserted after the last entry part (before the trailing comments and the closing fence), or, when no part has a key, immediately before the closing fence — `unset`: every part of the key is removed. Every other part is byte-identical. The new head is the parts joined + the separator, or — when nothing but the two fences would remain — the separator minus its first line ending (§6: the body's leading blank line stays). The head becomes `opset.set_frontmatter[] = { doc, raw }` (one entry per document, the last patch wins; `doc` a created document's symbol when it is one, 3.0 — `effects::create-then-set-on-new-doc`) and replaces the leading trivia and the frontmatter together (§10), so the body blocks keep their ids and bytes. A document **without** frontmatter (or whose head the fence rule does not recognise) composes as 3.5 did — `split(render(doc))`, the key set or deleted, `after = composeFile(body, merged)`, the head `after` minus the rendered body blocks (a file without a trailing newline gains one on its last block's trivia). Byte parity with `set_meta` (itself this effect since 3.0) is pinned by `effects::set-fm-matches-set-meta-bytes`; the untouched entries by `effects::set-fm-leaves-other-parts-byte-identical` and the §11.10 cases |
 | `set content` on a document | §7 `plan_update(doc, value)`: `converges: false` → `plan_not_convergent { doc, diagnostics }`; its annotations → `preview.identity[doc]` (3.0; §7); its `frontmatter` → the head `leading_trivia + raw`; its kernel ops appended with every `$k.ids[i]` placeholder shifted by the ops already planned. **No ops and no frontmatter change** (the content IS the document): nothing is loaded — the document's triple still goes to `preconditions.docs`, nothing commits (§11.7). The planner's own verifies mint under a throwaway symbol table (nothing of theirs reaches the plan) |
 | `set markdown` on a block | `update { block, markdown, expect: { content_hash (pinned), parent_children_hash? } }` |
-| `set attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
+| `set _attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
 | `set <prop>` on a node | §5 `node_set(node, prop, value)` → its one `update`, the pin as above (`node_not_editable` / `block_missing` as there) |
-| `move` a document | `opset.moves[] = { id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` then the sources' revisions, the moved document's own revision (when it is a source) at the NEW path — §6, one commit |
+| `move` a document | `opset.moves[] = { _id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` then the sources' revisions, the moved document's own revision (when it is a source) at the NEW path — §6, one commit |
 | `move` blocks | `move { blocks, to, doc?, expect? }` — `doc` the destination document's id (or symbol) when `into` is a document (§2.3, 3.0) |
-| `remove` a document | `opset.tombstones[] = { id, path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
+| `remove` a document | `opset.tombstones[] = { _id, _path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
 | `remove` blocks | `remove { blocks, expect: { <id>: { content_hash (pinned), … } } }` |
 | `split` | `split { block, at, expect }` |
 | `merge` | `merge { blocks, separator, expect: { <id>: … } }` |
@@ -1122,9 +1170,9 @@ what it writes and what it addresses, against what earlier effects did:
 
 | Focus | Key | Rule |
 | --- | --- | --- |
-| scalar | `(document, frontmatter.<key>)`, `(document, content)`, `(document, path)` — a `move`, `(block, markdown)`, `(block, attrs.checked)`, `(node, <prop>)`; a `retarget` is one `(block, markdown)` per hit | a second write to a key an earlier effect wrote: **identical** (same op; for `set`, equal canonical JSON of `value`) → the later effect is **dropped** and `diagnostics` gains `effect <j> (<describe>) duplicates effect <i>; dropped` (`describe`: `set <field> on document <id>`, `set <field> on block <id>`, …); otherwise — a different value, `set` then `unset`, `unset` then `set` — `conflicting_effects { effects: [i, j], focus: { kind: "scalar", target: { kind, id }, field } }` |
+| scalar | `(document, _frontmatter.<key>)`, `(document, content)`, `(document, _path)` — a `move`, `(block, markdown)`, `(block, _attrs.checked)`, `(node, <prop>)`; a `retarget` is one `(block, markdown)` per hit | a second write to a key an earlier effect wrote: **identical** (same op; for `set`, equal canonical JSON of `value`) → the later effect is **dropped** and `diagnostics` gains `effect <j> (<describe>) duplicates effect <i>; dropped` (`describe`: `set <field> on document <id>`, `set <field> on block <id>`, …); otherwise — a different value, `set` then `unset`, `unset` then `set` — `conflicting_effects { effects: [i, j], focus: { kind: "scalar", target: { kind, _id }, field } }` (the `field` as the effect spells it — `_frontmatter.<key>`, `_attrs.checked`, `_path` for a move) |
 | positional | `insert`, `move` blocks, `split`, `merge` | any number, sequential; an anchor must exist when reached (the kernel's `target_missing`) |
-| identity | retired by: `remove` a document (the document and every block), `remove` blocks (each block and its descendants), `merge` (the non-first blocks and their descendants), `set markdown` on a block (its descendants — the re-parse re-mints them, §2.2), `set content` (every block of the document; the document counts as wholly rewritten), `move` a document (its OLD path) | a later effect that **addresses** a retired document, block (a target, an `into`, a `heading_id`, an anchor, a node's block) or path (a `create` there, a `move` to it) → `conflicting_effects { effects: [i, j], focus: { kind: "identity", target: { kind: "document" \| "block" \| "path", id? \| path? } } }`; `set content` on a document any earlier effect touched → the same, naming the document and that effect |
+| identity | retired by: `remove` a document (the document and every block), `remove` blocks (each block and its descendants), `merge` (the non-first blocks and their descendants), `set markdown` on a block (its descendants — the re-parse re-mints them, §2.2), `set content` (every block of the document; the document counts as wholly rewritten), `move` a document (its OLD path) | a later effect that **addresses** a retired document, block (a target, an `into`, a `heading_id`, an anchor, a node's block) or path (a `create` there, a `move` to it) → `conflicting_effects { effects: [i, j], focus: { kind: "identity", target: { kind: "document" \| "block" \| "path", _id? \| _path? } } }`; `set content` on a document any earlier effect touched → the same, naming the document and that effect |
 
 The dropped duplicate is not in the plan's `effects`. `conflicting_effects`
 is not retriable. `execute` does no analysis.
@@ -1135,17 +1183,18 @@ is not retriable. `execute` does no analysis.
 Plan {
   version: 1,                    // the plan schema
   planner_v: "p3",               // the lowering + conflict rules above (the matcher_v precedent; "p1" through 2.3, "p2" through 3.0)
-  effects: [ResolvedEffect],     // in order, duplicates dropped: document targets as { kind: "document", id, path }
+  effects: [ResolvedEffect],     // in order, duplicates dropped: document targets as { kind: "document", _id, _path }
                                  // (path in the storage form; a $new.n document keeps its symbol with the create's path),
                                  // defaults made explicit (insert/move `at: "end"`, move `retarget_inbound: true`,
                                  // merge `separator: " "`), a `create` path canonicalized; optional keys absent when absent
-  opset: { creates: [{ symbol, path, source, before_op }], moves: [{ id, from, to }], tombstones: [{ id, path }],
+  opset: { creates: [{ symbol, path, source, before_op }], moves: [{ _id, from, to }], tombstones: [{ _id, _path }],
            set_frontmatter: [{ doc, raw }], ops: [Op] },     // every key present ([] when empty); ops in the fixture spelling
+                                                             // (a create's `path` and a move's `from`/`to` are roles — where to; `set_frontmatter[].doc` a ref)
                                                              // (`child_ids`); new structure an op minted is named by kernel placeholders "$k.ids[i]",
                                                              // a created document and its blocks by their "$new.n" (3.0)
-  preconditions: { docs: [{ id, path, base_revision, hash }],      // §4 step 5's triple of every touched document: the loaded ones
+  preconditions: { docs: [{ _id, _path, base_revision, _hash }],   // §4 step 5's triple of every touched document: the loaded ones
                                                                    // in load order, then moved/removed documents in effect order
-                   blocks: [{ id, content_hash }],                 // every pin, first-pin order ($new.n blocks excluded)
+                   blocks: [{ _id, content_hash }],                // every pin, first-pin order ($new.n blocks excluded)
                    parents: [{ doc, parent: <block id> | null, parent_children_hash }],   // the caller's destination-parent pins
                    absent_paths: [path] },                         // create paths and move destinations, in effect order
   new_ids: [{ symbol: "$new.n", kind: "block" | "document" }],      // in allocation order (below)
@@ -1155,12 +1204,22 @@ Plan {
   diagnostics: [string],         // the dropped duplicates
   templates?: [Effect as written],   // (3.2, §11.8 "Sugar") a plain request's effects AS WRITTEN when one carried an
                                      // expression; not digested (the core holds the concrete effects); the intent record's
-  preview?: { results: [{ ids }], revisions: [{ id, path, hash }], diffs: { path: { before, after } },
+  preview?: { results: [{ ids }], revisions: [{ _id, _path, _hash }], diffs: { path: { before, after } },
               summary: [string],   // (3.3, §11.9) one line in words per resolved effect, in order; [] for a zero-hit selection
               identity?: { <doc id>: { matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics } },
-              retarget?: [{ effect_index, hits: [{ id, path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }] }   // not digested; omittable
+              retarget?: [{ effect_index, hits: [{ _id, _path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }] }   // not digested; omittable
 }
 ```
+
+Every key above that carries a row attribute is spelled as the row spells
+it under `spec/surface` §1.2 (4.0): `_id`, `_path`, `_hash`. The others are
+roles — `version`, `planner_v`, `symbol`, `source`, `before_op`, `from`,
+`to`, `doc`, `raw`, `base_revision`, `content_hash`, `parent`,
+`parent_children_hash`, `absent_paths`, `new_ids`, `kind`, `query`,
+`templates`, `cardinality`, `identities`, `plan_id`, `diagnostics`, `ids`,
+`oldRaw`, `newRaw`, `pairs` — and stay bare. Because `preconditions` and
+`opset` are digested (§11.5), **every `plan_id` of a plan that touches a
+document or pins a block moved at 4.0**; the empty core's did not.
 
 `preview.identity` (3.0) is present when the plan has a `set content`: per
 document, the whole-document planner's annotations (§7) — what the 3.x
@@ -1181,8 +1240,8 @@ of the op that minted it. `new_ids` lists every symbol in allocation order
 (§10: a discarded mint is a symbol too).
 
 The `preview`: the kernel results (`ids` may be symbols), the revisions
-the commit would record — the loaded documents' `{ id, path, hash }` with a
-moved document at its new path, plus `{ id: "$new.n", path, hash }` per
+the commit would record — the loaded documents' `{ _id, _path, _hash }` with
+a moved document at its new path, plus `{ _id: "$new.n", _path, _hash }` per
 create — and the per-file diffs: the kernel's, a create `"" → source`, a
 move two entries (`from → ""`, `to` filled with the moved document's bytes
 — its rewritten bytes when it is a retarget source), a removal `bytes → ""`.
@@ -1202,8 +1261,11 @@ under these rules, each exact:
    absent (`undefined`) is omitted; a member whose value is JSON `null` is
    written `null`. Optional keys of the plan and of resolved effects are
    therefore absent, never `null`, when they are not given — and a `null`
-   that IS a value (`base_revision: null`, `hash: null`, a frontmatter
-   `value: null`) stays.
+   that IS a value (`base_revision: null`, `_hash: null`, a frontmatter
+   `value: null`) stays. Key order is bytewise, so `_hash`, `_id`, `_path`
+   (U+005F) sort after every lower-case bare key of the same object
+   (`base_revision`, `content_hash`, `from`, `to`) — the 4.0 spellings
+   change the digests' bytes, not the rule.
 3. **Arrays**: elements in order, comma-separated.
 4. **Strings** (values and keys): `"` → `\"`, `\` → `\\`, U+0008 → `\b`,
    U+000C → `\f`, U+000A → `\n`, U+000D → `\r`, U+0009 → `\t`, every other
@@ -1235,11 +1297,15 @@ preconditions: { every key [] }, new_ids: [] }` digests to
 core, `planner_v: "p1"`, to
 `a20097a9c319b59a1313c83e1fd494bbb3cf4895040fbbddd2866e56b16cddd3`), and the
 empty core with the selection `{ query: "from docs where type == \"nope\"",
-templates: [{ op: "set", field: "frontmatter.x", value: 1 }], cardinality:
+templates: [{ op: "set", field: "_frontmatter.x", value: 1 }], cardinality:
 0, identities: [] }` — a zero-hit plan — to
-`73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9` (all four
-are `effects::digest-vectors`; `select-zero-hits-commit-null`'s plan carries
-the last one as its `plan_id`).
+`75d2a3c518e7ee5a396d82d61318fd06146be3a3f3e3e3af2c45f73f2eb34299` (4.0;
+the 3.x template `field: "frontmatter.x"` digested to
+`73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9` — the
+selector's `type` is an authored key and stays bare, so only the field
+moved; all four are `effects::digest-vectors`;
+`select-zero-hits-commit-null`'s plan carries the last one as its
+`plan_id`).
 
 ### 11.6 `plan`
 
@@ -1295,11 +1361,11 @@ operation (a `set content` whose value is the document) — records no commit
 and touches no file: the **zero-effects rule** (`spec/surface`
 `write-docs-update`).
 
-**Receipt** `{ plan_id, commit, revisions: [{ id, path, hash }], new_ids:
+**Receipt** `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids:
 { "$new.n": <id> }, committed: true, summary: [string] }`: `commit` the one
 `commits` row (`null` when the plan had nothing to commit); `revisions` one
-per ingest in effect order (a created document's `id` is the `d` its ingest
-minted); `summary` (3.3) the plan's `preview.summary` verbatim — what was
+per ingest in effect order, each a `revisions` row under its engine names
+(4.0; a created document's `_id` is the `d` its ingest minted); `summary` (3.3) the plan's `preview.summary` verbatim — what was
 committed, in words (§11.9; `[]` when the plan form was handed back without
 its `preview`);
 `new_ids` maps the plan's symbols to the ids the replay minted — the `i`-th
@@ -1357,13 +1423,14 @@ effects out per flattened row — the hit is the parent row, the templates read
 the bound name, `expect.max` bounds the **flattened** count (Decisions,
 2026-10-16). A user alias beginning `__omg_` or `__oqx_` is
 refused (the prefixes are the engines'; the runner refuses them on every
-query since 3.1 — `select __oqx_id: 1` overwrote the hit's `id` before). Each
+query since 3.1 — `select __oqx_id: 1` overwrote the hit's then-bare `id`
+before). Each
 template: `op` ∈ `create insert set unset move remove split merge`
 (`retarget` is not row-shaped); the directive `{ oqx }` is legal only in the
 **slots** — the primary target (`target` of set/unset/split and of a
 document `move`/`remove`; `into` of insert; `targets[k]` of a block
-`move`/`remove`/`merge`) as `{ kind, id: { oqx } }` or `{ kind: "document",
-path: { oqx } }` (one of the two), the secondary target `into` of a block
+`move`/`remove`/`merge`) as `{ kind, _id: { oqx } }` or `{ kind: "document",
+_path: { oqx } }` (one of the two), the secondary target `into` of a block
 `move`, `at.before` / `at.after`, the strings `markdown`, `to`, `path`,
 `separator`, the JSON `value`, and each top-level value of a `create`'s
 `frontmatter`; anywhere else (`expect`, `field`, a nested value of a target,
@@ -1387,18 +1454,20 @@ back by the wrapper's 16 code points.
 `fm_<j>`), is appended **after the user's items** on the RAW parsed tree —
 nothing is spliced as text — so the runner's alias resolution inlines a user
 alias a template reads (`select hub: project …` with `{ oqx: "hub" }` reads
-`project`). The worked example — template 0 `insert into { document, path:
-{ oqx: "project" } } at end, markdown: { oqx: "\"- completed: [\" + title +
-\"](\" + path + \")\"" }`, template 1 `set frontmatter.rolled_up = true` on
+`project`). The worked example — template 0 `insert into { document, _path:
+{ oqx: "project" } } at end, markdown: { oqx: "\"- completed: [\" + _title +
+\"](\" + _path + \")\"" }`, template 1 `set _frontmatter.rolled_up = true` on
 the hit (all literal, no slot) — over `from docs where type == "workstream"
-and status == "completed"` prints as
+and status == "completed"` (`project`, `type`, `status` are the authored
+keys, bare; `_title` the computed title and `_path` the path, the engine's)
+prints as
 
 ```text
-select __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + title + "](" + path + ")" from docs where type == "workstream" and status == "completed"
+select __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + _title + "](" + _path + ")" from docs where type == "workstream" and status == "completed"
 ```
 
-The runner injects `id` / `path` as for any query; every hit carries both
-for all three roots (`path` in the reference form). The query runs ONCE,
+The runner injects `_id` / `_path` as for any query; every hit carries both
+for all three roots (`_path` in the reference form). The query runs ONCE,
 over one snapshot, with the page bound `max + 1` (`SELECTION_CEILING + 1 =
 1001` without `expect`): more hits than the bound → `selection_too_large {
 cardinality: ">" + bound | n, max: bound, implicit?: true }` (`">" + bound`
@@ -1417,10 +1486,10 @@ expanded effect `k = h·T + t` for hit `h` of `H` and template `t` of `T`
 
 | Template member | Binding |
 | --- | --- |
-| primary target absent | the hit by root: `{ kind: "document", id }` / `{ kind: "block", id }` / `{ kind: "node", id }` (`targets` → the one-element list); the op's kind table still applies |
-| `{ kind, id: { oqx } }` / `{ kind: "document", path: { oqx } }` / `targets[k].id: { oqx }` | the value: a **string** → that `id` / `path` as written; a **row** (the runner renders a row value as `{ id, path }`, spec/surface §1.4 — `^docs single { … }`) → `{ kind, id: <its id> }` whichever member held the expression; absent (`null`, no value) or `[]` → `target_missing { effect_index: k, template_index: t, row: { id, path }, expression }`; a list of one or more → `ambiguous_target { …, count }` (a one-element list is still a list: strictness over guessing); anything else → `filter_invalid { hint: "selection" }`. Then the resolution of §11.3 as for a literal target (`doc_missing`, `block_missing`, `parent_missing`) |
+| primary target absent | the hit by root: `{ kind: "document", _id }` / `{ kind: "block", _id }` / `{ kind: "node", _id }` (`targets` → the one-element list); the op's kind table still applies |
+| `{ kind, _id: { oqx } }` / `{ kind: "document", _path: { oqx } }` / `targets[k]._id: { oqx }` | the value: a **string** → that `_id` / `_path` as written; a **row** (the runner renders a row value as `{ _id, _path }`, spec/surface §1.4 — `^docs single { … }`) → `{ kind, _id: <its id> }` whichever member held the expression; absent (`null`, no value) or `[]` → `target_missing { effect_index: k, template_index: t, row: { _id, _path }, expression }`; a list of one or more → `ambiguous_target { …, count }` (a one-element list is still a list: strictness over guessing); anything else → `filter_invalid { hint: "selection" }`. Then the resolution of §11.3 as for a literal target (`doc_missing`, `block_missing`, `parent_missing`) |
 | `at.before` / `at.after`, `markdown`, `to`, `path`, `separator` | must be a string; absent or another type → `filter_invalid { hint: "selection" }` |
-| `value`, `frontmatter.<k>` | any JSON as the runner rendered it (a row value lands as the record `{ id, path }`, a list as a list, a number by OQX's own arithmetic — nothing is re-formatted); absent → `filter_invalid { hint: "selection" }` ("use `unset`" for a `value`) |
+| `value`, `frontmatter.<k>` (a `create`'s authored mapping — bare keys, the user's) | any JSON as the runner rendered it (a row value lands as the record `{ _id, _path }`, a list as a list, a number by OQX's own arithmetic — nothing is re-formatted); absent → `filter_invalid { hint: "selection" }` ("use `unset`" for a `value`) |
 
 The expanded list is validated (§11.1, `effects[k]`) and lowered by the
 loop of §11.3 **unchanged** — the conflict rules give the cross-hit
@@ -1429,9 +1498,9 @@ dedupe with a diagnostic (`effect <k> … duplicates effect <j>; dropped`),
 with different values → `conflicting_effects`; inserts into one shared
 document are positional and sequential in hit order. Every error raised
 from an expanded effect — binding, resolution, kernel, conflict — carries
-`effect_index: k` plus `template_index: t` and `row: { id, path }` (the hit's
-identity as the envelope spells it; `conflicting_effects` names the later
-effect's). Zero hits → an empty expansion: a plan with `effects: []`, an
+`effect_index: k` plus `template_index: t` and `row: { _id, _path }` (the
+hit's identity as the envelope spells it; `conflicting_effects` names the
+later effect's). Zero hits → an empty expansion: a plan with `effects: []`, an
 empty opset, no preconditions, `selection.cardinality: 0` (the non-empty
 rule of §11.1 is the templates'); `execute` / `apply` of it commit nothing
 (`commit: null`, the zero-effects rule of §11.7).
@@ -1458,7 +1527,7 @@ rewrite identically (the reference's `select.ts` `desugarEffect` /
 
 **The leader.** In every slot the table of step 1 admits an expression —
 `markdown`, `to`, `path`, `separator`, `at.before` / `at.after`, `value`,
-each top-level `create.frontmatter` value, a target's `id` / `path`, and a
+each top-level `create.frontmatter` value, a target's `_id` / `_path`, and a
 whole target (below) — a JSON string beginning exactly **`-> `** (dash,
 greater-than, space) is an OQX expression: the rest of the string. It
 desugars to `{ oqx: rest }` before the compile, so typing follows the value
@@ -1468,7 +1537,8 @@ always — no escaping, no `${` scanning (`->x`, ` -> x`, `-->`, a mid-string
 `-> ` and `${HOME}` land verbatim; `effects::sugar-literal-without-leader-
 untouched`). A literal that must begin `-> ` is spelled `-> "-> …"`
 (`sugar-literal-that-begins-with-leader`). OQX 0.21 template literals are the
-string-building form: `"-> `## ${title}`"`. A string nested inside a `value`
+string-building form: `"-> `## ${_title}`"` (`_title` the computed title;
+an authored `title` key is the bare `title`). A string nested inside a `value`
 or a frontmatter value is data (the slot is the top-level value, as for
 `{ oqx }`).
 
@@ -1477,17 +1547,17 @@ template literal with no interpolation folds to the plain literal before
 planning — it never emits `{ oqx }`, needs no row and no query — so `-> "x"`,
 `` -> `x` `` and `"x"` digest identically
 (`effects::sugar-constant-fold-equal-plan-id`:
-`dd0f05613d10645355cfb33139767424d9f1ade0c36d04bce363df06e66477c3` three
+`4736c3680dc6b1bdfbd9862cf8dd6818aed9bc88d20bd0cb0fb06b7bfe5bb288` three
 times).
 
 **Bare targets.** Where a target object is expected (`target`, `into`, each
 `targets[k]`; with or without a selector) a bare string is sugar, normalized
 by the shape check before resolution: a **path-looking** string — contains
-`/` or ends `.md`, either path form — is `{ kind: "document", path }`; a
+`/` or ends `.md`, either path form — is `{ kind: "document", _path }`; a
 `b_` / `d_` id (`spec/store` §2.2) or an `n_` id (`n_` + 12 hex) is the
 matching kind; `"$new.n"` is the kind the symbol table recorded when the
-effect is resolved (a document → `{ kind: "document", id }`, a block →
-`{ kind: "block", id }`; a symbol nothing created → `target_missing
+effect is resolved (a document → `{ kind: "document", _id }`, a block →
+`{ kind: "block", _id }`; a symbol nothing created → `target_missing
 { symbol }`; the slot's kind table and the §11.2 `field` rule then apply to
 the recorded kind — `effects::sugar-bare-new-symbol-target`); `"-> expr"` is
 a whole-target expression — the identity the value names: a row → its kind
@@ -1506,7 +1576,7 @@ object form's (`sugar-bare-path-target` plans both; `sugar-bare-id-target`).
 set/unset/split and of a document move/remove, `into` of insert, the first
 of `targets` for the block forms (a section's row is its heading block's, a
 node's its own): the effects are grouped by that row's identity, one
-synthetic query per identity runs — `from <docs|blocks|nodes> where id ==
+synthetic query per identity runs — `from <docs|blocks|nodes> where _id ==
 "<id>"` with the slot items appended exactly as step 2's rewrite, named
 `__omg_sel_<effectIndex>_<slot>` — and the row binds the slots as step 3
 binds a hit; the concrete effects then lower unchanged. There is no
@@ -1533,7 +1603,7 @@ start of the written string (the wrapper's shift plus the leader's 3;
 `sugar-leader-bad-expression`); a query smuggled into the leader fails as for
 `{ oqx }`. `-> ` in a slot that takes no expression — `expect`, `field`,
 `op`, a section's `heading_id`, `split.at`, a `retarget`'s members, a
-whole `at`, a target member beside `id` / `path` — is `filter_invalid { hint:
+whole `at`, a target member beside `_id` / `_path` — is `filter_invalid { hint:
 "selection" }` (`sugar-leader-in-non-expression-slot`), never literal data.
 
 ### 11.9 The summary (3.3)
@@ -1569,11 +1639,11 @@ byte for byte by this table; the vocabulary:
 | --- | --- |
 | `create` | `create <path> (<n> blocks)` — `<n>` the top-level blocks of the parsed body (`create /lab/2026-03-notes.md (3 blocks)`) |
 | `insert` | `insert <n> blocks <placement>` — `<n>` the top-level blocks the markdown parsed to (the kernel result's `ids`): `insert 2 blocks at the end of section "Risks" in /x.md`, `insert 1 block after paragraph b_7 in /x.md`, `insert 1 block at the end of /x.md` |
-| `set frontmatter.<k>` | `set frontmatter.<k> = <value> in <path>` (`set frontmatter.verified = false in /substances/salt.md`) |
-| `unset frontmatter.<k>` | `unset frontmatter.<k> in <path>` |
+| `set _frontmatter.<k>` | `set _frontmatter.<k> = <value> in <path>` (`set _frontmatter.verified = false in /substances/salt.md`) — the field as the effect spells it (4.0; `set frontmatter.<k> = …` through 3.x) |
+| `unset _frontmatter.<k>` | `unset _frontmatter.<k> in <path>` |
 | `set content` | `set content of <path>` |
 | `set markdown` | `set markdown of <block> in <path>` (`set markdown of paragraph b_12 in /x.md`) |
-| `set attrs.checked` | `check <block> in <path>` for `true`, `uncheck <block> in <path>` for `false` (`check task b_9 in /x.md`) |
+| `set _attrs.checked` | `check <block> in <path>` for `true`, `uncheck <block> in <path>` for `false` (`check task b_9 in /x.md`) |
 | `set <prop>` on a node | `set <prop> = <value> on node <id> in <path>` |
 | `move` a document | `move <from> → <to>` (U+2192), plus ` (retarget <n> links in <m> documents)` when the inbound rewrite lowered — `<n>` the inbound links rewritten (the links that were not left dangling), `<m>` the source documents |
 | `move` blocks | `move <block> <placement>` for one block, `move <n> blocks <placement>` for several (`move paragraph b_12 after task b_7 in /x.md`, `move 3 blocks to the end of /b.md`) |
@@ -1590,7 +1660,7 @@ Receipt pins them in every committing fixture step (§9).
 
 ### 11.10 Frontmatter entries (3.6)
 
-The `set`/`unset frontmatter.<key>` effect edits **one entry** of the
+The `set`/`unset _frontmatter.<key>` effect edits **one entry** of the
 frontmatter and leaves every other byte alone (§11.3). To do that the
 `frontmatter` block's raw (`spec/format` §3: from the opening `---` fence
 through the closing one, no trailing line ending) is cut into an ordered
@@ -1660,6 +1730,52 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
 
 ## Decisions
 
+- 2026-10-20, mutate 4.0 (`spec/surface` 5.0 "underscore = engine"; with
+  `spec/sync` 3.0, `spec/search` 3.0, `spec/graph` 2.0, `spec/cli` 5.0): the
+  surface's row rule became one rule for every record kind — a BARE name is
+  a user-authored entry, an UNDERSCORE-prefixed name is engine-provided,
+  however derived, and `$` stays OQX's — and every shape this spec owns that
+  spells a row attribute follows it. Effect targets are `{ kind: "document",
+  _id? | _path? }`, `{ kind: "block", _id }`, `{ kind: "node", _id }` (the
+  bare forms — a path, a `b_`/`d_`/`n_` id, `$new.n` — and `{ kind:
+  "section", heading_id }` unchanged); the fields `_frontmatter.<key>` and
+  `_attrs.checked` (the handles of `spec/surface` §1.2; `content`,
+  `markdown` and a node's `value`/`name`/`checked` are roles and stay); a
+  selector's hit, a `row` origin and a rendered row value are `{ _id, _path
+  }`, a slot `{ kind, _id: { oqx } }` / `{ kind: "document", _path: { oqx }
+  }`; the Plan's `preconditions.docs[{ _id, _path, base_revision, _hash }]`,
+  `preconditions.blocks[{ _id, content_hash }]`, `opset.moves[{ _id, from, to
+  }]`, `opset.tombstones[{ _id, _path }]`, `effects[].target { kind, _id,
+  _path }`, `preview.revisions[{ _id, _path, _hash }]`, `preview.retarget[].
+  hits[{ _id, _path, oldRaw, newRaw }]`; the Receipt's and the kernel
+  result's `revisions[{ _id, _path, _hash }]`; the opset's `target { _id,
+  _path }` and `precondition { _id, _path, base_revision, _hash }`;
+  `stale_expectation`/`stale_plan` `current { _hash, … }`, `ambiguous_target`
+  and the selector errors' `row { _id, _path }`, a `focus.target`'s `_id`/
+  `_path`; the summary lines `set _frontmatter.<k> = …` / `unset
+  _frontmatter.<k> …`; the `fix`es (`where _id == "…"`, `{ kind: "block",
+  _id }`). Everything that names a role keeps its name: the kernel ops'
+  `block`/`blocks`/`to`/`doc`/`at`, `expect.content_hash`/
+  `parent_children_hash`/`revision`, `set_frontmatter[{ doc, raw }]`,
+  `preconditions.parents[{ doc, parent, parent_children_hash }]`,
+  `absent_paths`, `new_ids`, `plan_id`, `commit`, `creates[{ symbol, path,
+  source, before_op }]`, a `create`'s `path` and `frontmatter` (the authored
+  mapping), a `move`'s `to`, the §6 builders' `doc`/`path`/`to_path` and
+  their `{ doc, path, committed }` record, `heading_id`, `op_index`,
+  `expected_content_hash`, `expected_revision`. The self aliases are gone
+  from a selector's and a leader's expressions (`$it` is the self; a bare
+  `doc`, `title`, `path`, `tags` is an authored key; `_doc.<x>` reaches a
+  block's document) — `"-> `## ${_title}`"`. Because `preconditions` and
+  `opset` are digested, every `plan_id` of a plan that touches a document or
+  pins a block moved (the empty core's `5051e4…` did not; the zero-hit
+  selection vector moved with its template's field, `73ca03…` → `75d2a3…`);
+  `planner_v` stays `"p3"` — the lowering and the conflict rules are
+  unchanged, only the spelling of what they produce. A request shape and a
+  result key changed: a major. Fixtures: every effect target, field, Plan,
+  Receipt, `fix` and error `row`/`current` re-keyed and every plan-bearing
+  case re-digested; nothing else moved. The Rust twin (`omgbase-mutate`,
+  `omgbase-store`'s planner, `omgbase-surface`'s selector) follows in a
+  separate round; until it lands the Rust spec runner is red by design.
 - 2026-10-17 (mutate 3.6): `set`/`unset frontmatter.<key>` edits one entry
   of the frontmatter (§11.3, §11.10) instead of re-serializing the whole
   mapping. The attn prototype found `set frontmatter.cues` turning `[a, b]`
@@ -1695,7 +1811,8 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   (§11.8). The rule falls out of the language and the compiler as they stand —
   nothing in the admission pass changes: the selector's hits are the engine's
   rows, and a flattened row *is* the parent row with a name bound, so each hit
-  is the parent (`row.id` the document's, `id`/`path` repeating per element),
+  is the parent (`row.id` the document's, `id`/`path` repeating per element —
+  4.0: `row._id`, `_id`/`_path`),
   the slot items appended to the select read the bound name in the flattened
   scope (`-> tag`, `{ oqx: "tag" }`), the effects fan out per **flattened**
   row, and `expect.max` — the page bound `max + 1` — counts flattened hits, as
@@ -1812,7 +1929,8 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   (§9). Additive — a request without `select` is unchanged — so a minor.
   Decided against the design brief in one place: a `path: { oqx }` whose
   expression yields a row binds the row's `id` (a rendered row's `path` is
-  the reference form; the id is the identity). Fixtures: `effects.json` 39 →
+  the reference form; the id is the identity — 4.0: `_path: { oqx }` binds
+  `_id`). Fixtures: `effects.json` 39 →
   63 (the `select-*` cases and the p3 vectors); every plan-bearing case of
   `effects.json` / `plan.json` and every intent record of `changesets.json`
   / `docs.json` / `materialize.json` re-digested under p3 (the design's

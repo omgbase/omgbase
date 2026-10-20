@@ -33,12 +33,12 @@ function save(path: string, content: string): void {
 function docId(path: string): string {
   return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
 }
-// Reachable doc paths from a seed via OQX `follow out_links collect { from dst }|in` — the traversal
+// Reachable doc paths from a seed via OQX `follow _out_links collect { from _dst }|in` — the traversal
 // replacement for the retired graph_traverse. Default depth (8) covers these
 // short chains; the walk crosses format boundaries because edges are doc-grain.
 function reachable(seed: string, dir: "out" | "in"): string[] {
-  const hits = oqxRun(store, repoId, `from docs where path == "${seed}" follow ${dir === "out" ? "out_links collect { from dst }" : "in_links collect { from doc }"}`, { limit: 100 }).hits;
-  return hits.map((h) => h.path);
+  const hits = oqxRun(store, repoId, `from docs where _path == "${seed}" follow ${dir === "out" ? "_out_links collect { from _dst }" : "_in_links collect { from _doc }"}`, { limit: 100 }).hits;
+  return hits.map((h) => h._path);
 }
 
 describe("cross-format graph: markdown → yaml → json", () => {
@@ -58,35 +58,35 @@ describe("cross-format graph: markdown → yaml → json", () => {
 
   it("markdown doc has outbound edges to YAML file", () => {
     const links = docLinks(store, docId("docs/readme.md"), { direction: "out" });
-    const targets = links.out.map((e) => e.doc_id);
+    const targets = links.out.map((e) => e._doc_id);
     expect(targets).toContain(docId("config/database.yaml"));
   });
 
   it("yaml doc has outbound extends edge to base.yaml", () => {
     const links = docLinks(store, docId("config/database.yaml"), { direction: "out" });
-    const extendEdge = links.out.find((e) => e.predicate === "extends");
+    const extendEdge = links.out.find((e) => e._predicate === "extends");
     expect(extendEdge).toBeDefined();
-    expect(extendEdge!.doc_id).toBe(docId("config/base.yaml"));
+    expect(extendEdge!._doc_id).toBe(docId("config/base.yaml"));
   });
 
   it("yaml doc has outbound schema edge to JSON schema", () => {
     const links = docLinks(store, docId("config/database.yaml"), { direction: "out" });
-    const schemaEdge = links.out.find((e) => e.predicate === "schema");
+    const schemaEdge = links.out.find((e) => e._predicate === "schema");
     expect(schemaEdge).toBeDefined();
-    expect(schemaEdge!.doc_id).toBe(docId("config/schemas/db.json"));
+    expect(schemaEdge!._doc_id).toBe(docId("config/schemas/db.json"));
   });
 
-  it("follow out_links collect { from dst } crosses markdown → yaml boundary", () => {
+  it("follow _out_links collect { from _dst } crosses markdown → yaml boundary", () => {
     expect(reachable("docs/readme.md", "out")).toContain("/config/database.yaml");
   });
 
-  it("follow out_links collect { from dst } crosses yaml → yaml (extends)", () => {
+  it("follow _out_links collect { from _dst } crosses yaml → yaml (extends)", () => {
     const paths = reachable("docs/readme.md", "out");
     expect(paths).toContain("/config/database.yaml");
     expect(paths).toContain("/config/base.yaml");
   });
 
-  it("follow out_links collect { from dst } crosses yaml → json (schema)", () => {
+  it("follow _out_links collect { from _dst } crosses yaml → json (schema)", () => {
     const paths = reachable("docs/readme.md", "out");
     expect(paths).toContain("/config/database.yaml");
     expect(paths).toContain("/config/schemas/db.json");
@@ -99,11 +99,11 @@ describe("cross-format graph: markdown → yaml → json", () => {
     expect(paths.has("/config/schemas/db.json")).toBe(true);
   });
 
-  it("follow in_links collect { from doc }: who references the YAML config?", () => {
+  it("follow _in_links collect { from _doc }: who references the YAML config?", () => {
     expect(reachable("config/database.yaml", "in")).toContain("/docs/readme.md");
   });
 
-  it("follow in_links collect { from doc }: who extends base.yaml?", () => {
+  it("follow _in_links collect { from _doc }: who extends base.yaml?", () => {
     expect(reachable("config/base.yaml", "in")).toContain("/config/database.yaml");
   });
 });

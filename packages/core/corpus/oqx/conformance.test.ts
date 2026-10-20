@@ -29,16 +29,16 @@ afterAll(() => store.close());
 // distinct, correlation, and each target. Each must agree planned vs in-memory.
 const QUERIES: string[] = [
   // pushable path predicates (the planner reduces the scan in SQL)
-  'from docs where path == "index.md"',
-  'from docs where path.startsWith("substances/")',
-  'from docs where path.startsWith("substances/") && path.endsWith("mercury.md")',
-  'from docs where path != "index.md"',
-  'from blocks where path.startsWith("lab/")',
-  'from nodes where path.startsWith("processes/")',
-  'from links where path.startsWith("index")',
+  'from docs where _path == "index.md"',
+  'from docs where _path.startsWith("substances/")',
+  'from docs where _path.startsWith("substances/") && _path.endsWith("mercury.md")',
+  'from docs where _path != "index.md"',
+  'from blocks where _path.startsWith("lab/")',
+  'from nodes where _path.startsWith("processes/")',
+  'from links where _path.startsWith("index")',
   // pushable composed with a non-pushable residual (mixed)
-  'from docs where path.startsWith("substances/") && "substance" in list(tags)',
-  'from docs where path.startsWith("processes/") && nodes exists { where kind == "md:task" }',
+  'from docs where _path.startsWith("substances/") && "substance" in list(_tags)',
+  'from docs where _path.startsWith("processes/") && _nodes exists { where _kind == "md:task" }',
   // non-pushable (falls fully to in-memory)
   'from docs where type == "substance"',
   'from docs where layer == "canon"',
@@ -55,108 +55,108 @@ const QUERIES: string[] = [
   'from docs where window == "2026-01-01..2026-01-31"', // a bare range-valued prop is a plain string → pushable, agrees
   'from docs where stage_range == "1..4"',
   'from docs where !verified',
-  'from docs where nodes exists { where kind == "md:task" && !attrs.checked }',
-  'from blocks where type == "task" && doc.type == "lab-note"',
-  'from nodes where kind == "md:section"',
-  'from docs where format == "markdown"',          // a docs COLUMN, not a property
-  'from nodes where kind == "md:task" && attrs.checked == true',   // boolean param → 1/0
-  'from nodes where kind == "md:task" && attrs.checked == false',
+  'from docs where _nodes exists { where _kind == "md:task" && !_attrs.checked }',
+  'from blocks where _type == "task" && _doc.type == "lab-note"',
+  'from nodes where _kind == "md:section"',
+  'from docs where _format == "markdown"',          // a docs COLUMN, not a property
+  'from nodes where _kind == "md:task" && _attrs.checked == true',   // boolean param → 1/0
+  'from nodes where _kind == "md:task" && _attrs.checked == false',
   // flattened attrs: a bare identifier reads attrs.<key> on nodes/blocks; planned
   // (json_extract) must equal in-memory for the SAME queries the attrs.<k> form covers
-  'from nodes where kind == "md:task" && checked == true',
-  'from nodes where kind == "md:task" && checked == false',
-  'from nodes where kind == "md:task" && !checked',
-  'from blocks where type == "task" && checked == false',
-  'from nodes where kind == "md:section" && level == 1',
-  'from docs where nodes exists { where kind == "md:task" && !checked }',
-  'select path, checked from nodes where kind == "md:task" && checked == false',
+  'from nodes where _kind == "md:task" && checked == true',
+  'from nodes where _kind == "md:task" && checked == false',
+  'from nodes where _kind == "md:task" && !checked',
+  'from blocks where _type == "task" && checked == false',
+  'from nodes where _kind == "md:section" && level == 1',
+  'from docs where _nodes exists { where _kind == "md:task" && !checked }',
+  'select _path, checked from nodes where _kind == "md:task" && checked == false',
   // consumers
-  'docs count { where path.startsWith("substances/") }',
-  'docs exists { where path == "index.md" }',
+  'docs count { where _path.startsWith("substances/") }',
+  'docs exists { where _path == "index.md" }',
   'docs first { where type == "practitioner" order by era desc }',
-  'select path, layer from docs where type == "substance"',
+  'select _path, layer from docs where type == "substance"',
   // order by + pagination surface
   'from docs where type == "practitioner" order by era asc',
-  'from docs order by path',
+  'from docs order by _path',
   // distinct
   'select distinct type from docs',
-  'select k: nodes collect distinct { select kind } from docs where path == "processes/magnum-opus.md"',
-  'from docs where nodes count distinct { select kind } == 3',
+  'select k: _nodes collect distinct { select _kind } from docs where _path == "processes/magnum-opus.md"',
+  'from docs where _nodes count distinct { select _kind } == 3',
   // values / $it (top-level values is shaped by the runner; nested by the engine)
   'select era values from docs where type == "practitioner" order by era asc',
   'select distinct type values from docs',
-  'docs first { select path values where type == "practitioner" order by era desc }',
-  'select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"',
-  'from docs where tags exists { where $it == "tria-prima" }',
+  'docs first { select _path values where type == "practitioner" order by era desc }',
+  'select tags: _tags collect { $it values where $it != "substance" } from docs where type == "substance"',
+  'from docs where _tags exists { where $it == "tria-prima" }',
   // none / limit / offset (top-level bounds are applied by the runner, nested by the engine)
-  'from docs where type == "substance" && nodes none { where kind == "md:task" }',
+  'from docs where type == "substance" && _nodes none { where _kind == "md:task" }',
   'docs none { where type == "nope" }',
   'from docs where type == "practitioner" order by era desc limit 2',
   'from docs where type == "practitioner" order by era desc limit 2 offset 1',
   'select distinct type values from docs limit 2',
-  'from docs where nodes exists { where kind == "md:task" offset 3 }',
-  'docs first { select path values where type == "practitioner" order by era asc offset 1 }',
+  'from docs where _nodes exists { where _kind == "md:task" offset 3 }',
+  'docs first { select _path values where type == "practitioner" order by era asc offset 1 }',
   // entries() / $key (a free call → residual; the store context materializes frontmatter/inline)
-  'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where path == "substances/salt.md"',
-  'from docs where entries(frontmatter) exists { where $key == "era" && $it > 1600 }',
-  'select ks: entries(inline) collect { $key values } from docs where entries(inline) exists { }',
-  'select path from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $it }',
-  'select h: nodes collect { select name values where kind == "md:section" order by first_ordinal limit 2 } from docs where path == "processes/magnum-opus.md"',
+  'select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == "substances/salt.md"',
+  'from docs where entries(_frontmatter) exists { where $key == "era" && $it > 1600 }',
+  'select ks: entries(_inline) collect { $key values } from docs where entries(_inline) exists { }',
+  'select _path from nodes where _kind == "md:task" && entries(_attrs) exists { where $key == "checked" && $it }',
+  'select h: _nodes collect { select _name values where _kind == "md:section" order by first_ordinal limit 2 } from docs where _path == "processes/magnum-opus.md"',
   // follow (planner declines → in-memory both ways, still must agree)
-  'from docs where path == "substances/philosophers-stone.md" follow distinct out_links collect { from dst }',
-  'select n: name, d: $depth from nodes where kind == "md:section" && name == "The magnum opus" follow section.children',
+  'from docs where _path == "substances/philosophers-stone.md" follow distinct _out_links collect { from _dst }',
+  'select n: _name, d: $depth from nodes where _kind == "md:section" && _name == "The magnum opus" follow $it._children',
   // correlation / lifts
-  'select slug from docs where type == "substance" && ^nodes exists { where kind == "md:wikilink" && value == ^slug }',
-  'select path, open from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked }',
+  'select slug from docs where type == "substance" && ^nodes exists { where _kind == "md:wikilink" && _value == ^slug }',
+  'select _path, open from docs where _nodes collect { ^open: _value where _kind == "md:task" && !_attrs.checked }',
   // links target
-  'select doc_id, dst_path from links where predicate == "references"',
+  'select _doc_id, _dst_path from links where _predicate == "references"',
   // nested blocks over a ROOT SCAN with a correlated / constant equality: the
   // store answers these from SQLite indexes (oqx-js/store-index.ts) instead of
   // materializing `^<target>` — results must not move an inch
-  'select path, cited: ^docs collect { path where out_links exists { where dst_path == ^^path } } from docs',
-  'select name, orders: ^docs collect { path where type == "order" && customer == ^path } from docs where type == "customer"',
-  'from docs where path == "index.md" follow out_links collect { from dst }, ^docs collect { where after.contains(^path) }',
-  'select path, same_type: ^docs collect { path where type == ^type && path != ^path } from docs',
-  'select path, same_era: ^docs collect { path where era == ^era } from docs where type == "practitioner"',
-  'select path, same_layer: ^docs collect { path values where layer == ^layer } from docs',
+  'select _path, cited: ^docs collect { _path where _out_links exists { where _dst_path == ^^_path } } from docs',
+  'select name, orders: ^docs collect { _path where type == "order" && customer == ^_path } from docs where type == "customer"',
+  'from docs where _path == "index.md" follow _out_links collect { from _dst }, ^docs collect { where after.contains(^_path) }',
+  'select _path, same_type: ^docs collect { _path where type == ^type && _path != ^_path } from docs',
+  'select _path, same_era: ^docs collect { _path where era == ^era } from docs where type == "practitioner"',
+  'select _path, same_layer: ^docs collect { _path values where layer == ^layer } from docs',
   'from docs where ^docs count { where layer == ^layer } > 3',
-  'from docs where ^docs exists { where title == ^title && id != ^id }',
-  'select path, by_title: ^docs collect { path values where title == ^title } from docs where type == "process"',
-  'select path, self: ^docs first { path values where path == ^path } from docs',
-  'select path, by_id: ^docs single { path values where id == ^id } from docs where type == "substance"',
+  'from docs where ^docs exists { where _title == ^_title && _id != ^_id }',
+  'select _path, by_title: ^docs collect { _path values where _title == ^_title } from docs where type == "process"',
+  'select _path, self: ^docs first { _path values where _path == ^_path } from docs',
+  'select _path, by_id: ^docs single { _path values where _id == ^_id } from docs where type == "substance"',
   // mixed value kinds on one property: a number probe against a string property
   // (and the reverse) matches nothing; an absent probe matches the documents
   // lacking the key (the in-memory fallback)
-  'select path, s: ^docs collect { path where slug == ^era } from docs where type == "practitioner"',
-  'select path, e: ^docs collect { path where era == ^slug } from docs where type == "substance"',
+  'select _path, s: ^docs collect { _path where slug == ^era } from docs where type == "practitioner"',
+  'select _path, e: ^docs collect { _path where era == ^slug } from docs where type == "substance"',
   'from docs where ^docs none { where era == ^type }',
-  'select path, no_era: ^docs collect { path values where era == ^nope } from docs where path == "index.md"',
-  'select path, no_slug: ^docs collect { path where slug == null } from docs where type == "text"',
-  'select path, l: ^docs collect { path values where tags == ^tags } from docs',
-  'select path, l: ^docs collect { path values where layer == ^tags } from docs',
+  'select _path, no_era: ^docs collect { _path values where era == ^nope } from docs where _path == "index.md"',
+  'select _path, no_slug: ^docs collect { _path where slug == null } from docs where type == "text"',
+  'select _path, l: ^docs collect { _path values where _tags == ^_tags } from docs',
+  'select _path, l: ^docs collect { _path values where layer == ^_tags } from docs',
   // the other targets as receivers: a links-target correlated block, blocks by doc_id, nodes by kind
-  'select path, inbound: ^links collect { doc_id where dst_id == ^id } from docs',
-  'select path, outbound: ^links collect { dst_path values where path == ^path } from docs',
-  'from docs where ^links count { where path == ^path } > 2',
-  'select doc_id, same_dst: ^links collect { doc_id values where dst_path == ^dst_path && id != ^id } from links where predicate == "references"',
-  'select id, paragraphs: ^blocks collect { ordinal values where doc_id == ^doc_id && type == "paragraph" } from blocks where type == "heading"',
-  'from blocks where type == "heading" && ^blocks count { where doc_id == ^doc_id && type == "paragraph" } > 3',
-  'from nodes where kind == "md:section" && ^nodes count { where kind == ^kind } > 10',
-  'select name, same_kind: ^nodes collect { name values where kind == ^kind && doc_id == ^doc_id } from nodes where kind == "md:section"',
-  'select path, by_name: ^nodes collect { id where name == ^name } from nodes where kind == "md:section" && name == "Preparation"',
-  'select path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == "md:section" && name == "Preparation"',
+  'select _path, inbound: ^links collect { _doc_id where _dst_id == ^_id } from docs',
+  'select _path, outbound: ^links collect { _dst_path values where _path == ^_path } from docs',
+  'from docs where ^links count { where _path == ^_path } > 2',
+  'select _doc_id, same_dst: ^links collect { _doc_id values where _dst_path == ^_dst_path && _id != ^_id } from links where _predicate == "references"',
+  'select _id, paragraphs: ^blocks collect { _ordinal values where _doc_id == ^_doc_id && _type == "paragraph" } from blocks where _type == "heading"',
+  'from blocks where _type == "heading" && ^blocks count { where _doc_id == ^_doc_id && _type == "paragraph" } > 3',
+  'from nodes where _kind == "md:section" && ^nodes count { where _kind == ^_kind } > 10',
+  'select _name, same_kind: ^nodes collect { _name values where _kind == ^_kind && _doc_id == ^_doc_id } from nodes where _kind == "md:section"',
+  'select _path, by_name: ^nodes collect { _id where _name == ^_name } from nodes where _kind == "md:section" && _name == "Preparation"',
+  'select _path, nameless: ^nodes collect { _kind values where _name == ^nope } from nodes where _kind == "md:section" && _name == "Preparation"',
   // group by (oqx 0.24): the planner declines a grouped query whole (even with a
   // pushable `where`), so both paths run in memory — and must still agree
   'select layer, n: count() from docs group by layer order by count() desc, layer',
-  'select layer, n: count(), eras: collect(era) from docs where path.startsWith("practitioners/") group by layer',
-  'select type, open: rows count { where nodes exists { where kind == "md:task" and not attrs.checked } } from docs group by type having count() > 1 order by type',
-  'select path, done: rows count { where checked }, all: count() from blocks where type == "task" group by path order by path',
+  'select layer, n: count(), eras: collect(era) from docs where _path.startsWith("practitioners/") group by layer',
+  'select type, open: rows count { where _nodes exists { where _kind == "md:task" and not _attrs.checked } } from docs group by type having count() > 1 order by type',
+  'select _path, done: rows count { where checked }, all: count() from blocks where _type == "task" group by _path order by _path',
   'docs count { group by layer }',
-  'select kind values from nodes group by kind order by kind',
+  'select _kind values from nodes group by _kind order by _kind',
   // flatten (oqx 0.25): declined whole as well — the fan-out runs in memory on both paths
-  'select path, tags from docs where type == "process" flatten tags order by path, tags',
-  'select path, t: b.text from docs where layer == "canon" flatten blocks { where type == "task" and not checked } as b order by path, t',
-  'select tags, n: count() from docs where has(tags) flatten tags group by tags order by count() desc, tags',
+  'select _path, _tags from docs where type == "process" flatten _tags order by _path, _tags',
+  'select _path, t: b._text from docs where layer == "canon" flatten _blocks { where _type == "task" and not checked } as b order by _path, t',
+  'select _tags, n: count() from docs where has(_tags) flatten _tags group by _tags order by count() desc, _tags',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {
@@ -186,17 +186,17 @@ describe("OQX differential conformance — planned == in-memory", () => {
     afterAll(() => yj.close());
     const YJ_QUERIES = [
       'from docs where focused_intent == "/notes/plan.md"',
-      'select focused_intent, since from docs where path == "/attn/focus.yaml"',
+      'select focused_intent, since from docs where _path == "/attn/focus.yaml"',
       'from docs where name == "attn" and version == 2',
-      'from docs where n == 3 order by path',
-      'from docs where n == 3 and format != "markdown" order by path',
-      'select path, o: data.meta.owner, f: frontmatter.title, t: title, tg: tags from docs where format == "yaml" order by path',
-      'select path from docs where format == "markdown" and ^docs exists { where path == "/attn/focus.yaml" and focused_intent == ^path }',
-      'select path, focused: ^docs count { where path == "/attn/focus.yaml" and focused_intent == ^path } from docs where format == "markdown" order by path',
-      'select e: entries(frontmatter) collect { k: $key, v: $it } from docs where path == "/config.json"',
-      'from docs where entries(frontmatter) exists { where $key == "version" && $it > 1 }',
-      'select path from docs where entries(frontmatter) none { } order by path',
-      'from docs where "attn" in list(tags)',
+      'from docs where n == 3 order by _path',
+      'from docs where n == 3 and _format != "markdown" order by _path',
+      'select _path, o: _data.meta.owner, f: _frontmatter.title, t: _title, tg: _tags from docs where _format == "yaml" order by _path',
+      'select _path from docs where _format == "markdown" and ^docs exists { where _path == "/attn/focus.yaml" and focused_intent == ^_path }',
+      'select _path, focused: ^docs count { where _path == "/attn/focus.yaml" and focused_intent == ^_path } from docs where _format == "markdown" order by _path',
+      'select e: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == "/config.json"',
+      'from docs where entries(_frontmatter) exists { where $key == "version" && $it > 1 }',
+      'select _path from docs where entries(_frontmatter) none { } order by _path',
+      'from docs where "attn" in list(_tags)',
     ];
     for (const q of YJ_QUERIES) {
       it(q, () => {
@@ -206,7 +206,7 @@ describe("OQX differential conformance — planned == in-memory", () => {
       });
     }
     it("a bare key over a yaml document is answered (not empty)", () => {
-      expect(oqxRun(yj, yjRepo, 'from docs where focused_intent == "/notes/plan.md"', { limit: 10 }).hits.map((h) => h.path)).toEqual(["/attn/focus.yaml"]);
+      expect(oqxRun(yj, yjRepo, 'from docs where focused_intent == "/notes/plan.md"', { limit: 10 }).hits.map((h) => h._path)).toEqual(["/attn/focus.yaml"]);
     });
   });
 

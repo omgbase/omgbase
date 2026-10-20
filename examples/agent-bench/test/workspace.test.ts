@@ -17,10 +17,11 @@ async function fresh(profile = "full"): Promise<{ ws: Workspace; server: OmgServ
   return { ws, server };
 }
 
-async function docs(server: OmgServer): Promise<{ id: string; path: string }[]> {
-  const r = await server.call("query", { query: "select id, path from docs order by path" });
+// The hit envelope is `{ _id, _path, … }` (spec/surface §1.4, 5.0); `from docs` and the row functions stay bare.
+async function docs(server: OmgServer): Promise<{ _id: string; _path: string }[]> {
+  const r = await server.call("query", { query: "from docs order by _path" });
   expect(r.ok).toBe(true);
-  return (r.result as { hits: { id: string; path: string }[] }).hits;
+  return (r.result as { hits: { _id: string; _path: string }[] }).hits;
 }
 
 describe("the workspace", () => {
@@ -31,21 +32,26 @@ describe("the workspace", () => {
     const db = await docs(b.server);
     expect(da).toEqual(db);
     expect(da).toHaveLength(20);
-    expect(da.find((d) => d.path === "/index.md")?.id).toBe("d_0");
-    expect(da.find((d) => d.path === "/substances/salt.md")?.id).toBe("d_14");
-    // the ids the tasks name
-    const tasks = await a.server.call("query", { query: 'select block_id from nodes where kind == "md:section" and name == "Tasks" and path == "/processes/calcination.md"' });
-    expect((tasks.result as { hits: { block_id: string }[] }).hits).toEqual([expect.objectContaining({ block_id: "b_153" })]);
-    const processes = await a.server.call("query", { query: 'select block_id from nodes where kind == "md:section" and name == "Processes" and path == "/index.md"' });
-    expect((processes.result as { hits: { block_id: string }[] }).hits).toEqual([expect.objectContaining({ block_id: "b_12" })]);
+    expect(da.find((d) => d._path === "/index.md")?._id).toBe("d_0");
+    expect(da.find((d) => d._path === "/substances/salt.md")?._id).toBe("d_14");
+    // the ids the tasks name — a node's engine attributes are `_kind`, `_name`, `_block_id`, `_path`
+    const tasks = await a.server.call("query", { query: 'select _block_id from nodes where _kind == "md:section" and _name == "Tasks" and _path == "/processes/calcination.md"' });
+    expect((tasks.result as { hits: { _block_id: string }[] }).hits).toEqual([expect.objectContaining({ _block_id: "b_153" })]);
+    const processes = await a.server.call("query", { query: 'select _block_id from nodes where _kind == "md:section" and _name == "Processes" and _path == "/index.md"' });
+    expect((processes.result as { hits: { _block_id: string }[] }).hits).toEqual([expect.objectContaining({ _block_id: "b_12" })]);
   });
 
-  it("serves the corpus bytes verbatim and knows the fixture bytes", async () => {
+  it("serves the corpus bytes verbatim (docs_read { _path } → _raw) and knows the fixture bytes", async () => {
     const { server } = await fresh();
-    const r = await server.call("docs_read", { path: "/substances/mercury.md" });
+    const r = await server.call("docs_read", { _path: "/substances/mercury.md" });
     expect(r.ok).toBe(true);
-    expect((r.result as { raw: string }).raw).toBe(fixtureBytes("/substances/mercury.md"));
+    expect((r.result as { _raw: string })._raw).toBe(fixtureBytes("/substances/mercury.md"));
     expect(fixtureBytes("substances/mercury.md")).toBe(fixtureBytes("/substances/mercury.md"));
+    // No tolerance (spec/surface §4 "Arguments"): a bare `path` is an argument error whose `fix` is the `_path` spelling.
+    const bare = await server.call("docs_read", { path: "/substances/mercury.md" });
+    expect(bare.ok).toBe(false);
+    expect(bare.error_code).toBe("filter_invalid");
+    expect(bare.result).toMatchObject({ data: { hint: "arguments", fix: expect.stringContaining("_path") } });
   });
 
   it("tools/list under full is the 47-tool catalog, handed over verbatim", async () => {
@@ -75,7 +81,7 @@ describe("the workspace", () => {
     const { server } = await fresh("minimal");
     const tools = await server.tools();
     expect(tools.map((t) => t.name)).toEqual(["docs_read", "docs_tree", "query_syntax", "query", "blocks_resolve", "apply", "plan", "execute", "changes_since", "version"]);
-    const hidden = await server.call("docs_set_meta", { path: "/index.md", set: { x: 1 } });
+    const hidden = await server.call("docs_set_meta", { _path: "/index.md", set: { x: 1 } });
     expect(hidden.ok).toBe(false);
     expect(hidden.error_code).toBe("unknown_tool");
     expect((await server.call("version", {})).result).toMatchObject({ profile: "minimal" });

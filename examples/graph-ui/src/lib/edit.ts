@@ -5,7 +5,7 @@
 //
 // Rules:
 //   1. WRITABLE candidates are frontmatter relations (not the link graph —
-//      `doc.out_links`/`doc.in_links` — which lives in the body; not `order by`
+//      `_out_links`/`_in_links` — which lives in the body; not `order by`
 //      sequences, which are derived)
 //      whose sampled values are document references — a `/`-rooted repo path
 //      (`/projects/oqx.md`), a bare repo path (`projects/oqx.md`, `projects/oqx`),
@@ -166,8 +166,8 @@ export function inferShape(values: readonly unknown[]): Shape | null {
   return lists >= scalars ? "list" : "scalar";
 }
 
-// The hit envelope (`id`/`path` — lib/paths.ts `HIT_ENVELOPE_KEYS`) plus the
-// walk intrinsics.
+// The hit envelope (`_id`/`_path`, and 4.x's `id`/`path` — lib/paths.ts
+// `HIT_ENVELOPE_KEYS`) plus the walk intrinsics.
 const ROW_META = new Set([...HIT_ENVELOPE_KEYS, "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$doc_id"]);
 
 /** Row fields whose values are all document references (scalar or list). */
@@ -223,7 +223,7 @@ export function editability(c: Pick<Candidate, "name" | "kind"> & { pair?: Pick<
   // The combined pair is both fields read one way; the edit belongs to a field.
   if (c.pair) return { writable: false, reason: `edit \`${c.pair.forward}\` or \`${c.pair.backward}\` directly` };
   if (c.kind === "sequence") return { writable: false, reason: `derived from order by ${c.name}` };
-  if (c.name.includes(".") || c.name.startsWith("$")) return { writable: false, reason: "not a frontmatter field" };
+  if (c.name.includes(".") || c.name.startsWith("$") || c.name.startsWith("_")) return { writable: false, reason: "not a frontmatter field" };
   if (!serverCanWrite) return { writable: false, reason: "the server offers no docs_set_meta tool (a gateway's tool allowlist must include it)" };
   const values = fieldValues(rows, c.name);
   if (values.length > 0 && !allRefs(values)) return { writable: false, reason: "values are not document references" };
@@ -248,7 +248,7 @@ export function ownerFor<T>(direction: Direction, selected: T, target: T): { own
 
 /** Authored fields the query projects under their own name (`select before` —
  * not `select b: before`, not a computed expression, not an engine attribute
- * such as `path` or `title`), so a row's value for them is the document's
+ * such as `_path` or `_title`), so a row's value for them is the document's
  * current value and no `docs_read` is needed. */
 export function projectedFields(query: Query | null): string[] {
   if (!query) return [];

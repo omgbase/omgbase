@@ -22,10 +22,13 @@ itself with its `where` predicate as the one editable hole, so `status ==
 "active"` there limits the recent list to the active documents and, from then
 on, the feed to changes of documents the predicate admits.
 
-**Requires omgbase surface ≥ 3.0** (the current `omg`): the page calls the
-`version` tool on connect, shows the surface in the header (`· surface 3.0`)
-and refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
-server reports 2.0*.
+**Requires omgbase surface ≥ 3.0** (the current `omg` speaks 5.0): the page
+calls the `version` tool on connect, shows the surface in the header (`· surface
+5.0`), refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
+server reports 2.0*, and spells the engine names the way the connected server
+does — `_path`/`_title`/`_updated_at` and `{ _id | _path }` from 5.0
+("underscore = engine"), the bare `path`/`title`/`updated_at` and `{ id | path }`
+on a 3.x/4.x server (see "Surface 5.0").
 
 ## Run it
 
@@ -89,12 +92,13 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    when it is older than 3.0 (or missing) and says so (`lib/paths.ts`
    `surfaceProblem`); `repos` → the repository picker (the choice is
    persisted).
-3. **Recently updated** — `select path, title, updated_at from docs order by
-   updated_at desc limit 25`; for each hit `docs_history { id | path }` gives
-   the version list and the last two versions are diffed with
-   `docs_diff_unified { id | path, from_rev, to_rev }`; a document with one
-   version is **created** and `docs_read_at { id | path, rev }` gives its
-   content (`lib/paths.ts` `docLocator` spells the document argument —
+3. **Recently updated** — `select _path, _title, _updated_at from docs order by
+   _updated_at desc limit 25` (bare on a 3.x/4.x server — `recentQuery(filter,
+   names)`); for each hit `docs_history { _id | _path }` gives the version list
+   and the last two versions are diffed with `docs_diff_unified { _id | _path,
+   from_rev, to_rev }`; a document with one version is **created** and
+   `docs_read_at { _id | _path, rev }` gives its content (`lib/paths.ts`
+   `docLocator(doc, names)` spells the document argument for the server —
    `spec/surface` §4 "Arguments"), shown as a pure-addition
    diff (`createdDiff`: one `@@ -0,0 +1,N @@` hunk, every line `+`, so
    frontmatter fences and dash bullets are green, not subtractions; `+N −0`).
@@ -243,17 +247,19 @@ The field is the recent query as one CodeMirror 6 editor with OQX highlighting
 dimmed:
 
 ```
-select path, title, updated_at from docs
-order by updated_at desc limit 25
+select _path, _title, _updated_at from docs
+order by _updated_at desc limit 25
 ```
 
-Click into it (anywhere) and a `where ` line opens between the two with the
+(against a 3.x/4.x server the same frame reads `select path, title, updated_at
+from docs` / `order by updated_at desc limit 25` — the element's `names`
+property). Click into it (anywhere) and a `where ` line opens between the two with the
 caret right after the keyword, in the hole:
 
 ```
-select path, title, updated_at from docs
+select _path, _title, _updated_at from docs
 where ⟨hole⟩
-order by updated_at desc limit 25
+order by _updated_at desc limit 25
 ```
 
 Lines 1 and 3 and the `where ` are the frame — read-only and dimmed; the hole
@@ -289,8 +295,8 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   the filter is fixed nothing is hidden. Fixing it re-runs the list and
   resumes filtering.
 - **The feed**: every poll that brings digests runs ONE lookup query over the
-  documents they touch — `select path, title from docs where (path ==
-  "/a.md" or path == "/b.md" …)` (`matchQuery`, in the server's spelling; OQX
+  documents they touch — `select _path, _title from docs where (_path ==
+  "/a.md" or _path == "/b.md" …)` (`matchQuery`, in the server's spelling; OQX
   has no array literal, so the path equalities are or-ed, each JSON-quoted;
   hits read through `hitPath`). Its titles are the cards' titles
   (`titlesByPath`: each change shows the title prominent and the `/`-rooted
@@ -307,18 +313,26 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   screen as they are: it applies to the recent list and to what arrives from
   now on.
 
-**Surface 3.0.** Every tool spells a row the way the language does and the
-language's attributes are bare (`id`/`path`/`updated_at`/`hash`/`raw`
-everywhere — `spec/surface` §1.2; `$` belongs to OQX alone): a query hit is
-`{ id, path, … }`, `changes_since` revisions are `{ id, path, hash }`,
-`docs_history` documents `{ id, path, deleted, currentRev, versions: [{ rev,
-seq, commit, updated_at, origin, actor, hash, isCurrent }] }`,
-`docs_diff_unified` `{ id, path, from, to, diff }` and `docs_read_at` `{ id,
-path, rev, raw }`. `lib/paths.ts` reads identity through `hitId`/`hitPath`,
-`lib/shapes.ts` coerces each tool result (`changesOf`, `docVersionsOf`,
-`unifiedOf`, `readAtOf`) into the typed shapes `feed.ts` keeps, and every path
-is shown `/`-rooted. There is no compatibility layer for earlier surfaces: an
-older server is refused on connect.
+**Surface 5.0.** Every tool spells a row the way the language does, and in the
+language an engine-provided name is `_`-prefixed while a bare name is the user's
+authored key ("underscore = engine", `spec/surface` §1.2; `$` belongs to OQX
+alone): a query hit is `{ _id, _path, … }`, `changes_since` revisions are `{ _id,
+_path, _hash }`, `docs_history` documents `{ _id, _path, deleted, currentRev,
+versions: [{ _rev, _seq, _commit, _ts, _origin, _actor, _hash, _is_current,
+_archived }] }` (a version is a `revisions` row under the row's names),
+`docs_diff_unified` `{ _id, _path, from, to, diff }` and `docs_read_at` `{ _id,
+_path, rev, _raw }`; a document argument is `{ _id }` or `{ _path }`. A 3.x/4.x
+server spells all of these bare (`{ id, path, … }`, `{ rev, seq, commit,
+updated_at, origin, actor, hash, isCurrent }`, `{ id }`/`{ path }`). The page
+GENERATES in the connected server's spelling — `lib/paths.ts` `namesFor(surface)`
+picks `NAMES_5` or `NAMES_4` once the `version` tool has answered, and
+`recentQuery`, `matchQuery`, `frameFor`, `docLocator` and the filter element's
+`names` property take it — and READS both: `hitId`/`hitPath` try `_id`/`_path`
+then `id`/`path`, `lib/shapes.ts` coerces each tool result (`changesOf`,
+`docVersionsOf`, `unifiedOf`, `readAtOf`) from either spelling into the typed
+shapes `feed.ts` keeps (the demo's own field names), and every path is shown
+`/`-rooted. There is no compatibility layer for surfaces before 3.0: an older
+server is refused on connect.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds
 (default 3600) or when it restarts and answers the next POST with `404`
@@ -360,7 +374,8 @@ reconnected* in the header; only a second failure is shown.
   `holeText`, `holeState`); only `@codemirror/state`, so it is tested with
   plain `EditorState`s.
 - `src/lib/paths.ts` — `surfaceOf`, `surfaceMajor`, `surfaceProblem` (the
-  ≥ 3.0 gate), `hitId`, `hitPath`, `docLocator`, `rooted`.
+  ≥ 3.0 gate), `EngineNames`/`NAMES_5`/`NAMES_4`/`namesFor` (the server's
+  spelling of the engine names), `hitId`, `hitPath`, `docLocator`, `rooted`.
 - `src/lib/shapes.ts` — the tool results coerced into the typed shapes
   `feed.ts` keeps: `changesOf` (`revisionOf`/`digestOf`), `docVersionsOf`
   (`versionOf`), `unifiedOf`, `readAtOf`.
@@ -381,7 +396,7 @@ reconnected* in the header; only a second failure is shown.
   at an edge whose block is shown or for a created document, none between
   two shown clusters adjacent in the source and exactly one when blocks are
   skipped between two hunks; the view's persistence in `feed.test.ts`; the
-  surface gate in `paths.test.ts`; 89 tests).
+  surface gate and the names in `paths.test.ts`; 92 tests).
 
 ## Verified headlessly
 

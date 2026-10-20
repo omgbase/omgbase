@@ -26,7 +26,7 @@
               "op": "insert",
               "into": {
                 "kind": "document",
-                "path": "/timeline/review.md"
+                "_path": "/timeline/review.md"
               },
               "at": "end",
               "markdown": "Decisions deferred to spring are tracked in the March notes."
@@ -51,7 +51,7 @@
               "op": "insert",
               "into": {
                 "kind": "document",
-                "path": "/timeline/review.md"
+                "_path": "/timeline/review.md"
               },
               "at": "end",
               "markdown": "Decisions deferred to spring are tracked in the March notes."

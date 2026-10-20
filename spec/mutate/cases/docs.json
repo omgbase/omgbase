@@ -729,18 +729,18 @@
             "committed": true,
             "dangling": [
               {
-                "doc_id": "d_1",
-                "path": "b.md",
-                "block_id": "b_3",
+                "_doc_id": "d_1",
+                "_path": "b.md",
+                "_block_id": "b_3",
                 "target": "/a.md",
-                "anchor": null
+                "_anchor": null
               },
               {
-                "doc_id": "d_1",
-                "path": "b.md",
-                "block_id": "b_3",
+                "_doc_id": "d_1",
+                "_path": "b.md",
+                "_block_id": "b_3",
                 "target": "/a.md",
-                "anchor": "A"
+                "_anchor": "A"
               }
             ],
             "retargeted": null
@@ -935,7 +935,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":false,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"fdcd5f53dddcee9aee2003099d98b8983d7ccad8da3e5d76970c5b86dd4fcbe9\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":false,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"3e8fe59762ae9f707f33755434358730e7d9f39a40349ef6e2380b392bef34f5\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -1311,7 +1311,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"e4ac37f23b00134b5658e24a74b204a8f52800a254cc7efe463dc13e4536ef0f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"292c9450ebbfee670533ddac8c3d749f6d418337a41669e33d2df8d901db8bbf\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -1706,7 +1706,7 @@
             "actor": null,
             "reason": "move a.md -> moved/a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"e4ac37f23b00134b5658e24a74b204a8f52800a254cc7efe463dc13e4536ef0f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"move\",\"retarget_inbound\":true,\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"to\":\"moved/a.md\"}],\"plan_id\":\"292c9450ebbfee670533ddac8c3d749f6d418337a41669e33d2df8d901db8bbf\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2597,7 +2597,7 @@
             "actor": null,
             "reason": "delete a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"ef699bd2c4d04c5a943b989522812a8595c22d00cdbbf45bc923dd1e1057ad4f\",\"v\":1}"
+            "ops": "{\"effects\":[{\"op\":\"remove\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"9e53fa5f9ca331a5327d90f9df8b3f34c5e1e071b81cd5cea50bad9e45d65ce6\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -2946,7 +2946,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"frontmatter.status\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"done\"},{\"field\":\"frontmatter.tags\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"16b63ab223a63e4eb17bd3ab1176458275f482cc71d2df151228cd0e10739673\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"_frontmatter.status\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"done\"},{\"field\":\"_frontmatter.tags\",\"op\":\"unset\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"7c3cf9105b5d2372df1a2370f0eae352757a029dccb007842090a0ef230c6192\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3136,7 +3136,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"frontmatter.title\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"T\"}],\"plan_id\":\"c78be5439e55d15cd691f482215b8c479c5c301ee880594a903dfb2b2dccacbb\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"_frontmatter.title\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"T\"}],\"plan_id\":\"edc148d3d7e67baeef59b84184cb24a26b56d68fa2ffa45a8b018c0391432f13\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3319,7 +3319,7 @@
             "actor": null,
             "reason": "set_meta a.md",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"frontmatter.title\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}},{\"field\":\"frontmatter.tags\",\"op\":\"unset\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"}}],\"plan_id\":\"6c7986c66436ccf778b4b8bd56411999d5e41342dc8a1e85629a3a89dd949541\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"_frontmatter.title\",\"op\":\"unset\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}},{\"field\":\"_frontmatter.tags\",\"op\":\"unset\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"}}],\"plan_id\":\"5aa1b7d6459419ebb4d00cc197d84c92650afcd0ee3247fd8b71a78a2ce96352\",\"v\":1}"
           }
         ],
         "revisions": [

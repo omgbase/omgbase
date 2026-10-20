@@ -118,7 +118,7 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
     throw new MutationError("stale_expectation", "expect.content_hash required", {
       op_index: opIndex,
       block: block.id,
-      current: { hash: rawHashHex(block.raw), markdown: block.raw },
+      current: { _hash: rawHashHex(block.raw), markdown: block.raw },
       retriable: true,
     });
   }
@@ -128,7 +128,7 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
       op_index: opIndex,
       block: block.id,
       expected_content_hash: expect.content_hash,
-      current: { hash: current, markdown: block.raw },
+      current: { _hash: current, markdown: block.raw },
       retriable: true,
     });
   }

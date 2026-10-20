@@ -12,7 +12,7 @@ import type { MutBlock, MutDoc } from "./tree.js";
 // module held `docsCreate` / `docsMove` / `docsDelete` / `docsSetMeta`, library
 // functions that composed the internal commit effects themselves; since 3.0 the
 // operations are the effect builders of `sugar.ts` (`create`, `move document`,
-// `remove document`, `set`/`unset frontmatter.<k>`) planned and executed by the
+// `remove document`, `set`/`unset _frontmatter.<k>`) planned and executed by the
 // Effect layer (`plan.ts`), and what remains here is what the planner's
 // lowerings share with them: the path canonicalization, the file composition,
 // the parse of a created document, the inbound-link retarget plan and the
@@ -31,7 +31,7 @@ export function canonicalDocPath(path: string): string {
  *  (spec/mutate §6 `docs_create`): the body with a trailing `\n` ensured; a
  *  non-empty frontmatter mapping becomes `---\n<yaml>\n---\n` followed by a
  *  blank line unless the body already starts with one. The effect planner's
- *  `set frontmatter.<k>` composes through this same function (§11.3), so its
+ *  `set _frontmatter.<k>` composes through this same function (§11.3), so its
  *  bytes equal `docs_set_meta`'s for the same patch. */
 export function composeFile(markdown: string, frontmatter?: Record<string, unknown>): string {
   const body = markdown.endsWith("\n") || markdown.length === 0 ? markdown : markdown + "\n";
@@ -77,7 +77,7 @@ export function parseNewDoc(symbol: string, path: string, source: string): MutDo
  */
 export function planInboundRetarget(store: Store, docId: string, fromPath: string, toRel: string, inbound: InboundLink[]): { ops: Op[]; blocks: string[]; docs: string[]; dangling: InboundLink[] } {
   const byBlock = new Map<string, InboundLink>();
-  for (const l of inbound) if (l.block_id !== null && !byBlock.has(l.block_id)) byBlock.set(l.block_id, l);
+  for (const l of inbound) if (l._block_id !== null && !byBlock.has(l._block_id)) byBlock.set(l._block_id, l);
   // A container's raw includes its children's raw, so a link inside a list item
   // is reported for BOTH the list and the item. Rewrite the deepest block only:
   // updating the container would re-parse (and re-identify) its children, and
@@ -103,16 +103,16 @@ export function planInboundRetarget(store: Store, docId: string, fromPath: strin
     // Match against the directory the link was RESOLVED in (the source's path at
     // extraction time); write relative forms against the source's CURRENT
     // directory — they differ only for links inside the moved doc itself.
-    const writeDir = src.doc_id === docId ? dirOf(toRel) : dirOf(src.path);
-    const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src.path), writeDir, fromPath, toRel);
+    const writeDir = src._doc_id === docId ? dirOf(toRel) : dirOf(src._path);
+    const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src._path), writeDir, fromPath, toRel);
     if (newRaw === null) continue;
     ops.push({ op: "update", block: blockId, markdown: newRaw, expect: { content_hash: row.raw_hash.toString("hex") } });
     blocks.push(blockId);
-    docs.add(src.doc_id);
+    docs.add(src._doc_id);
   }
   // Containers whose rewritten child covered them count as rewritten too.
   const rewritten = new Set([...blocks, ...containers]);
-  const dangling = inbound.filter((l) => l.block_id === null || !rewritten.has(l.block_id));
+  const dangling = inbound.filter((l) => l._block_id === null || !rewritten.has(l._block_id));
   return { ops, blocks, docs: [...docs], dangling };
 }
 

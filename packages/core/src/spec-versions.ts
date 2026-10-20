@@ -16,12 +16,12 @@ export const SPEC_VERSIONS = {
   reconcile: "2.3",
   store: "16.0",
   properties: "1.2",
-  graph: "1.1",
-  search: "2.0",
-  mutate: "3.6",
-  sync: "2.2",
-  surface: "4.11",
-  cli: "4.6",
+  graph: "2.0",
+  search: "3.0",
+  mutate: "4.0",
+  sync: "3.0",
+  surface: "5.0",
+  cli: "5.0",
 } as const;
 
 export type SpecName = keyof typeof SPEC_VERSIONS;

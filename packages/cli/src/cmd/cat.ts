@@ -62,12 +62,12 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
   if (cli.flags.server) {
     const tool = blockReadTool(ref);
     if (tool) {
-      const r = await remoteCall<Record<string, unknown>>(cli, tool, { id: ref, resolution });
-      return { text: String(r.raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
+      const r = await remoteCall<Record<string, unknown>>(cli, tool, { _id: ref, resolution });
+      return { text: String(r._raw ?? r._text ?? r.label ?? ""), json: r, capture: r };
     }
     const r = await remoteCall<Record<string, unknown>>(cli, "docs_read", docLocator(ref));
     warnDocResolution(cli, ref, resolution);
-    return { text: String(r.raw ?? ""), json: r, capture: r.raw };
+    return { text: String(r._raw ?? ""), json: r, capture: r._raw };
   }
 
   const ws = cli.workspace();
@@ -85,13 +85,13 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     warnDocResolution(cli, ref, resolution);
     // shell: the bytes (a string; @_ only). `--json` is the `docs_read` result.
-    return { text: res.raw, json: res, capture: res.raw };
+    return { text: res._raw, json: res, capture: res._raw };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
   // shell: the block (single entity)
-  return { text: node.raw ?? node.text ?? node.label ?? "", json: node, capture: node };
+  return { text: node._raw ?? node._text ?? node.label ?? "", json: node, capture: node };
 }
 
 async function runCat(cli: Cli, args: string[]): Promise<number> {

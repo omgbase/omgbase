@@ -24,10 +24,13 @@ It is also a probe of the reflection API being built next door: whatever the
 UI wanted and could not get from `@omgbase/oqx`'s public `parse` or omgbase's
 MCP tools is listed under [Gaps](#gaps-found-in-the-public-api).
 
-**Requires omgbase surface ≥ 3.0** (the current `omg`): the page calls the
-`version` tool on connect, shows the surface in the header (`· surface 3.0`)
-and refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
-server reports 2.0* (see [Server version](#server-version)).
+**Requires omgbase surface ≥ 3.0** (the current `omg` speaks 5.0): the page
+calls the `version` tool on connect, shows the surface in the header (`· surface
+5.0`), refuses an older server with *this demo needs omgbase surface ≥ 3.0 — the
+server reports 2.0*, and spells the engine names the way the connected server
+does — `_path`/`_title`/`_in_links`/`{ _id | _path }` from 5.0 ("underscore =
+engine"), the bare `path`/`title`/`in_links`/`{ id | path }` on a 3.x/4.x
+server (see [Server version](#server-version)).
 
 ## Try it against a remote omgbase
 
@@ -59,23 +62,24 @@ sample slug only, probes `/timeline/kickoff.md` with one `limit 1` query
 or the starter itself), never a query you edited:
 
 ```oqx
-select path, title
+select _path, _title
 from docs
-order by updated_at desc
+order by _updated_at desc
 limit 40
 ```
 
-The starter has no `follow`, so the picker offers
-the builtin link graph — `doc.out_links` (links, drawn by default) and
-`doc.in_links` (backlinks), named for the link rows the edges come from — and a
-force layout; under the editor a second suggestion shows
-the timeline walk rooted at the first shown document (`select path, title,
-before, after from docs where path == "/…" follow distinct refs(before),
-in_links collect { from doc where ^path in list(after) }`) with a *use this
-query* button. When any query
+(every preset is spelled for the connected server: `select path, title … order
+by updated_at desc` against a 3.x/4.x one). The starter has no `follow`, so the
+picker offers the builtin link graph — `_out_links` (links, drawn by default)
+and `_in_links` (backlinks), named for the document's link relations the edges
+come from (`doc.out_links` / `doc.in_links` under the 4.x names) — and a force
+layout; under the editor a second suggestion shows the timeline walk rooted at
+the first shown document (`select _path, _title, before, after from docs where
+_path == "/…" follow distinct refs(before), _in_links collect { from _doc where
+^_path in list(after) }`) with a *use this query* button. When any query
 matches nothing, the graph area says so instead of drawing an empty canvas:
 *the query matched nothing in repo notes*, the first `where` clause as
-written, and — when the query compares `path` with a
+written, and — when the query compares `_path` with a
 literal that is not in the repository (each literal is probed with the same
 `limit 1` query) — `/timeline/kickoff.md is not in repo notes`, with a *show
 recent documents* button (the starter) and a *keep the last graph when a query
@@ -182,12 +186,18 @@ repository starts with the generic starter instead — see [First run against a
 real repository](#try-it-against-a-remote-omgbase)):
 
 ```oqx
-select path, title, phase, before, after
+select _path, _title, phase, before, after
 from docs
-where path == "/timeline/kickoff.md"
-follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
+where _path == "/timeline/kickoff.md"
+follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }
 order by $ordinal
 ```
+
+(the 5.0 spelling — `_`-prefixed names are the engine's, bare ones the
+author's; against a 3.x/4.x server the same walk reads `select path, title,
+… where path == … follow distinct refs(before), in_links collect { from doc
+where ^path in list(after) }`, and the page swaps the preset to whichever the
+server speaks).
 
 **Why `refs()`.** `before` holds document *references* — strings like
 `/timeline/alpha.md` — not documents. `follow before` walks the strings, and
@@ -198,72 +208,89 @@ to the live document, so it is the `follow` destination that means "the
 documents `before` names". The editor says so under the query whenever a
 destination is a bare field.
 
-**Why `in_links collect { from doc … }` for the backward hop.** The engine has
+**Why `_in_links collect { from _doc … }` for the backward hop.** The engine has
 no `refs⁻¹`: there is no function giving "the documents whose `after` names
 me". But a `/`-rooted frontmatter reference *is extracted as an edge*
 (`spec/graph` §3.1, `provenance: frontmatter`), so the frontier's backlinks —
-its `in_links` rows, each re-rooted to its source document by `from doc` —
+its `_in_links` rows, each re-rooted to its source document by `from _doc` —
 already contain every document whose `after` — or any other field, or a body
 link — points at it. The destination block narrows those to the ones whose
-`after` really says so (`^path in list(after)`: `^` is the frontier row, whose
+`after` really says so (`^_path in list(after)`: `^` is the frontier row, whose
 path is `/`-rooted like the authored reference; `list()` makes a scalar and a
 list read alike). It is an indexed lookup per frontier row, unlike the
 full-scan fallback, which still works:
 
 ```oqx
-follow refs(before), ^docs collect { where after.contains(^path) }
+follow refs(before), ^docs collect { where after.contains(^_path) }
 ```
 
 (`^docs` is the root `docs` collection seen from inside the block.)
 
 ### Server version
 
-The demo is written against omgbase **surface 3.0** (`spec/surface`): every
-path a query or a tool returns is `/`-rooted and every path a tool accepts
-tolerates both forms (§1 "Paths"); every engine attribute is a bare name in the
-language — `path`, `id`, `title`, `updated_at`, `raw`, `hash`, `tags` — and `$`
-belongs to OQX alone (`$it`, `$key`, `$depth`, …; §1.2; an authored `path:` or
-`title:` key is reached as `data.path` / `data.title`, `title` being the
-computed title); the link rows are the `links` collection (`from links`,
-`^links`, `out_links`/`in_links`; §1.1); a `docs_*` tool addresses its document
-by `id` or `path` (§4 "Arguments"); a hit is `{ id, path, ...projection }` and
-a row surfacing as a value `{ id, path }` (§1.4).
+The demo is written against omgbase **surface 5.0** (`spec/surface`,
+"underscore = engine"): every path a query or a tool returns is `/`-rooted and
+every path a tool accepts tolerates both forms (§1 "Paths"); in the language an
+engine-provided name is `_`-prefixed — `_path`, `_id`, `_title`, `_updated_at`,
+`_raw`, `_hash`, `_tags` — and a bare name is the user's authored key, so an
+authored `path:` or `title:` key is just `path` / `title` (`_title` being the
+computed title; `_data.<k>` / `_frontmatter.<k>` reach a key by source), while
+`$` belongs to OQX alone (`$it`, `$key`, `$depth`, …; §1.2); the link rows are
+the `links` collection (`from links`, `^links`; a document's `_out_links` /
+`_in_links`, a link's `_dst` / `_doc`; §1.1); a `docs_*` tool addresses its
+document by `_id` or `_path` (§4 "Arguments"); a hit is `{ _id, _path,
+...projection }` and a row surfacing as a value `{ _id, _path }` (§1.4). A
+3.x/4.x server spells every one of these bare (`path`, `title`, `out_links`,
+`doc.out_links`, `from dst`/`from doc`, `{ id }`/`{ path }`, `{ id, path, … }`).
 
 On connect the page calls the `version` tool once and reads `specs.surface`
 (`"major.minor"`) into the `serverSurface` signal, shown in the header (`·
-surface 3.0`). A server reporting an older surface — or none, which a server
+surface 5.0`). A server reporting an older surface — or none, which a server
 without the `version` tool is — is refused before anything else runs, with the
 status line reading *error: this demo needs omgbase surface ≥ 3.0 — the server
 reports 2.0* and the settings panel open (`surfaceProblem`, `src/lib/paths.ts`).
-There is no compatibility layer for earlier surfaces. The helpers:
+From 3.0 up the surface also picks the **spelling** (`namesFor(surface)` →
+`NAMES_5` at major ≥ 5, else `NAMES_4`; an `EngineNames` record): everything
+the page GENERATES — the preset queries (`defaultQuery(names)`,
+`starterQuery(names)`, `timelineStarter(…, names)`, `existsQuery(…, names)`),
+the edge queries (`edgeQueries(…, names)`), the document arguments
+(`docLocator(doc, names)`) and the builtin candidate names
+(`inferCandidates(…, names)`) — takes it, while everything it READS or
+CLASSIFIES accepts both spellings (`hitId`/`hitPath`/`rowRef`,
+`isEngineAttribute`, the `_`-or-bare relation names in `candidates.ts` and
+`hints.ts`, every reader in `shapes.ts`). A preset in the editor is respelled
+when the server changes (`chooseQuery(current, repo, names)`); a user's edit is
+never touched. There is no compatibility layer for surfaces before 3.0. The
+helpers:
 
 | | |
 | --- | --- |
 | `surfaceOf(versionResult)` / `surfaceMajor(s)` / `surfaceProblem(s)` | `specs.surface` (null when absent), its major, and the gate's message (null when the server is fine) |
+| `EngineNames` / `NAMES_5` / `NAMES_4` / `namesFor(surface)` | the server's spelling of the engine names: `_`-prefixed from 5.0, bare before (the native 5.0 one while unknown) |
 | `rooted(p)` / `unrooted(p)` / `samePath(a, b)` | the two path forms (idempotent) and equality modulo the leading slash |
-| `docLocator(doc)` | the document argument: `{ id }` for a `d_…` id, else `{ path }` |
-| `hitId(hit)` / `hitPath(hit)` / `rowRef(v)` | a query hit's identity, and a row that surfaced as a value (rooted, else null) |
-| `HIT_ENVELOPE_KEYS` / `DOC_ATTRIBUTES` | `id` and `path` (neither is a projectable field); the docs attributes a bare name reads |
+| `docLocator(doc, names)` | the document argument: `{ _id }` for a `d_…` id, else `{ _path }` (`{ id }`/`{ path }` under the 4.x names) |
+| `hitId(hit)` / `hitPath(hit)` / `rowRef(v)` | a query hit's identity (`_id`/`_path`, then `id`/`path`), and a row that surfaced as a value (rooted, else null) |
+| `HIT_ENVELOPE_KEYS` / `DOC_ATTRIBUTES` / `isEngineAttribute(n)` | the envelope in both spellings (none is a projectable field); the bare 4.x docs attributes; "an engine attribute, in either spelling" (`_`-prefixed, or one of the 4.x names) |
 
 and every other tool result goes through its sibling `src/lib/shapes.ts`, which
-normalises to one internal shape with rooted paths: `graphEdgeRows(result)` /
-`edgeOf(e)` / `docOf(d)` for the `graph` tool's `links[]` and documents (this
-demo fetches edges through `query`, not `graph`, so these are for a consumer
-that does), `docReadOf(r)` for `docs_read` and `docOpOf(r)` for a document
-op's `{ id, path, committed }`.
+takes either spelling and normalises to one internal shape with rooted paths:
+`graphEdgeRows(result)` / `edgeOf(e)` / `docOf(d)` for the `graph` tool's
+`links[]` and documents (this demo fetches edges through `query`, not `graph`,
+so these are for a consumer that does), `docReadOf(r)` for `docs_read` and
+`docOpOf(r)` for a document op's `{ _id, _path, committed }`.
 
 Nodes are keyed by the rooted path, and the edge fetch roots the rows'
-`path`/`dst_path` before matching them to the shown nodes while spelling its
-`path == "…"` literals rooted. The default query and the starter are constants
+`_path`/`_dst_path` before matching them to the shown nodes while spelling its
+`_path == "…"` literals rooted. The default query and the starter are presets
 swapped only while the editor still holds a preset, never a user's edit. The
 value form of an edited field is inferred from the field's existing values
-(leading slash or not), never from `path`. The page never stores a cursor
+(leading slash or not), never from `_path`. The page never stores a cursor
 (`queryAll` follows one within a single call). One hint under the editor
-catches the stale idiom: a `"/" + ^path` (or `"/" + path`, `"/" + dst_path`) in
-the query gets "`path` is already `/`-rooted; use `^path`". A literal (`path ==
-"a.md"`) is never flagged: the server roots it.
+catches the stale idiom: a `"/" + ^_path` (or `"/" + _path`, `"/" + _dst_path`;
+the bare spellings too) in the query gets "`_path` is already `/`-rooted; use
+`^_path`". A literal (`_path == "a.md"`) is never flagged: the server roots it.
 
-Try: `select path, title, before from docs where phase == "experiment" || phase == "plan"`
+Try: `select _path, _title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
 fields, and the three `loop-*` notes trigger the cycle banner); `follow
 out_links collect { from dst }` for the link graph; `order by phase` for a
@@ -388,22 +415,24 @@ Requesting `offline_access` needs *Allow Offline Access* on the API that the
 **Edges** are fetched with generated OQX over the link rows:
 
 ```oqx
-select src: path, dst: dst_path from links
-where field == "after" && provenance == "frontmatter"
-  && (path == "/timeline/kickoff.md" || path == "/timeline/alpha.md" || …)
+select src: _path, dst: _dst_path from links
+where _field == "after" && _provenance == "frontmatter"
+  && (_path == "/timeline/kickoff.md" || _path == "/timeline/alpha.md" || …)
 ```
 
 in chunks of 40 paths, then filtered client-side to edges whose both ends are
-shown. OQX has no array literal (`path in [...]` is a lex error) and `in` only
-takes a lifted set or a range, hence the disjunction. The nested alternative
-(`select path, out: doc.out_links collect { select dst: dst_path, field } from
-docs where …`) also works against the engine; the flat rows were simpler to
-merge across chunks and page with the tool's cursor. An edge is a link row
-read source → destination, `path` → `dst_path` (the paths of `doc_id` and
-`dst_id`; `dst` is the destination document row itself). Links
-(`doc.out_links`) and backlinks (`doc.in_links`) use the same query with
-`provenance == "link"`; backlinks are the same rows reversed. A sequence candidate (an `order by` key) needs no
-fetch — its edges are consecutive result rows.
+shown (bare `path`/`dst_path`/`field`/`provenance` against a 3.x/4.x server —
+`edgeQueries(candidate, paths, names)`). OQX has no array literal (`_path in
+[...]` is a lex error) and `in` only takes a lifted set or a range, hence the
+disjunction. The nested alternative (`select _path, out: _out_links collect {
+select dst: _dst_path, _field } from docs where …`) also works against the
+engine; the flat rows were simpler to merge across chunks and page with the
+tool's cursor. An edge is a link row read source → destination, `_path` →
+`_dst_path` (the paths of `_doc_id` and `_dst_id`; `_dst` is the destination
+document row itself). Links (`_out_links`) and backlinks (`_in_links`) use the
+same query with `_provenance == "link"`; backlinks are the same rows reversed. A
+sequence candidate (an `order by` key) needs no fetch — its edges are
+consecutive result rows.
 
 ## The elements
 
@@ -501,9 +530,10 @@ to the panel (and removing one drops it, along with any choice made about it).
 **Reflection rules.** Each `select` item, in order, keyed by the name the row
 carries (the alias, or a navigation's last segment):
 
-- a bare engine attribute (`path`, `title`, `id`, `updated_at`, … —
-  `spec/surface` §1.2; aliased or not), or one of OQX's own `$`-names
-  (`$depth`, `$ordinal`), is an **intrinsic**;
+- an engine attribute (`_path`, `_title`, `_id`, `_updated_at`, … —
+  `spec/surface` §1.2, the `_` prefix; the bare 4.x `path`, `title`, … read
+  the same; aliased or not), or one of OQX's own `$`-names (`$depth`,
+  `$ordinal`), is an **intrinsic**;
 - any other scalar item — a frontmatter field, a navigation (`meta.slug` →
   `slug`), an aliased expression (`n: size(before)`) — is a **field**;
 - a `collect` / `first` / `single` block (`jobs: jobs collect { … }`) is
@@ -513,14 +543,14 @@ carries (the alias, or a navigation's last segment):
   read, so the fields are the keys the returned rows actually carry, in
   first-seen order (badge *from rows*), kinded by their values.
 
-**Defaults.** The label is the first of `title` (the computed title
-attribute), `name` that is projected; otherwise the card is labelled with the de-rooted
-document path, which is always offered as the **fallback** row. Only the label
-is shown by default — scalars other than the label start **off**, so cards
-stay as small as they were until a field is asked for. The starter query
-(`select path, title …`) therefore shows the title alone; the sample timeline
-(`select path, title, phase, before, after`) shows `title` with `phase`,
-`before` and `after` unchecked.
+**Defaults.** The label is the first of `_title` (the computed title
+attribute; a 4.x server's `title`), `name` that is projected; otherwise the card
+is labelled with the de-rooted document path, which is always offered as the
+**fallback** row. Only the label is shown by default — scalars other than the
+label start **off**, so cards stay as small as they were until a field is asked
+for. The starter query (`select _path, _title …`) therefore shows the title
+alone; the sample timeline (`select _path, _title, phase, before, after`) shows
+`_title` with `phase`, `before` and `after` unchecked.
 
 **The panel.** One row per field with a *show* checkbox and a *label* radio
 (exactly one — a field or the path). The label field is always shown (its
@@ -616,12 +646,12 @@ form among all reference fields in the rows, else `/path.md`; whether it
 becomes a list or a scalar follows the same inference (ties → list). A field
 whose existing values disagree (`/a.md` next to `b.md`) is refused with a
 message until they agree. The values are the author's — `/`-rooted in these
-repositories — whatever form the row's own `path` takes.
+repositories — whatever form the row's own `_path` takes.
 
 **Writable or not.** Writable candidates are exactly the frontmatter relations
 whose sampled values are document references (a `/`-rooted repo path, a bare
 repo path, or a doc id — scalar or list). The rest show *read-only* with a
-reason: `doc.out_links` / `doc.in_links` ("links live in the body"), an `order by` key
+reason: `_out_links` / `_in_links` ("links live in the body"), an `order by` key
 ("derived from order by …"), an inverse pair ("edit `before` or `after`
 directly"), a frontmatter field holding something else ("values are not
 document references"), or a server that does not offer the tool. While a
@@ -636,14 +666,14 @@ field was not projected). The page lists the server's tools on connect and
 shows every relationship read-only when `docs_set_meta` is missing; a refusal at
 write time is reported with the same hint.
 
-**Limits.** Body links (`doc.out_links`, `doc.in_links`) and derived sequences
+**Limits.** Body links (`_out_links`, `_in_links`) and derived sequences
 are read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
 document: the inverse relation (e.g. `before` when you edit `after`) is not
 maintained — the engine has no field definitions declaring inverses. In the
 local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
 made by `dev:workspace`; `pnpm --filter graph-ui dev:workspace --force` resets
-it). Try the scalar path with `select path, title, owner from docs where
-path.startsWith("/timeline/") || path.startsWith("/people/")` (`owner` is a
+it). Try the scalar path with `select _path, _title, owner from docs where
+_path.startsWith("/timeline/") || _path.startsWith("/people/")` (`owner` is a
 scalar `/people/….md`) and the list path with the default query's `after`.
 
 ## Inference rules (`src/lib/candidates.ts`)
@@ -657,28 +687,30 @@ module becomes the fallback.
    owns the field and names its successors; it is the same candidate a bare
    `follow <field>` would give (same name and kind, merged with the inferred one
    from the rows, written the same way), now meaning the documents. The link
-   graph is walked through the link rows — `follow out_links collect { from dst
-   }` = links (`dst` is a link's destination document), `follow in_links
-   collect { from doc }` = backlinks with direction *backward* (`doc` its
-   source); the receiver names the relation, as written (`out_links`,
-   `doc.out_links`, `$it.in_links`). Any other plain relation is a frontmatter
-   relation — flagged by the editor's hint, since it follows the strings. Any
-   **destination block** (`^docs collect { where … }`, `in_links collect { from
-   doc where … }`, `refs(before) collect { … }`) is read first through its
-   receiver — `refs(<field>)` names `<field>`, *forward* — then through its
-   correlated `where`: a bare property of the candidate row compared against an
-   outer reference (`^path in list(after)`, `after.contains(^path)`) names the
+   graph is walked through the link rows — `follow _out_links collect { from
+   _dst }` = links (`_dst` is a link's destination document), `follow _in_links
+   collect { from _doc }` = backlinks with direction *backward* (`_doc` its
+   source); the receiver names the relation, as written (`_out_links`,
+   `$it._in_links`; the 4.x `out_links`, `doc.out_links`, `$it.in_links` read
+   the same). Any other plain relation is a frontmatter relation — flagged by
+   the editor's hint, since it follows the strings. Any **destination block**
+   (`^docs collect { where … }`, `_in_links collect { from _doc where … }`,
+   `refs(before) collect { … }`) is read first through its receiver —
+   `refs(<field>)` names `<field>`, *forward* — then through its correlated
+   `where`: a bare property of the candidate row compared against an outer
+   reference (`^_path in list(after)`, `after.contains(^_path)`) names the
    relation `after` with direction *backward* (the edge is stored on the
-   successor and points at the frontier); an outer property (`path in ^before`)
+   successor and points at the frontier); an outer property (`_path in ^before`)
    names `before`, *forward*; a `refs()` receiver of a nested directive follows
-   the same two cases (`refs(after) exists { where path == ^^path }` → `after`
-   *backward*, `refs(^before) exists { … }` → `before` *forward*); a `field ==
-   "x"` / `predicate == "x"` literal under `doc.in_links` / `doc.out_links` /
-   `^links` names `x` (*forward* for in_links, *backward* for out_links). A
-   link-row block whose `where` correlates with the frontier that way — the
-   default query's `in_links collect { from doc where ^path in list(after) }` —
-   *means* that relation, so the whole backlink graph is not offered beside it;
-   an uncorrelated filter (`in_links collect { from doc where phase == "x" }`)
+   the same two cases (`refs(after) exists { where _path == ^^_path }` → `after`
+   *backward*, `refs(^before) exists { … }` → `before` *forward*); a `_field ==
+   "x"` / `_predicate == "x"` literal under `_in_links` / `_out_links` /
+   `^links` (the bare `field`/`predicate` under `doc.in_links` on 4.x) names `x`
+   (*forward* for in_links, *backward* for out_links). A link-row block whose
+   `where` correlates with the frontier that way — the default query's
+   `_in_links collect { from _doc where ^_path in list(after) }` — *means* that
+   relation, so the whole backlink graph is not offered beside it; an
+   uncorrelated filter (`_in_links collect { from _doc where phase == "x" }`)
    keeps the walk as the candidate.
 2. **`order by` keys** that are not `$`-intrinsics become *sequence*
    candidates (edges = consecutive rows; `desc` → backward).
@@ -687,11 +719,12 @@ module becomes the fallback.
    "looks-backward" vocabulary (`after`, `prev`, `parent`, `depends_on`, …)
    default to *backward*.
 4. **Builtin**: a query without a `follow` always gets the authored link graph
-   to choose from — `doc.out_links` (links) and `doc.in_links` (backlinks),
-   named for the link rows the edges are fetched from — so a query that
-   projects no relationship (the starter) still has edges to draw. A `follow
-   out_links collect { from dst }` is the follow candidate itself, not a second
-   entry.
+   to choose from — `_out_links` (links) and `_in_links` (backlinks), named for
+   the document's link relations the edges are fetched from, in the connected
+   server's spelling (`doc.out_links` / `doc.in_links` under the 4.x names) — so
+   a query that projects no relationship (the starter) still has edges to draw.
+   A `follow _out_links collect { from _dst }` is the follow candidate itself,
+   not a second entry.
 
 5. **Inverse pairs** — see the next section: two frontmatter candidates that are
    one sequence read from both ends get a combined candidate (`before/after`,
@@ -699,8 +732,8 @@ module becomes the fallback.
 
 Defaults: a pair is drawn and its members are not; otherwise every `follow`
 candidate is drawn; inferred fields are drawn only when the query has no
-`follow`; the builtin `doc.out_links` is drawn only when nothing else is (no
-`follow`, no inferred field); `doc.in_links` and sequences are never drawn by
+`follow`; the builtin `_out_links` is drawn only when nothing else is (no
+`follow`, no inferred field); `_in_links` and sequences are never drawn by
 default. The layout axis is the first pair, else the first `follow` candidate,
 else the first sequence key, else the first inferred field (timeline words
 first), else none (force) — a builtin is never the axis. Overrides live beside
@@ -760,11 +793,11 @@ engine's own `refs(<field>)` when no bare destination names the field.
 ## Gaps found in the public API
 
 - ~~**Paths disagree with frontmatter paths.**~~ Fixed in surface 2.0: the
-  row's path is `/`-rooted like an authored reference, so `^path in
+  row's path is `/`-rooted like an authored reference, so `^_path in
   list(after)` needs no `"/" +`.
 - **No inverse of `refs()`.** `refs(before)` walks forward; "the documents whose
   `after` names me" has no function and is spelled as a backlink block
-  (`in_links collect { from doc where ^path in list(after) }`) — correct because
+  (`_in_links collect { from _doc where ^_path in list(after) }`) — correct because
   frontmatter references are edges, but a `referrers(after)` (or a field
   definition with `inverse_of`) would make the backward hop as short as the
   forward one.
@@ -803,7 +836,7 @@ engine's own `refs(<field>)` when no bare destination names the field.
   — and would replace the pair detection in `candidates.ts` (vocabulary plus
   reciprocal rows) with a declaration.
 - **An empty projection is not "the row itself".** `from docs where …` with no
-  `select` returns hits carrying only the envelope (`id` and `path`), so the
+  `select` returns hits carrying only the envelope (`_id` and `_path`), so the
   cards panel's *from rows* fallback has nothing to
   offer; the frontmatter has to be named in `select` to reach a card (a
   `select *`, or hits that carry the frontmatter bag when nothing is projected,

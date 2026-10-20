@@ -5,26 +5,26 @@ import { loadDocBlocks, blockRaw, type BlockNode } from "./reader.js";
 
 export type Resolution = "skeleton" | "outline" | "text" | "raw" | "full";
 
-// The wire shape follows the surface's row rule (spec/surface §1.2, 3.0): the
-// block's identity `id`, its source bytes `raw` and their hash `hash` under
-// the row attributes' own names; `type`, `text`, `attrs`, `ordinal`, `depth` are
-// the block's plain fields and `parent_id` its parent's foreign key (the former
+// The wire shape follows the surface's row rule (spec/surface §1.2, 5.0): the
+// block's identity `_id`, its source bytes `_raw` and their hash `_hash` under
+// the row attributes' own names; `_type`, `_text`, `_attrs`, `_ordinal`, `_depth` are
+// the block's columns, `_children` its relation and `parent_id` (a role) its parent's foreign key (the former
 // `placement` object flattened onto the row).
 export interface GetNode {
-  id: string;
-  type: string;
+  _id: string;
+  _type: string;
   label?: string;
-  text?: string;
-  /** The block's raw source bytes (`raw` / `full`). */
-  raw?: string;
+  _text?: string;
+  /** The block's raw source bytes (`raw` / `full` resolutions). */
+  _raw?: string;
   /** The block's raw_hash (hex) — the value update/split expect as `expect.content_hash`. */
-  hash?: string;
-  attrs?: Record<string, unknown>;
-  ordinal?: number;
-  depth?: number;
+  _hash?: string;
+  _attrs?: Record<string, unknown>;
+  _ordinal?: number;
+  _depth?: number;
   /** The parent block's id, null at the top level (`full`). */
   parent_id?: string | null;
-  children?: GetNode[];
+  _children?: GetNode[];
 }
 
 function firstWords(text: string, n: number): string {
@@ -33,7 +33,7 @@ function firstWords(text: string, n: number): string {
 }
 
 function project(store: Store, node: BlockNode, resolution: Resolution, includeChildren: boolean): GetNode {
-  const out: GetNode = { id: node.blockId, type: node.type };
+  const out: GetNode = { _id: node.blockId, _type: node.type };
   switch (resolution) {
     case "skeleton":
       out.label = node.type === "heading" ? node.text : node.type;
@@ -42,24 +42,24 @@ function project(store: Store, node: BlockNode, resolution: Resolution, includeC
       out.label = firstWords(node.text, 10);
       break;
     case "text":
-      out.text = node.text;
+      out._text = node.text;
       break;
     case "raw":
-      out.raw = blockRaw(store, node.rawHashHex);
-      out.hash = node.rawHashHex;
+      out._raw = blockRaw(store, node.rawHashHex);
+      out._hash = node.rawHashHex;
       break;
     case "full":
-      out.raw = blockRaw(store, node.rawHashHex);
-      out.hash = node.rawHashHex;
-      out.text = node.text;
-      out.attrs = node.attrs;
-      out.ordinal = node.ordinal;
-      out.depth = node.depth;
+      out._raw = blockRaw(store, node.rawHashHex);
+      out._hash = node.rawHashHex;
+      out._text = node.text;
+      out._attrs = node.attrs;
+      out._ordinal = node.ordinal;
+      out._depth = node.depth;
       out.parent_id = node.parentBlock;
       break;
   }
   if (includeChildren && node.children.length > 0) {
-    out.children = node.children.map((c) => project(store, c, resolution, true));
+    out._children = node.children.map((c) => project(store, c, resolution, true));
   }
   return out;
 }

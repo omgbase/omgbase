@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { STRUCTURAL_RELATIONS, detectPairs, inferCandidates, linkRowsReceiver, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
+import { BUILTIN_BACKLINKS, BUILTIN_LINKS, STRUCTURAL_RELATIONS, detectPairs, inferCandidates, linkRowsReceiver, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
+import { NAMES_4 } from "../src/lib/paths.ts";
 
 const TIMELINE = `select path, title, before, after
 from docs
@@ -85,20 +86,20 @@ describe("inferCandidates", () => {
   });
 
   it("turns a non-attribute order by key into a sequence candidate (`path`/`updated_at` are attributes, never keys)", () => {
-    const c = inferCandidates(parse(`path, date from docs order by date desc, path, updated_at`), []);
+    const c = inferCandidates(parse(`path, date from docs order by date desc, path, updated_at`), [], NAMES_4);
     expect(c.map((x) => x.name)).toEqual(["date", "doc.out_links", "doc.in_links"]); // + the builtin links (no follow)
     expect(c[0]).toMatchObject({ name: "date", kind: "sequence", sources: ["order by"], defaults: { edge: false, layout: true, direction: "backward" } });
     expect(c.find((x) => x.name === "doc.out_links")!.defaults.edge).toBe(true); // nothing else is drawn
   });
 
-  it("offers the builtin link graph when the query has no follow: doc.out_links drawn only when nothing else is, never the axis", () => {
-    const bare = inferCandidates(parse(`select path, title from docs order by updated_at desc limit 40`), []);
+  it("offers the builtin link graph when the query has no follow: doc.out_links drawn only when nothing else is, never the axis (the 4.x names)", () => {
+    const bare = inferCandidates(parse(`select path, title from docs order by updated_at desc limit 40`), [], NAMES_4);
     expect(bare.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([
       ["doc.out_links", "links", ["builtin"], { edge: true, layout: false, direction: "forward" }],
       ["doc.in_links", "backlinks", ["builtin"], { edge: false, layout: false, direction: "backward" }],
     ]);
     // With an inferred field the field is drawn and lays out; the links stay offered, undrawn.
-    const withField = inferCandidates(parse(`path, before from docs`), [{ id: "d_1", path: "/a.md", before: ["/b.md"] }]);
+    const withField = inferCandidates(parse(`path, before from docs`), [{ id: "d_1", path: "/a.md", before: ["/b.md"] }], NAMES_4);
     expect(withField.map((x) => [x.name, x.defaults.edge, x.defaults.layout])).toEqual([["before", true, true], ["doc.out_links", false, false], ["doc.in_links", false, false]]);
     // With a follow there is no builtin pair; a link-graph walk is the follow candidate itself.
     expect(inferCandidates(parse(`path from docs follow refs(before)`), []).map((x) => x.name)).toEqual(["before"]);
@@ -237,8 +238,81 @@ order by $ordinal`;
   });
 
   it("works without an AST (unparsable source) from rows alone", () => {
-    expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "doc.out_links", "doc.in_links"]);
-    expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["doc.out_links", "doc.in_links"]);
+    expect(inferCandidates(null, [{ _id: "x", _path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "_out_links", "_in_links"]);
+    expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["_out_links", "_in_links"]);
+    expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }], NAMES_4).map((c) => c.name)).toEqual(["next", "doc.out_links", "doc.in_links"]);
+    expect(inferCandidates(null, [], NAMES_4).map((c) => c.name)).toEqual(["doc.out_links", "doc.in_links"]);
+  });
+});
+
+describe("inferCandidates — the surface 5.0 names (underscore = engine)", () => {
+  it("names the builtin link graph `_out_links` / `_in_links` by default (the document's relations; `$it` is the self, a bare `doc` an authored key)", () => {
+    expect(BUILTIN_LINKS).toBe("_out_links");
+    expect(BUILTIN_BACKLINKS).toBe("_in_links");
+    const bare = inferCandidates(parse(`select _path, _title from docs order by _updated_at desc limit 40`), []);
+    expect(bare.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([
+      ["_out_links", "links", ["builtin"], { edge: true, layout: false, direction: "forward" }],
+      ["_in_links", "backlinks", ["builtin"], { edge: false, layout: false, direction: "backward" }],
+    ]);
+    // `_updated_at`/`_path` are engine attributes, never sequence keys; a bare `date` is.
+    const c = inferCandidates(parse(`_path, date from docs order by date desc, _path, _updated_at`), []);
+    expect(c.map((x) => x.name)).toEqual(["date", "_out_links", "_in_links"]);
+  });
+
+  it("reads the link-graph walk in the 5.0 spelling: `_out_links collect { from _dst }`, `_in_links collect { from _doc }`, `$it._out_links`", () => {
+    const c = inferCandidates(parse(`_path from docs where _path == "a.md" follow _out_links collect { from _dst }`), []);
+    expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([["_out_links", "links", ["follow"], { edge: true, layout: true, direction: "forward" }]]);
+    const b = inferCandidates(parse(`_path from docs where _path == "a.md" follow _in_links collect { from _doc depth 2 }`), []);
+    expect(b.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([["_in_links", "backlinks", "backward"]]);
+    const d = inferCandidates(parse(`_path from docs follow $it._in_links, _out_links, $it._out_links, before`), []);
+    expect(d.map((x) => [x.name, x.kind, x.defaults.direction])).toEqual([
+      ["$it._in_links", "backlinks", "backward"], ["_out_links", "links", "forward"], ["$it._out_links", "links", "forward"], ["before", "frontmatter", "forward"],
+    ]);
+    expect(["_out_links", "$it._out_links"].map(relationKind)).toEqual(["links", "links"]);
+    expect(["_in_links", "$it._in_links"].map(relationKind)).toEqual(["backlinks", "backlinks"]);
+    expect(linkRowsReceiver("$it._in_links")).toBe("in");
+    expect(linkRowsReceiver("_out_links")).toBe("out");
+    for (const r of ["_in_links", "_out_links", "_dst", "_doc", "_children", "_subsections", "_block"]) expect(STRUCTURAL_RELATIONS.has(r), r).toBe(true);
+  });
+
+  it("reads `_field` / `_predicate` literals under `_in_links` / `_out_links` / `^links`", () => {
+    const q = parse(`_path from docs where _path == "a.md" follow ^docs collect { where _in_links exists { where _field == "before" && _path == ^^_path } }`);
+    expect(inferCandidates(q, []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    const q2 = parse(`_path from docs where _path == "a.md" follow ^docs collect { where $it._out_links exists { where _predicate == "after" && _dst_path == ^^_path } }`);
+    expect(inferCandidates(q2, []).map((x) => [x.name, x.defaults.direction])).toEqual([["after", "backward"]]);
+    const f = inferCandidates(parse(`_path from docs where _path == "a.md" follow _out_links collect { from _dst where _field == "owner" }`), []);
+    expect(f.map((x) => [x.name, x.kind])).toEqual([["_out_links", "links"], ["owner", "frontmatter"]]);
+  });
+
+  it("reads the natural timeline query in the 5.0 spelling: refs(before) forward and the backlink block's `after` backward, the walk meaning `after`", () => {
+    const src = `select _path, _title, phase, before, after
+from docs
+where _path == "/timeline/kickoff.md"
+follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }
+order by $ordinal`;
+    const c = inferCandidates(parse(src), []);
+    expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.defaults.edge, x.defaults.layout])).toEqual([
+      ["before/after", "sequence", "forward", true, true],
+      ["before", "frontmatter", "forward", false, false],
+      ["after", "frontmatter", "backward", false, false],
+    ]);
+    expect(src.slice(...c[2]!.spans[0]!)).toBe("^_path in list(after)");
+    for (const follow of [`^docs collect { where after.contains(^_path) }`, `_in_links collect { from _doc where ^_path in list(after) }`, `^docs collect { where refs(after) exists { where _path == ^^_path } }`]) {
+      const cands = inferCandidates(parse(`_path from docs where _path == "/a.md" follow ${follow}`), []).filter((x) => x.kind === "frontmatter");
+      expect(cands.map((x) => [x.name, x.defaults.direction]), follow).toEqual([["after", "backward"]]);
+    }
+    expect(inferCandidates(parse(`_path from docs where _path == "/a.md" follow ^docs collect { where _path in ^before }`), []).map((x) => [x.name, x.defaults.direction])).toEqual([["before", "forward"]]);
+    expect(inferCandidates(parse(`_path from docs follow _in_links collect { from _doc where phase == "x" }`), []).map((x) => x.name)).toEqual(["_in_links"]);
+  });
+
+  it("reads a hit's path through the 5.0 envelope (`_id`/`_path`) and rows-as-values", () => {
+    const rows = [
+      { _id: "d_1", _path: "/a.md", before: [{ _id: "d_2", _path: "/b.md" }] },
+      { _id: "d_2", _path: "/b.md", after: { _id: "d_1", _path: "a.md" } },
+    ];
+    expect(reciprocal(rows, "before", "after")).toBe(true);
+    expect(pathValuedFields([{ _id: "d_1", _path: "/a.md", owner: "/c.md" }])).toEqual(["owner"]);
+    expect(refsField((parse(`select x: refs(_path) from docs`).select[0] as { expr: import("@omgbase/oqx").Expr }).expr)).toBeNull();
   });
 });
 
@@ -302,7 +376,7 @@ describe("inverse pairs (rule 5)", () => {
 
   it("builds the combined candidate: sequence kind, source pair, inserted before its first member, the axis, undrawn members", () => {
     const rows = [{ id: "1", path: "/a.md", after: ["/b.md"], owner: "/p.md" }, { id: "2", path: "/b.md", before: ["/a.md"] }];
-    const c = inferCandidates(parse(`path, owner, after, before from docs`), rows);
+    const c = inferCandidates(parse(`path, owner, after, before from docs`), rows, NAMES_4);
     // Inferred fields come in first-seen row order (`after`, `owner`, `before`); the pair sits just before its first member.
     expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults.edge, x.defaults.layout])).toEqual([
       ["before/after", "sequence", ["pair"], true, true],

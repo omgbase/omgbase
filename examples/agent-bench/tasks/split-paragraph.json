@@ -11,7 +11,7 @@
     },
     {
       "kind": "query",
-      "query": "blocks count { where path == \"/texts/emerald-tablet.md\" and type == \"paragraph\" }",
+      "query": "blocks count { where _path == \"/texts/emerald-tablet.md\" and _type == \"paragraph\" }",
       "count": 8
     }
   ],
@@ -25,7 +25,7 @@
               "op": "split",
               "target": {
                 "kind": "block",
-                "id": "b_298"
+                "_id": "b_298"
               },
               "at": [
                 117

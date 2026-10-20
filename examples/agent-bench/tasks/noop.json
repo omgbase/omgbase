@@ -16,7 +16,7 @@
       {
         "tool": "docs_read",
         "args": {
-          "path": "/substances/mercury.md"
+          "_path": "/substances/mercury.md"
         }
       }
     ],

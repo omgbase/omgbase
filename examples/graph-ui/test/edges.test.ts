@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
 import { edgeQueries, edgesFromRows, oqxString, orientEdge, orientEdges, pairEdges, sequenceEdges, type GraphEdge } from "../src/lib/edges.ts";
+import { NAMES_4 } from "../src/lib/paths.ts";
 
 describe("edgeQueries", () => {
   it("generates parsable OQX over the link rows, chunked", () => {
@@ -8,21 +9,26 @@ describe("edgeQueries", () => {
     const qs = edgeQueries({ name: "before", kind: "frontmatter" }, paths);
     expect(qs).toHaveLength(3);
     for (const q of qs) expect(() => parse(q)).not.toThrow();
-    expect(qs[0]).toMatch(/^select src: path, dst: dst_path from links where field == "before" && provenance == "frontmatter" && \(path == "\/d\/0\.md" \|\| /);
+    expect(qs[0]).toMatch(/^select src: _path, dst: _dst_path from links where _field == "before" && _provenance == "frontmatter" && \(_path == "\/d\/0\.md" \|\| /);
+    for (const q of edgeQueries({ name: "before", kind: "frontmatter" }, paths, NAMES_4)) expect(() => parse(q)).not.toThrow();
   });
 
-  it("spells `from links` with `path`/`dst_path`/`field` (spec/surface §1.1–§1.2); the aliases are the demo's own", () => {
-    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"])[0]).toBe('select src: path, dst: dst_path from links where field == "before" && provenance == "frontmatter" && (path == "/a.md")');
-    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"])[0]).toBe('select src: path, dst: dst_path from links where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
+  it("spells `from links` with `_path`/`_dst_path`/`_field` (spec/surface 5.0 §1.1–§1.2) — bare for a 4.x server; the aliases are the demo's own", () => {
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"])[0]).toBe('select src: _path, dst: _dst_path from links where _field == "before" && _provenance == "frontmatter" && (_path == "/a.md")');
+    expect(edgeQueries({ name: "_out_links", kind: "links" }, ["/a.md"])[0]).toBe('select src: _path, dst: _dst_path from links where _provenance == "link" && _dst_kind == "document" && (_path == "/a.md")');
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"], NAMES_4)[0]).toBe('select src: path, dst: dst_path from links where field == "before" && provenance == "frontmatter" && (path == "/a.md")');
+    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"], NAMES_4)[0]).toBe('select src: path, dst: dst_path from links where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
   });
 
   it("spells the path literals rooted whatever form the keys came in", () => {
-    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md", "dir/b.md"])[0]).toContain('(path == "/a.md" || path == "/dir/b.md")');
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md", "dir/b.md"])[0]).toContain('(_path == "/a.md" || _path == "/dir/b.md")');
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md", "dir/b.md"], NAMES_4)[0]).toContain('(path == "/a.md" || path == "/dir/b.md")');
   });
 
   it("links and backlinks share the link-provenance query; sequences fetch nothing", () => {
-    const q = edgeQueries({ name: "doc.in_links", kind: "backlinks" }, ["a.md"]);
-    expect(q[0]).toContain('provenance == "link" && dst_kind == "document"');
+    const q = edgeQueries({ name: "_in_links", kind: "backlinks" }, ["a.md"]);
+    expect(q[0]).toContain('_provenance == "link" && _dst_kind == "document"');
+    expect(edgeQueries({ name: "doc.in_links", kind: "backlinks" }, ["a.md"], NAMES_4)[0]).toContain('provenance == "link" && dst_kind == "document"');
     expect(edgeQueries({ name: "date", kind: "sequence" }, ["a.md"])).toEqual([]);
     expect(edgeQueries({ name: "before", kind: "frontmatter" }, [])).toEqual([]);
   });
@@ -46,8 +52,8 @@ describe("edgesFromRows", () => {
     expect(edgesFromRows({ name: "before", kind: "frontmatter" }, bare, shown)).toEqual(edgesFromRows({ name: "before", kind: "frontmatter" }, rows, shown));
   });
   it("flips backlinks", () => {
-    expect(edgesFromRows({ name: "doc.in_links", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
-      .toEqual([{ src: "/b.md", dst: "/a.md", rel: "doc.in_links" }]);
+    expect(edgesFromRows({ name: "_in_links", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
+      .toEqual([{ src: "/b.md", dst: "/a.md", rel: "_in_links" }]);
   });
 });
 

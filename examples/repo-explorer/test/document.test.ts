@@ -4,15 +4,16 @@ import { ScriptedCaller } from "./scripted.ts";
 
 const RAW = "---\ntype: process\ntags: [process, fire]\nverified: true\n---\n\n# Calcination\n\nHeating.\n";
 
+// The 5.0 wire: the row attributes `_id`/`_path`/`_raw` and the computed `_title` carry the prefix; the authored groups and the roles (`rev`, `ids`, …) are bare.
 const WIRE = {
-  id: "d_7", path: "processes/calcination.md", rev: "r_7",
-  properties: { frontmatter: { type: "process", tags: ["process", "fire"], verified: true }, inline: { element: "fire" }, computed: { title: "Calcination" } },
-  raw: RAW,
+  _id: "d_7", _path: "processes/calcination.md", rev: "r_7",
+  properties: { frontmatter: { type: "process", tags: ["process", "fire"], verified: true }, inline: { element: "fire" }, computed: { _title: "Calcination" } },
+  _raw: RAW,
   ids: ["b_1", "b_2"], hashes: { b_1: "aa", b_2: "bb" }, parents: { b_1: null, b_2: null },
 };
 
 describe("docs_read → DocRead", () => {
-  it("reads the shape, roots the path, keeps the ids map", () => {
+  it("reads the 5.0 shape (_id, _path, _raw, computed._title), roots the path, keeps the ids map", () => {
     const d = docReadOf(WIRE);
     expect(d).toMatchObject({ id: "d_7", path: "/processes/calcination.md", rev: "r_7", raw: RAW });
     expect(d.blockIds).toEqual({ ids: ["b_1", "b_2"], hashes: { b_1: "aa", b_2: "bb" }, parents: { b_1: null, b_2: null } });
@@ -26,7 +27,7 @@ describe("docs_read → DocRead", () => {
     expect(docReadOf({ properties: "nope" }).properties).toEqual({ frontmatter: {}, inline: {}, computed: {} });
   });
   it("docs_read { at } → DocAt", () => {
-    expect(docAtOf({ id: "d_0", path: "guide.md", rev: "r_0", raw: "# G\n", renderedHashMatch: true })).toEqual({ id: "d_0", path: "/guide.md", rev: "r_0", raw: "# G\n", renderedHashMatch: true });
+    expect(docAtOf({ _id: "d_0", _path: "guide.md", rev: "r_0", _raw: "# G\n", renderedHashMatch: true })).toEqual({ id: "d_0", path: "/guide.md", rev: "r_0", raw: "# G\n", renderedHashMatch: true });
   });
 });
 
@@ -38,7 +39,7 @@ describe("the property table", () => {
       ["frontmatter", "tags", '["process","fire"]'],
       ["frontmatter", "verified", "true"],
       ["inline", "element", "fire"],
-      ["computed", "title", "Calcination"],
+      ["computed", "_title", "Calcination"],
     ]);
     expect(valueText(null)).toBe("null");
     expect(valueText(undefined)).toBe("");
@@ -56,19 +57,20 @@ describe("splitFrontmatter", () => {
 });
 
 describe("the reads over a scripted minimal server", () => {
-  it("fetchDocument is docs_read { id | path, include_ids: true } (+ repo when chosen)", async () => {
+  it("fetchDocument is docs_read { _id | _path, include_ids: true } (+ repo when chosen) — the 5.0 argument spelling, never a bare id/path", async () => {
     const s = new ScriptedCaller({ docs_read: () => WIRE });
-    await fetchDocument(s, { path: "/processes/calcination.md" }, null);
-    await fetchDocument(s, { id: "d_7" }, "alchemy");
+    await fetchDocument(s, { _path: "/processes/calcination.md" }, null);
+    await fetchDocument(s, { _id: "d_7" }, "alchemy");
     expect(s.calls).toEqual([
-      { name: "docs_read", args: { path: "/processes/calcination.md", include_ids: true } },
-      { name: "docs_read", args: { id: "d_7", include_ids: true, repo: "alchemy" } },
+      { name: "docs_read", args: { _path: "/processes/calcination.md", include_ids: true } },
+      { name: "docs_read", args: { _id: "d_7", include_ids: true, repo: "alchemy" } },
     ]);
+    for (const c of s.calls) { expect(c.args).not.toHaveProperty("id"); expect(c.args).not.toHaveProperty("path"); }
   });
-  it("fetchDocumentAt is docs_read { id | path, at } — never docs_read_at", async () => {
-    const s = new ScriptedCaller({ docs_read: () => ({ id: "d_7", path: "/processes/calcination.md", rev: "r_7", raw: "# Old\n", renderedHashMatch: true }) });
-    const at = await fetchDocumentAt(s, { id: "d_7" }, "r_7", null);
+  it("fetchDocumentAt is docs_read { _id | _path, at } — never docs_read_at", async () => {
+    const s = new ScriptedCaller({ docs_read: () => ({ _id: "d_7", _path: "/processes/calcination.md", rev: "r_7", _raw: "# Old\n", renderedHashMatch: true }) });
+    const at = await fetchDocumentAt(s, { _id: "d_7" }, "r_7", null);
     expect(at.raw).toBe("# Old\n");
-    expect(s.calls).toEqual([{ name: "docs_read", args: { id: "d_7", at: "r_7" } }]);
+    expect(s.calls).toEqual([{ name: "docs_read", args: { _id: "d_7", at: "r_7" } }]);
   });
 });

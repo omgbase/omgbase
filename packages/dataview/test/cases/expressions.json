@@ -2,14 +2,14 @@
   {
     "name": "literals",
     "dql": "TABLE \"text\", 42, 1.5, true, false, null FROM \"a\"",
-    "oqx": "select path, c0: \"text\", c1: 42, c2: 1.5, c3: true, c4: false, c5: null from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: \"text\", c1: 42, c2: 1.5, c3: true, c4: false, c5: null from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -44,14 +44,14 @@
   {
     "name": "single-quoted-string",
     "dql": "LIST WHERE status = 'open'",
-    "oqx": "select path from docs where status == \"open\"",
+    "oqx": "select _path from docs where status == \"open\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -61,14 +61,14 @@
   {
     "name": "string-escapes",
     "dql": "LIST WHERE title = \"say \\\"hi\\\"\"",
-    "oqx": "select path from docs where data.title == \"say \\\"hi\\\"\"",
+    "oqx": "select _path from docs where title == \"say \\\"hi\\\"\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -78,14 +78,14 @@
   {
     "name": "arithmetic",
     "dql": "TABLE (pages + 10) * 2 - 1, pages / 2, pages % 3 FROM \"a\"",
-    "oqx": "select path, c0: (pages + 10) * 2 - 1, c1: pages / 2, c2: pages % 3 from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: (pages + 10) * 2 - 1, c1: pages / 2, c2: pages % 3 from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -108,14 +108,14 @@
   {
     "name": "negation-and-minus",
     "dql": "TABLE -pages, !archived FROM \"a\"",
-    "oqx": "select path, c0: -pages, c1: !archived from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: -pages, c1: !archived from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -134,14 +134,14 @@
   {
     "name": "comparisons",
     "dql": "LIST WHERE a = 1 & b != 2 & c < 3 & d <= 4 & e > 5 & f >= 6",
-    "oqx": "select path from docs where a == 1 and b != 2 and c < 3 and d <= 4 and e > 5 and f >= 6",
+    "oqx": "select _path from docs where a == 1 and b != 2 and c < 3 and d <= 4 and e > 5 and f >= 6",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -151,14 +151,14 @@
   {
     "name": "double-equals-accepted",
     "dql": "LIST WHERE a == 1",
-    "oqx": "select path from docs where a == 1",
+    "oqx": "select _path from docs where a == 1",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -168,14 +168,14 @@
   {
     "name": "nested-field",
     "dql": "TABLE meta.owner, meta.slug FROM \"a\" WHERE meta.owner = \"ada\"",
-    "oqx": "select path, c0: meta.owner, c1: meta.slug from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and meta.owner == \"ada\"",
+    "oqx": "select _path, c0: meta.owner, c1: meta.slug from docs where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and meta.owner == \"ada\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -194,14 +194,14 @@
   {
     "name": "index-by-number",
     "dql": "TABLE authors[0] FROM \"a\"",
-    "oqx": "select path, c0: authors first { offset 0 } from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: authors first { offset 0 } from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -216,14 +216,14 @@
   {
     "name": "index-by-string-key",
     "dql": "TABLE meta[\"owner\"] FROM \"a\"",
-    "oqx": "select path, c0: meta.owner from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: meta.owner from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -238,14 +238,14 @@
   {
     "name": "list-literal-membership",
     "dql": "LIST WHERE contains([\"open\", \"blocked\"], status)",
-    "oqx": "select path from docs where status in (\"open\", \"blocked\")",
+    "oqx": "select _path from docs where status in (\"open\", \"blocked\")",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -255,14 +255,14 @@
   {
     "name": "one-element-list",
     "dql": "TABLE [status] FROM \"a\"",
-    "oqx": "select path, c0: list(status) from docs where path.startsWith(\"/a/\") or path == \"/a.md\"",
+    "oqx": "select _path, c0: list(status) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -275,38 +275,87 @@
     "warnings": []
   },
   {
-    "name": "engine-names-read-the-authored-key",
+    "name": "bare-names-are-authored-keys",
     "dql": "TABLE path, title, tags, id FROM \"a\" WHERE title = \"x\"",
-    "oqx": "select path, c0: data.path, c1: data.title, c2: data.tags, c3: data.id from docs where (path.startsWith(\"/a/\") or path == \"/a.md\") and data.title == \"x\"",
+    "oqx": "select _path, path, title, tags, id from docs where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and title == \"x\"",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
         {
           "name": "path",
-          "alias": "c0"
+          "alias": "path"
         },
         {
           "name": "title",
-          "alias": "c1"
+          "alias": "title"
         },
         {
           "name": "tags",
-          "alias": "c2"
+          "alias": "tags"
         },
         {
           "name": "id",
-          "alias": "c3"
+          "alias": "id"
         }
       ]
     },
     "warnings": []
+  },
+  {
+    "name": "underscore-authored-key-reads-through-data",
+    "dql": "TABLE _private FROM \"a\" WHERE _private = true",
+    "oqx": "select _path, c0: _data._private from docs where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and _data._private == true",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "_path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "_private",
+          "alias": "c0"
+        }
+      ]
+    },
+    "warnings": [
+      "_private: an authored key beginning with `_` is read as _data._private (a bare `_` name is the engine's)"
+    ]
+  },
+  {
+    "name": "underscore-authored-key-on-a-task-reads-the-page",
+    "dql": "TASK WHERE _private",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and _doc._data._private",
+    "render": {
+      "type": "task",
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "_path",
+        "derive": "link"
+      },
+      "rows": null,
+      "task": {
+        "id": "_id",
+        "text": "_text",
+        "checked": "checked",
+        "path": "_path"
+      }
+    },
+    "warnings": [
+      "_private: a task's inline fields are not indexed per task; read as the page's property _doc._private",
+      "_private: an authored key beginning with `_` is read as _data._private (a bare `_` name is the engine's)"
+    ]
   },
   {
     "name": "this-file-constants",
@@ -314,14 +363,14 @@
     "options": {
       "thisPath": "projects/alpha.md"
     },
-    "oqx": "select path from docs where project == \"alpha\" and folder == \"projects\" and path != \"/projects/alpha.md\"",
+    "oqx": "select _path from docs where project == \"alpha\" and folder == \"projects\" and _path != \"/projects/alpha.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -334,14 +383,14 @@
     "options": {
       "thisPath": "/projects/alpha.md"
     },
-    "oqx": "select path from docs where project == ^docs first { where path == \"/projects/alpha.md\" }.project",
+    "oqx": "select _path from docs where project == ^docs first { where _path == \"/projects/alpha.md\" }.project",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -354,14 +403,14 @@
     "options": {
       "thisPath": "/projects/alpha.md"
     },
-    "oqx": "select path from docs where out_links exists { where dst.path == \"/projects/alpha.md\" } and ^docs first { where path == \"/projects/alpha.md\" }.status == status",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path == \"/projects/alpha.md\" } and ^docs first { where _path == \"/projects/alpha.md\" }.status == status",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -382,14 +431,14 @@
   {
     "name": "paren-grouping-prints-minimal-parens",
     "dql": "LIST WHERE (a | b) & c | (d & e)",
-    "oqx": "select path from docs where (a or b) and c or d and e",
+    "oqx": "select _path from docs where (a or b) and c or d and e",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null

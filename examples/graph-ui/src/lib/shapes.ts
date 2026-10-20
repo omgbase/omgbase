@@ -1,29 +1,36 @@
 // Tool-result shapes — the sibling of lib/paths.ts for everything that is NOT
-// a query hit. Surface 3.0 (spec/surface §1.2, §2–§4) made one rule of every
-// result: a row's identity is `id`/`path`, its bytes `raw`, its hash `hash`,
-// its time `updated_at`, and every other engine-provided name is a plain
-// snake_case field (`doc_id`, `block_id`, `dst_id`, `dst_path`, `uri`,
-// `field`). The link rows are the `links` collection (§1.1: `from links`,
-// `^links`, `out_links`/`in_links`) and the `graph` tool's array of them is
-// `links[]`. Every reader here normalises to ONE internal shape with rooted
-// paths; nothing else in the demo spells a wire key.
+// a query hit. Surface 5.0 (spec/surface §1.2, §2–§4, "underscore = engine")
+// made one rule of every result: an engine-provided key is `_`-prefixed — a
+// row's identity is `_id`/`_path`, its bytes `_raw`, its hash `_hash`, its
+// time `_updated_at`, a link row's `_doc_id`, `_block_id`, `_dst_id`,
+// `_dst_path`, `_uri`, `_field` — and a bare key names a role (`rev`,
+// `properties`, `committed`, `degree`, `frontier`) or the user's authored
+// data. A 3.x/4.x server spells the engine keys bare (`id`, `path`, `raw`,
+// `doc_id`, `dst_path`, …). The link rows are the `links` collection (§1.1:
+// `from links`, `^links`, `_out_links`/`_in_links`) and the `graph` tool's
+// array of them is `links[]`. Every reader here takes EITHER spelling and
+// normalises to ONE internal shape with rooted paths; nothing else in the demo
+// spells a wire key.
 
-import { rooted } from "./paths.ts";
+import { HIT_ENVELOPE_KEYS, rooted } from "./paths.ts";
 
+type Wire = Record<string, unknown>;
+/** The first value among the keys (the 5.0 spelling first, then the 4.x one). */
+const pick = (w: Wire, ...keys: string[]): unknown => { for (const k of keys) if (w[k] !== undefined) return w[k]; return undefined; };
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 // ---- the `graph` tool ----------------------------------------------------------------
 
 /** The `graph` result's link rows (`links[]`); anything else is no row. */
-export function graphEdgeRows(result: Record<string, unknown>): Record<string, unknown>[] {
+export function graphEdgeRows(result: Wire): Wire[] {
   const rows = result.links;
-  return Array.isArray(rows) ? rows.filter((r): r is Record<string, unknown> => r !== null && typeof r === "object") : [];
+  return Array.isArray(rows) ? rows.filter((r): r is Wire => r !== null && typeof r === "object") : [];
 }
 
-/** A `graph` edge (one `links[]` row), normalised: `{ id, doc_id, block_id,
- * via_id, dst_id, dst_path, uri, dst_kind, predicate, provenance, anchor,
- * field }` with the destination path rooted. */
+/** A `graph` edge (one `links[]` row), normalised: `{ _id, _doc_id, _block_id,
+ * _via_id, _dst_id, _dst_path, _uri, _dst_kind, _predicate, _provenance,
+ * _anchor, _field }` (bare on 4.x) with the destination path rooted. */
 export interface GraphToolEdge {
   id: string;
   docId: string;
@@ -39,29 +46,29 @@ export interface GraphToolEdge {
   field: string | null;
 }
 
-export function edgeOf(e: Record<string, unknown>): GraphToolEdge | null {
-  const id = str(e.id);
-  const docId = str(e.doc_id);
-  const dstId = str(e.dst_id);
+export function edgeOf(e: Wire): GraphToolEdge | null {
+  const id = str(pick(e, "_id", "id"));
+  const docId = str(pick(e, "_doc_id", "doc_id"));
+  const dstId = str(pick(e, "_dst_id", "dst_id"));
   if (id === null || docId === null || dstId === null) return null;
-  const dstPath = str(e.dst_path);
+  const dstPath = str(pick(e, "_dst_path", "dst_path"));
   return {
     id, docId, dstId,
-    blockId: str(e.block_id),
-    viaId: str(e.via_id),
+    blockId: str(pick(e, "_block_id", "block_id")),
+    viaId: str(pick(e, "_via_id", "via_id")),
     dstPath: dstPath === null ? null : rooted(dstPath),
-    uri: str(e.uri),
-    dstKind: str(e.dst_kind),
-    predicate: str(e.predicate),
-    provenance: str(e.provenance),
-    anchor: str(e.anchor),
-    field: str(e.field),
+    uri: str(pick(e, "_uri", "uri")),
+    dstKind: str(pick(e, "_dst_kind", "dst_kind")),
+    predicate: str(pick(e, "_predicate", "predicate")),
+    provenance: str(pick(e, "_provenance", "provenance")),
+    anchor: str(pick(e, "_anchor", "anchor")),
+    field: str(pick(e, "_field", "field")),
   };
 }
 
-/** A `graph` document (or frontier entry): `{ id, path, degree, frontier,
+/** A `graph` document (or frontier entry): `{ _id, _path, degree, frontier,
  * …select }`. The extra projections are kept under their own keys (an
- * `id`/`path` selection collapses onto the envelope; any other bare name is a
+ * `_id`/`_path` selection collapses onto the envelope; any other name is a
  * plain column). */
 export interface GraphToolDoc {
   id: string;
@@ -72,18 +79,18 @@ export interface GraphToolDoc {
   fields: Record<string, unknown>;
 }
 
-export function docOf(d: Record<string, unknown>): GraphToolDoc | null {
-  const id = str(d.id);
-  const path = str(d.path);
+export function docOf(d: Wire): GraphToolDoc | null {
+  const id = str(pick(d, "_id", "id"));
+  const path = str(pick(d, "_path", "path"));
   if (id === null || path === null) return null;
   const fields: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(d)) if (k !== "id" && k !== "path" && k !== "degree" && k !== "frontier") fields[k] = v;
+  for (const [k, v] of Object.entries(d)) if (!HIT_ENVELOPE_KEYS.has(k) && k !== "degree" && k !== "frontier") fields[k] = v;
   return { id, path: rooted(path), degree: num(d.degree), frontier: d.frontier === true, fields };
 }
 
 // ---- docs_read / docs_set_meta -------------------------------------------------------
 
-/** `docs_read`: `{ id, path, rev, properties, raw }`. */
+/** `docs_read`: `{ _id, _path, rev, properties, _raw }` (4.x: `{ id, path, rev, properties, raw }`). */
 export interface DocRead {
   id: string | null;
   path: string | null;
@@ -92,26 +99,26 @@ export interface DocRead {
   frontmatter: Record<string, unknown>;
 }
 
-export function docReadOf(r: Record<string, unknown>): DocRead {
-  const path = str(r.path);
+export function docReadOf(r: Wire): DocRead {
+  const path = str(pick(r, "_path", "path"));
   const props = (r.properties as { frontmatter?: Record<string, unknown> } | undefined)?.frontmatter;
   return {
-    id: str(r.id),
+    id: str(pick(r, "_id", "id")),
     path: path === null ? null : rooted(path),
     rev: str(r.rev),
-    raw: str(r.raw),
+    raw: str(pick(r, "_raw", "raw")),
     frontmatter: props && typeof props === "object" ? props : {},
   };
 }
 
-/** A document operation's result (`docs_set_meta`, `docs_create`, …): `{ id, path, committed }`. */
+/** A document operation's result (`docs_set_meta`, `docs_create`, …): `{ _id, _path, committed }` (4.x: `{ id, path, committed }`). */
 export interface DocOpResult {
   id: string | null;
   path: string | null;
   committed: boolean;
 }
 
-export function docOpOf(r: Record<string, unknown>): DocOpResult {
-  const path = str(r.path);
-  return { id: str(r.id), path: path === null ? null : rooted(path), committed: r.committed === true };
+export function docOpOf(r: Wire): DocOpResult {
+  const path = str(pick(r, "_path", "path"));
+  return { id: str(pick(r, "_id", "id")), path: path === null ? null : rooted(path), committed: r.committed === true };
 }

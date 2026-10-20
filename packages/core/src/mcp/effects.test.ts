@@ -31,7 +31,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<Res> {
 
 const DOC = "---\nstatus: draft\n---\n\n# Title\n\nIntro.\n\n## Notes\n\nFirst note.\n";
 const SLICE1 = [
-  { op: "set", target: { kind: "document", path: "/a.md" }, field: "frontmatter.status", value: "active" },
+  { op: "set", target: { kind: "document", _path: "/a.md" }, field: "_frontmatter.status", value: "active" },
   { op: "insert", into: { kind: "section", heading_id: "b_2" }, markdown: "Second note." },
 ];
 
@@ -60,10 +60,10 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(plan.version).toBe(1);
     expect(plan.planner_v).toBe("p3");
     expect(plan.plan_id).toMatch(/^[0-9a-f]{64}$/);
-    expect((plan.effects as { target: { path: string } }[])[0]!.target.path).toBe("a.md");
-    expect((plan.preconditions as { docs: { path: string }[] }).docs[0]!.path).toBe("a.md");
-    const preview = plan.preview as { revisions: { path: string }[]; diffs: Record<string, unknown> };
-    expect(preview.revisions[0]!.path).toBe("/a.md");
+    expect((plan.effects as { target: { _path: string } }[])[0]!.target._path).toBe("a.md");
+    expect((plan.preconditions as { docs: { _path: string }[] }).docs[0]!._path).toBe("a.md");
+    const preview = plan.preview as { revisions: { _path: string }[]; diffs: Record<string, unknown> };
+    expect(preview.revisions[0]!._path).toBe("/a.md");
     expect(Object.keys(preview.diffs)).toEqual(["/a.md"]);
     expect(plan.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }]);
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe(DOC);
@@ -74,7 +74,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const { payload: plan } = await call("plan", { effects: SLICE1 });
     const { payload: receipt, isError } = await call("execute", { plan, reason: "via mcp" });
     expect(isError).toBe(false);
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "/a.md", hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true, summary: ['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "/a.md", _hash: expect.any(String) }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("---\nstatus: active\n---\n\n# Title\n\nIntro.\n\n## Notes\n\nFirst note.\n\nSecond note.\n");
     expect(store.db.prepare("SELECT actor, reason FROM commits WHERE commit_id = 'c_1'").get()).toEqual({ actor: "agent:mcp", reason: "via mcp" });
     const again = await call("execute", { plan });
@@ -86,14 +86,14 @@ describe("plan / execute / apply { effects } over MCP", () => {
 
   it("the teaching surfaces (4.4): plan and every Receipt carry the summary in words; a selector plan's summary is its concrete effects'", async () => {
     const { payload: plan } = await call("plan", { effects: SLICE1 });
-    expect((plan.preview as { summary: string[] }).summary).toEqual(['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
+    expect((plan.preview as { summary: string[] }).summary).toEqual(['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
     const { payload: receipt } = await call("apply", { effects: SLICE1 });
     expect(receipt.summary).toEqual((plan.preview as { summary: string[] }).summary);
-    const sugar = await call("blocks_check", { ids: [] });
+    const sugar = await call("blocks_check", { _ids: [] });
     expect(sugar.isError).toBe(true); // an empty list is refused — the sugar tools' Receipts are covered by migration.test.ts
-    const sel = await call("plan", { select: 'from docs where path == "/a.md"', effects: [{ op: "set", field: "frontmatter.seen", value: true }] });
-    expect((sel.payload.preview as { summary: string[] }).summary).toEqual(["set frontmatter.seen = true in /a.md"]);
-    const none = await call("plan", { select: 'from docs where path == "/nope.md"', effects: [{ op: "set", field: "frontmatter.seen", value: true }] });
+    const sel = await call("plan", { select: 'from docs where _path == "/a.md"', effects: [{ op: "set", field: "_frontmatter.seen", value: true }] });
+    expect((sel.payload.preview as { summary: string[] }).summary).toEqual(["set _frontmatter.seen = true in /a.md"]);
+    const none = await call("plan", { select: 'from docs where _path == "/nope.md"', effects: [{ op: "set", field: "_frontmatter.seen", value: true }] });
     expect((none.payload.preview as { summary: string[] }).summary).toEqual([]);
   });
 
@@ -142,17 +142,17 @@ describe("plan / execute / apply { effects } over MCP", () => {
     const wet = await call("apply", { effects: SLICE1, reason: "one shot" });
     expect(wet.isError).toBe(false);
     expect(wet.payload).toMatchObject({ plan_id: dry.payload.plan_id, commit: "c_1", committed: true });
-    const bad = await call("apply", { effects: [{ op: "set", target: { kind: "document", path: "/a.md" }, field: "title", value: 1 }] });
+    const bad = await call("apply", { effects: [{ op: "set", target: { kind: "document", _path: "/a.md" }, field: "title", value: 1 }] });
     expect(bad.payload).toMatchObject({ error: "filter_invalid", data: { hint: "arguments" } });
-    expect(bad.payload.message).toContain("effects[0]: a document's `field` is `frontmatter.<key>` or `content`");
+    expect(bad.payload.message).toContain("effects[0]: a document's `field` is `_frontmatter.<key>` or `content`");
     const conflict = await call("apply", { effects: [SLICE1[0], { ...SLICE1[0]!, value: "other" }] });
-    expect(conflict.payload).toMatchObject({ error: "conflicting_effects", retriable: false, data: { effects: [0, 1], focus: { kind: "scalar", target: { kind: "document", id: "d_0" }, field: "frontmatter.status" } } });
+    expect(conflict.payload).toMatchObject({ error: "conflicting_effects", retriable: false, data: { effects: [0, 1], focus: { kind: "scalar", target: { kind: "document", _id: "d_0" }, field: "_frontmatter.status" } } });
   });
 
   it("every apply records its intent (`commits.ops`): the kernel ops path is gone from the surface (4.0)", async () => {
-    const { payload, isError } = await call("apply", { effects: [{ op: "insert", into: { kind: "document", id: "d_0" }, at: "end", markdown: "Appended." }] });
+    const { payload, isError } = await call("apply", { effects: [{ op: "insert", into: { kind: "document", _id: "d_0" }, at: "end", markdown: "Appended." }] });
     expect(isError).toBe(false);
-    expect(payload).toMatchObject({ revisions: [{ id: "d_0", path: "/a.md" }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true });
+    expect(payload).toMatchObject({ revisions: [{ _id: "d_0", _path: "/a.md" }], new_ids: { "$new.0": expect.stringMatching(/^b_/) }, committed: true });
     const row = store.db.prepare("SELECT ops FROM commits WHERE origin = 'api'").get() as { ops: string };
     expect(row.ops).toMatch(/^\{"effects":\[/);
     const legacy = await call("apply", { ops: [{ op: "insert", doc: "d_0", to: { parent: { doc: true }, at: "end" }, markdown: "Appended." }] });
@@ -161,7 +161,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
 
   // ---- query-directed planning (4.1; spec/mutate §11.8) ----
   const SELECT = 'from docs where type == "note"';
-  const TEMPLATES = [{ op: "set", field: "frontmatter.seen", value: true }];
+  const TEMPLATES = [{ op: "set", field: "_frontmatter.seen", value: true }];
   async function seedNotes(): Promise<void> {
     writeFileSync(join(dir, "one.md"), "---\ntype: note\n---\n\n# One\n");
     writeFileSync(join(dir, "two.md"), "---\ntype: note\n---\n\n# Two\n");
@@ -174,8 +174,8 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(isError).toBe(false);
     expect(payload.planner_v).toBe("p3");
     expect(payload.selection).toEqual({ query: SELECT, templates: TEMPLATES, cardinality: 2, identities: ["d_1", "d_2"] });
-    expect((payload.effects as { target: { id: string; path: string } }[]).map((e) => e.target)).toEqual([
-      { kind: "document", id: "d_1", path: "one.md" }, { kind: "document", id: "d_2", path: "two.md" },
+    expect((payload.effects as { target: { _id: string; _path: string } }[]).map((e) => e.target)).toEqual([
+      { kind: "document", _id: "d_1", _path: "one.md" }, { kind: "document", _id: "d_2", _path: "two.md" },
     ]);
     expect(Object.keys(payload.preview as object)).toEqual(["results", "revisions", "summary"]); // no `diffs` unless asked (4.5)
     const bounded = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 2 } });
@@ -203,7 +203,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
     const ok = await call("apply", { select: SELECT, effects: TEMPLATES, expect: { max: 2 }, reason: "bulk" });
     expect(ok.isError).toBe(false);
-    expect(ok.payload).toMatchObject({ commit: "c_3", revisions: [{ id: "d_1", path: "/one.md" }, { id: "d_2", path: "/two.md" }], new_ids: {}, committed: true });
+    expect(ok.payload).toMatchObject({ commit: "c_3", revisions: [{ _id: "d_1", _path: "/one.md" }, { _id: "d_2", _path: "/two.md" }], new_ids: {}, committed: true });
     const row = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_3'").get() as { ops: string };
     expect(JSON.parse(row.ops)).toMatchObject({ v: 1, plan_id: ok.payload.plan_id, selection: { query: SELECT, expect: { max: 2 }, cardinality: 2 } });
     const zero = await call("apply", { select: 'from docs where type == "nope"', effects: TEMPLATES, expect: { max: 2 } });
@@ -223,7 +223,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(done.isError).toBe(false);
     expect(done.payload).toMatchObject({ plan_id: plan.payload.plan_id, commit: "c_3", committed: true });
     // the plan form of a selector plan replays without OQX: a fresh plan over the written state executes as given
-    const again = await call("plan", { select: SELECT, effects: [{ op: "set", field: "frontmatter.twice", value: true }] });
+    const again = await call("plan", { select: SELECT, effects: [{ op: "set", field: "_frontmatter.twice", value: true }] });
     const viaPlan = await call("execute", { plan: again.payload });
     expect(viaPlan.payload).toMatchObject({ plan_id: again.payload.plan_id, commit: "c_4" });
   });

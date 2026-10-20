@@ -1,16 +1,20 @@
 // Paths, the hit envelope and the surface gate (after graph-ui's lib/paths.ts;
-// the subset this demo needs, plus a minor-version gate). The demo speaks
-// omgbase surface 4.7 (spec/surface): every path the server returns is
-// `/`-rooted (§1 "Paths"), a query hit is `{ id, path, ...projection }` (§1.4),
-// the engine attributes are bare names in the language (§1.2), a `docs_*` tool
-// addresses its document by `id` or `path` (§4 "Arguments"), `revisions` is a
-// query target and `docs_read` takes `at` (both 4.7). The connected server's
-// version comes from the `version` tool's `specs.surface` and is checked once
-// per connection (`surfaceProblem`): an older server gets a loud, friendly
-// error instead of empty panes.
+// the subset this demo needs, plus a version gate). The demo speaks omgbase
+// surface 5.0 (spec/surface, "underscore = engine"): every path the server
+// returns is `/`-rooted (§1 "Paths"), a query hit is `{ _id, _path,
+// ...projection }` (§1.4), the engine attributes are `_`-prefixed names in the
+// language and the bare namespace is the user's (§1.2), a `docs_*` tool
+// addresses its document by `_id` or `_path` (§4 "Arguments"; a bare `id`/`path`
+// argument is refused), `revisions` is a query target and `docs_read` takes
+// `at` (both 4.7). The connected server's version comes from the `version`
+// tool's `specs.surface` and is checked once per connection (`surfaceProblem`):
+// an older server gets a loud, friendly error instead of empty panes.
 
-/** The surface this demo is written against: `revisions` and `docs_read { at }` arrived in 4.7. */
-export const REQUIRED_SURFACE = "4.7";
+/** The surface this demo is written against: the `_`-prefixed engine names and
+ * the `_id`/`_path` arguments arrived in 5.0 (`revisions` and `docs_read { at }`
+ * in 4.7). A 5.0 client cannot address rows on a 4.x server — its bare `path`
+ * arguments are gone and `_path` is unknown there — so the gate is a major. */
+export const REQUIRED_SURFACE = "5.0";
 
 /** The `version` tool's `specs.surface` ("major.minor"), or null when the
  * result does not carry one (no `version` tool, a gateway hiding it, an error body). */
@@ -39,31 +43,31 @@ export function surfaceAtLeast(surface: string | null, required: string = REQUIR
   return a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]);
 }
 
-/** Null when the server speaks a surface this demo understands (≥ 4.7); else
+/** Null when the server speaks a surface this demo understands (≥ 5.0); else
  * the message to show instead of connecting. */
 export function surfaceProblem(surface: string | null): string | null {
   if (surfaceAtLeast(surface)) return null;
-  return `this demo needs omgbase surface ≥ ${REQUIRED_SURFACE} (the revisions target and docs_read { at }) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
+  return `this demo needs omgbase surface ≥ ${REQUIRED_SURFACE} (the underscore engine names: _id/_path arguments, _title, _doc_id, …) — the server reports ${surface ?? "no surface version (no `version` tool)"}`;
 }
 
-/** A query hit's id, else null. */
+/** A query hit's `_id` (the envelope, spec/surface §1.4), else null. */
 export function hitId(hit: Record<string, unknown> | null | undefined): string | null {
-  const v = hit?.id;
+  const v = hit?._id;
   return typeof v === "string" ? v : null;
 }
 
-/** A query hit's document path as returned (`/`-rooted), else null. */
+/** A query hit's `_path` as returned (`/`-rooted), else null. */
 export function hitPath(hit: Record<string, unknown> | null | undefined): string | null {
-  const v = hit?.path;
+  const v = hit?._path;
   return typeof v === "string" ? v : null;
 }
 
 const DOC_ID = /^d_[0-9a-z]{1,7}$/;
 
 /** A document ref (an id or a path) as the argument a `docs_*` tool takes
- * (spec/surface §4 "Arguments"): `{ id }` for a `d_…` id, `{ path }` otherwise. */
+ * (spec/surface §4 "Arguments", 5.0): `{ _id }` for a `d_…` id, `{ _path }` otherwise. */
 export function docLocator(doc: string): Record<string, string> {
-  return DOC_ID.test(doc) ? { id: doc } : { path: doc };
+  return DOC_ID.test(doc) ? { _id: doc } : { _path: doc };
 }
 
 /** The `/`-rooted form: exactly one leading slash. Idempotent. */

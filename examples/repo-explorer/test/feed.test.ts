@@ -7,8 +7,8 @@ const digest = (seq: number, revisions: Digest["revisions"] = [{ id: "d_a", path
 });
 
 describe("changes_since", () => {
-  it("reads a page as the server spells it, rooting every revision path", () => {
-    const page = changesOf({ digests: [{ commit: "c_1", seq: 1, ts: "t", origin: "observed", actor: null, summary: "observed: /index.md — 31 inserted", revisions: [{ id: "d_0", path: "index.md", hash: "h" }] }], cursor: 1, truncated: true, head: 20 });
+  it("reads a page as the server spells it (5.0: a revision is { _id, _path, _hash }; the digest's keys are roles), rooting every revision path", () => {
+    const page = changesOf({ digests: [{ commit: "c_1", seq: 1, ts: "t", origin: "observed", actor: null, summary: "observed: /index.md — 31 inserted", revisions: [{ _id: "d_0", _path: "index.md", _hash: "h" }] }], cursor: 1, truncated: true, head: 20 });
     expect(page.digests[0]).toEqual({ commit: "c_1", seq: 1, ts: "t", origin: "observed", actor: null, summary: "observed: /index.md — 31 inserted", revisions: [{ id: "d_0", path: "/index.md", hash: "h" }] });
     expect(page).toMatchObject({ cursor: 1, truncated: true, head: 20 });
   });

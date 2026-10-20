@@ -71,7 +71,7 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
     const ws = cli.workspace();
     const repo = cli.repo(ws);
     if (!repo.rootPath) throw new CliUsageError(`repo '${repo.slug}' has no filesystem source; 'update' needs a working tree`);
-    const effects: Effect[] = [{ op: "set", target: { kind: "document", id: requireDoc(ws.store, repo.repoId, doc) }, field: "content", value: bytes }];
+    const effects: Effect[] = [{ op: "set", target: { kind: "document", _id: requireDoc(ws.store, repo.repoId, doc) }, field: "content", value: bytes }];
     const req = {
       repoId: repo.repoId,
       rootPath: repo.rootPath,
@@ -94,11 +94,12 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
   }
 
   if (receipt === undefined) {
-    // The plan: its one effect names the document; `preview.identity[<id>]` is
-    // the opset plan (one line per op, an empty line, the summary).
+    // The plan: its one effect names the document (a resolved target carries
+    // `_id` and `_path`, spec/mutate §11); `preview.identity[<id>]` is the opset
+    // plan (one line per op, an empty line, the summary).
     const target = plan!.effects[0] && "target" in plan!.effects[0] ? plan!.effects[0].target : undefined;
-    const docId = target && target.kind === "document" ? target.id : undefined;
-    const path = target && target.kind === "document" ? referencePath(target.path) : doc;
+    const docId = target && target.kind === "document" ? target._id : undefined;
+    const path = target && target.kind === "document" ? referencePath(target._path) : doc;
     const identity = docId !== undefined ? plan!.preview?.identity?.[docId] : undefined;
     cli.io.err(cli.style.dim(`  plan for ${cli.style.accent(path)}`));
     if (identity) cli.io.out(renderIdentityPlan(identity));

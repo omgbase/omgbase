@@ -26,8 +26,8 @@ const TURN_ONE: Anthropic.MessageParam[] = [{ role: "user", content: "Set verifi
 
 const TURN_THREE: Anthropic.MessageParam[] = [
   { role: "user", content: "Set verified: true on the stone." },
-  { role: "assistant", content: [{ type: "thinking", thinking: "", signature: "sig" }, { type: "tool_use", id: "toolu_1", name: "plan", input: {} }, { type: "tool_use", id: "toolu_2", name: "docs_read", input: { path: "/index.md" } }] },
-  { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "{}" }, { type: "tool_result", tool_use_id: "toolu_2", content: "{\"raw\":\"# Alchemy\"}", is_error: true }] },
+  { role: "assistant", content: [{ type: "thinking", thinking: "", signature: "sig" }, { type: "tool_use", id: "toolu_1", name: "plan", input: {} }, { type: "tool_use", id: "toolu_2", name: "docs_read", input: { _path: "/index.md" } }] },
+  { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "{}" }, { type: "tool_result", tool_use_id: "toolu_2", content: "{\"_raw\":\"# Alchemy\"}", is_error: true }] },
 ];
 
 describe("ClaudeModel's request", () => {
@@ -54,7 +54,7 @@ describe("ClaudeModel's request", () => {
     expect(breakpoints(req)).toBe(2);
     const last = req.messages[2]!.content as Anthropic.ContentBlockParam[];
     expect(last[0]).toEqual({ type: "tool_result", tool_use_id: "toolu_1", content: "{}" });
-    expect(last[1]).toEqual({ type: "tool_result", tool_use_id: "toolu_2", content: "{\"raw\":\"# Alchemy\"}", is_error: true, cache_control: EPHEMERAL });
+    expect(last[1]).toEqual({ type: "tool_result", tool_use_id: "toolu_2", content: "{\"_raw\":\"# Alchemy\"}", is_error: true, cache_control: EPHEMERAL });
     expect(breakpoints(req.messages[1])).toBe(0);
     // the original: same shape as before the call, the last message copied rather than touched
     expect(TURN_THREE).toEqual(before);

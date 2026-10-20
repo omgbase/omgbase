@@ -1,11 +1,14 @@
-// One document: `docs_read { id | path, include_ids: true }` (spec/surface §2)
-// — `{ id, path, rev, properties: { frontmatter, inline, computed }, raw, ids
-// (pre-order), hashes (block id → sha256 of its raw), parents (block id →
+// One document: `docs_read { _id | _path, include_ids: true }` (spec/surface §2,
+// 5.0) — `{ _id, _path, rev, properties: { frontmatter, inline, computed }, _raw,
+// ids (pre-order), hashes (block id → sha256 of its raw), parents (block id →
 // parent id | null) }` — and the same document as of a revision, `docs_read {
-// id | path, at }` (4.7) — `{ id, path (as of the revision), rev, raw,
+// _id | _path, at }` (4.7) — `{ _id, _path (as of the revision), rev, _raw,
 // renderedHashMatch }` and nothing else (no properties at a past revision; a
-// client parses `raw`). The pure side: wire → shapes, the property table's
-// rows, the frontmatter/body split the renderer needs.
+// client parses `_raw`). The row attributes carry the `_` prefix on the wire
+// (`_id`, `_path`, `_raw`; `properties.computed._title`); the authored groups
+// (`frontmatter`, `inline`) and the roles (`rev`, `ids`, …) stay bare. The pure
+// side: wire → shapes (the demo's own field names, `id`/`path`/`raw`), the
+// property table's rows, the frontmatter/body split the renderer needs.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { rooted } from "./paths.ts";
@@ -59,25 +62,25 @@ export function blockIdsOf(wire: Wire): BlockIds | null {
 export function docReadOf(wire: Wire): DocRead {
   const p = record(wire.properties);
   return {
-    id: str(wire.id),
-    path: rooted(str(wire.path)),
+    id: str(wire._id),
+    path: rooted(str(wire._path)),
     rev: str(wire.rev),
     properties: { frontmatter: record(p.frontmatter), inline: record(p.inline), computed: record(p.computed) },
-    raw: str(wire.raw),
+    raw: str(wire._raw),
     blockIds: blockIdsOf(wire),
   };
 }
 
 export function docAtOf(wire: Wire): DocAt {
-  return { id: str(wire.id), path: rooted(str(wire.path)), rev: str(wire.rev), raw: str(wire.raw), renderedHashMatch: wire.renderedHashMatch === true };
+  return { id: str(wire._id), path: rooted(str(wire._path)), rev: str(wire.rev), raw: str(wire._raw), renderedHashMatch: wire.renderedHashMatch === true };
 }
 
-/** `docs_read { id | path, include_ids: true }` — the whole document with its block ids. */
+/** `docs_read { _id | _path, include_ids: true }` — the whole document with its block ids. */
 export async function fetchDocument(caller: Caller, locator: Record<string, string>, repo: string | null): Promise<DocRead> {
   return docReadOf(await caller.call<Wire>("docs_read", { ...locator, include_ids: true, ...repoArg(repo) }));
 }
 
-/** `docs_read { id | path, at: <rev> }` — the document's bytes as of a revision (4.7). */
+/** `docs_read { _id | _path, at: <rev> }` — the document's bytes as of a revision (4.7). */
 export async function fetchDocumentAt(caller: Caller, locator: Record<string, string>, rev: string, repo: string | null): Promise<DocAt> {
   return docAtOf(await caller.call<Wire>("docs_read", { ...locator, at: rev, ...repoArg(repo) }));
 }
@@ -134,8 +137,8 @@ export function splitFrontmatter(raw: string): SplitDoc {
   return { frontmatter: null, body: raw, bodyLine: 0 };
 }
 
-/** The document's title for a tab or header: the computed title, else the path's base name. */
+/** The document's title for a tab or header: the computed title (`properties.computed._title`, 5.0), else the path's base name. */
 export function docTitle(doc: Pick<DocRead, "properties" | "path">): string {
-  const t = doc.properties.computed.title;
+  const t = doc.properties.computed._title;
   return typeof t === "string" && t.trim() ? t : doc.path.slice(doc.path.lastIndexOf("/") + 1);
 }

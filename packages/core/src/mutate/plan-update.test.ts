@@ -17,7 +17,7 @@ import type { Effect } from "./effects.js";
 // effect layer, the result in the kernel's apply shape.
 type Ctx = { repoId: string; rootPath: string; actor: string };
 function setContent(ref: string, content: string): Effect[] {
-  return [{ op: "set", target: { kind: "document", ...(ref.startsWith("d_") ? { id: ref } : { path: ref }) }, field: "content", value: content }];
+  return [{ op: "set", target: { kind: "document", ...(ref.startsWith("d_") ? { _id: ref } : { _path: ref }) }, field: "content", value: content }];
 }
 function docsUpdate(store: Store, ctx: Ctx, ref: string, content: string, opts: { dryRun?: boolean } = {}): { opset: Opset; result: ApplyResult | null } {
   const opset = planUpdate(store, ctx.repoId, ctx.rootPath, ref, content);

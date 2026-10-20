@@ -43,13 +43,15 @@ describe("shapes", () => {
 });
 
 describe("on: focus — membership", () => {
-  it("isMember matches the focused intent by path, or by id when a hit has no path", () => {
+  it("isMember matches the focused intent by the hit's _path, or by its _id when a hit has no path (the 5.0 hit envelope)", () => {
     const focused = { path: SALT, id: "d_salt" };
-    expect(isMember([{ id: "d_x", path: "/x.md" }, { id: "d_y", path: SALT }], focused)).toBe(true);
-    expect(isMember([{ id: "d_salt" }], focused)).toBe(true);
-    expect(isMember([{ id: "d_x", path: "/x.md" }], focused)).toBe(false);
+    expect(isMember([{ _id: "d_x", _path: "/x.md" }, { _id: "d_y", _path: SALT }], focused)).toBe(true);
+    expect(isMember([{ _id: "d_salt" }], focused)).toBe(true);
+    expect(isMember([{ _id: "d_x", _path: "/x.md" }], focused)).toBe(false);
     expect(isMember([], focused)).toBe(false);
-    expect(isMember([{ id: "d_salt" }], { path: SALT, id: null })).toBe(false);
+    expect(isMember([{ _id: "d_salt" }], { path: SALT, id: null })).toBe(false);
+    // A 4.x hit (`id`/`path`) is not read: the bare names are the user's namespace in 5.0.
+    expect(isMember([{ id: "d_salt", path: SALT }], focused)).toBe(false);
   });
   it("one query per focus cue, run AS AUTHORED (every page); matched when the focused intent is among the hits; a query that does not parse is the engine's filter_invalid for that cue alone", async () => {
     const cues = [
@@ -64,8 +66,8 @@ describe("on: focus — membership", () => {
       query: (a) => {
         const q = String(a.query);
         if (q.endsWith("== ")) return new OmgError("filter_invalid", "unexpected end of input — expected a value (at offset 27)", { reason: "unexpected end", hint: "OQX" });
-        if (q.includes("magnum-opus")) return page([{ id: "d_salt", path: SALT }, { id: "d_dew", path: DEW }]);
-        return page([{ id: "d_lunch", path: "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md" }]);
+        if (q.includes("magnum-opus")) return page([{ _id: "d_salt", _path: SALT }, { _id: "d_dew", _path: DEW }]);
+        return page([{ _id: "d_lunch", _path: "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md" }]);
       },
     });
     const r = await evaluateFocusCues(s, cues, { path: SALT, id: "d_salt" }, null);
@@ -98,13 +100,13 @@ describe("on: query-enter / query-exit", () => {
   const enter = cue({ id: "new", on: "query-enter", query: 'from docs where type == "/terms/types/intent.md"' });
   const exit = cue({ id: "gone", on: "query-exit", query: 'from docs where status == "active"' });
   it("the first run only takes the checkpoint; later runs fire on ids that entered (enter) or left (exit)", async () => {
-    let hits = [{ id: "d_1", path: "/attn/intents/2026/10/a.md" }, { id: "d_2", path: "/attn/intents/2026/10/b.md" }];
+    let hits = [{ _id: "d_1", _path: "/attn/intents/2026/10/a.md" }, { _id: "d_2", _path: "/attn/intents/2026/10/b.md" }];
     const s = new ScriptedCaller({ query: () => page(hits) });
     const first = await queryTransitionDelta(s, enter, null, null);
     expect(first).toMatchObject({ ids: ["d_1", "d_2"], entered: [], exited: [], fires: [], error: null });
     const same = await queryTransitionDelta(s, enter, first.ids, null);
     expect(same.fires).toEqual([]);
-    hits = [{ id: "d_2", path: "/attn/intents/2026/10/b.md" }, { id: "d_3", path: "/attn/intents/2026/10/c.md" }];
+    hits = [{ _id: "d_2", _path: "/attn/intents/2026/10/b.md" }, { _id: "d_3", _path: "/attn/intents/2026/10/c.md" }];
     const next = await queryTransitionDelta(s, enter, first.ids, null);
     expect(next).toMatchObject({ ids: ["d_2", "d_3"], entered: ["d_3"], exited: ["d_1"], fires: [{ id: "d_3", path: "/attn/intents/2026/10/c.md" }] });
     const left = await queryTransitionDelta(s, exit, first.ids, null);

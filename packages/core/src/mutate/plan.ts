@@ -38,12 +38,12 @@ export type WireOp =
 
 /** The lowered form `execute` replays (§11.4): every key present, `[]` when empty. */
 export interface PlanOpset {
-  /** `create` → the composed file, its document symbol and the index of the first kernel op planned after it (3.0; a later `set frontmatter.<k>` on the symbol is a head below) */
+  /** `create` → the composed file, its document symbol and the index of the first kernel op planned after it (3.0; a later `set _frontmatter.<k>` on the symbol is a head below) */
   creates: CreateEntry[];
   /** `move document` → the row/file rename (its retarget updates are in `ops`) */
-  moves: { id: string; from: string; to: string }[];
+  moves: { _id: string; from: string; to: string }[];
   /** `remove document` */
-  tombstones: { id: string; path: string }[];
+  tombstones: { _id: string; _path: string }[];
   /** per document, the file head — everything before the first block (frontmatter incl. fences and separator) */
   set_frontmatter: { doc: string; raw: string }[];
   /** the kernel ops, in order; new structure is referenced by kernel placeholders `$k.ids[j]` */
@@ -52,9 +52,9 @@ export interface PlanOpset {
 
 export interface PlanPreconditions {
   /** the row triples (`spec/mutate` §4 step 5) of every document the plan touches, loaded ones first in load order */
-  docs: { id: string; path: string; base_revision: string | null; hash: string | null }[];
+  docs: { _id: string; _path: string; base_revision: string | null; _hash: string | null }[];
   /** every block content hash the plan pins (caller-given or pinned from the live row), first-pin order */
-  blocks: { id: string; content_hash: string }[];
+  blocks: { _id: string; content_hash: string }[];
   /** the caller's destination-parent CAS pins */
   parents: { doc: string; parent: string | null; parent_children_hash: string }[];
   /** paths that must have no live document and no file: `create` paths and move destinations */
@@ -218,18 +218,18 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
 
     const opset: PlanOpset = {
       creates: ctx.creates,
-      moves: ctx.moves.map((m) => ({ id: m.id, from: m.from, to: m.to })),
-      tombstones: ctx.tombstones.map((t) => ({ id: t.id, path: t.path })),
+      moves: ctx.moves.map((m) => ({ _id: m.id, from: m.from, to: m.to })),
+      tombstones: ctx.tombstones.map((t) => ({ _id: t.id, _path: t.path })),
       set_frontmatter: [...ctx.heads].map(([doc, raw]) => ({ doc, raw })),
       ops: ctx.ops.map(wireOp),
     };
-    const docs: PlanPreconditions["docs"] = changeset.preconditions.map((p) => ({ id: p.id, path: p.path, base_revision: p.currentRev, hash: p.fileHash }));
+    const docs: PlanPreconditions["docs"] = changeset.preconditions.map((p) => ({ _id: p.id, _path: p.path, base_revision: p.currentRev, _hash: p.fileHash }));
     for (const [id, base] of ctx.docBases) {
-      if (!docs.some((d) => d.id === id)) docs.push({ id, path: base.path, base_revision: base.currentRev, hash: base.fileHash });
+      if (!docs.some((d) => d._id === id)) docs.push({ _id: id, _path: base.path, base_revision: base.currentRev, _hash: base.fileHash });
     }
     const preconditions: PlanPreconditions = {
       docs,
-      blocks: [...ctx.pins].map(([id, content_hash]) => ({ id, content_hash })),
+      blocks: [...ctx.pins].map(([id, content_hash]) => ({ _id: id, content_hash })),
       parents: ctx.parents,
       absent_paths: ctx.absentPaths,
     };
@@ -252,8 +252,8 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     }
     for (const t of ctx.tombstones) diffs[t.path] = { before: docStore.read(t.path) ?? "", after: "" };
     for (const r of revisions) {
-      const moved = ctx.moves.find((m) => m.id === r.id);
-      if (moved) r.path = moved.to;
+      const moved = ctx.moves.find((m) => m.id === r._id);
+      if (moved) r._path = moved.to;
     }
     const preview: PlanPreview = { results: changeset.results, revisions, diffs, summary: ctx.summary };
     if (ctx.identity.size > 0) preview.identity = Object.fromEntries(ctx.identity);
@@ -272,7 +272,7 @@ function requestOf(req: { effects: unknown; select?: unknown; expect?: unknown }
 /**
  * `conflicting_effects`: keep the later effect — the request minus the earlier
  * one; under a selector, a cross-hit collision narrows the selector to the
- * later hit (`from <root> where id == …`, `expect.max: 1`) and a same-hit
+ * later hit (`from <root> where _id == …`, `expect.max: 1`) and a same-hit
  * collision drops the earlier template. `stale_plan` at plan time (an
  * `expect.revision` that no longer holds): the same request with the current
  * revision in that guard. `target_missing { symbol }` for a `$new.n` no earlier
@@ -289,7 +289,7 @@ function planningFix(err: MutationError, i: number, req: PlanEffectsRequest, ori
     const oa = origins[a];
     const ob = origins[b];
     if (oa === undefined || ob === undefined || oa.template_index === undefined) return undefined;
-    if (oa.row.id !== ob.row.id) return fixRequest({ select: narrowedTo(rootOfId(ob.row.id), ob.row.id), effects, expect: { max: 1 } });
+    if (oa.row._id !== ob.row._id) return fixRequest({ select: narrowedTo(rootOfId(ob.row._id), ob.row._id), effects, expect: { max: 1 } });
     return fixRequest({ ...requestOf(req), effects: effects.filter((_, k) => k !== oa.template_index) });
   }
   if (err.code === "stale_plan" && isRecord(err.data.current) && typeof err.data.current.revision === "string") {
@@ -491,13 +491,13 @@ function underLock<T>(req: { omgbaseDir?: string }, fn: () => T): T {
  */
 function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore: DocStore): Receipt {
   for (const d of plan.preconditions.docs) {
-    const row = readDocBase(store.db, d.id);
-    if (!row) throw new MutationError("doc_missing", `doc ${d.id} no longer exists`, { doc: d.id });
-    if (row.path !== d.path || row.currentRev !== d.base_revision || row.fileHash !== d.hash) {
-      throw new MutationError("stale_plan", `document ${d.id} changed since the plan was made; re-plan`, {
-        doc: d.id,
+    const row = readDocBase(store.db, d._id);
+    if (!row) throw new MutationError("doc_missing", `doc ${d._id} no longer exists`, { doc: d._id });
+    if (row.path !== d._path || row.currentRev !== d.base_revision || row.fileHash !== d._hash) {
+      throw new MutationError("stale_plan", `document ${d._id} changed since the plan was made; re-plan`, {
+        doc: d._id,
         expected_revision: d.base_revision,
-        current: { revision: row.currentRev, hash: row.fileHash },
+        current: { revision: row.currentRev, _hash: row.fileHash },
         retriable: true,
         fix: replanFix(plan),
       });
@@ -521,7 +521,7 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     }),
   };
   const stat = req.omgbaseDir !== undefined;
-  const moved = new Map(plan.opset.moves.map((m) => [m.id, m]));
+  const moved = new Map(plan.opset.moves.map((m) => [m._id, m]));
   const blockSymbols = plan.new_ids.filter((s) => s.kind === "block").map((s) => s.symbol);
   const planner = new ChangesetPlanner(store, req.repoId, req.omgbaseDir);
 
@@ -559,8 +559,8 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
       const effects: InternalEffect[] = [];
       for (const m of plan.opset.moves) {
         const bytes = docStore.read(m.from) ?? "";
-        const rev = readDocBase(store.db, m.id)?.currentRev ?? null;
-        effects.push({ kind: "move_path", docId: m.id, from: m.from, to: m.to, currentRev: rev, inbound: inboundLinksTo(store, req.repoId, m.id, m.from), bytes });
+        const rev = readDocBase(store.db, m._id)?.currentRev ?? null;
+        effects.push({ kind: "move_path", docId: m._id, from: m.from, to: m.to, currentRev: rev, inbound: inboundLinksTo(store, req.repoId, m._id, m.from), bytes });
         if (stat) effects.push({ kind: "clear_stat", path: m.from }, { kind: "record_stat", path: m.to, bytes });
       }
       for (const e of changeset.effects) {
@@ -573,9 +573,9 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
         } else effects.push(e);
       }
       for (const t of plan.opset.tombstones) {
-        const rev = readDocBase(store.db, t.id)?.currentRev ?? null;
-        effects.push({ kind: "tombstone", docId: t.id, path: t.path, currentRev: rev, pool: false });
-        if (stat) effects.push({ kind: "clear_stat", path: t.path });
+        const rev = readDocBase(store.db, t._id)?.currentRev ?? null;
+        effects.push({ kind: "tombstone", docId: t._id, path: t._path, currentRev: rev, pool: false });
+        if (stat) effects.push({ kind: "clear_stat", path: t._path });
       }
       const outcome = commitChangeset(store, req.repoId, head, effects, ts, { docStore, ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}) });
       return { effects, outcome };
@@ -587,8 +587,8 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
   const revisions: ApplyRevision[] = [];
   let j = 0;
   for (const e of effects) {
-    if (e.kind === "ingest_reconciled") revisions.push({ id: outcome.ingests[j++]!.docId, path: e.path, hash: sha256(e.source).toString("hex") });
-    else if (e.kind === "ingest_known") revisions.push({ id: outcome.ingests[j++]!.docId, path: e.path, hash: sha256(e.rendered).toString("hex") });
+    if (e.kind === "ingest_reconciled") revisions.push({ _id: outcome.ingests[j++]!.docId, _path: e.path, _hash: sha256(e.source).toString("hex") });
+    else if (e.kind === "ingest_known") revisions.push({ _id: outcome.ingests[j++]!.docId, _path: e.path, _hash: sha256(e.rendered).toString("hex") });
   }
   // `$new.n` → minted id: the i-th block symbol is the i-th `b` the replay
   // minted (all before the transaction, in the plan's order — the aliases

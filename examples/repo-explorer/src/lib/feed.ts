@@ -1,9 +1,11 @@
 // The live feed: `changes_since` polled with a cursor, as live-tail does (the
 // cursor and digest helpers are copied from examples/live-tail/src/lib/feed.ts
-// and lib/shapes.ts). The tool (spec/sync §6, spec/surface §3): `{ digests:
-// [{ commit, seq, ts, origin, actor, summary, revisions: [{ id, path, hash }]
-// }], cursor, truncated, head }`; a digest without revisions is a deletion or a
-// move, its `summary` the only statement of what happened.
+// and lib/shapes.ts). The tool (spec/sync §6 3.0, spec/surface §3 5.0): `{
+// digests: [{ commit, seq, ts, origin, actor, summary, revisions: [{ _id,
+// _path, _hash }] }], cursor, truncated, head }` — a revision's keys are row
+// attributes, so `_`-prefixed; a digest describes a commit, so its keys are
+// bare roles; a digest without revisions is a deletion or a move, its `summary`
+// the only statement of what happened.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { rooted } from "./paths.ts";
@@ -25,7 +27,7 @@ const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : nu
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 export function digestOf(d: Wire): Digest {
-  const revisions = Array.isArray(d.revisions) ? (d.revisions as Wire[]).map((r) => ({ id: str(r.id), path: rooted(str(r.path)), hash: str(r.hash) })) : [];
+  const revisions = Array.isArray(d.revisions) ? (d.revisions as Wire[]).map((r) => ({ id: str(r._id), path: rooted(str(r._path)), hash: str(r._hash) })) : [];
   return { commit: str(d.commit), seq: num(d.seq), ts: str(d.ts), origin: str(d.origin), actor: strOrNull(d.actor), summary: str(d.summary), revisions };
 }
 

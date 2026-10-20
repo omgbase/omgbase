@@ -16,10 +16,16 @@ profile](#works-on-the-minimal-profile) names the tool behind each feature);
 `tools/list` is read on connect and the one tool beyond the ten the page ever
 uses is `repos`, for a repository picker when a full server lists it.
 
-**Requires omgbase surface ≥ 4.7** (the current `omg`): the `revisions` query
-target and `docs_read { at }` arrived there. The page calls `version` on
-connect, shows `surface 4.7 · minimal` in the header, and refuses an older
-server with *this demo needs omgbase surface ≥ 4.7 … — the server reports 4.6*.
+**Requires omgbase surface ≥ 5.0** (the current `omg`): surface 5.0's
+"underscore = engine" rule — on every record a bare name is the user's and an
+engine-provided one is `_`-prefixed (`_id`, `_path`, `_title`, `_doc_id`, …), a
+`docs_*` tool is addressed by `_id`/`_path` with no tolerance for the bare
+spelling, and an effect's field is `_frontmatter.<k>` — is what every query and
+call below speaks, so a 4.x server cannot serve this page (its `path` arguments
+are gone and `_path` is unknown there). The page calls `version` on connect,
+shows `surface 5.0 · minimal` in the header, and refuses an older server with
+*this demo needs omgbase surface ≥ 5.0 … — the server reports 4.11*. (The
+`revisions` target and `docs_read { at }` it also leans on arrived in 4.7.)
 
 ## Run it
 
@@ -65,28 +71,33 @@ Scripts: `dev [--full] [--remote <url>]`, `dev:workspace [--force]`, `dev:mcp`
 
 ## Works on the minimal profile
 
-Every feature, the tool it calls and the exact OQX it sends. `<path>` is the
-open document's `/`-rooted path, `<id>` its `d_…` id (both from `docs_read`),
-`<rev>` a revision id from the history list. A `repo` argument is added only
-when a repository was picked (which needs `repos`); on the minimal profile
-nothing names one and the server's default repository is browsed.
+Every feature, the tool it calls and the exact OQX it sends — in surface 5.0's
+spelling: a row attribute is `_`-prefixed in a query, in an argument and in a
+result (`_id`, `_path`, `_raw`, `_title`, `_dst_path`, `_rev`, …); a role keeps
+its bare name (`docs_tree`'s `path` prefix, `rev`, `at`, `include_ids`, `ids`,
+`cursor`, `limit`; a digest's `commit`/`seq`); an authored key is bare (`layer`,
+`tags`, `verified`). `<path>` is the open document's `/`-rooted path, `<id>` its
+`d_…` id (both from `docs_read`'s `_path`/`_id`), `<rev>` a revision id from
+the history list. A `repo` argument is added only when a repository was picked
+(which needs `repos`); on the minimal profile nothing names one and the
+server's default repository is browsed.
 
 | feature | tool(s) | call |
 | --- | --- | --- |
-| connect: the surface gate, the profile label | `version`, `tools/list` | `version {}` → `specs.surface` (≥ 4.7), `profile`; the listing decides whether a picker is offered |
-| repository tree (left pane) | `docs_tree` | `{ depth: 1 }` for the root, `{ path: "/processes/", depth: 1 }` per folder as it opens, `{ …, cursor }` while a level is truncated; `dir` rows carry `docs` for the badge, `total` the header's counts |
-| document view | `docs_read` | `{ path \| id, include_ids: true }` → `raw` (rendered as Markdown by markdown-it, or shown raw), `properties.frontmatter / inline / computed` (the property table), `ids` + `parents` + `hashes` (the block anchors, below) |
-| backlinks | `query` | `select path, block_id, provenance, field, anchor from links where dst_path == "<path>"` |
-| outlinks | `query` | `select dst_path, dst_id, dst_kind, uri, provenance, field, anchor from links where path == "<path>"` |
-| wikilinks naming the document | `query` | `select path, block_id, provenance, field, anchor from links where dst_id == "phantom:<stem>"` (`<stem>` = the file name without its extension; see feedback 10) |
-| a `[[wikilink]]` clicked | `query` | `select path from docs where path.endsWith("/<name>.md")` |
-| query console | `query`, `query_syntax` | the textarea's text with `limit: 50`, then `{ …, cursor }` for "more"; `query_syntax {}` once, for the drawer |
-| an `id` cell clicked | `query` | `select path from blocks where id == "b_…"` (nodes/links likewise), `select path, doc_id from revisions where rev == "r_…"` — then the document opens (a `d_…` id needs no query) |
-| history (per document) | `query` | `select rev, seq, ts, origin, actor, reason, hash, is_current, doc_id from revisions where doc_id == "<id>" order by seq desc` |
-| time travel + diff | `docs_read` | `{ id: "<id>", at: "<rev>" }` → `raw`; the unified diff against the current body is computed in the browser (`src/lib/diff.ts`) |
-| deleted documents | `query` | `select rev, seq, ts, origin, actor, reason, hash, is_current, doc_id from revisions where doc == null order by ts desc, seq desc` |
-| live feed (the strip) | `changes_since` | `{ limit: 1 }` once for `head`, then `{ cursor, limit: 50 }` every N seconds (default 3) |
-| frontmatter edit | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<path>", field: "frontmatter.<k>", value }], diffs: true }` → `preview.summary` + `preview.diffs`; on confirm `execute { plan_id, effects, reason }` (the digest form, the same effects) |
+| connect: the surface gate, the profile label | `version`, `tools/list` | `version {}` → `specs.surface` (≥ 5.0), `profile`; the listing decides whether a picker is offered |
+| repository tree (left pane) | `docs_tree` | `{ depth: 1 }` for the root, `{ path: "/processes/", depth: 1 }` per folder as it opens (`path` is a prefix — a role, bare), `{ …, cursor }` while a level is truncated; entries are `{ _id?, _path, kind, docs, blocks, _updated_at }` — `dir` rows carry `docs` for the badge, `total` the header's counts |
+| document view | `docs_read` | `{ _path \| _id, include_ids: true }` → `_raw` (rendered as Markdown by markdown-it, or shown raw), `properties.frontmatter / inline / computed` (the property table; the computed title is `computed._title`), `ids` + `parents` + `hashes` (the block anchors, below) |
+| backlinks | `query` | `select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == "<path>"` |
+| outlinks | `query` | `select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == "<path>"` |
+| wikilinks naming the document | `query` | `select _path, _block_id, _provenance, _field, _anchor from links where _dst_id == "phantom:<stem>"` (`<stem>` = the file name without its extension; see feedback 10) |
+| a `[[wikilink]]` clicked | `query` | `select _path from docs where _path.endsWith("/<name>.md")` |
+| query console | `query`, `query_syntax` | the textarea's text with `limit: 50`, then `{ …, cursor }` for "more"; `query_syntax {}` once, for the drawer; the starter is `select _title, layer, tags from docs order by _path` |
+| an `_id` cell clicked | `query` | `select _path from blocks where _id == "b_…"` (nodes/links likewise), `select _path, _doc_id from revisions where _rev == "r_…"` — then the document opens (a `d_…` id needs no query) |
+| history (per document) | `query` | `select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc_id == "<id>" order by _seq desc` |
+| time travel + diff | `docs_read` | `{ _id: "<id>", at: "<rev>" }` → `_raw`; the unified diff against the current body is computed in the browser (`src/lib/diff.ts`) |
+| deleted documents | `query` | `select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc == null order by _ts desc, _seq desc` |
+| live feed (the strip) | `changes_since` | `{ limit: 1 }` once for `head`, then `{ cursor, limit: 50 }` every N seconds (default 3); a digest's `revisions` are `[{ _id, _path, _hash }]` |
+| frontmatter edit | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<path>", field: "_frontmatter.<k>", value }], diffs: true }` → `preview.summary` + `preview.diffs` (+ `preview.revisions[{ _id, _path, _hash }]`); on confirm `execute { plan_id, effects, reason }` (the digest form, the same effects) → the Receipt's `revisions[{ _id, _path, _hash }]` |
 
 Not used, on either profile: `docs_history`, `docs_diff_unified`,
 `docs_read_at`, `docs_list`, `docs_set_meta`, `apply`, `blocks_resolve` — the
@@ -125,14 +136,14 @@ this page against `omg mcp --tools minimal`:
    named the default repository's slug (it already reports the profile) would
    let a minimal client at least say which repository it is looking at.
 2. **A deleted document is listable but not readable.** `from revisions where
-   doc == null` lists a deleted document's revisions (history is history), but
-   `docs_read { id | path, at }` is `doc_missing` for a document that is not
+   _doc == null` lists a deleted document's revisions (history is history), but
+   `docs_read { _id | _path, at }` is `doc_missing` for a document that is not
    live — on every profile (`docs_read_at` has the same locator rule). The
    "deleted documents" pane therefore shows the revision rows and says why the
    body cannot be fetched. Letting `at` reach a tombstoned document's revision
    (the bytes exist in the Merkle tree) would close this.
-3. **`order by` disables the cursor.** `from revisions where doc_id == …
-   order by seq desc` — the natural history query — returns the top `limit`
+3. **`order by` disables the cursor.** `from revisions where _doc_id == …
+   order by _seq desc` — the natural history query — returns the top `limit`
    with `truncated: true, cursor: null`; the console's "more" button cannot page
    it, and the history pane caps at 200 revisions (`fetchAllRevisions` pages the
    default order and sorts client-side when more are needed). A keyset cursor
@@ -141,14 +152,14 @@ this page against `omg mcp --tools minimal`:
 4. **Block spans are not in `docs_read`.** `include_ids` gives ids, parents and
    hashes — enough to *verify* an anchor, but the client has to re-parse the
    Markdown and pair trees to *place* one. A `spans` map (block id → byte or
-   line range in `raw`) next to `hashes` would make the anchors exact without
+   line range in `_raw`) next to `hashes` would make the anchors exact without
    a parser on the client, and would also make the hash verification
    unnecessary.
-5. **A quoted paragraph's `raw` is not its source bytes** (the first line loses
+5. **A quoted paragraph's `_raw` is not its source bytes** (the first line loses
    its `> ` marker, continuation lines keep theirs). Harmless for CAS, but
    anyone hashing the source to find a block hits it; worth a line in
    `spec/format`.
-6. **No `properties` at a past revision.** `docs_read { at }` returns `raw` only
+6. **No `properties` at a past revision.** `docs_read { at }` returns `_raw` only
    (documented, 4.7); the history pane shows the diff of the whole file, which
    covers the frontmatter, so nothing is lost — but a client wanting the
    property table "as of" must parse YAML itself.
@@ -167,13 +178,13 @@ this page against `omg mcp --tools minimal`:
    "re-plan with this" button without parsing.
 10. **A bare `[[wikilink]]` is not a backlink.** `[[salt]]` in `index.md`,
     `calcination.md`, `mercury.md` and `sulphur.md` does not resolve to
-    `/substances/salt.md`: the link row has `dst_path: null`, `dst_kind:
-    "document"`, `dst_id: "phantom:salt"`, so `from links where dst_path ==
+    `/substances/salt.md`: the link row has `_dst_path: null`, `_dst_kind:
+    "document"`, `_dst_id: "phantom:salt"`, so `from links where _dst_path ==
     "/substances/salt.md"` returns nothing and salt's backlinks read 0 in the
     links tab. The page lists them anyway under "wikilinks naming [[salt]]"
-    with `where dst_id == "phantom:salt"` — but that is a client guessing the
+    with `where _dst_id == "phantom:salt"` — but that is a client guessing the
     engine's phantom naming. Resolving a bare wikilink to the unique document
-    whose file name matches (the Obsidian rule), or at least a `dst_name`
+    whose file name matches (the Obsidian rule), or at least a `_dst_name`
     field, would make wikilink backlinks first-class.
 
 ## What it does
@@ -184,7 +195,7 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 
 1. `GET /whoami` — the proxy's mode and sign-in state (header label; the
    sign-in wait).
-2. `version` → the surface (refused under 4.7) and the profile for the header;
+2. `version` → the surface (refused under 5.0) and the profile for the header;
    `tools/list` → the capabilities (`src/lib/tools.ts`): a banner names any of
    the ten that is missing and the feature it takes away; `repos` → the picker,
    only when listed.
@@ -200,8 +211,9 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 6. The strip: `changes_since` from the repo's `head`, polled; new digests are
    prepended (newest first, deduped by commit, capped at 50) and the folders
    they touched are refreshed; a change to the open document reloads it.
-7. The console: ⌘/Ctrl+Enter runs; the result's keys are the columns (`id`,
-   `path` first), an `id`/`path` cell opens the thing it names, `hints` is the
+7. The console: ⌘/Ctrl+Enter runs; the result's keys are the columns (`_id`,
+   `_path` first — the envelope; a bare `id`/`path` is an authored key and an
+   ordinary column), an `_id`/`_path` cell opens the thing it names, `hints` is the
    yellow bar, an error shows the engine's code, message, `data.hint` and
    `data.fix`; "more" follows the keyset cursor; the footer says why an ordered
    query cannot page; "syntax" opens `query_syntax` in a drawer.
@@ -243,7 +255,8 @@ call once, noting *session expired at the server — reconnected* in the header.
 - `src/lib/diff.ts` — Myers' O(ND) line diff with `docs_diff_unified`'s tie rule
   and hunk format, `unifiedDiff`, `diffStats`.
 - `src/lib/route.ts` — the hash route; `src/lib/paths.ts` — paths, the hit
-  envelope, the ≥ 4.7 gate; `src/lib/effect.ts` — the signals `effect` helper.
+  envelope (`_id`/`_path`), the `docs_*` locator (`{ _id } | { _path }`), the
+  ≥ 5.0 gate; `src/lib/effect.ts` — the signals `effect` helper.
 - `scripts/dev.mjs`, `dev-args.mjs`, `dev-workspace.mjs`, `omg-minimal.mjs` —
   the proxy + Vite dev script, the alchemy workspace, the `--tools minimal` stand-in.
 - `test/` — vitest over the pure parts and the data paths through a scripted
@@ -256,11 +269,15 @@ call once, noting *session expired at the server — reconnected* in the header.
   (edit scripts, hunks, the alchemy frontmatter edit), the feed (cursor,
   entries, cap), writes (effects, value parsing, plan → execute, `plan_mismatch`),
   the route, the client's session recovery and `unknown tool` mapping, the dev
-  arguments and the stand-in — 90 tests, no live server.
+  arguments and the stand-in — 91 tests, no live server.
 
 ## Verified against the real stack
 
-Over a scratch workspace built from the alchemy corpus with
+(Recorded against surface 4.7, before the 5.0 respelling; the names below are
+quoted as they read then — `path`, `dst_path`, `doc_id`, `title` — and are
+`_path`, `_dst_path`, `_doc_id`, `_title` today. The 5.0 round was verified
+through the scripted-server suite only; a live pass against a 5.0 `omg` is
+still to do.) Over a scratch workspace built from the alchemy corpus with
 `scripts/dev-workspace.mjs`, webdevproxy started exactly as `pnpm dev` starts
 it (the minimal stand-in as `omg`), and the browser-side client over Streamable
 HTTP: `tools/list` returned the ten; `version` said `surface 4.7`, `profile

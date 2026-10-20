@@ -26,82 +26,82 @@
     {
       "name": "root-order",
       "notes": "§1.1: open edges of live source docs in (source path, edge_id) order.",
-      "query": "select p: predicate from links where path == \"index.md\"",
+      "query": "select p: _predicate from links where _path == \"index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "_id": "e_0",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_1",
-            "path": "/index.md",
+            "_id": "e_1",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_10",
-            "path": "/index.md",
+            "_id": "e_10",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_11",
-            "path": "/index.md",
+            "_id": "e_11",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_12",
-            "path": "/index.md",
+            "_id": "e_12",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_13",
-            "path": "/index.md",
+            "_id": "e_13",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_14",
-            "path": "/index.md",
+            "_id": "e_14",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_2",
-            "path": "/index.md",
+            "_id": "e_2",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_3",
-            "path": "/index.md",
+            "_id": "e_3",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_4",
-            "path": "/index.md",
+            "_id": "e_4",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "_id": "e_5",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_6",
-            "path": "/index.md",
+            "_id": "e_6",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_7",
-            "path": "/index.md",
+            "_id": "e_7",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_8",
-            "path": "/index.md",
+            "_id": "e_8",
+            "_path": "/index.md",
             "p": "references"
           },
           {
-            "id": "e_9",
-            "path": "/index.md",
+            "_id": "e_9",
+            "_path": "/index.md",
             "p": "references"
           }
         ],
@@ -112,44 +112,44 @@
     },
     {
       "name": "fields",
-      "query": "select predicate, provenance, dst_kind, anchor, field from links where path == \"substances/prima-materia.md\"",
+      "query": "select _predicate, _provenance, _dst_kind, _anchor, _field from links where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "field": null
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
+            "_predicate": "references",
+            "_provenance": "link",
+            "_dst_kind": "document",
+            "_anchor": null,
+            "_field": null
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "field": null
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
+            "_predicate": "references",
+            "_provenance": "link",
+            "_dst_kind": "document",
+            "_anchor": null,
+            "_field": null
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "field": null
+            "_id": "e_49",
+            "_path": "/substances/prima-materia.md",
+            "_predicate": "references",
+            "_provenance": "link",
+            "_dst_kind": "document",
+            "_anchor": null,
+            "_field": null
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "field": null
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
+            "_predicate": "references",
+            "_provenance": "link",
+            "_dst_kind": "document",
+            "_anchor": null,
+            "_field": null
           }
         ],
         "truncated": false,
@@ -158,14 +158,25 @@
       }
     },
     {
+      "name": "engine-names-dst-path-field",
+      "notes": "§1.2 (5.0): a link row's columns under their engine names — `_dst_path` (the reference form), `_field` (the authoring key, null for a Markdown link), `_predicate` — filtered by `_dst_path` (a rooted literal; the store-index probe serves it).",
+      "query": "select _dst_path, _field, _predicate, _provenance from links where _dst_path == \"/substances/salt.md\" order by _path, _id",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
       "name": "foreign-keys",
       "notes": "§1.2 (3.0): an edge's `$` names are id/path only; doc_id/dst_id/block_id/via_id/dst_path/uri are plain fields (foreign keys named for what they are); the creating commit is not a field. The dangling [[nigredo]] is a phantom with no dst_path.",
-      "query": "select s: doc_id, d: dst_id, sb: block_id, v: via_id, dp: dst_path, du: uri from links where path == \"substances/prima-materia.md\"",
+      "query": "select s: _doc_id, d: _dst_id, sb: _block_id, v: _via_id, dp: _dst_path, du: _uri from links where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_16",
             "sb": "b_254",
@@ -174,8 +185,8 @@
             "du": null
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_10",
             "sb": "b_256",
@@ -184,8 +195,8 @@
             "du": null
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_49",
+            "_path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "d_7",
             "sb": "b_256",
@@ -194,8 +205,8 @@
             "du": null
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
             "s": "d_13",
             "d": "phantom:nigredo",
             "sb": "b_256",
@@ -211,27 +222,27 @@
     },
     {
       "name": "doc-reach-through",
-      "query": "select dt: doc.type from links where path == \"substances/salt.md\"",
+      "query": "select dt: _doc.type from links where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_51",
-            "path": "/substances/salt.md",
+            "_id": "e_51",
+            "_path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md",
+            "_id": "e_52",
+            "_path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_53",
-            "path": "/substances/salt.md",
+            "_id": "e_53",
+            "_path": "/substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_54",
-            "path": "/substances/salt.md",
+            "_id": "e_54",
+            "_path": "/substances/salt.md",
             "dt": "substance"
           }
         ],
@@ -242,7 +253,7 @@
     },
     {
       "name": "doc-reach-through-filter",
-      "query": "links count { where doc.type == \"lab-note\" }",
+      "query": "links count { where _doc.type == \"lab-note\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -254,30 +265,30 @@
     {
       "name": "dst-reach-through",
       "notes": "§1.2 (3.0 follow-up): `dst` on a link row is the destination DOCUMENT row when `dst_kind == \"document\"` and the document exists, so `dst.title` is its computed title; absent (null here) for the dangling [[nigredo]].",
-      "query": "select t: dst.title, k: dst_kind from links where path == \"substances/prima-materia.md\"",
+      "query": "select t: _dst._title, k: _dst_kind from links where _path == \"substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
             "t": "The Emerald Tablet",
             "k": "document"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
             "t": "The magnum opus",
             "k": "document"
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_49",
+            "_path": "/substances/prima-materia.md",
             "t": "Calcination",
             "k": "document"
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
             "k": "document"
           }
         ],
@@ -289,29 +300,29 @@
     {
       "name": "dst-block-sugar",
       "notes": "§1.2: `dst { title }` is `dst collect { title }` over the one destination row — a one-element list, or empty where `dst` is absent.",
-      "query": "select d: dst { title } from links where path == \"substances/salt.md\"",
+      "query": "select d: _dst { _title } from links where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_51",
-            "path": "/substances/salt.md"
+            "_id": "e_51",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md"
+            "_id": "e_52",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "e_53",
-            "path": "/substances/salt.md",
+            "_id": "e_53",
+            "_path": "/substances/salt.md",
             "d": {
-              "title": "Calcination"
+              "_title": "Calcination"
             }
           },
           {
-            "id": "e_54",
-            "path": "/substances/salt.md",
+            "_id": "e_54",
+            "_path": "/substances/salt.md",
             "d": {
-              "title": "Coagulation"
+              "_title": "Coagulation"
             }
           }
         ],
@@ -323,36 +334,36 @@
     {
       "name": "dst-identity-reads-the-foreign-key",
       "notes": "§1 (3.0 follow-up): `dst.id` / `dst.path` are the destination's `dst_id` / `dst_path` wherever `dst` exists — the same values, pushed as a primary-key probe of the destination, no owner row loaded.",
-      "query": "select a: dst.id, b: dst_id, c: dst.path, d: dst_path from links where path == \"texts/emerald-tablet.md\"",
+      "query": "select a: _dst._id, b: _dst_id, c: _dst._path, d: _dst_path from links where _path == \"texts/emerald-tablet.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_59",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "e_59",
+            "_path": "/texts/emerald-tablet.md",
             "a": "d_3",
             "b": "d_3",
             "c": "/practitioners/jabir-ibn-hayyan.md",
             "d": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "e_60",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "e_60",
+            "_path": "/texts/emerald-tablet.md",
             "a": "d_5",
             "b": "d_5",
             "c": "/practitioners/newton.md",
             "d": "/practitioners/newton.md"
           },
           {
-            "id": "e_61",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "e_61",
+            "_path": "/texts/emerald-tablet.md",
             "a": "d_9",
             "b": "d_9",
             "c": "/processes/dissolution.md",
             "d": "/processes/dissolution.md"
           },
           {
-            "id": "e_62",
-            "path": "/texts/emerald-tablet.md",
+            "_id": "e_62",
+            "_path": "/texts/emerald-tablet.md",
             "a": "d_8",
             "b": "d_8",
             "c": "/processes/coagulation.md",
@@ -367,53 +378,53 @@
     {
       "name": "dst-filter-pushes-down",
       "notes": "§1: `dst.<k>` in a top-level `where` is pushed like `doc.<k>` (the destination's properties keyed by the row's own `dst_node`); the differential proves planned == in-memory.",
-      "query": "select path, dst_path from links where dst.type == \"practitioner\"",
+      "query": "select _path, _dst_path from links where _dst.type == \"practitioner\"",
       "expect": {
         "hits": [
           {
-            "id": "e_10",
-            "path": "/index.md",
-            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "e_10",
+            "_path": "/index.md",
+            "_dst_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "e_11",
-            "path": "/index.md",
-            "dst_path": "/practitioners/paracelsus.md"
+            "_id": "e_11",
+            "_path": "/index.md",
+            "_dst_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "e_12",
-            "path": "/index.md",
-            "dst_path": "/practitioners/newton.md"
+            "_id": "e_12",
+            "_path": "/index.md",
+            "_dst_path": "/practitioners/newton.md"
           },
           {
-            "id": "e_9",
-            "path": "/index.md",
-            "dst_path": "/practitioners/maria-prophetissa.md"
+            "_id": "e_9",
+            "_path": "/index.md",
+            "_dst_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "e_41",
-            "path": "/substances/mercury.md",
-            "dst_path": "/practitioners/paracelsus.md"
+            "_id": "e_41",
+            "_path": "/substances/mercury.md",
+            "_dst_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "e_42",
-            "path": "/substances/mercury.md",
-            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "e_42",
+            "_path": "/substances/mercury.md",
+            "_dst_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "e_57",
-            "path": "/substances/sulphur.md",
-            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "e_57",
+            "_path": "/substances/sulphur.md",
+            "_dst_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "e_59",
-            "path": "/texts/emerald-tablet.md",
-            "dst_path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "e_59",
+            "_path": "/texts/emerald-tablet.md",
+            "_dst_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "e_60",
-            "path": "/texts/emerald-tablet.md",
-            "dst_path": "/practitioners/newton.md"
+            "_id": "e_60",
+            "_path": "/texts/emerald-tablet.md",
+            "_dst_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -424,32 +435,32 @@
     {
       "name": "dst-path-literal-rooted",
       "notes": "§1 Paths: a literal compared with `dst.path` is rooted like one compared with `dst_path`.",
-      "query": "select dp: dst.path from links where dst.path == \"processes/magnum-opus.md\"",
+      "query": "select dp: _dst._path from links where _dst._path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
+            "_id": "e_5",
+            "_path": "/index.md",
             "dp": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "e_23",
+            "_path": "/practitioners/maria-prophetissa.md",
             "dp": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
+            "_id": "e_24",
+            "_path": "/practitioners/newton.md",
             "dp": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "e_43",
+            "_path": "/substances/philosophers-stone.md",
             "dp": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
             "dp": "/processes/magnum-opus.md"
           }
         ],
@@ -471,7 +482,7 @@
     },
     {
       "name": "count-by-provenance",
-      "query": "links count { where provenance == \"link\" }",
+      "query": "links count { where _provenance == \"link\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -482,7 +493,7 @@
     },
     {
       "name": "distinct-provenance",
-      "query": "select distinct provenance values from links",
+      "query": "select distinct _provenance values from links",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -496,7 +507,7 @@
     },
     {
       "name": "distinct-predicate",
-      "query": "select distinct predicate values from links",
+      "query": "select distinct _predicate values from links",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -513,127 +524,127 @@
     {
       "name": "phantom-targets",
       "notes": "spec/graph: a wikilink resolves by path, so every [[slug]] here is a phantom — dst_kind document, dst_id `phantom:<value>`, null dst_path.",
-      "query": "select d: dst_id from links where dst_kind == \"document\" && dst_path == null",
+      "query": "select d: _dst_id from links where _dst_kind == \"document\" && _dst_path == null",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "_id": "e_0",
+            "_path": "/index.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_1",
-            "path": "/index.md",
+            "_id": "e_1",
+            "_path": "/index.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_2",
-            "path": "/index.md",
+            "_id": "e_2",
+            "_path": "/index.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_16",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "e_16",
+            "_path": "/lab/2026-01-notes.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_17",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "e_17",
+            "_path": "/lab/2026-01-notes.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_20",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "e_20",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_21",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "e_21",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_25",
-            "path": "/practitioners/newton.md",
+            "_id": "e_25",
+            "_path": "/practitioners/newton.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_27",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "e_27",
+            "_path": "/practitioners/paracelsus.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_28",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "e_28",
+            "_path": "/practitioners/paracelsus.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_29",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "e_29",
+            "_path": "/practitioners/paracelsus.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_30",
-            "path": "/processes/calcination.md",
+            "_id": "e_30",
+            "_path": "/processes/calcination.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_38",
-            "path": "/substances/mercury.md",
+            "_id": "e_38",
+            "_path": "/substances/mercury.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_39",
-            "path": "/substances/mercury.md",
+            "_id": "e_39",
+            "_path": "/substances/mercury.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_45",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "e_45",
+            "_path": "/substances/philosophers-stone.md",
             "d": "phantom:magnum-opus"
           },
           {
-            "id": "e_46",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "e_46",
+            "_path": "/substances/philosophers-stone.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
             "d": "phantom:nigredo"
           },
           {
-            "id": "e_51",
-            "path": "/substances/salt.md",
+            "_id": "e_51",
+            "_path": "/substances/salt.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md",
+            "_id": "e_52",
+            "_path": "/substances/salt.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_55",
-            "path": "/substances/sulphur.md",
+            "_id": "e_55",
+            "_path": "/substances/sulphur.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_56",
-            "path": "/substances/sulphur.md",
+            "_id": "e_56",
+            "_path": "/substances/sulphur.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_65",
-            "path": "/timeline/kickoff.md",
+            "_id": "e_65",
+            "_path": "/timeline/kickoff.md",
             "d": "phantom:timeline/lost-notes.md"
           },
           {
-            "id": "e_67",
-            "path": "/timeline/review.md",
+            "_id": "e_67",
+            "_path": "/timeline/review.md",
             "d": "phantom:timeline/lost-notes.md"
           },
           {
-            "id": "e_68",
-            "path": "/timeline/review.md",
+            "_id": "e_68",
+            "_path": "/timeline/review.md",
             "d": "phantom:timeline/next-season.md"
           }
         ],
@@ -644,7 +655,7 @@
     },
     {
       "name": "external-targets-none",
-      "query": "links count { where uri != null }",
+      "query": "links count { where _uri != null }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -655,33 +666,33 @@
     },
     {
       "name": "links-into-a-doc",
-      "query": "select path, provenance from links where dst_path == \"processes/magnum-opus.md\"",
+      "query": "select _path, _provenance from links where _dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
-            "provenance": "link"
+            "_id": "e_5",
+            "_path": "/index.md",
+            "_provenance": "link"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "provenance": "link"
+            "_id": "e_23",
+            "_path": "/practitioners/maria-prophetissa.md",
+            "_provenance": "link"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "provenance": "link"
+            "_id": "e_24",
+            "_path": "/practitioners/newton.md",
+            "_provenance": "link"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "provenance": "link"
+            "_id": "e_43",
+            "_path": "/substances/philosophers-stone.md",
+            "_provenance": "link"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "provenance": "link"
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
+            "_provenance": "link"
           }
         ],
         "truncated": false,
@@ -692,41 +703,41 @@
     {
       "name": "no-relations",
       "notes": "§1.2 / §1.5: edges have no relations and a closed row shape — a navigation by a name that is not a link field is the §1.5 `filter_invalid` naming the fields (through 4.5 it read absent; a target name there is the §1.1 bare-target error: `query-root::bare-target-nodes-on-edge-row`).",
-      "query": "select x: children, y: out_links from links where path == \"index.md\" limit 1",
+      "query": "select x: children, y: out_links from links where _path == \"index.md\" limit 1",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "`children` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)"
+        "message_includes": "`children` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)"
       }
     },
     {
       "name": "links-page",
-      "query": "from links where path.startsWith(\"substances/\")",
+      "query": "from links where _path.startsWith(\"substances/\")",
       "limit": 6,
       "expect": {
         "hits": [
           {
-            "id": "e_38",
-            "path": "/substances/mercury.md"
+            "_id": "e_38",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "e_39",
-            "path": "/substances/mercury.md"
+            "_id": "e_39",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "e_40",
-            "path": "/substances/mercury.md"
+            "_id": "e_40",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "e_41",
-            "path": "/substances/mercury.md"
+            "_id": "e_41",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "e_42",
-            "path": "/substances/mercury.md"
+            "_id": "e_42",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "e_43",
+            "_path": "/substances/philosophers-stone.md"
           }
         ],
         "truncated": true,
@@ -737,33 +748,33 @@
     {
       "name": "dst-path-rooted-literal",
       "notes": "§1 Paths (2.0): `dst_path` is the reference form; a rooted literal matches it (and the planner's `dst_path` probe de-roots it).",
-      "query": "select path, dst_path from links where dst_path == \"/processes/magnum-opus.md\"",
+      "query": "select _path, _dst_path from links where _dst_path == \"/processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_5",
+            "_path": "/index.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_23",
+            "_path": "/practitioners/maria-prophetissa.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_24",
+            "_path": "/practitioners/newton.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_43",
+            "_path": "/substances/philosophers-stone.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
+            "_dst_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -774,33 +785,33 @@
     {
       "name": "dst-path-bare-literal",
       "notes": "§1 Paths: the bare spelling is rooted first — the same edges.",
-      "query": "select path, dst_path from links where dst_path == \"processes/magnum-opus.md\"",
+      "query": "select _path, _dst_path from links where _dst_path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_5",
+            "_path": "/index.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_23",
+            "_path": "/practitioners/maria-prophetissa.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_24",
+            "_path": "/practitioners/newton.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_43",
+            "_path": "/substances/philosophers-stone.md",
+            "_dst_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
+            "_dst_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -811,36 +822,36 @@
     {
       "name": "reach-through-identity-is-the-foreign-key",
       "notes": "§1 foreign-key elimination (3.0): `doc.id` on an edge is its `doc_id` (the source document), `doc.path` its `path` — no owner lookup, the same SQL when planned.",
-      "query": "select a: doc.id, b: doc_id, c: doc.path, t: doc.type from links where path == \"substances/prima-materia.md\" && predicate == \"references\"",
+      "query": "select a: _doc._id, b: _doc_id, c: _doc._path, t: _doc.type from links where _path == \"substances/prima-materia.md\" && _predicate == \"references\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
             "a": "d_13",
             "b": "d_13",
             "c": "/substances/prima-materia.md",
             "t": "substance"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
             "a": "d_13",
             "b": "d_13",
             "c": "/substances/prima-materia.md",
             "t": "substance"
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_49",
+            "_path": "/substances/prima-materia.md",
             "a": "d_13",
             "b": "d_13",
             "c": "/substances/prima-materia.md",
             "t": "substance"
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
             "a": "d_13",
             "b": "d_13",
             "c": "/substances/prima-materia.md",
@@ -855,30 +866,30 @@
     {
       "name": "block-reach-through",
       "notes": "§1.2 (4.11): `block` is the SOURCE block the link was written in — the blocks row `block_id` names — so `block.text` / `block.type` read it as `dst.title` reads the destination.",
-      "query": "select t: block.text, k: block.type from links where path == \"/substances/prima-materia.md\"",
+      "query": "select t: _block._text, k: _block._type from links where _path == \"/substances/prima-materia.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
             "t": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
             "k": "paragraph"
           },
           {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_48",
+            "_path": "/substances/prima-materia.md",
             "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
             "k": "paragraph"
           },
           {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_49",
+            "_path": "/substances/prima-materia.md",
             "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
             "k": "paragraph"
           },
           {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
+            "_id": "e_50",
+            "_path": "/substances/prima-materia.md",
             "t": "Reduction to the *prima materia* is the purpose of [[nigredo]], the blackening that opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md) is the usual first operation.",
             "k": "paragraph"
           }
@@ -891,14 +902,14 @@
     {
       "name": "block-reach-through-filter",
       "notes": "a `where` over `block.*` (pushed down as a probe by `src_block`).",
-      "query": "select block_id, dst_path from links where block.type == \"paragraph\" and path == \"/index.md\"",
+      "query": "select _block_id, _dst_path from links where _block._type == \"paragraph\" and _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_5",
-            "path": "/index.md",
-            "block_id": "b_13",
-            "dst_path": "/processes/magnum-opus.md"
+            "_id": "e_5",
+            "_path": "/index.md",
+            "_block_id": "b_13",
+            "_dst_path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -909,18 +920,18 @@
     {
       "name": "block-text-filter-residual",
       "notes": "a string method over `block.text` stays in memory; planned == in-memory.",
-      "query": "select path, dst_path from links where block.text.contains(\"Emerald\") order by id",
+      "query": "select _path, _dst_path from links where _block._text.contains(\"Emerald\") order by _id",
       "expect": {
         "hits": [
           {
-            "id": "e_13",
-            "path": "/index.md",
-            "dst_path": "/texts/emerald-tablet.md"
+            "_id": "e_13",
+            "_path": "/index.md",
+            "_dst_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
-            "dst_path": "/texts/emerald-tablet.md"
+            "_id": "e_47",
+            "_path": "/substances/prima-materia.md",
+            "_dst_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -931,24 +942,24 @@
     {
       "name": "block-absent-for-a-frontmatter-link",
       "notes": "a frontmatter link (`field` set, `block_id` null) has no `block`: the handle is absent — as a value it renders no key, `block.text` is absent, `block == null`.",
-      "query": "select f: field, b: block, t: block.text, none: block == null from links where field != null order by id limit 3",
+      "query": "select f: _field, b: _block, t: _block._text, none: _block == null from links where _field != null order by _id limit 3",
       "expect": {
         "hits": [
           {
-            "id": "e_64",
-            "path": "/timeline/kickoff.md",
+            "_id": "e_64",
+            "_path": "/timeline/kickoff.md",
             "f": "after",
             "none": true
           },
           {
-            "id": "e_65",
-            "path": "/timeline/kickoff.md",
+            "_id": "e_65",
+            "_path": "/timeline/kickoff.md",
             "f": "see_also",
             "none": true
           },
           {
-            "id": "e_66",
-            "path": "/timeline/review.md",
+            "_id": "e_66",
+            "_path": "/timeline/review.md",
             "f": "before",
             "none": true
           }
@@ -961,28 +972,28 @@
     {
       "name": "block-identity-reads-the-foreign-key",
       "notes": "`block.id` is the row's own `block_id` (FK elimination, §1), `block.doc.path` the link's `path`.",
-      "query": "select bi: block.id, b: block_id, bp: block.path, bd: block.doc.path from links where path == \"/index.md\" order by id limit 3",
+      "query": "select bi: _block._id, b: _block_id, bp: _block._path, bd: _block._doc._path from links where _path == \"/index.md\" order by _id limit 3",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
-            "path": "/index.md",
+            "_id": "e_0",
+            "_path": "/index.md",
             "bi": "b_5",
             "b": "b_5",
             "bp": "/index.md",
             "bd": "/index.md"
           },
           {
-            "id": "e_1",
-            "path": "/index.md",
+            "_id": "e_1",
+            "_path": "/index.md",
             "bi": "b_6",
             "b": "b_6",
             "bp": "/index.md",
             "bd": "/index.md"
           },
           {
-            "id": "e_10",
-            "path": "/index.md",
+            "_id": "e_10",
+            "_path": "/index.md",
             "bi": "b_22",
             "b": "b_22",
             "bp": "/index.md",
@@ -997,12 +1008,12 @@
     {
       "name": "block-doc-is-the-source",
       "notes": "every link with a block was written in its source document: the two counts agree.",
-      "query": "select n: ^links count { where block.doc.path == path }, m: ^links count { where block_id != null } from docs where path == \"/index.md\"",
+      "query": "select n: ^links count { where _block._doc._path == _path }, m: ^links count { where _block_id != null } from docs where _path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 64,
             "m": 64
           }

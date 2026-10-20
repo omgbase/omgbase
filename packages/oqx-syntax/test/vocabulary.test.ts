@@ -12,6 +12,7 @@ import {
   CONSUMERS,
   CONTEXTUAL_WORDS,
   GROUP_ROWS,
+  IDENTIFIER,
   INTRINSICS,
   KEYWORDS,
   LANGUAGE_VERSION,
@@ -93,10 +94,24 @@ describe("vocabulary", () => {
     const s1 = surface.slice(surface.indexOf("## 1."), surface.indexOf("### 1.4"));
     for (const list of Object.values(OMGBASE.attributes)) for (const name of list) expect(s1, name).toContain(`\`${name}\``);
     for (const h of OMGBASE.handles) expect(s1, h).toContain(`\`${h}\``);
-    // omgbase adds no `$` names (§1.2, 3.0): every host name is bare.
-    for (const list of Object.values(OMGBASE.attributes)) for (const name of list) expect(name).not.toMatch(/^\$/);
     for (const rel of OMGBASE.relations) expect(s1, rel).toContain(`\`${rel}\``);
     for (const root of OMGBASE.roots) expect(s1, root).toContain(`\`${root}\``);
+  });
+
+  it("the omgbase host vocabulary follows surface 5.0's rule: engine names are `_`-prefixed, collections and row functions bare, no `$` names", () => {
+    // "underscore = engine" (spec/surface §1.2, 5.0): every attribute, handle,
+    // reach-through and relation starts with `_`; a collection (`from docs`)
+    // and a row function (`text("x")`) never do; omgbase adds no `$` names.
+    const engine = [...Object.values(OMGBASE.attributes).flat(), ...OMGBASE.handles, ...OMGBASE.reachThroughs, ...OMGBASE.relations];
+    for (const name of engine) expect(name).toMatch(/^_[a-z][a-z_]*$/);
+    for (const name of [...OMGBASE.roots, ...OMGBASE.rowFunctions]) expect(name).toMatch(/^[a-z][a-z_]*$/);
+    for (const r of OMGBASE.reachThroughs) expect(OMGBASE.relations).toContain(r);
+    // The self aliases of 4.x are gone: `$it` is the self (an OQX intrinsic).
+    for (const gone of ["doc", "block", "section", "dst"]) expect(engine).not.toContain(gone);
+    expect(INTRINSICS).toContain("$it");
+    // Every engine name is an identifier to the lexer (a leading `_` is in the shape).
+    const ident = new RegExp(`^(?:${IDENTIFIER})$`);
+    for (const name of engine) expect(name).toMatch(ident);
   });
 
   it("token classes have distinct TextMate scopes ending in .oqx", () => {

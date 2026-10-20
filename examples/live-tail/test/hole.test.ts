@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FRAME_AFTER, FRAME_BEFORE, frameFor, recentQuery } from "../src/lib/feed.ts";
 import { changesInside, holeField, holeState, holeText, mapHole, reframeSpec } from "../src/lib/hole.ts";
+import { NAMES_4, NAMES_5 } from "../src/lib/paths.ts";
 
 describe("the framed filter's hole", () => {
   it("starts as the three-line frame with the filter in the hole, cursor at its end", () => {
@@ -101,9 +102,15 @@ describe("the framed filter's hole", () => {
     expect(mapHole(h, tr)).toEqual({ from: h.from, to: h.to + 2, where: true });
     expect(holeText(tr.state)).toBe("xaby");
   });
-  it("spells the frame with the bare attributes; a reframe keeps the hole's text", () => {
+  it("spells the frame with the engine attributes (5.0's `_`-prefixed by default; the bare 4.x names on request); a reframe keeps the hole's text", () => {
     const s = holeState('status == "active"');
-    expect(s.doc.toString()).toBe("select path, title, updated_at from docs\nwhere status == \"active\"\norder by updated_at desc limit 25");
+    expect(s.doc.toString()).toBe("select _path, _title, _updated_at from docs\nwhere status == \"active\"\norder by _updated_at desc limit 25");
+    const old = holeState('status == "active"', { names: NAMES_4 });
+    expect(old.doc.toString()).toBe("select path, title, updated_at from docs\nwhere status == \"active\"\norder by updated_at desc limit 25");
+    expect(holeText(old)).toBe('status == "active"');
+    // Switching the names reframes around the same hole text.
+    const switched = old.update(reframeSpec(old, holeText(old), false, NAMES_5)).state;
+    expect(switched.doc.toString()).toBe(s.doc.toString());
     expect(holeText(s)).toBe('status == "active"');
     expect(s.selection.main.head).toBe(FRAME_BEFORE.length + 'status == "active"'.length);
     const reframed = s.update(reframeSpec(s, holeText(s), false)).state;

@@ -3,11 +3,15 @@
 // VIRTUAL `#focus` — no intent is ever tagged as focused; the focused one is
 // found by a correlated join against the pointer document:
 //
-//   focus: ^docs first { select since where path == "/attn/focus.md" and focused_intent == ^path }
+//   focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path }
 //
 // reads, for each intent row, the pointer's `since` when the pointer's
-// `focused_intent` names this row's path (`^path` is the enclosing intent's
-// path), and null otherwise. The where-form of the same join — the one row in
+// `focused_intent` names this row's path (`^_path` is the enclosing intent's
+// path), and null otherwise. Names follow surface 5.0 ("underscore = engine"):
+// `_path`, `_id`, `_updated_at` are the engine's; `title`, `tags`, `status`,
+// `project`, `cues`, `focused_intent`, `since` are attn's own frontmatter keys
+// and stay bare (an intent always carries an authored `title`, so the bare key
+// — not the computed `_title` — is the one meant). The where-form of the same join — the one row in
 // focus — is `VIRTUAL_FOCUS_QUERY`. Also here: the feed's sections (the Cued
 // lift, recent, released), the chooser's ranking, and the intent edits
 // (status, content).
@@ -33,23 +37,23 @@ export interface Intent {
 }
 
 /** Every intent (active and released), most recently edited first, with its cues and the virtual `#focus` column. */
-export const INTENTS_QUERY = `select path, title, status, tags, project, updated_at, cues, focus: ^docs first { select since where path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^path } from docs where type == ${JSON.stringify(INTENT_TYPE)} and path.startsWith(${JSON.stringify(INTENTS_DIR)}) order by updated_at desc`;
+export const INTENTS_QUERY = `select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path } from docs where type == ${JSON.stringify(INTENT_TYPE)} and _path.startsWith(${JSON.stringify(INTENTS_DIR)}) order by _updated_at desc`;
 
 /** The intent in focus, as a semi-join — the README's one-row form of the virtual `#focus`. */
-export const VIRTUAL_FOCUS_QUERY = `select path, title, status, tags from docs where type == ${JSON.stringify(INTENT_TYPE)} and status == "active" and ^docs exists { where path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^path }`;
+export const VIRTUAL_FOCUS_QUERY = `select _path, title, status, tags from docs where type == ${JSON.stringify(INTENT_TYPE)} and status == "active" and ^docs exists { where _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path }`;
 
 export function intentOf(hit: Record<string, unknown>): Intent {
   const focus = record(hit.focus);
-  const path = str(hit.path);
+  const path = str(hit._path);
   return {
-    id: str(hit.id),
+    id: str(hit._id),
     path,
     title: str(hit.title) || path.replace(/^.*\//, "").replace(/\.md$/, ""),
     status: hit.status === "released" ? "released" : "active",
     tags: strList(hit.tags),
     project: strOrNull(hit.project),
     focusSince: strOrNull(focus.since),
-    updatedAt: strOrNull(hit.updated_at),
+    updatedAt: strOrNull(hit._updated_at),
     cues: cuesOf(path, hit.cues),
   };
 }
@@ -98,12 +102,12 @@ export function feedOf(intents: readonly Intent[], focused: string | null, cued:
 
 // ---- the edits ----------------------------------------------------------------------------------
 
-/** `set frontmatter.status = released | active` on an intent — a bare rooted path is the document target. */
+/** `set _frontmatter.status = released | active` on an intent — a bare rooted path is the document target. */
 export function setStatusEffect(path: string, status: IntentStatus): Effect {
-  return { op: "set", target: path, field: "frontmatter.status", value: status };
+  return { op: "set", target: path, field: "_frontmatter.status", value: status };
 }
 
-/** `set content` — the whole document's bytes (frontmatter and body); the one edit that legitimately moves `updated_at`. */
+/** `set content` — the whole document's bytes (frontmatter and body); the one edit that legitimately moves `_updated_at`. */
 export function setContentEffect(path: string, content: string): Effect {
   return { op: "set", target: path, field: "content", value: content };
 }

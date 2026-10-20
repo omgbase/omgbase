@@ -1,7 +1,9 @@
 // The feed: one query (pinned) with the virtual #focus and each intent's cues;
 // active intents most recently edited first; the Cued lift; the focused intent
 // never sorted in; released behind the toggle. And the design note's rule as a
-// test: focusing an intent does not change its updated_at.
+// test: focusing an intent does not change its _updated_at. Hits and results
+// are spelled as surface 5.0 spells them: `_id`, `_path`, `_updated_at`, `_raw`
+// the engine's; `title`, `status`, `tags`, `cues`, … attn's own keys, bare.
 import { describe, expect, it } from "vitest";
 import { INTENTS_QUERY, VIRTUAL_FOCUS_QUERY, activeCues, feedOf, fetchIntents, findByTitle, fuzzyScore, intentOf, rankIntents, setContentEffect, sortByEdited, type Intent } from "../src/lib/intents.ts";
 import { OmgError } from "../src/lib/mcp-client.ts";
@@ -15,18 +17,20 @@ const LUNCH = "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md";
 const CINNABAR = "/attn/intents/2026/10/2026-10-03-grind-the-cinnabar.md";
 
 const HITS = [
-  { id: "d_2qgjkps", path: SALT, title: "Calcine the salt", status: "active", tags: ["fire", "laboratory"], project: "/projects/magnum-opus.md", updated_at: "2026-10-13T08:17:55.962Z", cues: [[{ id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' }, { id: "off-the-fire", on: "time", at: "2026-10-13T16:00:00Z" }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
-  { id: "d_n8gzkm4", path: DEW, title: "Distil the May dew", status: "active", tags: ["aqua", "laboratory"], project: "/projects/magnum-opus.md", updated_at: "2026-10-14T08:17:55.962Z", focus: null },
-  { id: "d_n06c3kt", path: LUNCH, title: "Enjoy lunch", status: "active", tags: ["rest"], updated_at: "2026-10-12T08:17:55.962Z", focus: null },
-  { id: "d_x", path: CINNABAR, title: "Grind the cinnabar", status: "released", tags: ["laboratory", "fire"], project: "/projects/magnum-opus.md", updated_at: "2026-10-14T09:00:00.000Z", cues: [[{ id: "released-cue", on: "time", at: "2026-10-01T00:00:00Z" }]], focus: null },
+  { _id: "d_2qgjkps", _path: SALT, title: "Calcine the salt", status: "active", tags: ["fire", "laboratory"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-13T08:17:55.962Z", cues: [[{ id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' }, { id: "off-the-fire", on: "time", at: "2026-10-13T16:00:00Z" }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
+  { _id: "d_n8gzkm4", _path: DEW, title: "Distil the May dew", status: "active", tags: ["aqua", "laboratory"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-14T08:17:55.962Z", focus: null },
+  { _id: "d_n06c3kt", _path: LUNCH, title: "Enjoy lunch", status: "active", tags: ["rest"], _updated_at: "2026-10-12T08:17:55.962Z", focus: null },
+  { _id: "d_x", _path: CINNABAR, title: "Grind the cinnabar", status: "released", tags: ["laboratory", "fire"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-14T09:00:00.000Z", cues: [[{ id: "released-cue", on: "time", at: "2026-10-01T00:00:00Z" }]], focus: null },
 ];
 
 describe("the query", () => {
-  it("is pinned: cues and updated_at projected, the virtual #focus a correlated join against the pointer, most recently edited first", () => {
-    expect(INTENTS_QUERY).toBe('select path, title, status, tags, project, updated_at, cues, focus: ^docs first { select since where path == "/attn/focus.md" and focused_intent == ^path } from docs where type == "/terms/types/intent.md" and path.startsWith("/attn/intents/") order by updated_at desc');
-    expect(VIRTUAL_FOCUS_QUERY).toBe('select path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where path == "/attn/focus.md" and focused_intent == ^path }');
+  it("is pinned: cues and _updated_at projected, the virtual #focus a correlated join against the pointer, most recently edited first; the engine's names `_`-prefixed, attn's keys bare", () => {
+    expect(INTENTS_QUERY).toBe('select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } from docs where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc');
+    expect(VIRTUAL_FOCUS_QUERY).toBe('select _path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where _path == "/attn/focus.md" and focused_intent == ^_path }');
+    // `title` is the authored key (every intent carries one), not the computed `_title`; `tags` the authored list, not `_tags` (∪ body hashtags).
+    expect(INTENTS_QUERY).not.toMatch(/\b_title\b|\b_tags\b/);
   });
-  it("intentOf reads the focus column and the cues; fetchIntents orders by updated_at desc", async () => {
+  it("intentOf reads the focus column and the cues; fetchIntents orders by _updated_at desc", async () => {
     const s = new ScriptedCaller({ query: () => page([...HITS].reverse()) });
     const is = await fetchIntents(s, null);
     expect(s.argsOf("query")).toEqual({ query: INTENTS_QUERY, limit: 500 });
@@ -36,8 +40,9 @@ describe("the query", () => {
       ["Calcine the salt", "active", "2026-10-13T15:02:00.000Z", 2],
       ["Enjoy lunch", "active", null, 0],
     ]);
+    expect(is[2]!).toMatchObject({ id: "d_2qgjkps", path: SALT, updatedAt: "2026-10-13T08:17:55.962Z" });
     expect(is[2]!.cues[0]).toEqual({ intent: SALT, id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n', at: null });
-    expect(intentOf({ id: "d", path: "/attn/intents/2026/10/2026-10-14-no-title.md" })).toMatchObject({ title: "2026-10-14-no-title", tags: [], project: null, focusSince: null, cues: [] });
+    expect(intentOf({ _id: "d", _path: "/attn/intents/2026/10/2026-10-14-no-title.md" })).toMatchObject({ title: "2026-10-14-no-title", tags: [], project: null, focusSince: null, cues: [] });
     expect(sortByEdited([]).length).toBe(0);
   });
   it("activeCues is every cue of the active intents — a released intent's cues do not fire", () => {
@@ -66,31 +71,31 @@ describe("the feed", () => {
 });
 
 describe("focusing does not edit the intent", () => {
-  /** A tiny stateful server: documents with updated_at; `apply` bumps the updated_at of every document an effect addresses. */
+  /** A tiny stateful server: documents with `_updated_at`; `apply` bumps the `_updated_at` of every document an effect addresses. */
   function repo() {
-    const docs = new Map<string, { updated_at: string; rev: string }>([[SALT, { updated_at: "2026-10-13T08:17:55.962Z", rev: "r_s" }], [LUNCH, { updated_at: "2026-10-12T08:17:55.962Z", rev: "r_l" }], ["/attn/focus.md", { updated_at: "2026-10-13T15:02:00.000Z", rev: "r_35bctb5" }]]);
+    const docs = new Map<string, { _updated_at: string; rev: string }>([[SALT, { _updated_at: "2026-10-13T08:17:55.962Z", rev: "r_s" }], [LUNCH, { _updated_at: "2026-10-12T08:17:55.962Z", rev: "r_l" }], ["/attn/focus.md", { _updated_at: "2026-10-13T15:02:00.000Z", rev: "r_35bctb5" }]]);
     let n = 0;
     const s = new ScriptedCaller({
-      query: () => page(HITS.filter((h) => docs.has(h.path)).map((h) => ({ ...h, updated_at: docs.get(h.path)!.updated_at }))),
-      docs_read: (a) => ({ id: "d_f", path: a.path, rev: docs.get(String(a.path))!.rev, properties: { frontmatter: { focused_intent: SALT, since: "2026-10-13T15:02:00.000Z", return_stack: [] } }, raw: "" }),
+      query: () => page(HITS.filter((h) => docs.has(h._path)).map((h) => ({ ...h, _updated_at: docs.get(h._path)!._updated_at }))),
+      docs_read: (a) => ({ _id: "d_f", _path: a._path, rev: docs.get(String(a._path))!.rev, properties: { frontmatter: { focused_intent: SALT, since: "2026-10-13T15:02:00.000Z", return_stack: [] } }, _raw: "" }),
       apply: (a) => {
         for (const e of a.effects as Record<string, unknown>[]) {
           const path = String(e.target ?? e.path);
-          docs.set(path, { updated_at: `2026-10-14T10:00:0${++n}.000Z`, rev: `r_${n}` });
+          docs.set(path, { _updated_at: `2026-10-14T10:00:0${++n}.000Z`, rev: `r_${n}` });
         }
         return { plan_id: "p", commit: `c_${n}`, revisions: [], new_ids: {}, committed: true, summary: [] };
       },
     });
     return { s, docs };
   }
-  it("a switch writes the pointer only: every intent's updated_at is what it was; an edit (set content) legitimately moves it", async () => {
+  it("a switch writes the pointer only: every intent's _updated_at is what it was; an edit (set content) legitimately moves it", async () => {
     const { s, docs } = repo();
     const before = (await fetchIntents(s, null)).map((i) => [i.path, i.updatedAt]);
     const pointer = await fetchPointer(s, null);
     await applyEffects(s, switchEffects({ pointer, now: "2026-10-14T10:00:00.000Z" }, LUNCH), null, "attn switch");
     const after = (await fetchIntents(s, null)).map((i) => [i.path, i.updatedAt]);
     expect(after).toEqual(before);
-    expect(docs.get("/attn/focus.md")!.updated_at).not.toBe("2026-10-13T15:02:00.000Z");
+    expect(docs.get("/attn/focus.md")!._updated_at).not.toBe("2026-10-13T15:02:00.000Z");
     await applyEffects(s, [setContentEffect(LUNCH, "---\n---\n# Enjoy lunch\n")], null, "attn edit intent");
     const edited = (await fetchIntents(s, null)).find((i) => i.path === LUNCH)!;
     expect(edited.updatedAt).not.toBe(before.find(([p]) => p === LUNCH)![1]);
@@ -99,14 +104,15 @@ describe("focusing does not edit the intent", () => {
 
 describe("the pointer", () => {
   it("pointerOf reads docs_read (focused_intent); a missing document is never-focused; episodeKey and returnTarget", async () => {
-    const wire = { id: "d_avkm6zx", path: "/attn/focus.md", rev: "r_35bctb5", properties: { frontmatter: { type: "/terms/types/attn-state.md", layer: "draft", focused_intent: SALT, since: "2026-10-13T15:02:00.000Z", return_stack: [DEW] }, inline: {}, computed: {} }, raw: "" };
+    const wire = { _id: "d_avkm6zx", _path: "/attn/focus.md", rev: "r_35bctb5", properties: { frontmatter: { type: "/terms/types/attn-state.md", layer: "draft", focused_intent: SALT, since: "2026-10-13T15:02:00.000Z", return_stack: [DEW] }, inline: {}, computed: {} }, _raw: "" };
     const p = pointerOf(wire);
     expect(p).toEqual({ exists: true, docId: "d_avkm6zx", rev: "r_35bctb5", focused: SALT, since: "2026-10-13T15:02:00.000Z", returnStack: [DEW] });
     expect(episodeKey(p)).toBe(`${SALT}@2026-10-13T15:02:00.000Z`);
     expect(returnTarget(p)).toBe(DEW);
-    const s = new ScriptedCaller({ docs_read: (a) => (a.path === "/attn/focus.md" ? new OmgError("doc_missing", "no document", {}) : wire) });
+    const s = new ScriptedCaller({ docs_read: (a) => (a._path === "/attn/focus.md" ? new OmgError("doc_missing", "no document", {}) : wire) });
     expect(await fetchPointer(s, "attn")).toMatchObject({ exists: false, focused: null, returnStack: [] });
-    expect(s.argsOf("docs_read")).toEqual({ path: "/attn/focus.md", repo: "attn" });
+    // The argument addresses the row's `_path` (5.0, no tolerance for a bare `path`).
+    expect(s.argsOf("docs_read")).toEqual({ _path: "/attn/focus.md", repo: "attn" });
     expect(episodeKey({ focused: null, since: null })).toBeNull();
   });
 });

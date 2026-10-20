@@ -36,8 +36,8 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
   let result: OutlineResult;
   let header: string;
   if (cli.flags.server) {
-    // Remote: the docs_outline tool resolves the locator (`id` for a `d_` id,
-    // else `path`) + returns the same OutlineResult. The header shows the ref you passed (no local path lookup):
+    // Remote: the docs_outline tool resolves the locator (`_id` for a `d_` id,
+    // else `_path` — spec/surface §4 "Arguments", 5.0) + returns the same OutlineResult. The header shows the ref you passed (no local path lookup):
     // a path ref rooted (spec/surface §1 "Paths"), a `d_` id verbatim.
     result = await remoteCall<OutlineResult>(cli, "docs_outline", {
       ...docLocator(ref),

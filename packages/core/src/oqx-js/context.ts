@@ -55,40 +55,47 @@ function tagAll(rows: Record<string, unknown>[], t: Kind): Row[] {
   return rows as Row[];
 }
 
-// THE NAME RULE (spec/surface §1.2, 3.0). `$` belongs to OQX: `$it`, `$key`,
+// THE NAME RULE (spec/surface §1.2, 5.0: "underscore = engine"). On every
+// record kind a BARE name is a user-authored entry and an UNDERSCORE-prefixed
+// name is engine-provided, however derived — the prefix declares an engine
+// field on a record, and the bare namespace is the user's on every kind (any
+// record may carry user data later, so docs, blocks, nodes, links, revisions
+// and the root row all follow it now). `$` belongs to OQX: `$it`, `$key`,
 // `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` are values the LANGUAGE
-// injects into a scope; omgbase adds no `$` names. Every engine attribute is a
-// bare snake_case name that WINS on collision — the convention the relations
-// (`children`, `blocks`, `out_links`, `doc`, `frontmatter`, …) always followed:
-// a bare name that is an engine attribute reads the engine's value, never the
-// author's. The attributes: every row's `id`/`path`; docs' and blocks' `raw`/
-// `hash`/`updated_at`/`created_at` (4.10: the commit `ts` of the thing's first
-// revision / earliest `block_changes` row — "first observed by omgbase", not a
-// filesystem time); docs' `title` (the computed title) and `tags` (authored
-// tags ∪ body hashtags) and `format`; a foreign key named for what it is
-// (`doc_id`, `block_id`, `via_id`, `dst_id`, `dst_path`, `uri`), a column its
-// column (`type`, `text`, `depth`, `ordinal`, `kind`, `predicate`, `field`).
-// User data is bare too, read by any non-colliding key; where it collides it is
-// reached through a source handle — `data` (the merged authored view:
-// frontmatter + inline by the property rule, exactly the read a bare
-// non-colliding key performs), `frontmatter`, `inline` — so `data.path` is the
-// author's `path:` key, `data.tags` the authored list alone, `data.title` the
-// authored title. There is no loud-error set: a bare `id`/`path`/`updated_at`/
-// `hash`/`raw` is simply the engine's attribute (before this batch of 3.0 the
-// attributes were `$`-prefixed and the bare spelling was an error, §9). A bare
-// target name — `docs`, `links`, … — is a loud error of its own (root-row.ts).
-// `revisions` on a document is a RELATION (its revision list, §1.2, 4.7) in
-// `rel.docs` below, and names.ts's `RELATIONS.docs` knows it as one.
-const DOC_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "title", "tags", "format"]);
-const BLOCK_ATTRIBUTES = new Set(["id", "path", "raw", "hash", "updated_at", "created_at", "doc_id", "type", "text", "attrs", "depth", "ordinal"]);
-const NODE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "kind", "name", "value", "attrs"]);
-const EDGE_ATTRIBUTES = new Set(["id", "path", "doc_id", "block_id", "via_id", "dst_id", "dst_path", "uri", "field", "dst_kind", "predicate", "provenance", "anchor"]);
+// injects into a scope; omgbase adds no `$` names. The engine names: every
+// row's `_id`/`_path`; docs' and blocks' `_raw`/`_hash`/`_updated_at`/
+// `_created_at` (4.10: the commit `ts` of the thing's first revision / earliest
+// `block_changes` row — "first observed by omgbase", not a filesystem time);
+// docs' `_title` (the computed title) and `_tags` (authored tags ∪ body
+// hashtags) and `_format`; a foreign key named for what it is (`_doc_id`,
+// `_block_id`, `_via_id`, `_dst_id`, `_dst_path`, `_uri`), a column its column
+// (`_type`, `_text`, `_depth`, `_ordinal`, `_kind`, `_predicate`, `_field`); the
+// handles `_data`/`_frontmatter`/`_inline`, the reach-throughs `_doc`/`_block`/
+// `_dst` and the relations (`_blocks`, `_children`, `_out_links`, …). A bare
+// name is ALWAYS the author's: on a document a property (frontmatter + inline
+// by the property rule — `title`, `tags`, `id`, `path`, `doc` included; nothing
+// is reserved), on a block or node an `attrs` key (`checked`). `_data.<k>` is
+// the same merged read as the bare `<k>` (kept as the handle for
+// `entries(_data)`), `_frontmatter.<k>` / `_inline.<k>` one source each — and
+// the only way to reach an authored key that itself begins with `_`. The self
+// aliases (`doc` on a document, `block` on a block, `section` on a node) are
+// gone: `$it` is the self. Collections stay bare (`from docs`, `^docs`) — a
+// root name names a collection, not a row property — and so do the row
+// functions in call position (`text("x")`, `under(…)`): a call is never an
+// entry read. A bare target name — `docs`, `links`, … — inside a block is a
+// loud error of its own (root-row.ts). `_revisions` on a document is a
+// RELATION (its revision list, §1.2, 4.7) in `rel.docs` below, and names.ts's
+// `RELATIONS.docs` knows it as one.
+const DOC_ATTRIBUTES = new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_title", "_tags", "_format"]);
+const BLOCK_ATTRIBUTES = new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_doc_id", "_type", "_text", "_attrs", "_depth", "_ordinal"]);
+const NODE_ATTRIBUTES = new Set(["_id", "_path", "_doc_id", "_block_id", "_kind", "_name", "_value", "_attrs"]);
+const EDGE_ATTRIBUTES = new Set(["_id", "_path", "_doc_id", "_block_id", "_via_id", "_dst_id", "_dst_path", "_uri", "_field", "_dst_kind", "_predicate", "_provenance", "_anchor"]);
 // The history target (spec/surface §1.2, 4.7): a revision row's own columns
-// under the names `docs_history` already uses (`rev`, `seq`, `commit`, `origin`,
-// `actor`, `hash`), the commit's `ts` and `reason`, `is_current`, and (4.9)
-// `archived` — the revision's bodies live in an archive segment (spec/store §7
+// under the names `docs_history` uses (`_rev`, `_seq`, `_commit`, `_origin`,
+// `_actor`, `_hash`), the commit's `_ts` and `_reason`, `_is_current`, and (4.9)
+// `_archived` — the revision's bodies live in an archive segment (spec/store §7
 // "Retention"; `docs_read { at }` reads through it when attached).
-const REVISION_ATTRIBUTES = new Set(["id", "path", "rev", "seq", "doc_id", "commit", "ts", "origin", "actor", "reason", "hash", "is_current", "archived"]);
+const REVISION_ATTRIBUTES = new Set(["_id", "_path", "_rev", "_seq", "_doc_id", "_commit", "_ts", "_origin", "_actor", "_reason", "_hash", "_is_current", "_archived"]);
 /** The engine attributes per kind (spec/surface §1.2 table). Exported so the
  * translator's tests pin the two against each other. */
 export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
@@ -103,9 +110,21 @@ export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
 // `current_rev`.
 const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
-/** The source handles of a document (§1.2): `data` is the merged authored view
+/** The source handles of a document (§1.2): `_data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
-export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["data", "frontmatter", "inline"]);
+export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["_data", "_frontmatter", "_inline"]);
+/** The `properties.source` a handle narrows a read to: `_data` → both authored sources (null). */
+export function handleSource(handle: string): string | null {
+  return handle === "_data" ? null : handle.slice(1);
+}
+/** The reach-through handles per kind (§1.2) — each a statically single row of another kind. */
+export const REACH_THROUGHS: Readonly<Record<Kind, ReadonlySet<string>>> = {
+  docs: new Set(),
+  blocks: new Set(["_doc"]),
+  nodes: new Set(["_doc", "_block"]),
+  links: new Set(["_doc", "_dst", "_block"]),
+  revisions: new Set(["_doc"]),
+};
 
 /** The value of a statically SINGLE relation that has no row — `dst` on an
  * external or dangling link, `block` on a node without one (oqx 0.20, SEMANTICS
@@ -339,24 +358,24 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // ---- relations (return row arrays) ----------------------------------------
   const rel: Record<Kind, Record<string, (row: Row) => Row[] | Row | undefined>> = {
     docs: {
-      nodes: (r) => docNodesInOrder(r.doc_id, r.path),
-      blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
+      _nodes: (r) => docNodesInOrder(r.doc_id, r.path),
+      _blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
       // A document's revision list (spec/surface §1.2, 4.7), oldest first.
-      revisions: (r) => docRevisions(r.doc_id),
+      _revisions: (r) => docRevisions(r.doc_id),
       // The linked / linking DOCUMENTS are reached through the link rows (3.0
-      // follow-up, §9: the `out` / `in` relations are gone): `out_links collect
-      // distinct { from dst }` and `in_links collect distinct { from doc }`.
-      out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
-      in_links: (r) => tagAll(all(
+      // follow-up, §9: the `out` / `in` relations are gone): `_out_links collect
+      // distinct { from _dst }` and `_in_links collect distinct { from _doc }`.
+      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
+      _in_links: (r) => tagAll(all(
         `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
          WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
     },
     blocks: {
-      children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
-      nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
-      out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
+      _children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
+      _nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
+      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
       // enclosing section node(s): md:section whose range contains this block's top ordinal.
-      section: (r) => {
+      _section: (r) => {
         const top = topOrdinal(r);
         return tagAll(all(
           `SELECT n.*, ? AS __path FROM nodes n WHERE n.doc_id = ? AND n.kind = 'md:section'
@@ -365,15 +384,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       },
     },
     nodes: {
-      // section.* — the node interpreted as a section (range attrs).
-      blocks: (r) => {
+      // the node interpreted as a section (range attrs).
+      _blocks: (r) => {
         const f = jattr(r, "first_ordinal"), l = jattr(r, "last_ordinal");
         if (f == null || l == null) return [];
         // blocks whose top-level ancestor's ordinal falls in the section range, in document order.
         const kept = docBlocksPreorder(r.doc_id, r.__path).filter((x) => x.top >= (f as number) && x.top <= (l as number)).map((x) => x.row);
         return tagAll(kept, "blocks");
       },
-      subsections: (r) => {
+      _subsections: (r) => {
         const f = jattr(r, "first_ordinal"), l = jattr(r, "last_ordinal"), lvl = jattr(r, "level");
         if (f == null) return [];
         return tagAll(all(
@@ -382,7 +401,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
              AND json_extract(n.attrs,'$.level') > ? ORDER BY json_extract(n.attrs,'$.first_ordinal'), n.node_id`,
           r.__path, r.doc_id, f, l, lvl), "nodes");
       },
-      children: (r) => {
+      _children: (r) => {
         const f = jattr(r, "first_ordinal"), l = jattr(r, "last_ordinal"), lvl = jattr(r, "level");
         if (f == null) return [];
         // immediate child sections: contained, deeper, with no intervening section.
@@ -412,12 +431,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // (spec/surface §1, 3.0): the owner is handed out as a LAZY row whose identity
   // columns are already known from the child — a block's/node's `doc_id` and
   // `__path` name its document, an edge's `src_doc` and `__path` its source doc,
-  // a node's `block_id` (+ `doc_id`, `__path`) its block — so `doc.id` and
-  // `doc.path` (and `block.id`/`block.path`/`block.doc_id` on a node) read
-  // those columns and run NO statement, exactly like the bare `doc_id`; the full
-  // owner row is loaded on the first read of anything else (`doc.layer`,
-  // `block.text`). The translator mirrors this in SQL (`doc.id` → the FK
-  // column). A Proxy over the backing object so the engine sees a plain tagged
+  // a node's `block_id` (+ `doc_id`, `__path`) its block — so `_doc._id` and
+  // `_doc._path` (and `_block._id`/`_block._path`/`_block._doc_id` on a node)
+  // read those columns and run NO statement, exactly like the bare `_doc_id`;
+  // the full owner row is loaded on the first read of anything else
+  // (`_doc.layer`, `_block._text`). The translator mirrors this in SQL
+  // (`_doc._id` → the FK column). A Proxy over the backing object so the engine sees a plain tagged
   // row either way (indexing, rendering, `rowRef`).
   const lazyOwner = (known: Record<string, unknown>, t: Kind, load: () => Record<string, unknown> | undefined): Row | undefined => {
     const backing: Row = tag({ ...known }, t)!;
@@ -451,19 +470,19 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (typeof path !== "string") return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, id), "docs");
     return lazyOwner({ doc_id: id, path }, "docs", () => one(`SELECT * FROM docs WHERE doc_id = ?`, id));
   };
-  // `dst` on a link row (spec/surface §1.2, 3.0 follow-up): the destination
-  // DOCUMENT row when the link points at one (`dst_kind == "document"` and the
+  // `_dst` on a link row (spec/surface §1.2, 3.0 follow-up): the destination
+  // DOCUMENT row when the link points at one (`_dst_kind == "document"` and the
   // document exists — a phantom target has the kind and no row), read by
-  // `dst_id` exactly as `dst_path` is; absent for a `block` or `external`
-  // destination (never reached into). `doc` stays the source document.
+  // `_dst_id` exactly as `_dst_path` is; absent for a `block` or `external`
+  // destination (never reached into). `_doc` stays the source document.
   const destinationDoc = (row: Row): Row | undefined => {
     if (row.dst_kind !== "document") return undefined;
     return tag(one(`SELECT * FROM docs WHERE doc_id = ?`, row.dst_node), "docs");
   };
-  // `doc` on a revision row (spec/surface §1.2, 4.7): the document's CURRENT
-  // live row — the revision's `path` may be an earlier one — and absent (the
-  // single-with-no-row marker, as `dst` on a dangling link) for a tombstoned
-  // document: its revisions are rows, `doc == null` tells them apart.
+  // `_doc` on a revision row (spec/surface §1.2, 4.7): the document's CURRENT
+  // live row — the revision's `_path` may be an earlier one — and absent (the
+  // single-with-no-row marker, as `_dst` on a dangling link) for a tombstoned
+  // document: its revisions are rows, `_doc == null` tells them apart.
   const revisionDoc = (row: Row): Row | undefined =>
     tag(one(`SELECT * FROM docs WHERE doc_id = ? AND deleted_commit IS NULL`, row.doc_id), "docs");
   const owningBlock = (row: Row): Row | undefined => {
@@ -473,10 +492,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (typeof row.__path !== "string") return tag(load(), "blocks");
     return lazyOwner({ block_id: row.block_id, doc_id: row.doc_id, __path: row.__path }, "blocks", load);
   };
-  // `block` on a link row (spec/surface §1.2, 4.11): the SOURCE block the link
-  // was written in — the blocks row `block_id` (the edge's `src_block`) names,
+  // `_block` on a link row (spec/surface §1.2, 4.11): the SOURCE block the link
+  // was written in — the blocks row `_block_id` (the edge's `src_block`) names,
   // in the source document (`__path` is already the block's document path) —
-  // mirroring `doc`; absent when the link has none (a frontmatter link).
+  // mirroring `_doc`; absent when the link has none (a frontmatter link).
   const linkBlock = (row: Row): Row | undefined => {
     if (!row.src_block) return undefined;
     const load = (): Record<string, unknown> | undefined =>
@@ -486,105 +505,105 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   // ---- engine attributes -----------------------------------------------------
-  // Bare, snake_case, winning on collision (see the name rule above; spec/surface
-  // §1.2, 3.0). `path` (and the edge field `dst_path`) is the REFERENCE form
-  // (`/a/b.md`, §1 "Paths", 2.0): the rows carry the storage form (`path`, the
-  // `__path` join column) and the read roots it, so nothing below the binding
-  // changes. run.ts roots the string literals a query compares them with.
-  // `undefined` means "not an attribute" — the caller falls through to the
-  // handles, relations and the author's data.
+  // `_`-prefixed, snake_case (see the name rule above; spec/surface §1.2, 5.0).
+  // `_path` (and the edge field `_dst_path`) is the REFERENCE form (`/a/b.md`,
+  // §1 "Paths", 2.0): the rows carry the storage form (`path`, the `__path` join
+  // column) and the read roots it, so nothing below the binding changes. run.ts
+  // roots the string literals a query compares them with. `undefined` means
+  // "not an attribute" — the caller falls through to the handles, relations and
+  // the author's data.
   const attribute = (row: Row, t: Kind, name: string): unknown => {
     if (t === "docs") switch (name) {
-      case "id": return row.doc_id;
-      case "path": return referencePath(String(row.path));
-      case "hash": return row.file_hash == null ? null : hex(row.file_hash);
-      case "updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
-      // `created_at` (4.10): the commit `ts` of the document's first revision
-      // (`seq = 1`, the row `revisions first { ts values }` reads) — when
+      case "_id": return row.doc_id;
+      case "_path": return referencePath(String(row.path));
+      case "_hash": return row.file_hash == null ? null : hex(row.file_hash);
+      case "_updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
+      // `_created_at` (4.10): the commit `ts` of the document's first revision
+      // (`seq = 1`, the row `_revisions first { _ts values }` reads) — when
       // omgbase first observed the document, not a filesystem time. The
       // retention squash (spec/store §7.1, 15.0) keeps every revision and
       // commit row, so the value survives archiving.
-      case "created_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? AND r.seq = 1`, row.doc_id) ?? null;
-      // `raw`: the exact file bytes (spec/store §6.1, frontmatter included).
-      case "raw": return docsRead(store, String(row.doc_id))?.raw ?? null;
-      // `title`: the computed title (spec/properties §3.3 — the authored
-      // title, else the first H1, else absent → null). `data.title` is the
-      // authored one alone.
-      case "title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
-      // `tags`: the union of the authored tags (frontmatter + inline, by the
+      case "_created_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? AND r.seq = 1`, row.doc_id) ?? null;
+      // `_raw`: the exact file bytes (spec/store §6.1, frontmatter included).
+      case "_raw": return docsRead(store, String(row.doc_id))?._raw ?? null;
+      // `_title`: the computed title (spec/properties §3.3 — the authored
+      // title, else the first H1, else absent → null). The bare `title` is the
+      // authored key alone.
+      case "_title": return docProp(String(row.doc_id), "$title", "computed") ?? null;
+      // `_tags`: the union of the authored tags (frontmatter + inline, by the
       // property rule) and the body `#hashtags` (the computed `$tags` row,
       // spec/properties §3.3), deduped, authored first in authored order, then
-      // the hashtags in document order; null when both are absent.
-      // `data.tags` is the authored list alone.
-      case "tags": return docTags(String(row.doc_id));
-      case "format": return row.format;
+      // the hashtags in document order; null when both are absent. The bare
+      // `tags` is the authored list alone.
+      case "_tags": return docTags(String(row.doc_id));
+      case "_format": return row.format;
     }
     if (t === "blocks") switch (name) {
-      case "id": return row.block_id;
-      case "path": return referencePath(String(row.__path));
-      // `raw`: the block's raw source bytes — the blob its `raw_hash` names (a
-      // container's raw holds its children verbatim); `text` is the normalized text.
-      case "raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
-      case "hash": return row.raw_hash == null ? null : hex(row.raw_hash);
-      case "updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
-      // `created_at` (4.10): the EARLIEST commit `ts` among the block's
-      // `block_changes` — the same join as `updated_at` under MIN: the commit
+      case "_id": return row.block_id;
+      case "_path": return referencePath(String(row.__path));
+      // `_raw`: the block's raw source bytes — the blob its `raw_hash` names (a
+      // container's raw holds its children verbatim); `_text` is the normalized text.
+      case "_raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
+      case "_hash": return row.raw_hash == null ? null : hex(row.raw_hash);
+      case "_updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      // `_created_at` (4.10): the EARLIEST commit `ts` among the block's
+      // `block_changes` — the same join as `_updated_at` under MIN: the commit
       // that first wrote the id (`inserted`, or the split/merge lineage row
       // that minted it). Store 14.2 keeps that row and the 15.0 squash keeps
       // each block's earliest row (spec/store §7.1), so it survives archiving;
       // a resurrected block keeps its original creation.
-      case "created_at": return scalar(`SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
-      case "doc_id": return row.doc_id;
-      case "type": return row.type;
-      case "text": return row.text;
-      case "attrs": return parseJson(row.attrs);
-      case "ordinal": return row.ordinal;
-      case "depth": return row.depth;
+      case "_created_at": return scalar(`SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      case "_doc_id": return row.doc_id;
+      case "_type": return row.type;
+      case "_text": return row.text;
+      case "_attrs": return parseJson(row.attrs);
+      case "_ordinal": return row.ordinal;
+      case "_depth": return row.depth;
     }
     if (t === "nodes") switch (name) {
-      case "id": return row.node_id;
-      case "path": return referencePath(String(row.__path));
-      case "doc_id": return row.doc_id;
-      case "block_id": return row.block_id ?? null;
-      case "kind": return row.kind;
-      case "name": return row.name;
-      case "value": return row.value;
-      case "attrs": return parseJson(row.attrs);
+      case "_id": return row.node_id;
+      case "_path": return referencePath(String(row.__path));
+      case "_doc_id": return row.doc_id;
+      case "_block_id": return row.block_id ?? null;
+      case "_kind": return row.kind;
+      case "_name": return row.name;
+      case "_value": return row.value;
+      case "_attrs": return parseJson(row.attrs);
     }
     if (t === "links") switch (name) {
       // the store's columns under the surface's names (spec/surface §1.2).
-      case "id": return row.edge_id;
-      case "path": return referencePath(String(row.__path));
-      case "doc_id": return row.src_doc;
-      case "block_id": return row.src_block ?? null;
-      case "via_id": return row.via_node ?? null;
-      case "dst_id": return row.dst_node;
-      case "dst_path": {
+      case "_id": return row.edge_id;
+      case "_path": return referencePath(String(row.__path));
+      case "_doc_id": return row.src_doc;
+      case "_block_id": return row.src_block ?? null;
+      case "_via_id": return row.via_node ?? null;
+      case "_dst_id": return row.dst_node;
+      case "_dst_path": {
         const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, row.dst_node);
         return p == null ? null : referencePath(String(p));
       }
-      case "uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
-      case "field": return row.src_field ?? null;
-      case "predicate": case "provenance": case "dst_kind": case "anchor": return row[name];
+      case "_uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
+      case "_field": return row.src_field ?? null;
+      case "_predicate": case "_provenance": case "_dst_kind": case "_anchor": return row[name.slice(1)];
     }
     if (t === "revisions") switch (name) {
-      // the `revisions` × `commits` columns under docs_history's names (spec/surface §1.2, 4.7).
-      case "id": case "rev": return row.rev_id;
-      case "path": return referencePath(String(row.path));
-      case "seq": return row.seq;
-      case "doc_id": return row.doc_id;
-      case "commit": return row.commit_id;
-      case "ts": return row.ts;
-      case "origin": return row.origin;
-      case "actor": return row.actor ?? null;
-      case "reason": return row.reason ?? null;
-      case "hash": return hex(row.rendered_hash);
-      case "is_current": return row.is_current === 1 || row.is_current === true;
-      case "archived": return row.archived === 1 || row.archived === true;
+      // the `revisions` × `commits` columns under docs_history's names, `_`-prefixed (spec/surface §1.2, 4.7).
+      case "_id": case "_rev": return row.rev_id;
+      case "_path": return referencePath(String(row.path));
+      case "_seq": return row.seq;
+      case "_doc_id": return row.doc_id;
+      case "_commit": return row.commit_id;
+      case "_ts": return row.ts;
+      case "_origin": return row.origin;
+      case "_actor": return row.actor ?? null;
+      case "_reason": return row.reason ?? null;
+      case "_hash": return hex(row.rendered_hash);
+      case "_is_current": return row.is_current === 1 || row.is_current === true;
+      case "_archived": return row.archived === 1 || row.archived === true;
     }
     return undefined;
   };
-  // `tags` on a document: authored ∪ hashtags, each list as the property rule
+  // `_tags` on a document: authored ∪ hashtags, each list as the property rule
   // reads it (a scalar-authored `tags: x` is one element), deduped by value
   // (canonical JSON, so both engines agree on non-string elements).
   const docTags = (docId: string): unknown => {
@@ -606,10 +625,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // ---- get ------------------------------------------------------------------
   const getFrom = (row: unknown, key: string): unknown => {
     if (row == null) return undefined;
-    // The root row: `^$it.id` is the repository id, `^$it.<target>` the lazy
+    // The root row: `^$it._id` is the repository id, `^$it.<target>` the lazy
     // root scan (the same handle `^<target>` / `root(name)` hands out).
     if ((row as RootRow)[ROOT_ROW]) {
-      if (key === "id") return repoId;
+      if (key === "_id") return repoId;
       return rootFns[key] ? rootFns[key]!() : undefined;
     }
     if ((row as PropSourceRef)[PROP_SOURCE]) {
@@ -628,26 +647,34 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // functions (text/semantic/under_*/…) never arrive here: run.ts rewrites
     // them to `$it.fn(…)`, so they reach callMethod with the row as receiver.
 
-    // engine attributes win on collision (the name rule above).
-    if (ATTRIBUTES[t].has(key)) return attribute(r, t, key);
+    // An underscore-prefixed name is the engine's (the name rule above): an
+    // attribute, a reach-through, a relation or a source handle — never the
+    // author's.
+    if (key.startsWith("_")) {
+      if (ATTRIBUTES[t].has(key)) return attribute(r, t, key);
 
-    // self-alias namespaces: `doc.x` (docs), `block.x` (blocks), `section.x` (nodes).
-    if (t === "docs" && key === "doc") return r;
-    if (t === "blocks" && key === "block") return r;
-    if (t === "nodes" && key === "section") return r;
+      // reach-through to owning entities, from a link row to its destination and
+      // from a revision to its document's current row — statically single
+      // relations: absent is the single-with-no-row marker.
+      if (t === "revisions" && key === "_doc") return revisionDoc(r) ?? ABSENT_SINGLE;
+      if (t !== "docs" && key === "_doc") return owningDoc(r) ?? ABSENT_SINGLE;
+      if (t === "nodes" && key === "_block") return owningBlock(r) ?? ABSENT_SINGLE;
+      if (t === "links" && key === "_dst") return destinationDoc(r) ?? ABSENT_SINGLE;
+      if (t === "links" && key === "_block") return linkBlock(r) ?? ABSENT_SINGLE;
 
-    // reach-through to owning entities, from a link row to its destination and
-    // from a revision to its document's current row — statically single
-    // relations: absent is the single-with-no-row marker.
-    if (t === "revisions" && key === "doc") return revisionDoc(r) ?? ABSENT_SINGLE;
-    if (t !== "docs" && key === "doc") return owningDoc(r) ?? ABSENT_SINGLE;
-    if (t === "nodes" && key === "block") return owningBlock(r) ?? ABSENT_SINGLE;
-    if (t === "links" && key === "dst") return destinationDoc(r) ?? ABSENT_SINGLE;
-    if (t === "links" && key === "block") return linkBlock(r) ?? ABSENT_SINGLE;
+      // relations.
+      const rels = rel[t];
+      if (rels[key]) return rels[key]!(r);
 
-    // relations.
-    const rels = rel[t];
-    if (rels[key]) return rels[key]!(r);
+      // The source handles of a document: `_data` is the merged authored view
+      // (frontmatter + inline), the other two one source each; `_data.<k>` is
+      // the bare `<k>`, and the one way to an authored key spelled `_x`.
+      if (t === "docs" && SOURCE_HANDLES.has(key)) return { [PROP_SOURCE]: true, docId: String(r.doc_id), source: handleSource(key) } as PropSourceRef;
+      // Any other `_name` is no engine name of this kind (names.ts refuses it
+      // statically, before any row is read): absent.
+      return undefined;
+    }
+
     // A bare target name that is not one of this row's relations reads a
     // property the row has none of (spec/surface §1.1, 2.0): loud, naming the
     // root-row spelling. `docs`/`links` never get here (run.ts refuses them
@@ -655,18 +682,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // row and `revisions` on anything but a document do.
     if (ROOTS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
 
-    // the author's data.
-    if (t === "docs") {
-      // The source handles: `data` is the merged authored view (frontmatter +
-      // inline), the other two one source each; `data.<k>` reaches an authored
-      // key whose bare name is an engine attribute (`data.path`, `data.tags`).
-      if (SOURCE_HANDLES.has(key)) return { [PROP_SOURCE]: true, docId: String(r.doc_id), source: key === "data" ? null : key } as PropSourceRef;
-      return docProp(String(r.doc_id), key);
-    }
-    // blocks / nodes: a bare non-structural identifier flattens into attrs:
-    // `checked` reads `attrs.checked`. The attributes above win on collision; an
-    // absent key is undefined (silently false in a predicate), matching a doc's
-    // missing frontmatter key. The `attrs.<k>` form still works unchanged.
+    // the author's data — every bare name.
+    if (t === "docs") return docProp(String(r.doc_id), key);
+    // blocks / nodes: a bare identifier flattens into attrs: `checked` reads
+    // `_attrs.checked`. An absent key is undefined (silently false in a
+    // predicate), matching a doc's missing frontmatter key.
     if (t === "blocks" || t === "nodes") return jattr(r, key);
     return undefined;
   };
@@ -824,11 +844,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
 
   return {
     // The root scope's names (spec/oqx §2 step 5 at the root): the five lazy
-    // scans and `id`, the repository id — so `^docs` / `0^docs` from any row is
-    // the scan and `^id` / `0^id` the id.
+    // scans and `_id`, the repository id — so `^docs` / `0^docs` from any row is
+    // the scan and `^_id` / `0^_id` the id.
     root(name: string): unknown {
       if (opts.rowsRoot && name === opts.rowsRoot.name) return opts.rowsRoot.rows;
-      if (name === "id") return repoId;
+      if (name === "_id") return repoId;
       return rootFns[name] ? rootFns[name]!() : undefined;
     },
     // The root scope's row (oqx 0.18): the repository, so `^$it` from a
@@ -877,7 +897,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // pushdown can serve the property's autopromoted/cached bounds — see
     // detectRange + val_json in store/properties.ts.
     callFunction(name: string, args: unknown[]): CallResult {
-      // `entries(data)` / `entries(frontmatter)` / `entries(inline)`: the source
+      // `entries(_data)` / `entries(_frontmatter)` / `entries(_inline)`: the source
       // handle is lazy (a PropSourceRef, not a plain object), so materialize its
       // property bag as entries here; any other argument falls through to the
       // oqx builtin.
@@ -931,14 +951,14 @@ export function tagRows(rows: Record<string, unknown>[], target: Kind): unknown[
 
 /**
  * A store row surfacing as a VALUE in a result (spec/surface §1.4, rows as
- * values, 1.2) is rendered as `{ id, path }` (3.0) — its id column and its
+ * values, 1.2) is rendered as `{ _id, _path }` (5.0) — its id column and its
  * document's path in the reference form (`/a.md`, §1 "Paths"), the same two keys
  * every hit carries, spelled as the attributes that read them — never the store
  * row itself.
  * Returns undefined for anything that is not a tagged row (run.ts leaves those
  * alone).
  */
-export function rowRef(value: unknown): { id: string; path: string } | undefined {
+export function rowRef(value: unknown): { _id: string; _path: string } | undefined {
   const t = (value as Row | null | undefined)?.[TARGET];
   if (!t) return undefined;
   const r = value as Row;
@@ -946,7 +966,7 @@ export function rowRef(value: unknown): { id: string; path: string } | undefined
   // a revision's path is `revisions.path` — the path it was committed under
   // (a move re-paths the current revision; §1.2, 4.7).
   const path = t === "docs" || t === "revisions" ? r.path : r.__path;
-  return { id: String(id), path: path == null ? "" : referencePath(String(path)) };
+  return { _id: String(id), _path: path == null ? "" : referencePath(String(path)) };
 }
 
 export { TARGET };

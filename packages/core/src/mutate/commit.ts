@@ -62,8 +62,8 @@ import { MutationError, type MutDoc } from "./tree.js";
  *  when the row has none) as one `SELECT` read them at plan time. Invariant I3
  *  (spec/store §8) makes `current_rev` the version vector of every live block,
  *  so the commit need not re-read blocks: a block cannot change without a new
- *  revision. The same triple the opset precondition `{ id, path, base_revision,
- *  hash }` freezes. */
+ *  revision. The same triple the opset precondition `{ _id, _path, base_revision,
+ *  _hash }` freezes. */
 export interface DocBase {
   path: string;
   currentRev: string | null;
@@ -165,7 +165,7 @@ export interface CommitTargets {
  * Commit `effects` as one request under `head` at `ts`. Throws `sync_conflict`
  * (retriable) when a document changed on disk — after ingesting those bytes as
  * an `observed` commit so a retry sees them — `stale_plan` (retriable, `{ doc,
- * expected_revision, current: { revision, hash } }`) when a document's row
+ * expected_revision, current: { revision, _hash } }`) when a document's row
  * moved since the plan, `doc_missing` / `path_taken` per effect, and otherwise
  * returns the shared commit id with the ingest results. The caller holds the
  * writer lock when it has a workspace.
@@ -404,7 +404,7 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
       throw new MutationError("stale_plan", `document ${docId} changed since the request was planned; re-plan`, {
         doc: docId,
         expected_revision: expected.currentRev,
-        current: { revision: row.currentRev, hash: row.fileHash },
+        current: { revision: row.currentRev, _hash: row.fileHash },
         retriable: true,
       });
     }
@@ -461,8 +461,8 @@ function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>): void
   db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").run(phantom, e.docId, e.docId);
   const selfEdge = db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc = ? AND src_block = ? AND anchor IS ?");
   for (const l of e.inbound) {
-    if (l.doc_id !== e.docId || l.block_id === null) continue;
-    selfEdge.run(phantom, e.docId, e.docId, l.block_id, l.anchor);
+    if (l._doc_id !== e.docId || l._block_id === null) continue;
+    selfEdge.run(phantom, e.docId, e.docId, l._block_id, l._anchor);
     affected.add(e.docId);
   }
   for (const d of affected) rebuildDocEdges(db, d);

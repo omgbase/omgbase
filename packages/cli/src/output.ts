@@ -217,17 +217,18 @@ function indent(s: string, pad: string): string {
 
 // ---- query hits (human tier) ------------------------------------------------
 //
-// Every OQX hit carries the injected `id` + `path` (the addressable handle and
-// its locator, 06 §2) plus whatever the query's `select` projected, in select
-// order. Two renderings:
+// Every OQX hit carries the envelope `_id` + `_path` (the addressable handle and
+// its locator — spec/surface §1.4, 5.0: the engine names, `_`-prefixed) plus
+// whatever the query's `select` projected, in select order. Two renderings:
 //
-//   * no projection → `<id>  <path>` per line, no header (the classic list; kept
-//     byte-for-byte so transcripts that don't project stay valid);
-//   * a projection   → an aligned table: dim header row, then per hit the id
-//     (dim), the locator, and the projected columns in select order. Columns are
-//     the union of projected keys across hits in first-seen order (a hit omits
-//     an absent field, so no single hit is authoritative). The injected `path`
-//     column is dropped when the projection itself carries `path` — a row stays
+//   * no projection → `<_id>  <_path>` per line, no header (the classic list;
+//     kept byte-for-byte so transcripts that don't project stay valid);
+//   * a projection   → an aligned table: dim header row (`_id`, `_path`, then the
+//     projected keys), then per hit the id (dim), the locator, and the projected
+//     columns in select order. Columns are the union of projected keys across
+//     hits in first-seen order (a hit omits an absent field, so no single hit is
+//     authoritative). A projected `_id`/`_path` collapses onto the envelope
+//     (spec/surface §1.4) so it is never a column of its own — a row stays
 //     locatable either way, and the same path never prints twice.
 //
 // Cells: strings verbatim (first line only; `…` marks a cut), numbers/booleans
@@ -237,8 +238,8 @@ function indent(s: string, pad: string): string {
 // `cli.style`, so NO_COLOR / non-TTY degrade to plain text like everything else.
 
 export interface HitLike {
-  id: string;
-  path: string;
+  _id: string;
+  _path: string;
   [k: string]: unknown;
 }
 
@@ -262,12 +263,12 @@ export function hitCell(v: unknown): string {
 }
 
 /** The projected column names across `hits`: every key but the envelope's
- *  `id`/`path` (spec/surface §1.4, 3.0 — a `path` projection collapses onto
+ *  `_id`/`_path` (spec/surface §1.4, 5.0 — a `_path` projection collapses onto
  *  the envelope key, so it is never a column), in first-seen order. Empty when
  *  nothing was projected. */
 export function hitColumns(hits: HitLike[]): string[] {
   const cols: string[] = [];
-  const seen = new Set<string>(["id", "path"]);
+  const seen = new Set<string>(["_id", "_path"]);
   for (const h of hits) {
     for (const k of Object.keys(h)) {
       if (seen.has(k)) continue;
@@ -278,22 +279,22 @@ export function hitColumns(hits: HitLike[]): string[] {
   return cols;
 }
 
-/** Human-tier hit list: `<id>  <path>` lines, or an aligned table when projected
- *  (header `id`, `path`, then the projected keys — spec/cli §4, 3.0). */
+/** Human-tier hit list: `<_id>  <_path>` lines, or an aligned table when projected
+ *  (header `_id`, `_path`, then the projected keys — spec/cli §4, 5.0). */
 export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void {
   const { io, style } = cli;
   const projected = hitColumns(hits);
   if (projected.length === 0) {
-    for (const h of hits) io.out(`${style.id(h.id)}  ${style.accent(h.path)}`.trimEnd());
+    for (const h of hits) io.out(`${style.id(h._id)}  ${style.accent(h._path)}`.trimEnd());
     return;
   }
-  const cols = ["id", "path", ...projected];
+  const cols = ["_id", "_path", ...projected];
   const rows: string[][] = [cols.map((c) => style.dim(c))];
   for (const h of hits) {
     rows.push(
       cols.map((c) => {
-        if (c === "id") return style.id(h.id);
-        if (c === "path") return style.accent(h.path);
+        if (c === "_id") return style.id(h._id);
+        if (c === "_path") return style.accent(h._path);
         return hitCell(h[c]);
       }),
     );
@@ -303,7 +304,7 @@ export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void
 
 /** The bare hit table (`query --bare`, spec/cli §4, 4.1): a hit is its
  *  projection alone (`spec/surface` §1.4, 4.2), so the columns are every key in
- *  first-seen order across the hits — a projected `id`/`path` is an ordinary
+ *  first-seen order across the hits — a projected `_id`/`_path` is an ordinary
  *  column, rendered as any other cell — with no envelope columns before them.
  *  Header row, then one row per hit; cells as the enveloped table's. */
 export function renderBareHits(cli: { io: IO; style: Style }, hits: Record<string, unknown>[]): void {

@@ -1,5 +1,5 @@
 // <query-console>: a textarea for OQX (Cmd/Ctrl+Enter runs), the result as a
-// table whose `id`/`path` cells are links into the explorer, "more" for the
+// table whose `_id`/`_path` cells are links into the explorer, "more" for the
 // next page, the result's `hints` as a yellow bar, the engine's error with its
 // `data.fix`, and a "syntax" button that opens `query_syntax` in a drawer
 // (fetched once by the page). Properties: `query`, `result`, `error`,
@@ -109,7 +109,7 @@ export class QueryConsole extends LitElement {
         <button type="button" @click=${this.openSyntax}>syntax</button>
         <button type="button" class="primary" ?disabled=${this.running || !this.query.trim()} @click=${this.run} title="⌘/Ctrl + Enter">${this.running ? "running…" : "run"}</button>
       </div>
-      <textarea spellcheck="false" .value=${this.query} placeholder="select title, layer from docs where …   (⌘/Ctrl+Enter runs)"
+      <textarea spellcheck="false" .value=${this.query} placeholder="select _title, layer from docs where …   (⌘/Ctrl+Enter runs)"
         @input=${(e: Event) => { this.query = (e.target as HTMLTextAreaElement).value; this.emit("console-input", { query: this.query }); }}
         @keydown=${this.onKeydown}></textarea>
       ${r?.hints?.length ? html`<div class="hints" data-hints>${r.hints.map((h) => html`<div>${renderBackticks(h)}</div>`)}</div>` : nothing}

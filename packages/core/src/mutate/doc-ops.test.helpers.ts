@@ -35,7 +35,7 @@ export interface DocMoveResult extends DocOpResult {
 function docOf(store: Store, ctx: DocOpContext, ref: string): SugarDoc {
   const info = findDocByRef(store, ctx.repoId, ref);
   if (!info) throw new MutationError("doc_missing", `no document ${ref}`);
-  return { id: info.docId, path: info.path };
+  return { _id: info.docId, _path: info.path };
 }
 
 function request(ctx: DocOpContext) {
@@ -47,7 +47,7 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   const built = createEffects(path, markdown, frontmatter);
   const { receipt } = applySugar(store, request(ctx), built);
   const res = createdDoc(receipt!, (built.effects[0] as { path: string }).path);
-  return { docId: res.id, path: res.path, committed: true };
+  return { docId: res._id, path: res._path, committed: true };
 }
 
 export function docsMove(store: Store, ctx: DocOpContext, ref: string, toPath: string, opts: { retargetInbound?: boolean } = {}): DocMoveResult {
@@ -56,17 +56,17 @@ export function docsMove(store: Store, ctx: DocOpContext, ref: string, toPath: s
   const links = moveLinks(store, ctx.repoId, doc, toPath, retarget);
   const built = moveDocEffects(doc, toPath, retarget);
   applySugar(store, request(ctx), built);
-  return { docId: doc.id, path: (built.effects[0] as { to: string }).to, committed: true, ...links };
+  return { docId: doc._id, path: (built.effects[0] as { to: string }).to, committed: true, ...links };
 }
 
 export function docsDelete(store: Store, ctx: DocOpContext, ref: string): DocOpResult {
   const doc = docOf(store, ctx, ref);
   applySugar(store, request(ctx), deleteDocEffects(doc));
-  return { docId: doc.id, path: doc.path, committed: true };
+  return { docId: doc._id, path: doc._path, committed: true };
 }
 
 export function docsSetMeta(store: Store, ctx: DocOpContext, ref: string, patch: { set?: Record<string, unknown>; unset?: string[] }): DocOpResult {
   const doc = docOf(store, ctx, ref);
   applySugar(store, request(ctx), setMetaEffects(doc, patch.set, patch.unset));
-  return { docId: doc.id, path: doc.path, committed: true };
+  return { docId: doc._id, path: doc._path, committed: true };
 }

@@ -32,11 +32,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select title, era from docs where type == \"practitioner\" order by era"
+        "select _title, era from docs where type == \"practitioner\" order by era"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id   path                                 title              era\nd_4  /practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  /practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  /practitioners/paracelsus.md         Paracelsus         1530\nd_5  /practitioners/newton.md             Isaac Newton       1680\n"
+        "stdout": "_id  _path                                _title             era\nd_4  /practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  /practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  /practitioners/paracelsus.md         Paracelsus         1530\nd_5  /practitioners/newton.md             Isaac Newton       1680\n"
       }
     },
     {
@@ -45,11 +45,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select path, era from docs where type == \"text\""
+        "select _path, era from docs where type == \"text\""
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                      era\nd_16  /texts/emerald-tablet.md  800\nd_17  /texts/mutus-liber.md     1677\n"
+        "stdout": "_id   _path                     era\nd_16  /texts/emerald-tablet.md  800\nd_17  /texts/mutus-liber.md     1677\n"
       }
     },
     {
@@ -58,11 +58,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select text, tags, nope from blocks where doc.path == \"texts/mutus-liber.md\" && type == \"paragraph\""
+        "select _text, tags, nope from blocks where _doc._path == \"texts/mutus-liber.md\" && _type == \"paragraph\""
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                   text                                                          tags  nope\nb_303  /texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  /texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  /texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  /texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  /texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
+        "stdout": "_id    _path                  _text                                                         tags  nope\nb_303  /texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  /texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  /texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  /texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  /texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
       }
     },
     {
@@ -70,11 +70,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select type, ordinal, depth, attrs.checked from blocks where doc.path == \"texts/mutus-liber.md\" && depth == 1"
+        "select _type, _ordinal, _depth, _attrs.checked from blocks where _doc._path == \"texts/mutus-liber.md\" && _depth == 1"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                   type  ordinal  depth  checked\nb_311  /texts/mutus-liber.md  task  0        1      false\nb_312  /texts/mutus-liber.md  task  1        1      false\nb_313  /texts/mutus-liber.md  task  2        1      false\n"
+        "stdout": "_id    _path                  _type  _ordinal  _depth  checked\nb_311  /texts/mutus-liber.md  task   0         1       false\nb_312  /texts/mutus-liber.md  task   1         1       false\nb_313  /texts/mutus-liber.md  task   2         1       false\n"
       }
     },
     {
@@ -134,7 +134,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select path values from docs where type == \"text\""
+        "select _path values from docs where type == \"text\""
       ],
       "expect": {
         "exit": 0,
@@ -159,7 +159,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select path values from docs where type == \"text\"",
+        "select _path values from docs where type == \"text\"",
         "--jsonl"
       ],
       "expect": {
@@ -173,12 +173,12 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select title, era from docs where type == \"practitioner\" order by era",
+        "select _title, era from docs where type == \"practitioner\" order by era",
         "--bare"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "title              era\nMaria Prophetissa  250\nJabir ibn Hayyan   800\nParacelsus         1530\nIsaac Newton       1680\n"
+        "stdout": "_title             era\nMaria Prophetissa  250\nJabir ibn Hayyan   800\nParacelsus         1530\nIsaac Newton       1680\n"
       }
     },
     {
@@ -187,13 +187,13 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select title, era from docs where type == \"practitioner\" order by era",
+        "select _title, era from docs where type == \"practitioner\" order by era",
         "--bare",
         "--json"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"title\":\"Maria Prophetissa\",\"era\":250},{\"title\":\"Jabir ibn Hayyan\",\"era\":800},{\"title\":\"Paracelsus\",\"era\":1530},{\"title\":\"Isaac Newton\",\"era\":1680}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+        "stdout": "{\"hits\":[{\"_title\":\"Maria Prophetissa\",\"era\":250},{\"_title\":\"Jabir ibn Hayyan\",\"era\":800},{\"_title\":\"Paracelsus\",\"era\":1530},{\"_title\":\"Isaac Newton\",\"era\":1680}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
       }
     },
     {
@@ -234,7 +234,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"}\n{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}\n"
+        "stdout": "{\"_id\":\"d_16\",\"_path\":\"/texts/emerald-tablet.md\"}\n{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\"}\n"
       }
     },
     {
@@ -247,7 +247,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+        "stdout": "{\"hits\":[{\"_id\":\"d_16\",\"_path\":\"/texts/emerald-tablet.md\"},{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
       }
     },
     {
@@ -324,7 +324,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_0\",\"path\":\"/index.md\"}\n{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}\n",
+        "stdout": "{\"_id\":\"d_0\",\"_path\":\"/index.md\"}\n{\"_id\":\"d_1\",\"_path\":\"/lab/2026-01-notes.md\"}\n",
         "stderr": "… truncated; continue with --cursor WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\n"
       }
     },
@@ -342,7 +342,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_0\",\"path\":\"/index.md\"},{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\",\"consumer\":\"collect\"}\n",
+        "stdout": "{\"hits\":[{\"_id\":\"d_0\",\"_path\":\"/index.md\"},{\"_id\":\"d_1\",\"_path\":\"/lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\",\"consumer\":\"collect\"}\n",
         "stderr": ""
       }
     },
@@ -450,8 +450,8 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "id    path                      titel\nd_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n",
-        "stderr": "  hint: `titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?\n"
+        "stdout": "_id   _path                     titel\nd_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n",
+        "stderr": "  hint: no document in this repository carries a property `titel`; did you mean `title`?\n"
       }
     },
     {
@@ -465,7 +465,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"hints\":[\"`titel` is not a field of docs and no document in this repository carries a property by that name; did you mean `title`?\"]}\n"
+        "stdout": "{\"hits\":[{\"_id\":\"d_16\",\"_path\":\"/texts/emerald-tablet.md\"},{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"hints\":[\"no document in this repository carries a property `titel`; did you mean `title`?\"]}\n"
       }
     },
     {
@@ -474,13 +474,13 @@
       "workspace": "alchemy",
       "argv": [
         "query",
-        "select path from docs where layr == \"canon\""
+        "select _path from docs where layr == \"canon\""
       ],
       "pin_stderr": true,
       "expect": {
         "exit": 0,
         "stdout": "",
-        "stderr": "  no hits\n  hint: `layr` is not a field of docs and no document in this repository carries a property by that name; did you mean `layer`?\n"
+        "stderr": "  no hits\n  hint: no document in this repository carries a property `layr`; did you mean `layer`?\n"
       }
     },
     {
@@ -489,12 +489,12 @@
       "workspace": "alchemy",
       "argv": [
         "query",
-        "select path, target from links"
+        "select _path, target from links"
       ],
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[filter_invalid]: `target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)\n  {\n    \"reason\": \"`target` is not a field of links (fields: id, path, doc_id, block_id, via_id, dst_id, dst_path, uri, field, dst_kind, predicate, provenance, anchor)\",\n    \"hint\": \"OQX\"\n  }\n"
+        "stderr": "error[filter_invalid]: `target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)\n  {\n    \"reason\": \"`target` reads an authored property, and a link carries none (engine names: _id, _path, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _field, _dst_kind, _predicate, _provenance, _anchor, _doc, _dst, _block)\",\n    \"hint\": \"OQX\"\n  }\n"
       }
     },
     {
@@ -571,7 +571,7 @@
       "name": "source-from-file",
       "workspace": "alchemy",
       "files": {
-        "query.oqx": "select path values\nfrom docs\nwhere type == \"text\"\n"
+        "query.oqx": "select _path values\nfrom docs\nwhere type == \"text\"\n"
       },
       "argv": [
         "q",
@@ -589,11 +589,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select path, d: $depth, s: $stop from docs where path == \"texts/mutus-liber.md\" follow out_links collect { from dst depth 2 }"
+        "select _path, d: $depth, s: $stop from docs where _path == \"texts/mutus-liber.md\" follow _out_links collect { from _dst depth 2 }"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                          d  s\nd_17  /texts/mutus-liber.md         1  interior\nd_13  /substances/prima-materia.md  2  depth\n"
+        "stdout": "_id   _path                         d  s\nd_17  /texts/mutus-liber.md         1  interior\nd_13  /substances/prima-materia.md  2  depth\n"
       }
     },
     {
@@ -601,11 +601,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select predicate, to: dst_path from links where doc_id == \"d_17\""
+        "select _predicate, to: _dst_path from links where _doc_id == \"d_17\""
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                   predicate   to\ne_63  /texts/mutus-liber.md  references  /substances/prima-materia.md\n"
+        "stdout": "_id   _path                  _predicate  to\ne_63  /texts/mutus-liber.md  references  /substances/prima-materia.md\n"
       }
     },
     {
@@ -613,11 +613,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select path, open: nodes collect { id where kind == \"md:task\" && !attrs.checked } from docs where path == \"texts/mutus-liber.md\""
+        "select _path, open: _nodes collect { _id where _kind == \"md:task\" && !_attrs.checked } from docs where _path == \"texts/mutus-liber.md\""
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                   open\nd_17  /texts/mutus-liber.md  [{\"id\":\"n_5ebb7234aa44\"},{\"id\":\"n_cb80a4290986\"},{\"id\":\"n_d…\n"
+        "stdout": "_id   _path                  open\nd_17  /texts/mutus-liber.md  [{\"_id\":\"n_5ebb7234aa44\"},{\"_id\":\"n_cb80a4290986\"},{\"_id\":\"…\n"
       }
     },
     {
@@ -630,7 +630,7 @@
             "new",
             "q.md",
             "-m",
-            "# Q\n\nA fence:\n\n```omg\nselect path values from docs where type == \"text\"\n```\n",
+            "# Q\n\nA fence:\n\n```omg\nselect _path values from docs where type == \"text\"\n```\n",
             "--actor",
             "human:spec"
           ],
@@ -649,7 +649,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"text\":\"b_327 h1   Q  §\\nb_328 p    A fence:\\nb_329 code select path values from docs where type == \\\"text\\\"\",\"truncated\":false}\n"
+            "stdout": "{\"text\":\"b_327 h1   Q  §\\nb_328 p    A fence:\\nb_329 code select _path values from docs where type == \\\"text\\\"\",\"truncated\":false}\n"
           }
         },
         {
@@ -831,7 +831,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "from docs where path == \"/texts/mutus-liber.md\""
+        "from docs where _path == \"/texts/mutus-liber.md\""
       ],
       "expect": {
         "exit": 0,
@@ -844,7 +844,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "from docs where path == \"texts/mutus-liber.md\""
+        "from docs where _path == \"texts/mutus-liber.md\""
       ],
       "expect": {
         "exit": 0,
@@ -873,11 +873,11 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "select n: size(^docs), rid: ^id from docs where path == \"/index.md\""
+        "select n: size(^docs), rid: ^_id from docs where _path == \"/index.md\""
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id   path       n   rid\nd_0  /index.md  20  rp_0\n"
+        "stdout": "_id  _path      n   rid\nd_0  /index.md  20  rp_0\n"
       }
     },
     {
@@ -891,7 +891,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[filter_invalid]: `$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`\n  {\n    \"reason\": \"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`\",\n    \"hint\": \"OQX\"\n  }\n"
+        "stderr": "error[filter_invalid]: `$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`\n  {\n    \"reason\": \"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`\",\n    \"hint\": \"OQX\"\n  }\n"
       }
     },
     {
@@ -905,7 +905,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"filter_invalid\",\"message\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`\",\"data\":{\"reason\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^id` / `0^id`\",\"hint\":\"OQX\"},\"retriable\":false}\n"
+        "stderr": "{\"error\":\"filter_invalid\",\"message\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`\",\"data\":{\"reason\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^_id` / `0^_id`\",\"hint\":\"OQX\"},\"retriable\":false}\n"
       }
     },
     {

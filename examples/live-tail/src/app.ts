@@ -34,7 +34,7 @@ import {
   RECENT_LIMIT, advanceCursor, createdDiff, diffLineKind, diffStats, digestPaths, entryCard, filterStateAfter, formatStats, formatTime, hiddenLine, latestChange, latestPair, loadDiffView, matchQuery, pairForCommit, partitionByFilter, pollMs, prependDigests, recentCard, recentFromHits, recentQuery, saveDiffView, startCursor, titlesByPath,
   type Card, type Digest, type DiffPair, type DiffView, type DocVersions, type EntryChange, type FeedEntry, type FilterState, type RecentDoc, type Stats,
 } from "./lib/feed.ts";
-import { docLocator, surfaceOf, surfaceProblem } from "./lib/paths.ts";
+import { docLocator, namesFor, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { changesOf, docVersionsOf, readAtOf, unifiedOf } from "./lib/shapes.ts";
 
 const MCP_URL = "/mcp";
@@ -71,6 +71,8 @@ const connectionMessage = signal("");
 const whoami = signal<WhoAmI | null>(null);
 /** The server's surface version (`specs.surface`) for the header; null until known. The page only connects to a server that passes lib/paths.ts `surfaceProblem`. */
 const surface = signal<string | null>(null);
+/** How the connected server spells the engine names (lib/paths.ts `namesFor`): `_path`/`_title`/`_updated_at` and `{ _id | _path }` from surface 5.0, the bare 3.x/4.x names before. Every query and locator the page generates goes through it. */
+const names = computed(() => namesFor(surface.get()));
 const repos = signal<string[]>([]);
 const repo = signal<string>(localStorage.getItem(REPO_KEY) ?? "");
 const pollSeconds = signal<number>(pollMs(localStorage.getItem(POLL_KEY)) / 1000);
@@ -133,7 +135,7 @@ function setSource(key: string, state: SourceState): void {
 
 /** One revision's full text. */
 async function readAt(doc: string, rev: string): Promise<string> {
-  return readAtOf(await client.docsReadAt(docLocator(doc), rev, repo.get())).raw;
+  return readAtOf(await client.docsReadAt(docLocator(doc, names.get()), rev, repo.get())).raw;
 }
 
 /** Fetch what a pair names: the unified diff between two revisions, or the created revision's content. */
@@ -146,7 +148,7 @@ async function fetchPair(key: string, doc: string, pair: DiffPair): Promise<Diff
     setSource(key, { status: "ready", before: "", after: content }); // the markdown view's sides, already in hand
     return text === "" ? { status: "none", note: "created empty" } : { status: "ready", pair, text, doc };
   }
-  const d = unifiedOf(await client.diffUnified(docLocator(doc), pair.from, pair.to, r));
+  const d = unifiedOf(await client.diffUnified(docLocator(doc, names.get()), pair.from, pair.to, r));
   return d.diff === "" ? { status: "none", note: "no textual change between the two revisions" } : { status: "ready", pair, text: d.diff, doc };
 }
 
@@ -174,7 +176,7 @@ function statsOf(state: DiffState | undefined): Stats | null {
 
 /** One document's `docs_history` (lib/shapes.ts). */
 async function docsHistory(doc: string): Promise<DocVersions | null> {
-  const d = await client.docsHistory(docLocator(doc), repo.get());
+  const d = await client.docsHistory(docLocator(doc, names.get()), repo.get());
   return d ? docVersionsOf(d) : null;
 }
 
@@ -220,7 +222,7 @@ async function loadRecent(): Promise<void> {
   const f = filter.get();
   recentLoading.set(true);
   try {
-    const result = await client.query(recentQuery(f), repo.get(), RECENT_LIMIT);
+    const result = await client.query(recentQuery(f, names.get()), repo.get(), RECENT_LIMIT);
     if (generation !== recentGeneration) return; // the filter or repo changed meanwhile
     filterState.set(filterStateAfter(f, null));
     const docs = recentFromHits(result.hits);
@@ -262,7 +264,7 @@ async function lookupDigests(digests: Digest[]): Promise<{ digests: Digest[]; ti
   const paths = digestPaths(digests);
   const state = filterState.get();
   const filter = state.kind === "on" ? state.filter : "";
-  const q = matchQuery(filter, paths);
+  const q = matchQuery(filter, paths, names.get());
   if (q === null) return { digests, titles: new Map() };
   let titles: Map<string, string | null>;
   try {
@@ -409,7 +411,8 @@ async function connect(): Promise<void> {
     return;
   }
   try {
-    // This demo speaks surface 3.0: an older server (or one without the
+    // This demo speaks surface 3.0 and later (5.0's `_`-prefixed engine names,
+    // the bare ones before — `names`): an older server (or one without the
     // `version` tool) gets a loud, friendly error instead of a silently empty feed.
     const [{ repos: list }, v] = await Promise.all([client.repos(), client.version().then(surfaceOf, () => null)]);
     const problem = surfaceProblem(v);
@@ -580,7 +583,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
     const apply = (value: string) => { if (this.filterTimer) { clearTimeout(this.filterTimer); this.filterTimer = null; } applyFilter(value); };
     return html`
       <div class="filterbar">
-        <oqx-framed-filter .value=${filter.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
+        <oqx-framed-filter .value=${filter.get()} .names=${names.get()} ?invalid=${fs.kind === "invalid"} placeholder=${FILTER_PLACEHOLDER}
           @filter-input=${(e: CustomEvent<FilterDetail>) => {
             const { value } = e.detail;
             if (this.filterTimer) clearTimeout(this.filterTimer);
@@ -589,7 +592,7 @@ export class LiveTailApp extends SignalWatcher(LitElement) {
           @filter-change=${(e: CustomEvent<FilterDetail>) => apply(e.detail.value)}></oqx-framed-filter>
         ${fs.kind === "invalid"
           ? html`<span class="hint err">${fs.message}</span>`
-          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>path.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
+          : html`<span class="hint">click into the query to add a <code>where</code> predicate — an OQX expression over <code>docs</code> such as <code>${FILTER_PLACEHOLDER}</code> or <code>${names.get().path}.startsWith("/notes/")</code>; it narrows the recent list and what arrives from now on (Enter applies, Escape leaves)</span>`}
       </div>
     `;
   }

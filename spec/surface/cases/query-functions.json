@@ -30,8 +30,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -45,8 +45,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -60,14 +60,14 @@
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "a": true,
             "b": false
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "a": false,
             "b": true
           }
@@ -89,12 +89,12 @@
     },
     {
       "name": "range-numeric",
-      "query": "select a: 2 in range(stage_range), b: 4 in range(stage_range), c: 5 in range(stage_range) from docs where path == \"processes/magnum-opus.md\"",
+      "query": "select a: 2 in range(stage_range), b: 4 in range(stage_range), c: 5 in range(stage_range) from docs where _path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "a": true,
             "b": true,
             "c": false
@@ -111,16 +111,16 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -134,23 +134,23 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "r": null
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "r": null
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "r": null
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "r": null
           }
         ],
@@ -165,24 +165,24 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -196,20 +196,20 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -223,12 +223,12 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -242,8 +242,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           }
         ],
         "truncated": false,
@@ -253,32 +253,32 @@
     },
     {
       "name": "size-list-and-scalar",
-      "query": "select n: size(tags) from docs where type == \"substance\"",
+      "query": "select n: size(_tags) from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "n": 1
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "n": 3
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "n": 2
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "n": 2
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "n": 2
           }
         ],
@@ -289,7 +289,7 @@
     },
     {
       "name": "size-values",
-      "query": "select size(tags) values from docs where path == \"substances/salt.md\"",
+      "query": "select size(_tags) values from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -302,12 +302,12 @@
     },
     {
       "name": "list-of-scalar",
-      "query": "select l: list(tags), m: list(era) from docs where path == \"substances/mercury.md\" || path == \"practitioners/newton.md\"",
+      "query": "select l: list(_tags), m: list(era) from docs where _path == \"substances/mercury.md\" || _path == \"practitioners/newton.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "l": [
               "practitioner",
               "transmutation"
@@ -317,8 +317,8 @@
             ]
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "l": [
               "substance"
             ],
@@ -337,50 +337,50 @@
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "h": true,
             "s": false
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "h": true,
             "s": false
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "h": true,
             "s": false
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "h": true,
             "s": false
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "h": false,
             "s": true
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "h": false,
             "s": true
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "h": false,
             "s": true
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "h": false,
             "s": false
           }
@@ -414,7 +414,7 @@
     },
     {
       "name": "consumer-count-correlated-counts-docs",
-      "query": "docs count { where nodes exists { where kind == \"md:task\" } }",
+      "query": "docs count { where _nodes exists { where _kind == \"md:task\" } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -473,8 +473,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "t": "hub"
           }
         ],
@@ -489,8 +489,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -500,7 +500,7 @@
     },
     {
       "name": "consumer-first-offset",
-      "query": "docs first { select path values where type == \"practitioner\" order by era asc offset 1 }",
+      "query": "docs first { select _path values where type == \"practitioner\" order by era asc offset 1 }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -513,7 +513,7 @@
     },
     {
       "name": "consumer-first-values-empty",
-      "query": "docs first { select path values where type == \"nope\" }",
+      "query": "docs first { select _path values where type == \"nope\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -538,8 +538,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -562,52 +562,52 @@
     },
     {
       "name": "nested-exists",
-      "query": "from docs where nodes exists { where kind == \"md:task\" }",
+      "query": "from docs where _nodes exists { where _kind == \"md:task\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -617,48 +617,48 @@
     },
     {
       "name": "nested-exists-open-task",
-      "query": "from docs where nodes exists { where kind == \"md:task\" && !attrs.checked }",
+      "query": "from docs where _nodes exists { where _kind == \"md:task\" && !_attrs.checked }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -668,24 +668,24 @@
     },
     {
       "name": "nested-exists-reaches-owning-doc",
-      "query": "from docs where nodes exists { where kind == \"md:task\" && !attrs.checked && doc.layer == \"working\" }",
+      "query": "from docs where _nodes exists { where _kind == \"md:task\" && !_attrs.checked && _doc.layer == \"working\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           }
         ],
         "truncated": false,
@@ -695,48 +695,48 @@
     },
     {
       "name": "nested-count-as-predicate",
-      "query": "from docs where nodes count { where kind == \"md:task\" && !attrs.checked }",
+      "query": "from docs where _nodes count { where _kind == \"md:task\" && !_attrs.checked }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md"
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md"
+            "_id": "d_7",
+            "_path": "/processes/calcination.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md"
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -746,28 +746,28 @@
     },
     {
       "name": "nested-count-comparison",
-      "query": "from docs where nodes count distinct { select kind } == 3",
+      "query": "from docs where _nodes count distinct { select _kind } == 3",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md"
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md"
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md"
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md"
           },
           {
-            "id": "d_16",
-            "path": "/texts/emerald-tablet.md"
+            "_id": "d_16",
+            "_path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -777,24 +777,24 @@
     },
     {
       "name": "nested-none",
-      "query": "from docs where type == \"substance\" && nodes none { where kind == \"md:task\" }",
+      "query": "from docs where type == \"substance\" && _nodes none { where _kind == \"md:task\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -804,28 +804,28 @@
     },
     {
       "name": "nested-none-every-task-done",
-      "query": "from docs where type == \"substance\" && nodes none { where kind == \"md:task\" && !checked }",
+      "query": "from docs where type == \"substance\" && _nodes none { where _kind == \"md:task\" && !checked }",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -835,16 +835,16 @@
     },
     {
       "name": "nested-exists-offset-is-a-floor",
-      "query": "from docs where nodes exists { where kind == \"md:task\" offset 3 }",
+      "query": "from docs where _nodes exists { where _kind == \"md:task\" offset 3 }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -854,12 +854,12 @@
     },
     {
       "name": "nested-collect-projection",
-      "query": "select open: nodes collect { select text: value where kind == \"md:task\" && !attrs.checked } from docs where type == \"lab-note\"",
+      "query": "select open: _nodes collect { select text: _value where _kind == \"md:task\" && !_attrs.checked } from docs where type == \"lab-note\"",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "open": [
               {
                 "text": "Repeat the series with copper"
@@ -873,8 +873,8 @@
             ]
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "open": [
               {
                 "text": "Assay cycle 1 and cycle 4 crops for iron"
@@ -892,39 +892,39 @@
     },
     {
       "name": "nested-collect-empty-arrays",
-      "query": "select tasks: nodes collect { value where kind == \"md:task\" } from docs where type == \"substance\"",
+      "query": "select tasks: _nodes collect { _value where _kind == \"md:task\" } from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "tasks": []
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "tasks": []
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "tasks": []
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "tasks": [
               {
-                "value": "Buy more salt of tartar"
+                "_value": "Buy more salt of tartar"
               },
               {
-                "value": "Replace the leaching filter papers"
+                "_value": "Replace the leaching filter papers"
               }
             ]
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "tasks": []
           }
         ],
@@ -936,20 +936,20 @@
     {
       "name": "nested-collect-empty-projection",
       "notes": "§1.4 rows as values (1.2): a nested collect with NO projection yields the row itself (spec/oqx §12), rendered as { id, path } — the node id and its document path — never the store row (§9: before 1.2 the raw row leaked: node_id/repo_id/span_* columns, attrs as a JSON string, the join column __path).",
-      "query": "select tasks: nodes collect { where kind == \"md:task\" } from docs where path == \"substances/salt.md\"",
+      "query": "select tasks: _nodes collect { where _kind == \"md:task\" } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "tasks": [
               {
-                "id": "n_0ddcacdef653",
-                "path": "/substances/salt.md"
+                "_id": "n_0ddcacdef653",
+                "_path": "/substances/salt.md"
               },
               {
-                "id": "n_6d35d6b1d52b",
-                "path": "/substances/salt.md"
+                "_id": "n_6d35d6b1d52b",
+                "_path": "/substances/salt.md"
               }
             ]
           }
@@ -962,15 +962,15 @@
     {
       "name": "nested-first-empty-projection",
       "notes": "§1.4 rows as values (1.2): first { } / single { } with no projection render the row as { id, path } (or null when nothing matches).",
-      "query": "select latest: nodes first { where kind == \"md:task\" }, none: nodes single { where kind == \"nope\" } from docs where path == \"substances/salt.md\"",
+      "query": "select latest: _nodes first { where _kind == \"md:task\" }, none: _nodes single { where _kind == \"nope\" } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "latest": {
-              "id": "n_0ddcacdef653",
-              "path": "/substances/salt.md"
+              "_id": "n_0ddcacdef653",
+              "_path": "/substances/salt.md"
             },
             "none": null
           }
@@ -983,20 +983,20 @@
     {
       "name": "nested-collect-values-of-rows",
       "notes": "§1.4 rows as values (1.2): a `values` projection whose item is the row ($it) renders each row as { id, path }.",
-      "query": "select tasks: nodes collect { select $it values where kind == \"md:task\" } from docs where path == \"substances/salt.md\"",
+      "query": "select tasks: _nodes collect { select $it values where _kind == \"md:task\" } from docs where _path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "tasks": [
               {
-                "id": "n_0ddcacdef653",
-                "path": "/substances/salt.md"
+                "_id": "n_0ddcacdef653",
+                "_path": "/substances/salt.md"
               },
               {
-                "id": "n_6d35d6b1d52b",
-                "path": "/substances/salt.md"
+                "_id": "n_6d35d6b1d52b",
+                "_path": "/substances/salt.md"
               }
             ]
           }
@@ -1008,21 +1008,21 @@
     },
     {
       "name": "nested-collect-distinct",
-      "query": "select kinds: nodes collect distinct { select kind } from docs where path == \"processes/magnum-opus.md\"",
+      "query": "select kinds: _nodes collect distinct { select _kind } from docs where _path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "kinds": [
               {
-                "kind": "md:section"
+                "_kind": "md:section"
               },
               {
-                "kind": "md:link"
+                "_kind": "md:link"
               },
               {
-                "kind": "md:task"
+                "_kind": "md:task"
               }
             ]
           }
@@ -1035,12 +1035,12 @@
     },
     {
       "name": "nested-collect-limit",
-      "query": "select h: nodes collect { select name values where kind == \"md:section\" order by first_ordinal limit 2 } from docs where path == \"processes/magnum-opus.md\"",
+      "query": "select h: _nodes collect { select _name values where _kind == \"md:section\" order by first_ordinal limit 2 } from docs where _path == \"processes/magnum-opus.md\"",
       "expect": {
         "hits": [
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "h": [
               "The magnum opus",
               "The four stages"
@@ -1054,12 +1054,12 @@
     },
     {
       "name": "nested-first-and-single",
-      "query": "select subject, process: ^docs single { select p: path, layer where slug == ^subject }, mate: ^docs first { select p: path where type == \"practitioner\" && era > 1600 } from docs where type == \"lab-note\"",
+      "query": "select subject, process: ^docs single { select p: _path, layer where slug == ^subject }, mate: ^docs first { select p: _path where type == \"practitioner\" && era > 1600 } from docs where type == \"lab-note\"",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "subject": "calcination",
             "process": {
               "p": "/processes/calcination.md",
@@ -1070,8 +1070,8 @@
             }
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "subject": "coagulation",
             "process": {
               "p": "/processes/coagulation.md",
@@ -1089,35 +1089,35 @@
     },
     {
       "name": "scalar-alongside-collection",
-      "query": "select era: month, open: nodes collect { value where kind == \"md:task\" && !checked } from docs where type == \"lab-note\"",
+      "query": "select era: month, open: _nodes collect { _value where _kind == \"md:task\" && !checked } from docs where type == \"lab-note\"",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "era": 1,
             "open": [
               {
-                "value": "Repeat the series with copper"
+                "_value": "Repeat the series with copper"
               },
               {
-                "value": "Plot mass gain against heating time"
+                "_value": "Plot mass gain against heating time"
               },
               {
-                "value": "Tabulate the metal sulphides by colour"
+                "_value": "Tabulate the metal sulphides by colour"
               }
             ]
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "era": 2,
             "open": [
               {
-                "value": "Assay cycle 1 and cycle 4 crops for iron"
+                "_value": "Assay cycle 1 and cycle 4 crops for iron"
               },
               {
-                "value": "Write the plateau result up for the coagulation note"
+                "_value": "Write the plateau result up for the coagulation note"
               }
             ]
           }
@@ -1129,39 +1129,39 @@
     },
     {
       "name": "value-over-list-property",
-      "query": "select tags: tags collect { $it values where $it != \"substance\" } from docs where type == \"substance\"",
+      "query": "select tags: _tags collect { $it values where $it != \"substance\" } from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "tags": []
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "tags": [
               "goal",
               "legendary"
             ]
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "tags": [
               "theory"
             ]
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "tags": [
               "tria-prima"
             ]
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "tags": [
               "tria-prima"
             ]
@@ -1174,16 +1174,16 @@
     },
     {
       "name": "value-membership",
-      "query": "from docs where tags exists { where $it == \"tria-prima\" }",
+      "query": "from docs where _tags exists { where $it == \"tria-prima\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1193,28 +1193,28 @@
     },
     {
       "name": "value-scalar-authored-is-one-element",
-      "query": "from docs where tags exists { where $it == \"substance\" }",
+      "query": "from docs where _tags exists { where $it == \"substance\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md"
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1224,12 +1224,12 @@
     },
     {
       "name": "lift-filters-and-captures",
-      "query": "select p: path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }",
+      "query": "select p: _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" && !_attrs.checked }",
       "expect": {
         "hits": [
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "p": "/lab/2026-01-notes.md",
             "open": [
               "Repeat the series with copper",
@@ -1238,8 +1238,8 @@
             ]
           },
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md",
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md",
             "p": "/lab/2026-02-notes.md",
             "open": [
               "Assay cycle 1 and cycle 4 crops for iron",
@@ -1247,16 +1247,16 @@
             ]
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "open": [
               "Separate the Jabirian corpus into strata by vocabulary"
             ]
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "open": [
               "Read the Index Chemicus entries on [[mercury]]",
@@ -1264,16 +1264,16 @@
             ]
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "open": [
               "Check which mineral remedies survived into the 18th-century pharmacopoeia"
             ]
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "open": [
               "Repeat with copper and record the colour sequence",
@@ -1281,24 +1281,24 @@
             ]
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md",
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md",
             "p": "/processes/coagulation.md",
             "open": [
               "Measure purity gain per cycle to find where it plateaus"
             ]
           },
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md",
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md",
             "p": "/processes/dissolution.md",
             "open": [
               "Write up the alkahest arguments and their rebuttals"
             ]
           },
           {
-            "id": "d_10",
-            "path": "/processes/magnum-opus.md",
+            "_id": "d_10",
+            "_path": "/processes/magnum-opus.md",
             "p": "/processes/magnum-opus.md",
             "open": [
               "Map the twelve gates onto the four stages across three sources",
@@ -1306,8 +1306,8 @@
             ]
           },
           {
-            "id": "d_17",
-            "path": "/texts/mutus-liber.md",
+            "_id": "d_17",
+            "_path": "/texts/mutus-liber.md",
             "p": "/texts/mutus-liber.md",
             "open": [
               "Obtain a facsimile with plate numbering",
@@ -1323,12 +1323,12 @@
     },
     {
       "name": "lift-salt-discriminator",
-      "query": "select p: path, t from docs where type == \"substance\" && nodes collect { ^t: value where kind == \"md:task\" }",
+      "query": "select p: _path, t from docs where type == \"substance\" && _nodes collect { ^t: _value where _kind == \"md:task\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "p": "/substances/salt.md",
             "t": [
               "Buy more salt of tartar",
@@ -1343,7 +1343,7 @@
     },
     {
       "name": "lift-open-task-empties",
-      "query": "from docs where type == \"substance\" && nodes collect { ^t: value where kind == \"md:task\" && !attrs.checked }",
+      "query": "from docs where type == \"substance\" && _nodes collect { ^t: _value where _kind == \"md:task\" && !_attrs.checked }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1353,12 +1353,12 @@
     },
     {
       "name": "join-dependent",
-      "query": "select p: path, cites: ^docs collect { select target: path where slug in ^refs } from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" }",
+      "query": "select p: _path, cites: ^docs collect { select target: _path where slug in ^refs } from docs where _nodes collect { ^refs: _value where _kind == \"md:wikilink\" }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "p": "/index.md",
             "cites": [
               {
@@ -1373,8 +1373,8 @@
             ]
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md",
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md",
             "p": "/lab/2026-01-notes.md",
             "cites": [
               {
@@ -1386,8 +1386,8 @@
             ]
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "p": "/practitioners/jabir-ibn-hayyan.md",
             "cites": [
               {
@@ -1399,8 +1399,8 @@
             ]
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "p": "/practitioners/newton.md",
             "cites": [
               {
@@ -1409,8 +1409,8 @@
             ]
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "p": "/practitioners/paracelsus.md",
             "cites": [
               {
@@ -1425,8 +1425,8 @@
             ]
           },
           {
-            "id": "d_7",
-            "path": "/processes/calcination.md",
+            "_id": "d_7",
+            "_path": "/processes/calcination.md",
             "p": "/processes/calcination.md",
             "cites": [
               {
@@ -1435,8 +1435,8 @@
             ]
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "p": "/substances/mercury.md",
             "cites": [
               {
@@ -1448,8 +1448,8 @@
             ]
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "p": "/substances/philosophers-stone.md",
             "cites": [
               {
@@ -1461,14 +1461,14 @@
             ]
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "p": "/substances/prima-materia.md",
             "cites": []
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "p": "/substances/salt.md",
             "cites": [
               {
@@ -1480,8 +1480,8 @@
             ]
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "p": "/substances/sulphur.md",
             "cites": [
               {
@@ -1500,22 +1500,22 @@
     },
     {
       "name": "join-semi",
-      "query": "select slug from docs where type == \"substance\" && ^nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
+      "query": "select slug from docs where type == \"substance\" && ^nodes exists { where _kind == \"md:wikilink\" && _value == ^slug }",
       "expect": {
         "hits": [
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md",
+            "_id": "d_11",
+            "_path": "/substances/mercury.md",
             "slug": "mercury"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md",
+            "_id": "d_14",
+            "_path": "/substances/salt.md",
             "slug": "salt"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md",
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md",
             "slug": "sulphur"
           }
         ],
@@ -1526,17 +1526,17 @@
     },
     {
       "name": "join-anti",
-      "query": "select slug from docs where type == \"substance\" && !^nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
+      "query": "select slug from docs where type == \"substance\" && !^nodes exists { where _kind == \"md:wikilink\" && _value == ^slug }",
       "expect": {
         "hits": [
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md",
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md",
             "slug": "philosophers-stone"
           },
           {
-            "id": "d_13",
-            "path": "/substances/prima-materia.md",
+            "_id": "d_13",
+            "_path": "/substances/prima-materia.md",
             "slug": "prima-materia"
           }
         ],
@@ -1547,26 +1547,26 @@
     },
     {
       "name": "join-self",
-      "query": "select me: path, tradition, peers: ^docs collect { select p: path where type == \"practitioner\" && tradition == ^tradition && path != ^path } from docs where type == \"practitioner\"",
+      "query": "select me: _path, tradition, peers: ^docs collect { select p: _path where type == \"practitioner\" && tradition == ^tradition && _path != ^_path } from docs where type == \"practitioner\"",
       "expect": {
         "hits": [
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "me": "/practitioners/jabir-ibn-hayyan.md",
             "tradition": "islamic",
             "peers": []
           },
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "me": "/practitioners/maria-prophetissa.md",
             "tradition": "alexandrian",
             "peers": []
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "me": "/practitioners/newton.md",
             "tradition": "western",
             "peers": [
@@ -1576,8 +1576,8 @@
             ]
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "me": "/practitioners/paracelsus.md",
             "tradition": "western",
             "peers": [
@@ -1595,33 +1595,33 @@
     {
       "name": "from-reprojection",
       "notes": "spec/oqx: `from E` inside a consumer block re-projects the rows through a relation.",
-      "query": "docs collect { select value from nodes where kind == \"md:task\" && !checked && doc.type == \"lab-note\" }",
+      "query": "docs collect { select _value from _nodes where _kind == \"md:task\" && !checked && _doc.type == \"lab-note\" }",
       "expect": {
         "hits": [
           {
-            "id": "n_7d73d8ff9294",
-            "path": "/lab/2026-01-notes.md",
-            "value": "Repeat the series with copper"
+            "_id": "n_7d73d8ff9294",
+            "_path": "/lab/2026-01-notes.md",
+            "_value": "Repeat the series with copper"
           },
           {
-            "id": "n_95a191326d69",
-            "path": "/lab/2026-01-notes.md",
-            "value": "Plot mass gain against heating time"
+            "_id": "n_95a191326d69",
+            "_path": "/lab/2026-01-notes.md",
+            "_value": "Plot mass gain against heating time"
           },
           {
-            "id": "n_6647b1c32a15",
-            "path": "/lab/2026-01-notes.md",
-            "value": "Tabulate the metal sulphides by colour"
+            "_id": "n_6647b1c32a15",
+            "_path": "/lab/2026-01-notes.md",
+            "_value": "Tabulate the metal sulphides by colour"
           },
           {
-            "id": "n_3f352718a47e",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Assay cycle 1 and cycle 4 crops for iron"
+            "_id": "n_3f352718a47e",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Assay cycle 1 and cycle 4 crops for iron"
           },
           {
-            "id": "n_1b6ff200b17c",
-            "path": "/lab/2026-02-notes.md",
-            "value": "Write the plateau result up for the coagulation note"
+            "_id": "n_1b6ff200b17c",
+            "_path": "/lab/2026-02-notes.md",
+            "_value": "Write the plateau result up for the coagulation note"
           }
         ],
         "truncated": false,
@@ -1635,26 +1635,26 @@
       "expect": {
         "hits": [
           {
-            "id": "d_4",
-            "path": "/practitioners/maria-prophetissa.md",
+            "_id": "d_4",
+            "_path": "/practitioners/maria-prophetissa.md",
             "n": 251,
             "s": "practitioner!"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md",
             "n": 801,
             "s": "practitioner!"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md",
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md",
             "n": 1531,
             "s": "practitioner!"
           },
           {
-            "id": "d_5",
-            "path": "/practitioners/newton.md",
+            "_id": "d_5",
+            "_path": "/practitioners/newton.md",
             "n": 1681,
             "s": "practitioner!"
           }
@@ -1670,8 +1670,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_9",
-            "path": "/processes/dissolution.md"
+            "_id": "d_9",
+            "_path": "/processes/dissolution.md"
           }
         ],
         "truncated": false,
@@ -1685,32 +1685,32 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_3",
-            "path": "/practitioners/jabir-ibn-hayyan.md"
+            "_id": "d_3",
+            "_path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
-            "id": "d_6",
-            "path": "/practitioners/paracelsus.md"
+            "_id": "d_6",
+            "_path": "/practitioners/paracelsus.md"
           },
           {
-            "id": "d_11",
-            "path": "/substances/mercury.md"
+            "_id": "d_11",
+            "_path": "/substances/mercury.md"
           },
           {
-            "id": "d_12",
-            "path": "/substances/philosophers-stone.md"
+            "_id": "d_12",
+            "_path": "/substances/philosophers-stone.md"
           },
           {
-            "id": "d_14",
-            "path": "/substances/salt.md"
+            "_id": "d_14",
+            "_path": "/substances/salt.md"
           },
           {
-            "id": "d_15",
-            "path": "/substances/sulphur.md"
+            "_id": "d_15",
+            "_path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1720,16 +1720,16 @@
     },
     {
       "name": "text-inside-correlated-subquery",
-      "query": "from docs where nodes exists { where kind == \"md:task\" && text(\"recrystallization\") }",
+      "query": "from docs where _nodes exists { where _kind == \"md:task\" && text(\"recrystallization\") }",
       "expect": {
         "hits": [
           {
-            "id": "d_2",
-            "path": "/lab/2026-02-notes.md"
+            "_id": "d_2",
+            "_path": "/lab/2026-02-notes.md"
           },
           {
-            "id": "d_8",
-            "path": "/processes/coagulation.md"
+            "_id": "d_8",
+            "_path": "/processes/coagulation.md"
           }
         ],
         "truncated": false,
@@ -1744,88 +1744,88 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "all": [
               {
-                "id": "d_0",
-                "path": "/index.md"
+                "_id": "d_0",
+                "_path": "/index.md"
               },
               {
-                "id": "d_1",
-                "path": "/lab/2026-01-notes.md"
+                "_id": "d_1",
+                "_path": "/lab/2026-01-notes.md"
               },
               {
-                "id": "d_2",
-                "path": "/lab/2026-02-notes.md"
+                "_id": "d_2",
+                "_path": "/lab/2026-02-notes.md"
               },
               {
-                "id": "d_3",
-                "path": "/practitioners/jabir-ibn-hayyan.md"
+                "_id": "d_3",
+                "_path": "/practitioners/jabir-ibn-hayyan.md"
               },
               {
-                "id": "d_4",
-                "path": "/practitioners/maria-prophetissa.md"
+                "_id": "d_4",
+                "_path": "/practitioners/maria-prophetissa.md"
               },
               {
-                "id": "d_5",
-                "path": "/practitioners/newton.md"
+                "_id": "d_5",
+                "_path": "/practitioners/newton.md"
               },
               {
-                "id": "d_6",
-                "path": "/practitioners/paracelsus.md"
+                "_id": "d_6",
+                "_path": "/practitioners/paracelsus.md"
               },
               {
-                "id": "d_7",
-                "path": "/processes/calcination.md"
+                "_id": "d_7",
+                "_path": "/processes/calcination.md"
               },
               {
-                "id": "d_8",
-                "path": "/processes/coagulation.md"
+                "_id": "d_8",
+                "_path": "/processes/coagulation.md"
               },
               {
-                "id": "d_9",
-                "path": "/processes/dissolution.md"
+                "_id": "d_9",
+                "_path": "/processes/dissolution.md"
               },
               {
-                "id": "d_10",
-                "path": "/processes/magnum-opus.md"
+                "_id": "d_10",
+                "_path": "/processes/magnum-opus.md"
               },
               {
-                "id": "d_11",
-                "path": "/substances/mercury.md"
+                "_id": "d_11",
+                "_path": "/substances/mercury.md"
               },
               {
-                "id": "d_12",
-                "path": "/substances/philosophers-stone.md"
+                "_id": "d_12",
+                "_path": "/substances/philosophers-stone.md"
               },
               {
-                "id": "d_13",
-                "path": "/substances/prima-materia.md"
+                "_id": "d_13",
+                "_path": "/substances/prima-materia.md"
               },
               {
-                "id": "d_14",
-                "path": "/substances/salt.md"
+                "_id": "d_14",
+                "_path": "/substances/salt.md"
               },
               {
-                "id": "d_15",
-                "path": "/substances/sulphur.md"
+                "_id": "d_15",
+                "_path": "/substances/sulphur.md"
               },
               {
-                "id": "d_16",
-                "path": "/texts/emerald-tablet.md"
+                "_id": "d_16",
+                "_path": "/texts/emerald-tablet.md"
               },
               {
-                "id": "d_17",
-                "path": "/texts/mutus-liber.md"
+                "_id": "d_17",
+                "_path": "/texts/mutus-liber.md"
               },
               {
-                "id": "d_18",
-                "path": "/timeline/kickoff.md"
+                "_id": "d_18",
+                "_path": "/timeline/kickoff.md"
               },
               {
-                "id": "d_19",
-                "path": "/timeline/review.md"
+                "_id": "d_19",
+                "_path": "/timeline/review.md"
               }
             ]
           }
@@ -1842,8 +1842,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "same": true,
             "other": false,
             "ne": false
@@ -1861,8 +1861,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "hit": false,
             "self": false
           }
@@ -1875,7 +1875,7 @@
     {
       "name": "lazy-root-membership-in-where",
       "notes": "§9: `in` over a root handle in `where` is false for a string — no hits.",
-      "query": "select path from docs where \"index.md\" in ^docs",
+      "query": "select _path from docs where \"index.md\" in ^docs",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1886,16 +1886,16 @@
     {
       "name": "lazy-root-truthiness",
       "notes": "§9: a root handle is an array — truthy as a `where` scalar, not absent.",
-      "query": "select path from docs where ^docs && !(^docs == null) limit 2",
+      "query": "select _path from docs where ^docs && !(^docs == null) limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -1910,8 +1910,8 @@
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "n": 20,
             "m": 20,
             "e": 20
@@ -1925,12 +1925,12 @@
     {
       "name": "lazy-root-entries-in-row-position",
       "notes": "§9: `entries(handle)` in row position yields (index, row) entries; `$key` is the index, `$it` the row.",
-      "query": "entries(docs) first { select k: $key, p: $it.path }",
+      "query": "entries(docs) first { select k: $key, p: $it._path }",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md",
+            "_id": "d_0",
+            "_path": "/index.md",
             "k": 0,
             "p": "/index.md"
           }
@@ -1943,16 +1943,16 @@
     {
       "name": "lazy-root-order-by-constant-key",
       "notes": "§9: a root handle as an `order by` key is one constant array; the next key decides.",
-      "query": "select path from docs order by ^docs, path limit 2",
+      "query": "select _path from docs order by ^docs, _path limit 2",
       "expect": {
         "hits": [
           {
-            "id": "d_0",
-            "path": "/index.md"
+            "_id": "d_0",
+            "_path": "/index.md"
           },
           {
-            "id": "d_1",
-            "path": "/lab/2026-01-notes.md"
+            "_id": "d_1",
+            "_path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,

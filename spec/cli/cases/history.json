@@ -58,7 +58,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"id\":\"d_0\",\"path\":\"/index.md\",\"hash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}\n",
+        "stdout": "{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"_id\":\"d_0\",\"_path\":\"/index.md\",\"_hash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}\n",
         "stderr": "… truncated; continue with --cursor 1\n"
       }
     },
@@ -73,7 +73,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"digests\":[{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"id\":\"d_0\",\"path\":\"/index.md\",\"hash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}],\"cursor\":1,\"truncated\":true,\"head\":20}\n"
+        "stdout": "{\"digests\":[{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"_id\":\"d_0\",\"_path\":\"/index.md\",\"_hash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}],\"cursor\":1,\"truncated\":true,\"head\":20}\n"
       }
     },
     {
@@ -100,7 +100,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"digests\":[{\"commit\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /texts/mutus-liber.md — 12 inserted\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}]},{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/kickoff.md — 7 inserted\",\"revisions\":[{\"id\":\"d_18\",\"path\":\"/timeline/kickoff.md\",\"hash\":\"be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141\"}]},{\"commit\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/review.md — 6 inserted\",\"revisions\":[{\"id\":\"d_19\",\"path\":\"/timeline/review.md\",\"hash\":\"291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701\"}]}],\"cursor\":20,\"truncated\":false,\"head\":20}\n"
+        "stdout": "{\"digests\":[{\"commit\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /texts/mutus-liber.md — 12 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}]},{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/kickoff.md — 7 inserted\",\"revisions\":[{\"_id\":\"d_18\",\"_path\":\"/timeline/kickoff.md\",\"_hash\":\"be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141\"}]},{\"commit\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/review.md — 6 inserted\",\"revisions\":[{\"_id\":\"d_19\",\"_path\":\"/timeline/review.md\",\"_hash\":\"291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701\"}]}],\"cursor\":20,\"truncated\":false,\"head\":20}\n"
       }
     },
     {
@@ -259,7 +259,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 1 edited\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}]},{\"commit\":\"c_21\",\"seq\":22,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 2 edited\",\"revisions\":[{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"hash\":\"b37b7d543115d4630871628739402dba87cf6137a4029d213124045838358240\"}]}],\"cursor\":22,\"truncated\":false,\"head\":22}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 1 edited\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}]},{\"commit\":\"c_21\",\"seq\":22,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 2 edited\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"b37b7d543115d4630871628739402dba87cf6137a4029d213124045838358240\"}]}],\"cursor\":22,\"truncated\":false,\"head\":22}\n"
           }
         },
         {
@@ -489,7 +489,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_17\",\"to\":\"r_17\",\"diff\":\"\"}\n"
+        "stdout": "{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"from\":\"r_17\",\"to\":\"r_17\",\"diff\":\"\"}\n"
       }
     },
     {
@@ -572,7 +572,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
+            "stdout": "{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         },
         {
@@ -622,7 +622,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
+            "stdout": "{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         }
       ]
@@ -746,7 +746,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"out\":[{\"predicate\":\"references\",\"doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
+        "stdout": "{\"out\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
       }
     },
     {
@@ -760,7 +760,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"out\":[{\"predicate\":\"references\",\"doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"block_id\":\"b_307\"}],\"in\":[{\"predicate\":\"references\",\"doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1,\"block_id\":\"b_28\"}]}\n"
+        "stdout": "{\"out\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"_block_id\":\"b_307\"}],\"in\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1,\"_block_id\":\"b_28\"}]}\n"
       }
     },
     {
@@ -787,7 +787,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"out\":[{\"predicate\":\"references\",\"doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
+        "stdout": "{\"out\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"_predicate\":\"references\",\"_doc_id\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
       }
     },
     {
@@ -1319,11 +1319,11 @@
         {
           "argv": [
             "query",
-            "select seq, is_current, archived from revisions where path == \"/lab/2026-01-notes.md\" order by seq"
+            "select _seq, _is_current, _archived from revisions where _path == \"/lab/2026-01-notes.md\" order by _seq"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "id    path                   seq  is_current  archived\nr_1   /lab/2026-01-notes.md  1    false       true\nr_20  /lab/2026-01-notes.md  2    false       true\nr_21  /lab/2026-01-notes.md  3    true        false\n"
+            "stdout": "_id   _path                  _seq  _is_current  _archived\nr_1   /lab/2026-01-notes.md  1     false        true\nr_20  /lab/2026-01-notes.md  2     false        true\nr_21  /lab/2026-01-notes.md  3     true         false\n"
           }
         },
         {

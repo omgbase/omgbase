@@ -1,31 +1,33 @@
 // Edge fetching through the `query` tool, by generated OQX.
 //
 // Strategy: the link rows (`from links`, spec/surface §1.1), restricted to the
-// shown nodes with a chunked disjunction — OQX has no array literal (`path in
+// shown nodes with a chunked disjunction — OQX has no array literal (`_path in
 // [...]` is a lex error) and `in` only takes a lifted set or a range, so the
-// node set is spelled `(path == "a" || path == "b" || …)` in chunks of CHUNK
+// node set is spelled `(_path == "a" || _path == "b" || …)` in chunks of CHUNK
 // paths. The result is filtered client-side so only edges between SHOWN nodes
 // remain (the disjunction constrains the source only). The alternative — a
-// nested `doc.out_links collect { … }` per doc — also works against the engine
+// nested `_out_links collect { … }` per doc — also works against the engine
 // but returns one row per doc with the edges inlined; the flat edge rows are
 // simpler to merge across chunks and page with the tool's cursor. An edge is a
-// link row read source → destination: its `path` (the source document,
-// `doc_id`'s path) → its `dst_path` (the destination document, `dst_id`'s path
-// — what `dst` reaches); the builtin links candidate (`doc.out_links`) draws
-// them as stored and the backlinks candidate (`doc.in_links`) flipped.
+// link row read source → destination: its `_path` (the source document,
+// `_doc_id`'s path) → its `_dst_path` (the destination document, `_dst_id`'s
+// path — what `_dst` reaches); the builtin links candidate (`_out_links`) draws
+// them as stored and the backlinks candidate (`_in_links`) flipped.
 //
-// Paths: the shown nodes are keyed by the `/`-rooted path (lib/paths.ts), the
-// literals are spelled rooted, and the rows' paths are rooted before they are
-// compared with the node keys. The projection aliases (`src`/`dst`) are the
-// demo's own.
+// The attributes are spelled for the connected server (lib/paths.ts
+// `EngineNames`: `_path`/`_dst_path`/`_field`/`_provenance`/`_dst_kind` from
+// surface 5.0, bare before). Paths: the shown nodes are keyed by the
+// `/`-rooted path (lib/paths.ts), the literals are spelled rooted, and the
+// rows' paths are rooted before they are compared with the node keys. The
+// projection aliases (`src`/`dst`) are the demo's own.
 
 import type { Candidate, Direction, InversePair } from "./candidates.ts";
-import { rooted } from "./paths.ts";
+import { NAMES_5, rooted, type EngineNames } from "./paths.ts";
 
 export interface GraphEdge {
-  /** Source doc path (the link row's `path`, `/`-rooted). */
+  /** Source doc path (the link row's `_path`, `/`-rooted). */
   src: string;
-  /** Destination doc path (the link row's `dst_path`, `/`-rooted). */
+  /** Destination doc path (the link row's `_dst_path`, `/`-rooted). */
   dst: string;
   /** The candidate name this edge belongs to. */
   rel: string;
@@ -48,21 +50,22 @@ export function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
   return out;
 }
 
-/** The queries that fetch one relationship's edges among `paths` (one per chunk). */
-export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: readonly string[]): string[] {
+/** The queries that fetch one relationship's edges among `paths` (one per
+ * chunk), in the server's spelling of the link-row attributes. */
+export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: readonly string[], names: EngineNames = NAMES_5): string[] {
   if (paths.length === 0 || candidate.kind === "sequence") return [];
   const relation =
     candidate.kind === "frontmatter"
-      ? `field == ${oqxString(candidate.name)} && provenance == "frontmatter"`
-      : `provenance == "link" && dst_kind == "document"`;
+      ? `${names.field} == ${oqxString(candidate.name)} && ${names.provenance} == "frontmatter"`
+      : `${names.provenance} == "link" && ${names.dst_kind} == "document"`;
   return chunked(paths).map(
-    (chunk) => `select src: path, dst: dst_path from links where ${relation} && ${pathDisjunction(chunk.map(rooted), "path")}`,
+    (chunk) => `select src: ${names.path}, dst: ${names.dst_path} from links where ${relation} && ${pathDisjunction(chunk.map(rooted), names.path)}`,
   );
 }
 
 /** Rows from the edge queries → edges between SHOWN nodes (`shown` holds the
  * rooted keys; the rows' paths are rooted before the lookup), deduped; a
- * backlinks candidate (`doc.in_links`) flips direction so an edge points the
+ * backlinks candidate (`_in_links`) flips direction so an edge points the
  * way the walk goes. */
 export function edgesFromRows(
   candidate: Pick<Candidate, "name" | "kind">,

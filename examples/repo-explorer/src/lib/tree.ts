@@ -1,9 +1,10 @@
-// The repository tree: `docs_tree { path, depth: 1 }` per directory, loaded
-// lazily as folders open (spec/surface §2: entries are `dir` rows — `{ path
-// (rooted, ending "/"), kind: "dir", docs, blocks, updated_at }` — or `doc`
-// rows — `{ id, path, kind: "doc", docs: 1, blocks, updated_at }` — ordered by
-// path and paged by a `[path]` keyset cursor; `total` covers everything under
-// the prefix). The pure side: wire → entries, the level table, and the names.
+// The repository tree: `docs_tree { path, depth: 1 }` per directory (`path` is
+// a prefix — a role, so bare), loaded lazily as folders open (spec/surface §2,
+// 5.0: entries are `dir` rows — `{ _path (rooted, ending "/"), kind: "dir",
+// docs, blocks, _updated_at }` — or `doc` rows — `{ _id, _path, kind: "doc",
+// docs: 1, blocks, _updated_at }` — ordered by path and paged by a `[path]`
+// keyset cursor; `total` covers everything under the prefix). The pure side:
+// wire → entries, the level table, and the names.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { ancestorsOf, baseName, rooted } from "./paths.ts";
@@ -25,10 +26,10 @@ const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : nu
 const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 export function entryOf(e: Wire): TreeEntry | null {
-  const path = str(e.path);
+  const path = str(e._path);
   if (!path) return null;
-  if (e.kind === "dir") return { kind: "dir", path: rooted(path).replace(/\/*$/, "/"), docs: num(e.docs), blocks: num(e.blocks), updatedAt: strOrNull(e.updated_at) };
-  if (e.kind === "doc") return { kind: "doc", id: str(e.id), path: rooted(path), blocks: num(e.blocks), updatedAt: strOrNull(e.updated_at) };
+  if (e.kind === "dir") return { kind: "dir", path: rooted(path).replace(/\/*$/, "/"), docs: num(e.docs), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
+  if (e.kind === "doc") return { kind: "doc", id: str(e._id), path: rooted(path), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
   return null;
 }
 

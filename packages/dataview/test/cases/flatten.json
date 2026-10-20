@@ -2,14 +2,14 @@
   {
     "name": "tags-as-tag",
     "dql": "TABLE tag FROM \"a\" FLATTEN file.tags AS tag",
-    "oqx": "select path, tag from docs where path.startsWith(\"/a/\") or path == \"/a.md\" flatten tags collect { } as tag",
+    "oqx": "select _path, tag from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\" flatten _tags collect { } as tag",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -22,16 +22,16 @@
     "warnings": []
   },
   {
-    "name": "tags-implicit-name-shadows-the-engine-tags",
+    "name": "tags-implicit-name-is-the-authored-tags",
     "dql": "TABLE tags FLATTEN file.tags",
-    "oqx": "select path, tags from docs flatten tags collect { } as tags",
+    "oqx": "select _path, tags from docs flatten _tags collect { } as tags",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -41,21 +41,19 @@
         }
       ]
     },
-    "warnings": [
-      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
-    ]
+    "warnings": []
   },
   {
     "name": "etags",
     "dql": "LIST tag FLATTEN file.etags AS tag",
-    "oqx": "select path, value: tag from docs flatten tags collect { } as tag",
+    "oqx": "select _path, value: tag from docs flatten _tags collect { } as tag",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -68,14 +66,14 @@
   {
     "name": "aliases",
     "dql": "LIST alias FLATTEN file.aliases AS alias",
-    "oqx": "select path, value: alias from docs flatten aliases collect { } as alias",
+    "oqx": "select _path, value: alias from docs flatten aliases collect { } as alias",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -88,14 +86,14 @@
   {
     "name": "tasks-implicit-name",
     "dql": "TABLE tasks.text FLATTEN file.tasks",
-    "oqx": "select path, c0: tasks.text from docs flatten blocks collect { where type == \"task\" } as tasks",
+    "oqx": "select _path, c0: tasks._text from docs flatten _blocks collect { where _type == \"task\" } as tasks",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -110,14 +108,14 @@
   {
     "name": "tasks-as-t-task-fields",
     "dql": "TABLE t.text, t.completed, t.blockId FLATTEN file.tasks AS t",
-    "oqx": "select path, c0: t.text, c1: t.checked, c2: t.id from docs flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, c0: t._text, c1: t.checked, c2: t._id from docs flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -140,14 +138,14 @@
   {
     "name": "tasks-bound-row-as-a-value",
     "dql": "TABLE t FLATTEN file.tasks AS t",
-    "oqx": "select path, t from docs flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, t from docs flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -162,14 +160,14 @@
   {
     "name": "tasks-inline-field-reads-the-page",
     "dql": "TABLE t.due FLATTEN file.tasks AS t",
-    "oqx": "select path, c0: t.doc.due from docs flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, c0: t._doc.due from docs flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -180,20 +178,20 @@
       ]
     },
     "warnings": [
-      "due: a task's inline fields are not indexed per task; read as the page's property doc.due"
+      "due: a task's inline fields are not indexed per task; read as the page's property _doc.due"
     ]
   },
   {
     "name": "tasks-outlinks",
     "dql": "TABLE t.outlinks FLATTEN file.tasks AS t",
-    "oqx": "select path, c0: t.out_links collect { from dst } from docs flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, c0: t._out_links collect { from _dst } from docs flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -219,14 +217,14 @@
   {
     "name": "lists",
     "dql": "TABLE item.text FLATTEN file.lists AS item",
-    "oqx": "select path, c0: item.text from docs flatten blocks collect { where type == \"list_item\" } as item",
+    "oqx": "select _path, c0: item._text from docs flatten _blocks collect { where _type == \"list_item\" } as item",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -241,14 +239,14 @@
   {
     "name": "outlinks-document-fields",
     "dql": "TABLE o.file.name, o.file.mtime FLATTEN file.outlinks AS o",
-    "oqx": "select path, c0: o.path, c1: o.updated_at from docs flatten out_links collect { from dst } as o",
+    "oqx": "select _path, c0: o._path, c1: o._updated_at from docs flatten _out_links collect { from _dst } as o",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -268,14 +266,14 @@
   {
     "name": "inlinks-link",
     "dql": "LIST i.file.link FLATTEN file.inlinks AS i",
-    "oqx": "select path, value: i.path from docs flatten in_links collect { from doc } as i",
+    "oqx": "select _path, value: i._path from docs flatten _in_links collect { from _doc } as i",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -289,14 +287,14 @@
   {
     "name": "frontmatter-list-field",
     "dql": "TABLE a FROM \"books\" FLATTEN authors AS a",
-    "oqx": "select path, a from docs where path.startsWith(\"/books/\") or path == \"/books.md\" flatten authors as a",
+    "oqx": "select _path, a from docs where _path.startsWith(\"/books/\") or _path == \"/books.md\" flatten authors as a",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -311,14 +309,14 @@
   {
     "name": "frontmatter-list-field-implicit-name-rebinds",
     "dql": "TABLE authors FLATTEN authors",
-    "oqx": "select path, authors from docs flatten authors as authors",
+    "oqx": "select _path, authors from docs flatten authors as authors",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -333,14 +331,14 @@
   {
     "name": "nested-field-binds-its-last-segment",
     "dql": "TABLE tags FLATTEN file.frontmatter.tags",
-    "oqx": "select path, tags from docs flatten frontmatter.tags as tags",
+    "oqx": "select _path, tags from docs flatten _frontmatter.tags as tags",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -350,21 +348,30 @@
         }
       ]
     },
-    "warnings": [
-      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
-    ]
+    "warnings": []
+  },
+  {
+    "name": "nested-field-with-an-underscore-last-segment-needs-as",
+    "dql": "TABLE e FLATTEN file.frontmatter._extra",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS _extra",
+      "message": "FLATTEN … AS _extra: a name in the engine's `_` namespace cannot be bound (the hit envelope `_id`/`_path` included); the bare namespace is the user's — write AS <a bare name> (at line 1, column 9)",
+      "line": 1,
+      "column": 9
+    }
   },
   {
     "name": "frontmatter-entries",
     "dql": "TABLE e.key, e.value FLATTEN file.frontmatter AS e",
-    "oqx": "select path, c0: e.key, c1: e.value from docs flatten entries(frontmatter) as e",
+    "oqx": "select _path, c0: e.key, c1: e.value from docs flatten entries(_frontmatter) as e",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -386,14 +393,14 @@
     "options": {
       "thisPath": "/projects/alpha.md"
     },
-    "oqx": "select path, r from docs flatten ^docs first { where path == \"/projects/alpha.md\" }.related as r",
+    "oqx": "select _path, r from docs flatten ^docs first { where _path == \"/projects/alpha.md\" }.related as r",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -408,14 +415,14 @@
   {
     "name": "computed-value-with-as",
     "dql": "TABLE n FLATTEN length(authors) AS n",
-    "oqx": "select path, n from docs flatten size(authors) as n",
+    "oqx": "select _path, n from docs flatten size(authors) as n",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -441,14 +448,14 @@
   {
     "name": "where-element-only-task",
     "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE t.completed",
-    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" and checked } as t",
+    "oqx": "select _path, c0: t._text from docs flatten _blocks collect { where _type == \"task\" and checked } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -463,14 +470,14 @@
   {
     "name": "where-element-only-negated",
     "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE !t.completed",
-    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" and !checked } as t",
+    "oqx": "select _path, c0: t._text from docs flatten _blocks collect { where _type == \"task\" and !checked } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -485,14 +492,14 @@
   {
     "name": "where-page-only-after-flatten",
     "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE status = \"open\"",
-    "oqx": "select path, c0: t.text from docs where status == \"open\" flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, c0: t._text from docs where status == \"open\" flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -507,14 +514,14 @@
   {
     "name": "where-before-flatten-is-the-body",
     "dql": "TABLE tag WHERE status = \"open\" FLATTEN file.tags AS tag",
-    "oqx": "select path, tag from docs where status == \"open\" flatten tags collect { } as tag",
+    "oqx": "select _path, tag from docs where status == \"open\" flatten _tags collect { } as tag",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -529,14 +536,14 @@
   {
     "name": "where-split-page-and-element",
     "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE t.completed & status = \"open\"",
-    "oqx": "select path, c0: t.text from docs where status == \"open\" flatten blocks collect { where type == \"task\" and checked } as t",
+    "oqx": "select _path, c0: t._text from docs where status == \"open\" flatten _blocks collect { where _type == \"task\" and checked } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -551,14 +558,14 @@
   {
     "name": "where-split-through-parentheses-and-words",
     "dql": "TABLE t.text FLATTEN file.tasks AS t WHERE (status = \"open\") and (!t.completed) and due",
-    "oqx": "select path, c0: t.text from docs where status == \"open\" and due flatten blocks collect { where type == \"task\" and !checked } as t",
+    "oqx": "select _path, c0: t._text from docs where status == \"open\" and due flatten _blocks collect { where _type == \"task\" and !checked } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -595,14 +602,14 @@
   {
     "name": "where-element-tag",
     "dql": "LIST tag FLATTEN file.tags AS tag WHERE tag != \"draft\"",
-    "oqx": "select path, value: tag from docs flatten tags collect { where $it != \"draft\" } as tag",
+    "oqx": "select _path, value: tag from docs flatten _tags collect { where $it != \"draft\" } as tag",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -615,14 +622,14 @@
   {
     "name": "where-element-tag-function",
     "dql": "LIST tag FLATTEN file.tags AS tag WHERE startswith(tag, \"proj/\")",
-    "oqx": "select path, value: tag from docs flatten tags collect { where $it.startsWith(\"proj/\") } as tag",
+    "oqx": "select _path, value: tag from docs flatten _tags collect { where $it.startsWith(\"proj/\") } as tag",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -635,14 +642,14 @@
   {
     "name": "where-element-authored-list-warns",
     "dql": "TABLE a FLATTEN authors AS a WHERE a != \"anon\"",
-    "oqx": "select path, a from docs flatten list(authors) collect { where $it != \"anon\" } as a",
+    "oqx": "select _path, a from docs flatten list(authors) collect { where $it != \"anon\" } as a",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -659,14 +666,14 @@
   {
     "name": "where-element-record-field",
     "dql": "TABLE j.employer FLATTEN jobs AS j WHERE j.pay > 5",
-    "oqx": "select path, c0: j.employer from docs flatten list(jobs) collect { where $it.pay > 5 } as j",
+    "oqx": "select _path, c0: j.employer from docs flatten list(jobs) collect { where $it.pay > 5 } as j",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -683,14 +690,14 @@
   {
     "name": "where-element-outlink-document",
     "dql": "TABLE o.file.link FLATTEN file.outlinks AS o WHERE contains(o.file.tags, \"#project\")",
-    "oqx": "select path, c0: o.path from docs flatten out_links collect { from dst where tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } } as o",
+    "oqx": "select _path, c0: o._path from docs flatten _out_links collect { from _dst where _tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } } as o",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -709,14 +716,14 @@
     "options": {
       "thisPath": "/projects/alpha.md"
     },
-    "oqx": "select path, c0: o.path from docs flatten out_links collect { from dst where path != \"/projects/alpha.md\" } as o",
+    "oqx": "select _path, c0: o._path from docs flatten _out_links collect { from _dst where _path != \"/projects/alpha.md\" } as o",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -732,14 +739,14 @@
   {
     "name": "chained-flattens",
     "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t",
-    "oqx": "select path, c0: j.employer, t from docs flatten jobs as j flatten j.tags as t",
+    "oqx": "select _path, c0: j.employer, t from docs flatten jobs as j flatten j.tags as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -758,14 +765,14 @@
   {
     "name": "chained-flatten-implicit-name",
     "dql": "TABLE j.employer, tags FLATTEN jobs AS j FLATTEN j.tags",
-    "oqx": "select path, c0: j.employer, tags from docs flatten jobs as j flatten j.tags as tags",
+    "oqx": "select _path, c0: j.employer, tags from docs flatten jobs as j flatten j.tags as tags",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -779,21 +786,19 @@
         }
       ]
     },
-    "warnings": [
-      "FLATTEN … AS tags shadows the engine's `tags`: for the rest of the query it is the element (write AS <another name> to keep the page's value readable)"
-    ]
+    "warnings": []
   },
   {
     "name": "chained-where-on-the-second",
     "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t WHERE t != \"old\"",
-    "oqx": "select path, c0: j.employer, t from docs flatten jobs as j flatten list(j.tags) collect { where $it != \"old\" } as t",
+    "oqx": "select _path, c0: j.employer, t from docs flatten jobs as j flatten list(j.tags) collect { where $it != \"old\" } as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -814,14 +819,14 @@
   {
     "name": "chained-where-on-the-first-after-both",
     "dql": "TABLE j.employer, t FLATTEN jobs AS j FLATTEN j.tags AS t WHERE j.pay > 5",
-    "oqx": "select path, c0: j.employer, t from docs flatten list(jobs) collect { where $it.pay > 5 } as j flatten j.tags as t",
+    "oqx": "select _path, c0: j.employer, t from docs flatten list(jobs) collect { where $it.pay > 5 } as j flatten j.tags as t",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -842,7 +847,7 @@
   {
     "name": "group-by-tag-census",
     "dql": "TABLE length(rows) AS n FLATTEN file.tags AS tag GROUP BY tag SORT length(rows) DESC",
-    "oqx": "select key, n: count() from docs flatten tags collect { } as tag group by key: tag order by count() desc",
+    "oqx": "select key, n: count() from docs flatten _tags collect { } as tag group by key: tag order by count() desc",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -863,7 +868,7 @@
   {
     "name": "group-by-rows-reads-the-bound-name",
     "dql": "TABLE rows.t.text FLATTEN file.tasks AS t GROUP BY file.link",
-    "oqx": "select key, c0: collect(t.text) from docs flatten blocks collect { where type == \"task\" } as t group by key: path",
+    "oqx": "select key, c0: collect(t._text) from docs flatten _blocks collect { where _type == \"task\" } as t group by key: _path",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -885,7 +890,7 @@
   {
     "name": "group-by-bound-name-is-the-key",
     "dql": "TABLE length(rows) FLATTEN file.tags AS tag GROUP BY tag AS tag SORT tag",
-    "oqx": "select tag, c0: count() from docs flatten tags collect { } as tag group by tag: tag order by tag",
+    "oqx": "select tag, c0: count() from docs flatten _tags collect { } as tag group by tag: tag order by tag",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -928,14 +933,14 @@
   {
     "name": "sort-by-bound-name",
     "dql": "TABLE t.text FLATTEN file.tasks AS t SORT t.text",
-    "oqx": "select path, c0: t.text from docs flatten blocks collect { where type == \"task\" } as t order by t.text",
+    "oqx": "select _path, c0: t._text from docs flatten _blocks collect { where _type == \"task\" } as t order by t._text",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -950,14 +955,14 @@
   {
     "name": "sort-by-tag-desc",
     "dql": "LIST tag FLATTEN file.tags AS tag SORT tag DESC",
-    "oqx": "select path, value: tag from docs flatten tags collect { } as tag order by tag desc",
+    "oqx": "select _path, value: tag from docs flatten _tags collect { } as tag order by tag desc",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -970,14 +975,14 @@
   {
     "name": "limit-bounds-flattened-rows",
     "dql": "TABLE tag FLATTEN file.tags AS tag LIMIT 10",
-    "oqx": "select path, tag from docs flatten tags collect { } as tag limit 10",
+    "oqx": "select _path, tag from docs flatten _tags collect { } as tag limit 10",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -992,14 +997,14 @@
   {
     "name": "list-value-from-the-bound-name",
     "dql": "LIST t.text FLATTEN file.tasks AS t",
-    "oqx": "select path, value: t.text from docs flatten blocks collect { where type == \"task\" } as t",
+    "oqx": "select _path, value: t._text from docs flatten _blocks collect { where _type == \"task\" } as t",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": {
@@ -1012,14 +1017,14 @@
   {
     "name": "column-alias-never-takes-a-bound-name",
     "dql": "TABLE upper(tag) AS tag FLATTEN file.tags AS tag",
-    "oqx": "select path, c0: tag.upper() from docs flatten tags collect { } as tag",
+    "oqx": "select _path, c0: tag.upper() from docs flatten _tags collect { } as tag",
     "render": {
       "type": "table",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "columns": [
@@ -1034,13 +1039,13 @@
   {
     "name": "task-over-flattened-tasks",
     "dql": "TASK FROM \"projects\" FLATTEN file.tasks AS t WHERE !t.completed",
-    "oqx": "select path, task_id: t.id, text: t.text, checked: t.checked from docs where path.startsWith(\"/projects/\") or path == \"/projects.md\" flatten blocks collect { where type == \"task\" and !checked } as t",
+    "oqx": "select _path, task_id: t._id, text: t._text, checked: t.checked from docs where _path.startsWith(\"/projects/\") or _path == \"/projects.md\" flatten _blocks collect { where _type == \"task\" and !checked } as t",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
@@ -1048,7 +1053,7 @@
         "id": "task_id",
         "text": "text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -1056,13 +1061,13 @@
   {
     "name": "task-over-flattened-tasks-bare-fields",
     "dql": "TASK FLATTEN file.tasks AS t WHERE !completed & priority = \"high\"",
-    "oqx": "select path, task_id: t.id, text: t.text, checked: t.checked from docs where priority == \"high\" flatten blocks collect { where type == \"task\" and !checked } as t",
+    "oqx": "select _path, task_id: t._id, text: t._text, checked: t.checked from docs where priority == \"high\" flatten _blocks collect { where _type == \"task\" and !checked } as t",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
@@ -1070,7 +1075,7 @@
         "id": "task_id",
         "text": "text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -1078,13 +1083,13 @@
   {
     "name": "task-over-flattened-tasks-where-before-the-flatten",
     "dql": "TASK WHERE !completed FLATTEN file.tasks",
-    "oqx": "select path, task_id: tasks.id, text: tasks.text, checked: tasks.checked from docs flatten blocks collect { where type == \"task\" and !checked } as tasks",
+    "oqx": "select _path, task_id: tasks._id, text: tasks._text, checked: tasks.checked from docs flatten _blocks collect { where _type == \"task\" and !checked } as tasks",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
@@ -1092,7 +1097,7 @@
         "id": "task_id",
         "text": "text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -1100,7 +1105,7 @@
   {
     "name": "task-over-flattened-tasks-grouped",
     "dql": "TASK FLATTEN file.tasks AS t GROUP BY file.link",
-    "oqx": "select key, tasks: rows collect { path: path, task_id: t.id, text: t.text, checked: t.checked } from docs flatten blocks collect { where type == \"task\" } as t group by key: path",
+    "oqx": "select key, tasks: rows collect { _path: _path, task_id: t._id, text: t._text, checked: t.checked } from docs flatten _blocks collect { where _type == \"task\" } as t group by key: _path",
     "render": {
       "type": "task",
       "grouped": true,
@@ -1114,7 +1119,7 @@
         "id": "task_id",
         "text": "text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -1122,21 +1127,21 @@
   {
     "name": "task-flatten-tags-keeps-the-task-rows",
     "dql": "TASK FLATTEN file.tags AS tag WHERE tag = \"urgent\"",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\" flatten doc.tags collect { where $it == \"urgent\" } as tag",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" flatten _doc._tags collect { where $it == \"urgent\" } as tag",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []
@@ -1166,13 +1171,13 @@
   {
     "name": "calendar-page-date-with-a-flatten",
     "dql": "CALENDAR due FLATTEN file.tags AS tag",
-    "oqx": "select path, date: due from docs where has(date) flatten tags collect { } as tag",
+    "oqx": "select _path, date: due from docs where has(date) flatten _tags collect { } as tag",
     "render": {
       "type": "calendar",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "date": {
@@ -1194,25 +1199,75 @@
     }
   },
   {
-    "name": "as-id-is-refused",
-    "dql": "TABLE id FLATTEN file.tags AS id",
+    "name": "as-_id-is-refused",
+    "dql": "TABLE x FLATTEN file.tags AS _id",
     "error": {
       "code": "unsupported",
-      "construct": "FLATTEN … AS id",
-      "message": "FLATTEN … AS id: the hit envelope's names cannot be rebound (at line 1, column 10)",
+      "construct": "FLATTEN … AS _id",
+      "message": "FLATTEN … AS _id: a name in the engine's `_` namespace cannot be bound (the hit envelope `_id`/`_path` included); the bare namespace is the user's — write AS <a bare name> (at line 1, column 9)",
       "line": 1,
-      "column": 10
+      "column": 9
     }
   },
   {
-    "name": "as-path-is-refused",
-    "dql": "LIST FLATTEN authors AS path",
+    "name": "as-id-binds-an-authored-name",
+    "dql": "TABLE id FLATTEN file.tags AS id",
+    "oqx": "select _path, id from docs flatten _tags collect { } as id",
+    "render": {
+      "type": "table",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "_path",
+        "derive": "link"
+      },
+      "columns": [
+        {
+          "name": "id",
+          "alias": "id"
+        }
+      ]
+    },
+    "warnings": []
+  },
+  {
+    "name": "as-_path-is-refused",
+    "dql": "LIST FLATTEN authors AS _path",
     "error": {
       "code": "unsupported",
-      "construct": "FLATTEN … AS path",
-      "message": "FLATTEN … AS path: the hit envelope's names cannot be rebound (at line 1, column 6)",
+      "construct": "FLATTEN … AS _path",
+      "message": "FLATTEN … AS _path: a name in the engine's `_` namespace cannot be bound (the hit envelope `_id`/`_path` included); the bare namespace is the user's — write AS <a bare name> (at line 1, column 6)",
       "line": 1,
       "column": 6
+    }
+  },
+  {
+    "name": "as-path-binds-an-authored-name",
+    "dql": "LIST FLATTEN authors AS path",
+    "oqx": "select _path from docs flatten authors as path",
+    "render": {
+      "type": "list",
+      "withoutId": false,
+      "grouped": false,
+      "id": {
+        "name": "File",
+        "alias": "_path",
+        "derive": "link"
+      },
+      "value": null
+    },
+    "warnings": []
+  },
+  {
+    "name": "as-underscore-name-is-refused",
+    "dql": "TABLE x FLATTEN file.tags AS _tags",
+    "error": {
+      "code": "unsupported",
+      "construct": "FLATTEN … AS _tags",
+      "message": "FLATTEN … AS _tags: a name in the engine's `_` namespace cannot be bound (the hit envelope `_id`/`_path` included); the bare namespace is the user's — write AS <a bare name> (at line 1, column 9)",
+      "line": 1,
+      "column": 9
     }
   },
   {

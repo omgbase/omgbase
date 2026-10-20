@@ -86,7 +86,7 @@ And it works **inside** a correlated subquery — "documents with a task node wh
 text mentions recrystallization" (a query the flat search surface can't express):
 
 ```console
-$ omg query 'from docs where nodes exists { where kind == "md:task" and text("recrystallization") }'
+$ omg query 'from docs where _nodes exists { where _kind == "md:task" and text("recrystallization") }'
 d_w18c2st  /lab/2026-02-notes.md
 d_jtnqxt2  /processes/coagulation.md
 ```

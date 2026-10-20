@@ -5,7 +5,7 @@ const VALID = {
   id: "demo",
   prompt: "do a thing",
   checks: [{ kind: "read", path: "/index.md", matches: ["Alchemy"] }],
-  solution: { steps: [{ tool: "docs_read", args: { path: "/index.md" } }], final_text: "done" },
+  solution: { steps: [{ tool: "docs_read", args: { _path: "/index.md" } }], final_text: "done" },
 };
 
 describe("tasks/*.json", () => {

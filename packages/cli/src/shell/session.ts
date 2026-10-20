@@ -182,7 +182,7 @@ export class ShellSession {
     line(style.dim("run any omg command; results become addressable:"));
     line(`${style.accent("@1 @2 …")}   ${style.dim("rows of the last displayed collection")}`);
     line(`${style.accent("@_")}         ${style.dim("the previous command's result")}`);
-    line(`${style.accent("@name")}      ${style.dim("a named binding (also @name[i], @name.field)")}`);
+    line(`${style.accent("@name")}      ${style.dim("a named binding (also @name[i], @name.field — e.g. @1._id, @t[1]._path)")}`);
     io.out("");
     line(`${style.accent("@x = <cmd|@ref>")}      ${style.dim("bind a snapshot of a result")}`);
     line(`${style.accent("unset x")}              ${style.dim("drop a binding")}`);
@@ -329,7 +329,7 @@ export class ShellSession {
     if (typeof v === "number" || typeof v === "boolean") return String(v);
     if (v && typeof v === "object") {
       const o = v as Record<string, unknown>;
-      const id = o.id ?? o.id ?? o.node ?? o.path ?? o.path ?? o.locator; // a query hit leads with id/path (surface 3.0)
+      const id = o._id ?? o.node ?? o._path ?? o.locator; // a query hit leads with _id/_path (surface 5.0: engine names are `_`-prefixed)
       return id ? String(id) : "record";
     }
     return "empty";

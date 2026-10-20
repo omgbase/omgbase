@@ -119,7 +119,7 @@ describe("combining structural functions with other filters", () => {
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n");
     ingestFile(store, repoId, "readme.md", "# Hello\n");
 
-    const results = oqxRun(store, repoId, 'from blocks where doc.format == "yaml" && yaml_path("database")');
+    const results = oqxRun(store, repoId, 'from blocks where _doc._format == "yaml" && yaml_path("database")');
     expect(results.hits.length).toBe(1);
   });
 });

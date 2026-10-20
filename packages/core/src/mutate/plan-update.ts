@@ -110,8 +110,8 @@ export function planUpdate(store: Store, repoId: string, rootPath: string, docRe
   return {
     version: 1,
     kind: "doc_update",
-    target: { id: docId, path: path },
-    precondition: { id: docId, path: path, baseRevision: info.currentRev, hash: baseContentHash },
+    target: { _id: docId, _path: path },
+    precondition: { _id: docId, _path: path, baseRevision: info.currentRev, _hash: baseContentHash },
     matcherV: config.matcherV,
     ops,
     ...(fmChanged ? { frontmatter: { raw: targetFm } } : {}),

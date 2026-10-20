@@ -21,18 +21,18 @@
               "op": "set",
               "target": {
                 "kind": "document",
-                "path": "/processes/coagulation.md"
+                "_path": "/processes/coagulation.md"
               },
-              "field": "frontmatter.layer",
+              "field": "_frontmatter.layer",
               "value": "canon"
             },
             {
               "op": "set",
               "target": {
                 "kind": "document",
-                "path": "/processes/coagulation.md"
+                "_path": "/processes/coagulation.md"
               },
-              "field": "frontmatter.layer",
+              "field": "_frontmatter.layer",
               "value": "draft"
             }
           ]

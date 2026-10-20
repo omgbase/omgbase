@@ -1,62 +1,74 @@
-// Unknown names (spec/surface §1.5, 4.6). A query that projects, filters or
-// orders by a name no row of the scope's kind can carry — `select path, target
-// from links` (links have `dst_path`), `where preview != ""` on blocks — used
-// to run silently: an absent column in every row, a predicate true or false of
-// every row. This pass judges every name the query reads (`@omgbase/oqx`'s
-// `references`, AST.md §5b) against the VOCABULARY of the row kind it is read
-// from, statically — before any row is read, so the verdict never depends on
-// the query's own filter — and either records a hint or refuses the query.
+// Unknown names (spec/surface §1.5, 4.6; simplified in 5.0). A query that
+// projects, filters or orders by a name no row of the scope's kind can carry —
+// `select _path, target from links` (links have `_dst_path`), `where preview !=
+// ""` on blocks — used to run silently: an absent column in every row, a
+// predicate true or false of every row. This pass judges every name the query
+// reads (`@omgbase/oqx`'s `references`, AST.md §5b) against the row kind it is
+// read from, statically — before any row is read, so the verdict never depends
+// on the query's own filter — and either records a hint or refuses the query.
 //
-// The three tiers of a name at a scope whose kind is known:
-//   1. an engine attribute, handle or relation of the kind — known;
-//   2. an authored property at least one live object of the kind in this
-//      repository carries (docs: a frontmatter or inline key — `stage` on three
-//      processes is enough; blocks and nodes: a key of a live row's `attrs`,
-//      the bare-name read of those kinds) — known, however partial;
-//   3. a name no object of the kind carries — the complaint.
-// Severity: `links` has a closed row shape (no authored data reaches a link
-// row), so a tier-3 name there is `filter_invalid`; docs, blocks and nodes are
-// open — on a read the result carries one hint per offending name and the rows
-// still come back; a write selector (the AST entry, `unknownNames: "refuse"`)
-// is refused, since a name no row carries would select every row. A repository
-// with no live object of the kind has no vocabulary: the check is skipped for
-// that kind. The vocabulary is read once per (repository, kind) and cached on
-// the repository's head commit (`MAX(commits.seq)`), the one thing every
-// property or attrs change moves.
+// The name rule (§1.2, 5.0) makes the judgement two-sided:
+//   • an UNDERSCORE-prefixed name is an engine name — an attribute, a
+//     reach-through, a source handle or a relation of the kind, a CLOSED set —
+//     so a `_x` that is none of them is `filter_invalid` naming the kind's
+//     engine names (the one loud error of this pass; both modes);
+//   • a BARE name is the author's — on a document a frontmatter or inline key,
+//     on a block or node a key of its `attrs` — and is judged against the
+//     VOCABULARY of the kind in this repository: a name at least one live object
+//     carries is known (however partial: `stage` on three processes out of
+//     twenty documents is the data model working); a name no object carries is
+//     the complaint — on a read the result carries one hint per offending name
+//     and the rows still come back; a write selector (the AST entry,
+//     `unknownNames: "refuse"`) is refused, since a name no row carries would
+//     select every row. The hint's nearest match is drawn from the authored keys
+//     AND the engine names, so the one hint worth keeping survives: a bare
+//     `title` / `id` / `path` / `tags` / `format` that spells an engine attribute
+//     without its prefix says "did you mean `_title`?". A `links` or `revisions`
+//     row carries no authored data at all, so a bare name there is
+//     `filter_invalid` either way (closed row shape). A repository with no live
+//     object of an open kind has no vocabulary: the check is skipped for that
+//     kind. The vocabulary is read once per (repository, kind) and cached on the
+//     repository's head commit (`MAX(commits.seq)`), the one thing every
+//     property or attrs change moves.
 
 import type { Expr, Follow, Query, ReferenceStep } from "@omgbase/oqx";
 import { references } from "@omgbase/oqx";
-import { ATTRIBUTES, SOURCE_HANDLES, type Kind } from "./context.js";
+import { ATTRIBUTES, REACH_THROUGHS, SOURCE_HANDLES, type Kind } from "./context.js";
 import { ROOTS } from "./root-row.js";
 import { FROM, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 
-/** What to do with a tier-3 name on an open kind: record it in `hints` (every read) or refuse the query (a write selector). */
+/** What to do with an unknown bare name on an open kind: record it in `hints` (every read) or refuse the query (a write selector). */
 export type UnknownNames = "hint" | "refuse";
 
 /** The relations of each kind and the kind of the rows they yield (spec/surface §1.2). */
 export const RELATIONS: Readonly<Record<Kind, Readonly<Record<string, Kind>>>> = {
-  docs: { blocks: "blocks", nodes: "nodes", out_links: "links", in_links: "links", revisions: "revisions" },
-  blocks: { children: "blocks", nodes: "nodes", out_links: "links", section: "nodes" },
-  nodes: { blocks: "blocks", subsections: "nodes", children: "nodes" },
+  docs: { _blocks: "blocks", _nodes: "nodes", _out_links: "links", _in_links: "links", _revisions: "revisions" },
+  blocks: { _children: "blocks", _nodes: "nodes", _out_links: "links", _section: "nodes" },
+  nodes: { _blocks: "blocks", _subsections: "nodes", _children: "nodes" },
   links: {},
   revisions: {},
 };
 
-/** The self and reach-through handles of each kind and the kind of the row they reach (§1.2). */
+/** The reach-through handles of each kind and the kind of the row they reach (§1.2; the self aliases are gone in 5.0 — `$it` is the self). */
 export const HANDLES: Readonly<Record<Kind, Readonly<Record<string, Kind>>>> = {
-  docs: { doc: "docs" },
-  blocks: { block: "blocks", doc: "docs" },
-  nodes: { section: "nodes", doc: "docs", block: "blocks" },
-  links: { doc: "docs", dst: "docs", block: "blocks" },
-  revisions: { doc: "docs" },
+  docs: {},
+  blocks: { _doc: "docs" },
+  nodes: { _doc: "docs", _block: "blocks" },
+  links: { _doc: "docs", _dst: "docs", _block: "blocks" },
+  revisions: { _doc: "docs" },
 };
 
 /** The kinds whose row shape is closed: no authored data reaches a row by bare name. */
 const CLOSED: ReadonlySet<Kind> = new Set<Kind>(["links", "revisions"]);
 
 const NOUN: Readonly<Record<Kind, string>> = { docs: "document", blocks: "block", nodes: "node", links: "link", revisions: "revision" };
+
+/** Every engine name of a kind, in the §1.2 table's order: attributes, reach-throughs, source handles (docs), relations. */
+export function engineNames(target: Kind): string[] {
+  return [...ATTRIBUTES[target], ...REACH_THROUGHS[target], ...(target === "docs" ? [...SOURCE_HANDLES] : []), ...Object.keys(RELATIONS[target])];
+}
 
 // ---- vocabulary ------------------------------------------------------------
 
@@ -93,7 +105,7 @@ function repoCache(store: Store, repoId: string): RepoCache {
 /** The authored vocabulary of a kind: docs — every live frontmatter or inline
  * key (the merged read a bare name performs); blocks and nodes — every key a
  * live row's `attrs` holds (the bare-name read of those kinds). Computed keys
- * (`$title`, `$tags`) are the intrinsics `title`/`tags`, not authored keys. */
+ * (`$title`, `$tags`) are the attributes `_title`/`_tags`, not authored keys. */
 function authoredKeys(store: Store, repoId: string, target: Kind): string[] {
   let sql: string;
   switch (target) {
@@ -182,7 +194,7 @@ function dotted(e: Expr): { head: Expr & { kind: "ident" | "outer" }; rest: stri
   return inner === null ? null : { head: inner.head, rest: [...inner.rest, e.name] };
 }
 
-/** Follow a dotted path from a row kind through handles and relations (`doc.blocks` on a link → blocks). */
+/** Follow a dotted path from a row kind through reach-throughs and relations (`_doc._blocks` on a link → blocks). */
 function kindOfPath(on: RowKind | null, path: readonly string[]): Kind | null {
   let cur: RowKind | null = on;
   for (let i = 0; i < path.length; i++) {
@@ -239,22 +251,27 @@ export function kindOfScope(steps: readonly ReferenceStep[]): Kind | null {
 
 interface Verdict {
   target: Kind;
-  /** the dotted name judged (the path after any handle or relation) */
+  /** the dotted name judged (the path after any reach-through or relation) */
   name: string;
-  closed: boolean;
-  /** the source handle the name was read through (`data`, `frontmatter`, `inline`), when it was */
+  /** `engine`: an underscore name that is no engine name of the kind; `closed`: a bare name on a kind that carries no authored data; `authored`: a bare name no object of the kind carries */
+  why: "engine" | "closed" | "authored";
+  /** the source handle the name was read through (`_data`, `_frontmatter`, `_inline`), when it was */
   handle?: string;
 }
 
 /** Judge a dotted name read on rows of `target`; null = known. */
 function judge(store: Store, repoId: string, target: Kind, path: readonly string[]): Verdict | null {
   const [head, ...rest] = path as [string, ...string[]];
-  // An engine attribute wins on collision; what follows it (`attrs.checked`, `tags.size`) is the value's own navigation.
-  if (ATTRIBUTES[target].has(head)) return null;
-  // The source handles reach the authored data under them.
-  if (target === "docs" && SOURCE_HANDLES.has(head)) return rest.length === 0 ? null : judgeAuthored(store, repoId, "docs", rest, head);
-  const via = HANDLES[target][head] ?? RELATIONS[target][head];
-  if (via !== undefined) return rest.length === 0 ? null : judge(store, repoId, via, rest);
+  if (head.startsWith("_")) {
+    // An engine attribute: what follows it (`_attrs.checked`, `_tags.size`) is the value's own navigation.
+    if (ATTRIBUTES[target].has(head)) return null;
+    // The source handles reach the authored data under them.
+    if (target === "docs" && SOURCE_HANDLES.has(head)) return rest.length === 0 ? null : judgeAuthored(store, repoId, "docs", rest, head);
+    const via = HANDLES[target][head] ?? RELATIONS[target][head];
+    if (via !== undefined) return rest.length === 0 ? null : judge(store, repoId, via, rest);
+    // Not an engine name of this kind: the closed set is the whole set.
+    return { target, name: head, why: "engine" };
+  }
   // A bare target name on a row is the context's own loud error (root-row.ts); not doubled here.
   if (ROOTS.has(head)) return null;
   return judgeAuthored(store, repoId, target, path);
@@ -262,21 +279,14 @@ function judge(store: Store, repoId: string, target: Kind, path: readonly string
 
 function judgeAuthored(store: Store, repoId: string, target: Kind, path: readonly string[], handle?: string): Verdict | null {
   const name = path.join(".");
-  if (CLOSED.has(target)) return { target, name, closed: true };
+  if (CLOSED.has(target)) return { target, name, why: "closed", ...(handle !== undefined ? { handle } : {}) };
   const v = vocabularyOf(store, repoId, target);
   if (!v.present) return null; // no object of the kind: no vocabulary to judge by
   if (v.keys.has(name)) return null;
-  return { target, name, closed: false, ...(handle !== undefined ? { handle } : {}) };
+  return { target, name, why: "authored", ...(handle !== undefined ? { handle } : {}) };
 }
 
 // ---- messages --------------------------------------------------------------
-
-/** The names a kind knows, for the nearest match: attributes, handles, relations, the authored keys. */
-function candidates(store: Store, repoId: string, target: Kind): string[] {
-  const out = [...ATTRIBUTES[target], ...Object.keys(HANDLES[target]), ...(target === "docs" ? [...SOURCE_HANDLES] : []), ...Object.keys(RELATIONS[target])];
-  if (!CLOSED.has(target)) out.push(...vocabularyOf(store, repoId, target).list);
-  return out;
-}
 
 /** Optimal string alignment distance (Damerau–Levenshtein with adjacent transpositions, each edit 1). */
 export function editDistance(a: string, b: string): number {
@@ -297,20 +307,33 @@ export function editDistance(a: string, b: string): number {
 }
 
 /**
- * The nearest match of `name` among `candidates` (§1.5): case-insensitive; a
- * candidate qualifies when its distance is ≤ 2, or when one of the two is a
- * substring of the other and the shorter has at least three characters; the
- * lowest distance wins, ties broken by the shorter candidate, then
- * alphabetically. Null when nothing qualifies.
+ * The nearest match of `name` among `candidates` (§1.5). First, the one hint
+ * the name rule makes certain: a candidate that is exactly `name` with the
+ * engine prefix added or removed (`id` → `_id`, `_layer` → `layer`) wins
+ * outright, whatever its length. Otherwise case-insensitive and **prefix-blind**
+ * — the `_` is a declaration, not spelling, so `commited` is one edit from
+ * `_commit` and `titel` one from `_title` as from `title`: a candidate
+ * qualifies when its distance is ≤ 2, or when one of the two is a substring of
+ * the other and the shorter has at least three characters; the lowest distance
+ * wins, ties broken by the shorter candidate (so the bare authored `title`
+ * beats `_title` when both are one edit away), then alphabetically. Null when
+ * nothing qualifies.
  */
 export function nearest(name: string, candidates: readonly string[]): string | null {
-  const needle = name.toLowerCase();
+  const lower = name.toLowerCase();
+  const prefixed = `_${lower}`;
+  const unprefixed = lower.startsWith("_") ? lower.slice(1) : null;
+  for (const c of candidates) {
+    const hay = c.toLowerCase();
+    if (hay === prefixed || (unprefixed !== null && hay === unprefixed)) return c;
+  }
+  const needle = lower.replace(/^_/, "");
   // A name under three characters is within distance 2 of nearly anything, so
   // only a substring match (which needs three characters anyway) could qualify.
   if (needle.length < 3) return null;
   let best: { c: string; d: number; sub: boolean } | null = null;
   for (const c of new Set(candidates)) {
-    const hay = c.toLowerCase();
+    const hay = c.toLowerCase().replace(/^_/, "");
     if (hay === needle) continue;
     const d = editDistance(needle, hay);
     const shorter = needle.length <= hay.length ? needle : hay;
@@ -318,9 +341,9 @@ export function nearest(name: string, candidates: readonly string[]): string | n
     const sub = shorter.length >= 3 && longer.includes(shorter);
     if (!(d <= 2 || sub)) continue;
     // One typo (distance 1) wins first; then a substring match outranks a
-    // distance-2 match (`via` → `via_id`, not `id`; `dst_pth` → `dst_path`, not
-    // `dst`); within a class the lowest distance, then the shorter candidate,
-    // then alphabetical.
+    // distance-2 match (`_via` → `_via_id`, not `_id`; `_dst_pth` → `_dst_path`,
+    // not `_dst`); within a class the lowest distance, then the shorter
+    // candidate, then alphabetical.
     const rank = (x: { d: number; sub: boolean }): number => (x.d === 1 ? 0 : x.sub ? 1 : 2);
     const better =
       best === null ||
@@ -336,29 +359,43 @@ function suggestion(name: string, candidates: readonly string[]): string {
   return c === null ? "" : `; did you mean \`${c}\`?`;
 }
 
-/** The error of a closed kind: `` `target` is not a field of links (fields: id, path, …); did you mean `…`? ``. */
-export function fieldErrorMessage(store: Store, repoId: string, target: Kind, name: string): string {
-  return `\`${name}\` is not a field of ${target} (fields: ${[...ATTRIBUTES[target]].join(", ")})${suggestion(name, candidates(store, repoId, target))}`;
+/** The candidates of a bare name: the kind's engine names (so `title` finds `_title`) and its authored keys. */
+function candidates(store: Store, repoId: string, target: Kind): string[] {
+  const out = engineNames(target);
+  if (!CLOSED.has(target)) out.push(...vocabularyOf(store, repoId, target).list);
+  return out;
 }
 
-/** The hint of an open kind: `` `preview` is not a field of blocks and no block in this repository carries a property by that name; did you mean `…`? ``.
- * Under a source handle the name is an authored lookup by construction, so the
- * hint says only that: `` no document in this repository carries a property `path` (`data.path`); did you mean `…`? ``,
- * the nearest match drawn from the authored keys alone. */
+/** The error of an unknown engine name: `` `_target` is not an engine name of links (engine names: _id, _path, …); did you mean `_dst_path`? ``
+ * — the nearest match drawn from the engine names and the authored keys, so a `_layer` written for the authored `layer` is pointed at it. */
+export function engineNameErrorMessage(store: Store, repoId: string, target: Kind, name: string): string {
+  return `\`${name}\` is not an engine name of ${target} (engine names: ${engineNames(target).join(", ")})${suggestion(name, candidates(store, repoId, target))}`;
+}
+
+/** The error of a bare name on a closed kind: `` `target` reads an authored property, and a link carries none (engine names: _id, _path, …); did you mean `_dst_path`? ``. */
+export function closedKindErrorMessage(target: Kind, name: string, handle?: string): string {
+  const shown = handle !== undefined ? ` (\`${handle}.${name}\`)` : "";
+  return `\`${name}\`${shown} reads an authored property, and a ${NOUN[target]} carries none (engine names: ${engineNames(target).join(", ")})${suggestion(name, engineNames(target))}`;
+}
+
+/** The hint of an open kind: `` no block in this repository carries a property `preview`; did you mean `_text`? ``.
+ * Under a source handle the name is shown with it — `` no document in this repository carries a property `x` (`_data.x`); did you mean `y`? `` —
+ * and the nearest match is drawn from the authored keys alone. */
 export function propertyHintMessage(store: Store, repoId: string, target: Kind, name: string, handle?: string): string {
   if (handle !== undefined) {
     return `no ${NOUN[target]} in this repository carries a property \`${name}\` (\`${handle}.${name}\`)${suggestion(name, vocabularyOf(store, repoId, target).list)}`;
   }
-  return `\`${name}\` is not a field of ${target} and no ${NOUN[target]} in this repository carries a property by that name${suggestion(name, candidates(store, repoId, target))}`;
+  return `no ${NOUN[target]} in this repository carries a property \`${name}\`${suggestion(name, candidates(store, repoId, target))}`;
 }
 
 // ---- the pass --------------------------------------------------------------
 
 /**
- * Judge every name the query reads. Returns the hints (one per offending name
- * of an open kind, first-reference order, deduplicated) under `"hint"`; throws
- * `FilterInvalid` for a tier-3 name on a closed kind in either mode, and for
- * one on an open kind under `"refuse"`.
+ * Judge every name the query reads. Returns the hints (one per unknown bare
+ * name of an open kind, first-reference order, deduplicated) under `"hint"`;
+ * throws `FilterInvalid` for an unknown engine name (`_x`) and for a bare name
+ * on a closed kind in either mode, and for an unknown bare name on an open kind
+ * under `"refuse"`.
  */
 export function checkNames(store: Store, repoId: string, raw: Query, mode: UnknownNames): string[] {
   const hints: string[] = [];
@@ -369,7 +406,8 @@ export function checkNames(store: Store, repoId: string, raw: Query, mode: Unkno
     if (kind === null) continue;
     const verdict = judge(store, repoId, kind, ref.name.split("."));
     if (verdict === null) continue;
-    if (verdict.closed) throw new FilterInvalid(fieldErrorMessage(store, repoId, verdict.target, verdict.name), "OQX");
+    if (verdict.why === "engine") throw new FilterInvalid(engineNameErrorMessage(store, repoId, verdict.target, verdict.name), "OQX");
+    if (verdict.why === "closed") throw new FilterInvalid(closedKindErrorMessage(verdict.target, verdict.name, verdict.handle), "OQX");
     const message = propertyHintMessage(store, repoId, verdict.target, verdict.name, verdict.handle);
     if (mode === "refuse") throw new FilterInvalid(message, "OQX");
     if (!seen.has(message)) {

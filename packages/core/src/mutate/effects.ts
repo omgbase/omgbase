@@ -36,11 +36,11 @@ import { stringify as stringifyYaml } from "yaml";
  *  `symbol` (3.2, §11.8 "Sugar"): a bare `"$new.n"` target whose kind — document or block — the
  *  symbol table decides when the effect is resolved; it never reaches a resolved effect. */
 export type EffectTarget =
-  | { kind: "document"; id?: string; path?: string }
-  | { kind: "block"; id: string }
-  | { kind: "node"; id: string }
+  | { kind: "document"; _id?: string; _path?: string }
+  | { kind: "block"; _id: string }
+  | { kind: "node"; _id: string }
   | { kind: "section"; heading_id: string }
-  | { kind: "symbol"; id: string };
+  | { kind: "symbol"; _id: string };
 
 export type EffectAt = At;
 
@@ -77,11 +77,11 @@ export function isNewSymbol(s: string): boolean {
 
 // ---- resolved effects (§11.4 `effects`) ----------------------------------------------
 
-/** A target with its document resolved to `{ id, path }` (path in the storage form; a `$new.n` document keeps its symbol). */
+/** A target with its document resolved to `{ _id, _path }` (path in the storage form; a `$new.n` document keeps its symbol). */
 export type ResolvedTarget =
-  | { kind: "document"; id: string; path: string }
-  | { kind: "block"; id: string }
-  | { kind: "node"; id: string }
+  | { kind: "document"; _id: string; _path: string }
+  | { kind: "block"; _id: string }
+  | { kind: "node"; _id: string }
   | { kind: "section"; heading_id: string };
 
 export type ResolvedEffect =
@@ -180,10 +180,10 @@ function effectLevelMax(v: Record<string, unknown>, here: string, f: EffectFixer
 function bareAnchor(at: "before" | "after", into: EffectTarget, here: string, f: EffectFixer | undefined): MutationError {
   const message = `${here}: \`at\` must be "start", "end", { before: <block id> } or { after: <block id> } — "${at} block X" is into: X's parent (a block, or the document when X is top-level), at: { ${at}: X }`;
   if (f === undefined || into.kind !== "block") return effectInvalid(message);
-  const row = f.parentOf(into.id);
+  const row = f.parentOf(into._id);
   if (row === null) return effectInvalid(message);
-  const parent: unknown = row.parent === null ? referencePath(row.path) : { kind: "block", id: row.parent };
-  return effectInvalid(message, f.build({ ...f.written, into: parent, at: { [at]: into.id } }));
+  const parent: unknown = row.parent === null ? referencePath(row.path) : { kind: "block", _id: row.parent };
+  return effectInvalid(message, f.build({ ...f.written, into: parent, at: { [at]: into._id } }));
 }
 
 /**
@@ -242,8 +242,8 @@ export function isTargetId(s: string): boolean {
 
 /**
  * A bare string where a target object is expected (3.2, §11.8 "Sugar"): a
- * path-looking string → `{ kind: "document", path }`; a `b_`/`d_`/`n_` id →
- * that kind; `$new.n` → `{ kind: "symbol", id }` (its kind is the symbol
+ * path-looking string → `{ kind: "document", _path }`; a `b_`/`d_`/`n_` id →
+ * that kind; `$new.n` → `{ kind: "symbol", _id }` (its kind is the symbol
  * table's at resolution); a `#` locator → `filter_invalid` with a `fix`;
  * anything else is no target. A `-> ` leader never reaches here from the
  * planner (`select.ts` desugars it first); as a library input it is refused
@@ -258,11 +258,11 @@ export function bareTarget(ref: string, here: string): EffectTarget {
     const reason = `${here}: ${JSON.stringify(ref)} is a locator, not a target — a bare target is a document path, a \`b_\`/\`d_\`/\`n_\` id or \`$new.n\``;
     throw new MutationError("filter_invalid", reason, { reason, hint: "arguments", fix: "resolve the locator to an id first: `blocks_resolve { locator }`, or a `query` whose hit is the block" });
   }
-  if (isNewSymbol(ref)) return { kind: "symbol", id: ref };
-  if (isValidId(ref, "b")) return { kind: "block", id: ref };
-  if (isValidId(ref, "d")) return { kind: "document", id: ref };
-  if (NODE_ID_RE.test(ref)) return { kind: "node", id: ref };
-  if (looksLikePath(ref)) return { kind: "document", path: ref };
+  if (isNewSymbol(ref)) return { kind: "symbol", _id: ref };
+  if (isValidId(ref, "b")) return { kind: "block", _id: ref };
+  if (isValidId(ref, "d")) return { kind: "document", _id: ref };
+  if (NODE_ID_RE.test(ref)) return { kind: "node", _id: ref };
+  if (looksLikePath(ref)) return { kind: "document", _path: ref };
   throw effectInvalid(`${here}: a target is { kind: …, … } or a bare document path, a \`b_\`/\`d_\`/\`n_\` id or \`$new.n\` (got ${JSON.stringify(ref)})`);
 }
 
@@ -270,22 +270,22 @@ export function validateTarget(v: unknown, here: string, kinds: readonly EffectT
   if (typeof v === "string") v = bareTarget(v, here);
   if (!isRecord(v) || typeof v.kind !== "string") throw effectInvalid(`${here}: a target is { kind: ${kinds.map((k) => `"${k}"`).join(" | ")}, … }`);
   // A bare `$new.n` defers its kind check to resolution (`resolveEffect`); the `kinds` are the slot's.
-  if (v.kind === "symbol" && typeof v.id === "string" && isNewSymbol(v.id) && Object.keys(v).length === 2) return { kind: "symbol", id: v.id };
+  if (v.kind === "symbol" && typeof v._id === "string" && isNewSymbol(v._id) && Object.keys(v).length === 2) return { kind: "symbol", _id: v._id };
   if (!(kinds as readonly string[]).includes(v.kind)) throw effectInvalid(`${here}: \`kind\` must be one of ${kinds.join(", ")} (got "${v.kind}")`);
   switch (v.kind as Exclude<EffectTarget["kind"], "symbol">) {
     case "document": {
-      onlyKeys(v, ["kind", "id", "path"], here);
-      const id = optionalString(v, "id", here);
-      const path = optionalString(v, "path", here);
-      if (id === undefined && path === undefined) throw effectInvalid(`${here}: a document target needs \`id\` or \`path\``);
-      return { kind: "document", ...(id !== undefined ? { id } : {}), ...(path !== undefined ? { path } : {}) };
+      onlyKeys(v, ["kind", "_id", "_path"], here);
+      const id = optionalString(v, "_id", here);
+      const path = optionalString(v, "_path", here);
+      if (id === undefined && path === undefined) throw effectInvalid(`${here}: a document target needs \`_id\` or \`_path\``);
+      return { kind: "document", ...(id !== undefined ? { _id: id } : {}), ...(path !== undefined ? { _path: path } : {}) };
     }
     case "block":
-      onlyKeys(v, ["kind", "id"], here);
-      return { kind: "block", id: requireString(v, "id", here) };
+      onlyKeys(v, ["kind", "_id"], here);
+      return { kind: "block", _id: requireString(v, "_id", here) };
     case "node":
-      onlyKeys(v, ["kind", "id"], here);
-      return { kind: "node", id: requireString(v, "id", here) };
+      onlyKeys(v, ["kind", "_id"], here);
+      return { kind: "node", _id: requireString(v, "_id", here) };
     case "section":
       onlyKeys(v, ["kind", "heading_id"], here);
       return { kind: "section", heading_id: requireString(v, "heading_id", here) };
@@ -441,17 +441,17 @@ export function validateEffects(v: unknown, fix?: ShapeFixContext): Effect[] {
 }
 
 // §11.2: the `field` spellings per target kind.
-export const FRONTMATTER_FIELD = /^frontmatter\.(.+)$/;
+export const FRONTMATTER_FIELD = /^_frontmatter\.(.+)$/;
 function checkField(kind: EffectTarget["kind"], field: string, here: string, op: "set" | "unset", f?: EffectFixer): void {
   if (kind === "document") {
     if (FRONTMATTER_FIELD.test(field) || (op === "set" && field === "content")) return;
-    throw effectInvalid(`${here}: a document's \`field\` is \`frontmatter.<key>\`${op === "set" ? " or `content`" : ""} (got "${field}")`);
+    throw effectInvalid(`${here}: a document's \`field\` is \`_frontmatter.<key>\`${op === "set" ? " or `content`" : ""} (got "${field}")`);
   }
   if (kind === "block") {
-    if (field === "markdown" || field === "attrs.checked") return;
+    if (field === "markdown" || field === "_attrs.checked") return;
     // (3.4, §8) `text` / `content` / `body` / `raw` on a block: the fix spells `markdown`.
     const fix = f !== undefined && BLOCK_FIELD_ALIASES.has(field) ? f.build({ ...f.written, field: "markdown" }) : undefined;
-    throw effectInvalid(`${here}: a block's \`field\` is \`markdown\` or \`attrs.checked\` (got "${field}")`, fix);
+    throw effectInvalid(`${here}: a block's \`field\` is \`markdown\` or \`_attrs.checked\` (got "${field}")`, fix);
   }
   // node: the adapter's editable props (`node_not_editable` names them when unknown)
   if (field === "" || field.includes(".")) throw effectInvalid(`${here}: a node's \`field\` is one of its editable properties (got "${field}")`);
@@ -462,12 +462,12 @@ function checkField(kind: EffectTarget["kind"], field: string, here: string, op:
 /** The focus a conflict names: `{ kind, target, field? }`. */
 export interface Focus {
   kind: "scalar" | "positional" | "identity";
-  target: { kind: "document" | "block" | "node" | "path"; id?: string; path?: string };
+  target: { kind: "document" | "block" | "node" | "path"; _id?: string; _path?: string };
   field?: string;
 }
 
 export function conflictingEffects(effects: [number, number], focus: Focus): MutationError {
-  const what = focus.field !== undefined ? `${focus.target.kind} ${focus.target.id ?? focus.target.path} ${focus.field}` : `${focus.target.kind} ${focus.target.id ?? focus.target.path}`;
+  const what = focus.field !== undefined ? `${focus.target.kind} ${focus.target._id ?? focus.target._path} ${focus.field}` : `${focus.target.kind} ${focus.target._id ?? focus.target._path}`;
   return new MutationError("conflicting_effects", `effects ${effects[0]} and ${effects[1]} contradict each other on ${what}`, { effects, focus, retriable: false });
 }
 
@@ -506,19 +506,19 @@ export class ConflictTracker {
   check(i: number, info: FocusInfo, describe: string): boolean {
     for (const d of info.docs) {
       const by = this.retiredDocs.get(d);
-      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "document", id: d } });
+      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "document", _id: d } });
     }
     for (const b of info.blocks) {
       const by = this.retiredBlocks.get(b);
-      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "block", id: b } });
+      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "block", _id: b } });
     }
     for (const p of info.paths) {
       const by = this.retiredPaths.get(p);
-      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "path", path: p } });
+      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "path", _path: p } });
     }
     if (info.wholeDoc !== undefined) {
       const by = this.touchedDocs.get(info.wholeDoc);
-      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "document", id: info.wholeDoc } });
+      if (by !== undefined) throw conflictingEffects([by, i], { kind: "identity", target: { kind: "document", _id: info.wholeDoc } });
     }
     if (info.scalar) {
       const prev = this.scalar.get(info.scalar.key);
@@ -634,26 +634,26 @@ function docMissing(ref: string): MutationError {
   return new MutationError("doc_missing", `doc ${ref} not found`, { doc: ref });
 }
 
-/** Resolve a document target: an existing document's `{ id, path }`, or a `$new.n` document this plan creates. */
+/** Resolve a document target: an existing document's `{ _id, _path }`, or a `$new.n` document this plan creates. */
 export function resolveDocumentTarget(ctx: LoweringContext, t: Extract<EffectTarget, { kind: "document" }>): Extract<ResolvedTarget, { kind: "document" }> {
-  if (t.id !== undefined && isNewSymbol(t.id)) {
-    const created = ctx.creates.find((c) => c.symbol === t.id);
-    if (!created) throw symbolMissing(ctx, t.id, "document");
-    if (t.path !== undefined && canonicalDocPath(t.path) !== created.path) throw effectInvalid(`id ${JSON.stringify(t.id)} and path ${JSON.stringify(t.path)} name different documents`);
-    return { kind: "document", id: t.id, path: created.path };
+  if (t._id !== undefined && isNewSymbol(t._id)) {
+    const created = ctx.creates.find((c) => c.symbol === t._id);
+    if (!created) throw symbolMissing(ctx, t._id, "document");
+    if (t._path !== undefined && canonicalDocPath(t._path) !== created.path) throw effectInvalid(`\`_id\` ${JSON.stringify(t._id)} and \`_path\` ${JSON.stringify(t._path)} name different documents`);
+    return { kind: "document", _id: t._id, _path: created.path };
   }
   return findDocumentTarget(ctx.store, ctx.repoId, t);
 }
 
-/** An existing document's `{ id, path }` for a literal document target (`doc_missing`; `filter_invalid` when `id` and `path` disagree). */
+/** An existing document's `{ _id, _path }` for a literal document target (`doc_missing`; `filter_invalid` when `_id` and `_path` disagree). */
 export function findDocumentTarget(store: Store, repoId: string, t: Extract<EffectTarget, { kind: "document" }>): Extract<ResolvedTarget, { kind: "document" }> {
-  const byId = t.id !== undefined ? findDoc(store, { docId: t.id }) : null;
-  if (t.id !== undefined && (!byId || byId.repoId !== repoId)) throw docMissing(t.id);
-  const byPath = t.path !== undefined ? findDoc(store, { repoId, path: t.path }) : null;
-  if (t.path !== undefined && !byPath) throw docMissing(t.path);
-  if (byId && byPath && byId.docId !== byPath.docId) throw effectInvalid(`id ${JSON.stringify(t.id)} and path ${JSON.stringify(t.path)} name different documents`);
+  const byId = t._id !== undefined ? findDoc(store, { docId: t._id }) : null;
+  if (t._id !== undefined && (!byId || byId.repoId !== repoId)) throw docMissing(t._id);
+  const byPath = t._path !== undefined ? findDoc(store, { repoId, path: t._path }) : null;
+  if (t._path !== undefined && !byPath) throw docMissing(t._path);
+  if (byId && byPath && byId.docId !== byPath.docId) throw effectInvalid(`\`_id\` ${JSON.stringify(t._id)} and \`_path\` ${JSON.stringify(t._path)} name different documents`);
   const info = (byId ?? byPath)!;
-  return { kind: "document", id: info.docId, path: info.path };
+  return { kind: "document", _id: info.docId, _path: info.path };
 }
 
 /** A bare `$new.n` target (3.2): the kind the symbol table recorded, checked against the slot's admitted kinds. */
@@ -661,7 +661,7 @@ function resolveSymbolTarget(ctx: LoweringContext, symbol: string, kinds: readon
   const kind = ctx.symbols.kindOf(symbol);
   if (kind === undefined) throw new MutationError("target_missing", `${symbol} is not created by an earlier effect`, { symbol });
   if (!kinds.includes(kind)) throw effectInvalid(`${here}: \`kind\` must be one of ${kinds.join(", ")} (got "${kind}")`);
-  return { kind, id: symbol };
+  return { kind, _id: symbol };
 }
 
 function symbolMissing(ctx: LoweringContext, symbol: string, wanted: "block" | "document"): MutationError {
@@ -772,9 +772,9 @@ function placeWords(ctx: LoweringContext, into: ResolvedTarget, at: EffectAt, ve
     case "section":
       return `${edge} of ${sectionName(ctx, into.heading_id)} in ${path}`;
     case "block":
-      return `${edge} of ${blockName(ctx, into.id)} in ${path}`;
+      return `${edge} of ${blockName(ctx, into._id)} in ${path}`;
     case "node":
-      return `${edge} of node ${into.id} in ${path}`;
+      return `${edge} of node ${into._id} in ${path}`;
   }
 }
 
@@ -814,7 +814,7 @@ function descendantsOf(ctx: LoweringContext, id: string): string[] {
 function targetDoc(ctx: LoweringContext, t: ResolvedTarget): string {
   switch (t.kind) {
     case "document":
-      return t.id;
+      return t._id;
     case "section": {
       const inTree = locateLoaded(ctx, t.heading_id);
       if (inTree) return inTree.docId;
@@ -823,15 +823,15 @@ function targetDoc(ctx: LoweringContext, t: ResolvedTarget): string {
       return row.doc_id;
     }
     case "block": {
-      const inTree = locateLoaded(ctx, t.id);
+      const inTree = locateLoaded(ctx, t._id);
       if (inTree) return inTree.docId;
-      if (isNewSymbol(t.id)) throw symbolMissing(ctx, t.id, "block");
-      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(t.id) as { doc_id: string } | undefined;
-      if (!row) throw new MutationError("parent_missing", `parent ${t.id} not found`);
+      if (isNewSymbol(t._id)) throw symbolMissing(ctx, t._id, "block");
+      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(t._id) as { doc_id: string } | undefined;
+      if (!row) throw new MutationError("parent_missing", `parent ${t._id} not found`);
       return row.doc_id;
     }
     case "node":
-      return nodeBlock(ctx, t.id).docId;
+      return nodeBlock(ctx, t._id).docId;
   }
 }
 
@@ -850,7 +850,7 @@ function placement(ctx: LoweringContext, into: ResolvedTarget, at: EffectAt): To
     case "section":
       return { parent: { heading: kernelBlockId(ctx, into.heading_id), scope: "section" }, at: kernel };
     case "block":
-      return { parent: kernelBlockId(ctx, into.id), at: kernel };
+      return { parent: kernelBlockId(ctx, into._id), at: kernel };
     case "node":
       throw effectInvalid("a node is not a placement target");
   }
@@ -866,7 +866,7 @@ function checkRevision(ctx: LoweringContext, docId: string, expect: EffectExpect
     throw new MutationError("stale_plan", `document ${docId} is at revision ${base.currentRev ?? "null"}, not ${expect.revision}; re-plan`, {
       doc: docId,
       expected_revision: expect.revision,
-      current: { revision: base.currentRev, hash: base.fileHash },
+      current: { revision: base.currentRev, _hash: base.fileHash },
       retriable: true,
     });
   }
@@ -899,7 +899,7 @@ function kernelExpect(e: EffectExpect | undefined, contentHash?: string): Expect
 
 function recordParentPin(ctx: LoweringContext, doc: string, into: ResolvedTarget, expect: EffectExpect | undefined): void {
   if (expect?.parent_children_hash === undefined) return;
-  const parent = into.kind === "block" ? into.id : null;
+  const parent = into.kind === "block" ? into._id : null;
   ctx.parents.push({ doc, parent, parent_children_hash: expect.parent_children_hash });
 }
 
@@ -919,7 +919,7 @@ function describe(e: ResolvedEffect): string {
   }
 }
 function targetName(t: ResolvedTarget): string {
-  return t.kind === "section" ? `section ${t.heading_id}` : `${t.kind} ${t.id}`;
+  return t.kind === "section" ? `section ${t.heading_id}` : `${t.kind} ${t._id}`;
 }
 
 /** The target kinds each slot admits (§11.1); `validateTarget` checks a literal, `resolveEffect` a bare `$new.n`. */
@@ -928,11 +928,11 @@ const DOCUMENT_KIND: readonly EffectTarget["kind"][] = ["document"];
 const BLOCK_KIND: readonly EffectTarget["kind"][] = ["block"];
 const SET_KINDS: readonly EffectTarget["kind"][] = ["document", "block", "node"];
 
-/** Resolve one validated effect's targets (§11.4): documents to `{ id, path }`, defaults made explicit; `i` names the effect in messages. */
+/** Resolve one validated effect's targets (§11.4): documents to `{ _id, _path }`, defaults made explicit; `i` names the effect in messages. */
 export function resolveEffect(ctx: LoweringContext, e: Effect, i = 0): ResolvedEffect {
   const here = `effects[${i}]`;
   const target = (t: EffectTarget, kinds: readonly EffectTarget["kind"][], member: string): ResolvedTarget => {
-    const literal = t.kind === "symbol" ? resolveSymbolTarget(ctx, t.id, kinds, `${here}.${member}`) : t;
+    const literal = t.kind === "symbol" ? resolveSymbolTarget(ctx, t._id, kinds, `${here}.${member}`) : t;
     return literal.kind === "document" ? resolveDocumentTarget(ctx, literal) : literal;
   };
   const targets = (list: EffectTarget[]): ResolvedTarget[] => list.map((t, k) => target(t, BLOCK_KIND, `targets[${k}]`));
@@ -995,12 +995,12 @@ function frontmatterNotMarkdown(path: string, format: string, field: string, doc
   return new MutationError(
     "type_mismatch",
     `frontmatter effects apply to markdown documents; ${referencePath(path)} is a ${format} document — its top-level mapping is edited with \`set content\` (the whole file) until frontmatter effects learn yaml and json`,
-    { ...(docId !== null ? { doc: docId } : {}), path: referencePath(path), format, field },
+    { ...(docId !== null ? { doc: docId } : {}), _path: referencePath(path), _format: format, field },
   );
 }
 
 /**
- * spec/mutate §11.3 `set`/`unset frontmatter.<key>` (3.6, "Frontmatter
+ * spec/mutate §11.3 `set`/`unset _frontmatter.<key>` (3.6, "Frontmatter
  * entries"): the frontmatter is edited BY ENTRY. The document's head is cut
  * into its parts (`splitFrontmatterRaw`, the §11.3 split rule): a `set`
  * replaces the key's part — the lead lines (a comment documenting the key)
@@ -1131,7 +1131,7 @@ function focusOf(ctx: LoweringContext, e: ResolvedEffect): FocusInfo {
       return { docs: [], blocks: [], paths: [e.path] };
     case "insert": {
       const doc = targetDoc(ctx, e.into);
-      const blocks = [...(e.into.kind === "block" ? [e.into.id] : e.into.kind === "section" ? [e.into.heading_id] : []), ...anchorIds(e.at)];
+      const blocks = [...(e.into.kind === "block" ? [e.into._id] : e.into.kind === "section" ? [e.into.heading_id] : []), ...anchorIds(e.at)];
       return { docs: [doc], blocks, paths: [] };
     }
     case "set":
@@ -1139,62 +1139,62 @@ function focusOf(ctx: LoweringContext, e: ResolvedEffect): FocusInfo {
       if (e.target.kind === "document") {
         const field = e.field === "content" ? "content" : e.field;
         return {
-          scalar: { key: `document:${e.target.id}:${field}`, target: { kind: "document", id: e.target.id }, field, op: e.op, value: e.op === "set" ? e.value : undefined },
-          docs: [e.target.id], blocks: [], paths: [],
-          ...(field === "content" ? { wholeDoc: e.target.id, retiresDocs: [e.target.id], retiresBlocks: allBlocksOf(ctx, e.target.id) } : {}),
+          scalar: { key: `document:${e.target._id}:${field}`, target: { kind: "document", _id: e.target._id }, field, op: e.op, value: e.op === "set" ? e.value : undefined },
+          docs: [e.target._id], blocks: [], paths: [],
+          ...(field === "content" ? { wholeDoc: e.target._id, retiresDocs: [e.target._id], retiresBlocks: allBlocksOf(ctx, e.target._id) } : {}),
         };
       }
       if (e.target.kind === "block") {
-        const { docId } = blockInfo(ctx, e.target.id);
+        const { docId } = blockInfo(ctx, e.target._id);
         return {
-          scalar: { key: `block:${e.target.id}:${e.field}`, target: { kind: "block", id: e.target.id }, field: e.field, op: e.op, value: e.op === "set" ? e.value : undefined },
-          docs: [docId], blocks: [e.target.id], paths: [],
-          ...(e.field === "markdown" ? { retiresBlocks: descendantsOf(ctx, e.target.id) } : {}),
+          scalar: { key: `block:${e.target._id}:${e.field}`, target: { kind: "block", _id: e.target._id }, field: e.field, op: e.op, value: e.op === "set" ? e.value : undefined },
+          docs: [docId], blocks: [e.target._id], paths: [],
+          ...(e.field === "markdown" ? { retiresBlocks: descendantsOf(ctx, e.target._id) } : {}),
         };
       }
       const node = nodeTarget(e.target);
-      const { docId, blockId } = nodeBlock(ctx, node.id);
+      const { docId, blockId } = nodeBlock(ctx, node._id);
       return {
-        scalar: { key: `node:${node.id}:${e.field}`, target: { kind: "node", id: node.id }, field: e.field, op: e.op, value: e.op === "set" ? e.value : undefined },
+        scalar: { key: `node:${node._id}:${e.field}`, target: { kind: "node", _id: node._id }, field: e.field, op: e.op, value: e.op === "set" ? e.value : undefined },
         docs: [docId], blocks: [blockId], paths: [],
       };
     }
     case "move": {
       if ("targets" in e) {
-        const ids = e.targets.map((t) => blockTarget(t).id);
+        const ids = e.targets.map((t) => blockTarget(t)._id);
         const { docs } = blocksOf(ids);
         const dst = targetDoc(ctx, e.into);
-        const blocks = [...ids, ...(e.into.kind === "block" ? [e.into.id] : e.into.kind === "section" ? [e.into.heading_id] : []), ...anchorIds(e.at)];
+        const blocks = [...ids, ...(e.into.kind === "block" ? [e.into._id] : e.into.kind === "section" ? [e.into.heading_id] : []), ...anchorIds(e.at)];
         return { docs: [...new Set([...docs, dst])], blocks, paths: [] };
       }
       const t = docTarget(e.target);
       return {
-        scalar: { key: `document:${t.id}:path`, target: { kind: "document", id: t.id }, field: "path", op: "set", value: e.to },
-        docs: [t.id], blocks: [], paths: [e.to], retiresPaths: [t.path],
+        scalar: { key: `document:${t._id}:path`, target: { kind: "document", _id: t._id }, field: "_path", op: "set", value: e.to },
+        docs: [t._id], blocks: [], paths: [e.to], retiresPaths: [t._path],
       };
     }
     case "remove": {
       if ("targets" in e) {
-        const ids = e.targets.map((t) => blockTarget(t).id);
+        const ids = e.targets.map((t) => blockTarget(t)._id);
         const { docs } = blocksOf(ids);
         return { docs, blocks: ids, paths: [], retiresBlocks: ids.flatMap((id) => [id, ...descendantsOf(ctx, id)]) };
       }
       const t = docTarget(e.target);
-      return { docs: [t.id], blocks: [], paths: [], retiresDocs: [t.id], retiresBlocks: allBlocksOf(ctx, t.id) };
+      return { docs: [t._id], blocks: [], paths: [], retiresDocs: [t._id], retiresBlocks: allBlocksOf(ctx, t._id) };
     }
     case "split": {
-      const id = blockTarget(e.target).id;
+      const id = blockTarget(e.target)._id;
       return { ...blocksOf([id]), paths: [] };
     }
     case "merge": {
-      const ids = e.targets.map((t) => blockTarget(t).id);
+      const ids = e.targets.map((t) => blockTarget(t)._id);
       return { ...blocksOf(ids), paths: [], retiresBlocks: ids.slice(1).flatMap((id) => [id, ...descendantsOf(ctx, id)]) };
     }
     case "retarget": {
       const plan = linksRepair(ctx.store, ctx.repoId, e.repairs, e.path_glob !== undefined ? { pathGlob: e.path_glob } : {});
       const ids = plan.ops.map((o) => (o as { block: string }).block);
       return {
-        scalars: ids.map((id) => ({ key: `block:${id}:markdown`, target: { kind: "block", id }, field: "markdown" })),
+        scalars: ids.map((id) => ({ key: `block:${id}:markdown`, target: { kind: "block", _id: id }, field: "markdown" })),
         ...blocksOf(ids), paths: [],
       };
     }
@@ -1248,7 +1248,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
     case "set":
     case "unset": {
       if (e.target.kind === "document") {
-        const docId = e.target.id;
+        const docId = e.target._id;
         checkRevision(ctx, docId, e.expect);
         if (e.field === "content") {
           if (e.op !== "set" || typeof e.value !== "string") throw effectInvalid("`content` takes a string value: the complete proposed document");
@@ -1257,7 +1257,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
           ctx.summary.push(`set content of ${docPathOf(ctx, docId)}`);
           return;
         }
-        // `frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
+        // `_frontmatter.<key>` — on a created document too (3.0): its tree is loaded, the patch is a head like any other.
         const key = FRONTMATTER_FIELD.exec(e.field)![1]!;
         requireMarkdownForFrontmatter(ctx, docId, e.field);
         patchFrontmatterKey(ctx, docId, key, e.op === "set" ? { value: e.value } : null);
@@ -1266,7 +1266,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       }
       if (e.op !== "set") throw effectInvalid("`unset` takes a document target");
       if (e.target.kind === "block") {
-        const id = e.target.id;
+        const id = e.target._id;
         const { docId } = blockInfo(ctx, id);
         checkRevision(ctx, docId, e.expect);
         const hash = pin(ctx, id, e.expect?.content_hash);
@@ -1276,7 +1276,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
           pushOp(ctx, { op: "update", block: kernelBlockId(ctx, id), markdown: e.value, expect: kernelExpect(e.expect, hash)! });
           ctx.summary.push(`set markdown of ${name} in ${docPathOf(ctx, docId)}`);
         } else {
-          if (typeof e.value !== "boolean") throw effectInvalid("`attrs.checked` takes a boolean value");
+          if (typeof e.value !== "boolean") throw effectInvalid("`_attrs.checked` takes a boolean value");
           pushOp(ctx, { op: "update", block: kernelBlockId(ctx, id), attrs: { checked: e.value }, expect: kernelExpect(e.expect, hash)! });
           ctx.summary.push(`${e.value ? "check" : "uncheck"} ${name} in ${docPathOf(ctx, docId)}`);
         }
@@ -1284,20 +1284,20 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       }
       // node: the adapter's editor → one update (macros.ts nodeSet)
       const node = nodeTarget(e.target);
-      const { docId, blockId } = nodeBlock(ctx, node.id);
+      const { docId, blockId } = nodeBlock(ctx, node._id);
       checkRevision(ctx, docId, e.expect);
-      const ops = nodeSet(ctx.store, node.id, e.field, typeof e.value === "string" ? e.value : ctx.canonical(e.value));
+      const ops = nodeSet(ctx.store, node._id, e.field, typeof e.value === "string" ? e.value : ctx.canonical(e.value));
       for (const op of ops) {
         const u = op as Extract<Op, { op: "update" }>;
         const hash = pin(ctx, blockId, e.expect?.content_hash ?? u.expect?.content_hash);
         pushOp(ctx, { ...u, expect: { ...(u.expect ?? {}), content_hash: hash } });
       }
-      ctx.summary.push(`set ${e.field} = ${ctx.canonical(e.value)} on node ${node.id} in ${docPathOf(ctx, docId)}`);
+      ctx.summary.push(`set ${e.field} = ${ctx.canonical(e.value)} on node ${node._id} in ${docPathOf(ctx, docId)}`);
       return;
     }
     case "move": {
       if ("targets" in e) {
-        const ids = e.targets.map((t) => blockTarget(t).id);
+        const ids = e.targets.map((t) => blockTarget(t)._id);
         const dst = targetDoc(ctx, e.into);
         checkRevision(ctx, dst, e.expect);
         recordParentPin(ctx, dst, e.into, e.expect);
@@ -1312,19 +1312,19 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         return;
       }
       const t = docTarget(e.target);
-      if (isNewSymbol(t.id)) throw new MutationError("target_missing", `${t.id} is a document this plan creates; it cannot be moved in the same plan`, { symbol: t.id });
-      const base = readDocBase(ctx.store.db, t.id);
-      if (!base) throw docMissing(t.id);
+      if (isNewSymbol(t._id)) throw new MutationError("target_missing", `${t._id} is a document this plan creates; it cannot be moved in the same plan`, { symbol: t._id });
+      const base = readDocBase(ctx.store.db, t._id);
+      if (!base) throw docMissing(t._id);
       if (findDoc(ctx.store, { repoId: ctx.repoId, path: e.to })) throw new MutationError("path_taken", `a document already exists at ${e.to}`, { path: e.to });
       if (ctx.absentPaths.includes(e.to)) throw new MutationError("path_taken", `an earlier effect already creates or moves a document to ${e.to}`, { path: e.to });
       if (ctx.docStore.exists(e.to)) throw new MutationError("path_taken", `file already exists on disk at ${e.to}`, { path: e.to });
       ctx.absentPaths.push(e.to);
-      if (!ctx.docBases.has(t.id)) ctx.docBases.set(t.id, base);
-      const inbound = inboundLinksTo(ctx.store, ctx.repoId, t.id, t.path);
+      if (!ctx.docBases.has(t._id)) ctx.docBases.set(t._id, base);
+      const inbound = inboundLinksTo(ctx.store, ctx.repoId, t._id, t._path);
       let retargeted: MoveDraft["retargeted"] = null;
       let links = "";
       if (e.retarget_inbound && inbound.length > 0) {
-        const plan = planInboundRetarget(ctx.store, t.id, t.path, e.to, inbound);
+        const plan = planInboundRetarget(ctx.store, t._id, t._path, e.to, inbound);
         for (const op of plan.ops) {
           const u = op as Extract<Op, { op: "update" }>;
           pin(ctx, u.block, u.expect?.content_hash);
@@ -1333,13 +1333,13 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         retargeted = { blocks: plan.blocks, docs: plan.docs };
         links = ` (retarget ${plural(inbound.length - plan.dangling.length, "link")} in ${plural(plan.docs.length, "document")})`;
       }
-      ctx.moves.push({ id: t.id, from: t.path, to: e.to, currentRev: base.currentRev, inbound, retargeted });
-      ctx.summary.push(`move ${referencePath(t.path)} → ${referencePath(e.to)}${links}`);
+      ctx.moves.push({ id: t._id, from: t._path, to: e.to, currentRev: base.currentRev, inbound, retargeted });
+      ctx.summary.push(`move ${referencePath(t._path)} → ${referencePath(e.to)}${links}`);
       return;
     }
     case "remove": {
       if ("targets" in e) {
-        const ids = e.targets.map((t) => blockTarget(t).id);
+        const ids = e.targets.map((t) => blockTarget(t)._id);
         const expect: Record<string, Expect> = {};
         for (const id of ids) {
           const given = e.expect?.[id];
@@ -1352,16 +1352,16 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         return;
       }
       const t = docTarget(e.target);
-      if (isNewSymbol(t.id)) throw new MutationError("target_missing", `${t.id} is a document this plan creates; it cannot be removed in the same plan`, { symbol: t.id });
-      const base = readDocBase(ctx.store.db, t.id);
-      if (!base) throw docMissing(t.id);
-      if (!ctx.docBases.has(t.id)) ctx.docBases.set(t.id, base);
-      ctx.tombstones.push({ id: t.id, path: t.path, currentRev: base.currentRev });
-      ctx.summary.push(`remove ${referencePath(t.path)}`);
+      if (isNewSymbol(t._id)) throw new MutationError("target_missing", `${t._id} is a document this plan creates; it cannot be removed in the same plan`, { symbol: t._id });
+      const base = readDocBase(ctx.store.db, t._id);
+      if (!base) throw docMissing(t._id);
+      if (!ctx.docBases.has(t._id)) ctx.docBases.set(t._id, base);
+      ctx.tombstones.push({ id: t._id, path: t._path, currentRev: base.currentRev });
+      ctx.summary.push(`remove ${referencePath(t._path)}`);
       return;
     }
     case "split": {
-      const id = blockTarget(e.target).id;
+      const id = blockTarget(e.target)._id;
       const { docId } = blockInfo(ctx, id);
       checkRevision(ctx, docId, e.expect);
       const hash = pin(ctx, id, e.expect?.content_hash);
@@ -1371,7 +1371,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
       return;
     }
     case "merge": {
-      const ids = e.targets.map((t) => blockTarget(t).id);
+      const ids = e.targets.map((t) => blockTarget(t)._id);
       const expect: Record<string, Expect> = {};
       for (const id of ids) {
         const given = e.expect?.[id];
@@ -1391,7 +1391,7 @@ function applyLowering(ctx: LoweringContext, i: number, e: ResolvedEffect): void
         pin(ctx, u.block, u.expect?.content_hash);
         pushOp(ctx, u);
       }
-      const docs = new Set(plan.hits.map((h) => h.path)).size;
+      const docs = new Set(plan.hits.map((h) => h._path)).size;
       const pair = e.repairs.length === 1 ? `${e.repairs[0]!.from} → ${e.repairs[0]!.to}` : `over ${plural(e.repairs.length, "pair")}`;
       ctx.summary.push(`retarget ${plural(plan.hits.length, "link")} ${pair} in ${plural(docs, "document")}`);
       return;

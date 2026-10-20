@@ -61,8 +61,8 @@ describe("canonicalJson (§11.5)", () => {
     expect(planDigest({ ...core, planner_v: PLANNER_V })).toBe("5051e40051314fa855721d1943b42a9acb867c79a7b49eb4db0fd811559289ff");
     expect(PLANNER_V).toBe("p3");
     // `selection` present ⇒ digested (the zero-hit vector of §11.5); absent ⇒ absent, never null.
-    const selection = { query: 'from docs where type == "nope"', templates: [{ op: "set", field: "frontmatter.x", value: 1 }], cardinality: 0, identities: [] };
-    expect(planDigest({ ...core, planner_v: PLANNER_V, selection })).toBe("73ca03407ddf05fb522c4118bd5ef1e88887f8430acbaba7428378a0b1e342c9");
+    const selection = { query: 'from docs where type == "nope"', templates: [{ op: "set", field: "_frontmatter.x", value: 1 }], cardinality: 0, identities: [] };
+    expect(planDigest({ ...core, planner_v: PLANNER_V, selection })).toBe("75d2a3c518e7ee5a396d82d61318fd06146be3a3f3e3e3af2c45f73f2eb34299");
     expect(planCore({ ...core, planner_v: PLANNER_V, selection })).toEqual({ ...core, planner_v: PLANNER_V, selection });
     expect(Object.keys(planCore({ ...core, planner_v: PLANNER_V }))).not.toContain("selection");
     expect(planDigest({ ...core, planner_v: PLANNER_V, selection: { ...selection, expect: { max: 3 } } })).not.toBe(planDigest({ ...core, planner_v: PLANNER_V, selection }));
@@ -73,7 +73,7 @@ let store: Store;
 let repoId: string;
 const DOC = "---\nstatus: draft\n---\n\n# Title\n\nIntro paragraph.\n\n## Notes\n\nFirst note.\n\n## Later\n\nTail.\n";
 const SLICE1 = [
-  { op: "set", target: { kind: "document", path: "a.md" }, field: "frontmatter.status", value: "active" },
+  { op: "set", target: { kind: "document", _path: "a.md" }, field: "_frontmatter.status", value: "active" },
   { op: "insert", into: { kind: "section", heading_id: "b_2" }, at: "end", markdown: "Second note." },
 ];
 const origin = { actor: "agent:test", reason: "test" };
@@ -108,7 +108,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(plan.new_ids).toEqual([{ symbol: "$new.0", kind: "block" }]);
     expect(mintId("b")).toBe("b_6"); // nothing burned by planning
     const receipt = executePlan(store, { ...base(), plan });
-    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ id: "d_0", path: "a.md", hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true, summary: ['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
+    expect(receipt).toEqual({ plan_id: plan.plan_id, commit: "c_1", revisions: [{ _id: "d_0", _path: "a.md", _hash: expect.any(String) }], new_ids: { "$new.0": "b_7" }, committed: true, summary: ['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md'] });
     const commit = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_1'").get() as { ops: string };
     expect(commit.ops).toBe(canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects }));
     expect(store.db.prepare("SELECT text FROM blocks WHERE block_id = 'b_7'").get()).toEqual({ text: "Second note." });
@@ -134,8 +134,8 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(() => executePlan(store, { ...base(), plan })).toThrow(expect.objectContaining({ code: "stale_plan", data: expect.objectContaining({ doc: "d_0", expected_revision: "r_0", retriable: true }) }));
     // The document moved on, so the same effects now plan differently.
     expect(() => executeByDigest(store, { ...base(), planId: plan.plan_id, effects: SLICE1 })).toThrow(expect.objectContaining({ code: "plan_mismatch", data: expect.objectContaining({ expected: plan.plan_id }) }));
-    const fresh = planEffects(store, { ...base(), effects: [{ op: "insert", into: { kind: "document", path: "a.md" }, markdown: "Third." }] });
-    const r = executeByDigest(store, { ...base(), planId: fresh.plan_id, effects: [{ op: "insert", into: { kind: "document", path: "a.md" }, markdown: "Third." }] });
+    const fresh = planEffects(store, { ...base(), effects: [{ op: "insert", into: { kind: "document", _path: "a.md" }, markdown: "Third." }] });
+    const r = executeByDigest(store, { ...base(), planId: fresh.plan_id, effects: [{ op: "insert", into: { kind: "document", _path: "a.md" }, markdown: "Third." }] });
     expect(r.commit).toBe("c_2");
   });
 
@@ -186,17 +186,17 @@ describe("plan + execute (§11.6, §11.7)", () => {
     const receipt = applyEffects(store, {
       ...base(),
       effects: [
-        { op: "insert", into: { kind: "document", path: "a.md" }, markdown: "P." },
+        { op: "insert", into: { kind: "document", _path: "a.md" }, markdown: "P." },
         { op: "create", path: "n.md", markdown: "# N\n\nBody." },
-        { op: "set", target: { kind: "document", id: "$new.1" }, field: "frontmatter.k", value: [1, "two", { three: null }] },
-        { op: "insert", into: { kind: "document", path: "a.md" }, markdown: "Q." },
+        { op: "set", target: { kind: "document", _id: "$new.1" }, field: "_frontmatter.k", value: [1, "two", { three: null }] },
+        { op: "insert", into: { kind: "document", _path: "a.md" }, markdown: "Q." },
       ],
     }) as Receipt;
     // $new.0 the first insert; $new.1 the document, $new.2/$new.3 its heading and paragraph (3.0: the
     // created tree's blocks are symbols too, minted by the replay's parse at the create's position);
     // $new.4 the second insert. Revisions in load order: a.md was touched first.
     expect(receipt.new_ids).toEqual({ "$new.0": "b_6", "$new.1": "d_1", "$new.2": "b_7", "$new.3": "b_8", "$new.4": "b_9" });
-    expect(receipt.revisions.map((r) => [r.id, r.path])).toEqual([["d_0", "a.md"], ["d_1", "n.md"]]);
+    expect(receipt.revisions.map((r) => [r._id, r._path])).toEqual([["d_0", "a.md"], ["d_1", "n.md"]]);
     const created = store.db.prepare("SELECT path FROM docs WHERE doc_id = 'd_1'").get();
     expect(created).toEqual({ path: "n.md" });
     expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' ORDER BY ordinal").all()).toEqual([{ block_id: "b_7", text: "N" }, { block_id: "b_8", text: "Body." }]);
@@ -215,15 +215,15 @@ describe("plan + execute (§11.6, §11.7)", () => {
       effects: [
         { op: "create", path: "n.md", markdown: "# N\n\nBody.", frontmatter: { k: 1 } },
         { op: "insert", into: { kind: "section", heading_id: "$new.1" }, markdown: "Tail." },
-        { op: "set", target: { kind: "block", id: "$new.2" }, field: "markdown", value: "Body, edited." },
-        { op: "move", targets: [{ kind: "block", id: "b_5" }], into: { kind: "document", id: "$new.0" }, at: "start" },
+        { op: "set", target: { kind: "block", _id: "$new.2" }, field: "markdown", value: "Body, edited." },
+        { op: "move", targets: [{ kind: "block", _id: "b_5" }], into: { kind: "document", _id: "$new.0" }, at: "start" },
       ],
     });
     expect(mintId("b")).toBe("b_6"); // nothing burned by planning
     const receipt = executePlan(store, { ...base(), docStore, plan });
     // b_7/b_8 the parse (pre-order), b_9 the insert, b_10 the update's discarded re-parse mint.
     expect(receipt.new_ids).toEqual({ "$new.0": "d_1", "$new.1": "b_7", "$new.2": "b_8", "$new.3": "b_9", "$new.4": "b_10" });
-    expect(receipt.revisions.map((r) => r.id)).toEqual(["d_1", "d_0"]);
+    expect(receipt.revisions.map((r) => r._id)).toEqual(["d_1", "d_0"]);
     expect(docStore.files.get("n.md")).toBe("---\nk: 1\n---\n\nTail.\n\n# N\n\nBody, edited.\n\nTail.\n");
     expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' AND deleted_commit IS NULL ORDER BY ordinal").all()).toEqual([
       { block_id: "b_5", text: "Tail." }, { block_id: "b_7", text: "N" }, { block_id: "b_8", text: "Body, edited." }, { block_id: "b_9", text: "Tail." },
@@ -259,13 +259,13 @@ describe("the summary and the fix (§11.9, §8; 3.3)", () => {
   it("the summary is one line per effect, deterministic, outside the digest, and the Receipt repeats it", () => {
     const a = planEffects(store, { ...base(), effects: SLICE1 });
     const b = planEffects(store, { ...base(), effects: SLICE1 });
-    expect(a.preview!.summary).toEqual(['set frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
+    expect(a.preview!.summary).toEqual(['set _frontmatter.status = "active" in /a.md', 'insert 1 block at the end of section "Notes" in /a.md']);
     expect(b.preview!.summary).toEqual(a.preview!.summary);
     expect(Object.keys(planCore(a))).not.toContain("summary");
     const receipt = executePlan(store, { ...base(), plan: a });
     expect(receipt.summary).toEqual(a.preview!.summary);
     // The plan form handed back without its preview: nothing to repeat.
-    const bare = planEffects(store, { ...base(), effects: [{ op: "set", target: "a.md", field: "frontmatter.k", value: 1 }] });
+    const bare = planEffects(store, { ...base(), effects: [{ op: "set", target: "a.md", field: "_frontmatter.k", value: 1 }] });
     const { preview: _p, ...noPreview } = bare;
     expect(executePlan(store, { ...base(), plan: noPreview }).summary).toEqual([]);
   });
@@ -279,8 +279,8 @@ describe("the summary and the fix (§11.9, §8; 3.3)", () => {
     const mismatch = caught(() => executeByDigest(store, { ...base(), planId: "0".repeat(64), effects: SLICE1 }));
     expect(mismatch.code).toBe("plan_mismatch");
     expect(mismatch.data.fix).toBe(canonicalJson({ effects: SLICE1 }));
-    const select = 'from docs where path == "/a.md"';
-    const templates = [{ op: "set", field: "frontmatter.seen", value: true }];
+    const select = 'from docs where _path == "/a.md"';
+    const templates = [{ op: "set", field: "_frontmatter.seen", value: true }];
     const sp = planEffects(store, { ...base(), select, effects: templates });
     executePlan(store, { ...base(), plan: sp });
     const staleSel = caught(() => executePlan(store, { ...base(), plan: sp }));
@@ -291,7 +291,7 @@ describe("the summary and the fix (§11.9, §8; 3.3)", () => {
 
   it("apply with select and no expect.max: the fix is the same call bounded at the selection's size", () => {
     const select = "from docs";
-    const templates = [{ op: "set", field: "frontmatter.seen", value: true }];
+    const templates = [{ op: "set", field: "_frontmatter.seen", value: true }];
     const e = caught(() => applyEffects(store, { ...base(), select, effects: templates }));
     expect(e.code).toBe("filter_invalid");
     expect(e.data.fix).toBe(canonicalJson({ select, effects: templates, expect: { max: 1 } }));
@@ -300,7 +300,7 @@ describe("the summary and the fix (§11.9, §8; 3.3)", () => {
 
 describe("query-directed plans (§11.8)", () => {
   const SELECT = 'from docs where type == "note"';
-  const TEMPLATES = [{ op: "set", field: "frontmatter.seen", value: true }];
+  const TEMPLATES = [{ op: "set", field: "_frontmatter.seen", value: true }];
   function seed(): void {
     ingestFile(store, repoId, "n/one.md", "---\ntype: note\n---\n\n# One\n");
     ingestFile(store, repoId, "n/two.md", "---\ntype: note\n---\n\n# Two\n");
@@ -310,7 +310,7 @@ describe("query-directed plans (§11.8)", () => {
     seed();
     const plan = planEffects(store, { ...base(), select: SELECT, effects: TEMPLATES });
     expect(plan.selection).toEqual({ query: SELECT, templates: TEMPLATES, cardinality: 2, identities: ["d_1", "d_2"] });
-    expect(plan.effects.map((e) => (e as { target: { id: string } }).target.id)).toEqual(["d_1", "d_2"]);
+    expect(plan.effects.map((e) => (e as { target: { _id: string } }).target._id)).toEqual(["d_1", "d_2"]);
     expect(plan.plan_id).toBe(planDigest(plan));
     expect(planDigest({ ...plan, selection: undefined } as never)).not.toBe(plan.plan_id);
     // the plan form: a plan with a selection is admitted as it is; an edited selection is plan_mismatch; a malformed one filter_invalid
@@ -319,7 +319,7 @@ describe("query-directed plans (§11.8)", () => {
     expect(() => admitPlan({ ...plan, selection: { query: SELECT } })).toThrow(expect.objectContaining({ code: "filter_invalid" }));
     expect(() => admitPlan({ ...plan, selection: { ...plan.selection, expect: { max: "3" } } })).toThrow(expect.objectContaining({ code: "filter_invalid" }));
     const receipt = executePlan(store, { ...base(), plan });
-    expect(receipt).toMatchObject({ plan_id: plan.plan_id, commit: "c_3", revisions: [{ id: "d_1" }, { id: "d_2" }] });
+    expect(receipt).toMatchObject({ plan_id: plan.plan_id, commit: "c_3", revisions: [{ _id: "d_1" }, { _id: "d_2" }] });
     const row = store.db.prepare("SELECT ops FROM commits WHERE commit_id = 'c_3'").get() as { ops: string };
     expect(row.ops).toBe(canonicalJson({ v: 1, plan_id: plan.plan_id, effects: plan.effects, selection: plan.selection }));
   });

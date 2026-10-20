@@ -63,7 +63,7 @@ describe("commitChangeset — one transaction, one commit per request", () => {
 
     const res = apply(store, { repoId, rootPath: dir, ops: [appendOp(a, "A tail."), appendOp(b, "B tail."), appendOp(c, "C tail.")], origin: { actor: "agent:test", reason: "three docs" } });
     expect(res.committed).toBe(true);
-    expect(res.revisions.map((r) => r.path)).toEqual(["a.md", "b.md", "c.md"]);
+    expect(res.revisions.map((r) => r._path)).toEqual(["a.md", "b.md", "c.md"]);
 
     const all = commits();
     expect(all).toHaveLength(before + 1);
@@ -87,8 +87,8 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     expect(feed.digests).toHaveLength(1);
     const d = feed.digests[0]!;
     expect(d.origin).toBe("api");
-    expect(d.revisions.map((r) => r.path)).toEqual(["/a.md", "/b.md"]);
-    expect(d.revisions.map((r) => r.id)).toEqual([a, b]);
+    expect(d.revisions.map((r) => r._path)).toEqual(["/a.md", "/b.md"]);
+    expect(d.revisions.map((r) => r._id)).toEqual([a, b]);
     // store 14.2: the untouched blocks of both documents are `same` and not
     // persisted, so the digest counts only the two appended blocks (through
     // 14.1 every carried block was `edited`: "4 edited, 2 inserted").
@@ -190,7 +190,7 @@ describe("docsMove — one commit with the retarget", () => {
     // store 14.2: only the link-bearing blocks the retarget rewrote are `edited`;
     // the sources' other blocks are `same` and not persisted ("5 edited" through 14.1).
     expect(feed.digests[0]!.summary).toBe("api(agent:test): moved /old.md → /moved/new.md; /b.md, /c.md — 3 edited");
-    expect(feed.digests[0]!.revisions.map((r) => r.path)).toEqual(["/b.md", "/c.md"]);
+    expect(feed.digests[0]!.revisions.map((r) => r._path)).toEqual(["/b.md", "/c.md"]);
     expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nSee [old](/moved/new.md#Top) here.\n");
     expect(existsSync(join(dir, "old.md"))).toBe(false);
   });

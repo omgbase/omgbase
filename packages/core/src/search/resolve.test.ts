@@ -50,7 +50,7 @@ describe("resolve", () => {
     ingestFile(store, repoId, "a.md", "# Doc\n\nstable block identity across edits is the core design goal of the matcher\n");
     const hits = resolve(store, { repoId, query: "identity matcher", limit: 5 });
     expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0]!.id).toMatch(/^b_/);
+    expect(hits[0]!._id).toMatch(/^b_/);
     expect(hits[0]!.locator).toContain("a.md#");
     expect(hits[0]!.preview.length).toBeGreaterThan(0);
   });

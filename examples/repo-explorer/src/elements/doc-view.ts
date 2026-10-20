@@ -1,5 +1,5 @@
 // <doc-view>: one document — its properties as a table (frontmatter, inline
-// fields, the computed title), the body rendered as Markdown with every block
+// fields, the computed `_title`), the body rendered as Markdown with every block
 // an anchor (lib/markdown.ts) or the raw source, and — when the page allows
 // writes — a frontmatter editor whose change is previewed with `plan` and
 // committed with `execute` (the page does the calls; this element shows the
@@ -215,7 +215,7 @@ export class DocView extends LitElement {
   override render() {
     const doc = this.doc;
     if (!doc) return nothing;
-    const title = typeof doc.properties.computed.title === "string" ? doc.properties.computed.title : null;
+    const title = typeof doc.properties.computed._title === "string" ? doc.properties.computed._title : null;
     const r = this.rendered;
     const summary = r ? anchorsSummary(r) : null;
     const m = this.writeMessage;

@@ -25,20 +25,20 @@
   "cases": [
     {
       "name": "envelope-collision-needs-an-alias",
-      "notes": "§1.4 (3.0): a projection whose output key would be `path` (here `data.path`, the author's `path:` key) would overwrite the hit envelope — a loud error asking for an alias.",
-      "query": "select data.path from docs",
+      "notes": "§1.4 (5.0): an alias ONTO `_path` of anything but the attribute itself collides with the hit envelope — a loud error asking for another alias. The author's `path:` key is the bare `path`, an ordinary column (no collision: see `bare-path-and-id-are-authored-columns`).",
+      "query": "select _path: layer from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
+        "message_includes": "projection `_path` collides with the hit envelope — alias it (`p: …`)"
       }
     },
     {
       "name": "envelope-collision-id-needs-an-alias",
-      "notes": "§1.4 (3.0): an alias ONTO `id` of anything but the attribute itself collides with the envelope.",
-      "query": "select id: layer from docs",
+      "notes": "§1.4 (5.0): an alias ONTO `_id` of anything but the attribute itself collides with the envelope.",
+      "query": "select _id: layer from docs",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "projection `id` collides with the hit envelope — alias it (`i: data.id`)"
+        "message_includes": "projection `_id` collides with the hit envelope — alias it (`i: …`)"
       }
     },
     {
@@ -50,7 +50,7 @@
         "cursor": null,
         "consumer": "collect",
         "hints": [
-          "`body` is not a field of docs and no document in this repository carries a property by that name"
+          "no document in this repository carries a property `body`"
         ]
       },
       "notes": "§1.2: `body` is not an engine attribute (the bytes are `raw`), so it is an ordinary property read — absent on every document."
@@ -134,7 +134,7 @@
     },
     {
       "name": "nested-single-matches-many",
-      "query": "select x: ^docs single { where type == \"substance\" } from docs where path == \"index.md\"",
+      "query": "select x: ^docs single { where type == \"substance\" } from docs where _path == \"index.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "matched"
@@ -167,7 +167,7 @@
     },
     {
       "name": "nested-limit-absent-binding",
-      "query": "from docs where nodes exists { limit ^nope }",
+      "query": "from docs where _nodes exists { limit ^nope }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "non-negative integer"
@@ -276,17 +276,76 @@
     },
     {
       "name": "envelope-collision-through-a-row-handle",
-      "notes": "§1.4 (3.0): `doc.path` on a block is the same value as the block's `path`, but it is not the envelope's own selection (the bare attribute), so aliasing it onto `path` is the collision error too.",
-      "query": "select path: doc.path from blocks where type == \"heading\"",
+      "notes": "§1.4 (5.0): `_doc._path` on a block is the same value as the block's `_path`, but it is not the envelope's own selection (the bare attribute), so aliasing it onto `_path` is the collision error too.",
+      "query": "select _path: _doc._path from blocks where _type == \"heading\"",
       "expect": {
         "error": "filter_invalid",
-        "message_includes": "projection `path` collides with the hit envelope — alias it (`p: data.path`)"
+        "message_includes": "projection `_path` collides with the hit envelope — alias it (`p: …`)"
+      }
+    },
+    {
+      "name": "bare-path-and-id-are-authored-columns",
+      "notes": "§1.2 / §1.4 (5.0): a bare `path` or `id` is the author's key — an ordinary projected column beside the envelope's `_path`/`_id`, never a collision. No alchemy document authors either, so the columns are absent and the result carries the §1.5 hints, each pointing at the engine spelling.",
+      "query": "select path, id, layer from docs where _path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "_id": "d_0",
+            "_path": "/index.md",
+            "layer": "canon"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `path`; did you mean `_path`?",
+          "no document in this repository carries a property `id`; did you mean `_id`?"
+        ]
+      }
+    },
+    {
+      "name": "unknown-engine-name-is-loud",
+      "notes": "§1.5 (5.0): an underscore-prefixed name is an engine name by declaration, and the set is closed — `_nope` is `filter_invalid` naming the kind's engine names (attributes, handles, relations).",
+      "query": "select _nope from docs",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`_nope` is not an engine name of docs (engine names: _id, _path, _raw, _hash, _updated_at, _created_at, _title, _tags, _format, _data, _frontmatter, _inline, _blocks, _nodes, _out_links, _in_links, _revisions); did you mean `type`?"
+      }
+    },
+    {
+      "name": "unknown-engine-name-points-at-the-authored-key",
+      "notes": "§1.5 (5.0): `_layer` written for the authored `layer` — the error's nearest match is drawn from the authored keys too, so it points at the bare spelling.",
+      "query": "from docs where _layer == \"canon\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`_layer` is not an engine name of docs (engine names: _id, _path, _raw, _hash, _updated_at, _created_at, _title, _tags, _format, _data, _frontmatter, _inline, _blocks, _nodes, _out_links, _in_links, _revisions); did you mean `layer`?"
+      }
+    },
+    {
+      "name": "doc-on-a-document-is-an-authored-key",
+      "notes": "§1.2 (5.0): the self alias is gone — `$it` is the self — so a bare `doc` on a document reads an authored property like any other name (absent here, with the §1.5 hint).",
+      "query": "select doc, p: $it._path from docs where _path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "_id": "d_0",
+            "_path": "/index.md",
+            "p": "/index.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect",
+        "hints": [
+          "no document in this repository carries a property `doc`"
+        ]
       }
     },
     {
       "name": "planned-residual-bad-regex-not-hidden",
       "notes": "§1 planner decline (c): a residual method call (matches with an invalid pattern) raises in memory; the emptying pushed conjunct must not hide it.",
-      "query": "from docs where path.matches(\"[\") && path == \"nope.md\"",
+      "query": "from docs where _path.matches(\"[\") && _path == \"nope.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "invalid regular expression \"[\": unterminated character class (missing ']')"
@@ -295,7 +354,7 @@
     {
       "name": "planned-residual-unknown-function-not-hidden",
       "notes": "§1 planner decline (c): a residual free call to an unknown function raises in memory; the emptying pushed conjunct must not hide it.",
-      "query": "from docs where nope(\"x\") && path == \"nope.md\"",
+      "query": "from docs where nope(\"x\") && _path == \"nope.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "unknown function 'nope(…)'"
@@ -304,7 +363,7 @@
     {
       "name": "hit-not-a-row-follow-property",
       "notes": "§1.4 (1.5): a hit must be a store row. `follow before` over a frontmatter list of paths reaches the strings; the error names the value and the remedy (refs(<field>)).",
-      "query": "select path from docs where path == \"timeline/review.md\" follow before",
+      "query": "select _path from docs where _path == \"timeline/review.md\" follow before",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
@@ -313,7 +372,7 @@
     {
       "name": "hit-not-a-row-first",
       "notes": "§1.4 (1.5): the rule holds for first/single too.",
-      "query": "select path from docs where path == \"timeline/review.md\" follow before first { }",
+      "query": "select _path from docs where _path == \"timeline/review.md\" follow before first { }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
@@ -322,7 +381,7 @@
     {
       "name": "hit-not-a-row-nested-from",
       "notes": "§1.4 (1.5): a top-level directive whose block re-projects to scalars reaches a string hit.",
-      "query": "docs collect { select $it from tags }",
+      "query": "docs collect { select $it from _tags }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node, link or revision row — the query reached a string (\"alchemy\"); to follow document references held in a property use refs(<field>)"

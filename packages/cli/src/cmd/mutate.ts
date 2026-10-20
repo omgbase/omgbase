@@ -31,32 +31,36 @@ import { remoteCall, remoteHasTool } from "./_remote.js";
 // (ADR-021, the intentional-write vocabulary; the kernel `ops` input is retired
 // at cli 4.0) — and `execute` commits a frozen plan; the rest are sugar.
 
+// Error data spells a row attribute as the attribute (spec/surface §4, 5.0):
+// `block_missing { _id }`, and the CLI's own `type_mismatch` names the block's
+// `_id` and `_type`.
 function block(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, ref: string): string {
   const r = resolveRef(ws.store, repoId, ref);
-  if (!r || r.kind !== "block") throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
+  if (!r || r.kind !== "block") throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { _id: ref } });
   return r.blockId!;
 }
 
 // A parent ref for insert/move: a block ref names that block as the parent; a
 // document ref (id or path) names the document's top level — the same reading
-// the server gives `blocks_insert.to` / `blocks_move.to`.
+// the server gives `blocks_insert.to` / `blocks_move.to`. The target's address
+// is the row's `_id` (spec/mutate §11, 4.0).
 function parent(ws: ReturnType<Cli["workspace"]>, repoId: string, ref: string): EffectTarget {
   const r = resolveRef(ws.store, repoId, ref);
-  if (!r) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
-  if (r.kind === "document") return { kind: "document", id: r.docId };
-  return { kind: "block", id: r.blockId! };
+  if (!r) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { _id: ref } });
+  if (r.kind === "document") return { kind: "document", _id: r.docId };
+  return { kind: "block", _id: r.blockId! };
 }
 
 // `done` addresses task blocks only (spec/cli §6): any other live block type is
 // a type_mismatch before an op is built — the macro itself would record a no-op
-// `edited` commit (its `attrs.checked` only rewrites a task's marker).
+// `edited` commit (its `_attrs.checked` only rewrites a task's marker).
 function taskBlock(ws: ReturnType<Cli["workspace"]>, ref: string, blockId: string): string {
   const row = ws.store.db
     .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
     .get(blockId) as { type: string } | undefined;
-  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { id: ref } });
+  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { _id: ref } });
   if (row.type !== "task") {
-    throw new EngineErrorLike("type_mismatch", `not a task: ${ref} is a ${row.type}`, { data: { block: blockId, type: row.type } });
+    throw new EngineErrorLike("type_mismatch", `not a task: ${ref} is a ${row.type}`, { data: { _id: blockId, _type: row.type } });
   }
   return blockId;
 }
@@ -212,7 +216,7 @@ async function runUpdate(cli: Cli, args: string[]): Promise<number> {
   const expect = values.expect ? { content_hash: values.expect } : undefined;
   // Remote: the server pins CAS from current bytes when --expect is absent.
   if (cli.flags.server) {
-    return runSugarRemote(cli, "blocks_update", { id: ref, markdown, ...(expect ? { expect } : {}) }, () => updateBlockEffects(ref, { markdown, expect }).effects, [ref]);
+    return runSugarRemote(cli, "blocks_update", { _id: ref, markdown, ...(expect ? { expect } : {}) }, () => updateBlockEffects(ref, { markdown, expect }).effects, [ref]);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
@@ -320,7 +324,7 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
   const checked = !values.undo;
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_check", { ids: refs, ...(values.undo ? { checked: false } : {}) }, () => checkEffects(refs, checked).effects, refs);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_check", { _ids: refs, ...(values.undo ? { checked: false } : {}) }, () => checkEffects(refs, checked).effects, refs);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => taskBlock(ws, r, block(cli, ws, repo.repoId, r)));
@@ -356,13 +360,13 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
   // Remote: blocks_append resolves the ref and decides by the block's kind
   // server-side (spec/surface §4); a remote dry run reads the kind first.
   if (cli.flags.server) {
-    return runSugarRemote(cli, "blocks_append", { id: target, text: markdown }, async () => {
-      // The block's type decides the effect; `blocks_read` reads it on a full
+    return runSugarRemote(cli, "blocks_append", { _id: target, text: markdown }, async () => {
+      // The block's `_type` decides the effect; `blocks_read` reads it on a full
       // server, a `query` over the blocks target on a minimal one (§2.3).
       const type = (await remoteHasTool(cli, "blocks_read"))
-        ? (await remoteCall<{ type: string }>(cli, "blocks_read", { id: target, resolution: "skeleton" })).type
-        : (await remoteCall<{ hits: { type?: string }[] }>(cli, "query", { query: `select type from blocks where id == ${JSON.stringify(target)}` })).hits[0]?.type;
-      return appendEffects(type === "heading" ? { kind: "section", heading_id: target } : { kind: "block", id: target }, markdown).effects;
+        ? (await remoteCall<{ _type: string }>(cli, "blocks_read", { _id: target, resolution: "skeleton" }))._type
+        : (await remoteCall<{ hits: { _type?: string }[] }>(cli, "query", { query: `select _type from blocks where _id == ${JSON.stringify(target)}` })).hits[0]?._type;
+      return appendEffects(type === "heading" ? { kind: "section", heading_id: target } : { kind: "block", _id: target }, markdown).effects;
     }, [target]);
   }
   const ws = cli.workspace();
@@ -378,12 +382,12 @@ function appendSugar(store: Store, blockId: string, markdown: string): Sugar {
   const row = store.db
     .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
     .get(blockId) as { type: string; format: string | null; children: number } | undefined;
-  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(blockId)}`, { data: { id: blockId } });
+  if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(blockId)}`, { data: { _id: blockId } });
   if (row.type === "heading") return appendEffects({ kind: "section", heading_id: blockId }, markdown);
   if (isContainerBlock(row.format ?? "markdown", { type: row.type, children: new Array<unknown>(row.children) })) {
-    return appendEffects({ kind: "block", id: blockId }, markdown);
+    return appendEffects({ kind: "block", _id: blockId }, markdown);
   }
-  throw new EngineErrorLike("block_not_container", `block ${blockId} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(blockId)} } }`, { data: { id: blockId, type: row.type } });
+  throw new EngineErrorLike("block_not_container", `block ${blockId} is a ${row.type}, not a heading or a container; append means into — insert after it with blocks_insert { to: <its parent>, at: { after: ${JSON.stringify(blockId)} } }`, { data: { _id: blockId, _type: row.type } });
 }
 
 // ---- split / merge ----------------------------------------------------------
@@ -415,7 +419,7 @@ async function runSplit(cli: Cli, args: string[]): Promise<number> {
     if (s.trim() === "" || !Number.isInteger(n)) throw new CliUsageError(`bad --at '${values.at}' (offsets must be integers: n[,n…])`);
     return n;
   });
-  if (cli.flags.server) return runSugarRemote(cli, "blocks_split", { id: ref, at }, () => splitEffects(ref, at).effects, [ref]);
+  if (cli.flags.server) return runSugarRemote(cli, "blocks_split", { _id: ref, at }, () => splitEffects(ref, at).effects, [ref]);
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);

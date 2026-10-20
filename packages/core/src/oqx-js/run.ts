@@ -1,7 +1,7 @@
 // omgbase's OQX entry point, served by `@omgbase/oqx`: parse the source, run it
 // through the in-memory engine over a store-backed DataContext (context.ts), and
-// shape the engine's result into omgbase's OqxResult (lean {id, path, …} hits
-// — the envelope keys ARE the attributes, spec/surface §1.4 3.0 — keyset
+// shape the engine's result into omgbase's OqxResult (lean {_id, _path, …}
+// hits — the envelope keys ARE the attributes, spec/surface §1.4 (5.0) — keyset
 // pagination, count/exists scalars). Same signature + shape as the former
 // in-tree compiler, so every caller and the corpus are unchanged.
 
@@ -25,21 +25,21 @@ export type OqxConsumer = "collect" | "count" | "exists" | "none" | "first" | "s
 
 export type EmbedQuery = (text: string) => Promise<{ model: string; vec: Float32Array }>;
 
-/** A query hit (spec/surface §1.4, 3.0): the row's identity under the SAME
- * bare names the expression language reads — `id`, `path` — plus whatever
+/** A query hit (spec/surface §1.4, 5.0): the row's identity under the SAME
+ * engine names the expression language reads — `_id`, `_path` — plus whatever
  * `select` projected. A key copied from a hit is valid in the next `where` with
- * no translation (`where id == "<hit.id>"`); a `select id, path` is simply the
- * envelope, and any other projection whose output key would be `id` or `path`
- * must be aliased (`envelopeCollision`). */
+ * no translation (`where _id == "<hit._id>"`); a `select _id, _path` is simply
+ * the envelope, and any other projection whose output key would be `_id` or
+ * `_path` must be aliased (`envelopeCollision`). */
 export interface OqxHit {
-  id: string;
-  path: string;
+  _id: string;
+  _path: string;
   [k: string]: unknown;
 }
 
 export interface OqxResult {
-  /** `{ id, path, ...projection }` per hit — or, under `OqxOptions.bare`, the
-   * projection alone (`id`/`path` present only when the query projected them;
+  /** `{ _id, _path, ...projection }` per hit — or, under `OqxOptions.bare`, the
+   * projection alone (`_id`/`_path` present only when the query projected them;
    * typed as `OqxHit` for the one hit shape every consumer handles, a bare
    * caller knows it asked). */
   hits: OqxHit[];
@@ -66,16 +66,17 @@ export interface OqxResult {
 export interface OqxOptions {
   limit?: number;
   cursor?: string | null;
-  /** Return each hit as its PROJECTION only — no automatic `id`/`path`
-   * members (spec/surface §1.4, 4.2): `select title, era from docs` yields
-   * `{ title, era }` rows. Needs a `select` (without a projection a hit is
+  /** Return each hit as its PROJECTION only — no automatic `_id`/`_path`
+   * members (spec/surface §1.4, 4.2): `select _title, era from docs` yields
+   * `{ _title, era }` rows. Needs a `select` (without a projection a hit is
    * only its envelope) and is refused with `values` (already the bare-values
    * form); both are `filter_invalid` before the engine runs. A projected
-   * `id`/`path` is the intrinsic as everywhere (`select id` → `{ id }`), and
-   * with no envelope there is nothing to collide with (`select path: layer`
-   * is fine). Paging, `distinct`, `truncated` and `cursor` are unchanged —
-   * the runner keeps identity internally and strips the envelope last. The
-   * scalar consumers (`count`/`exists`/`none`) have no hits and ignore it. */
+   * `_id`/`_path` is the attribute as everywhere (`select _id` → `{ _id }`),
+   * and with no envelope there is nothing to collide with (`select _path:
+   * layer` is fine). Paging, `distinct`, `truncated` and `cursor` are
+   * unchanged — the runner keeps identity internally and strips the envelope
+   * last. The scalar consumers (`count`/`exists`/`none`) have no hits and
+   * ignore it. */
   bare?: boolean;
   semanticVectors?: Map<string, SemanticVec>;
   /** Force the pure in-memory engine (skip tier-3 pushdown). Internal — used by
@@ -110,18 +111,18 @@ const ROW_FNS = new Set([
 ]);
 
 // Paths on the surface are the reference form (spec/surface §1 "Paths", 2.0):
-// `path` and the edge field `dst_path` read `/a/b.md`. A string literal a query
-// compares with one of them — `path == "a.md"`, `"a.md" != dst_path`,
-// `path.startsWith("lab/")`, `doc.path == "a.md"` — is rooted first, so both
+// `_path` and the edge field `_dst_path` read `/a/b.md`. A string literal a
+// query compares with one of them — `_path == "a.md"`, `"a.md" != _dst_path`,
+// `_path.startsWith("lab/")`, `_doc._path == "a.md"` — is rooted first, so both
 // spellings match; a property or binding compared with a path is never touched
-// (it is the author's value), and neither is an authored `path:` key read
-// through a source handle (`data.path`, `frontmatter.path`, `inline.path`): a
-// member read is a path read only through a ROW handle (`doc`, `block`, `dst`,
-// `$it`).
+// (it is the author's value) — so an authored `path:` key, bare or through a
+// source handle (`path`, `_data.path`, `_frontmatter.path`), is compared as
+// written: a member read is a path read only through a ROW handle (`_doc`,
+// `_block`, `_dst`, `$it`).
 // The planner sees the rewritten tree too, so the pushed SQL and the in-memory
 // engine agree by construction.
-const PATH_ATTRIBUTES = new Set(["path", "dst_path"]);
-const ROW_HANDLES = new Set(["doc", "block", "dst", "$it"]);
+const PATH_ATTRIBUTES = new Set(["_path", "_dst_path"]);
+const ROW_HANDLES = new Set(["_doc", "_block", "_dst", "$it"]);
 function isPathRead(e: Expr): boolean {
   if (e.kind === "ident" || e.kind === "outer") return PATH_ATTRIBUTES.has(e.name);
   if (e.kind === "member" && PATH_ATTRIBUTES.has(e.name)) {
@@ -144,11 +145,11 @@ export function rootPathLiterals(e: Expr): Expr {
 }
 
 // The root row (root-row.ts, spec/surface §1.1, 2.0): `$repo` anywhere, and a
-// bare `docs`/`links` at scope depth ≥ 1 (a property read of a row that has
-// none), are refused before evaluation — one `visit` over the parsed tree, so
-// the error does not depend on which rows the data happens to hold and the
-// planned and in-memory paths agree trivially. `blocks`/`nodes` are relations of
-// some rows and are judged by the context at read time (same message). A
+// bare root name at scope depth ≥ 1 (a property read of a row that has none —
+// since 5.0 every relation is `_`-prefixed, so a bare `blocks`/`nodes`/
+// `revisions` is never one either), are refused before evaluation — one `visit`
+// over the parsed tree, so the error does not depend on which rows the data
+// happens to hold and the planned and in-memory paths agree trivially. A
 // `^<target>` with more carets than enclosing scopes (`^docs count { }` at the
 // top level) would read absent and count 0: refused too, naming the bare
 // spelling.
@@ -161,7 +162,7 @@ export function checkRootSpellings(q: Query): void {
     enter(node, ctx) {
       if (node.kind !== "ident" && node.kind !== "outer") return;
       if (node.name === "$repo") throw new FilterInvalid(REPO_REMOVED_MESSAGE, "OQX");
-      if (node.kind === "ident" && ctx.depth >= 1 && (node.name === "docs" || node.name === "links")) {
+      if (node.kind === "ident" && ctx.depth >= 1 && ROOTS.has(node.name)) {
         throw new FilterInvalid(bareTargetMessage(node.name, ctx.depth), "OQX");
       }
       if (node.kind === "outer" && ROOTS.has(node.name) && node.levels > ctx.depth) {
@@ -224,14 +225,15 @@ export function collectSemanticPhrases(source: string): string[] {
   return [...phrases];
 }
 
-const ID_ITEM: SelectItem = build.field("__oqx_id", build.ident("id"));
-const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("path"));
+const ID_ITEM: SelectItem = build.field("__oqx_id", build.ident("_id"));
+const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("_path"));
 // The runner's own projection names (`__oqx_id`, `__oqx_path`, `__oqx_self`,
 // `__oqx_value`) and the selector compiler's slots (`__omg_sel_<t>_<slot>`,
 // mutate/select.ts) share two reserved prefixes. A user alias under either would
 // shadow an injected item (`select __oqx_id: 1` overwrote the hit's `id` through
 // 4.0) or collide with a slot, so it is refused before anything runs — over the
-// query's own top-level items, the only ones the runner injects beside.
+// query's own top-level items, the only ones the runner injects beside. (The
+// engine prefix of 5.0 is a single `_`; two underscores stay the runner's.)
 const RESERVED_ALIAS_PREFIXES = ["__oqx_", "__omg_"] as const;
 export function reservedAlias(items: readonly SelectItem[]): FilterInvalid | null {
   for (const item of items) {
@@ -241,21 +243,23 @@ export function reservedAlias(items: readonly SelectItem[]): FilterInvalid | nul
   return null;
 }
 // Result projections may not overwrite the envelope (spec/surface §1.4, 3.0):
-// a projection whose output key is `id` or `path` is allowed only when it IS
-// the envelope's own selection — the bare attribute of the same name, which
-// collapses onto the envelope key (`select id, path` is simply the envelope) —
-// and is otherwise a loud error asking for an alias: `select data.path` must be
-// `select p: data.path`, `select path: doc.layer` likewise. Checked over the
-// resolved items (an alias is just a name here), before the engine runs, so the
-// error never depends on the rows. A `values` projection returns no hits, so
-// the envelope — and the rule — do not apply.
-const ENVELOPE_KEYS = new Set(["id", "path"]);
+// a projection whose output key is `_id` or `_path` is allowed only when it IS
+// the envelope's own selection — the attribute of the same name, which
+// collapses onto the envelope key (`select _id, _path` is simply the envelope)
+// — and is otherwise a loud error asking for an alias: `select _path: layer`
+// must pick another name. (Since 5.0 the author's `path:`/`id:` keys are the
+// bare `path`/`id`, their own columns — nothing collides by accident; only an
+// alias spelled `_id:`/`_path:` can.) Checked over the resolved items (an alias
+// is just a name here), before the engine runs, so the error never depends on
+// the rows. A `values` projection returns no hits, so the envelope — and the
+// rule — do not apply.
+const ENVELOPE_KEYS = new Set(["_id", "_path"]);
 function envelopeCollision(items: readonly SelectItem[]): FilterInvalid | null {
   for (const item of items) {
     if (!ENVELOPE_KEYS.has(item.name)) continue;
     if (item.kind === "field" && item.expr.kind === "ident" && item.expr.name === item.name) continue;
-    const hint = item.name === "path" ? "p: data.path" : "i: data.id";
-    return new FilterInvalid(`projection \`${item.name}\` collides with the hit envelope — alias it (\`${hint}\`)`, "OQX");
+    const hint = item.name === "_path" ? "p" : "i";
+    return new FilterInvalid(`projection \`${item.name}\` collides with the hit envelope — alias it (\`${hint}: …\`)`, "OQX");
   }
   return null;
 }
@@ -264,8 +268,8 @@ function envelopeCollision(items: readonly SelectItem[]): FilterInvalid | null {
 // the five collections, `revisions` included — the planner's `rootTarget` is
 // narrower: the four it can plan) and nothing re-projects them; a `follow` destination (`follow before` over a
 // frontmatter list of paths), a `from E` re-projection or any other source can
-// reach a scalar, which the injected `id`/`path` reads would render as the
-// junk hit `{ id: "undefined", path: "" }`. For those queries the row itself is
+// reach a scalar, which the injected `_id`/`_path` reads would render as the
+// junk hit `{ _id: "undefined", _path: "" }`. For those queries the row itself is
 // projected too (`$it`), and `toHit` fails the query when it is not a row. Only
 // then: a row clone per hit is free here but not in the Rust port, and a root
 // scan cannot need it. A `values` projection returns no hits, so it is exempt
@@ -301,8 +305,8 @@ const VALUE_KEY = "__oqx_value";
 // spec/oqx §12), a `values` projection of `$it`, a field bound to a
 // row — and a store row is not a wire shape (column names, `attrs` as a JSON
 // string, the `__path` join column, Buffers). Walk the projected value and
-// render every tagged row as `{ id, path }` — the hit envelope's own keys
-// (3.0), one notation for "a document reference" everywhere a row shape
+// render every tagged row as `{ _id, _path }` — the hit envelope's own keys
+// (5.0), one notation for "a document reference" everywhere a row shape
 // appears in a result; everything else passes through untouched (plain records
 // and arrays are descended, scalars kept). Hits are records the engine built
 // from the injected id/path items, never rows.
@@ -334,24 +338,24 @@ function shapeRow(row: unknown): Shaped {
   return { id: String(__oqx_id), path: String(__oqx_path ?? ""), proj: renderValue(rest) as Record<string, unknown> };
 }
 
-// The envelope keys lead; a user projection of `id`/`path` collapses onto
+// The envelope keys lead; a user projection of `_id`/`_path` collapses onto
 // them in place (the same value, read by the same attribute).
 function toHit(s: Shaped): OqxHit {
-  return { id: s.id, path: s.path, ...s.proj };
+  return { _id: s.id, _path: s.path, ...s.proj };
 }
 
-// `bare` (4.2): the projection alone. A projected `id`/`path` is an ordinary
-// column here — the intrinsic the attribute reads, under the key the query
-// gave it — and nothing is injected beside it.
+// `bare` (4.2): the projection alone. A projected `_id`/`_path` is an ordinary
+// column here — the attribute's value, under the key the query gave it — and
+// nothing is injected beside it.
 function toBareHit(s: Shaped): OqxHit {
   return s.proj as OqxHit;
 }
 
 // Top-level `select distinct`: dedup hits by their USER projection — every
-// field except the envelope's `id`/`path`, which a projection of the attribute
-// collapses onto (so `select distinct id` dedups on nothing but the empty
+// field except the envelope's `_id`/`_path`, which a projection of the attribute
+// collapses onto (so `select distinct _id` dedups on nothing but the empty
 // projection, as it always has); under `bare` there is no envelope, so a
-// projected `id`/`path` IS part of the projection and counts. Keeps the first
+// projected `_id`/`_path` IS part of the projection and counts. Keeps the first
 // (so the retained hit carries a real identity). Order-preserving.
 function dedupByProjection(rows: Shaped[], bare: boolean): Shaped[] {
   const seen = new Set<string>();
@@ -527,11 +531,11 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   }
 
   // A grouped query (oqx 0.24, SEMANTICS §24) yields GROUPS, not store rows:
-  // the envelope does not apply — there is no `id`/`path` to inject and no
+  // the envelope does not apply — there is no `_id`/`_path` to inject and no
   // keyset to page by — so a hit is the group's projection as the query wrote
   // it (`{ layer, n }`), exactly what `bare` yields for a row query; `bare` is
   // accepted and changes nothing. Rows that surface as values (`rows collect {
-  // }` with an empty projection, `collect(doc)`) render as `{ id, path }` refs
+  // }` with an empty projection, `collect($it)`) render as `{ _id, _path }` refs
   // like every row-as-value. Paging is by position: the query's own
   // `limit`/`offset` define the set, the tool's `limit` takes the first page,
   // `truncated` says whether more groups follow, the cursor is always null (as
@@ -545,7 +549,7 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   // cannot land inside a document's elements: a flattened query pages
   // positionally with a null cursor, as a grouped query and a custom `order by`
   // do (a keyset extended with the flatten ordinal is a later round). A bound
-  // name of `id` or `path` would shadow the envelope's own reads (the name
+  // name of `_id` or `_path` would shadow the envelope's own reads (the name
   // shadows a same-named row property on the flattened row): refused, like a
   // projection that collides with the envelope.
   const flattened = parsed.flatten.length > 0;
@@ -553,11 +557,11 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
     if (ENVELOPE_KEYS.has(f.name)) throw new FilterInvalid(`flatten \`as ${f.name}\` collides with the hit envelope — a flattened row is still the row, whose \`${f.name}\` the envelope reads; bind another name`, "OQX");
   }
 
-  // collect / first / single: inject id + path so every hit carries them. A
+  // collect / first / single: inject _id + _path so every hit carries them. A
   // top-level `select distinct` is applied HERE, not in the engine: the injected
-  // id/path are unique per row and would defeat the engine's projection dedup, so
-  // we run without engine-distinct and dedup hits by their USER projection below,
-  // keeping the first row's id/path.
+  // _id/_path are unique per row and would defeat the engine's projection dedup,
+  // so we run without engine-distinct and dedup hits by their USER projection
+  // below, keeping the first row's _id/_path.
   const topDistinct = parsed.distinct;
   // A top-level `values` projection runs as a RECORD projection whose single
   // item is renamed to VALUE_KEY (the engine's own values mode is switched off),
@@ -567,7 +571,7 @@ function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions)
   const userSelect = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
   // `bare` (4.2): the hits are the projection alone — refused without one and
   // with `values`; with no envelope there is no collision to refuse either, a
-  // projected `id`/`path` is simply a column.
+  // projected `_id`/`_path` is simply a column.
   const bare = opts.bare === true;
   if (bare) {
     const misuse = bareMisuse(parsed);
@@ -659,10 +663,10 @@ export async function oqxRunAsync(
   return oqxRun(store, repoId, source, { ...opts, semanticVectors });
 }
 
-// The collect page's keyset is (path, id) — the hit's `path`, so the reference
-// form (`/a.md`), and its `id`: the kernel's shared cursor encoding
+// The collect page's keyset is (path, id) — the hit's `_path`, so the reference
+// form (`/a.md`), and its `_id`: the kernel's shared cursor encoding
 // (core/cursor.ts) with a two-part tuple of VALUES (no key names ride in it, so
-// a 2.x cursor stays valid on 3.0). A malformed cursor is CursorInvalid, which the MCP layer maps
+// a 2.x cursor stays valid on 5.0). A malformed cursor is CursorInvalid, which the MCP layer maps
 // to filter_invalid; so is a cursor whose path is not rooted — one issued by a
 // 1.x surface, whose keyset would otherwise sort before every rooted hit and
 // silently replay the first page (spec/surface §1.4, 2.0).

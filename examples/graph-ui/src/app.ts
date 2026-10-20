@@ -38,10 +38,10 @@ import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Id
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { docLocator, hitId, hitPath, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
+import { docLocator, hitId, hitPath, namesFor, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
 import { DEFAULT_QUERY } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
-import { SAMPLE_REPO, SAMPLE_PROBE_PATH, STARTER_QUERY, chooseQuery, existsQuery, isStarterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
+import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
 import { emptyStateText, firstWhereText, missingPathLiterals, pathLiterals, type EmptyState } from "./lib/empty-state.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
@@ -108,10 +108,10 @@ function loadUiSettings(): UiSettings {
   return parseUiSettings(localStorage.getItem(UI_KEY));
 }
 
-/** The stored query, or the sample default (lib/default-query.ts) — the
- * repository is not known before connecting; once it is, `chooseQuery`
- * (lib/starter-query.ts) swaps a preset for the sample default or the starter,
- * never a user's edit. */
+/** The stored query, or the sample default (lib/default-query.ts, in the
+ * native 5.0 spelling) — the repository is not known before connecting; once
+ * it is, `chooseQuery` (lib/starter-query.ts) swaps a preset for the sample
+ * default or the starter in the server's spelling, never a user's edit. */
 function loadQuery(): string {
   return localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY;
 }
@@ -162,9 +162,14 @@ const bridgeError = signal<string | null>(null);
 /** The connected server's surface version from its `version` tool (`specs.surface`,
  * "major.minor"), shown in the header; null until known — and set only once the
  * server has passed the gate (lib/paths.ts `surfaceProblem`: this demo speaks
- * surface 3.0), so a non-null value also means "connected to a server we understand". */
+ * surface 3.0 and later), so a non-null value also means "connected to a server we understand". */
 const serverSurface = signal<string | null>(null);
-const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get()));
+/** How the connected server spells the engine names (lib/paths.ts `namesFor`):
+ * `_path`/`_title`/`_in_links`/`{ _id | _path }` from surface 5.0 ("underscore =
+ * engine"), the bare 3.x/4.x names before. Every query, argument and builtin
+ * candidate name the page generates goes through it; what it reads takes both. */
+const names = computed(() => namesFor(serverSurface.get()));
+const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get(), names.get()));
 /** The relationship picker's resolved view (edges + layout); the projection joins it below. */
 const relationshipView = signal<View>(defaultView([]));
 /** The projected fields, by reflection over the query (or the rows for an empty projection). */
@@ -180,7 +185,7 @@ const view = computed<View>(() => {
 // defensively). The node's `label` is the FALLBACK title line (the de-rooted
 // path); the card's actual title comes from the projection's label field
 // (lib/cards.ts). The hit's identity is read through `hitId`/`hitPath`
-// (lib/paths.ts): the envelope's `id`/`path`.
+// (lib/paths.ts): the envelope's `_id`/`_path` (a 4.x server's `id`/`path`).
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   const rawPath = hitPath(row);
   const path = rawPath !== null ? rooted(rawPath) : hitId(row) ?? "";
@@ -331,8 +336,9 @@ async function refreshRepos(): Promise<void> {
   try {
     const c = clientFor(url);
     // The surface version first (one `version` call per connection): this demo
-    // speaks surface 3.0 and says so, loudly, when the server does not — instead
-    // of drawing a silently empty graph. A server without the tool is older still.
+    // speaks surface 3.0 and later (5.0's `_`-prefixed engine names, the bare
+    // ones before — `names`) and says so, loudly, when the server does not —
+    // instead of drawing a silently empty graph. A server without the tool is older still.
     const [{ repos: list }, surface] = await Promise.all([
       c.repos(),
       c.version().then(surfaceOf, () => null),
@@ -416,7 +422,7 @@ async function finishSignIn(): Promise<boolean> {
 /** Does `path` exist in the current repository? null when the probe failed. */
 async function docExists(path: string): Promise<boolean | null> {
   try {
-    const r = await clientFor(serverUrl.get()).query(existsQuery(path), { repo: settings.get().repo, limit: 1 });
+    const r = await clientFor(serverUrl.get()).query(existsQuery(path, names.get()), { repo: settings.get().repo, limit: 1 });
     return r.hits.length > 0;
   } catch {
     return null;
@@ -461,7 +467,7 @@ async function runQuery(): Promise<void> {
     if (gen === runGeneration) querying.set(false);
   }
   if (!empty) return;
-  // Then say WHY, when the query names a document: probe its `path == "…"` literals.
+  // Then say WHY, when the query names a document: probe its `_path == "…"` literals.
   const missing = await missingPathLiterals(pathLiterals(q), docExists);
   if (gen === runGeneration && missing.length > 0) emptyResult.set({ ...empty, missing });
 }
@@ -471,18 +477,18 @@ async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphE
   const s = settings.get();
   const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths)) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
+  for (const q of edgeQueries(candidate, paths, names.get())) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
-/** The edit tools with the document argument spelled for the server (`{ id }`
- * or `{ path }`, lib/paths.ts `docLocator`); the plans and the graph speak
- * rooted paths. */
+/** The edit tools with the document argument spelled for the server (`{ _id }`
+ * or `{ _path }` — `{ id }`/`{ path }` on 4.x; lib/paths.ts `docLocator`); the
+ * plans and the graph speak rooted paths. */
 function metaClientFor(url: string) {
   const c = clientFor(url);
   return {
-    docsRead: (doc: string, repo?: string) => c.docsRead(docLocator(doc), repo),
-    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(docLocator(doc), patch, repo),
+    docsRead: (doc: string, repo?: string) => c.docsRead(docLocator(doc, names.get()), repo),
+    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(docLocator(doc, names.get()), patch, repo),
   };
 }
 
@@ -583,16 +589,17 @@ void (async () => {
     if (!repo || surface === null) return;
     void detectRepository(repo);
   });
-  // The preset query follows the repository: the sample default for the sample
-  // workspace, the starter elsewhere — only while the editor holds a preset
-  // (the default or the starter), never a user's edit. It runs when the
-  // connection or the repository changes, not on edits (`source` is read
-  // untracked): a sample query PASTED into the editor later stays, and the
-  // empty state says why it matches nothing.
+  // The preset query follows the repository AND the server's spelling: the
+  // sample default for the sample workspace, the starter elsewhere, each in
+  // the connected server's engine names — only while the editor holds a preset
+  // (the default or the starter, in either spelling), never a user's edit. It
+  // runs when the connection or the repository changes, not on edits (`source`
+  // is read untracked): a sample query PASTED into the editor later stays, and
+  // the empty state says why it matches nothing.
   effect(() => {
     const repo = repoShape.get();
     if (serverSurface.get() === null || repo === null) return;
-    const want = chooseQuery(Signal.subtle.untrack(() => source.get()), repo);
+    const want = chooseQuery(Signal.subtle.untrack(() => source.get()), repo, names.get());
     if (want !== null) source.set(want);
   });
   // Loading feedback: the spinner appears once the query or the edge fetch has
@@ -776,7 +783,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
   private renderStarterHint() {
     if (!isStarterQuery(source.get())) return nothing;
     const first = rows.get().map(hitPath).find((p) => p !== null) ?? null;
-    const suggestion = timelineStarter(first);
+    const suggestion = timelineStarter(first, names.get());
     return html`<div class="try" data-starter-hint>
       <span>for a timeline, start from one document and walk its <code>before</code> / <code>after</code> frontmatter:</span>
       <pre>${suggestion}</pre>
@@ -802,7 +809,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
       ${t.details.map((d) => html`<div class="missing" data-missing>${d}</div>`)}
       ${stale ? html`<div class="note">the graph below is the previous result</div>` : nothing}
       <div class="actions">
-        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(STARTER_QUERY)}>show recent documents</button>`}
+        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(starterQuery(names.get()))}>show recent documents</button>`}
         <label><input type="checkbox" .checked=${ui.keepLastGraph} @change=${(e: Event) => uiSettings.set({ ...ui, keepLastGraph: (e.target as HTMLInputElement).checked })}> keep the last graph when a query matches nothing</label>
       </div>
     </div>`;

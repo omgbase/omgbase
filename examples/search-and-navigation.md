@@ -53,8 +53,8 @@ b_cmb5nds p    Sulphur combines directly with most metals on heating, producing 
 ## `omg show` — the metadata card
 
 Where `cat` gives bytes and `outline` gives structure, `show` gives the derived
-metadata: frontmatter and inline (`key:: value`) properties, plus the document's
-open links. Mercury declares a symbol, a melting point, its toxicity, and links
+metadata: frontmatter and inline (`key:: value`) properties, the computed
+fields under their engine names (`_title`), plus the document's open links. Mercury declares a symbol, a melting point, its toxicity, and links
 out to other pages:
 
 ```console
@@ -73,7 +73,7 @@ $ omg show substances/mercury.md
     tags = substance
     verified = true
   computed
-    title = Mercury
+    _title = Mercury
   out links
 ...
 ```

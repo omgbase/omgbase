@@ -100,10 +100,10 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n\n- [x] done\n- [ ] todo\n");
 
-    const links = oqxRun(store, repoId, 'from nodes where kind == "md:link"');
+    const links = oqxRun(store, repoId, 'from nodes where _kind == "md:link"');
     expect(links.hits.length).toBe(1);
 
-    const tasks = oqxRun(store, repoId, 'from nodes where kind == "md:task"');
+    const tasks = oqxRun(store, repoId, 'from nodes where _kind == "md:task"');
     expect(tasks.hits.length).toBe(2);
   });
 
@@ -111,7 +111,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const status = oqxRun(store, repoId, 'from nodes where name == "status"');
+    const status = oqxRun(store, repoId, 'from nodes where _name == "status"');
     expect(status.hits.length).toBe(1);
   });
 
@@ -119,7 +119,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const active = oqxRun(store, repoId, 'from nodes where value == "active"');
+    const active = oqxRun(store, repoId, 'from nodes where _value == "active"');
     expect(active.hits.length).toBe(1);
   });
 
@@ -128,19 +128,19 @@ describe("node queries — from: nodes", () => {
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n");
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n");
 
-    const mdNodes = oqxRun(store, repoId, 'from nodes where kind.startsWith("md:")');
+    const mdNodes = oqxRun(store, repoId, 'from nodes where _kind.startsWith("md:")');
     expect(mdNodes.hits.length).toBeGreaterThan(0);
 
-    const yamlNodes = oqxRun(store, repoId, 'from nodes where kind.startsWith("yaml:")');
+    const yamlNodes = oqxRun(store, repoId, 'from nodes where _kind.startsWith("yaml:")');
     expect(yamlNodes.hits.length).toBeGreaterThan(0);
   });
 
-  it("queries nodes with doc.format reach-through", () => {
+  it("queries nodes with _doc._format reach-through", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n");
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n");
 
-    const yamlOnly = oqxRun(store, repoId, 'select kind: kind from nodes where doc.format == "yaml"');
+    const yamlOnly = oqxRun(store, repoId, 'select kind: _kind from nodes where _doc._format == "yaml"');
     expect(yamlOnly.hits.length).toBeGreaterThan(0);
     expect(yamlOnly.hits.every((h) => (h as Record<string, unknown>).kind?.toString().startsWith("yaml:"))).toBe(true);
   });
@@ -157,7 +157,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo\n");
 
-    const checked = oqxRun(store, repoId, 'from nodes where kind == "md:task" && attrs.checked == true');
+    const checked = oqxRun(store, repoId, 'from nodes where _kind == "md:task" && _attrs.checked == true');
     expect(checked.hits.length).toBe(1);
   });
 
@@ -167,12 +167,12 @@ describe("node queries — from: nodes", () => {
 
     // bare `checked` reads attrs.checked, in both the pushed and in-memory paths
     for (const plan of [true, false]) {
-      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == true', { plan }).hits.length).toBe(1);
-      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == false', { plan }).hits.length).toBe(2);
-      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && !checked', { plan }).hits.length).toBe(2);
+      expect(oqxRun(store, repoId, 'from nodes where _kind == "md:task" && checked == true', { plan }).hits.length).toBe(1);
+      expect(oqxRun(store, repoId, 'from nodes where _kind == "md:task" && checked == false', { plan }).hits.length).toBe(2);
+      expect(oqxRun(store, repoId, 'from nodes where _kind == "md:task" && !checked', { plan }).hits.length).toBe(2);
     }
     // the flattened name is exactly what a projection returns
-    const hit = oqxRun(store, repoId, 'select checked from nodes where kind == "md:task" && checked == true').hits[0]!;
+    const hit = oqxRun(store, repoId, 'select checked from nodes where _kind == "md:task" && checked == true').hits[0]!;
     expect(hit.checked).toBe(true);
   });
 
@@ -181,8 +181,8 @@ describe("node queries — from: nodes", () => {
     ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo\n");
 
     for (const plan of [true, false]) {
-      expect(oqxRun(store, repoId, 'from blocks where type == "task" && checked == true', { plan }).hits.length).toBe(1);
-      expect(oqxRun(store, repoId, 'from blocks where type == "task" && checked == false', { plan }).hits.length).toBe(1);
+      expect(oqxRun(store, repoId, 'from blocks where _type == "task" && checked == true', { plan }).hits.length).toBe(1);
+      expect(oqxRun(store, repoId, 'from blocks where _type == "task" && checked == false', { plan }).hits.length).toBe(1);
     }
   });
 
@@ -190,7 +190,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\n");
 
-    const results = oqxRun(store, repoId, 'select kind: kind, name: name, value: value from nodes where kind == "md:inline_field"');
+    const results = oqxRun(store, repoId, 'select kind: _kind, name: _name, value: _value from nodes where _kind == "md:inline_field"');
     expect(results.hits.length).toBe(1);
     const hit = results.hits[0]!;
     expect(hit.kind).toBe("md:inline_field");

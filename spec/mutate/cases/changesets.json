@@ -78,9 +78,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "091eb5530c6119efafe9e2244357851979319e14055c2bd4c69dd0d3b47d17eb"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "091eb5530c6119efafe9e2244357851979319e14055c2bd4c69dd0d3b47d17eb"
               }
             ],
             "committed": true
@@ -744,14 +744,14 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "123fca988d558035fdf1fa92ee161eeb722285b360ee1ce1656e9032791f6be2"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "123fca988d558035fdf1fa92ee161eeb722285b360ee1ce1656e9032791f6be2"
               },
               {
-                "id": "d_1",
-                "path": "b.md",
-                "hash": "cf014fd824147e400de701e2c01b33f250381e23156b88593f869323a5b47e3f"
+                "_id": "d_1",
+                "_path": "b.md",
+                "_hash": "cf014fd824147e400de701e2c01b33f250381e23156b88593f869323a5b47e3f"
               }
             ],
             "committed": true
@@ -1106,14 +1106,14 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
               },
               {
-                "id": "d_1",
-                "path": "b.md",
-                "hash": "79124a1d17e7d9d99e88165ed0217ff79d82adf6cc771a9f7768be20ea05c6c5"
+                "_id": "d_1",
+                "_path": "b.md",
+                "_hash": "79124a1d17e7d9d99e88165ed0217ff79d82adf6cc771a9f7768be20ea05c6c5"
               }
             ],
             "committed": true
@@ -1490,14 +1490,14 @@
             ],
             "revisions": [
               {
-                "id": "d_1",
-                "path": "b.md",
-                "hash": "4fcd48bbb2284a28ec2ede3b94ddb0355fb758faa01e6620332fedae87fd6912"
+                "_id": "d_1",
+                "_path": "b.md",
+                "_hash": "4fcd48bbb2284a28ec2ede3b94ddb0355fb758faa01e6620332fedae87fd6912"
               },
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
               }
             ],
             "committed": true
@@ -1861,14 +1861,14 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "7993c908e6b73a855c2d9e98d8ded73227acc4f41d5fe934b64fa4e3cf1791f0"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "7993c908e6b73a855c2d9e98d8ded73227acc4f41d5fe934b64fa4e3cf1791f0"
               },
               {
-                "id": "d_1",
-                "path": "b.md",
-                "hash": "4730ef59320a2998b551758cab03ac31c60d4fbb785d91c23c7ee3b9049578d2"
+                "_id": "d_1",
+                "_path": "b.md",
+                "_hash": "4730ef59320a2998b551758cab03ac31c60d4fbb785d91c23c7ee3b9049578d2"
               }
             ],
             "committed": true
@@ -2217,14 +2217,14 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "056ba198bcdc34c8cd83b089f3d879fe7695e9728142ec4de67397b7fb3aa80f"
               },
               {
-                "id": "d_1",
-                "path": "b.md",
-                "hash": "79124a1d17e7d9d99e88165ed0217ff79d82adf6cc771a9f7768be20ea05c6c5"
+                "_id": "d_1",
+                "_path": "b.md",
+                "_hash": "79124a1d17e7d9d99e88165ed0217ff79d82adf6cc771a9f7768be20ea05c6c5"
               }
             ],
             "committed": true
@@ -2870,9 +2870,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "281ece16525b3dc5832a2c844d7ed0d63f9bf1693a53e97f2aad7d66c1ea1eb2"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "281ece16525b3dc5832a2c844d7ed0d63f9bf1693a53e97f2aad7d66c1ea1eb2"
               }
             ],
             "diffs": {
@@ -3228,7 +3228,7 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_0"
+                  "_id": "d_0"
                 },
                 "field": "content",
                 "value": "---\ntitle: Added\n---\n\n# Title\n\nFirst paragraph.\n\nSecond paragraph.\n"
@@ -3259,13 +3259,13 @@
           ],
           {
             "receipt": {
-              "plan_id": "06c0a0abfaf4958af5f0116d86d24b4d1a2dd5f86a62bc73c92316432bac0e14",
+              "plan_id": "605fb6bc0b3ad7890c5b384566032905458d752b09b3f65eef648eefae2178a1",
               "commit": "c_1",
               "revisions": [
                 {
-                  "id": "d_0",
-                  "path": "a.md",
-                  "hash": "f11a1c0d280f1376f9eeb285fcf652b4247a9c915f77fc3142c8fc91dbd2d6f0"
+                  "_id": "d_0",
+                  "_path": "a.md",
+                  "_hash": "f11a1c0d280f1376f9eeb285fcf652b4247a9c915f77fc3142c8fc91dbd2d6f0"
                 }
               ],
               "new_ids": {},
@@ -3366,7 +3366,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Added\\n---\\n\\n# Title\\n\\nFirst paragraph.\\n\\nSecond paragraph.\\n\"}],\"plan_id\":\"06c0a0abfaf4958af5f0116d86d24b4d1a2dd5f86a62bc73c92316432bac0e14\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"---\\ntitle: Added\\n---\\n\\n# Title\\n\\nFirst paragraph.\\n\\nSecond paragraph.\\n\"}],\"plan_id\":\"605fb6bc0b3ad7890c5b384566032905458d752b09b3f65eef648eefae2178a1\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3449,7 +3449,7 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_0"
+                  "_id": "d_0"
                 },
                 "field": "content",
                 "value": "---\ntitle: Changed\n---\n\n# Body\n\nText.\n"
@@ -3480,13 +3480,13 @@
           ],
           {
             "receipt": {
-              "plan_id": "db59bf27423ff538f77f38089a689024c4ecedc06886b4168bcfc079f7825575",
+              "plan_id": "f3ddc4db14c54e52170b197bac1571e362b8f353202073ec110b9d7dbbee1076",
               "commit": "c_1",
               "revisions": [
                 {
-                  "id": "d_0",
-                  "path": "a.md",
-                  "hash": "776162c54f14e4cd417c0945fc85cee3c1383c3d835ce3d282eb0aabd168828e"
+                  "_id": "d_0",
+                  "_path": "a.md",
+                  "_hash": "776162c54f14e4cd417c0945fc85cee3c1383c3d835ce3d282eb0aabd168828e"
                 }
               ],
               "new_ids": {},
@@ -3570,7 +3570,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"---\\ntitle: Changed\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"db59bf27423ff538f77f38089a689024c4ecedc06886b4168bcfc079f7825575\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"---\\ntitle: Changed\\n---\\n\\n# Body\\n\\nText.\\n\"}],\"plan_id\":\"f3ddc4db14c54e52170b197bac1571e362b8f353202073ec110b9d7dbbee1076\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3644,7 +3644,7 @@
                 "op": "set",
                 "target": {
                   "kind": "document",
-                  "id": "d_0"
+                  "_id": "d_0"
                 },
                 "field": "content",
                 "value": "# Body\n\nText.\n"
@@ -3675,13 +3675,13 @@
           ],
           {
             "receipt": {
-              "plan_id": "9cf2ff9b9d66c1e39cc44f9187b448300003e23b0055806fdd52b7ae976c5f2c",
+              "plan_id": "7c3c350efe9e79e65b53ee09a1aae700da55127efc3da158ef85028ad617d8d8",
               "commit": "c_1",
               "revisions": [
                 {
-                  "id": "d_0",
-                  "path": "a.md",
-                  "hash": "6b0facbc960878346d9f25ab1d0b6aa786547bd88b132aa47a01b240b373ef0a"
+                  "_id": "d_0",
+                  "_path": "a.md",
+                  "_hash": "6b0facbc960878346d9f25ab1d0b6aa786547bd88b132aa47a01b240b373ef0a"
                 }
               ],
               "new_ids": {},
@@ -3765,7 +3765,7 @@
             "actor": "agent:test",
             "reason": "fixture",
             "checkpoint_id": null,
-            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"id\":\"d_0\",\"kind\":\"document\",\"path\":\"a.md\"},\"value\":\"# Body\\n\\nText.\\n\"}],\"plan_id\":\"9cf2ff9b9d66c1e39cc44f9187b448300003e23b0055806fdd52b7ae976c5f2c\",\"v\":1}"
+            "ops": "{\"effects\":[{\"field\":\"content\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"a.md\",\"kind\":\"document\"},\"value\":\"# Body\\n\\nText.\\n\"}],\"plan_id\":\"7c3c350efe9e79e65b53ee09a1aae700da55127efc3da158ef85028ad617d8d8\",\"v\":1}"
           }
         ],
         "revisions": [
@@ -3880,9 +3880,9 @@
             ],
             "revisions": [
               {
-                "id": "d_0",
-                "path": "a.md",
-                "hash": "f02313ba8013533af02b0e489ac13b30d2e8a9828200d486c0deec2c6de528e2"
+                "_id": "d_0",
+                "_path": "a.md",
+                "_hash": "f02313ba8013533af02b0e489ac13b30d2e8a9828200d486c0deec2c6de528e2"
               }
             ],
             "committed": true

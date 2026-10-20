@@ -287,11 +287,15 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
 - The engine's **change feed**, `changes_since(cursor = 0, limit = 50,
   origin?)`: the repo's commits with `seq > cursor` (optionally of one
   origin), in `seq` order, `limit + 1` fetched to set `truncated`; each
-  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ id,
-  path, hash = hex(rendered_hash) }] }` (2.0 — the document, its path as
-  of the commit and the revision's rendered hash, spelled as the row
-  attributes of `spec/surface` §1.2; `{ doc, path, content_hash }` before,
-  `contentHash` on the MCP wire); the page's `cursor` is the
+  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ _id,
+  _path, _hash = hex(rendered_hash) }] }` (3.0 — the document, its path as
+  of the commit and the revision's rendered hash, spelled as the engine
+  names of `spec/surface` §1.2, 5.0: a bare name is the user's on every
+  record, an underscore-prefixed one the engine's; `{ id, path, hash }`
+  through 2.x, `{ doc, path, content_hash }` before 2.0, `contentHash` on
+  the MCP wire). The digest's other keys describe the commit, not a row,
+  and stay bare (`commit`, `seq`, `ts`, `origin`, `actor`, `summary`,
+  `cursor`, `head`, `truncated`); the page's `cursor` is the
   last digest's `seq` (or the input cursor when empty) and `head` the repo's
   max `seq`. `summary` is a human line the fixtures do not pin.
 - `sync_out(cursor = 0)`: page the engine's `changes_since(cursor)`; for
@@ -515,6 +519,20 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-20, sync 3.0 (`spec/surface` 5.0 "underscore = engine"): a
+  change-feed revision is `{ _id, _path, _hash }` (§6). The surface's row
+  rule became one rule for every record kind — a bare name is user-authored,
+  an underscore-prefixed name is engine-provided — and a `changes_since`
+  revision is a `revisions` row rendered, so it takes the row's engine
+  names; the digest's own keys (`commit`, `seq`, `ts`, `origin`, `actor`,
+  `summary`) describe a commit and stay bare, as do `cursor`, `head` and
+  `truncated`. The §6 engine clients (`@omgbase/sync`'s coordinator and
+  `McpEngineClient`) read `_id`/`_path`/`_hash` off a revision; the adapter
+  protocol (`protocol: 1`), the registry, the sweep, the checkpoints and the
+  lock files are untouched. A key of the engine interface changed in
+  spelling: a major, as 2.0 was. Fixtures: every `changes_since` revision
+  re-keyed, nothing else. The Rust `omgbase-sync` follows in a separate
+  round; until it lands its spec runner is red by design.
 - 2026-10-12, sync 2.2: the freshness sweep and recovery gain step 0 —
   replay the api path's pending materialization rows (`spec/store` 14.0
   §5.7) before reading the disk — and a gone member whose path has a pending

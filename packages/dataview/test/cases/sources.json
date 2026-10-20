@@ -2,14 +2,14 @@
   {
     "name": "folder",
     "dql": "LIST FROM \"books\"",
-    "oqx": "select path from docs where path.startsWith(\"/books/\") or path == \"/books.md\"",
+    "oqx": "select _path from docs where _path.startsWith(\"/books/\") or _path == \"/books.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -19,14 +19,14 @@
   {
     "name": "nested-folder",
     "dql": "LIST FROM \"books/fiction\"",
-    "oqx": "select path from docs where path.startsWith(\"/books/fiction/\") or path == \"/books/fiction.md\"",
+    "oqx": "select _path from docs where _path.startsWith(\"/books/fiction/\") or _path == \"/books/fiction.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -36,14 +36,14 @@
   {
     "name": "folder-with-slashes-trimmed",
     "dql": "LIST FROM \"/books/\"",
-    "oqx": "select path from docs where path.startsWith(\"/books/\") or path == \"/books.md\"",
+    "oqx": "select _path from docs where _path.startsWith(\"/books/\") or _path == \"/books.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -53,14 +53,14 @@
   {
     "name": "single-note-by-extension",
     "dql": "LIST FROM \"books/index.md\"",
-    "oqx": "select path from docs where path == \"/books/index.md\"",
+    "oqx": "select _path from docs where _path == \"/books/index.md\"",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -70,14 +70,14 @@
   {
     "name": "whole-vault",
     "dql": "LIST FROM \"\"",
-    "oqx": "select path from docs",
+    "oqx": "select _path from docs",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -87,14 +87,14 @@
   {
     "name": "tag",
     "dql": "LIST FROM #book",
-    "oqx": "select path from docs where tags exists { where $it == \"book\" or $it.startsWith(\"book/\") }",
+    "oqx": "select _path from docs where _tags exists { where $it == \"book\" or $it.startsWith(\"book/\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -104,14 +104,14 @@
   {
     "name": "nested-tag",
     "dql": "LIST FROM #games/mobas",
-    "oqx": "select path from docs where tags exists { where $it == \"games/mobas\" or $it.startsWith(\"games/mobas/\") }",
+    "oqx": "select _path from docs where _tags exists { where $it == \"games/mobas\" or $it.startsWith(\"games/mobas/\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -121,14 +121,14 @@
   {
     "name": "tag-or-tag",
     "dql": "LIST FROM #games/mobas OR #games/crpg",
-    "oqx": "select path from docs where tags exists { where $it == \"games/mobas\" or $it.startsWith(\"games/mobas/\") } or tags exists { where $it == \"games/crpg\" or $it.startsWith(\"games/crpg/\") }",
+    "oqx": "select _path from docs where _tags exists { where $it == \"games/mobas\" or $it.startsWith(\"games/mobas/\") } or _tags exists { where $it == \"games/crpg\" or $it.startsWith(\"games/crpg/\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -138,14 +138,14 @@
   {
     "name": "link-pages-linking-to",
     "dql": "LIST FROM [[Dataview]]",
-    "oqx": "select path from docs where out_links exists { where dst.path.endsWith(\"/Dataview.md\") }",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path.endsWith(\"/Dataview.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -160,14 +160,14 @@
         "Dataview": "tools/Dataview.md"
       }
     },
-    "oqx": "select path from docs where out_links exists { where dst.path == \"/tools/Dataview.md\" }",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path == \"/tools/Dataview.md\" }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -177,14 +177,14 @@
   {
     "name": "link-with-heading-and-display",
     "dql": "LIST FROM [[Dataview#Sources|the docs]]",
-    "oqx": "select path from docs where out_links exists { where dst.path.endsWith(\"/Dataview.md\") }",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path.endsWith(\"/Dataview.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -194,14 +194,14 @@
   {
     "name": "outgoing",
     "dql": "LIST FROM outgoing([[Dataview]])",
-    "oqx": "select path from docs where in_links exists { where doc.path.endsWith(\"/Dataview.md\") }",
+    "oqx": "select _path from docs where _in_links exists { where _doc._path.endsWith(\"/Dataview.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -211,14 +211,14 @@
   {
     "name": "link-or-outgoing",
     "dql": "LIST FROM [[Dataview]] OR outgoing([[Dataview]])",
-    "oqx": "select path from docs where out_links exists { where dst.path.endsWith(\"/Dataview.md\") } or in_links exists { where doc.path.endsWith(\"/Dataview.md\") }",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path.endsWith(\"/Dataview.md\") } or _in_links exists { where _doc._path.endsWith(\"/Dataview.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -231,14 +231,14 @@
     "options": {
       "thisPath": "projects/alpha.md"
     },
-    "oqx": "select path from docs where out_links exists { where dst.path == \"/projects/alpha.md\" }",
+    "oqx": "select _path from docs where _out_links exists { where _dst._path == \"/projects/alpha.md\" }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -248,14 +248,14 @@
   {
     "name": "and-negation",
     "dql": "LIST FROM #book AND -\"archive\"",
-    "oqx": "select path from docs where tags exists { where $it == \"book\" or $it.startsWith(\"book/\") } and !(path.startsWith(\"/archive/\") or path == \"/archive.md\")",
+    "oqx": "select _path from docs where _tags exists { where $it == \"book\" or $it.startsWith(\"book/\") } and !(_path.startsWith(\"/archive/\") or _path == \"/archive.md\")",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -265,14 +265,14 @@
   {
     "name": "bang-negation",
     "dql": "LIST FROM !#draft",
-    "oqx": "select path from docs where !tags exists { where $it == \"draft\" or $it.startsWith(\"draft/\") }",
+    "oqx": "select _path from docs where !_tags exists { where $it == \"draft\" or $it.startsWith(\"draft/\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -282,14 +282,14 @@
   {
     "name": "parentheses",
     "dql": "LIST FROM \"notes\" AND (#a OR #b) AND -[[Index]]",
-    "oqx": "select path from docs where (path.startsWith(\"/notes/\") or path == \"/notes.md\") and (tags exists { where $it == \"a\" or $it.startsWith(\"a/\") } or tags exists { where $it == \"b\" or $it.startsWith(\"b/\") }) and !out_links exists { where dst.path.endsWith(\"/Index.md\") }",
+    "oqx": "select _path from docs where (_path.startsWith(\"/notes/\") or _path == \"/notes.md\") and (_tags exists { where $it == \"a\" or $it.startsWith(\"a/\") } or _tags exists { where $it == \"b\" or $it.startsWith(\"b/\") }) and !_out_links exists { where _dst._path.endsWith(\"/Index.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -299,14 +299,14 @@
   {
     "name": "symbols-for-and-or",
     "dql": "LIST FROM #a & #b | #c",
-    "oqx": "select path from docs where tags exists { where $it == \"a\" or $it.startsWith(\"a/\") } and tags exists { where $it == \"b\" or $it.startsWith(\"b/\") } or tags exists { where $it == \"c\" or $it.startsWith(\"c/\") }",
+    "oqx": "select _path from docs where _tags exists { where $it == \"a\" or $it.startsWith(\"a/\") } and _tags exists { where $it == \"b\" or $it.startsWith(\"b/\") } or _tags exists { where $it == \"c\" or $it.startsWith(\"c/\") }",
     "render": {
       "type": "list",
       "withoutId": false,
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "value": null
@@ -316,21 +316,21 @@
   {
     "name": "task-sources-go-through-doc",
     "dql": "TASK FROM #project AND [[Home]]",
-    "oqx": "select path, id, text, checked from blocks where type == \"task\" and doc.tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } and doc.out_links exists { where dst.path.endsWith(\"/Home.md\") }",
+    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and _doc._tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } and _doc._out_links exists { where _dst._path.endsWith(\"/Home.md\") }",
     "render": {
       "type": "task",
       "grouped": false,
       "id": {
         "name": "File",
-        "alias": "path",
+        "alias": "_path",
         "derive": "link"
       },
       "rows": null,
       "task": {
-        "id": "id",
-        "text": "text",
+        "id": "_id",
+        "text": "_text",
         "checked": "checked",
-        "path": "path"
+        "path": "_path"
       }
     },
     "warnings": []

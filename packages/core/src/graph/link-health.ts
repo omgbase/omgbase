@@ -31,19 +31,19 @@ import { referencePath, storagePath } from "../core/paths.js";
 
 export type StaleReason = "dangling_doc" | "dangling_block" | "broken_anchor";
 
-// A stale link is an edge row under the `edges` target's names (spec/surface
-// §1.2, 3.0): `doc_id`/`block_id` the source, `path` the source document's
-// path (the reference form), `dst_kind` the destination's kind.
+// A stale link is a link row under the `links` target's names (spec/surface
+// §1.2, 5.0): `_doc_id`/`_block_id` the source, `_path` the source document's
+// path (the reference form), `_dst_kind` the destination's kind; `target`, `authored` and `reason` are roles.
 export interface StaleLink {
   /** source document id */
-  doc_id: string;
+  _doc_id: string;
   /** source document path in the reference form */
-  path: string;
+  _path: string;
   /** source block id (null for frontmatter-level edges) */
-  block_id: string | null;
-  predicate: string;
-  provenance: string;
-  dst_kind: string;
+  _block_id: string | null;
+  _predicate: string;
+  _provenance: string;
+  _dst_kind: string;
   /** the canonical target path in the reference form (phantom prefix stripped,
    *  rooted), e.g. "/guides/old.md" — spec/surface §1 "Paths" */
   target: string;
@@ -51,7 +51,7 @@ export interface StaleLink {
    * — paste-ready as `links_repair.from`. null when it can't be recovered (frontmatter
    * edges have no block; a projected node no longer matches). */
   authored: string | null;
-  anchor: string | null;
+  _anchor: string | null;
   reason: StaleReason;
 }
 
@@ -61,8 +61,8 @@ export interface LinkHealthSummary {
   staleCount: number;
   /** distinct missing targets, most-referenced first (ties by target) */
   byTarget: { target: string; count: number }[];
-  /** source documents carrying dangling links, most first (ties by path); `path` the reference form */
-  bySource: { path: string; count: number }[];
+  /** source documents carrying dangling links, most first (ties by path); `_path` the reference form */
+  bySource: { _path: string; count: number }[];
   externalCount: number;
   totalOpenEdges: number;
 }
@@ -183,18 +183,18 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
   const stale: StaleLink[] = page.map((r) => {
     // Strip the "phantom:" prefix to expose the canonical path.
     const target = r.dstNode.slice("phantom:".length);
-    // The surface speaks the reference form: `path` and `target` rooted;
+    // The surface speaks the reference form: `_path` and `target` rooted;
     // `authored` stays exactly as written in the source.
     return {
-      doc_id: r.srcDoc,
-      path: referencePath(r.srcPath),
-      block_id: r.srcBlock,
-      predicate: r.predicate,
-      provenance: r.provenance,
-      dst_kind: r.dstKind,
+      _doc_id: r.srcDoc,
+      _path: referencePath(r.srcPath),
+      _block_id: r.srcBlock,
+      _predicate: r.predicate,
+      _provenance: r.provenance,
+      _dst_kind: r.dstKind,
       target: referencePath(target),
       authored: authoredFor(r.srcBlock, r.srcPath, target, r.anchor),
-      anchor: r.anchor,
+      _anchor: r.anchor,
       // All phantom targets are dangling DOCUMENTS in this data model (cross-doc
       // block refs collapse to document phantoms carrying an anchor). We tag rows
       // that also carry an anchor as such, but the miss is still a missing doc.
@@ -237,7 +237,7 @@ export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkH
   const bySource = (store.db
     .prepare(`SELECT d.path AS srcPath, count(*) AS count ${phantom} GROUP BY d.path ORDER BY count DESC, d.path`)
     .all(...params) as { srcPath: string; count: number }[])
-    .map((r) => ({ path: referencePath(r.srcPath), count: r.count }));
+    .map((r) => ({ _path: referencePath(r.srcPath), count: r.count }));
   return {
     staleCount: byTarget.reduce((n, t) => n + t.count, 0),
     byTarget,

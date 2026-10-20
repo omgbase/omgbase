@@ -194,7 +194,7 @@ Checks (`src/types.ts`):
 | kind | what it asserts |
 | --- | --- |
 | `query` | the OQX `query` returns exactly `hits` (in order; each expected key deep-equal) and/or `count` |
-| `read` | `docs_read { path }`'s raw bytes `equals` a string, match every `matches` regex, match none of `not_matches` |
+| `read` | `docs_read { _path }`'s `_raw` bytes `equals` a string, match every `matches` regex, match none of `not_matches` (the check's own `path` member is the harness's name for it; the tool argument is `_path`, surface 5.0) |
 | `unchanged` | the bytes equal the fixture file **and** no `api`-origin commit touched the document (`changes_since`) |
 | `final_text` | the model's last assistant text matches the regex |
 
@@ -208,7 +208,8 @@ same under both profiles. The server answers the stale commit with
 re-ingests; the check needs both the disk line and the model's paragraph.
 
 The solution's `args` may reference earlier steps: `{ "$result": 0 }` is step 0's
-parsed result, `{ "$result": 0, "$get": "hits.0.id" }` a member of it; a step
+parsed result, `{ "$result": 0, "$get": "hits.0._id" }` a member of it (a query
+hit is `{ _id, _path, … }`, surface 5.0); a step
 that is supposed to fail says `"expect_error": "<code>"`.
 
 ### Adding a task
@@ -217,7 +218,13 @@ that is supposed to fail says `"expect_error": "<code>"`.
    reaches the end state using tools of the **minimal** profile (so `--dry`
    is green under both profiles). Under the sequential minter the fixture ids
    are stable, so a solution may name them (`b_153`); when it must discover
-   one, use a `query` step and `$result`.
+   one, use a `query` step and `$result`. Spell names the surface 5.0 way: an
+   engine attribute is `_`-prefixed in a query, an argument, a target and a
+   result (`_path`, `_type`, `_kind`, `docs_read { _path }`, `{ kind:
+   "document", _path }`, `{ kind: "block", _id }`, `_frontmatter.<k>`,
+   `_attrs.checked`, `hits.0._id`); an authored frontmatter key or `attrs` key
+   stays bare (`verified`, `layer`, `checked`); roles stay bare (`docs_create`'s
+   `path`, `to`, `heading_id`, `at`, `expect`).
 2. `pnpm bench --dry --tasks <id>` — the solution must pass the checks and the
    checks must fail on a fresh workspace.
 3. `pnpm test` — `test/tasks.test.ts` pins the task list; extend it.

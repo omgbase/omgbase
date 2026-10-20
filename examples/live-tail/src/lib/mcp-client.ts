@@ -137,9 +137,11 @@ export class OmgClient {
   }
 
   // The four reads below return the server's wire shape untouched (spec/surface
-  // §3–§4: `id`/`path`/`hash`/`updated_at`/`raw`); the page reads them through
-  // lib/shapes.ts. A document argument arrives from lib/paths.ts `docLocator`
-  // (`{ id }` or `{ path }`, §4 "Arguments").
+  // §3–§4: `_id`/`_path`/`_hash`/`_raw` — the bare `id`/`path`/`hash`/`raw`
+  // from a 3.x/4.x server); the page reads them through lib/shapes.ts, which
+  // takes both. A document argument arrives from lib/paths.ts `docLocator`
+  // (`{ _id }` or `{ _path }` — `{ id }`/`{ path }` under the 4.x names, §4
+  // "Arguments"), spelled for the connected server.
 
   changesSince(repo: string, cursor?: number, limit = 50): Promise<ChangesSinceWire> {
     return this.call<ChangesSinceWire>("changes_since", { repo, limit, ...(cursor !== undefined ? { cursor } : {}) });
@@ -151,7 +153,7 @@ export class OmgClient {
     return r.docs[0] ?? null;
   }
 
-  /** The unified diff between two revisions of one document (`docs_diff_unified { id | path, from_rev, to_rev }`). */
+  /** The unified diff between two revisions of one document (`docs_diff_unified { _id | _path, from_rev, to_rev }`). */
   diffUnified(locator: Record<string, string>, fromRev: string, toRev: string, repo: string): Promise<Wire> {
     return this.call("docs_diff_unified", { ...locator, from_rev: fromRev, to_rev: toRev, repo });
   }

@@ -17,7 +17,7 @@ derives a **graph** of the relationships your text asserts. On top of the blocks
 it projects **nodes** — the meaningful things inside them (a link, a task, a
 heading-as-section) — which is what you *read and query*. The relationships
 between things are **edges** — at the query surface the row kind is `links`
-(`from links`, `out_links`/`in_links`, `^links`; surface 3.0), while the storage
+(`from links`, the `_out_links`/`_in_links` relations, `^links`; surface 3.0), while the storage
 table and the graph layer keep the name `edges`. Four words carry the whole model:
 
 ```
@@ -39,7 +39,7 @@ result, or a write target (ADR-003).
 ## Documents
 
 A **document** is one file the engine tracks: a Markdown note, a YAML config, a
-JSON file. It has a repo-relative `path` in storage (the surface reports it `/`-rooted, `spec/surface` §1 "Paths"), a `format` (which adapter parses it),
+JSON file. It has a repo-relative `path` in storage (the surface reports it as `_path`, `/`-rooted, `spec/surface` §1 "Paths"), a `format` (which adapter parses it; `_format` at the surface),
 optional frontmatter, and a linear chain of **revisions** (its history).
 
 The file on disk is canonical for *content* (ADR-004); the database is canonical
@@ -83,13 +83,13 @@ Key properties:
   peer heading) are *derived*, addressed by the heading block's id with
   `scope: "section"` — not a separate block.
 - **Block types:** `heading`, `paragraph`, `list`, `list_item`, `task` (a list
-  item with a GFM checkbox → `attrs.checked`), `blockquote`, `code_fence`,
+  item with a GFM checkbox → `attrs.checked`, read in a query as `checked` ≡ `_attrs.checked`), `blockquote`, `code_fence`,
   `table`, `table_row`, `thematic_break`, `html_block`, `frontmatter` (at most
   one, first), and `opaque` (unrecognized syntax — preserved byte-perfectly,
   addressable, but refusing typed edits).
 - **Two content hashes.** `raw_hash` = the exact source bytes (the compare-and-swap
   key for safe edits); `norm_hash` = the visible text with block-level syntax
-  stripped (`text`, the source of full-text search and the `text` read mode as
+  stripped (the block's `_text`, the source of full-text search and the `text` read mode as
   well as reconciliation's normalized lock). Inline constructs — links, emphasis, images — are *not* blocks;
   they are content of blocks (and surface as nodes and edges, below).
 
@@ -164,19 +164,19 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
   is created (phantoms are flagged in results).
 - **Two things are *not* edges.** (1) **Structural** relations — parent/child,
   sibling order, section containment — live in the block tree, not the edge
-  tables; you navigate them with the query `follow` operator (`block.children`,
-  `section.children`) — and the citation graph through the link rows' reach-
-  throughs (`follow out_links collect { from dst }`, `dst` being a link's
+  tables; you navigate them with the query `follow` operator (a block's
+  `_children`, a section node's `_children`) — and the citation graph through the link rows' reach-
+  throughs (`follow _out_links collect { from _dst }`, `_dst` being a link's
   destination document) rather than a dedicated edge walk. (2) **Inferred** relations
   (similarity, co-occurrence) are quarantined in a separate `inferred_edges`
   table, never mixed into the authored graph (as-built: a reserved stub).
 
-> **Surface:** `query "… follow out_links collect { from dst }"` (traverse the authored graph),
+> **Surface:** `query "… follow _out_links collect { from _dst }"` (traverse the authored graph),
 > `query "… follow refs(before)"` (walk the document references a frontmatter
 > relation holds — `refs(field)` resolves them to live documents; the reverse is
-> `^docs { ^path in list(before) }`, `^docs` being the repository's documents
+> `^docs { ^_path in list(before) }`, `^docs` being the repository's documents
 > from inside a row), `from links where …` (the edges as `links` rows — one per
-> relation; the `md:link` node is the occurrence in the text, `via_id` points at it),
+> relation; the `md:link` node is the occurrence in the text, `_via_id` points at it),
 > `links` (`links_stale`), `retarget` (`links_retarget`), `links_repair`. Edges
 > aren't created by an "add edge" call — you write a link/field in a block and the
 > engine extracts the edge.
@@ -203,7 +203,8 @@ sense 2 (the projection layer).
 
 Alongside the four is the **property** index: typed key/value pairs extracted
 from frontmatter, inline `key:: value` fields, and computed values (the
-computed title and body hashtags, read as the `title`/`tags` attributes).
+computed title and body hashtags, read as the `_title`/`_tags` attributes; an
+authored key is read by its bare name — surface 5.0).
 Properties are scoped to a document (frontmatter/computed) or a block
 (inline), and are the backing for property filters in queries
 (`from docs where layer == "working"`). See `properties-table.md`. They are

@@ -292,8 +292,8 @@ function doRemoveCue(path: string, id: string): void {
 async function openEditor(path: string): Promise<void> {
   panelMessage.set(null);
   try {
-    const doc = await client.call<Wire>("docs_read", { path, ...repoArg(repoArgValue.get()) });
-    editing.set({ path, raw: str(doc.raw) });
+    const doc = await client.call<Wire>("docs_read", { _path: path, ...repoArg(repoArgValue.get()) });
+    editing.set({ path, raw: str(doc._raw) });
   } catch (e) {
     panelMessage.set({ kind: "error", text: `docs_read: ${describe(e)}` });
   }

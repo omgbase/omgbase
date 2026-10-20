@@ -107,11 +107,11 @@ export interface DrainOutcome {
   doc_pooled: number;
 }
 export interface TextHitRow {
-  id: string;
-  doc_id: string;
-  path: string;
-  type: string;
-  text: string;
+  _id: string;
+  _doc_id: string;
+  _path: string;
+  _type: string;
+  _text: string;
   score: number;
 }
 export interface VectorHitRow {
@@ -135,7 +135,7 @@ export interface HybridHitRow {
   evidence: Evidence;
 }
 export interface ResolveHitRow {
-  id: string;
+  _id: string;
   locator: string;
   preview: string;
   evidence: Evidence;
@@ -336,7 +336,7 @@ async function runSearch(store: Store, repoId: string, provider: EmbeddingProvid
   if (q.text !== undefined && q.semantic === undefined) {
     const r = textSearch(store, repoId, q.text, limit !== undefined ? { limit } : {});
     return {
-      hits: r.hits.map((h) => ({ id: h.id, doc_id: h.doc_id, path: h.path, type: h.type, text: h.text, score: h.score })),
+      hits: r.hits.map((h) => ({ _id: h._id, _doc_id: h._doc_id, _path: h._path, _type: h._type, _text: h._text, score: h.score })),
       truncated: r.truncated,
     };
   }
@@ -356,7 +356,7 @@ async function runResolve(store: Store, repoId: string, provider: EmbeddingProvi
     ...(q.semantic !== undefined ? { vector: { model: provider.model, vec: await queryVector(provider, q.semantic) } } : {}),
     ...(q.limit !== undefined ? { limit: q.limit } : {}),
   });
-  return { hits: hits.map((h) => ({ id: h.id, locator: h.locator, preview: h.preview, evidence: evidenceOf(h.evidence as HybridHit["evidence"]) })) };
+  return { hits: hits.map((h) => ({ _id: h._id, locator: h.locator, preview: h.preview, evidence: evidenceOf(h.evidence as HybridHit["evidence"]) })) };
 }
 
 // ---- projection (README §7) -----------------------------------------------------------

@@ -7,21 +7,26 @@
 // chosen by `chooseQuery`:
 //
 //   - a user's edit is never replaced (only a preset — the sample default or
-//     the starter — is swapped);
+//     the starter, in either spelling — is swapped);
 //   - the sample workspace (`repos` slug `sample` AND `/timeline/kickoff.md`
 //     present) keeps its timeline default;
 //   - every other repository gets the STARTER: the most recently changed
 //     documents, which exists in any repository and needs no field names. It
-//     has no `follow`, so the picker offers the builtin `doc.out_links` /
-//     `doc.in_links` (lib/candidates.ts) and infers nothing else; `links` are
-//     drawn, force layout.
+//     has no `follow`, so the picker offers the builtin `_out_links` /
+//     `_in_links` (lib/candidates.ts; `doc.out_links` / `doc.in_links` under
+//     the 4.x names) and infers nothing else; `links` are drawn, force layout.
+//
+// Every preset is spelled for the connected server (lib/paths.ts
+// `EngineNames`: `_path`/`_title`/`_updated_at` from surface 5.0, bare before);
+// the `*_QUERY` constants are the 5.0 texts and the `is*Query` tests recognise
+// both spellings.
 //
 // `timelineStarter` is the second suggestion — the sample default's shape with
 // the start document left to the user — shown under the editor while it holds
 // the starter.
 
-import { DEFAULT_QUERY, isDefaultQuery } from "./default-query.ts";
-import { rooted } from "./paths.ts";
+import { defaultQuery, isDefaultQuery } from "./default-query.ts";
+import { NAMES_4, NAMES_5, rooted, type EngineNames } from "./paths.ts";
 
 /** The slug `scripts/dev-workspace.mjs` gives the sample. */
 export const SAMPLE_REPO = "sample";
@@ -30,15 +35,20 @@ export const SAMPLE_REPO = "sample";
 export const SAMPLE_PROBE_PATH = "/timeline/kickoff.md";
 
 /** The generic starter: recent documents, in any repository (no path literal,
- * no correlation). `title` is the computed title attribute (spec/surface
- * §1.2), the authored one being `data.title`. */
-export const STARTER_QUERY = `select path, title
+ * no correlation). `_title` is the computed title attribute (spec/surface
+ * §1.2), the authored one being the bare `title`. */
+export function starterQuery(names: EngineNames = NAMES_5): string {
+  return `select ${names.path}, ${names.title}
 from docs
-order by updated_at desc
+order by ${names.updated_at} desc
 limit 40`;
+}
+
+/** The starter in the native (5.0) spelling. */
+export const STARTER_QUERY = starterQuery(NAMES_5);
 
 export function isStarterQuery(source: string): boolean {
-  return source === STARTER_QUERY;
+  return source === starterQuery(NAMES_5) || source === starterQuery(NAMES_4);
 }
 
 /** A preset — something the page put in the editor, not the user. */
@@ -49,18 +59,18 @@ export function isPresetQuery(source: string): boolean {
 /** The timeline suggestion for a repository that authors `before`/`after`
  * frontmatter: the sample default's walk from `start` (a repo path; a
  * placeholder when none is known). */
-export function timelineStarter(start: string | null = null): string {
+export function timelineStarter(start: string | null = null, names: EngineNames = NAMES_5): string {
   const literal = start === null ? "/path/to/start.md" : rooted(start);
-  return `select path, title, before, after
+  return `select ${names.path}, ${names.title}, before, after
 from docs
-where path == ${JSON.stringify(literal)}
-follow distinct refs(before), in_links collect { from doc where ^path in list(after) }`;
+where ${names.path} == ${JSON.stringify(literal)}
+follow distinct refs(before), ${names.in_links} collect { from ${names.doc} where ^${names.path} in list(after) }`;
 }
 
 /** The one cheap probe: does `path` exist in the repository? (`limit 1`, so a
  * `hits.length > 0` answer.) */
-export function existsQuery(path: string): string {
-  return `select path from docs where path == ${JSON.stringify(rooted(path))} limit 1`;
+export function existsQuery(path: string, names: EngineNames = NAMES_5): string {
+  return `select ${names.path} from docs where ${names.path} == ${JSON.stringify(rooted(path))} limit 1`;
 }
 
 export interface RepositoryShape {
@@ -79,9 +89,10 @@ export function isSampleRepository(repo: RepositoryShape): boolean {
 }
 
 /** What the editor should hold once the repository is known: null = leave it
- * alone (the user wrote it, or it is already right). */
-export function chooseQuery(current: string, repo: RepositoryShape): string | null {
+ * alone (the user wrote it, or it is already right). A preset in the other
+ * server's spelling is swapped for this server's. */
+export function chooseQuery(current: string, repo: RepositoryShape, names: EngineNames = NAMES_5): string | null {
   if (!isPresetQuery(current)) return null;
-  const want = isSampleRepository(repo) ? DEFAULT_QUERY : STARTER_QUERY;
+  const want = isSampleRepository(repo) ? defaultQuery(names) : starterQuery(names);
   return want === current ? null : want;
 }

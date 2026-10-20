@@ -35,24 +35,25 @@ const REVS = [
   { rev: "r_8", seq: 8, ts: "2026-10-13T22:00:01.000Z", raw: raw(GARDEN, "2026-10-13T22:00:00.000Z") },
 ];
 
+/** A `revisions` row and a `docs_read { at }` result as surface 5.0 spells them: every attribute of a revision is the engine's (`_id` = the rev, `_path`, `_rev`, `_seq`, `_ts`), the bytes `_raw`. */
 function server(revs = REVS): ScriptedCaller {
   return new ScriptedCaller({
-    query: (a) => (String(a.query).startsWith("select rev, seq, ts from revisions") ? page(revs.map((r) => ({ id: r.rev, path: "/attn/focus.md", rev: r.rev, seq: r.seq, ts: r.ts }))) : page([])),
+    query: (a) => (String(a.query).startsWith("select _rev, _seq, _ts from revisions") ? page(revs.map((r) => ({ _id: r.rev, _path: "/attn/focus.md", _rev: r.rev, _seq: r.seq, _ts: r.ts }))) : page([])),
     docs_read: (a) => {
       const r = revs.find((x) => x.rev === a.at);
-      return r ? { id: "d_focus", path: "/attn/focus.md", rev: r.rev, raw: r.raw, renderedHashMatch: true } : { error: "target_missing" };
+      return r ? { _id: "d_focus", _path: "/attn/focus.md", rev: r.rev, _raw: r.raw, renderedHashMatch: true } : { error: "target_missing" };
     },
   });
 }
 
 describe("the calls", () => {
-  it("one revisions query (pinned), then docs_read { path, at } per revision; the states read focused_intent / since / return_stack off raw", async () => {
-    expect(REVISIONS_QUERY).toBe('select rev, seq, ts from revisions where path == "/attn/focus.md" order by seq');
+  it("one revisions query (pinned), then docs_read { _path, at } per revision; the states read focused_intent / since / return_stack off _raw", async () => {
+    expect(REVISIONS_QUERY).toBe('select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq');
     const s = server();
     const states = await fetchPointerHistory(s, "attn");
     expect(s.names()).toEqual(["query", ...Array<string>(8).fill("docs_read")]);
     expect(s.argsOf("query")).toEqual({ query: REVISIONS_QUERY, limit: 500, repo: "attn" });
-    expect(s.argsOf("docs_read", 4)).toEqual({ path: "/attn/focus.md", at: "r_5", repo: "attn" });
+    expect(s.argsOf("docs_read", 4)).toEqual({ _path: "/attn/focus.md", at: "r_5", repo: "attn" });
     expect(states.map((x) => [x.seq, x.focused, x.since, x.returnStack])).toEqual([
       [1, GARDEN, "2026-10-12T07:40:00.000Z", []],
       [2, DEW, "2026-10-12T08:55:00.000Z", []],
@@ -72,7 +73,7 @@ describe("the calls", () => {
     const s2 = server();
     const states = await fetchPointerHistory(s2, null, cache);
     expect(s2.names()).toEqual(["query", "docs_read"]);
-    expect(s2.argsOf("docs_read")).toEqual({ path: "/attn/focus.md", at: "r_8" });
+    expect(s2.argsOf("docs_read")).toEqual({ _path: "/attn/focus.md", at: "r_8" });
     expect(states).toHaveLength(8);
   });
 });

@@ -91,11 +91,14 @@ If the sanitized query is empty → no hits. Otherwise the live blocks of the
 repo whose FTS row matches, ordered by `bm25(blocks_fts)` ascending (best
 first), ties in SQLite's order — the fixtures pin only cases without ties —
 limited to `limit`, `truncated` = more than `limit` matched. A hit is
-`{ id, doc_id, path, type, text, score = −bm25 }` (higher is better) —
-the block row's own names (`spec/surface` §1.2, 3.0: `id` the block id,
-`path` its document's path in this spec's storage form, which the surface
-roots; before 2.0 the hit spelled `block_id`/`path`, and for a few days of the
-2.0 line `$id`/`$path` — Decisions). bm25 is SQLite's; a
+`{ _id, _doc_id, _path, _type, _text, score = −bm25 }` (higher is better) —
+the block row's engine names (`spec/surface` §1.2, 5.0: on every record a
+bare name is the user's and an underscore-prefixed name the engine's; `_id`
+the block id, `_path` its document's path in this spec's storage form, which
+the surface roots; `score` names a role — the hit's rank, no row carries it —
+and stays bare). Through 2.x the hit spelled the same names bare
+(`id`/`doc_id`/`path`/`type`/`text`), before 2.0 `block_id`/`path`, and for
+a few days of the 2.0 line `$id`/`$path` — Decisions. bm25 is SQLite's; a
 runner compares scores within 1e-6.
 
 ## 2. Embeddings
@@ -244,11 +247,15 @@ tool was named `resolve` before) — `resolve` stays this layer's name.
    `limit`. Each hit carries `evidence = { fts_rank?,
    vector_rank?, cosine?, rrf, boosts }`.
 
-`resolve(repo, query, vector?, limit = 10)` is `hybrid` reshaped: `{ id
+`resolve(repo, query, vector?, limit = 10)` is `hybrid` reshaped: `{ _id
 (the block), locator = path + "#" + type + "[" + ordinal + "]", preview = the
 first 12 whitespace-separated words of the text (+ "…" when cut), evidence }`
-(`id` before 2.0; `locator` names a role, not a row attribute, and keeps its
-name — `spec/surface` §1.2).
+(3.0 — `_id` is the block row's engine name, `spec/surface` §1.2; `id`
+through 2.x; `locator`, `preview` and `evidence` name roles, not row
+attributes, and keep their names). The `hybrid` and `vector_search` hits
+above (`{ block_id, doc_id, path, cosine }`, the `evidence`) are this layer's
+internal shapes — no tool returns them, and the fixtures (§7) pin them under
+the layer's names, which do not move with the surface's.
 `ordinal` is the sibling ordinal, so a nested block's locator is ambiguous
 (§8).
 
@@ -303,9 +310,11 @@ ordering, fusion) and is exactly reproducible.
     text-only → `text_search` hits (`score` within 1e-6); semantic-only →
     the query embedded with the fixture embedder **and rounded to float32**
     like a stored vector, `vector_search` hits (`cosine` within 1e-9); both
-    → `hybrid` hits with evidence (`boosts` holds only the applied keys);
-    for `{ "resolve": { query, semantic?, limit? } }` → `{ hits: [{ id,
-    locator, preview, evidence }] }`.
+    → `hybrid` hits with evidence (`boosts` holds only the applied keys) —
+    the vector and hybrid hits under the layer's internal names
+    (`block_id`, `doc_id`, `path`, `cosine`), which no tool returns;
+    for `{ "resolve": { query, semantic?, limit? } }` → `{ hits: [{ _id,
+    locator, preview, evidence }] }` (3.0).
   - `embed_tasks`: every embeddable block's `{ block_id, content_hash, ctx }`
     in `(path, ordinal, block_id bytewise)` order (nested blocks share
     ordinals with top-level ones; leaves only since 1.2); `doc_tasks`: every document's `{ doc_id,
@@ -407,6 +416,22 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
 
 ## Decisions
 
+- 2026-10-20, search 3.0 (`spec/surface` 5.0 "underscore = engine"): the
+  two tool-facing hit shapes take the block row's engine names —
+  `text_search` `{ _id, _doc_id, _path, _type, _text, score }` (§1.3),
+  `resolve` `{ _id, locator, preview, evidence }` (§4). The surface's rule
+  became one rule for every record kind: a bare name is user-authored, an
+  underscore-prefixed name is engine-provided, and a result key carrying a
+  row attribute is spelled as that attribute — so `id`, `doc_id`, `path`,
+  `type` and `text` move and the role keys `score`, `locator`, `preview`,
+  `evidence` stay. The `vector_search` and `hybrid` hits (`{ block_id,
+  doc_id, path, cosine }`, the `evidence` record) are the layer's internal
+  shapes, pinned by the fixtures under the layer's own names and returned
+  by no tool: unchanged. Only the two surfaced shapes moved — a result key
+  renamed is a major, as 2.0 was. Fixtures: every `text_search`/`resolve`
+  expectation of `fts.json`/`rank.json` re-keyed, nothing else. The Rust
+  `omgbase-search` follows in a separate round; until it lands its spec
+  runner is red by design.
 - 2026-10-11, search 2.0 (surface 3.0 batch 3): the renamed hit keys are
   bare — `text_search` `{ id, doc_id, path, … }`, `resolve` `{ id, locator,
   … }` — because `spec/surface` §1.2's final rule gives omgbase no `$` names

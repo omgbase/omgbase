@@ -3,11 +3,12 @@
 // states IS the episode history, and the open episode's start is the current
 // `since`. With what omgbase already has:
 //
-//   select rev, seq, ts from revisions where path == "/attn/focus.md" order by seq
-//   docs_read { path: "/attn/focus.md", at: <rev> }      per revision → raw → focused_intent / since / return_stack
+//   select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq
+//   docs_read { _path: "/attn/focus.md", at: <rev> }     per revision → _raw → focused_intent / since / return_stack
 //
 // (`docs_read { at }` carries no `properties`, so the frontmatter is read from
-// `raw` by model.ts's small grammar.) Revisions are immutable, so every state
+// `_raw` by model.ts's small grammar. A revision row's attributes are all the
+// engine's — `_rev`, `_seq`, `_ts`, `_path` — under surface 5.0's rule.) Revisions are immutable, so every state
 // is cached by its rev and only new revisions are read. Each state's `since`
 // is when the switch happened (the client clock at the switch); the next
 // state's `since` ends the episode; the kind of a transition is inferred from
@@ -31,20 +32,20 @@ export interface PointerRevision {
 export interface PointerSnapshot extends PointerRevision, PointerState {}
 
 /** The pointer's revisions, oldest first. */
-export const REVISIONS_QUERY = `select rev, seq, ts from revisions where path == ${JSON.stringify(POINTER_PATH)} order by seq`;
+export const REVISIONS_QUERY = `select _rev, _seq, _ts from revisions where _path == ${JSON.stringify(POINTER_PATH)} order by _seq`;
 
 export async function fetchPointerRevisions(caller: Caller, repo: string | null): Promise<PointerRevision[]> {
   const hits = await queryAll(caller, REVISIONS_QUERY, repo);
   return hits
-    .map((h) => ({ rev: str(h.rev) || str(h.id), seq: typeof h.seq === "number" ? h.seq : Number(h.seq), ts: str(h.ts) }))
+    .map((h) => ({ rev: str(h._rev) || str(h._id), seq: typeof h._seq === "number" ? h._seq : Number(h._seq), ts: str(h._ts) }))
     .filter((r) => r.rev)
     .sort((a, b) => a.seq - b.seq);
 }
 
-/** `docs_read { path, at: rev }` → the pointer's state as of that revision (its raw frontmatter, read by model.ts). */
+/** `docs_read { _path, at: rev }` → the pointer's state as of that revision (its `_raw` frontmatter, read by model.ts). */
 export async function readPointerAt(caller: Caller, revision: PointerRevision, repo: string | null): Promise<PointerSnapshot> {
-  const doc = await caller.call<Wire>("docs_read", { path: POINTER_PATH, at: revision.rev, ...repoArg(repo) });
-  return { ...revision, ...pointerStateOf(frontmatterOf(str(doc.raw))) };
+  const doc = await caller.call<Wire>("docs_read", { _path: POINTER_PATH, at: revision.rev, ...repoArg(repo) });
+  return { ...revision, ...pointerStateOf(frontmatterOf(str(doc._raw))) };
 }
 
 /** The cache: rev → snapshot. Revisions are immutable, so an entry never goes stale. */

@@ -31,6 +31,16 @@
 - **MCP**: descriptive, discoverable tool name, usually `noun_verb` (`docs_read`,
   `links_retarget`), with a rich Zod schema + a self-teaching description.
 - **library**: `camelCase` function (`docsRead`, `linksRetarget`).
+- **Arguments and keys follow the row rule (surface 5.0, "underscore = engine").** An
+  argument that addresses an engine field is spelled as the field: the `docs_*` tools
+  take `_id?`/`_path?`, the block tools (`blocks_read`, `blocks_update`, `blocks_split`,
+  `blocks_append`, `blocks_history`, `nodes_block_read`, `nodes_set`) `_id`,
+  `blocks_read_many`/`blocks_check` `_ids`; a bare `id`/`path`/`ids` is `filter_invalid`
+  with the corrected call in `data.fix` — no tolerance. Role arguments keep their names
+  (`docs`, `blocks`, `to`, `at`, `roots`, `rev`, `path_glob`, `docs_tree.path`,
+  `docs_create.path`, `to_path`, `observe*.path`, `section`, `plan_id`, …). Every result
+  key that carries a row attribute is `_`-prefixed (`_id`, `_path`, `_hash`, …) and the
+  CLI's `--json` is the tool result verbatim, so the three registers spell a row one way.
 - **Mutations are never a backdoor.** Every write — CLI verb or MCP tool — expands
   to the audited six-op `apply` kernel + named macros. There is no raw-kernel
   escape hatch, by design.
@@ -136,7 +146,7 @@ vernacular and `--server` does not apply.
   attach | detach | list` — history retention writes segment files under the
   workspace, takes the writer lock and is driven by a policy and a
   directory (`spec/store` §7.1); the catalog's whole trace of it is the
-  `revisions.archived` attribute and the `revision_archived` error
+  `revisions` target's `_archived` attribute and the `revision_archived` error
   (`spec/surface` 4.9). Server-operator ops; no MCP tools.
 - **Surface-intrinsic:** `omg shell` (a CLI session; `shell --server` runs each
   *line* remotely, but the session construct itself is CLI-only), `omg help`,
