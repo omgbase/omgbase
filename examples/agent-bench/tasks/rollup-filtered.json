@@ -1,7 +1,7 @@
 {
   "id": "rollup-filtered",
   "corpus": "timeline",
-  "prompt": "Append to the very end of /index.md one line per milestone owned by Mara Lindqvist (/people/mara-lindqvist.md) that is done and was closed in 2027 (`status: done` and a `closed` date within 2027), ordered by the `closed` date, each in the exact form `- <milestone path>: <project slug>` (for example `- /projects/x/y.md: x`). Only her milestones — not those of anyone with a similar name — and only those closed in 2027. Then tell me which milestones you listed.",
+  "prompt": "Append to the very end of /index.md one line per milestone owned by Mara Lindqvist (/people/mara-lindqvist.md) that is done and was closed in 2027 (`status: done` and a `closed` date within 2027), ordered by the `closed` date, each in the exact form `- <milestone path>: <project slug>` (for example `- /projects/x/y.md: x`). Only her milestones — not those of anyone with a similar name — and only those closed in 2027. Then tell me which milestones you listed. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "checks": [
     {
       "kind": "read",
@@ -9,12 +9,22 @@
       "matches": [
         "the day the status flipped\\.\\n\\n?- /projects/cirrus/dome-slit-alignment\\.md: cirrus\\n- /projects/aurora/bench-alignment\\.md: aurora\\n- /projects/aurora/integration-with-dome\\.md: aurora\\n*$"
       ],
-      "not_matches": ["open-day", "grating-procurement", "science-requirements", "aurora/kickoff", "aurora/closeout"]
+      "not_matches": [
+        "open-day",
+        "grating-procurement",
+        "science-requirements",
+        "aurora/kickoff",
+        "aurora/closeout"
+      ]
     },
     {
       "kind": "answer",
-      "must_mention": ["/projects/cirrus/dome-slit-alignment.md", "/projects/aurora/bench-alignment.md", "/projects/aurora/integration-with-dome.md"],
-      "must_not_mention": ["open-day", "Open day", "/mara-lind\\.md/", "/\\bmara lind\\b/"]
+      "paths": [
+        "/projects/cirrus/dome-slit-alignment.md",
+        "/projects/aurora/bench-alignment.md",
+        "/projects/aurora/integration-with-dome.md"
+      ],
+      "ordered": true
     }
   ],
   "solution": {
@@ -42,7 +52,7 @@
         }
       }
     ],
-    "final_text": "Appended three lines to /index.md for Mara Lindqvist's milestones closed in 2027, in closing order: /projects/cirrus/dome-slit-alignment.md (cirrus, closed 2027-03-01), /projects/aurora/bench-alignment.md (aurora, 2027-03-17) and /projects/aurora/integration-with-dome.md (aurora, 2027-06-01)."
+    "final_text": "Appended three lines to /index.md for Mara Lindqvist's milestones closed in 2027, in closing order: /projects/cirrus/dome-slit-alignment.md (cirrus, closed 2027-03-01), /projects/aurora/bench-alignment.md (aurora, 2027-03-17) and /projects/aurora/integration-with-dome.md (aurora, 2027-06-01).\n\n```answer\n/projects/cirrus/dome-slit-alignment.md\n/projects/aurora/bench-alignment.md\n/projects/aurora/integration-with-dome.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -75,7 +85,7 @@
         }
       }
     ],
-    "final_text": "Appended three lines to /index.md for Mara Lindqvist's milestones closed in 2027, in closing order: /projects/cirrus/dome-slit-alignment.md (cirrus, closed 2027-03-01), /projects/aurora/bench-alignment.md (aurora, 2027-03-17) and /projects/aurora/integration-with-dome.md (aurora, 2027-06-01)."
+    "final_text": "Appended three lines to /index.md for Mara Lindqvist's milestones closed in 2027, in closing order: /projects/cirrus/dome-slit-alignment.md (cirrus, closed 2027-03-01), /projects/aurora/bench-alignment.md (aurora, 2027-03-17) and /projects/aurora/integration-with-dome.md (aurora, 2027-06-01).\n\n```answer\n/projects/cirrus/dome-slit-alignment.md\n/projects/aurora/bench-alignment.md\n/projects/aurora/integration-with-dome.md\n```"
   },
-  "notes": "Find across the corpus, then write: a filter over three frontmatter fields (`owner` — a path string, also a frontmatter link; `status`; `closed in \"2027-01-01\"..\"2027-12-31\"`, a date range over an ISO string) ordered by date, then one insert at the end of /index.md. Decoys: Mara's milestones done in 2026 (kickoff, science-requirements, grating-procurement) and her open ones (closeout, 2028), and Mara LIND (`/people/mara-lind.md`), who owns fjord's `Open day`, closed 2027-06-21 — a near-miss name a grep for 'mara-lind' matches as a prefix. On bare files: grep her `owner:` lines (her seven milestones), grep their `status:`/`closed:` lines, read index.md and append with one exact-match edit anchored on its last line."
+  "notes": "Find across the corpus, then write: a filter over three frontmatter fields (`owner` — a path string, also a frontmatter link; `status`; `closed in \"2027-01-01\"..\"2027-12-31\"`, a date range over an ISO string) ordered by date, then one insert at the end of /index.md. Decoys: Mara's milestones done in 2026 (kickoff, science-requirements, grating-procurement) and her open ones (closeout, 2028), and Mara LIND (`/people/mara-lind.md`), who owns fjord's `Open day`, closed 2027-06-21 — a near-miss name a grep for 'mara-lind' matches as a prefix. On bare files: grep her `owner:` lines (her seven milestones), grep their `status:`/`closed:` lines, read index.md and append with one exact-match edit anchored on its last line. The `answer` block is the three paths in `closed` order (`ordered`) — the same list the `read` check expects in /index.md; explaining that Mara Lind's `Open day` was excluded is fine, it fails the run only inside the block."
 }

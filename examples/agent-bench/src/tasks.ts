@@ -51,7 +51,7 @@ function validateCheck(c: unknown, at: string, problems: string[]): void {
     read: ["kind", "path", "equals", "matches", "not_matches"],
     unchanged: ["kind", "path"],
     final_text: ["kind", "matches"],
-    answer: ["kind", "must_mention", "must_not_mention", "count"],
+    answer: ["kind", "paths", "ordered", "mode", "must_mention"],
   };
   for (const k of Object.keys(c)) if (!allowed[c.kind]!.includes(k)) problems.push(`${at}: unknown member \`${k}\` on a ${c.kind} check`);
   switch (c.kind as Check["kind"]) {
@@ -78,16 +78,20 @@ function validateCheck(c: unknown, at: string, problems: string[]): void {
       if (typeof c.matches !== "string" || !regexOk(c.matches)) problems.push(`${at}: matches must be a regex string`);
       break;
     case "answer":
-      if (!isStringArray(c.must_mention) || c.must_mention.length === 0) problems.push(`${at}: must_mention must be a non-empty array of strings`);
-      else for (const e of c.must_mention) if (e === "" || !answerEntryOk(e)) problems.push(`${at}: must_mention entry ${JSON.stringify(e)} is empty or does not compile`);
-      if (c.must_not_mention !== undefined) {
-        if (!isStringArray(c.must_not_mention)) problems.push(`${at}: must_not_mention must be an array of strings`);
-        else for (const e of c.must_not_mention) if (e === "" || !answerEntryOk(e)) problems.push(`${at}: must_not_mention entry ${JSON.stringify(e)} is empty or does not compile`);
+      if (c.paths === undefined && c.must_mention === undefined) problems.push(`${at}: an answer check needs \`paths\` and/or \`must_mention\``);
+      if (c.paths !== undefined) {
+        if (!isStringArray(c.paths) || c.paths.length === 0) problems.push(`${at}: paths must be a non-empty array of strings`);
+        else {
+          for (const p of c.paths) if (!/^\/[^\s`'"]+\.md$/.test(p)) problems.push(`${at}: paths entry ${JSON.stringify(p)} must be a repository-root \`.md\` path (\`/a/b.md\`)`);
+          if (new Set(c.paths).size !== c.paths.length) problems.push(`${at}: paths must not repeat`);
+        }
       }
-      if (c.count !== undefined) {
-        if (!isRecord(c.count) || typeof c.count.pattern !== "string" || !regexOk(c.count.pattern)) problems.push(`${at}: count.pattern must be a regex string`);
-        if (!isRecord(c.count) || !(Number.isInteger(c.count.equals) && (c.count.equals as number) >= 0)) problems.push(`${at}: count.equals must be a non-negative integer`);
-        if (isRecord(c.count)) for (const k of Object.keys(c.count)) if (!["pattern", "equals"].includes(k)) problems.push(`${at}: unknown member \`${k}\` on count`);
+      if (c.ordered !== undefined && typeof c.ordered !== "boolean") problems.push(`${at}: ordered must be a boolean`);
+      if (c.ordered !== undefined && c.paths === undefined) problems.push(`${at}: ordered needs paths`);
+      if (c.mode !== undefined) problems.push(`${at}: mode is set by the rescore, not by a task file`);
+      if (c.must_mention !== undefined) {
+        if (!isStringArray(c.must_mention) || c.must_mention.length === 0) problems.push(`${at}: must_mention must be a non-empty array of strings`);
+        else for (const e of c.must_mention) if (e === "" || !answerEntryOk(e)) problems.push(`${at}: must_mention entry ${JSON.stringify(e)} is empty or does not compile`);
       }
       break;
   }

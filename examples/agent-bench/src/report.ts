@@ -22,6 +22,23 @@ export interface ReportMeta {
   omg_version?: string;
   /** the embedding provider the bench ran with (`--embedder`), when any */
   embedder?: string;
+  /** true for a run whose retrieval prompts carried the `answer` block sentence (every run since the block check) — `pnpm bench rescore` scores an older run leniently */
+  answer_block?: boolean;
+  /** set on a `results.rescored.json`: how this report was derived from the stored one */
+  rescore?: RescoreMeta;
+}
+
+export interface RescoreMeta {
+  /** when the rescore ran */
+  at: string;
+  /** the results file it read */
+  source: string;
+  /** the mode the `answer` checks ran in — lenient when the run predates the block sentence */
+  answer_mode: "strict" | "lenient";
+  /** the runs whose verdict changed: `task [profile] #run: FAIL → pass` */
+  changed: string[];
+  /** the runs that were kept as they were because they never produced a final text (a harness error, a skip) */
+  kept: number;
 }
 
 function mean(xs: number[]): number {
@@ -145,6 +162,10 @@ export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
   if (meta.omg_version) out.push(`- omg: ${meta.omg_version}`);
   out.push(`- embedder: ${meta.embedder ? `\`${meta.embedder}\`` : "none (tasks that require semantic search are skipped under the omgbase profiles)"}`);
   out.push(`- started ${meta.started} · finished ${meta.finished}`);
+  if (meta.rescore) {
+    const r = meta.rescore;
+    out.push(`- **rescored** ${r.at} from \`${r.source}\` under the tasks' CURRENT checks: the text-only checks (\`answer\`, \`final_text\`) re-run over each run's stored final text — \`answer\` in ${r.answer_mode} mode${r.answer_mode === "lenient" ? " (the run predates the `answer` block sentence: a check with `must_mention` is judged by it alone, a check without one by every expected path anywhere in the text in either form; extra paths are not penalized)" : ""} — the workspace checks (\`read\`, \`query\`, \`unchanged\`, \`unchanged_all\`) kept as recorded; ${r.kept} run(s) with no final text kept as they were. Verdicts changed: ${r.changed.length === 0 ? "none" : r.changed.join("; ")}`);
+  }
   const live = ran(results);
   const perRun = meanCost(live);
   if (perRun !== null) out.push(`- cost: ${fmtDollars(perRun * live.length)} for ${live.length} run(s) at Anthropic list price (\`src/pricing.ts\`)`);

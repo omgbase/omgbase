@@ -1,18 +1,20 @@
 {
   "id": "timeline-between",
   "corpus": "timeline",
-  "prompt": "In the Delta data pipeline project, what happened between the milestone \"Archive schema freeze\" (/projects/delta/archive-schema-freeze.md) and the milestone \"Quick-look viewer\" (/projects/delta/quicklook-viewer.md)? The project's sequence is given by the `after:` frontmatter field (each milestone names the one immediately before it). List only the milestones strictly between those two, in sequence order, each with its title and path — not the two endpoints' neighbours on the other side. Change nothing.",
+  "prompt": "In the Delta data pipeline project, what happened between the milestone \"Archive schema freeze\" (/projects/delta/archive-schema-freeze.md) and the milestone \"Quick-look viewer\" (/projects/delta/quicklook-viewer.md)? The project's sequence is given by the `after:` frontmatter field (each milestone names the one immediately before it). List only the milestones strictly between those two, in sequence order, each with its title and path — not the two endpoints' neighbours on the other side. Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "unchanged_all": true,
   "checks": [
     {
       "kind": "answer",
-      "must_mention": [
-        "/Storage procurement[\\s\\S]*Pipeline v1[\\s\\S]*Calibration database/",
+      "paths": [
         "/projects/delta/storage-procurement.md",
         "/projects/delta/pipeline-v1.md",
         "/projects/delta/calibration-database.md"
       ],
-      "must_not_mention": ["Ingest prototype", "Archive API", "Data model"]
+      "ordered": true,
+      "must_mention": [
+        "/Storage procurement[\\s\\S]*Pipeline v1[\\s\\S]*Calibration database/"
+      ]
     }
   ],
   "solution": {
@@ -24,7 +26,7 @@
         }
       }
     ],
-    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md)."
+    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md).\n\n```answer\n/projects/delta/storage-procurement.md\n/projects/delta/pipeline-v1.md\n/projects/delta/calibration-database.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -43,7 +45,7 @@
         }
       }
     ],
-    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md)."
+    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md).\n\n```answer\n/projects/delta/storage-procurement.md\n/projects/delta/pipeline-v1.md\n/projects/delta/calibration-database.md\n```"
   },
-  "notes": "A bounded walk: seed at A, follow the inverse `after:` relation forward and stop expanding at D (`frontier _path == D` inside the destination block, spec/oqx 0.20), then drop the two endpoints — the three notes strictly between, in walk order (`$ordinal`). Delta's chain is 13 long; the decoys are the neighbours just outside the interval (`Ingest prototype` before A, `Archive API` after D) and `Data model` further back. On bare files: grep the twelve `after:` lines and the titles under projects/delta/ and chain them by hand."
+  "notes": "A bounded walk: seed at A, follow the inverse `after:` relation forward and stop expanding at D (`frontier _path == D` inside the destination block, spec/oqx 0.20), then drop the two endpoints — the three notes strictly between, in walk order (`$ordinal`). Delta's chain is 13 long; the decoys are the neighbours just outside the interval (`Ingest prototype` before A, `Archive API` after D) and `Data model` further back. On bare files: grep the twelve `after:` lines and the titles under projects/delta/ and chain them by hand. The `answer` block is the three paths in sequence order (`ordered`) and nothing else; the whole chain may be shown in the prose for context (every model did), the endpoints and their outer neighbours fail the run only inside the block."
 }

@@ -18,9 +18,11 @@ a named edit in two calls. The nine **retrieval** tasks ask what omgbase is
 for: finding, verifying and relating things *across* a corpus — range inclusion
 in frontmatter, graph traversal along a project timeline, cross-document
 aggregation, backlinks with their section, every open task in the vault,
-semantic search — and end with an **answer** the harness checks, not a write.
-Each is answerable by the file tools too (list / grep / read), just more
-expensively; that is the comparison.
+semantic search — and end with an **answer** the harness checks, not a write:
+a fenced code block tagged `answer` listing only the matching note paths, scored
+as an exact set (or sequence) with the explanation around it free. Each is
+answerable by the file tools too (list / grep / read), just more expensively;
+that is the comparison.
 
 Three **profiles**, one per surface: `full` and `minimal` are omgbase;
 `fs` is the filesystem baseline. For every (task, profile, run) cell the harness:
@@ -49,8 +51,9 @@ Three **profiles**, one per surface: `full` and `minimal` are omgbase;
    transcript. Under an omgbase profile the checks go through the run's own
    server; under `fs` the harness first sweeps the workspace (`omg sync`) so
    the store observes what the agent wrote to disk, then spawns a `full`
-   server for the checks. A retrieval task's `answer` check reads the model's
-   final text; its `unchanged_all` compares the whole vault to the corpus.
+   server for the checks. A retrieval task's `answer` check scores the
+   ```` ```answer ```` block of the model's final text; its `unchanged_all`
+   compares the whole vault to the corpus.
 
 Only the local `omg mcp` is ever used; nothing here knows about any remote
 gateway.
@@ -147,13 +150,27 @@ is the comparison.
 
 The provider is whatever `omg init --embedder` accepts (`packages/embedder/README.md`):
 the published `omgbase-embedder` when it is on `PATH`, the monorepo's build
-`node ../../packages/embedder/dist/src/bin.js` (relative to this package; pass
-an absolute path to be safe), or an `http(s)://` endpoint. The local provider
-is transformers.js + `Xenova/gte-base` (768 d); its first run downloads ~435 MB
-into `node_modules/@huggingface/transformers/.cache`, after which it is
-offline. `--dry --embedder <cmd>` proves the semantic task's scripted solution
-end to end (the workspace is embedded, the ranking query runs through the real
-server) in ~12 s on a cached model.
+`node ../../packages/embedder/dist/src/bin.js`, or an `http(s)://` endpoint.
+A **relative path in the command is made absolute** against the shell's
+working directory before it reaches `omg init` (`resolveEmbedder`,
+`src/workspace.ts`): omg spawns the provider with the *workspace* as its
+working directory, so `node packages/embedder/dist/src/bin.js` — the spelling
+the 2026-10-21 run used — pointed at a file that does not exist there; the
+provider died on `MODULE_NOT_FOUND`, `omg --json embed drain` and `embed
+status` exited 0 with **nothing on stdout**, and every omgbase `semantic-find`
+cell died before its first turn with a bare `Unexpected end of JSON input`.
+Both halves are fixed: the path is resolved, and the harness parses omg's JSON
+from the last line that parses (a warning line before it is tolerated) and
+turns empty or non-JSON output into an error that names the command and quotes
+stdout/stderr. A cell whose workspace cannot be built — the provider does not
+start, the queue does not drain — is a **FAIL row** carrying that message
+(`error`, `check_failures: ["harness: …"]`) with a `start` (no tools), an
+`error` and a failing `check` in its transcript, so the report says why. The
+local provider is transformers.js + `Xenova/gte-base` (768 d); its first run
+downloads ~435 MB into `node_modules/@huggingface/transformers/.cache`, after
+which it is offline. `--dry --embedder <cmd>` proves the semantic task's
+scripted solution end to end (the workspace is embedded, the ranking query
+runs through the real server) in ~12 s on a cached model.
 
 ### `--dry`: proving the checks without the model
 
@@ -166,7 +183,8 @@ profile:
   task's corpus — so the stale-plan hook fires exactly as it would for the
   model — and requires every step to succeed (or to fail with the error it
   says it expects) and every check to pass (a retrieval task's solution ends
-  with the final text its `answer` check expects);
+  with the final text its `answer` check expects — the ```` ```answer ````
+  block included);
 - runs the checks against an **untouched** workspace and requires them to
   **fail** (a task may opt out with `trivial_on_fresh: true`; none does today —
   the no-op's `final_text` check discriminates, a retrieval task's `answer`
@@ -178,6 +196,36 @@ Green means every check describes a reachable end state and rejects the
 starting one — and, per profile, that every task is solvable with that
 profile's tools. `--profiles full,minimal,fs` over the 22 tasks is 132 cells in
 ~3 minutes (a timeline workspace takes ~1.6 s to build, an alchemy one ~1 s).
+
+### Rescoring a stored run: `pnpm bench rescore <results-dir>`
+
+`pnpm bench rescore results/<timestamp>` scores a run that already happened
+under the tasks' **current** checks, without a workspace (`src/rescore.ts`).
+Only the checks that need nothing but the final text are re-run — `answer` and
+`final_text` — against each run's stored `final_text`; the checks that needed
+the workspace (`read`, `query`, `unchanged`, `unchanged_all`) are kept exactly
+as recorded in `check_failures` (their failure strings are recognizable: a
+text-only failure starts with `answer` or `final text does not match`). A run
+passes iff no workspace failure remains and the text checks pass; a run that
+never produced a final text (a harness error, a skipped cell) is kept as it
+was. It writes `results.rescored.json` and `report.rescored.md` **next to**
+the originals and never overwrites them; the report's header says it is a
+rescore, in which mode, and lists every verdict that changed; `meta.rescore`
+carries the same in the JSON.
+
+A run recorded **before** the retrieval prompts carried the `answer` block
+sentence (`meta.answer_block !== true` — every run since the block check
+records `answer_block: true`) was answered in prose, so its `answer` checks run
+in **lenient** mode: a check with `must_mention` is judged by it alone (the
+legacy prompts asked for titles, headings, task texts, and those entries were
+the legacy verdict), a check without one needs every expected path somewhere
+in the text in either path form; extra paths are not penalized and `ordered`
+is judged on first occurrences. The 2026-10-21 run rescored this way is
+`results/2026-10-21T02-33-11Z/report.rescored.md`: 48 verdicts flipped to
+pass, all of them the old check's artifacts (the `fs` agents' slash-less paths,
+decoys named while being excluded); what still fails is real — the six
+omgbase `semantic-find` cells the embedder crash took, and `merge-paragraphs`
+under `fs`.
 
 ## The `fs` profile: the filesystem baseline
 
@@ -337,7 +385,7 @@ first brief (the "split and merge" item is two tasks) and the nine
 | `timeline-follow` | retrieval | timeline | **graph traversal**: Aurora's eleven milestones in sequence order from the kickoff, walking the `after:` chain forward (`follow ^docs collect { where after == ^_path }`, two walks — the depth cap is 8); date order is wrong (one milestone slipped) and a sibling project's milestone names Aurora without being in the chain |
 | `timeline-between` | retrieval | timeline | **bounded traversal**: what happened between two named Delta milestones — the three notes strictly between, in order (`frontier` at the far end); decoys are the neighbours just outside |
 | `backlinks-with-context` | retrieval | alchemy | **backlinks + section**: which documents link to `/processes/calcination.md` from their body, and under which heading (`links` rows joined to `_block._section`) — five; decoys mention calcination in prose or in a `see_also` frontmatter list |
-| `aggregate-by-key` | retrieval | timeline | **aggregation**: open milestones per project (`group by project`, `count()`), including the zero (ember), and which has the most (delta, 5); `blocked`/`dropped` are not `open` |
+| `aggregate-by-key` | retrieval | timeline | **aggregation**: open milestones per project (`group by project`, `count()`), including the zero (ember), and which has the most (delta, 5); `blocked`/`dropped` are not `open`; the one retrieval task judged by `must_mention` alone (six counts, no `answer` block) |
 | `open-tasks-across-corpus` | retrieval | timeline | **structure across the corpus**: every unchecked task in the vault with its note (`md:task` nodes, `not checked`) — fourteen among 487 checked ones; the decoy is a `- [ ]` example inside a code fence |
 | `semantic-find` | retrieval | alchemy | **semantic search** (`requires: ["semantic"]`): the lab note arguing repeated purification is not transformation, found by meaning (`order by semantic("…") desc` over paragraphs of lab notes); skipped under full/minimal without `--embedder`; `fs` greps |
 | `rollup-filtered` | retrieval + write | timeline | **find across, then write**: append to `index.md` one line per milestone owned by Mara Lindqvist, done and closed in 2027, by closing date — three across two projects; decoys are her 2026/2028 ones and Mara **Lind**'s `Open day` |
@@ -368,12 +416,25 @@ Checks (`src/types.ts`):
 | `read` | `docs_read { _path }`'s `_raw` bytes `equals` a string, match every `matches` regex, match none of `not_matches` (the check's own `path` member is the harness's name for it; the tool argument is `_path`, surface 5.0) |
 | `unchanged` | the bytes equal the corpus file **and** no `api`-origin commit touched the document (`changes_since`; vacuous under `fs`, where the bytes carry the check) |
 | `final_text` | the model's last assistant text matches the regex |
-| `answer` | a retrieval task's verdict over the model's final text: it mentions every entry of `must_mention`, none of `must_not_mention` (the decoys), and `count.pattern` matches exactly `count.equals` times. An entry is a case-insensitive substring, or a regex when written `/…/` (flags `is`, so `/a[\s\S]*b/` pins an order); `count.pattern` is a regex (`gis`). On failure the answer is quoted |
+| `answer` | a retrieval task's verdict over the model's final text. `paths` is scored against the ```` ```answer ```` block the prompt's closing sentence asks for (`ANSWER_BLOCK_SENTENCE`, `src/types.ts`: "End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line …") and nothing else — the exact set, or the exact sequence when `ordered: true`; the model's leading slash is optional (`practitioners/x.md` = `/practitioners/x.md`), a stray list marker or backticks are dropped; the LAST such block counts. Text outside the block is free: a decoy may be explained and excluded — it fails the run only inside the block. No block fails with a clear message. `must_mention`, optional, is checked over the WHOLE text for the non-path facts (a count, a heading, an order of titles): a case-insensitive substring (a `/`-rooted path entry matches either form), or a regex when written `/…/` (flags `is`, so `/a[\s\S]*b/` pins an order). At least one of `paths`/`must_mention`. `mode: "lenient"` is set only by `pnpm bench rescore` for a run that predates the block (above). On failure the answer is quoted |
 
 A task-level `unchanged_all: true` adds, after the checks: the vault equals the
 corpus file for file on disk (nothing added, removed or edited — judged the
 same under every profile) and `changes_since { origin: "api" }` is empty. Every
 pure retrieval task carries it, so an agent that "helpfully" writes fails.
+
+Eight of the nine retrieval tasks end their prompt with the block sentence and
+carry `paths`: `range-era` (2), `range-window-includes` (6), `backlinks-with-context`
+(5), `open-tasks-across-corpus` (14) and `semantic-find` (1) as sets;
+`timeline-follow` (11), `timeline-between` (3) and `rollup-filtered` (3) as
+ordered sequences. `aggregate-by-key` is the exception by design: its answer
+is six counts, not a set of paths, so it keeps `must_mention` only (one regex
+per project pairing its name with its digit, plus `most … delta`) and asks for
+no block — a block of project index paths in descending order would measure
+something the prompt never asked for. The `fs` baseline is judged by the same
+normalization: its tools print `practitioners/x.md` and the omg tools
+`/practitioners/x.md`, and the check treats them as one path in the block and
+in `must_mention` alike; the tools' output is unchanged.
 
 The hook (`stale-plan-retry` only): `{ "kind": "disk_edit", "on":
 "after_first_plan", "path": "timeline/review.md", "append": "…" }` appends to
@@ -546,7 +607,9 @@ omgbase profiles); the per-profile sections carry the same label.
 
 The "Runs" table lists each run with its verdict (`pass` / `FAIL` / `skip`),
 its check failures (an `answer` failure quotes the answer) and a link to its
-transcript.
+transcript. A `report.rescored.md` beside a `report.md` is the same run under
+the tasks' current text checks (`pnpm bench rescore`, above); its header says
+so and lists the verdicts that changed.
 
 ### Metrics schema (`results.json` → `results[]`)
 
@@ -567,29 +630,39 @@ transcript.
 | `transcript` | `transcripts/<task>.<profile>.<run>.jsonl`, relative to the results directory |
 | `error` | set when the harness or the API failed (the run counts as failed) |
 
+`results.json` is `{ meta, results }`; `meta` carries the model, provider,
+profiles, runs, turn cap, omg version, embedder and `answer_block: true` (the
+retrieval prompts asked for the ```` ```answer ```` block — a rescore of the
+run is strict; a run without it is rescored leniently).
+
 A transcript is one JSON object per line: `start` (system prompt, task prompt,
 the tool names served), `assistant` (the full content incl. thinking blocks,
 `stop_reason`, that request's usage), `tool_call`, `tool_result` (ok / error
 code / ms / the parsed result), `hook`, `end`, `sync` (`fs` only: the sweep's
 `ingested`/`deleted`/`conflicted` paths), `check`, `error` — or, for a skipped
-cell, the single line `skip` (task, profile, run, reason).
+cell, the single line `skip` (task, profile, run, reason). A cell whose
+workspace could not be built (the embedding provider did not start) has a
+`start` with no tools, an `error` and a failing `check`.
 
 ## Layout
 
 ```
 src/corpus.ts      the timeline corpus: authored projects/milestones/people/open tasks + seeded filler → corpora/timeline (pnpm corpus)
 src/workspace.ts   fresh workspace from a named corpus under the seams (the minter seam where the corpus allows); fixture bytes;
-                   syncWorkspace (omg sync, the fs profile's sweep); embedWorkspace (--embedder: drain + wait); vaultDiff
+                   syncWorkspace (omg sync, the fs profile's sweep); embedWorkspace (--embedder: drain + wait); resolveEmbedder;
+                   parseOmgJson (the last JSON line of an omg --json command, or an error quoting stdout/stderr); vaultDiff
 src/server.ts      the ToolServer seam (tools / call / close) and CallOutcome
 src/mcp.ts         OmgServer: spawn omg mcp, tools/list → Anthropic tool defs, forward calls
 src/fs-server.ts   FsServer: the fs profile's seven file tools over vault/, path safety, the exact-match edit rule
 src/model.ts       the Model seam: ClaudeModel (SDK; the two cache breakpoints; isCredentialError) and ScriptedModel (a task's solution)
 src/agent.ts       the tool-use loop, the two system prompts, the hook, the per-run metrics and events
-src/checks.ts      the five check kinds + unchanged_all (always through an omg server; the vault compared on disk)
+src/checks.ts      the five check kinds + unchanged_all (always through an omg server; the vault compared on disk);
+                   the answer block parser (answerBlock, blockPaths, normalizePath) and the strict/lenient answer check
 src/tasks.ts       load + validate tasks/*.json (corpus, requires, checks incl. answer, solution + solution_fs)
 src/pricing.ts     list prices per bare model id; a run's cost from its four counters
 src/report.ts      results → report.md (corpus column, per-corpus totals, skipped cells)
 src/bench.ts       the CLI: cells, the agent/check servers per profile, --embedder and the skip rule, --dry, results/<timestamp>/, the credential probe
+src/rescore.ts     pnpm bench rescore <dir>: a stored run under the tasks' current text checks → results.rescored.json + report.rescored.md
 tasks/*.json       the twenty-two tasks (thirteen editing, nine retrieval)
 corpora/timeline/  the committed timeline snapshot (348 files; regenerate with pnpm corpus)
 test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end to end
@@ -597,13 +670,16 @@ test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end
                    the hook fires; FsServer's tools and the fs profile end to end
                    (hook before the first write, sweep, omgbase checks); the corpus
                    is deterministic and its oracle queries answer what the tasks
-                   expect; the answer and unchanged_all checks; one dry run per
-                   retrieval task (the semantic one's skip path); the report
-                   renders; bench writes its files and skips what it must
+                   expect; the answer check (block parsing, path forms, set vs
+                   ordered, the missing block, lenient mode) and unchanged_all; one
+                   dry run per retrieval task (the semantic one's skip path); the
+                   rescore over a fixture results.json; omg's JSON output and the
+                   embedder path; the report renders; bench writes its files, skips
+                   what it must and records a provider that cannot start as a FAIL
 ```
 
 Gates: `pnpm --filter agent-bench test`, `lint`, `typecheck`,
 `pnpm bench --dry --profiles full,minimal,fs` (and, with a local embedder,
-`pnpm bench --dry --tasks semantic-find --embedder <cmd>`).
+`pnpm bench --dry --tasks semantic-find --profiles full,minimal --embedder <cmd>`).
 Sources are TypeScript run directly by Node's type stripping (Node ≥ 22.18;
 `erasableSyntaxOnly`), no build step.

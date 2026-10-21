@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OmgServer } from "../src/mcp.ts";
-import { createWorkspace, fixtureBytes, type Workspace } from "../src/workspace.ts";
+import { createWorkspace, fixtureBytes, parseOmgJson, resolveEmbedder, type Workspace } from "../src/workspace.ts";
 
 const made: Workspace[] = [];
 const spawned: OmgServer[] = [];
@@ -85,5 +88,31 @@ describe("the workspace", () => {
     expect(hidden.ok).toBe(false);
     expect(hidden.error_code).toBe("unknown_tool");
     expect((await server.call("version", {})).result).toMatchObject({ profile: "minimal" });
+  });
+});
+
+describe("omg's JSON output", () => {
+  it("takes the last line that parses, tolerating a warning line before it; empty or non-JSON output is an error naming the command and what was printed", () => {
+    expect(parseOmgJson({ stdout: '{"queued":0}\n', stderr: "" }, "omg --json embed status")).toEqual({ queued: 0 });
+    expect(parseOmgJson({ stdout: 'warning: provider slow\n{"queued":3,"docsQueued":1}\n', stderr: "" }, "x")).toEqual({ queued: 3, docsQueued: 1 });
+    expect(parseOmgJson({ stdout: '{"a":1}\n{"a":2}', stderr: "" }, "x")).toEqual({ a: 2 });
+    expect(parseOmgJson({ stdout: "[1,2]\n", stderr: "" }, "x")).toEqual([1, 2]);
+    // the provider crash: exit 0, nothing on stdout, the module error on stderr — the bare `Unexpected end of JSON input` of the 2026-10-21 run
+    expect(() => parseOmgJson({ stdout: "", stderr: "Error: Cannot find module '/tmp/ws/packages/embedder/dist/src/bin.js'\n" }, "omg --json embed status"))
+      .toThrow("omg --json embed status printed nothing on stdout; stderr: \"Error: Cannot find module '/tmp/ws/packages/embedder/dist/src/bin.js'\"");
+    expect(() => parseOmgJson({ stdout: "not json at all\n", stderr: "" }, "omg --json sync")).toThrow('omg --json sync printed no JSON on stdout ("not json at all")');
+  });
+
+  it("resolveEmbedder makes a relative file path in the command absolute (omg spawns the provider inside the workspace); URLs, absolute paths and PATH commands pass through", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-bench-embedder-"));
+    mkdirSync(join(root, "packages/embedder/dist/src"), { recursive: true });
+    writeFileSync(join(root, "packages/embedder/dist/src/bin.js"), "");
+    expect(resolveEmbedder("node packages/embedder/dist/src/bin.js", root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")}`);
+    expect(resolveEmbedder("node ./packages/embedder/dist/src/bin.js --flag", root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")} --flag`);
+    expect(resolveEmbedder("node packages/embedder/dist/src/missing.js", root)).toBe("node packages/embedder/dist/src/missing.js"); // not a file: left for omg to report
+    expect(resolveEmbedder("omgbase-embedder", root)).toBe("omgbase-embedder");
+    expect(resolveEmbedder("http://localhost:8080/embed", root)).toBe("http://localhost:8080/embed");
+    expect(resolveEmbedder(`node ${join(root, "packages/embedder/dist/src/bin.js")}`, root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")}`);
+    rmSync(root, { recursive: true, force: true });
   });
 });

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { answerBlock, blockPaths, checkAnswer } from "../src/checks.ts";
 import { FS_TOOL_NAMES } from "../src/fs-server.ts";
 import { loadTasks, validateTask } from "../src/tasks.ts";
-import { isWriteTool } from "../src/types.ts";
+import { ANSWER_BLOCK_SENTENCE, isWriteTool, type AnswerCheck } from "../src/types.ts";
+import { corpusDir, DEFAULT_CORPUS } from "../src/workspace.ts";
 
 const VALID = {
   id: "demo",
@@ -32,7 +36,25 @@ describe("tasks/*.json", () => {
     expect(timeline).toEqual(["aggregate-by-key", "open-tasks-across-corpus", "range-window-includes", "rollup-filtered", "timeline-between", "timeline-follow"]);
     for (const id of retrieval) {
       const t = tasks.find((x) => x.id === id)!;
-      expect(t.checks.some((c) => c.kind === "answer")).toBe(true);
+      const answer = t.checks.find((c) => c.kind === "answer") as AnswerCheck | undefined;
+      expect(answer).toBeDefined();
+      if (id === "aggregate-by-key") {
+        // six counts, not a set of paths: must_mention only, no block asked for
+        expect(answer!.paths).toBeUndefined();
+        expect(answer!.must_mention!.length).toBeGreaterThan(0);
+        expect(t.prompt.endsWith(ANSWER_BLOCK_SENTENCE)).toBe(false);
+      } else {
+        // the block: the prompt asks for it, every expected path is a corpus document, both oracles end with it and pass it strictly
+        expect(t.prompt.endsWith(` ${ANSWER_BLOCK_SENTENCE}`)).toBe(true);
+        expect(answer!.paths!.length).toBeGreaterThan(0);
+        for (const p of answer!.paths!) expect(existsSync(join(corpusDir(t.corpus ?? DEFAULT_CORPUS), p.slice(1)))).toBe(true);
+        for (const sol of [t.solution, t.solution_fs]) {
+          expect(blockPaths(answerBlock(sol.final_text)!)).toEqual(answer!.paths);
+          expect(checkAnswer(answer!, sol.final_text)).toEqual([]);
+        }
+        expect(checkAnswer(answer!, "")).not.toEqual([]);
+      }
+      expect(answer!.mode).toBeUndefined();
       if (id === "rollup-filtered") {
         expect(t.unchanged_all).toBeUndefined();
         expect(t.checks.map((c) => c.kind)).toEqual(["read", "answer"]);
@@ -44,6 +66,8 @@ describe("tasks/*.json", () => {
       }
     }
     expect(tasks.filter((t) => t.requires).map((t) => t.id)).toEqual(["semantic-find"]);
+    // the ordered ones: a chain, a bounded walk, a by-date rollup
+    expect(tasks.filter((t) => t.checks.some((c) => c.kind === "answer" && c.ordered)).map((t) => t.id)).toEqual(["rollup-filtered", "timeline-between", "timeline-follow"]);
     // the editing tasks are untouched: alchemy, no answer check
     for (const t of tasks) if (!retrieval.includes(t.id)) {
       expect(t.corpus).toBeUndefined();

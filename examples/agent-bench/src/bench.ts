@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // pnpm bench [--profiles full,minimal,fs] [--runs 3] [--tasks a,b] [--model <id>]
 //            [--effort high] [--max-turns 20] [--out results] [--embedder <cmd|url>] [--dry]
+// pnpm bench rescore <results-dir>   (src/rescore.ts: the stored run under the tasks' current text checks)
 //
 // Every (task, profile, run) cell: a fresh workspace from the task's corpus
 // (alchemy or timeline), one tool server under the profile — `omg mcp` for
@@ -15,6 +16,10 @@
 // `skipped: "needs --embedder"`, neither passed nor failed, and a one-line
 // transcript. With `--embedder <cmd|url>` the workspace of such a task is built
 // with `omg init --embedder <cmd>` and drained (`omg embed drain`) before the loop.
+// A relative path in the command is made absolute first: omg spawns the provider
+// inside the workspace. A cell whose workspace cannot be built (the provider does
+// not start, the queue does not drain) is a FAIL row carrying the message, with a
+// `start`, an `error` and a failing `check` in its transcript.
 //
 // --dry: no model. Each task's scripted solution for the profile (`solution`, or
 // `solution_fs` under `fs`) is replayed through the same loop (so the hook fires
@@ -40,7 +45,8 @@ import { renderReport, type ReportMeta } from "./report.ts";
 import type { ToolServer } from "./server.ts";
 import { loadTasks } from "./tasks.ts";
 import { isFsProfile, type Profile, type RunMetrics, type Solution, type Task, type TranscriptEvent } from "./types.ts";
-import { createWorkspace, embedWorkspace, syncWorkspace, DEFAULT_CORPUS, PACKAGE_ROOT, type Workspace } from "./workspace.ts";
+import { rescoreMain } from "./rescore.ts";
+import { createWorkspace, embedWorkspace, resolveEmbedder, syncWorkspace, DEFAULT_CORPUS, PACKAGE_ROOT, type Workspace } from "./workspace.ts";
 
 export interface BenchOptions {
   profiles: Profile[];
@@ -72,11 +78,14 @@ export const USAGE = `usage: pnpm bench [--profiles full,minimal,fs] [--runs 3] 
           with \`omg init --embedder\` and drained before the loop. Without it those tasks are reported as
           skipped under full/minimal (fs runs them with grep — that is the comparison)
   --dry   validate tasks and prove every check: replay each task's scripted solution against a
-          fresh workspace (checks must pass), then run the checks on an untouched one (must fail)`;
+          fresh workspace (checks must pass), then run the checks on an untouched one (must fail)
+  rescore <results-dir>  re-run the text-only checks (answer, final_text) of a stored run against the
+          tasks' CURRENT definitions and write results.rescored.json + report.rescored.md beside the
+          originals (never overwriting); a run that predates the answer block is scored leniently`;
 
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
-export function parseBenchArgs(argv: string[], env: Record<string, string | undefined> = process.env): BenchOptions | { help: true } | { error: string } {
+export function parseBenchArgs(argv: string[], env: Record<string, string | undefined> = process.env, cwd = process.cwd()): BenchOptions | { help: true } | { error: string } {
   let v: ReturnType<typeof parseArgs>["values"];
   try {
     ({ values: v } = parseArgs({
@@ -118,7 +127,7 @@ export function parseBenchArgs(argv: string[], env: Record<string, string | unde
     effort: v.effort as BenchOptions["effort"],
     maxTurns,
     out: v.out as string,
-    ...(v.embedder ? { embedder: v.embedder as string } : {}),
+    ...(v.embedder ? { embedder: resolveEmbedder(v.embedder as string, cwd) } : {}),
     dry: Boolean(v.dry),
   };
 }
@@ -263,9 +272,14 @@ export async function runCell(args: {
   try {
     workspace = workspaceFor(task, profile, args.embedder);
   } catch (e) {
+    // The cell never reached the model: a `start` with no tools, the error, a failing check — and a FAIL row carrying the message.
     const message = e instanceof Error ? e.message : String(e);
-    onEvent({ type: "error", t: new Date().toISOString(), message });
-    return { ...base, error: message, check_failures: [`harness: ${message}`] };
+    const t = new Date().toISOString();
+    onEvent({ type: "start", t, task: task.id, profile, run, model: model.name, system: systemPromptFor(profile), prompt: task.prompt, tools: [] });
+    onEvent({ type: "error", t, message });
+    const failures = [`harness: ${message}`];
+    onEvent({ type: "check", t, passed: false, failures });
+    return { ...base, error: message, check_failures: failures };
   }
   let server: ToolServer | null = null;
   let checker: OmgServer | null = null;
@@ -399,7 +413,7 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
         }
         // keep the report current after every cell, so an interrupted run still has one
         if (omgVersion === undefined) omgVersion = await readOmgVersion();
-        const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}), ...(opts.embedder ? { embedder: opts.embedder } : {}) };
+        const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}), ...(opts.embedder ? { embedder: opts.embedder } : {}), answer_block: true };
         writeFileSync(join(dir, "results.json"), JSON.stringify({ meta, results }, null, 2) + "\n");
         writeFileSync(join(dir, "report.md"), renderReport(results, meta));
       }
@@ -427,6 +441,7 @@ async function readOmgVersion(): Promise<string | undefined> {
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "rescore") return rescoreMain(process.argv.slice(3));
   const parsed = parseBenchArgs(process.argv.slice(2));
   if ("help" in parsed) {
     console.log(USAGE);

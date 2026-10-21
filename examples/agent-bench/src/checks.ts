@@ -6,7 +6,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { OmgServer } from "./mcp.ts";
 import { answerRegex } from "./tasks.ts";
-import type { AnswerCheck, Check, Task } from "./types.ts";
+import type { AnswerCheck, Check, FinalTextCheck, Task } from "./types.ts";
 import { DEFAULT_CORPUS, fixtureBytes, vaultDiff, type Workspace } from "./workspace.ts";
 
 export interface CheckContext {
@@ -37,23 +37,110 @@ async function apiCommits(server: OmgServer): Promise<{ commit: string; paths: s
   return digests.map((d) => ({ commit: d.commit, paths: d.revisions.map((rev) => rev._path) }));
 }
 
-/** Does the text mention the entry — as a case-insensitive substring, or by the `/…/` regex? */
+/**
+ * Does the text mention the entry — as a case-insensitive substring, or by the `/…/`
+ * regex? A substring entry rooted at `/` matches either path form: the `fs` tools
+ * print `practitioners/x.md` and the omg tools `/practitioners/x.md`, and both are
+ * the one document.
+ */
 export function mentions(text: string, entry: string): boolean {
   const re = answerRegex(entry);
-  return re ? re.test(text) : text.toLowerCase().includes(entry.toLowerCase());
+  if (re) return re.test(text);
+  const t = text.toLowerCase();
+  const e = entry.toLowerCase();
+  return t.includes(e) || (e.startsWith("/") && t.includes(e.slice(1)));
 }
 
-/** The `answer` check over a final text (pure; exported for the tests). */
-export function checkAnswer(check: AnswerCheck, finalText: string): string[] {
-  const failures: string[] = [];
-  for (const e of check.must_mention) if (!mentions(finalText, e)) failures.push(`answer does not mention ${JSON.stringify(e)}`);
-  for (const e of check.must_not_mention ?? []) if (mentions(finalText, e)) failures.push(`answer mentions the decoy ${JSON.stringify(e)}`);
-  if (check.count) {
-    const n = (finalText.match(new RegExp(check.count.pattern, "gis")) ?? []).length;
-    if (n !== check.count.equals) failures.push(`answer matches /${check.count.pattern}/ ${n} time(s) ≠ ${check.count.equals}`);
+/** The repository-root form of a path as the model may have written it: `` `a/b.md` `` → `/a/b.md` (backticks, surrounding quotes and whitespace dropped, one leading slash). */
+export function normalizePath(p: string): string {
+  const bare = p.trim().replace(/^[`'"]+|[`'"]+$/g, "").trim().replace(/^\/+/, "");
+  return `/${bare}`;
+}
+
+/** The body of the LAST fenced code block tagged `answer` (```answer … ```), or null when the text has none. */
+export function answerBlock(text: string): string | null {
+  const re = /^[ \t]*(`{3,}|~{3,})[ \t]*answer[ \t]*\r?\n([\s\S]*?)\r?\n?^[ \t]*\1[ \t]*$/gim;
+  let body: string | null = null;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) body = m[2] ?? "";
+  return body;
+}
+
+/**
+ * The paths an `answer` block lists, normalized, in order, each once: one per line;
+ * a list marker (`- `, `* `, `1. `) the model added anyway is dropped, so is a blank
+ * line. Anything else on a line is part of the "path" and will not match — the
+ * block is for paths only.
+ */
+export function blockPaths(body: string): string[] {
+  const out: string[] = [];
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim().replace(/^(?:[-*+]|\d+[.)])\s+/, "");
+    if (line === "") continue;
+    const p = normalizePath(line);
+    if (!out.includes(p)) out.push(p);
   }
+  return out;
+}
+
+/** Lenient mode: where the path first appears in the text, in either form (−1 when it does not). */
+function foundLeniently(text: string, path: string): number {
+  return text.toLowerCase().indexOf(normalizePath(path).slice(1).toLowerCase());
+}
+
+/** The `paths` half of the `answer` check: strict (the block) or lenient (anywhere in the text). */
+function checkPaths(check: AnswerCheck, finalText: string, mode: "strict" | "lenient"): string[] {
+  const want = (check.paths ?? []).map(normalizePath);
+  const failures: string[] = [];
+  if (mode === "lenient") {
+    const positions = want.map((p) => [p, foundLeniently(finalText, p)] as const);
+    for (const [p, at] of positions) if (at < 0) failures.push(`answer (lenient) does not mention ${p}`);
+    if (check.ordered && failures.length === 0) {
+      const order = positions.map(([, at]) => at);
+      if (order.some((at, i) => i > 0 && at < order[i - 1]!)) failures.push(`answer (lenient) names the paths out of order: ${want.join(", ")} expected in that order`);
+    }
+    return failures;
+  }
+  const body = answerBlock(finalText);
+  if (body === null) return ["answer: no ```answer block in the final text (the prompt asks for one listing the matching paths, one per line)"];
+  const got = blockPaths(body);
+  const missing = want.filter((p) => !got.includes(p));
+  const extra = got.filter((p) => !want.includes(p));
+  if (missing.length > 0) failures.push(`answer block is missing ${missing.join(", ")}`);
+  if (extra.length > 0) failures.push(`answer block lists ${extra.length} path(s) that do not belong: ${extra.join(", ")}`);
+  if (check.ordered && failures.length === 0 && got.some((p, i) => p !== want[i])) failures.push(`answer block order differs: got ${got.join(", ")}; expected ${want.join(", ")}`);
+  return failures;
+}
+
+/**
+ * The `answer` check over a final text (pure; exported for the tests and the
+ * rescore). `mode` overrides the check's own (`pnpm bench rescore` passes "lenient"
+ * for a run that predates the block sentence).
+ */
+export function checkAnswer(check: AnswerCheck, finalText: string, mode?: "strict" | "lenient"): string[] {
+  const failures: string[] = [];
+  const m = mode ?? check.mode ?? "strict";
+  // Lenient: a check with `must_mention` is judged by it alone — the legacy prompts asked for prose facts (titles, headings, task
+  // texts) and those entries were the legacy verdict; `paths` entered with the block sentence. Only a check with nothing else falls
+  // back to the paths anywhere in the text.
+  if (check.paths && !(m === "lenient" && check.must_mention)) failures.push(...checkPaths(check, finalText, m));
+  for (const e of check.must_mention ?? []) if (!mentions(finalText, e)) failures.push(`answer does not mention ${JSON.stringify(e)}`);
   if (failures.length > 0) failures.push(`answer was: ${describe(finalText)}`);
   return failures;
+}
+
+/** The checks that need only the final text — what a rescore can re-run without the workspace. */
+export function isTextOnly(check: Check): check is AnswerCheck | FinalTextCheck {
+  return check.kind === "answer" || check.kind === "final_text";
+}
+
+/** Was this stored failure string produced by a text-only check (`answer`, `final_text`)? The rescore drops these and keeps the rest. */
+export function isTextOnlyFailure(failure: string): boolean {
+  return /^(answer\b|final text does not match)/.test(failure);
+}
+
+/** The `final_text` check over a final text (pure). */
+export function checkFinalText(check: FinalTextCheck, finalText: string): string[] {
+  return new RegExp(check.matches, "is").test(finalText) ? [] : [`final text does not match /${check.matches}/: ${describe(finalText)}`];
 }
 
 export async function runCheck(check: Check, ctx: CheckContext): Promise<string[]> {
@@ -100,10 +187,8 @@ export async function runCheck(check: Check, ctx: CheckContext): Promise<string[
       if (touched.length > 0) failures.push(`${check.path}: ${touched.length} api commit(s) touched it (${touched.map((c) => c.commit).join(", ")})`);
       return failures;
     }
-    case "final_text": {
-      if (!new RegExp(check.matches, "is").test(ctx.finalText)) failures.push(`final text does not match /${check.matches}/: ${describe(ctx.finalText)}`);
-      return failures;
-    }
+    case "final_text":
+      return checkFinalText(check, ctx.finalText);
     case "answer":
       return checkAnswer(check, ctx.finalText);
   }

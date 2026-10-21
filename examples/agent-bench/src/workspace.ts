@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TIMELINE_DIR, diffTrees, readTree } from "./corpus.ts";
 
@@ -83,11 +83,52 @@ export function workspaceEnv(dir: string, sequentialIds = true): NodeJS.ProcessE
   };
 }
 
-function omg(dir: string, env: NodeJS.ProcessEnv, argv: string[], timeout = 60_000): string {
+interface OmgOutput {
+  stdout: string;
+  stderr: string;
+}
+
+function omgRun(dir: string, env: NodeJS.ProcessEnv, argv: string[], timeout = 60_000): OmgOutput {
   const r = spawnSync(process.execPath, [OMG, "--no-color", ...argv], { cwd: dir, env, encoding: "utf8", timeout });
-  if (r.error) throw new Error(`spawn omg ${argv.join(" ")}: ${r.error.message}`);
+  if (r.error) throw new Error(`spawn omg ${argv.join(" ")}: ${r.error.message}${r.signal ? ` (signal ${r.signal})` : ""}`);
   if (r.status !== 0) throw new Error(`omg ${argv.join(" ")} exited ${r.status}\n${r.stdout}${r.stderr}`);
-  return r.stdout;
+  return { stdout: r.stdout, stderr: r.stderr };
+}
+
+function omg(dir: string, env: NodeJS.ProcessEnv, argv: string[], timeout = 60_000): string {
+  return omgRun(dir, env, argv, timeout).stdout;
+}
+
+/** The head and the tail of a long output (a crash's first line says what; its last lines say where). */
+function excerpt(s: string, max = 600): string {
+  const t = s.trim();
+  return t.length > max ? `${t.slice(0, max / 2)} … ${t.slice(-max / 2)}` : t;
+}
+
+/**
+ * The JSON an `omg --json <cmd>` printed: the LAST line of stdout that parses (a
+ * warning or progress line before it is tolerated). Empty or unparsable output is an
+ * error that carries the command and whatever stdout/stderr held — the way the
+ * embedding provider's crash surfaced as a bare `Unexpected end of JSON input`
+ * (`omg embed status` exits 0 with nothing on stdout when the provider cannot start).
+ */
+export function parseOmgJson<T>(out: OmgOutput, command: string): T {
+  const lines = out.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!;
+    if (!/^[[{]/.test(line)) continue;
+    try {
+      return JSON.parse(line) as T;
+    } catch {
+      // not this line
+    }
+  }
+  const why = lines.length === 0 ? "printed nothing on stdout" : `printed no JSON on stdout (${JSON.stringify(excerpt(out.stdout, 200))})`;
+  throw new Error(`${command} ${why}${out.stderr.trim() ? `; stderr: ${JSON.stringify(excerpt(out.stderr))}` : ""}`);
+}
+
+function omgJson<T>(dir: string, env: NodeJS.ProcessEnv, argv: string[], timeout = 60_000): T {
+  return parseOmgJson<T>(omgRun(dir, env, argv, timeout), `omg ${argv.join(" ")}`);
 }
 
 /** What the one-shot sweep found (`omg sync --json`; spec/sync §4.3): paths in the `/`-rooted reference form. */
@@ -109,8 +150,7 @@ export interface SweepResult {
  * server its checks run through.
  */
 export function syncWorkspace(ws: Workspace): SweepResult {
-  const out = omg(ws.dir, ws.env, ["--json", "sync"]);
-  const r = JSON.parse(out) as SweepResult;
+  const r = omgJson<SweepResult>(ws.dir, ws.env, ["--json", "sync"]);
   return { scanned: r.scanned, ingested: r.ingested, deleted: r.deleted, conflicted: r.conflicted, changed: r.changed };
 }
 
@@ -123,25 +163,49 @@ export interface EmbedStatus {
 }
 
 export function embedStatus(ws: Workspace): EmbedStatus {
-  return JSON.parse(omg(ws.dir, ws.env, ["--json", "embed", "status"])) as EmbedStatus;
+  const s = omgJson<Partial<EmbedStatus>>(ws.dir, ws.env, ["--json", "embed", "status"]);
+  if (typeof s.queued !== "number") throw new Error(`omg --json embed status answered without a numeric \`queued\`: ${JSON.stringify(s)}`);
+  return s as EmbedStatus;
 }
 
 /**
  * Embed everything now: `omg embed drain` (the provider is spawned, every queued
  * block and document embedded, the provider released), then wait until `omg embed
  * status` reports an empty queue — so a `semantic(…)` query has every vector it needs
- * before the agent's first turn. Throws when the queue does not drain.
+ * before the agent's first turn. Throws, naming the provider command and what omg
+ * printed, when the drain or the status fails or the queue does not drain.
  */
 export function embedWorkspace(ws: Workspace, attempts = 5): EmbedStatus {
   if (!ws.embedder) throw new Error("embedWorkspace: the workspace was created without an embedder");
-  omg(ws.dir, ws.env, ["--json", "embed", "drain"], 600_000);
-  let status = embedStatus(ws);
-  for (let i = 1; i < attempts && (status.queued > 0 || (status.docsQueued ?? 0) > 0); i++) {
-    omg(ws.dir, ws.env, ["--json", "embed", "drain"], 600_000);
-    status = embedStatus(ws);
+  try {
+    omgJson(ws.dir, ws.env, ["--json", "embed", "drain"], 600_000);
+    let status = embedStatus(ws);
+    for (let i = 1; i < attempts && (status.queued > 0 || (status.docsQueued ?? 0) > 0); i++) {
+      omgJson(ws.dir, ws.env, ["--json", "embed", "drain"], 600_000);
+      status = embedStatus(ws);
+    }
+    if (status.queued > 0 || (status.docsQueued ?? 0) > 0) throw new Error(`the embedding queue did not drain: ${JSON.stringify(status)}`);
+    return status;
+  } catch (e) {
+    throw new Error(`embedding the workspace with provider ${JSON.stringify(ws.embedder)} failed — ${e instanceof Error ? e.message : String(e)}`, { cause: e });
   }
-  if (status.queued > 0 || (status.docsQueued ?? 0) > 0) throw new Error(`the embedding queue did not drain: ${JSON.stringify(status)}`);
-  return status;
+}
+
+/**
+ * The `--embedder` value as `omg init` should store it. omg spawns the provider
+ * with the WORKSPACE as its working directory, so a command naming a file by a
+ * path relative to the shell (`node packages/embedder/dist/src/bin.js`) cannot be
+ * found there — that was the bench's `Unexpected end of JSON input`. Every
+ * whitespace-separated token that is a relative path to an existing file is made
+ * absolute against `cwd`; a URL, an absolute path and a bare command on PATH
+ * (`omgbase-embedder`) pass through unchanged.
+ */
+export function resolveEmbedder(embedder: string, cwd = process.cwd()): string {
+  if (/^https?:\/\//i.test(embedder)) return embedder;
+  return embedder
+    .split(/(\s+)/)
+    .map((tok) => (/\S/.test(tok) && !isAbsolute(tok) && /[/\\]|\.[cm]?js$/.test(tok) && existsSync(resolve(cwd, tok)) ? resolve(cwd, tok) : tok))
+    .join("");
 }
 
 export interface WorkspaceOptions {

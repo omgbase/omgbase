@@ -78,19 +78,37 @@ export interface FinalTextCheck {
 }
 
 /**
- * `answer`: a retrieval task ends with an ANSWER, not a write — the model's final
- * text must mention every entry of `must_mention` and none of `must_not_mention`
- * (the decoys), and `count.pattern` must match exactly `count.equals` times. An
- * entry is a case-insensitive substring, or a regex when written `/…/` (flags
- * "is" — so `/a[\s\S]*b/` asserts order); `count.pattern` is always a regex
- * (flags "gis").
+ * `answer`: a retrieval task ends with an ANSWER, not a write. The prompt's closing
+ * sentence (`ANSWER_BLOCK_SENTENCE`) asks for a fenced code block tagged `answer`
+ * listing ONLY the matching note paths, one per line; `paths` is scored against
+ * that block and nothing else — the exact set (or the exact sequence when
+ * `ordered`), a leading slash optional on the model's side, so `practitioners/x.md`
+ * and `/practitioners/x.md` are one path. Text outside the block is free: a decoy
+ * may be discussed, explained, excluded — it fails only when it is IN the block. A
+ * missing block fails with a clear message. `must_mention` is an optional check over
+ * the WHOLE text for the non-path facts (a count, a heading name, an order of
+ * titles): an entry is a case-insensitive substring (a `/…`-rooted path entry matches
+ * either path form), or a regex when written `/…/` (flags "is" — so `/a[\s\S]*b/`
+ * asserts order). At least one of `paths` / `must_mention` is required.
+ *
+ * `mode` is "strict" (default: the block) or "lenient" — for a run recorded BEFORE
+ * the block sentence existed (`meta.answer_block !== true`), whose prompts asked for
+ * prose and whose verdict was `must_mention`: a check WITH `must_mention` is judged by
+ * it alone; a check without one needs every expected path somewhere in the text
+ * (either form), extra paths are not penalized, and `ordered` is judged on first
+ * occurrences. `pnpm bench rescore` sets it; a task file never does.
  */
 export interface AnswerCheck {
   kind: "answer";
-  must_mention: string[];
-  must_not_mention?: string[];
-  count?: { pattern: string; equals: number };
+  paths?: string[];
+  ordered?: boolean;
+  mode?: "strict" | "lenient";
+  must_mention?: string[];
 }
+
+/** The sentence every retrieval task with `paths` ends its prompt with (the tests pin it). */
+export const ANSWER_BLOCK_SENTENCE =
+  "End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.";
 
 export type Check = QueryCheck | ReadCheck | UnchangedCheck | FinalTextCheck | AnswerCheck;
 

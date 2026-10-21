@@ -1,20 +1,27 @@
 {
   "id": "range-window-includes",
   "corpus": "timeline",
-  "prompt": "Which milestones of the Meridian programme were in flight on 2027-03-15 — that is, whose `window` frontmatter range (`first-day..last-day`, both ends inclusive) contains that date? Consider milestone notes only (`type: milestone`), not project or journal notes. List only the matches, each with its title and path; do not name milestones that were not in flight. Change nothing.",
+  "prompt": "Which milestones of the Meridian programme were in flight on 2027-03-15 — that is, whose `window` frontmatter range (`first-day..last-day`, both ends inclusive) contains that date? Consider milestone notes only (`type: milestone`), not project or journal notes. List only the matches, each with its title and path; do not name milestones that were not in flight. Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "unchanged_all": true,
   "checks": [
     {
       "kind": "answer",
-      "must_mention": [
-        "Bench alignment", "/projects/aurora/bench-alignment.md",
-        "Drainage works", "/projects/basalt/drainage-works.md",
-        "Shutter fabrication", "/projects/cirrus/shutter-fabrication.md",
-        "Pipeline v1", "/projects/delta/pipeline-v1.md",
-        "Chiller commissioning", "/projects/ember/chiller-commissioning.md",
-        "Visitor centre brief", "/projects/fjord/visitor-centre-brief.md"
+      "paths": [
+        "/projects/aurora/bench-alignment.md",
+        "/projects/basalt/drainage-works.md",
+        "/projects/cirrus/shutter-fabrication.md",
+        "/projects/delta/pipeline-v1.md",
+        "/projects/ember/chiller-commissioning.md",
+        "/projects/fjord/visitor-centre-brief.md"
       ],
-      "must_not_mention": ["Pier foundation pour", "Integration with the dome", "Battery backup", "Partner agreements", "journal/2027-03"]
+      "must_mention": [
+        "Bench alignment",
+        "Drainage works",
+        "Shutter fabrication",
+        "Pipeline v1",
+        "Chiller commissioning",
+        "Visitor centre brief"
+      ]
     }
   ],
   "solution": {
@@ -26,7 +33,7 @@
         }
       }
     ],
-    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30)."
+    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30).\n\n```answer\n/projects/aurora/bench-alignment.md\n/projects/basalt/drainage-works.md\n/projects/cirrus/shutter-fabrication.md\n/projects/delta/pipeline-v1.md\n/projects/ember/chiller-commissioning.md\n/projects/fjord/visitor-centre-brief.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -45,7 +52,7 @@
         }
       }
     ],
-    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30)."
+    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30).\n\n```answer\n/projects/aurora/bench-alignment.md\n/projects/basalt/drainage-works.md\n/projects/cirrus/shutter-fabrication.md\n/projects/delta/pipeline-v1.md\n/projects/ember/chiller-commissioning.md\n/projects/fjord/visitor-centre-brief.md\n```"
   },
-  "notes": "Range inclusion over a date-shaped frontmatter string: the engine stores `window: 2027-02-01..2027-03-15` as a range (spec/properties §2.2 — full ISO dates; a `YYYY-MM` bound is not range-shaped, which is why the corpus uses days) and `\"2027-03-15\" in range(window)` tests it with inclusive ends. Boundary decoys: bench-alignment and chiller-commissioning END on the date and visitor-centre-brief STARTS on it (all three in flight); foundation-pour ends 03-14, integration-with-dome and battery-backup start 03-16 (not); partner-agreements ends 03-12 but was closed 03-15 (a date that is not the window); the journal for 2027-03 and the six project indexes also carry windows that contain the date — `type == \"milestone\"` excludes them. On bare files: grep the 69 `window:` lines under projects/ (63 milestones + 6 project indexes) and compare dates by hand, then grep the titles."
+  "notes": "Range inclusion over a date-shaped frontmatter string: the engine stores `window: 2027-02-01..2027-03-15` as a range (spec/properties §2.2 — full ISO dates; a `YYYY-MM` bound is not range-shaped, which is why the corpus uses days) and `\"2027-03-15\" in range(window)` tests it with inclusive ends. Boundary decoys: bench-alignment and chiller-commissioning END on the date and visitor-centre-brief STARTS on it (all three in flight); foundation-pour ends 03-14, integration-with-dome and battery-backup start 03-16 (not); partner-agreements ends 03-12 but was closed 03-15 (a date that is not the window); the journal for 2027-03 and the six project indexes also carry windows that contain the date — `type == \"milestone\"` excludes them. On bare files: grep the 69 `window:` lines under projects/ (63 milestones + 6 project indexes) and compare dates by hand, then grep the titles. The `answer` block is the exact set of the six paths (any order); the near misses may be discussed in the prose — they fail the run only inside the block. The six titles stay in `must_mention`."
 }

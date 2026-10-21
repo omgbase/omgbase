@@ -1,12 +1,18 @@
 {
   "id": "range-era",
-  "prompt": "Which practitioners in this knowledge base worked between 700 and 1600 CE inclusive, going by the `era` frontmatter field of the practitioner notes (`type: practitioner`)? Answer with each one's name and note path. List only the practitioners that qualify — do not name the ones outside the range or notes of other types. Change nothing.",
+  "prompt": "Which practitioners in this knowledge base worked between 700 and 1600 CE inclusive, going by the `era` frontmatter field of the practitioner notes (`type: practitioner`)? Answer with each one's name and note path. List only the practitioners that qualify — do not name the ones outside the range or notes of other types. Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "unchanged_all": true,
   "checks": [
     {
       "kind": "answer",
-      "must_mention": ["jabir", "paracelsus", "/practitioners/jabir-ibn-hayyan.md", "/practitioners/paracelsus.md"],
-      "must_not_mention": ["maria", "newton", "emerald"]
+      "paths": [
+        "/practitioners/jabir-ibn-hayyan.md",
+        "/practitioners/paracelsus.md"
+      ],
+      "must_mention": [
+        "jabir",
+        "paracelsus"
+      ]
     }
   ],
   "solution": {
@@ -18,7 +24,7 @@
         }
       }
     ],
-    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530)."
+    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530).\n\n```answer\n/practitioners/jabir-ibn-hayyan.md\n/practitioners/paracelsus.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -30,7 +36,7 @@
         }
       }
     ],
-    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530)."
+    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530).\n\n```answer\n/practitioners/jabir-ibn-hayyan.md\n/practitioners/paracelsus.md\n```"
   },
-  "notes": "Range inclusion over a numeric frontmatter field: `era in 700..1600` (spec/oqx §10; the alchemy fixture `range-passthrough` pins it). Decoys: Maria Prophetissa (era 250) and Newton (1680) fall outside; the Emerald Tablet has `era: 800` but is a text, not a practitioner — `type == \"practitioner\"` excludes it. On bare files: one grep over the practitioner notes' `era:` lines and a comparison by hand. A pure retrieval: `unchanged_all` fails the run if anything was written."
+  "notes": "Range inclusion over a numeric frontmatter field: `era in 700..1600` (spec/oqx §10; the alchemy fixture `range-passthrough` pins it). Decoys: Maria Prophetissa (era 250) and Newton (1680) fall outside; the Emerald Tablet has `era: 800` but is a text, not a practitioner — `type == \"practitioner\"` excludes it. On bare files: one grep over the practitioner notes' `era:` lines and a comparison by hand. A pure retrieval: `unchanged_all` fails the run if anything was written. The verdict is the `answer` block's exact set — the two paths, nothing else — so an answer that names Maria and Newton in its explanation (\"fall outside the range\") passes, and one that lists them in the block fails; `must_mention` keeps the two names."
 }

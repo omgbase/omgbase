@@ -1,28 +1,43 @@
 {
   "id": "open-tasks-across-corpus",
   "corpus": "timeline",
-  "prompt": "List every unchecked task in the whole vault — every open `- [ ]` checklist item — giving the task's text and the path of the note it lives in. Include only real tasks in note bodies; an example of the syntax shown inside a code block is not a task and must not be listed. Change nothing.",
+  "prompt": "List every unchecked task in the whole vault — every open `- [ ]` checklist item — giving the task's text and the path of the note it lives in. Include only real tasks in note bodies; an example of the syntax shown inside a code block is not a task and must not be listed. Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "unchanged_all": true,
   "checks": [
     {
       "kind": "answer",
-      "must_mention": [
-        "Book the cryostat service visit", "zoe-chen.md",
-        "File the drainage as-built drawings", "tomas-okafor.md",
-        "Source a NIST-traceable calibration lamp", "throughput-calibration.md",
-        "Archive the bench alignment logs", "aurora/closeout.md",
-        "Return the site cabins to the hire company", "basalt/closeout.md",
-        "Confirm the gasket supplier lead time", "thermal-sealing.md",
-        "Draft the on-call rota", "operations-handbook.md",
-        "Agree the embargo period with the partners", "public-release.md",
-        "Shortlist the school entries", "naming-competition.md",
-        "Chase the shutter motor warranty paperwork", "2027-09-14-weekly.md",
-        "Revisit once the chiller duty cycle is measured", "012-single-glycol-loop.md",
-        "Write up the lessons learned from the shutter slip", "journal/2028-03.md",
-        "Price a spare detector before the warranty lapses", "r-07-spare-detector.md",
-        "Renew the glycol service contract", "northcool-systems.md"
+      "paths": [
+        "/decisions/012-single-glycol-loop.md",
+        "/journal/2028-03.md",
+        "/meetings/2027-09-14-weekly.md",
+        "/people/tomas-okafor.md",
+        "/people/zoe-chen.md",
+        "/projects/aurora/closeout.md",
+        "/projects/aurora/throughput-calibration.md",
+        "/projects/basalt/closeout.md",
+        "/projects/cirrus/thermal-sealing.md",
+        "/projects/delta/operations-handbook.md",
+        "/projects/delta/public-release.md",
+        "/projects/fjord/naming-competition.md",
+        "/risks/r-07-spare-detector.md",
+        "/vendors/northcool-systems.md"
       ],
-      "must_not_mention": ["Action item (owner, due date)"]
+      "must_mention": [
+        "Book the cryostat service visit",
+        "File the drainage as-built drawings",
+        "Source a NIST-traceable calibration lamp",
+        "Archive the bench alignment logs",
+        "Return the site cabins to the hire company",
+        "Confirm the gasket supplier lead time",
+        "Draft the on-call rota",
+        "Agree the embargo period with the partners",
+        "Shortlist the school entries",
+        "Chase the shutter motor warranty paperwork",
+        "Revisit once the chiller duty cycle is measured",
+        "Write up the lessons learned from the shutter slip",
+        "Price a spare detector before the warranty lapses",
+        "Renew the glycol service contract"
+      ]
     }
   ],
   "solution": {
@@ -34,7 +49,7 @@
         }
       }
     ],
-    "final_text": "Fourteen open tasks:\n- /decisions/012-single-glycol-loop.md — Revisit once the chiller duty cycle is measured\n- /journal/2028-03.md — Write up the lessons learned from the shutter slip\n- /meetings/2027-09-14-weekly.md — Chase the shutter motor warranty paperwork\n- /people/tomas-okafor.md — File the drainage as-built drawings\n- /people/zoe-chen.md — Book the cryostat service visit\n- /projects/aurora/closeout.md — Archive the bench alignment logs\n- /projects/aurora/throughput-calibration.md — Source a NIST-traceable calibration lamp\n- /projects/basalt/closeout.md — Return the site cabins to the hire company\n- /projects/cirrus/thermal-sealing.md — Confirm the gasket supplier lead time\n- /projects/delta/operations-handbook.md — Draft the on-call rota\n- /projects/delta/public-release.md — Agree the embargo period with the partners\n- /projects/fjord/naming-competition.md — Shortlist the school entries\n- /risks/r-07-spare-detector.md — Price a spare detector before the warranty lapses\n- /vendors/northcool-systems.md — Renew the glycol service contract"
+    "final_text": "Fourteen open tasks:\n- /decisions/012-single-glycol-loop.md — Revisit once the chiller duty cycle is measured\n- /journal/2028-03.md — Write up the lessons learned from the shutter slip\n- /meetings/2027-09-14-weekly.md — Chase the shutter motor warranty paperwork\n- /people/tomas-okafor.md — File the drainage as-built drawings\n- /people/zoe-chen.md — Book the cryostat service visit\n- /projects/aurora/closeout.md — Archive the bench alignment logs\n- /projects/aurora/throughput-calibration.md — Source a NIST-traceable calibration lamp\n- /projects/basalt/closeout.md — Return the site cabins to the hire company\n- /projects/cirrus/thermal-sealing.md — Confirm the gasket supplier lead time\n- /projects/delta/operations-handbook.md — Draft the on-call rota\n- /projects/delta/public-release.md — Agree the embargo period with the partners\n- /projects/fjord/naming-competition.md — Shortlist the school entries\n- /risks/r-07-spare-detector.md — Price a spare detector before the warranty lapses\n- /vendors/northcool-systems.md — Renew the glycol service contract\n\n```answer\n/decisions/012-single-glycol-loop.md\n/journal/2028-03.md\n/meetings/2027-09-14-weekly.md\n/people/tomas-okafor.md\n/people/zoe-chen.md\n/projects/aurora/closeout.md\n/projects/aurora/throughput-calibration.md\n/projects/basalt/closeout.md\n/projects/cirrus/thermal-sealing.md\n/projects/delta/operations-handbook.md\n/projects/delta/public-release.md\n/projects/fjord/naming-competition.md\n/risks/r-07-spare-detector.md\n/vendors/northcool-systems.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -51,7 +66,7 @@
         }
       }
     ],
-    "final_text": "Fourteen open tasks (the fifteenth grep hit, in /templates/meeting.md, is an example inside a code block, not a task):\n- /decisions/012-single-glycol-loop.md — Revisit once the chiller duty cycle is measured\n- /journal/2028-03.md — Write up the lessons learned from the shutter slip\n- /meetings/2027-09-14-weekly.md — Chase the shutter motor warranty paperwork\n- /people/tomas-okafor.md — File the drainage as-built drawings\n- /people/zoe-chen.md — Book the cryostat service visit\n- /projects/aurora/closeout.md — Archive the bench alignment logs\n- /projects/aurora/throughput-calibration.md — Source a NIST-traceable calibration lamp\n- /projects/basalt/closeout.md — Return the site cabins to the hire company\n- /projects/cirrus/thermal-sealing.md — Confirm the gasket supplier lead time\n- /projects/delta/operations-handbook.md — Draft the on-call rota\n- /projects/delta/public-release.md — Agree the embargo period with the partners\n- /projects/fjord/naming-competition.md — Shortlist the school entries\n- /risks/r-07-spare-detector.md — Price a spare detector before the warranty lapses\n- /vendors/northcool-systems.md — Renew the glycol service contract"
+    "final_text": "Fourteen open tasks (the fifteenth grep hit, in /templates/meeting.md, is an example inside a code block, not a task):\n- /decisions/012-single-glycol-loop.md — Revisit once the chiller duty cycle is measured\n- /journal/2028-03.md — Write up the lessons learned from the shutter slip\n- /meetings/2027-09-14-weekly.md — Chase the shutter motor warranty paperwork\n- /people/tomas-okafor.md — File the drainage as-built drawings\n- /people/zoe-chen.md — Book the cryostat service visit\n- /projects/aurora/closeout.md — Archive the bench alignment logs\n- /projects/aurora/throughput-calibration.md — Source a NIST-traceable calibration lamp\n- /projects/basalt/closeout.md — Return the site cabins to the hire company\n- /projects/cirrus/thermal-sealing.md — Confirm the gasket supplier lead time\n- /projects/delta/operations-handbook.md — Draft the on-call rota\n- /projects/delta/public-release.md — Agree the embargo period with the partners\n- /projects/fjord/naming-competition.md — Shortlist the school entries\n- /risks/r-07-spare-detector.md — Price a spare detector before the warranty lapses\n- /vendors/northcool-systems.md — Renew the glycol service contract\n\n```answer\n/decisions/012-single-glycol-loop.md\n/journal/2028-03.md\n/meetings/2027-09-14-weekly.md\n/people/tomas-okafor.md\n/people/zoe-chen.md\n/projects/aurora/closeout.md\n/projects/aurora/throughput-calibration.md\n/projects/basalt/closeout.md\n/projects/cirrus/thermal-sealing.md\n/projects/delta/operations-handbook.md\n/projects/delta/public-release.md\n/projects/fjord/naming-competition.md\n/risks/r-07-spare-detector.md\n/vendors/northcool-systems.md\n```"
   },
-  "notes": "Structure across the corpus: `md:task` nodes with `checked == false` (spec/surface §1.2) — fourteen, spread over people, milestones, a meeting, a decision, a journal, a risk and a vendor note, among 487 checked `- [x]` items. The decoy: /templates/meeting.md shows `- [ ] Action item (owner, due date)` inside a ```markdown fence — the parser does not make a task of it, but a grep for `- [ ]` does (fifteen hits), so the fs agent has to read the file to see the fence. On bare files: one grep plus that read."
+  "notes": "Structure across the corpus: `md:task` nodes with `checked == false` (spec/surface §1.2) — fourteen, spread over people, milestones, a meeting, a decision, a journal, a risk and a vendor note, among 487 checked `- [x]` items. The decoy: /templates/meeting.md shows `- [ ] Action item (owner, due date)` inside a ```markdown fence — the parser does not make a task of it, but a grep for `- [ ]` does (fifteen hits), so the fs agent has to read the file to see the fence. On bare files: one grep plus that read. The `answer` block is the exact set of the fourteen notes' paths (one note per task here, so the set is the answer); the fourteen task texts stay in `must_mention`. Naming the template's fenced example as the thing excluded is fine — /templates/meeting.md fails the run only inside the block."
 }

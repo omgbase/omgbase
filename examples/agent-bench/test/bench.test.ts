@@ -44,6 +44,9 @@ describe("parseBenchArgs", () => {
       .toMatchObject({ profiles: ["minimal"], runs: 1, tasks: ["noop", "rollup"], model: "claude-sonnet-5", effort: "low", maxTurns: 5, out: "/tmp/x", dry: true });
     expect(parseBenchArgs(["--profiles", "full,minimal,fs"], {})).toMatchObject({ profiles: ["full", "minimal", "fs"] });
     expect(parseBenchArgs(["--embedder", "omgbase-embedder"], {})).toMatchObject({ embedder: "omgbase-embedder" });
+    // a relative provider path is made absolute against the shell's cwd (omg spawns the provider inside the workspace, where it would not be found)
+    const pkg = join(import.meta.dirname, "..");
+    expect(parseBenchArgs(["--embedder", "node ../../packages/embedder/dist/src/bin.js"], {}, pkg)).toMatchObject({ embedder: `node ${join(pkg, "../../packages/embedder/dist/src/bin.js")}` });
     expect("embedder" in parseBenchArgs([], {})).toBe(false);
     expect(parseBenchArgs(["--runs", "0"], {})).toEqual({ error: "--runs must be a positive integer" });
     expect(parseBenchArgs(["--effort", "huge"], {})).toMatchObject({ error: expect.stringMatching(/--effort/) });
@@ -72,8 +75,9 @@ describe("bench", () => {
     expect(report).toContain("| frontmatter-edit | alchemy | `full` | 1/1 (100%) |");
     expect(report).toContain("| noop | alchemy | `full` | 1/1 (100%) |");
     expect(report).toContain("- embedder: none (tasks that require semantic search are skipped under the omgbase profiles)");
-    const json = JSON.parse(readFileSync(join(dir!, "results.json"), "utf8")) as { meta: { model: string }; results: { cost_usd?: number }[] };
+    const json = JSON.parse(readFileSync(join(dir!, "results.json"), "utf8")) as { meta: { model: string; answer_block?: boolean }; results: { cost_usd?: number }[] };
     expect(json.meta.model).toBe("scripted");
+    expect(json.meta.answer_block).toBe(true); // the retrieval prompts carry the `answer` block sentence: a rescore of this run is strict
     expect(json.results).toHaveLength(2);
     expect(json.results[0]).toMatchObject({ corpus: "alchemy" });
     expect(json.results[0]).not.toHaveProperty("cost_usd"); // the scripted model is not priced
@@ -125,6 +129,27 @@ describe("bench", () => {
     expect(report).toContain("Skipped 1 run(s): semantic-find (needs --embedder)");
     rmSync(own, { recursive: true, force: true });
   });
+
+  it("a cell whose embedding provider cannot start is a FAIL row carrying the message, with start/error/check in its transcript", async () => {
+    const own = mkdtempSync(join(tmpdir(), "agent-bench-embed-fail-"));
+    const embedder = "node /nonexistent/agent-bench/embedder.js"; // omg accepts it verbatim; the provider dies on its first spawn
+    const { dir, results, problems } = await bench({ ...BASE, out: own, profiles: ["full"], tasks: ["semantic-find"], embedder, makeModel: (task) => new ScriptedModel(task.solution) });
+    expect(problems).toEqual([]);
+    expect(results).toHaveLength(1);
+    const r = results[0]!;
+    expect(r.passed).toBe(false);
+    expect(r.skipped).toBeUndefined();
+    expect(r.error).toMatch(/^embedding the workspace with provider "node \/nonexistent\/agent-bench\/embedder\.js" failed — omg --json embed (drain|status) printed nothing on stdout; stderr: ".*Cannot find module/);
+    expect(r.check_failures).toEqual([`harness: ${r.error}`]);
+    const lines = readFileSync(join(dir!, "transcripts", "semantic-find.full.1.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines.map((l) => l.type)).toEqual(["start", "error", "check"]);
+    expect(lines[0]).toMatchObject({ task: "semantic-find", profile: "full", tools: [] });
+    expect(lines[2]).toMatchObject({ passed: false, failures: [`harness: ${r.error}`] });
+    const report = readFileSync(join(dir!, "report.md"), "utf8");
+    expect(report).toContain("| semantic-find | alchemy | `full` | 0/1 (0%) |");
+    expect(report).toMatch(/Harness\/API errors in 1 run\(s\): semantic-find#1 — embedding the workspace/);
+    rmSync(own, { recursive: true, force: true });
+  }, 120_000);
 
   it("aborts the whole bench with one message when the very first model request fails on credentials", async () => {
     const own = mkdtempSync(join(tmpdir(), "agent-bench-abort-")); // its own directory: the removal must not touch another bench's stamp

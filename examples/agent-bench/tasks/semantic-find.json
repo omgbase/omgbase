@@ -1,13 +1,16 @@
 {
   "id": "semantic-find",
-  "requires": ["semantic"],
-  "prompt": "Find the laboratory note whose conclusion argues that repeating a purification does not amount to a transformation — that refining something again and again makes it cleaner but cannot turn it into something else. Do not assume which operation it is about; locate the note by its argument. Give its path (only that note). Change nothing.",
+  "requires": [
+    "semantic"
+  ],
+  "prompt": "Find the laboratory note whose conclusion argues that repeating a purification does not amount to a transformation — that refining something again and again makes it cleaner but cannot turn it into something else. Do not assume which operation it is about; locate the note by its argument. Give its path (only that note). Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
   "unchanged_all": true,
   "checks": [
     {
       "kind": "answer",
-      "must_mention": ["/lab/2026-02-notes.md"],
-      "must_not_mention": ["2026-01-notes"]
+      "paths": [
+        "/lab/2026-02-notes.md"
+      ]
     }
   ],
   "solution": {
@@ -19,7 +22,7 @@
         }
       }
     ],
-    "final_text": "The note is /lab/2026-02-notes.md — its conclusion: \"`solve et coagula` purifies. It does not transform.\" (the recrystallization series whose yield plateaus by cycle 3)."
+    "final_text": "The note is /lab/2026-02-notes.md — its conclusion: \"`solve et coagula` purifies. It does not transform.\" (the recrystallization series whose yield plateaus by cycle 3).\n\n```answer\n/lab/2026-02-notes.md\n```"
   },
   "solution_fs": {
     "steps": [
@@ -37,7 +40,7 @@
         }
       }
     ],
-    "final_text": "The note is /lab/2026-02-notes.md — its conclusion: \"`solve et coagula` purifies. It does not transform.\" (the recrystallization series whose yield plateaus by cycle 3)."
+    "final_text": "The note is /lab/2026-02-notes.md — its conclusion: \"`solve et coagula` purifies. It does not transform.\" (the recrystallization series whose yield plateaus by cycle 3).\n\n```answer\n/lab/2026-02-notes.md\n```"
   },
-  "notes": "Semantic search: `order by semantic(\"…\") desc` over paragraph blocks needs an embedding provider (spec/surface §1.3; without one the query is `provider_unavailable`), so the task `requires: [\"semantic\"]` and the bench runs it under full/minimal only with `--embedder <cmd|url>` (`omg init --embedder`, `omg embed drain`, a drained queue before the loop); without the flag the report lists the cell as `skipped (needs --embedder)`. The target paragraph is the February lab note's conclusion; the process note /processes/coagulation.md argues the same point and ranks first over ALL blocks (gte-base), which is why the prompt asks for the laboratory note and the solution filters `_doc.type == \"lab-note\"`. The decoy is the other lab note (January, calcination). The `fs` profile runs it regardless with grep — `transform` over lab/ hits the February conclusion directly — which is the honest comparison: a word the prompt happens to share with the text."
+  "notes": "Semantic search: `order by semantic(\"…\") desc` over paragraph blocks needs an embedding provider (spec/surface §1.3; without one the query is `provider_unavailable`), so the task `requires: [\"semantic\"]` and the bench runs it under full/minimal only with `--embedder <cmd|url>` (`omg init --embedder`, `omg embed drain`, a drained queue before the loop); without the flag the report lists the cell as `skipped (needs --embedder)`. The target paragraph is the February lab note's conclusion; the process note /processes/coagulation.md argues the same point and ranks first over ALL blocks (gte-base), which is why the prompt asks for the laboratory note and the solution filters `_doc.type == \"lab-note\"`. The decoy is the other lab note (January, calcination). The `fs` profile runs it regardless with grep — `transform` over lab/ hits the February conclusion directly — which is the honest comparison: a word the prompt happens to share with the text. The `answer` block is the one path; naming the January note as the one it is not is fine."
 }
