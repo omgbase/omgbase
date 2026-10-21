@@ -2,7 +2,7 @@
   "name": "agent-bench",
   "version": "0.0.0",
   "private": true,
-  "description": "Private benchmark harness: does an agent work a Markdown knowledge base better through omgbase (the full MCP tool catalog or the minimal profile) or through generic filesystem tools over the same vault? Drives Claude through `omg mcp` over stdio, or an in-process file-tool server, on fresh copies of two corpora — the shared alchemy fixture and a generated 348-note programme timeline — and scores machine-checkable end states and answers through omgbase. Private, unpublished.",
+  "description": "Private benchmark harness: does an agent work a Markdown knowledge base better through omgbase (the full MCP tool catalog or the minimal profile) or through generic filesystem tools over the same vault? Drives Claude through `omg mcp` over stdio, or an in-process file-tool server, on fresh copies of two corpora \u2014 the shared alchemy fixture and a generated 361-note programme timeline \u2014 and scores machine-checkable end states and answers through omgbase. Private, unpublished.",
   "license": "MIT",
   "type": "module",
   "engines": {

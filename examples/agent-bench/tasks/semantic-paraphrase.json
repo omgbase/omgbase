@@ -1,0 +1,127 @@
+{
+  "id": "semantic-paraphrase",
+  "corpus": "timeline",
+  "requires": [
+    "semantic"
+  ],
+  "prompt": "Where did someone argue that buying the backup detector was a mistake? Locate it by what it says, not by the words it uses — do not assume which project or which kind of note it is. Give its path (only that note). Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "paths": [
+        "/journal/2028-04-14-the-crate-in-the-store.md"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, _text from blocks order by semantic(\"Where did someone argue that buying the backup detector was a mistake?\") desc limit 5"
+        }
+      },
+      {
+        "tool": "docs_read",
+        "args": {
+          "_path": {
+            "$result": 0,
+            "$get": "hits.0._path"
+          }
+        }
+      }
+    ],
+    "final_text": "The argument is in /journal/2028-04-14-the-crate-in-the-store.md — Mara Lindqvist's journal entry: with hindsight, procuring the spare focal-plane array was the wrong call; it sits unused in its crate until the warranty on the one in the cryostat lapses, and the money would have funded two months of commissioning time, which is what Aurora ran short of. The detector-procurement sync (where the purchase was approved and welcomed), the flat-field entry (a different mistake) and the smoke-detector risk (a backup generator shed) are not it.\n\n```answer\n/journal/2028-04-14-the-crate-in-the-store.md\n```"
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "backup detector"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/meetings/2027-03-10-detector-procurement.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "mistake|argue"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/journal/2027-06-30-flat-field-gradient.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "backup"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-27-generator-shed-smoke-detector.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/decisions/019-no-battery-backup.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "detector"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-07-spare-detector.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/vendors/halberd-detectors.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/decisions/036-spare-parts-budget.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/people/zoe-chen.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "spare|second unit|warranty"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/journal/2028-04-14-the-crate-in-the-store.md"
+        }
+      }
+    ],
+    "final_text": "The argument is in /journal/2028-04-14-the-crate-in-the-store.md — Mara Lindqvist's journal entry: with hindsight, procuring the spare focal-plane array was the wrong call; it sits unused in its crate until the warranty on the one in the cryostat lapses, and the money would have funded two months of commissioning time, which is what Aurora ran short of. The detector-procurement sync (where the purchase was approved and welcomed), the flat-field entry (a different mistake) and the smoke-detector risk (a backup generator shed) are not it.\n\n```answer\n/journal/2028-04-14-the-crate-in-the-store.md\n```"
+  },
+  "notes": "Semantic search for a CONCLUSION stated as a chain of reasoning: the question says 'argue that buying the backup detector was a mistake'; the target never uses argue, buy, backup, detector or mistake — it says 'procuring the spare focal-plane array … was the wrong call', 'hindsight', 'sits unused in its crate', 'the money would have funded two months of commissioning time', 'I said so at the time and was overruled' (test/semantic-plants.test.ts pins the zero overlap; 'bought' is avoided too). Decoys (planted): /meetings/2027-03-10-detector-procurement.md ('the backup detector' — approved, 'the right call'), /journal/2027-06-30-flat-field-gradient.md ('was a mistake', 'Lukas argued' — about flat fields), /risks/r-27-generator-shed-smoke-detector.md ('smoke detector in the backup generator shed'); the existing /risks/r-07-spare-detector.md and /decisions/036-spare-parts-budget.md are natural grep stops for 'spare'/'detector'. Ranks under gte-base over blocks (2026-10-21): target 1st (0.857; its second paragraph 2nd, 0.850), r-27 4th (0.833), detector-procurement 5th (0.831), flat-field 52nd (0.765); at the docs grain the target is 2nd (0.849) behind r-07 (0.853) — the whole-document embedding of a two-line risk about the spare detector's warranty sits closer than the two-paragraph argument, which is why the solution ranks blocks. The fs oracle: 'backup detector' hits the approving sync, 'mistake|argue' the flat-field entry, 'backup' seventeen lines, 'detector' forty, then the spare/warranty trail to the target — fourteen steps."
+}

@@ -14,11 +14,12 @@ questions about an agent working a Markdown knowledge base:
 Two kinds of task ask them. The thirteen **editing** tasks hand the agent a
 document and ask for a change — the first three-way run showed bare files at
 parity on correctness and ~3× cheaper there, because an exact-match editor does
-a named edit in two calls. The nine **retrieval** tasks ask what omgbase is
+a named edit in two calls. The twelve **retrieval** tasks ask what omgbase is
 for: finding, verifying and relating things *across* a corpus — range inclusion
 in frontmatter, graph traversal along a project timeline, cross-document
 aggregation, backlinks with their section, every open task in the vault,
-semantic search — and end with an **answer** the harness checks, not a write:
+semantic search (three of them grep-blind by construction, below) — and end
+with an **answer** the harness checks, not a write:
 a fenced code block tagged `answer` listing only the matching note paths, scored
 as an exact set (or sequence) with the explanation around it free. Each is
 answerable by the file tools too (list / grep / read), just more expensively;
@@ -29,7 +30,7 @@ Three **profiles**, one per surface: `full` and `minimal` are omgbase;
 
 1. builds a **fresh workspace** from the task's corpus — the shared **alchemy**
    fixture (`packages/core/corpus/oqx/fixtures/alchemy`, 20 notes) or this
-   package's generated **timeline** corpus (`corpora/timeline`, 348 notes,
+   package's generated **timeline** corpus (`corpora/timeline`, 361 notes,
    below) — exactly as the CLI spec runner does: `omg init --yes
    --no-embedder`, `omg source add vault --repo fixture -y` under
    `OMGBASE_SPEC_CLOCK` (and, for alchemy, `OMGBASE_SPEC_MINTER=sequential`, so
@@ -63,10 +64,10 @@ gateway.
 ```
 pnpm build                                      # at the repo root: the harness spawns packages/cli/dist/src/main.js
 export ANTHROPIC_API_KEY=sk-ant-…              # or an `ant auth login` profile — the SDK resolves either; or Bedrock, below
-pnpm --filter agent-bench bench --profiles full,minimal,fs   # the three-way comparison: 22 tasks × 3 profiles × 3 runs → results/<timestamp>/
-pnpm --filter agent-bench bench                 # the omgbase pair only: 22 tasks × {full, minimal} × 3 runs
+pnpm --filter agent-bench bench --profiles full,minimal,fs   # the three-way comparison: 25 tasks × 3 profiles × 3 runs → results/<timestamp>/
+pnpm --filter agent-bench bench                 # the omgbase pair only: 25 tasks × {full, minimal} × 3 runs
 pnpm --filter agent-bench bench --dry           # no model: prove the tasks and checks (below)
-pnpm --filter agent-bench bench --profiles full,minimal,fs --embedder omgbase-embedder   # …and run the semantic task under omgbase too
+pnpm --filter agent-bench bench --profiles full,minimal,fs --embedder packages/embedder/dist/src/bin.js   # …and run the four semantic tasks under omgbase too
 ```
 
 ```
@@ -133,14 +134,15 @@ mid-bench shows up per run, not as an abort.
 
 ### Semantic search: `--embedder`
 
-`semantic-find` needs `semantic(…)`, which needs an embedding provider; a store
-without one answers `provider_unavailable`. The task therefore declares
-`"requires": ["semantic"]`, and under an omgbase profile the bench runs it only
-with `--embedder <cmd|url>`: the cell's workspace is built with `omg init
+`semantic-find` and the three semantic-only tasks (`semantic-synonym`,
+`semantic-paraphrase`, `semantic-cross-domain`) need `semantic(…)`, which needs
+an embedding provider; a store without one answers `provider_unavailable`. Each
+therefore declares `"requires": ["semantic"]`, and under an omgbase profile the
+bench runs it only with `--embedder <cmd|url>`: the cell's workspace is built with `omg init
 --embedder <cmd>` instead of `--no-embedder`, then — after `source add` — `omg
 embed drain` embeds every block and document and the harness waits until `omg
 embed status` reports an empty queue, so the agent's first `semantic()` has
-every vector (`src/workspace.ts`, `embedWorkspace`). Only that task's
+every vector (`src/workspace.ts`, `embedWorkspace`). Only those tasks'
 workspaces get the provider; the others are unaffected. Without the flag the
 cell is **skipped**, not failed: one row per run with `skipped: "needs
 --embedder"`, a one-line transcript (`{ "type": "skip", … }`), `skipped (needs
@@ -175,9 +177,11 @@ start, the queue does not drain — is a **FAIL row** carrying that message
 `error` and a failing `check` in its transcript, so the report says why. The
 local provider is transformers.js + `Xenova/gte-base` (768 d); its first run
 downloads ~435 MB into `node_modules/@huggingface/transformers/.cache`, after
-which it is offline. `--dry --embedder <cmd>` proves the semantic task's
-scripted solution end to end (the workspace is embedded, the ranking query
-runs through the real server) in ~12 s on a cached model.
+which it is offline. `--dry --embedder <cmd>` proves the semantic tasks'
+scripted solutions end to end (the workspace is embedded, the ranking query
+runs through the real server): ~12 s for the alchemy one on a cached model, a
+minute or two per timeline cell (the 361-note corpus has 147 embeddable
+blocks plus the 361 document vectors).
 
 ### `--dry`: proving the checks without the model
 
@@ -201,8 +205,8 @@ profile:
 
 Green means every check describes a reachable end state and rejects the
 starting one — and, per profile, that every task is solvable with that
-profile's tools. `--profiles full,minimal,fs` over the 22 tasks is 132 cells in
-~3 minutes (a timeline workspace takes ~1.6 s to build, an alchemy one ~1 s).
+profile's tools. `--profiles full,minimal,fs` over the 25 tasks is 150 cells in
+~4 minutes (a timeline workspace takes ~1.6 s to build, an alchemy one ~1 s).
 
 ### Rescoring a stored run: `pnpm bench rescore <results-dir>`
 
@@ -304,7 +308,7 @@ no retrieval task has one — nothing fires on a run that only reads.
 
 **Fairness.** The `fs` tools are the honest cost of files at this corpus
 size, not a handicap. `grep` returns at most 200 matching lines and says when
-it cut (a generic server would cap too; over the 348-file timeline corpus the
+it cut (a generic server would cap too; over the 361-file timeline corpus the
 tasks' natural greps — `^after: ` under one project, `^window: ` under
 `projects/`, `^- \[ \] ` over the vault — return 10–69 lines, well under the
 cap, and a grep for every `- [x]` would not), and `read_file` returns whole
@@ -369,8 +373,8 @@ the model more hits per query and more grep lines per call); `--tasks` and
 ## The tasks
 
 `tasks/<id>.json`, one per scenario — the thirteen **editing** tasks of the
-first brief (the "split and merge" item is two tasks) and the nine
-**retrieval** tasks of the second:
+first brief (the "split and merge" item is two tasks), the nine **retrieval**
+tasks of the second, and the three **semantic-only** tasks of the third:
 
 | id | kind | corpus | scenario |
 | --- | --- | --- | --- |
@@ -396,6 +400,9 @@ first brief (the "split and merge" item is two tasks) and the nine
 | `open-tasks-across-corpus` | retrieval | timeline | **structure across the corpus**: every unchecked task in the vault with its note (`md:task` nodes, `not checked`) — fourteen among 487 checked ones; the decoy is a `- [ ]` example inside a code fence |
 | `semantic-find` | retrieval | alchemy | **semantic search** (`requires: ["semantic"]`): the lab note arguing repeated purification is not transformation, found by meaning (`order by semantic("…") desc` over paragraphs of lab notes); skipped under full/minimal without `--embedder`; `fs` greps |
 | `rollup-filtered` | retrieval + write | timeline | **find across, then write**: append to `index.md` one line per milestone owned by Mara Lindqvist, done and closed in 2027, by closing date — three across two projects; decoys are her 2026/2028 ones and Mara **Lind**'s `Open day` |
+| `semantic-synonym` | retrieval | timeline | **semantic search, everyday words → jargon** (`requires: ["semantic"]`): "Which note explains why the camera would not stay cold overnight?" — the answer is Zoe's journal entry on the dewar's hold time (glycol loop cycled, radiative load through the slit, the CCD stage above its operating temperature before dawn), which contains none of the question's words; the planted decoys do (the summit closed by cold weather overnight, the film crew's camera fogging, Ridgeline's cold storage) |
+| `semantic-paraphrase` | retrieval | timeline | **semantic search, conclusion → reasoning**: "Where did someone argue that buying the backup detector was a mistake?" — Mara's journal entry ("procuring the spare focal-plane array … was the wrong call", unused in its crate, the money would have funded commissioning time) without argue / buy / backup / detector / mistake; decoys: the sync that approved the backup detector, a different mistake (flat fields), a smoke detector in the backup generator shed |
+| `semantic-cross-domain` | retrieval | timeline | **semantic search, a concept named only by its symptoms**: "Which note describes someone burning out?" — Yusuf's journal entry (on call alone for three weeks, fell asleep in the sync, error rate doubled, taken off the rota) never says burn; decoys are a motor burnout, a lamp that burnt out, firmware being burnt, scrub burning |
 
 A task file:
 
@@ -430,9 +437,10 @@ corpus file for file on disk (nothing added, removed or edited — judged the
 same under every profile) and `changes_since { origin: "api" }` is empty. Every
 pure retrieval task carries it, so an agent that "helpfully" writes fails.
 
-Eight of the nine retrieval tasks end their prompt with the block sentence and
+Eleven of the twelve retrieval tasks end their prompt with the block sentence and
 carry `paths`: `range-era` (2), `range-window-includes` (6), `backlinks-with-context`
-(5), `open-tasks-across-corpus` (14) and `semantic-find` (1) as sets;
+(5), `open-tasks-across-corpus` (14), `semantic-find` (1) and the three
+semantic-only tasks (1 each) as sets;
 `timeline-follow` (11), `timeline-between` (3) and `rollup-filtered` (3) as
 ordered sequences. `aggregate-by-key` is the exception by design: its answer
 is six counts, not a set of paths, so it keeps `must_mention` only (one regex
@@ -467,7 +475,8 @@ frontmatter and appends to `index.md`; `bulk-check-off` edits three lines;
 `split-paragraph` and `merge-paragraphs` are string edits;
 `create-then-section` is a `write_file` then an `edit_file`; `noop` and
 `contradiction` read and make no write; `stale-plan-retry` is the read → edit →
-re-read → edit above. The retrieval oracles are greps: `^era: ` over the
+re-read → edit above. The retrieval oracles are greps (the semantic-only ones a
+grep *walk*, below): `^era: ` over the
 practitioners; `^window: ` and `^title: ` under `projects/`; `^after: ` and
 `^title: ` under one project (then chained by hand); the link path and every
 heading line (paired by line number); `^status: open$` under `projects/` plus a
@@ -478,6 +487,59 @@ edit of `index.md`. `--dry` proves, for `fs` as for the omgbase profiles, that
 every task is solvable with the profile's tools and that the checks
 discriminate. Each task's `notes` says what the omgbase answer rests on, what
 the decoys are and how `fs` gets there.
+
+### The semantic-only tasks and the grep-blind guard
+
+`semantic-find` turned out not to measure semantic search: its question and
+its answer share vocabulary ("purification", "transform"), so the model found
+the note with `text("purer")` or a grep, and only one omgbase run in six used
+`semantic(…)`. The three **semantic-only** tasks are built so that cannot
+happen. Each **plants** a target note in the timeline corpus
+(`SEMANTIC_PLANTS` in `src/corpus.ts` — the plants are authored data like the
+milestones, and `pnpm corpus` writes them into the snapshot) whose text shares
+**no content word** with the question — stopwords removed, loosely stemmed, the
+frontmatter, title, path and body all counted — and plants **decoys** that
+carry the question's literal words in unrelated senses, so a grep for the
+question finds the decoys and never the target. Three shapes: everyday words
+against domain jargon (`semantic-synonym`: camera / cold / overnight against
+dewar / hold time / glycol loop / CCD stage), a conclusion against the chain of
+reasoning that reaches it (`semantic-paraphrase`), and a concept against the
+symptoms that constitute it (`semantic-cross-domain`: "burning out" against
+three weeks on call, asleep in the sync, taken off the rota).
+
+**The grep-blind guard** (`test/semantic-plants.test.ts`) pins both halves for
+every plant — no stemmed content word of the question anywhere in the target,
+at least one in every decoy — plus the embedding floor (a planted passage must
+be ≥ 24 whitespace tokens or `semantic()` never ranks it, spec/search §2.1),
+that nothing planted carries a `window`, an `after:` or a task (so the other
+timeline tasks' answers do not move), and that the task file is the plant's:
+the prompt opens with the question, the `answer` is exactly the target, the
+`solution` embeds the question verbatim and reads the top hit, and the
+`solution_fs` is the honest grep walk — the question's words (which hit the
+decoys), their reads, synonyms, directory and title sweeps, the target read
+last — 13–15 steps against omgbase's two. A corpus edit that lets a question
+word into a target, or a task edit that strays from its plant, fails here.
+
+**Ranks under gte-base** were measured on 2026-10-21 (`--embedder
+packages/embedder/dist/src/bin.js`, `order by semantic(<the question>) desc`),
+and the opt-in `test/semantic-ranking.test.ts` (`AGENT_BENCH_EMBEDDER=<cmd>`)
+re-asserts that the target is the top block hit — the hit the solution reads —
+and prints every decoy's rank at both grains. Over blocks: `semantic-synonym`
+target 1st (0.854), its decoys 3rd / 15th / 28th; `semantic-paraphrase` target
+1st (0.857), decoys 4th / 5th / 52nd; `semantic-cross-domain` target 1st
+(0.803), decoys 2nd / 17th / 30th / 65th. Over whole documents the targets are
+1st, 2nd (behind the existing `r-07-spare-detector` risk) and 1st. The notes of
+each task carry the numbers. Two findings shaped the third task: gte-base is
+lexical enough that an **abstract project-management label never beats the
+generator's filler** — "a schedule slip caused by a supplier" (the brief's
+example) loses to "The supplier's paperwork arrived late but complete." (×27)
+and "The schedule held…" at both grains and under a journal-only filter, "scope
+creep" to "Two of the scope items moved to the next milestone", and "cost
+overrun", "conflict of interest" and "a near miss on site" never reach the top
+five — while a **person's state described by concrete symptoms** it does rank;
+and a decoy about equipment running long hours (a generator burn-in) ranked
+*above* the burnout entry, so the planted "burn" senses are electrical,
+firmware and fire.
 
 ### Adding a task
 
@@ -503,8 +565,8 @@ the decoys are and how `fs` gets there.
 
 ## The timeline corpus
 
-`corpora/timeline/` is a **generated** corpus: 348 small Markdown notes (0.1–2.3
-kB each, 212 kB in all) describing a fictional three-year programme —
+`corpora/timeline/` is a **generated** corpus: 361 small Markdown notes (0.1–2.3
+kB each, ~220 kB in all) describing a fictional three-year programme —
 "Meridian", a mountain observatory, 2026–2028 — written by `src/corpus.ts` as a
 pure function of that file (a seeded PRNG for the filler; the facts the tasks
 rest on are authored tables in the source). The snapshot is committed so a
@@ -544,6 +606,11 @@ Shape:
   25, `vendors/<slug>.md` × 12 (one is "Aurora Optics Ltd"), and
   `templates/meeting.md`, whose fenced code block shows `- [ ] Action item
   (owner, due date)`.
+- the thirteen **semantic plants** (`SEMANTIC_PLANTS`, authored, not
+  generated): five dated journal entries (`journal/<yyyy-mm-dd>-<slug>.md`,
+  no `window`), four extraordinary meetings (`meetings/<date>-<slug>.md`),
+  three risks (`r-26`…`r-28`) and a vendor — the three semantic-only tasks'
+  targets and decoys (above). None carries an `after:`, a `window` or a task.
 
 The decoys the tasks lean on: windows that end on 2027-03-15 (two) or start on
 it (one), against ones ending 03-14 / starting 03-16 and a milestone *closed*
@@ -654,7 +721,7 @@ workspace could not be built (the embedding provider did not start) has a
 ## Layout
 
 ```
-src/corpus.ts      the timeline corpus: authored projects/milestones/people/open tasks + seeded filler → corpora/timeline (pnpm corpus)
+src/corpus.ts      the timeline corpus: authored projects/milestones/people/open tasks/semantic plants + seeded filler → corpora/timeline (pnpm corpus)
 src/workspace.ts   fresh workspace from a named corpus under the seams (the minter seam where the corpus allows); fixture bytes;
                    syncWorkspace (omg sync, the fs profile's sweep); embedWorkspace (--embedder: drain + wait); resolveEmbedder;
                    parseOmgJson (the last JSON line of an omg --json command, or an error quoting stdout/stderr); vaultDiff
@@ -670,8 +737,8 @@ src/pricing.ts     list prices per bare model id; a run's cost from its four cou
 src/report.ts      results → report.md (corpus column, per-corpus totals, skipped cells)
 src/bench.ts       the CLI: cells, the agent/check servers per profile, --embedder and the skip rule, --dry, results/<timestamp>/, the credential probe
 src/rescore.ts     pnpm bench rescore <dir>: a stored run under the tasks' current text checks → results.rescored.json + report.rescored.md
-tasks/*.json       the twenty-two tasks (thirteen editing, nine retrieval)
-corpora/timeline/  the committed timeline snapshot (348 files; regenerate with pnpm corpus)
+tasks/*.json       the twenty-five tasks (thirteen editing, nine retrieval, three semantic-only)
+corpora/timeline/  the committed timeline snapshot (361 files; regenerate with pnpm corpus)
 test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end to end
                    against the real omg mcp with the scripted model (no API spend);
                    the hook fires; FsServer's tools and the fs profile end to end
@@ -679,7 +746,9 @@ test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end
                    is deterministic and its oracle queries answer what the tasks
                    expect; the answer check (block parsing, path forms, set vs
                    ordered, the missing block, lenient mode) and unchanged_all; one
-                   dry run per retrieval task (the semantic one's skip path); the
+                   dry run per retrieval task (the semantic ones' skip path); the
+                   grep-blind guard over the semantic plants; the opt-in ranking
+                   test under a real embedder (AGENT_BENCH_EMBEDDER); the
                    rescore over a fixture results.json; omg's JSON output and the
                    embedder path; the report renders; bench writes its files, skips
                    what it must and records a provider that cannot start as a FAIL
@@ -687,6 +756,7 @@ test/*.test.ts     vitest: tasks validate; deterministic bootstrap; the loop end
 
 Gates: `pnpm --filter agent-bench test`, `lint`, `typecheck`,
 `pnpm bench --dry --profiles full,minimal,fs` (and, with a local embedder,
-`pnpm bench --dry --tasks semantic-find --profiles full,minimal --embedder <cmd>`).
+`pnpm bench --dry --tasks semantic-find,semantic-synonym,semantic-paraphrase,semantic-cross-domain --profiles full,minimal,fs --embedder <cmd>`
+and `AGENT_BENCH_EMBEDDER=<cmd> pnpm --filter agent-bench exec vitest run test/semantic-ranking.test.ts`).
 Sources are TypeScript run directly by Node's type stripping (Node ≥ 22.18;
 `erasableSyntaxOnly`), no build step.

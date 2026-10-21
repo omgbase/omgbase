@@ -1,0 +1,134 @@
+{
+  "id": "semantic-synonym",
+  "corpus": "timeline",
+  "requires": [
+    "semantic"
+  ],
+  "prompt": "Which note explains why the camera would not stay cold overnight? Locate it by what it says, not by the words it uses — do not assume which project or which kind of note it is. Give its path (only that note). Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "paths": [
+        "/journal/2026-11-17-dewar-hold-time.md"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, _text from blocks order by semantic(\"Which note explains why the camera would not stay cold overnight?\") desc limit 5"
+        }
+      },
+      {
+        "tool": "docs_read",
+        "args": {
+          "_path": {
+            "$result": 0,
+            "$get": "hits.0._path"
+          }
+        }
+      }
+    ],
+    "final_text": "The note is /journal/2026-11-17-dewar-hold-time.md — Zoe's journal entry on the third cooldown run: the dewar's hold time fell short of a full observing run because the glycol loop cycled and the radiative load through the open slit exceeded the second-stage capacity, so the CCD stage drifted above its operating temperature before dawn. The camera-fogging risk (the film crew's camera), the summit closure (cold weather overnight) and Ridgeline's cold storage are not it.\n\n```answer\n/journal/2026-11-17-dewar-hold-time.md\n```"
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "[Cc]amera"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-26-camera-fogging.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/decisions/025-documentary-access.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "[Cc]old"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/meetings/2027-01-20-summit-closure.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/vendors/ridgeline-catering.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "overnight|stay"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/glossary/cryostat.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "cryostat|dewar|cooldown|detector"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-15-cooldown-failure.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/projects/aurora/detector-cooldown-test.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/decisions/016-detector-cooldown-extension.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/people/zoe-chen.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^title: ",
+          "glob": "journal/*.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/journal/2026-11-17-dewar-hold-time.md"
+        }
+      }
+    ],
+    "final_text": "The note is /journal/2026-11-17-dewar-hold-time.md — Zoe's journal entry on the third cooldown run: the dewar's hold time fell short of a full observing run because the glycol loop cycled and the radiative load through the open slit exceeded the second-stage capacity, so the CCD stage drifted above its operating temperature before dawn. The camera-fogging risk (the film crew's camera), the summit closure (cold weather overnight) and Ridgeline's cold storage are not it.\n\n```answer\n/journal/2026-11-17-dewar-hold-time.md\n```"
+  },
+  "notes": "Semantic search where the exact text is NOT in the document: the question is everyday words (camera, stay, cold, overnight), the target is domain jargon (dewar, hold time, glycol loop cycled, radiative load, second-stage capacity, CCD stage above its operating temperature before dawn) with zero lexical overlap on the question's content words — test/semantic-plants.test.ts pins that no stemmed content word of the question occurs anywhere in the target (frontmatter, title, path, body) and that every decoy carries at least one. Decoys (planted, SEMANTIC_PLANTS in src/corpus.ts): /meetings/2027-01-20-summit-closure.md (cold weather closed the road overnight, the crews stay at the base station), /risks/r-26-camera-fogging.md (the film crew's camera lens fogs), /vendors/ridgeline-catering.md (cold storage stays at the base station, overnight deliveries). Ranks under gte-base (Xenova/gte-base, `order by semantic(<the question>) desc` over blocks, 2026-10-21): target 1st (0.854; its second paragraph 2nd, 0.838), r-26 3rd (0.814), summit-closure 15th (0.790), ridgeline 28th (0.784); at the docs grain target 1st (0.856), r-26 4th. The omg solution is one semantic query plus a read of the top hit (two steps); the fs oracle is the honest grep walk — the question's words (which hit only the decoys and decision 025 'Camera access'), their reads, synonyms (cryostat/dewar/cooldown/detector: 34 lines over 25 files), the cooldown-test notes, then the journal titles and the target — fifteen steps, the measurement."
+}

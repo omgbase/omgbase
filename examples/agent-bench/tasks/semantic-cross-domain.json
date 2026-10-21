@@ -1,0 +1,122 @@
+{
+  "id": "semantic-cross-domain",
+  "corpus": "timeline",
+  "requires": [
+    "semantic"
+  ],
+  "prompt": "Which note describes someone burning out? Locate it by what it says, not by the words it uses — do not assume which project or which kind of note it is. Give its path (only that note). Change nothing. End your reply with a fenced code block tagged `answer` that lists ONLY the matching note paths, one per line (repository-root form, e.g. `/projects/x/y.md`), in the order asked; put explanations before the block, never inside it.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "paths": [
+        "/journal/2027-12-14-three-weeks-on-call.md"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, _text from blocks order by semantic(\"Which note describes someone burning out?\") desc limit 5"
+        }
+      },
+      {
+        "tool": "docs_read",
+        "args": {
+          "_path": {
+            "$result": 0,
+            "$get": "hits.0._path"
+          }
+        }
+      }
+    ],
+    "final_text": "The note is /journal/2027-12-14-three-weeks-on-call.md — Yusuf's journal entry: Zoe has carried the on-call rota alone for three weeks, fell asleep in the Tuesday sync, snapped at the partners, the pipeline's error rate doubled on her watch, she has not had a day off since October, and he has taken her off the rota until January. The notes that contain the word — the shutter motor burnout, the arc lamp that burnt out, the firmware being burnt onto the controller, the scrub burning on the ridge — are about equipment and land, not a person.\n\n```answer\n/journal/2027-12-14-three-weeks-on-call.md\n```"
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "[Bb]urn"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/meetings/2027-09-28-shutter-motor-burnout.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/meetings/2027-10-26-calibration-lamp.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-28-shutter-controller-firmware.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/journal/2026-08-19-clearing-the-ridge.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "burnout|burned out|burnt out"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "exhaust|tired|fatigue|overwork|stress"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/risks/r-27-generator-shed-smoke-detector.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "on-call|on call|rota"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/projects/delta/operations-handbook.md"
+        }
+      },
+      {
+        "tool": "list_files",
+        "args": {
+          "dir": "journal"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^title: ",
+          "glob": "journal/*.md"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "path": "/journal/2027-12-14-three-weeks-on-call.md"
+        }
+      }
+    ],
+    "final_text": "The note is /journal/2027-12-14-three-weeks-on-call.md — Yusuf's journal entry: Zoe has carried the on-call rota alone for three weeks, fell asleep in the Tuesday sync, snapped at the partners, the pipeline's error rate doubled on her watch, she has not had a day off since October, and he has taken her off the rota until January. The notes that contain the word — the shutter motor burnout, the arc lamp that burnt out, the firmware being burnt onto the controller, the scrub burning on the ridge — are about equipment and land, not a person.\n\n```answer\n/journal/2027-12-14-three-weeks-on-call.md\n```"
+  },
+  "notes": "Semantic search for a concept the document never names — described only by its symptoms and consequence: the question is 'someone burning out'; the target says on-call alone for three weeks, fell asleep in the sync, snapped at the partners, error rate doubled on her watch, no day off since October, taken off the rota (test/semantic-plants.test.ts pins that burn/burning never occur in it). Decoys (planted, every one with the word in another sense): /meetings/2027-09-28-shutter-motor-burnout.md (a motor's windings), /meetings/2027-10-26-calibration-lamp.md (the arc lamp burnt out; 'burning through the spares'), /risks/r-28-shutter-controller-firmware.md (burning a firmware image), /journal/2026-08-19-clearing-the-ridge.md (burning cleared scrub). Ranks under gte-base over blocks (2026-10-21): target 1st (0.803), motor burnout 2nd (0.784), calibration lamp 17th (0.763), firmware 30th (0.757), clearing the ridge 65th (0.740); at the docs grain target 1st (0.805), motor burnout 2nd (0.799). This concept was chosen after measuring that gte-base ranks the generator's own filler sentences above ANY zero-overlap description of a project-management concept — 'a schedule slip caused by a supplier' loses to 'The supplier's paperwork arrived late but complete.' (×27) and 'The schedule held…' at both grains and under a journal-only filter; 'scope creep' to 'Two of the scope items moved to the next milestone'; 'cost overrun', 'conflict of interest' and 'a near miss on site' never reach the top five — the model is lexical enough that an abstract label needs a literal anchor, while a person's state described by concrete symptoms it does rank. A generator burn-in risk ('forty-hour run … across the quiet hours') was tried as a decoy and ranked ABOVE the target (equipment running long hours reads as overwork), so the burn senses planted are electrical, firmware and fire. The fs oracle: '[Bb]urn' (six lines, four files — all decoys), their reads, the burnout spellings, the symptom synonyms (exhaust hits the smoke-detector risk's 'diesel exhaust'), the rota trail (25 lines over 23 files, most of them the weekly sync's 'summit access rota'), the journal listing and titles, the target — thirteen steps."
+}

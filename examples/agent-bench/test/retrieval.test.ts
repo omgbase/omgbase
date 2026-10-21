@@ -1,7 +1,8 @@
 // One dry run per retrieval task, under `full` and `fs`: the scripted solution
 // reaches the answer (or the end state) through the real loop and the real omg,
-// the checks pass, and the checks reject an untouched workspace. The semantic task
-// is the skip path under `full` (no embedder in the test) and a grep under `fs`.
+// the checks pass, and the checks reject an untouched workspace. The semantic tasks
+// are the skip path under `full` (no embedder in the test) and a grep walk under
+// `fs` (test/semantic-ranking.test.ts runs them under `full` with an embedder, opt-in).
 import { describe, expect, it } from "vitest";
 import { dryRun, skipReason } from "../src/bench.ts";
 import { loadTasks } from "../src/tasks.ts";
@@ -11,7 +12,7 @@ const { tasks, problems } = loadTasks();
 if (problems.length > 0) throw new Error(problems.join("\n"));
 const task = (id: string): Task => tasks.find((t) => t.id === id)!;
 
-export const RETRIEVAL_TASKS = ["range-era", "range-window-includes", "timeline-follow", "timeline-between", "backlinks-with-context", "aggregate-by-key", "open-tasks-across-corpus", "semantic-find", "rollup-filtered"];
+export const RETRIEVAL_TASKS = ["range-era", "range-window-includes", "timeline-follow", "timeline-between", "backlinks-with-context", "aggregate-by-key", "open-tasks-across-corpus", "semantic-find", "rollup-filtered", "semantic-synonym", "semantic-paraphrase", "semantic-cross-domain"];
 
 describe("the retrieval tasks dry-run green under full and fs", () => {
   for (const id of RETRIEVAL_TASKS) {
@@ -19,9 +20,9 @@ describe("the retrieval tasks dry-run green under full and fs", () => {
       const log: string[] = [];
       const problems = await dryRun([task(id)], ["full", "fs"], (l) => log.push(l));
       expect(problems).toEqual([]);
-      if (id === "semantic-find") {
-        expect(log[0]).toBe("  skip semantic-find [full] solution (needs --embedder)");
-        expect(log[2]).toMatch(/^ {2}ok {3}semantic-find \[fs\] solution: 2 step\(s\)/);
+      if (task(id).requires?.includes("semantic")) {
+        expect(log[0]).toBe(`  skip ${id} [full] solution (needs --embedder)`);
+        expect(log[2]).toMatch(new RegExp(`^ {2}ok {3}${id} \\[fs\\] solution: ${task(id).solution_fs.steps.length} step\\(s\\)`));
       } else {
         expect(log.filter((l) => /^ {2}ok {3}/.test(l))).toHaveLength(4);
       }

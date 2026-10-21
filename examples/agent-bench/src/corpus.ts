@@ -184,6 +184,200 @@ export const OPEN_TASKS: readonly { path: string; text: string }[] = [
 /** The decoy: a task-shaped line inside a code fence — not a task node, not an open task. */
 export const FENCED_TASK_DECOY = "Action item (owner, due date)";
 
+// ---- the semantic-only plants -----------------------------------------------------------------
+//
+// Three retrieval tasks (`semantic-synonym`, `semantic-paraphrase`, `semantic-cross-domain`)
+// ask a question in everyday words whose answer is a note written in deliberately
+// different vocabulary: NO content word of the question (stopwords removed, loosely
+// stemmed) appears anywhere in the target's text — frontmatter, title, path or body —
+// so a grep for the question's words cannot find it, while each DECOY carries at least
+// one of those words in an unrelated sense, so a grep finds the decoys instead. The
+// guard test (`test/semantic-plants.test.ts`) pins both halves, and the opt-in ranking
+// test pins that the target is the top `semantic()` hit under gte-base. A planted
+// passage must clear the engine's embedding floor (24 whitespace tokens, spec/search
+// §2.1) to be ranked at all. Nothing here carries a `window`, an `after:` or an open
+// task, so the other timeline tasks' answers do not move.
+
+export interface PlantedNote {
+  path: string;
+  text: string;
+}
+
+export interface SemanticPlant {
+  /** the task id (`tasks/<id>.json`) */
+  task: string;
+  /** the question the task's prompt opens with and its solution embeds verbatim */
+  question: string;
+  target: PlantedNote;
+  decoys: readonly PlantedNote[];
+}
+
+const note = (fm: string, body: string): string => `---\n${fm}\n---\n\n${body}\n`;
+
+export const SEMANTIC_PLANTS: readonly SemanticPlant[] = [
+  {
+    // everyday words → domain jargon; zero overlap on camera / stay / cold / overnight (and no "warm", no "night")
+    task: "semantic-synonym",
+    question: "Which note explains why the camera would not stay cold overnight?",
+    target: {
+      path: "/journal/2026-11-17-dewar-hold-time.md",
+      text: note(
+        "type: journal\ntitle: Why the cryostat could not hold its operating point until dawn\nproject: aurora\nwhen: 2026-11-17\nauthor: /people/zoe-chen.md\ntags: [journal, aurora, cryostat]",
+        `# Why the cryostat could not hold its operating point until dawn
+
+Third run of the [Detector cooldown test](/projects/aurora/detector-cooldown-test.md). The dewar's hold time fell short of a full observing run again: the glycol loop cycled every forty minutes instead of holding steady, and the radiative load through the open dome slit exceeded the second-stage capacity by about three watts, so the CCD stage drifted upward from the second hour and was above its operating temperature well before dawn.
+
+The thermal budget assumed a sealed enclosure and a steady coolant supply; neither exists yet. Until [Thermal sealing](/projects/cirrus/thermal-sealing.md) closes the gaps and Northcool fixes the chiller duty cycle, the cryostat will not hold the CCD at its operating point from dusk to dawn and the test cannot pass. See [Extend the detector cooldown test](/decisions/016-detector-cooldown-extension.md).`,
+      ),
+    },
+    decoys: [
+      {
+        // "cold", "overnight", "stay" — the weather, not the instrument
+        path: "/meetings/2027-01-20-summit-closure.md",
+        text: note(
+          "type: meeting\ntitle: Extraordinary sync — summit closure\nwhen: 2027-01-20\nattendees: [/people/tomas-okafor.md, /people/samir-haddad.md, /people/hana-sato.md]\nprojects: [basalt, cirrus]\ntags: [meeting, extraordinary, weather]",
+          `# Extraordinary sync — summit closure
+
+Cold weather closed the summit road overnight and the plough will not get through before Thursday; the site stays shut, the crews stay at the base station, and the pier survey moves to next week. Nobody goes up until Tomas has walked the road. #weather
+
+## Decisions
+
+The access rota is suspended while the road is closed; the overnight watch at the base station continues.`,
+        ),
+      },
+      {
+        // "camera" — the film crew's, not the science detector
+        path: "/risks/r-26-camera-fogging.md",
+        text: note(
+          "type: risk\ntitle: Documentary camera lens fogs inside the dome\nproject: fjord\nlikelihood: medium\nimpact: low\nstatus: open\nowner: /people/priya-raman.md\ntags: [risk, fjord]",
+          `# Documentary camera lens fogs inside the dome
+
+Threatens [Documentary filming](/projects/fjord/documentary-filming.md). The film crew's camera lens fogs over every time it is carried from the control room into the dome; the shots of the shutter opening at dusk were lost twice, and Sable Film want a drying cabinet for the camera by the dome door before the next shoot.`,
+        ),
+      },
+      {
+        // "cold storage", "stays", "overnight" — the canteen
+        path: "/vendors/ridgeline-catering.md",
+        text: note(
+          "type: vendor\nname: Ridgeline Catering\nsupplies: [site canteen, cold storage]\ntags: [vendor]",
+          `# Ridgeline Catering
+
+Supplies the site canteen and cold storage; first engaged for [Access road construction](/projects/basalt/road-construction.md). The cold storage unit stays at the base station because the summit has no three-phase supply for it yet; overnight deliveries come up with the morning crew bus, and the canteen stays open while any crew is on the ridge.`,
+        ),
+      },
+    ],
+  },
+  {
+    // the question states a conclusion; the note is the reasoning without the conclusion's words (argue / buying / backup / detector / mistake)
+    task: "semantic-paraphrase",
+    question: "Where did someone argue that buying the backup detector was a mistake?",
+    target: {
+      path: "/journal/2028-04-14-the-crate-in-the-store.md",
+      text: note(
+        "type: journal\ntitle: In hindsight, the spare was the wrong call\nproject: aurora\nwhen: 2028-04-14\nauthor: /people/mara-lindqvist.md\ntags: [journal, aurora, procurement]",
+        `# In hindsight, the spare was the wrong call
+
+Mara's position, for the record: procuring the spare focal-plane array last spring was the wrong call, and hindsight has only sharpened it. The spare sits unused in its crate in the instrument store and will until the warranty on the one in the cryostat lapses; the money would have funded two months of commissioning time between [Bench alignment](/projects/aurora/bench-alignment.md) and [First light](/projects/aurora/first-light.md), which is exactly what we ran short of.
+
+I said so at the time and was overruled; the board's reasoning — that a second unit protects first light — was sound on paper, but the insurance we paid for was never the scarce resource. Noted here so the [spare-parts budget line](/decisions/036-spare-parts-budget.md) discussion starts from what actually happened rather than from the paper.`,
+      ),
+    },
+    decoys: [
+      {
+        // "backup detector" — approved, and nobody minded
+        path: "/meetings/2027-03-10-detector-procurement.md",
+        text: note(
+          "type: meeting\ntitle: Extraordinary sync — detector procurement\nwhen: 2027-03-10\nattendees: [/people/mara-lindqvist.md, /people/zoe-chen.md, /people/samir-haddad.md]\nprojects: [aurora]\ntags: [meeting, extraordinary, procurement]",
+          `# Extraordinary sync — detector procurement
+
+The board approved the purchase order for the backup detector from [Halberd Detectors](/vendors/halberd-detectors.md) and everyone in the room agreed it was the right call; delivery is in twelve weeks, Zoe books the acceptance test for the second unit when it lands, and Samir confirms the warranty on the first one runs to the end of 2029. #procurement`,
+        ),
+      },
+      {
+        // "mistake", "argued" — about flat fields
+        path: "/journal/2027-06-30-flat-field-gradient.md",
+        text: note(
+          "type: journal\ntitle: The flat-field gradient\nproject: aurora\nwhen: 2027-06-30\nauthor: /people/lukas-brandt.md\ntags: [journal, aurora, calibration]",
+          `# The flat-field gradient
+
+Taking the flat fields through the open dome slit was a mistake: the gradient across the field is the slit, not the lamp, and a week of calibration frames has to be redone. Lukas argued for a screen on the inside of the dome from the start and he was right; the screen goes up before the next calibration run.`,
+        ),
+      },
+      {
+        // "backup", "detector" — a smoke detector in the backup generator shed
+        path: "/risks/r-27-generator-shed-smoke-detector.md",
+        text: note(
+          "type: risk\ntitle: Smoke detector in the backup generator shed trips on start-up\nproject: ember\nlikelihood: medium\nimpact: medium\nstatus: open\nowner: /people/hana-sato.md\ntags: [risk, ember]",
+          `# Smoke detector in the backup generator shed trips on start-up
+
+Threatens [Substation install](/projects/ember/substation-install.md). The smoke detector in the backup generator shed trips every time the backup set starts in damp weather, and the fire panel then locks out the substation feed for ten minutes; a detector rated for diesel exhaust is on order from Meridian Power.`,
+        ),
+      },
+    ],
+  },
+  {
+    // the concept named in the question (a person's state) is described only by its symptoms and consequences; zero overlap on burn / burning
+    task: "semantic-cross-domain",
+    question: "Which note describes someone burning out?",
+    target: {
+      path: "/journal/2027-12-14-three-weeks-on-call.md",
+      text: note(
+        "type: journal\ntitle: Three weeks on call\nproject: delta\nwhen: 2027-12-14\nauthor: /people/yusuf-adeyemi.md\ntags: [journal, delta, people]",
+        `# Three weeks on call
+
+Zoe has carried the on-call rota alone for three weeks while the [End-to-end rehearsal](/projects/delta/end-to-end-rehearsal.md) runs, and it shows: she fell asleep in the Tuesday sync, snapped at the partners on Thursday's call, the pipeline's error rate doubled on her watch, and she has started answering questions with questions. She has not had a day off since October. I have taken her off the rota until January and the rehearsal loses a week for it; a week is cheap against what we were about to lose.`,
+      ),
+    },
+    decoys: [
+      {
+        // "burnout" — a shutter motor's windings, not a person (the strongest decoy: second to the target under gte-base)
+        path: "/meetings/2027-09-28-shutter-motor-burnout.md",
+        text: note(
+          "type: meeting\ntitle: Shutter motor burnout\nwhen: 2027-09-28\nattendees: [/people/ines-ferreira.md, /people/samir-haddad.md]\nprojects: [cirrus]\ntags: [meeting, commissioning]",
+          `# Shutter motor burnout
+
+The second shutter motor burnout this month: water got past the seal on the east drive and shorted the windings, and the motor is a write-off. Kestrel will supply a sealed replacement under [Replace the shutter motors](/decisions/027-shutter-motor-replacement.md), and the warranty claim goes in this week. #commissioning`,
+        ),
+      },
+      {
+        // "burning" — a firmware image onto a controller
+        path: "/risks/r-28-shutter-controller-firmware.md",
+        text: note(
+          "type: risk\ntitle: Burning the shutter controller firmware fails halfway\nproject: cirrus\nlikelihood: low\nimpact: medium\nstatus: open\nowner: /people/ines-ferreira.md\ntags: [risk, cirrus]",
+          `# Burning the shutter controller firmware fails halfway
+
+Threatens [Shutter commissioning](/projects/cirrus/shutter-commissioning.md). Burning the new firmware image onto the shutter controller over the serial link fails halfway through on two of the three boards Kestrel shipped, leaving the controller unbootable until the image is burnt again from the recovery header; a bricked controller on the summit is a day's drive to fix.`,
+        ),
+      },
+      {
+        // "burnt out", "burning through" — the calibration lamp
+        path: "/meetings/2027-10-26-calibration-lamp.md",
+        text: note(
+          "type: meeting\ntitle: Calibration lamp\nwhen: 2027-10-26\nattendees: [/people/zoe-chen.md, /people/lukas-brandt.md]\nprojects: [aurora]\ntags: [meeting, commissioning]",
+          `# Calibration lamp
+
+The arc lamp burnt out after a hundred and forty hours, a third of its rated life, and Zoe is burning through the spares faster than the [Throughput calibration](/projects/aurora/throughput-calibration.md) plan allowed for; Lukas will ask Aurora Optics whether the lamp housing is running hot. #commissioning`,
+        ),
+      },
+      {
+        // "burning" — cleared scrub along the road line
+        path: "/journal/2026-08-19-clearing-the-ridge.md",
+        text: note(
+          "type: journal\ntitle: Clearing the ridge\nproject: basalt\nwhen: 2026-08-19\nauthor: /people/tomas-okafor.md\ntags: [journal, basalt, sitework]",
+          `# Clearing the ridge
+
+Ridgeway's crew spent the week burning the cleared scrub along the road line, inside the permit's burning window and with the fire service told each morning; the [Access road construction](/projects/basalt/road-construction.md) starts on a clean line on Monday, a week earlier than the plan assumed. #sitework`,
+        ),
+      },
+    ],
+  },
+];
+
+/** Every planted path (targets and decoys), in plant order. */
+export function plantedPaths(): string[] {
+  return SEMANTIC_PLANTS.flatMap((p) => [p.target.path, ...p.decoys.map((d) => d.path)]);
+}
+
 // ---- the PRNG and the word lists ---------------------------------------------------------
 
 /** mulberry32: a tiny deterministic PRNG. */
@@ -731,6 +925,10 @@ export function generateTimeline(): Map<string, string> {
   RISKS.forEach((risk, i) => out.set(`/risks/${risk[0]}.md`, riskNote(risk, i, r)));
   for (const v of VENDORS) out.set(`/vendors/${v[0]}.md`, vendorNote(v, r));
   out.set("/templates/meeting.md", templateNote());
+  for (const p of SEMANTIC_PLANTS) {
+    out.set(p.target.path, p.target.text);
+    for (const d of p.decoys) out.set(d.path, d.text);
+  }
   return new Map([...out.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 

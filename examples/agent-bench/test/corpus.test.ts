@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CORPUS_SEED, FENCED_TASK_DECOY, MILESTONES, OPEN_TASKS, PEOPLE, PROJECTS, TIMELINE_DIR, chainOf, diffTrees, generateTimeline, milestonePath, readTree, rng, writeTimeline } from "../src/corpus.ts";
+import { CORPUS_SEED, FENCED_TASK_DECOY, MILESTONES, OPEN_TASKS, PEOPLE, PROJECTS, TIMELINE_DIR, chainOf, diffTrees, generateTimeline, milestonePath, plantedPaths, readTree, rng, writeTimeline } from "../src/corpus.ts";
 import { OmgServer } from "../src/mcp.ts";
 import { CORPORA, createWorkspace, fixtureBytes, vaultDiff, type Workspace } from "../src/workspace.ts";
 
@@ -44,17 +44,18 @@ describe("generateTimeline", () => {
     }
   });
 
-  it("has the shape the README states: 348 small Markdown files — 6 projects, 63 milestones, 10 people, 130 weekly meetings, 40 decisions, 30 journals, 30 glossary terms, 25 risks, 12 vendors, a hub and a template", () => {
-    expect(files.size).toBe(348);
+  it("has the shape the README states: 361 small Markdown files — 6 projects, 63 milestones, 10 people, 130 weekly meetings, 40 decisions, 30 monthly journals, 30 glossary terms, 25 risks, 12 vendors, a hub, a template, and the 13 semantic plants (5 dated journal entries, 4 extraordinary meetings, 3 risks, a vendor)", () => {
+    expect(files.size).toBe(361);
     const under = (prefix: string) => [...files.keys()].filter((p) => p.startsWith(prefix)).length;
     expect(under("/projects/")).toBe(6 + 63);
     expect(under("/people/")).toBe(10);
-    expect(under("/meetings/")).toBe(130);
+    expect(under("/meetings/")).toBe(130 + 4);
     expect(under("/decisions/")).toBe(40);
-    expect(under("/journal/")).toBe(30);
+    expect(under("/journal/")).toBe(30 + 5);
     expect(under("/glossary/")).toBe(30);
-    expect(under("/risks/")).toBe(25);
-    expect(under("/vendors/")).toBe(12);
+    expect(under("/risks/")).toBe(25 + 3);
+    expect(under("/vendors/")).toBe(12 + 1);
+    expect(plantedPaths()).toHaveLength(13);
     expect(files.has("/index.md") && files.has("/templates/meeting.md")).toBe(true);
     for (const text of files.values()) expect(text.length).toBeLessThan(3000);
     expect([...files.values()].reduce((n, t) => n + Buffer.byteLength(t), 0)).toBeLessThan(400_000);
@@ -133,9 +134,9 @@ describe("the timeline corpus through a workspace", () => {
     return (r.result as { hits: Record<string, unknown>[] }).hits;
   }
 
-  it("ingests all 348 documents, and the tasks' oracle queries answer exactly what the task files expect", async () => {
+  it("ingests all 361 documents, and the tasks' oracle queries answer exactly what the task files expect", async () => {
     const server = await timeline();
-    expect((await server.call("query", { query: "docs count { }" })).result).toMatchObject({ count: 348 });
+    expect((await server.call("query", { query: "docs count { }" })).result).toMatchObject({ count: 361 });
     expect(fixtureBytes("/index.md", "timeline")).toMatch(/^---\ntype: hub\n/);
 
     // range-window-includes: six in flight on 2027-03-15, the boundary ones included
