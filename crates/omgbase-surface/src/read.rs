@@ -857,15 +857,25 @@ pub fn normalize_tree_prefix(path: Option<&str>) -> String {
     }
 }
 
-/// §2 `docs_tree`: `{ prefix, depth, total, entries, truncated, cursor }`. The
-/// tree is built over the storage form and rooted on the way out, so the
-/// prefix (`/` for the root), the entries and the cursor all speak the
-/// reference form (§1 "Paths").
+/// §2 `docs_tree` (5.1): `{ prefix, depth, total, files_here, entries,
+/// truncated, cursor }` — the directory rollup. Every directory within
+/// `depth` segments under the prefix is one entry `{ _path (ending `/`),
+/// docs, blocks }` (the totals beneath it; a nested directory after its
+/// parent in path order); the documents directly in the prefix are counted
+/// as `files_here`, never listed. With `files` the documents within `depth`
+/// are listed too, as `{ _id, _path, blocks }`; with `updated` every entry
+/// gains `_updated_at` (a directory's the latest beneath it). The tree is
+/// built over the storage form and rooted on the way out, so the prefix (`/`
+/// for the root), the entries and the cursor all speak the reference form
+/// (§1 "Paths").
+#[allow(clippy::too_many_arguments)]
 pub fn docs_tree(
     store: &Store,
     repo_id: &str,
     path: Option<&str>,
     depth: Option<i64>,
+    files: bool,
+    updated: bool,
     limit: Option<i64>,
     cursor: Option<&str>,
     budget_tokens: Option<usize>,
@@ -882,7 +892,7 @@ pub fn docs_tree(
 
     struct Entry {
         path: String,
-        /// The document's id for a `doc` entry; a `dir` has none.
+        /// The document's id for a document entry; a directory has none.
         doc_id: Option<String>,
         dir: bool,
         docs: i64,
@@ -890,13 +900,39 @@ pub fn docs_tree(
         ts: Option<String>,
     }
     let mut by_path: Vec<Entry> = Vec::new();
-    let (mut total_docs, mut total_blocks) = (0i64, 0i64);
+    let (mut total_docs, mut total_blocks, mut files_here) = (0i64, 0i64, 0i64);
     for row in &rows {
         total_docs += 1;
         total_blocks += row.blocks;
         let rel = &row.path[prefix.len().min(row.path.len())..];
         let segs: Vec<&str> = rel.split('/').collect();
-        if segs.len() <= depth {
+        if segs.len() == 1 {
+            files_here += 1;
+        }
+        // Every directory above the document within `depth` segments rolls it up.
+        for d in 1..segs.len().min(depth + 1) {
+            let dir = format!("{prefix}{}/", segs[..d].join("/"));
+            match by_path.iter_mut().find(|e| e.path == dir) {
+                Some(cur) => {
+                    cur.docs += 1;
+                    cur.blocks += row.blocks;
+                    if let Some(ts) = &row.ts
+                        && cur.ts.as_ref().is_none_or(|c| ts > c)
+                    {
+                        cur.ts = Some(ts.clone());
+                    }
+                }
+                None => by_path.push(Entry {
+                    path: dir,
+                    doc_id: None,
+                    dir: true,
+                    docs: 1,
+                    blocks: row.blocks,
+                    ts: row.ts.clone(),
+                }),
+            }
+        }
+        if files && segs.len() <= depth {
             by_path.push(Entry {
                 path: row.path.clone(),
                 doc_id: Some(row.doc_id.clone()),
@@ -905,27 +941,6 @@ pub fn docs_tree(
                 blocks: row.blocks,
                 ts: row.ts.clone(),
             });
-            continue;
-        }
-        let dir = format!("{prefix}{}/", segs[..depth].join("/"));
-        match by_path.iter_mut().find(|e| e.path == dir) {
-            Some(cur) => {
-                cur.docs += 1;
-                cur.blocks += row.blocks;
-                if let Some(ts) = &row.ts
-                    && cur.ts.as_ref().is_none_or(|c| ts > c)
-                {
-                    cur.ts = Some(ts.clone());
-                }
-            }
-            None => by_path.push(Entry {
-                path: dir,
-                doc_id: None,
-                dir: true,
-                docs: 1,
-                blocks: row.blocks,
-                ts: row.ts.clone(),
-            }),
         }
     }
     by_path.sort_by(|a, b| a.path.cmp(&b.path));
@@ -936,18 +951,21 @@ pub fn docs_tree(
     let entries: Vec<(String, Json)> = by_path
         .into_iter()
         .map(|e| {
-            // §2 (5.0): a `doc` entry is `{ _id, _path, kind, docs, blocks,
-            // _updated_at }`, a `dir` the same without the `_id`.
+            // §2 (5.1): a directory is `{ _path, docs, blocks }`, a document
+            // `{ _id, _path, blocks }`; `_updated_at` last, on request.
             let path = reference_path(&e.path);
             let mut m = Map::new();
             if let Some(id) = &e.doc_id {
                 m.insert("_id".to_owned(), json!(id));
             }
             m.insert("_path".to_owned(), json!(path));
-            m.insert("kind".to_owned(), json!(if e.dir { "dir" } else { "doc" }));
-            m.insert("docs".to_owned(), json!(e.docs));
+            if e.dir {
+                m.insert("docs".to_owned(), json!(e.docs));
+            }
             m.insert("blocks".to_owned(), json!(e.blocks));
-            m.insert("_updated_at".to_owned(), json!(e.ts));
+            if updated {
+                m.insert("_updated_at".to_owned(), json!(e.ts));
+            }
             (path, Json::Object(m))
         })
         .collect();
@@ -956,6 +974,7 @@ pub fn docs_tree(
         "prefix": reference_path(&prefix),
         "depth": depth,
         "total": { "docs": total_docs, "blocks": total_blocks },
+        "files_here": files_here,
         "entries": items,
         "truncated": truncated,
         "cursor": cursor,

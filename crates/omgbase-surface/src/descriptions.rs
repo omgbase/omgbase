@@ -30,19 +30,21 @@ pub const NODES_BLOCK_READ: &str = r#"Read the block a NODE was projected from: 
 pub const BLOCKS_READ_MANY: &str = r#"Fetch up to 100 blocks by id (in request order) with budget truncation — the plural of blocks_read (nodes_get_many before surface 3.0). Block ids are globally unique, so `_ids` may span ANY number of documents — each id is resolved to its owning doc server-side. Result carries `nodes` (the hydrated blocks, one per resolved id), `truncated` (cap or `budget_tokens` hit — the first resolved block always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped)."#;
 
 /// `docs_tree`
-pub const DOCS_TREE: &str = r#"docs_tree — Orientation: the shape of a repo in one small call, like tree -L depth with document and block counts per entry.
-{}   the root at depth 1: one entry per directory (_path ends in /) or shallow document, plus total
-{"path":"/processes/","depth":1}   descend into a directory entry (path is the prefix argument)
-{"depth":2,"limit":5}   collapse deeper; limit/cursor page the entries, total always covers everything under path
-Ranked or attribute-based discovery: blocks_resolve, or query (select _path from docs where ...). Grammar: query_syntax."#;
+pub const DOCS_TREE: &str = r#"docs_tree — Orientation: the repo's directories with document and block counts, one small page (tree -L depth -d + du).
+{}   the root: one row per directory ({ _path ending in /, docs, blocks }), files_here = documents at the root itself, total
+{"path":"/processes/","files":true}   descend (path is the prefix) and list its documents too ({ _id, _path, blocks })
+{"depth":2,"updated":true}   nested directories to depth 2; updated adds _updated_at; limit/cursor page the rows
+Find documents by attribute, not by path: query (select _path from docs where ...). Grammar: query_syntax."#;
 
 /// `docs_list`
 pub const DOCS_LIST: &str = r#"ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ _id, _path, _updated_at, blocks }], truncated, cursor }` — the document's `_id`, its `_path` (`/`-rooted, as every path the surface returns), last-commit timestamp (ISO, or null) and live block count — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default 200) caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `blocks_resolve`."#;
 
 /// `query_syntax`
-pub const QUERY_SYNTAX: &str = r#"query_syntax — The full OQX reference: clause order, targets and fields, scalar semantics, nested queries and the root row, follow, paging, worked examples.
-{}   no arguments; returns { syntax }
-Call it before writing a non-trivial query; every other tool's examples end here, at query_syntax."#;
+pub const QUERY_SYNTAX: &str = r#"query_syntax — The OQX reference: a card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time.
+{}   the ~3 kB card: { syntax, sections } — enough for most queries
+{"section":"follow"}   one chapter in full ({ section, syntax }); the names are the card's sections list
+{"section":"all"}   the whole manual (38 kB) — rarely needed
+Call the card before a non-trivial query; every other tool's examples end here, at query_syntax."#;
 
 /// `query`
 pub const QUERY: &str = r#"query — rows (_id, _path, projection) from docs, blocks, nodes or links.
@@ -74,7 +76,7 @@ pub const APPLY: &str = r###"apply — plan and commit in one call; returns the 
 Plan first for anything you cannot undo by hand; every error's data.fix is a corrected call to copy. Grammar: query_syntax."###;
 
 /// `plan`
-pub const PLAN: &str = r##"plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. File bodies: add diffs: true.
+pub const PLAN: &str = r##"plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.
 {"effects":[{"op":"set","target":"/processes/calcination.md","field":"_frontmatter.verified","value":false}]}   path = doc
 {"effects":[{"op":"insert","into":{"kind":"section","heading_id":"b_153"},"markdown":"- [ ] Weigh the calx"}]}   in a section
 {"effects":[{"op":"create","path":"lab/march.md","markdown":"# March\n"},{"op":"insert","into":"$new.0","markdown":"Hi."}]}   fill it: $new.0
@@ -83,9 +85,9 @@ pub const PLAN: &str = r##"plan — Preview a write: the Plan (summary, $new.n i
 Ops: create insert set unset move remove split merge retarget; grammar: query_syntax."##;
 
 /// `execute`
-pub const EXECUTE: &str = r#"execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).
-{"plan_id":"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f","effects":[{"op":"set","target":"/processes/calcination.md","field":"_frontmatter.verified","value":false}]}   digest form: the plan_id plan returned for these effects
-Or pass the whole object: {"plan": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax."#;
+pub const EXECUTE: &str = r#"execute — Commit a plan from plan: by plan_id alone (this server remembers the plans it made), or the plan form (the whole Plan object), or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).
+{"plan_id":"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)
+Or {"plan": the Plan as returned} or {"plan_id", "effects"}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax."#;
 
 /// `blocks_insert`
 pub const BLOCKS_INSERT: &str = r###"Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block — it must be a CONTAINER (a list, list item, task, blockquote or table); a leaf such as a heading or paragraph fails `type_mismatch` (spec/mutate §1.1) — use blocks_append for "into this heading's section / this container" or `at: {after: <ref>}` for "right after this block"; or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: "<path>", markdown: "## New\n\n…" }` (the positional generalization of docs_append). `at` places among the parent's children: "end" (default) / "start" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by "," and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Sugar for `apply { effects: [{ op: "insert", into, at, markdown, expect? }] }` — returns the Receipt (`new_ids` holds the inserted blocks' ids, `$new.0` first); preview with `plan` over that effect."###;

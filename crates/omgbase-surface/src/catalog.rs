@@ -12,7 +12,7 @@
 //! observe outcomes, opsets, change digests, search hits — are re-shaped
 //! here, exactly as the reference's `surface-paths.ts` re-shapes them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use omgbase_format::BlockKind;
@@ -42,12 +42,26 @@ use crate::names::VocabularyCache;
 use crate::paths::{reference_keyed, reference_path, root_field, storage_path};
 use crate::query::{QueryOptions, embed_phrases, query};
 use crate::read::{self, Resolution, ResolvedRef};
-use crate::reference::QUERY_SYNTAX;
+use crate::reference;
 use crate::select::{self, SelectRequest};
 use crate::version::{BuildInfo, version_info};
 
 /// The actor every write from this surface records.
 pub const ACTOR: &str = "agent:mcp";
+
+/// How many plans a surface remembers for `execute { plan_id }` alone (§4
+/// `execute`, 5.1): the most recent `plan` results of this process, by
+/// `plan_id`, the least recently produced evicted first. The same bound as
+/// the reference's `PLAN_MEMORY` (`packages/core/src/mcp/server.ts`).
+pub const PLAN_MEMORY: usize = 64;
+
+/// The message of `plan_unknown` (5.1), spelled alike by both engines.
+#[must_use]
+pub fn plan_unknown_message(plan_id: &str) -> String {
+    format!(
+        "this server has no plan {plan_id} — re-run plan, or pass the plan (or `plan_id` + `effects`) with execute"
+    )
+}
 
 /// One tool of the catalog.
 #[derive(Clone, Debug, PartialEq)]
@@ -100,6 +114,13 @@ pub struct Surface {
     /// the committed ids through the receipt's `new_ids`), for
     /// [`Surface::call_result_with_plan`].
     last_plan: Option<Plan>,
+    /// The plans this surface produced (§4 `execute`, 5.1): `plan`'s results
+    /// in production order, the last [`PLAN_MEMORY`] of them, so `execute {
+    /// plan_id }` alone runs the FULL plan form — `stale_plan` and
+    /// `plan_mismatch` told apart exactly as if the client had echoed the
+    /// Plan. A re-planned id moves to the back; an id this surface never
+    /// produced is `plan_unknown`.
+    plans: VecDeque<Plan>,
     /// Which tools this surface lists and accepts ([`Surface::tools`]);
     /// `Full` unless the host chose otherwise (`omgbase mcp --tools`).
     profile: Profile,
@@ -524,6 +545,8 @@ fn build_catalog() -> Vec<ToolSpec> {
                 &[
                     ("path", s()),
                     ("depth", i()),
+                    ("files", b()),
+                    ("updated", b()),
                     ("limit", i()),
                     ("cursor", nullable_string()),
                     ("budget_tokens", i()),
@@ -549,7 +572,7 @@ fn build_catalog() -> Vec<ToolSpec> {
         ToolSpec {
             name: "query_syntax",
             description: d::QUERY_SYNTAX,
-            input_schema: schema(&[], &[], false),
+            input_schema: schema(&[("section", s())], &[], false),
         },
         ToolSpec {
             name: "query",
@@ -935,9 +958,38 @@ impl Surface {
             build_info: BuildInfo::default(),
             preview: false,
             last_plan: None,
+            plans: VecDeque::new(),
             profile: Profile::Full,
             vocabulary: VocabularyCache::default(),
         }
+    }
+
+    /// Remember a `plan` result for `execute { plan_id }` alone (5.1): the
+    /// newest at the back, a re-planned id moved there, the oldest dropped
+    /// past [`PLAN_MEMORY`].
+    fn remember_plan(&mut self, plan: &Plan) {
+        self.plans.retain(|p| p.plan_id != plan.plan_id);
+        self.plans.push_back(plan.clone());
+        while self.plans.len() > PLAN_MEMORY {
+            self.plans.pop_front();
+        }
+    }
+
+    /// The remembered plan under `plan_id`, or `plan_unknown` (retriable).
+    fn remembered_plan(&self, plan_id: &str) -> Result<Plan> {
+        self.plans
+            .iter()
+            .find(|p| p.plan_id == plan_id)
+            .cloned()
+            .ok_or_else(|| {
+                let mut e = SurfaceError::with_data(
+                    "plan_unknown",
+                    plan_unknown_message(plan_id),
+                    json!({ "plan_id": plan_id }),
+                );
+                e.retriable = true;
+                e
+            })
     }
 
     /// Serve `profile` (§4 "Profiles"): [`Surface::tools`] lists only its
@@ -1802,6 +1854,8 @@ impl Surface {
                     &repo,
                     arg_str(args, "path"),
                     arg_i64(args, "depth")?,
+                    args.get("files").and_then(Json::as_bool) == Some(true),
+                    args.get("updated").and_then(Json::as_bool) == Some(true),
                     arg_i64(args, "limit")?,
                     arg_str(args, "cursor"),
                     arg_usize(args, "budget_tokens")?,
@@ -1818,7 +1872,34 @@ impl Surface {
                     arg_usize(args, "budget_tokens")?,
                 )
             }
-            "query_syntax" => Ok(json!({ "syntax": QUERY_SYNTAX })),
+            "query_syntax" => {
+                // (5.1) The card by default; a chapter by its slug; `all` the
+                // manual. An unknown name is an argument error naming the
+                // chapters, its `fix` the call respelled with the nearest name
+                // (or `all`).
+                let Some(section) = arg_str(args, "section") else {
+                    return Ok(json!({
+                        "syntax": reference::QUERY_SYNTAX_CARD,
+                        "sections": reference::QUERY_SYNTAX_SECTIONS.iter().map(|(slug, _)| *slug).collect::<Vec<_>>(),
+                    }));
+                };
+                let Some(syntax) = reference::query_syntax_section(section) else {
+                    let names = reference::QUERY_SYNTAX_SECTION_NAMES;
+                    let fix = omgbase_mutate::canonical_json(&json!({
+                        "section": crate::arguments::nearest(section, names).unwrap_or("all"),
+                    }));
+                    return Err(crate::arguments::argument_error_fix(
+                        name,
+                        &format!(
+                            "unknown section `{section}`; the sections are {}",
+                            names.join(", ")
+                        ),
+                        &spec.input_schema,
+                        Some(fix),
+                    ));
+                };
+                Ok(json!({ "section": section, "syntax": syntax }))
+            }
             "query" => {
                 let (repo, _) = self.scope(args)?;
                 let source = arg_string(args, "query")?;
@@ -1953,6 +2034,10 @@ impl Surface {
                         Ok(store.plan_effects(&ctx, &effects, ds)?)
                     })?,
                 };
+                // (5.1) remembered for `execute { plan_id }` alone — the Plan
+                // as planned, preview included (its `summary` is the
+                // Receipt's).
+                self.remember_plan(&plan);
                 let mut plan = plan_json(&plan);
                 // (4.5) `preview.diffs` — whole before/after bodies of every
                 // touched document — only on request: `diffs: true`. The
@@ -1971,31 +2056,48 @@ impl Surface {
                 let reason = arg_str(args, "reason").map(str::to_owned);
                 let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let ctx = self.plan_ctx(&repo);
-                // §4 (3.1): exactly one form — the plan, or `plan_id` +
-                // `effects` (+ `select` / `expect`, 4.1: the re-plan runs the
-                // selector again; a hit that came or went is `plan_mismatch`).
+                // §4 (3.1; 5.1): exactly one form — the plan, the id alone
+                // (5.1: the plan this surface remembers under it, run as the
+                // plan form), or `plan_id` + `effects` (+ `select` / `expect`,
+                // 4.1: the re-plan runs the selector again; a hit that came or
+                // went is `plan_mismatch`).
                 let plan_form = args.get("plan").is_some();
-                let digest_form = args.get("plan_id").is_some()
-                    || args.get("effects").is_some()
-                    || args.get("select").is_some()
-                    || args.get("expect").is_some();
-                if plan_form == digest_form {
+                let selector = args.get("select").is_some() || args.get("expect").is_some();
+                let id_form =
+                    args.get("plan_id").is_some() && args.get("effects").is_none() && !selector;
+                let digest_form = !id_form
+                    && (args.get("plan_id").is_some() || args.get("effects").is_some() || selector);
+                if plan_form == (id_form || digest_form) {
                     return Err(argument_error(
                         name,
-                        "pass exactly one of `plan` or `plan_id` + `effects`",
+                        "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects`",
                         &spec.input_schema,
                     ));
                 }
-                let receipt = if plan_form {
-                    let plan = match Plan::admit(&args["plan"]) {
-                        Ok(plan) => plan,
-                        Err(Admission::Refused(m)) => return Err(SurfaceError::from(m)),
-                        Err(Admission::Invalid(m)) => {
-                            return Err(SurfaceError::filter_invalid(m, "arguments"));
+                let receipt = if plan_form || id_form {
+                    let plan = if id_form {
+                        self.remembered_plan(arg_str(args, "plan_id").unwrap_or_default())?
+                    } else {
+                        match Plan::admit(&args["plan"]) {
+                            Ok(plan) => plan,
+                            Err(Admission::Refused(m)) => return Err(SurfaceError::from(m)),
+                            Err(Admission::Invalid(m)) => {
+                                return Err(SurfaceError::filter_invalid(m, "arguments"));
+                            }
                         }
                     };
                     self.with_writes(root.as_deref(), |store, ds| {
                         Ok(store.execute_plan(&ctx, &plan, &origin, ds)?)
+                    })
+                    .map_err(|e: SurfaceError| {
+                        // The id form's `stale_plan` carries the re-plan `fix` the
+                        // plan form's does (`fixes::attach` reads the plan from
+                        // the arguments, which hold only the id here).
+                        if id_form && matches!(e.code.as_str(), "stale_plan" | "plan_mismatch") {
+                            fixes::with_fix(e, fixes::replan(&plan.to_json(true)))
+                        } else {
+                            e
+                        }
                     })?
                 } else {
                     let (Some(plan_id), Some(effects)) =
@@ -3231,7 +3333,7 @@ mod tests {
             e.body["message"]
                 .as_str()
                 .unwrap()
-                .starts_with("pass exactly one of `plan` or `plan_id` + `effects`"),
+                .starts_with("pass exactly one of `plan`, `plan_id` or `plan_id` + `effects`"),
             "{}",
             e.body
         );
@@ -3358,15 +3460,39 @@ mod tests {
         );
         assert!(digest.is_error);
         assert_eq!(digest.body["error"], "plan_mismatch", "{}", digest.body);
-        let half = s.call("execute", json!({ "plan_id": plan["plan_id"] }));
-        assert!(half.is_error);
-        assert!(
-            half.body["message"]
-                .as_str()
-                .unwrap()
-                .starts_with("the digest form needs both"),
-            "{}",
-            half.body
+        // (5.1) The id alone is the remembered plan — already executed, so its
+        // own preconditions fail it (stale_plan, not plan_mismatch); the half
+        // digest form is `plan_id` + `expect` without `effects`, or `effects`
+        // alone; an id this surface never planned is plan_unknown.
+        let by_id = s.call("execute", json!({ "plan_id": plan["plan_id"] }));
+        assert!(by_id.is_error);
+        assert_eq!(by_id.body["error"], "stale_plan", "{}", by_id.body);
+        for half_args in [
+            json!({ "plan_id": plan["plan_id"], "expect": { "max": 1 } }),
+            json!({ "effects": effects }),
+        ] {
+            let half = s.call("execute", half_args);
+            assert!(half.is_error);
+            assert!(
+                half.body["message"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("the digest form needs both"),
+                "{}",
+                half.body
+            );
+        }
+        let unknown = s.call("execute", json!({ "plan_id": "0".repeat(64) }));
+        assert!(unknown.is_error);
+        assert_eq!(unknown.body["error"], "plan_unknown");
+        assert_eq!(unknown.body["retriable"], true);
+        assert_eq!(unknown.body["data"], json!({ "plan_id": "0".repeat(64) }));
+        assert_eq!(
+            unknown.body["message"],
+            format!(
+                "this server has no plan {} — re-run plan, or pass the plan (or `plan_id` + `effects`) with execute",
+                "0".repeat(64)
+            )
         );
         let v2 = s.call(
             "execute",

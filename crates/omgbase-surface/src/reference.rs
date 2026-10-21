@@ -1,10 +1,14 @@
-//! The `query_syntax` text (`spec/surface/README.md` §4: reference prose,
-//! unpinned). A condensed distillation of `docs/query-language.md`. Byte for
-//! byte the reference's `packages/core/src/mcp/reference.ts` — a test below
-//! compares the two when the monorepo is present, and another parses every
-//! example the text shows.
+//! The `query_syntax` texts (`spec/surface/README.md` §4; 5.1): the manual
+//! ([`QUERY_SYNTAX`], `{ section: "all" }`), its chapters
+//! ([`query_syntax_section`], one per `## ` heading of
+//! [`QUERY_SYNTAX_SECTIONS`]) and the card ([`QUERY_SYNTAX_CARD`], what `{}`
+//! returns). A condensed distillation of `docs/query-language.md`. Byte for
+//! byte the reference's `packages/core/src/mcp/reference.ts` — tests below
+//! compare every text with it when the monorepo is present, and others parse
+//! every example the texts show.
 
-/// The agent-facing OQX syntax reference the `query_syntax` tool returns.
+/// The agent-facing OQX syntax reference the `query_syntax` tool returns for
+/// `{ section: "all" }` (and for `{}` through 5.0).
 pub const QUERY_SYNTAX: &str = r##"# query — OQX syntax reference
 
 The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`, and
@@ -522,6 +526,122 @@ key is false — write `"x" in tags`. Another: `select _path: _doc._path` — al
 (`p: _doc._path`).
 "##;
 
+// ---- the card and the chapters (5.1) — byte for byte the reference's reference.ts ----
+
+/// The manual's chapters (`spec/surface` §4 `query_syntax`, 5.1): one
+/// `(slug, heading)` per `## ` heading of [`QUERY_SYNTAX`], in order — the
+/// `section` argument's names. Byte for byte the reference's
+/// `QUERY_SYNTAX_SECTIONS` (a test below checks every pair against its source).
+pub const QUERY_SYNTAX_SECTIONS: &[(&str, &str)] = &[
+    ("sugar", "Sugar (OQX 0.17)"),
+    ("paths", "Paths"),
+    ("targets", "Targets & field namespaces"),
+    (
+        "scoping",
+        "Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL",
+    ),
+    ("scalars", "Scalar semantics (@omgbase/oqx)"),
+    ("predicates", "Domain predicates (omgbase)"),
+    ("nested", "Nested queries & consumers"),
+    ("select", "select — projection"),
+    ("flatten", "flatten (OQX 0.25)"),
+    ("order", "order by, limit/offset, pagination"),
+    ("follow", "Graph traversal (follow) and links"),
+    ("semantic", "semantic grain"),
+    ("examples", "Examples"),
+];
+
+/// The `section` names a caller may pass: every slug, then `all` (the whole manual).
+pub const QUERY_SYNTAX_SECTION_NAMES: &[&str] = &[
+    "sugar",
+    "paths",
+    "targets",
+    "scoping",
+    "scalars",
+    "predicates",
+    "nested",
+    "select",
+    "flatten",
+    "order",
+    "follow",
+    "semantic",
+    "examples",
+    "all",
+];
+
+/// One chapter of the manual (5.1): the lines from `## <heading>` up to (not
+/// including) the next `## ` heading or the end, trailing blank lines dropped,
+/// one trailing newline. `"all"` is the whole manual; an unknown slug is `None`.
+/// The reference's `querySyntaxSection`, rule for rule.
+#[must_use]
+pub fn query_syntax_section(slug: &str) -> Option<String> {
+    if slug == "all" {
+        return Some(QUERY_SYNTAX.to_owned());
+    }
+    let (_, heading) = QUERY_SYNTAX_SECTIONS.iter().find(|(s, _)| *s == slug)?;
+    let lines: Vec<&str> = QUERY_SYNTAX.split('\n').collect();
+    let title = format!("## {heading}");
+    let start = lines.iter().position(|l| *l == title)?;
+    let mut end = start + 1;
+    while end < lines.len() && !lines[end].starts_with("## ") {
+        end += 1;
+    }
+    while end > start + 1 && lines[end - 1].trim().is_empty() {
+        end -= 1;
+    }
+    let mut text = lines[start..end].join("\n");
+    text.push('\n');
+    Some(text)
+}
+
+/// The card `query_syntax {}` returns (5.1): the grammar skeleton, the names
+/// rule and the engine names per kind, the handles, the consumers, follow in
+/// two lines, the examples agents reach for first, the chapter names. Byte for
+/// byte the reference's `QUERY_SYNTAX_CARD` (a test below compares the two).
+pub const QUERY_SYNTAX_CARD: &str = r#"# query — OQX card. Chapters: query_syntax { section: "<name>" }; the manual: { section: "all" }
+
+One OQX string; limit/cursor page the hits; bare: true drops the { _id, _path } envelope.
+  [select <items>] from <target> [where <pred>] [follow <dest> { … }] [order by <expr> [desc]] [limit N] [offset N]
+  <target> count|exists|none|first|single { <block> }     a scalar or one row
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset.
+and / or / not. Comparisons strict and typed; null == a missing field. A list key: "x" in tags, never tags == "x".
+Strings .contains("s") .startsWith("p") .lower(); x ~* "re" (ci regex), x !~ "re". Dates date("today"),
+date(due) < date("today").minus(dur("30 days")), _updated_at >= "2026-08-01".
+
+NAMES: a BARE name is YOURS (frontmatter, inline key:: value, a block's attrs); an UNDERSCORE name is the ENGINE's;
+$ is OQX's ($it $key $depth $stop $ordinal). title tags path id are your keys; _title _tags _path _id the engine's.
+  docs       _id _path _raw _hash _updated_at _created_at _title _tags _format | _data _frontmatter _inline | _blocks _nodes _out_links _in_links _revisions
+  blocks     _id _path _doc_id _raw _hash _type _text _attrs _depth _ordinal | _doc | _children _nodes _out_links _section
+  nodes      _id _path _doc_id _block_id _kind _name _value _attrs | _doc _block | _blocks _subsections _children
+  links      _id _path _doc_id _block_id _via_id _dst_id _dst_path _uri _dst_kind _predicate _provenance _anchor _field | _doc _dst _block
+  revisions  _id _path _rev _seq _doc_id _commit _ts _origin _actor _reason _hash _is_current _archived | _doc
+Handles _data.<k> ≡ <k>, _frontmatter.<k> / _inline.<k>; entries(_data) the bag as rows ($key, $it). Reach-through
+_doc.<k> the owning document, _dst.<k> a link's target. Scoping: a bare name is the CURRENT row; ^name one scope
+out; ^docs ^blocks ^nodes ^links the repository from a row. An unknown bare name is absent plus a hints line.
+
+NESTED: <receiver> collect|exists|none|count|first|single { [select …] [where …] [order by …] [limit N] } over a
+relation, a list key, entries(x) or ^docs; no consumer = collect, a leading predicate = where: docs { type == "x" }.
+FOLLOW: from docs where <seed> follow _out_links collect { from _dst depth 3 }   links out; _in_links { from _doc }
+backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("words") prunes; order by semantic("…") desc.
+
+  from docs where layer == "working"
+  select _title, stage from docs where "process" in tags order by _path limit 5
+  select _type, _text from blocks where _path == "/processes/calcination.md"
+  select _path, _value from nodes where _kind == "md:task" and not checked
+  select _path, _block_id from links where _dst_path == "/processes/calcination.md"
+  from docs where _title.lower().contains("salt") and _updated_at >= "2026-01-01"
+  from docs where _nodes exists { where _kind == "md:task" and not checked }
+  select _path, $depth from docs where _path == "/timeline/review.md" follow refs(before), refs(after)
+  docs count { where layer == "canon" }
+  select _seq, _ts, _hash from revisions where _path == "/processes/calcination.md" order by _seq desc
+  select tags, n: count() from docs flatten tags group by tags order by count() desc
+
+Every error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.
+Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.
+"#;
+
+// ---- end of the card and the chapters ----
+
 #[cfg(test)]
 mod tests {
     //! Every OQX example the text shows must parse — extracted MECHANICALLY by
@@ -535,7 +655,10 @@ mod tests {
     //! when it begins `select `, `from `, or a root target followed by a
     //! consumer or `{` (a `^`-led line is an expression fragment); (5) a
     //! `select`-led candidate without a depth-0 ` from ` is a fragment.
-    use super::QUERY_SYNTAX;
+    use super::{
+        QUERY_SYNTAX, QUERY_SYNTAX_CARD, QUERY_SYNTAX_SECTION_NAMES, QUERY_SYNTAX_SECTIONS,
+        query_syntax_section,
+    };
 
     const TARGETS: [&str; 4] = ["docs", "blocks", "nodes", "links"];
     const CONSUMERS: [&str; 7] = [
@@ -706,20 +829,22 @@ mod tests {
         );
     }
 
-    /// The twin is byte for byte the reference's `QUERY_SYNTAX` (the TS
-    /// template literal, unescaped). Skipped outside the monorepo.
-    #[test]
-    fn twin_is_byte_identical_to_the_reference() {
+    /// The reference's source, when the monorepo is present.
+    fn reference_ts() -> Option<String> {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../packages/core/src/mcp/reference.ts"
         );
-        let Ok(ts) = std::fs::read_to_string(path) else {
-            return;
-        };
-        let open = "export const QUERY_SYNTAX = `";
-        let start = ts.find(open).expect("the TS export") + open.len();
-        let end = ts.rfind("`;").expect("the TS literal's end");
+        std::fs::read_to_string(path).ok()
+    }
+
+    /// The TS template literal `export const <name> = \`…\`;`, unescaped
+    /// (`\`` → `` ` ``, `\\` → `\`, `\$` → `$`); the literal ends at the first
+    /// line that is exactly `` `; ``.
+    fn ts_literal(ts: &str, name: &str) -> String {
+        let open = format!("export const {name} = `");
+        let start = ts.find(&open).expect("the TS export") + open.len();
+        let end = start + ts[start..].find("\n`;").expect("the TS literal's end") + 1;
         let mut text = String::new();
         let mut chars = ts[start..end].chars();
         while let Some(c) = chars.next() {
@@ -731,9 +856,120 @@ mod tests {
                 text.push(c);
             }
         }
+        text
+    }
+
+    /// The twin is byte for byte the reference's `QUERY_SYNTAX` (the TS
+    /// template literal, unescaped). Skipped outside the monorepo.
+    #[test]
+    fn twin_is_byte_identical_to_the_reference() {
+        let Some(ts) = reference_ts() else {
+            return;
+        };
         assert!(
-            text == QUERY_SYNTAX,
+            ts_literal(&ts, "QUERY_SYNTAX") == QUERY_SYNTAX,
             "crates/omgbase-surface/src/reference.rs drifted from packages/core/src/mcp/reference.ts"
+        );
+    }
+
+    /// (5.1) The card and the section table are byte for byte the reference's
+    /// too — `QUERY_SYNTAX_CARD`, and every `{ slug, heading }` pair of
+    /// `QUERY_SYNTAX_SECTIONS` in order — so `query_syntax {}` and every
+    /// `{ section }` answer identically from both engines. Skipped outside the
+    /// monorepo.
+    #[test]
+    fn card_and_sections_are_byte_identical_to_the_reference() {
+        let Some(ts) = reference_ts() else {
+            return;
+        };
+        assert!(
+            ts_literal(&ts, "QUERY_SYNTAX_CARD") == QUERY_SYNTAX_CARD,
+            "QUERY_SYNTAX_CARD drifted from packages/core/src/mcp/reference.ts"
+        );
+        let table_at = ts
+            .find("export const QUERY_SYNTAX_SECTIONS")
+            .expect("the TS section table");
+        let mut cursor = table_at;
+        for (slug, heading) in QUERY_SYNTAX_SECTIONS {
+            let pair = format!("{{ slug: \"{slug}\", heading: \"{heading}\" }}");
+            let at = ts[cursor..]
+                .find(&pair)
+                .unwrap_or_else(|| panic!("the TS table lacks {pair} after the previous pair"));
+            cursor += at + pair.len();
+        }
+        let pairs = ts[table_at..cursor].matches("{ slug: \"").count();
+        assert_eq!(
+            pairs,
+            QUERY_SYNTAX_SECTIONS.len(),
+            "the TS table has pairs this twin lacks"
+        );
+        assert!(
+            !ts[cursor..ts[cursor..].find("];").unwrap() + cursor].contains("{ slug: \""),
+            "the TS table has pairs past this twin's last"
+        );
+    }
+
+    /// (5.1) The section table IS the manual's `## ` headings, in order; each
+    /// chapter runs from its heading to the next, no second heading inside, no
+    /// trailing blank line; the chapters joined are the manual's body after the
+    /// intro; `all` is the manual; an unknown slug is `None`.
+    #[test]
+    fn sections_are_the_headings_in_order_and_partition_the_manual() {
+        let headings: Vec<&str> = QUERY_SYNTAX
+            .lines()
+            .filter_map(|l| l.strip_prefix("## "))
+            .collect();
+        let table: Vec<&str> = QUERY_SYNTAX_SECTIONS.iter().map(|(_, h)| *h).collect();
+        assert_eq!(table, headings);
+        let mut names: Vec<&str> = QUERY_SYNTAX_SECTIONS.iter().map(|(s, _)| *s).collect();
+        names.push("all");
+        assert_eq!(names, QUERY_SYNTAX_SECTION_NAMES);
+        let mut joined = Vec::new();
+        for (slug, heading) in QUERY_SYNTAX_SECTIONS {
+            assert!(slug.chars().all(|c| c.is_ascii_lowercase()), "{slug}");
+            let text = query_syntax_section(slug).expect(slug);
+            assert!(text.starts_with(&format!("## {heading}\n")), "{slug}");
+            assert!(text.ends_with('\n') && !text.ends_with("\n\n"), "{slug}");
+            assert!(!text.contains("\n## "), "{slug} holds a second heading");
+            joined.push(text);
+        }
+        let body = &QUERY_SYNTAX[QUERY_SYNTAX.find("\n## ").unwrap() + 1..];
+        let squash = |s: &str| {
+            let mut out = String::new();
+            for l in s.split('\n').filter(|l| !l.is_empty()) {
+                out.push_str(l);
+                out.push('\n');
+            }
+            out
+        };
+        assert_eq!(squash(&joined.join("\n")), squash(body));
+        assert_eq!(query_syntax_section("all").as_deref(), Some(QUERY_SYNTAX));
+        assert_eq!(query_syntax_section("nope"), None);
+        assert!(QUERY_SYNTAX_CARD.contains("CLAUSE ORDER IS FIXED: select, from, where"));
+        for (slug, _) in QUERY_SYNTAX_SECTIONS {
+            assert!(QUERY_SYNTAX_CARD.contains(slug), "the card names {slug}");
+        }
+    }
+
+    /// (5.1) Every example on the card parses — the same extraction rule as
+    /// the manual's (the card has no `## Examples`, so rule 3 applies
+    /// throughout) — and there are at least ten.
+    #[test]
+    fn every_card_example_parses() {
+        let (queries, _) = extract(QUERY_SYNTAX_CARD);
+        assert!(queries.len() >= 10, "{} card examples", queries.len());
+        let failures: Vec<String> = queries
+            .iter()
+            .filter_map(|(line, _, q)| {
+                oqx::parse_string(q)
+                    .err()
+                    .map(|e| format!("line {line}: {q}\n    {e}"))
+            })
+            .collect();
+        assert!(
+            failures.is_empty(),
+            "card examples that do not parse:\n{}",
+            failures.join("\n")
         );
     }
 }

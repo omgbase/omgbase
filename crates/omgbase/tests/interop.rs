@@ -432,6 +432,7 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
                 d.get("hint").and_then(Json::as_str) == Some("arguments")
                     || [
                         "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider",
+                        "plan_id",
                     ]
                     .iter()
                     .any(|k| d.contains_key(*k))

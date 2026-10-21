@@ -474,7 +474,7 @@ pub fn attach(
     with_fix(err, fix)
 }
 
-fn with_fix(mut err: SurfaceError, fix: Option<String>) -> SurfaceError {
+pub fn with_fix(mut err: SurfaceError, fix: Option<String>) -> SurfaceError {
     if let Some(fix) = fix
         && let Some(d) = err.data.as_mut().and_then(Json::as_object_mut)
     {
