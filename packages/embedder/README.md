@@ -16,7 +16,7 @@ omg find "how are ids kept stable"                            # hybrid FTS ⊕ v
 omg q 'from blocks order by semantic("crash safety") desc' -n 5
 ```
 
-`omg init` offers to set this automatically when `omgbase-embedder` is already on `PATH` (`--yes` accepts, `--embedder <cmd|url>` sets any provider verbatim, `--no-embedder` skips). Without a provider, semantic ranking simply reports `semantic_unavailable` and everything else works. A provider that *is* configured but fails to spawn or handshake is a loud `embedder_failed` — never a silent downgrade.
+`omg init` offers to set this automatically when `omgbase-embedder` is already on `PATH` (`--yes` accepts, `--embedder <cmd|url>` sets any provider verbatim, `--no-embedder` skips). Without a provider, semantic ranking simply reports `semantic_unavailable` and everything else works. A provider that *is* configured but fails to spawn or handshake is a loud `embedder_failed` — never a silent downgrade. In a checkout, `omg init --embedder <repo>/packages/embedder/dist/src/bin.js` works as well: the build (`pnpm build`, `node dist/src/postbuild.js` after `tsc`) sets the executable bit on `bin.js`, and when a `.js` provider cannot be spawned (EACCES/ENOENT) the error says to run it through node (`node <path>`).
 
 The provider value is either a shell command (split on whitespace, spawned, spoken to over stdio) or an `http(s)://` URL. It is **not** a package name to `import` — the stale "package exporting `createProvider`" wording in `packages/core/src/search/provider.ts` comments and `docs/graph-and-query.md` §6 predates `search/external.ts`, which is the code that actually runs.
 

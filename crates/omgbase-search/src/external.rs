@@ -201,7 +201,10 @@ impl StdioProvider {
             .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| {
-                Error::EmbedderFailed(format!("embedding command '{spec}' failed to spawn: {e}"))
+                Error::EmbedderFailed(format!(
+                    "embedding command '{spec}' failed to spawn: {e}{}",
+                    spawn_hint(spec, e.kind())
+                ))
             })?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
@@ -233,6 +236,31 @@ impl StdioProvider {
             pipes: Mutex::new(pipes),
         })
     }
+}
+
+/// The hint appended to a spawn failure when the command names a JavaScript
+/// file (`.js`/`.mjs`/`.cjs`) and the OS refused it with `PermissionDenied`
+/// (EACCES) or `NotFound` (ENOENT): a built `bin.js` carries a
+/// `#!/usr/bin/env node` shebang but not always the executable bit, and the
+/// engine spawns the provider directly, so the fix is to run it through node.
+/// Empty for any other command or error. Byte for byte the reference's
+/// `spawnHint` (`packages/core/src/search/external.ts`).
+fn spawn_hint(spec: &str, kind: std::io::ErrorKind) -> String {
+    let spec = spec.trim();
+    let cmd = split_ws(spec).next().unwrap_or_default();
+    let lower = cmd.to_ascii_lowercase();
+    let is_js = lower.ends_with(".js") || lower.ends_with(".mjs") || lower.ends_with(".cjs");
+    if !is_js
+        || !matches!(
+            kind,
+            std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+        )
+    {
+        return String::new();
+    }
+    format!(
+        " Hint: the command names a JavaScript file; run it through node — set embedding.provider to `node {spec}` — or give the file the executable bit"
+    )
 }
 
 impl Drop for StdioProvider {
@@ -458,6 +486,55 @@ mod tests {
         let err = create_external_provider(&s).err().expect("spawn fails");
         assert_eq!(err.code(), "embedder_failed");
         assert!(err.to_string().contains("failed to spawn"));
+    }
+
+    #[test]
+    fn spawn_hint_names_node_for_a_js_file_refused_by_the_os() {
+        use std::io::ErrorKind::{NotFound, Other, PermissionDenied};
+        let hint = " Hint: the command names a JavaScript file; run it through node — set embedding.provider to `node /x/dist/src/bin.js --flag` — or give the file the executable bit";
+        assert_eq!(
+            spawn_hint("/x/dist/src/bin.js --flag", PermissionDenied),
+            hint
+        );
+        assert_eq!(spawn_hint("/x/dist/src/bin.js --flag", NotFound), hint);
+        assert_eq!(spawn_hint("/x/dist/src/bin.js --flag", Other), "");
+        assert!(!spawn_hint("/x/bin.mjs", NotFound).is_empty());
+        assert!(!spawn_hint("/x/BIN.CJS", NotFound).is_empty());
+        assert_eq!(spawn_hint("omgbase-embedder", NotFound), "");
+        assert_eq!(spawn_hint("node /x/bin.js", PermissionDenied), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_js_file_without_the_executable_bit_is_embedder_failed_with_the_hint() {
+        let dir =
+            std::env::temp_dir().join(format!("omgbase-search-noexec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bin.js");
+        std::fs::write(
+            &path,
+            "#!/usr/bin/env node\nprocess.stdout.write('{}\\n');\n",
+        )
+        .unwrap();
+        // 0644: readable, not executable — what `tsc` leaves behind
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let spec = path.display().to_string();
+        let s = EmbeddingSettings {
+            provider: Some(spec.clone()),
+            ..EmbeddingSettings::default()
+        };
+        let err = create_external_provider(&s).err().expect("spawn fails");
+        assert_eq!(err.code(), "embedder_failed");
+        let msg = err.to_string();
+        assert!(msg.contains("failed to spawn"), "{msg}");
+        assert!(
+            msg.ends_with(&format!(
+                "run it through node — set embedding.provider to `node {spec}` — or give the file the executable bit"
+            )),
+            "{msg}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

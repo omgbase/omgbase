@@ -74,9 +74,10 @@ export const USAGE = `usage: pnpm bench [--profiles full,minimal,fs] [--runs 3] 
           default bedrock when CLAUDE_CODE_USE_BEDROCK is set and no ANTHROPIC_API_KEY is, else anthropic
           (AGENT_BENCH_PROVIDER overrides). On bedrock a bare model id maps to global.anthropic.<id>
   --embedder  an embedding provider for the tasks that require semantic search (\`omgbase-embedder\`, or
-          \`node ../../packages/embedder/dist/src/bin.js\`, or an http(s) URL): their workspaces are built
-          with \`omg init --embedder\` and drained before the loop. Without it those tasks are reported as
-          skipped under full/minimal (fs runs them with grep — that is the comparison)
+          \`packages/embedder/dist/src/bin.js\` — a relative path is made absolute and a bare .js file is
+          run through node — or an http(s) URL): their workspaces are built with \`omg init --embedder\`
+          and drained before the loop. Without it those tasks are reported as skipped under full/minimal
+          (fs runs them with grep — that is the comparison)
   --dry   validate tasks and prove every check: replay each task's scripted solution against a
           fresh workspace (checks must pass), then run the checks on an untouched one (must fail)
   rescore <results-dir>  re-run the text-only checks (answer, final_text) of a stored run against the

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
-import { createExternalProvider, embedderEnv } from "./external.js";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createExternalProvider, embedderEnv, spawnHint } from "./external.js";
 
 const FAKE = fileURLToPath(new URL("../../test/fixtures/fake-embedder.mjs", import.meta.url));
 
@@ -36,6 +39,34 @@ describe("createExternalProvider — stdio", () => {
 
   it("throws a clear error when the command cannot spawn", async () => {
     await expect(createExternalProvider({ provider: "this-command-does-not-exist-omg" })).rejects.toThrow(/spawn|exited/i);
+  });
+
+  it("a .js file without the executable bit fails to spawn with the hint to run it through node (EACCES; the Rust twin pins the same text)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omgbase-noexec-"));
+    try {
+      const file = join(dir, "bin.js");
+      writeFileSync(file, "#!/usr/bin/env node\nprocess.stdout.write('{}\\n');\n");
+      chmodSync(file, 0o644);
+      await expect(createExternalProvider({ provider: `${file} --flag` })).rejects.toThrow(
+        `failed to spawn: spawn ${file} EACCES Hint: the command names a JavaScript file; run it through node — set embedding.provider to \`node ${file} --flag\` — or give the file the executable bit`,
+      );
+      // a missing .js file: ENOENT, the same hint
+      await expect(createExternalProvider({ provider: join(dir, "missing.mjs") })).rejects.toThrow(/ENOENT Hint: the command names a JavaScript file; run it through node/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("spawnHint: only for a .js/.mjs/.cjs command refused with EACCES or ENOENT", () => {
+    const hint = " Hint: the command names a JavaScript file; run it through node — set embedding.provider to `node /x/dist/src/bin.js --flag` — or give the file the executable bit";
+    expect(spawnHint("/x/dist/src/bin.js --flag", "EACCES")).toBe(hint);
+    expect(spawnHint(" /x/dist/src/bin.js --flag ", "ENOENT")).toBe(hint);
+    expect(spawnHint("/x/dist/src/bin.js --flag", "EPERM")).toBe("");
+    expect(spawnHint("/x/dist/src/bin.js", undefined)).toBe("");
+    expect(spawnHint("/x/BIN.CJS", "ENOENT")).not.toBe("");
+    expect(spawnHint("/x/bin.mjs", "EACCES")).not.toBe("");
+    expect(spawnHint("omgbase-embedder", "ENOENT")).toBe("");
+    expect(spawnHint("node /x/bin.js", "EACCES")).toBe("");
   });
 
   it("returns null when no provider is configured", async () => {

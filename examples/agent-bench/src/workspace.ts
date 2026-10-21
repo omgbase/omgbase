@@ -202,10 +202,15 @@ export function embedWorkspace(ws: Workspace, attempts = 5): EmbedStatus {
  */
 export function resolveEmbedder(embedder: string, cwd = process.cwd()): string {
   if (/^https?:\/\//i.test(embedder)) return embedder;
-  return embedder
+  const resolved = embedder
     .split(/(\s+)/)
     .map((tok) => (/\S/.test(tok) && !isAbsolute(tok) && /[/\\]|\.[cm]?js$/.test(tok) && existsSync(resolve(cwd, tok)) ? resolve(cwd, tok) : tok))
     .join("");
+  // A bare JavaScript file as the command (`--embedder packages/embedder/dist/src/bin.js`)
+  // is run through node: omg spawns the provider directly, and a built `bin.js` has a
+  // shebang but not always the executable bit (the 2026-10-21 run's `spawn … EACCES`).
+  const first = resolved.trim().split(/\s+/)[0] ?? "";
+  return /\.[cm]?js$/i.test(first) ? `node ${resolved.trim()}` : resolved;
 }
 
 export interface WorkspaceOptions {

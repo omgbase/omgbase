@@ -98,7 +98,7 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
   try {
     child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], env: embedderEnv(settings) });
   } catch (err) {
-    throw new Error(`embedding command '${settings.provider}' failed to spawn: ${(err as Error).message}`);
+    throw new Error(`embedding command '${settings.provider}' failed to spawn: ${(err as Error).message}${spawnHint(settings.provider!, (err as NodeJS.ErrnoException).code)}`);
   }
   child.stderr.pipe(process.stderr);
   // Don't let a still-running embedder keep our own event loop alive on exit.
@@ -107,7 +107,7 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
   const rl = createInterface({ input: child.stdout });
   const lines = lineQueue(rl);
   const spawnFailed = new Promise<never>((_, reject) => {
-    child.once("error", (err) => reject(new Error(`embedding command '${cmd}' failed to spawn: ${err.message}`)));
+    child.once("error", (err) => reject(new Error(`embedding command '${cmd}' failed to spawn: ${err.message}${spawnHint(settings.provider!, (err as NodeJS.ErrnoException).code)}`)));
     child.once("exit", (code) => reject(new Error(`embedding command '${cmd}' exited early (code ${code ?? "?"})`)));
   });
   // The race consumers below observe this rejection; guard the reference itself
@@ -164,6 +164,23 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
     });
   };
   return { provider, close };
+}
+
+/**
+ * The hint appended to a spawn failure when the command names a JavaScript file
+ * (`.js`/`.mjs`/`.cjs`) and the OS refused it with EACCES or ENOENT: a built
+ * `bin.js` carries a `#!/usr/bin/env node` shebang but not always the executable
+ * bit, and the engine spawns the provider directly, so the fix is to run it through
+ * node. Empty for any other command or error. The Rust twin
+ * (`crates/omgbase-search/src/external.rs`, `spawn_hint`) emits the same text
+ * byte for byte; the tests of both pin it.
+ */
+export function spawnHint(provider: string, code: string | undefined): string {
+  const spec = provider.trim();
+  const cmd = spec.split(/\s+/)[0] ?? "";
+  if (!/\.[cm]?js$/i.test(cmd)) return "";
+  if (code !== "EACCES" && code !== "ENOENT") return "";
+  return ` Hint: the command names a JavaScript file; run it through node — set embedding.provider to \`node ${spec}\` — or give the file the executable bit`;
 }
 
 /**

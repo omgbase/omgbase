@@ -113,6 +113,10 @@ describe("omg's JSON output", () => {
     expect(resolveEmbedder("omgbase-embedder", root)).toBe("omgbase-embedder");
     expect(resolveEmbedder("http://localhost:8080/embed", root)).toBe("http://localhost:8080/embed");
     expect(resolveEmbedder(`node ${join(root, "packages/embedder/dist/src/bin.js")}`, root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")}`);
+    // a bare JavaScript file as the command is run through node (omg spawns the provider directly; a built bin.js has a shebang but not always the executable bit)
+    expect(resolveEmbedder("packages/embedder/dist/src/bin.js", root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")}`);
+    expect(resolveEmbedder(`${join(root, "packages/embedder/dist/src/bin.js")} --flag`, root)).toBe(`node ${join(root, "packages/embedder/dist/src/bin.js")} --flag`);
+    expect(resolveEmbedder("/elsewhere/embedder.mjs", root)).toBe("node /elsewhere/embedder.mjs");
     rmSync(root, { recursive: true, force: true });
   });
 });

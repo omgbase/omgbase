@@ -162,7 +162,14 @@ cell died before its first turn with a bare `Unexpected end of JSON input`.
 Both halves are fixed: the path is resolved, and the harness parses omg's JSON
 from the last line that parses (a warning line before it is tolerated) and
 turns empty or non-JSON output into an error that names the command and quotes
-stdout/stderr. A cell whose workspace cannot be built — the provider does not
+stdout/stderr. A **bare JavaScript file as the command** (`--embedder
+packages/embedder/dist/src/bin.js`, `.js`/`.mjs`/`.cjs`) is **run through
+node**: `resolveEmbedder` prefixes `node ` itself, because omg spawns the
+provider directly and a `tsc` build leaves `bin.js` with its shebang but
+without the executable bit — the second 2026-10-21 run failed at `omg source
+add` with `embedder_failed … spawn … EACCES` for exactly that. The build now
+sets the bit (`packages/embedder`, `postbuild`), and both engines' spawn error
+names the fix (`Hint: … run it through node`), so either spelling works. A cell whose workspace cannot be built — the provider does not
 start, the queue does not drain — is a **FAIL row** carrying that message
 (`error`, `check_failures: ["harness: …"]`) with a `start` (no tools), an
 `error` and a failing `check` in its transcript, so the report says why. The
