@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/embedder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open Markdown Graph Base \u2014 local embedding server (transformers.js + gte-base), spoken to over stdio",
   "license": "MIT",
   "repository": {

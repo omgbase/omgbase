@@ -4,6 +4,11 @@ All notable changes to `omgbase-store` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [16.0.3] - 2026-10-21
+
+### Patch
+- Dependency pins moved: omgbase-search 3.0.1 → 3.0.2.
+
 ## [16.0.2] - 2026-10-20
 
 ### Patch
