@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 // pnpm bench [--profiles full,minimal,fs] [--runs 3] [--tasks a,b] [--model <id>]
-//            [--effort high] [--max-turns 20] [--out results] [--dry]
+//            [--effort high] [--max-turns 20] [--out results] [--embedder <cmd|url>] [--dry]
 //
-// Every (task, profile, run) cell: a fresh alchemy workspace, one tool server
-// under the profile — `omg mcp` for `full`/`minimal`, the in-process filesystem
-// baseline for `fs` — the agent loop, the checks, a JSONL transcript. The checks
-// always run through omgbase: under `fs` the workspace is swept (`omg sync`) and a
-// `full` server spawned for them, so every profile is judged by the same oracle.
+// Every (task, profile, run) cell: a fresh workspace from the task's corpus
+// (alchemy or timeline), one tool server under the profile — `omg mcp` for
+// `full`/`minimal`, the in-process filesystem baseline for `fs` — the agent loop,
+// the checks, a JSONL transcript. The checks always run through omgbase: under `fs`
+// the workspace is swept (`omg sync`) and a `full` server spawned for them, so every
+// profile is judged by the same oracle.
 // Writes results/<timestamp>/{report.md,results.json,transcripts/*.jsonl}.
+//
+// A task that `requires` a capability the profile lacks (`semantic` without
+// `--embedder`, under an omgbase profile) is SKIPPED: one row per cell with
+// `skipped: "needs --embedder"`, neither passed nor failed, and a one-line
+// transcript. With `--embedder <cmd|url>` the workspace of such a task is built
+// with `omg init --embedder <cmd>` and drained (`omg embed drain`) before the loop.
 //
 // --dry: no model. Each task's scripted solution for the profile (`solution`, or
 // `solution_fs` under `fs`) is replayed through the same loop (so the hook fires
@@ -33,7 +40,7 @@ import { renderReport, type ReportMeta } from "./report.ts";
 import type { ToolServer } from "./server.ts";
 import { loadTasks } from "./tasks.ts";
 import { isFsProfile, type Profile, type RunMetrics, type Solution, type Task, type TranscriptEvent } from "./types.ts";
-import { createWorkspace, syncWorkspace, PACKAGE_ROOT, type Workspace } from "./workspace.ts";
+import { createWorkspace, embedWorkspace, syncWorkspace, DEFAULT_CORPUS, PACKAGE_ROOT, type Workspace } from "./workspace.ts";
 
 export interface BenchOptions {
   profiles: Profile[];
@@ -45,6 +52,8 @@ export interface BenchOptions {
   maxTurns: number;
   out: string;
   dry: boolean;
+  /** an embedding provider (`omg init --embedder <cmd|url>`) for the tasks that `requires: ["semantic"]`; without it they are skipped under the omgbase profiles */
+  embedder?: string;
   /** build the model (tests inject a scripted one) */
   makeModel?: (task: Task) => Model;
   log?: (line: string) => void;
@@ -52,12 +61,16 @@ export interface BenchOptions {
 
 export const USAGE = `usage: pnpm bench [--profiles full,minimal,fs] [--runs 3] [--tasks id,id] [--model ${DEFAULT_MODEL}]
                   [--provider anthropic|bedrock] [--effort low|medium|high|xhigh|max] [--max-turns ${DEFAULT_MAX_TURNS}]
-                  [--out results] [--dry]
+                  [--out results] [--embedder <cmd|url>] [--dry]
   --profiles  omgbase catalog profiles (full, minimal — \`omg mcp --tools\`) and/or fs, the filesystem baseline:
           generic file tools over the same vault, no omgbase; default full,minimal
   --provider  anthropic (ANTHROPIC_API_KEY) or bedrock (the AWS credential chain: AWS_PROFILE/SSO, AWS_REGION);
           default bedrock when CLAUDE_CODE_USE_BEDROCK is set and no ANTHROPIC_API_KEY is, else anthropic
           (AGENT_BENCH_PROVIDER overrides). On bedrock a bare model id maps to global.anthropic.<id>
+  --embedder  an embedding provider for the tasks that require semantic search (\`omgbase-embedder\`, or
+          \`node ../../packages/embedder/dist/src/bin.js\`, or an http(s) URL): their workspaces are built
+          with \`omg init --embedder\` and drained before the loop. Without it those tasks are reported as
+          skipped under full/minimal (fs runs them with grep — that is the comparison)
   --dry   validate tasks and prove every check: replay each task's scripted solution against a
           fresh workspace (checks must pass), then run the checks on an untouched one (must fail)`;
 
@@ -77,6 +90,7 @@ export function parseBenchArgs(argv: string[], env: Record<string, string | unde
         effort: { type: "string", default: "high" },
         "max-turns": { type: "string", default: String(DEFAULT_MAX_TURNS) },
         out: { type: "string", default: join(PACKAGE_ROOT, "results") },
+        embedder: { type: "string" },
         dry: { type: "boolean", default: false },
         help: { type: "boolean", default: false },
       },
@@ -104,8 +118,37 @@ export function parseBenchArgs(argv: string[], env: Record<string, string | unde
     effort: v.effort as BenchOptions["effort"],
     maxTurns,
     out: v.out as string,
+    ...(v.embedder ? { embedder: v.embedder as string } : {}),
     dry: Boolean(v.dry),
   };
+}
+
+/**
+ * Why a cell cannot run under a profile, or null when it can: a task that `requires`
+ * `semantic` needs an embedding provider under an omgbase profile (`--embedder`);
+ * the `fs` profile never needs one — grep IS its semantic search.
+ */
+export function skipReason(task: Task, profile: Profile, embedder: string | undefined): string | null {
+  if (isFsProfile(profile)) return null;
+  for (const r of task.requires ?? []) {
+    if (r === "semantic" && !embedder) return "needs --embedder";
+  }
+  return null;
+}
+
+/** The workspace for a cell: the task's corpus; with the embedder (and drained) only when the task needs one under this profile. */
+export function workspaceFor(task: Task, profile: Profile, embedder: string | undefined): Workspace {
+  const needsEmbedder = embedder !== undefined && !isFsProfile(profile) && (task.requires ?? []).includes("semantic");
+  const ws = createWorkspace({ corpus: task.corpus ?? DEFAULT_CORPUS, ...(needsEmbedder && embedder !== undefined ? { embedder } : {}) });
+  if (needsEmbedder) {
+    try {
+      embedWorkspace(ws);
+    } catch (e) {
+      ws.cleanup();
+      throw e;
+    }
+  }
+  return ws;
 }
 
 /** Thrown through `runCell` when the bench's first model request fails on credentials; `bench` turns it into the one message. */
@@ -200,17 +243,30 @@ export async function runCell(args: {
   maxTurns: number;
   transcriptPath: string;
   transcriptRel: string;
+  embedder?: string;
 }): Promise<RunMetrics> {
   const { task, profile, run, model, maxTurns, transcriptPath, transcriptRel } = args;
   writeFileSync(transcriptPath, "");
   const onEvent = (e: TranscriptEvent) => appendFileSync(transcriptPath, JSON.stringify(e) + "\n");
   const base: RunMetrics = {
-    task: task.id, profile, run, model: model.name,
+    task: task.id, corpus: task.corpus ?? DEFAULT_CORPUS, profile, run, model: model.name,
     turns: 0, tool_calls: 0, calls_by_tool: {}, failed_calls: 0, failed_by_code: {}, plan_calls: 0, execute_calls: 0, write_calls: 0,
     plan_before_write: null, input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0,
     wall_ms: 0, hit_turn_cap: false, hook_fired: false, passed: false, check_failures: [], final_text: "", transcript: transcriptRel,
   };
-  const workspace = createWorkspace();
+  const skip = skipReason(task, profile, args.embedder);
+  if (skip !== null) {
+    onEvent({ type: "skip", t: new Date().toISOString(), task: task.id, profile, run, reason: skip });
+    return { ...base, skipped: skip };
+  }
+  let workspace: Workspace;
+  try {
+    workspace = workspaceFor(task, profile, args.embedder);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    onEvent({ type: "error", t: new Date().toISOString(), message });
+    return { ...base, error: message, check_failures: [`harness: ${message}`] };
+  }
   let server: ToolServer | null = null;
   let checker: OmgServer | null = null;
   try {
@@ -220,7 +276,7 @@ export async function runCell(args: {
     onEvent({ type: "start", t: new Date().toISOString(), task: task.id, profile, run, model: model.name, system, prompt: task.prompt, tools: tools.map((t) => t.name) });
     const loop = await runAgent({ task, model, server, workspace, tools, system, maxTurns, onEvent });
     checker = await openCheckServer(workspace, profile, server, onEvent);
-    const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text });
+    const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text, workspace });
     onEvent({ type: "check", t: new Date().toISOString(), passed: failures.length === 0, failures });
     const metrics: RunMetrics = { ...base, ...loop.metrics, passed: failures.length === 0, check_failures: failures };
     const cost = runCost(metrics);
@@ -238,14 +294,17 @@ export async function runCell(args: {
 }
 
 /** The dry run (see the file comment). Returns the problems found (empty = green). */
-export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string) => void): Promise<string[]> {
+export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string) => void, embedder?: string): Promise<string[]> {
   const problems: string[] = [];
   for (const profile of profiles) {
     for (const task of tasks) {
       // positive: the profile's solution reaches the end state
-      {
+      const skip = skipReason(task, profile, embedder);
+      if (skip !== null) {
+        log(`  skip ${task.id} [${profile}] solution (${skip})`);
+      } else {
         const solution = solutionFor(task, profile);
-        const workspace = createWorkspace();
+        const workspace = workspaceFor(task, profile, embedder);
         const server = await openAgentServer(workspace, profile);
         let checker: OmgServer | null = null;
         try {
@@ -266,7 +325,7 @@ export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string
           });
           if (task.hook && !loop.metrics.hook_fired) problems.push(`${task.id} [${profile}]: the hook never fired`);
           checker = await openCheckServer(workspace, profile, server, (e) => events.push(e));
-          const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text });
+          const failures = await runChecks(task, { server: checker, finalText: loop.metrics.final_text, workspace });
           for (const f of failures) problems.push(`${task.id} [${profile}]: after the solution, check failed: ${f}`);
           const sync = events.find((e): e is Extract<TranscriptEvent, { type: "sync" }> => e.type === "sync");
           const swept = sync ? `, swept +${sync.ingested.length} -${sync.deleted.length}` : "";
@@ -279,10 +338,10 @@ export async function dryRun(tasks: Task[], profiles: Profile[], log: (l: string
       }
       // negative: the checks reject the untouched workspace (through omgbase, whatever the profile)
       if (!task.trivial_on_fresh) {
-        const workspace = createWorkspace();
+        const workspace = createWorkspace({ corpus: task.corpus ?? DEFAULT_CORPUS });
         const server = await OmgServer.spawn({ workspace, profile: isFsProfile(profile) ? "full" : profile });
         try {
-          const failures = await runChecks(task, { server, finalText: "" });
+          const failures = await runChecks(task, { server, finalText: "", workspace });
           if (failures.length === 0) problems.push(`${task.id} [${profile}]: the checks pass on an untouched workspace — they do not discriminate`);
           log(`  ${failures.length > 0 ? "ok  " : "FAIL"} ${task.id} [${profile}] negative control: ${failures.length} failing check(s) on a fresh workspace`);
         } finally {
@@ -305,8 +364,8 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
   log(`${tasks.length} task(s), profiles ${opts.profiles.join(", ")}`);
 
   if (opts.dry) {
-    log("dry run: validating solutions and checks (no model)");
-    const problems = await dryRun(tasks, opts.profiles, log);
+    log(`dry run: validating solutions and checks (no model${opts.embedder ? `; embedder ${opts.embedder}` : ""})`);
+    const problems = await dryRun(tasks, opts.profiles, log, opts.embedder);
     return { dir: null, results: [], problems };
   }
 
@@ -324,7 +383,7 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
         const rel = join("transcripts", `${task.id}.${profile}.${run}.jsonl`);
         let metrics: RunMetrics;
         try {
-          metrics = await runCell({ task, profile, run, model: guard.wrap(makeModel(task)), maxTurns: opts.maxTurns, transcriptPath: join(dir, rel), transcriptRel: rel });
+          metrics = await runCell({ task, profile, run, model: guard.wrap(makeModel(task)), maxTurns: opts.maxTurns, transcriptPath: join(dir, rel), transcriptRel: rel, ...(opts.embedder ? { embedder: opts.embedder } : {}) });
         } catch (e) {
           if (!(e instanceof CredentialsAbort)) throw e;
           // nothing was measured: no report, no results — take the directory back if this bench made it
@@ -332,11 +391,15 @@ export async function bench(opts: BenchOptions): Promise<{ dir: string | null; r
           return { dir: null, results: [], problems: [`aborted: ${e.message}`] };
         }
         results.push(metrics);
-        const cost = metrics.cost_usd === undefined ? "" : `, ${fmtDollars(metrics.cost_usd)}`;
-        log(`  ${metrics.passed ? "pass" : "FAIL"} ${task.id} [${profile}] #${run}: ${metrics.turns} turn(s), ${metrics.tool_calls} call(s), ${metrics.failed_calls} failed, ${metrics.input_tokens} uncached / ${metrics.cache_read_input_tokens + metrics.cache_creation_input_tokens} cached / ${metrics.output_tokens} out${cost}, ${(metrics.wall_ms / 1000).toFixed(1)} s${metrics.error ? ` — ${metrics.error}` : ""}`);
+        if (metrics.skipped) {
+          log(`  skip ${task.id} [${profile}] #${run}: ${metrics.skipped}`);
+        } else {
+          const cost = metrics.cost_usd === undefined ? "" : `, ${fmtDollars(metrics.cost_usd)}`;
+          log(`  ${metrics.passed ? "pass" : "FAIL"} ${task.id} [${profile}] #${run}: ${metrics.turns} turn(s), ${metrics.tool_calls} call(s), ${metrics.failed_calls} failed, ${metrics.input_tokens} uncached / ${metrics.cache_read_input_tokens + metrics.cache_creation_input_tokens} cached / ${metrics.output_tokens} out${cost}, ${(metrics.wall_ms / 1000).toFixed(1)} s${metrics.error ? ` — ${metrics.error}` : ""}`);
+        }
         // keep the report current after every cell, so an interrupted run still has one
         if (omgVersion === undefined) omgVersion = await readOmgVersion();
-        const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}) };
+        const meta: ReportMeta = { model: opts.model, provider: opts.provider, effort: opts.effort, started: started.toISOString(), finished: new Date().toISOString(), profiles: opts.profiles, runs: opts.runs, max_turns: opts.maxTurns, ...(omgVersion ? { omg_version: omgVersion } : {}), ...(opts.embedder ? { embedder: opts.embedder } : {}) };
         writeFileSync(join(dir, "results.json"), JSON.stringify({ meta, results }, null, 2) + "\n");
         writeFileSync(join(dir, "report.md"), renderReport(results, meta));
       }

@@ -1,8 +1,11 @@
 // results/<timestamp>/report.md from the run metrics: one table task × profile
-// (pass rate, mean turns, mean calls, mean failed calls, mean tokens split by how
-// they bill, mean cost at list price, mean wall time, plan-before-write rate), a
-// per-profile totals table, the failed-call codes and the tool-call histogram per
-// profile, and the run list with its transcripts. Pure: metrics in, Markdown out.
+// (corpus, pass rate, mean turns, mean calls, mean failed calls, mean tokens split by
+// how they bill, mean cost at list price, mean wall time, plan-before-write rate), a
+// per-profile totals table (per corpus when the run spans more than one), the
+// failed-call codes and the tool-call histogram per profile, and the run list with
+// its transcripts. A skipped cell (a task whose requirement the profile lacks) shows
+// `skipped (<reason>)` in the pass column and counts in no mean. Pure: metrics in,
+// Markdown out.
 import { fmtDollars, runCost } from "./pricing.ts";
 import { isFsProfile, type Profile, type RunMetrics } from "./types.ts";
 
@@ -17,6 +20,8 @@ export interface ReportMeta {
   max_turns: number;
   effort?: string;
   omg_version?: string;
+  /** the embedding provider the bench ran with (`--embedder`), when any */
+  embedder?: string;
 }
 
 function mean(xs: number[]): number {
@@ -56,6 +61,11 @@ export interface CellStats {
   errors: number;
 }
 
+/** The runs that actually ran (a skipped cell is neither a pass nor a failure and enters no mean). */
+export function ran(rows: RunMetrics[]): RunMetrics[] {
+  return rows.filter((r) => r.skipped === undefined);
+}
+
 export function cellStats(rows: RunMetrics[]): CellStats {
   const wrote = rows.filter((r) => r.plan_before_write !== null);
   return {
@@ -93,7 +103,17 @@ function statsRow(label: string, s: CellStats, profile: Profile): string {
   return `| ${label} | ${s.passed}/${s.n} (${Math.round(s.pass_rate * 100)}%) | ${fmt(s.turns)} | ${fmt(s.calls)} | ${fmt(s.failed)} | ${tokens(s.uncached_tokens)} / ${tokens(s.cached_tokens)} / ${tokens(s.output_tokens)} | ${cost} | ${fmt(s.wall_s)} | ${pbw} |`;
 }
 
-const HEADER = "| task | profile | pass | turns | calls | failed | uncached / cached / out | $ / run | wall s | plan→write |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
+/** A cell's row: the stats of the runs that ran, or `skipped (<reason>)` when none did. */
+function cellRow(label: string, rows: RunMetrics[], profile: Profile): string {
+  const live = ran(rows);
+  if (live.length === 0 && rows.length > 0) return `| ${label} | skipped (${rows[0]!.skipped}) | — | — | — | — | — | — | — |`;
+  return statsRow(label, cellStats(live), profile);
+}
+
+const COLUMNS = "| pass | turns | calls | failed | uncached / cached / out | $ / run | wall s | plan→write |";
+const RULE = "| --- | --- | --- | --- | --- | --- | --- | --- |";
+const HEADER = `| task | corpus | profile ${COLUMNS}\n| --- | --- | --- ${RULE}`;
+const TOTALS_HEADER = `| | corpus | profile ${COLUMNS}\n| --- | --- | --- ${RULE}`;
 
 /** `\`full\`, \`minimal\` (omgbase MCP), \`fs\` (filesystem baseline)` — which profiles are omgbase and which the bare-files control. */
 export function describeProfiles(profiles: Profile[]): string {
@@ -114,40 +134,51 @@ function histogram(rows: RunMetrics[], pick: (r: RunMetrics) => Record<string, n
 
 export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
   const tasks = [...new Set(results.map((r) => r.task))].sort();
+  const corpora = [...new Set(results.map((r) => r.corpus))].sort();
   const profiles = meta.profiles.length > 0 ? meta.profiles : [...new Set(results.map((r) => r.profile))];
+  const skipped = results.filter((r) => r.skipped !== undefined);
   const out: string[] = [];
   out.push("# agent-bench report", "");
   out.push(`- model: \`${meta.model}\`${meta.provider ? ` via ${meta.provider}` : ""}${meta.effort ? ` (effort ${meta.effort})` : ""}`);
   out.push(`- profiles: ${describeProfiles(profiles)} · runs per cell: ${meta.runs} · turn cap: ${meta.max_turns}`);
-  out.push(`- tasks: ${tasks.length} · runs: ${results.length}`);
+  out.push(`- tasks: ${tasks.length} · corpora: ${corpora.map((c) => `\`${c}\``).join(", ") || "—"} · runs: ${results.length}${skipped.length > 0 ? ` (${skipped.length} skipped)` : ""}`);
   if (meta.omg_version) out.push(`- omg: ${meta.omg_version}`);
+  out.push(`- embedder: ${meta.embedder ? `\`${meta.embedder}\`` : "none (tasks that require semantic search are skipped under the omgbase profiles)"}`);
   out.push(`- started ${meta.started} · finished ${meta.finished}`);
-  const perRun = meanCost(results);
-  if (perRun !== null) out.push(`- cost: ${fmtDollars(perRun * results.length)} for ${results.length} run(s) at Anthropic list price (\`src/pricing.ts\`)`);
+  const live = ran(results);
+  const perRun = meanCost(live);
+  if (perRun !== null) out.push(`- cost: ${fmtDollars(perRun * live.length)} for ${live.length} run(s) at Anthropic list price (\`src/pricing.ts\`)`);
   out.push("");
-  out.push("Tokens are means per run: `uncached` input bills at full price, `cached` (cache reads + cache writes) at a tenth and 1.25× of it, `out` is output; `$ / run` is the mean cost at Anthropic list price (`src/pricing.ts`; blank for a model the table does not price — a Bedrock bill differs). `plan→write` is the share of runs that wrote something whose first write was preceded by a `plan` (— when no run wrote, and under `fs`, which has no plan tool).", "");
+  out.push("Tokens are means per run: `uncached` input bills at full price, `cached` (cache reads + cache writes) at a tenth and 1.25× of it, `out` is output; `$ / run` is the mean cost at Anthropic list price (`src/pricing.ts`; blank for a model the table does not price — a Bedrock bill differs). `plan→write` is the share of runs that wrote something whose first write was preceded by a `plan` (— when no run wrote, and under `fs`, which has no plan tool). A `skipped` cell did not run: the task requires a capability the profile lacks (`needs --embedder`); it is neither a pass nor a failure and enters no mean.", "");
 
   out.push("## Task × profile", "", HEADER);
   for (const task of tasks) {
     for (const profile of profiles) {
       const rows = results.filter((r) => r.task === task && r.profile === profile);
       if (rows.length === 0) continue;
-      out.push(statsRow(`${task} | \`${profile}\``, cellStats(rows), profile));
+      out.push(cellRow(`${task} | ${rows[0]!.corpus} | \`${profile}\``, rows, profile));
     }
   }
   out.push("");
 
-  out.push("## Totals per profile", "", HEADER.replace("| task | profile |", "| | profile |"));
+  out.push("## Totals per profile", "", TOTALS_HEADER);
   for (const profile of profiles) {
-    const rows = results.filter((r) => r.profile === profile);
+    const rows = ran(results.filter((r) => r.profile === profile));
     if (rows.length === 0) continue;
-    out.push(statsRow(`all | \`${profile}\``, cellStats(rows), profile));
+    if (corpora.length > 1) {
+      for (const corpus of corpora) {
+        const sub = rows.filter((r) => r.corpus === corpus);
+        if (sub.length > 0) out.push(statsRow(`all | ${corpus} | \`${profile}\``, cellStats(sub), profile));
+      }
+    }
+    out.push(statsRow(`all | ${corpora.length > 1 ? "all" : corpora[0] ?? "—"} | \`${profile}\``, cellStats(rows), profile));
   }
   out.push("");
 
   for (const profile of profiles) {
-    const rows = results.filter((r) => r.profile === profile);
-    if (rows.length === 0) continue;
+    const all = results.filter((r) => r.profile === profile);
+    const rows = ran(all);
+    if (all.length === 0) continue;
     out.push(`## \`${profile}\`${isFsProfile(profile) ? " (filesystem baseline)" : " (omgbase)"}`, "");
     const failed = histogram(rows, (r) => r.failed_by_code);
     out.push(`Failed calls by code: ${failed.length === 0 ? "none" : failed.map(([k, v]) => `\`${k}\` ${v}`).join(", ")}`, "");
@@ -155,14 +186,18 @@ export function renderReport(results: RunMetrics[], meta: ReportMeta): string {
     out.push(`Tool calls: ${calls.length === 0 ? "none" : calls.map(([k, v]) => `\`${k}\` ${v}`).join(", ")}`, "");
     const caps = rows.filter((r) => r.hit_turn_cap).length;
     const errors = rows.filter((r) => r.error !== undefined);
+    const skips = all.filter((r) => r.skipped !== undefined);
     if (caps > 0) out.push(`Turn cap hit in ${caps} run(s).`, "");
     if (errors.length > 0) out.push(`Harness/API errors in ${errors.length} run(s): ${errors.map((r) => `${r.task}#${r.run} — ${r.error}`).join("; ")}`, "");
+    if (skips.length > 0) out.push(`Skipped ${skips.length} run(s): ${[...new Set(skips.map((r) => `${r.task} (${r.skipped})`))].join("; ")}`, "");
   }
 
   out.push("## Runs", "", "| task | profile | run | pass | turns | calls | failed | failures | transcript |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const r of [...results].sort((a, b) => a.task.localeCompare(b.task) || a.profile.localeCompare(b.profile) || a.run - b.run)) {
     const failures = r.check_failures.map((f) => f.replace(/\|/g, "\\|").replace(/\n/g, " ")).join("; ");
-    out.push(`| ${r.task} | \`${r.profile}\` | ${r.run} | ${r.passed ? "pass" : "FAIL"} | ${r.turns} | ${r.tool_calls} | ${r.failed_calls} | ${failures || (r.error ? `error: ${r.error}` : "")} | [${r.transcript}](${r.transcript}) |`);
+    const verdict = r.skipped !== undefined ? "skip" : r.passed ? "pass" : "FAIL";
+    const why = r.skipped !== undefined ? r.skipped : failures || (r.error ? `error: ${r.error}` : "");
+    out.push(`| ${r.task} | \`${r.profile}\` | ${r.run} | ${verdict} | ${r.turns} | ${r.tool_calls} | ${r.failed_calls} | ${why} | [${r.transcript}](${r.transcript}) |`);
   }
   out.push("");
   return out.join("\n");

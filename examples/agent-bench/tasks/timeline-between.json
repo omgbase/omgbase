@@ -1,0 +1,49 @@
+{
+  "id": "timeline-between",
+  "corpus": "timeline",
+  "prompt": "In the Delta data pipeline project, what happened between the milestone \"Archive schema freeze\" (/projects/delta/archive-schema-freeze.md) and the milestone \"Quick-look viewer\" (/projects/delta/quicklook-viewer.md)? The project's sequence is given by the `after:` frontmatter field (each milestone names the one immediately before it). List only the milestones strictly between those two, in sequence order, each with its title and path — not the two endpoints' neighbours on the other side. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": [
+        "/Storage procurement[\\s\\S]*Pipeline v1[\\s\\S]*Calibration database/",
+        "/projects/delta/storage-procurement.md",
+        "/projects/delta/pipeline-v1.md",
+        "/projects/delta/calibration-database.md"
+      ],
+      "must_not_mention": ["Ingest prototype", "Archive API", "Data model"]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, title, $depth from docs where _path == \"/projects/delta/archive-schema-freeze.md\" follow ^docs collect { where after == ^_path frontier _path == \"/projects/delta/quicklook-viewer.md\" } order by $ordinal"
+        }
+      }
+    ],
+    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md)."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^after: ",
+          "glob": "projects/delta/*.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^title: ",
+          "glob": "projects/delta/*.md"
+        }
+      }
+    ],
+    "final_text": "Between Archive schema freeze and Quick-look viewer, Delta went through three milestones, in order: Storage procurement (/projects/delta/storage-procurement.md), Pipeline v1 (/projects/delta/pipeline-v1.md) and Calibration database (/projects/delta/calibration-database.md)."
+  },
+  "notes": "A bounded walk: seed at A, follow the inverse `after:` relation forward and stop expanding at D (`frontier _path == D` inside the destination block, spec/oqx 0.20), then drop the two endpoints — the three notes strictly between, in walk order (`$ordinal`). Delta's chain is 13 long; the decoys are the neighbours just outside the interval (`Ingest prototype` before A, `Archive API` after D) and `Data model` further back. On bare files: grep the twelve `after:` lines and the titles under projects/delta/ and chain them by hand."
+}

@@ -4,8 +4,8 @@
 // compile); whether a check is *right* is what `pnpm bench --dry` proves.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { PACKAGE_ROOT } from "./workspace.ts";
-import type { Check, Hook, Solution, SolutionStep, Task } from "./types.ts";
+import { CORPORA, PACKAGE_ROOT } from "./workspace.ts";
+import { REQUIREMENTS, type Check, type Hook, type Solution, type SolutionStep, type Task } from "./types.ts";
 
 export const TASKS_DIR = join(PACKAGE_ROOT, "tasks");
 
@@ -26,7 +26,22 @@ function regexOk(re: string): boolean {
   }
 }
 
-const CHECK_KINDS = new Set(["query", "read", "unchanged", "final_text"]);
+const CHECK_KINDS = new Set(["query", "read", "unchanged", "final_text", "answer"]);
+
+/** An `answer` entry written `/…/` is a regex; anything else a substring. */
+export function answerRegex(entry: string): RegExp | null {
+  const m = /^\/(.+)\/$/s.exec(entry);
+  return m ? new RegExp(m[1]!, "is") : null;
+}
+
+function answerEntryOk(entry: string): boolean {
+  try {
+    answerRegex(entry);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function validateCheck(c: unknown, at: string, problems: string[]): void {
   if (!isRecord(c)) return void problems.push(`${at}: a check must be an object`);
@@ -36,6 +51,7 @@ function validateCheck(c: unknown, at: string, problems: string[]): void {
     read: ["kind", "path", "equals", "matches", "not_matches"],
     unchanged: ["kind", "path"],
     final_text: ["kind", "matches"],
+    answer: ["kind", "must_mention", "must_not_mention", "count"],
   };
   for (const k of Object.keys(c)) if (!allowed[c.kind]!.includes(k)) problems.push(`${at}: unknown member \`${k}\` on a ${c.kind} check`);
   switch (c.kind as Check["kind"]) {
@@ -60,6 +76,19 @@ function validateCheck(c: unknown, at: string, problems: string[]): void {
       break;
     case "final_text":
       if (typeof c.matches !== "string" || !regexOk(c.matches)) problems.push(`${at}: matches must be a regex string`);
+      break;
+    case "answer":
+      if (!isStringArray(c.must_mention) || c.must_mention.length === 0) problems.push(`${at}: must_mention must be a non-empty array of strings`);
+      else for (const e of c.must_mention) if (e === "" || !answerEntryOk(e)) problems.push(`${at}: must_mention entry ${JSON.stringify(e)} is empty or does not compile`);
+      if (c.must_not_mention !== undefined) {
+        if (!isStringArray(c.must_not_mention)) problems.push(`${at}: must_not_mention must be an array of strings`);
+        else for (const e of c.must_not_mention) if (e === "" || !answerEntryOk(e)) problems.push(`${at}: must_not_mention entry ${JSON.stringify(e)} is empty or does not compile`);
+      }
+      if (c.count !== undefined) {
+        if (!isRecord(c.count) || typeof c.count.pattern !== "string" || !regexOk(c.count.pattern)) problems.push(`${at}: count.pattern must be a regex string`);
+        if (!isRecord(c.count) || !(Number.isInteger(c.count.equals) && (c.count.equals as number) >= 0)) problems.push(`${at}: count.equals must be a non-negative integer`);
+        if (isRecord(c.count)) for (const k of Object.keys(c.count)) if (!["pattern", "equals"].includes(k)) problems.push(`${at}: unknown member \`${k}\` on count`);
+      }
       break;
   }
 }
@@ -97,7 +126,7 @@ function validateSolution(s: unknown, at: string, problems: string[]): void {
   if (typeof s.final_text !== "string") problems.push(`${at}: final_text must be a string`);
 }
 
-const TASK_KEYS = new Set(["id", "prompt", "checks", "hook", "solution", "solution_fs", "trivial_on_fresh", "notes"]);
+const TASK_KEYS = new Set(["id", "prompt", "corpus", "requires", "checks", "unchanged_all", "hook", "solution", "solution_fs", "trivial_on_fresh", "notes"]);
 
 /** Structural problems of one task document (empty = valid). */
 export function validateTask(doc: unknown, at: string): string[] {
@@ -106,6 +135,12 @@ export function validateTask(doc: unknown, at: string): string[] {
   for (const k of Object.keys(doc)) if (!TASK_KEYS.has(k)) problems.push(`${at}: unknown member \`${k}\``);
   if (typeof doc.id !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(doc.id)) problems.push(`${at}: id must be a kebab-case string`);
   if (typeof doc.prompt !== "string" || doc.prompt.trim() === "") problems.push(`${at}: prompt must be a non-empty string`);
+  if (doc.corpus !== undefined && (typeof doc.corpus !== "string" || !(doc.corpus in CORPORA))) problems.push(`${at}: corpus must be one of ${Object.keys(CORPORA).join(", ")}`);
+  if (doc.requires !== undefined) {
+    if (!isStringArray(doc.requires)) problems.push(`${at}: requires must be an array of strings`);
+    else for (const r of doc.requires) if (!REQUIREMENTS.includes(r)) problems.push(`${at}: unknown requirement \`${r}\` (known: ${REQUIREMENTS.join(", ")})`);
+  }
+  if (doc.unchanged_all !== undefined && typeof doc.unchanged_all !== "boolean") problems.push(`${at}: unchanged_all must be a boolean`);
   if (!Array.isArray(doc.checks) || doc.checks.length === 0) problems.push(`${at}: checks must be a non-empty array`);
   else doc.checks.forEach((c: unknown, i) => validateCheck(c, `${at}.checks[${i}]`, problems));
   if (doc.hook !== undefined) validateHook(doc.hook, `${at}.hook`, problems);

@@ -40,7 +40,7 @@ export interface RunOptions {
   onEvent?: (e: TranscriptEvent) => void;
 }
 
-export type LoopMetrics = Omit<RunMetrics, "task" | "profile" | "run" | "model" | "passed" | "check_failures" | "transcript">;
+export type LoopMetrics = Omit<RunMetrics, "task" | "corpus" | "profile" | "run" | "model" | "skipped" | "passed" | "check_failures" | "transcript">;
 
 export interface LoopResult {
   metrics: LoopMetrics;

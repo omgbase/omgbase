@@ -1,0 +1,52 @@
+{
+  "id": "timeline-follow",
+  "corpus": "timeline",
+  "prompt": "Starting from the Aurora spectrograph's kickoff note (/projects/aurora/kickoff.md), list the project's milestones in sequence order through the last one. The sequence is defined by the `after:` frontmatter field — each milestone names the milestone immediately before it — and NOT by dates (one milestone slipped, so date order differs). Give the titles in sequence order, numbered. Include only Aurora's own milestones; do not list milestones of other projects even if they mention Aurora. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": [
+        "/Aurora kickoff[\\s\\S]*Science requirements signed off[\\s\\S]*Optical design review[\\s\\S]*Grating procurement[\\s\\S]*Detector cooldown test[\\s\\S]*Slit mask fabrication[\\s\\S]*Bench alignment[\\s\\S]*Integration with the dome[\\s\\S]*First light[\\s\\S]*Throughput calibration[\\s\\S]*Aurora closeout/"
+      ],
+      "must_not_mention": ["Dome slit alignment"]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, title, $depth, $frontier from docs where _path == \"/projects/aurora/kickoff.md\" follow ^docs collect { where after == ^_path depth 8 } order by $ordinal"
+        }
+      },
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, title, $depth, $frontier from docs where _path == \"/projects/aurora/integration-with-dome.md\" follow ^docs collect { where after == ^_path depth 8 } order by $ordinal"
+        }
+      }
+    ],
+    "final_text": "Aurora's milestones in sequence order (following `after:` forward from the kickoff):\n1. Aurora kickoff\n2. Science requirements signed off\n3. Optical design review\n4. Grating procurement\n5. Detector cooldown test\n6. Slit mask fabrication\n7. Bench alignment\n8. Integration with the dome\n9. First light\n10. Throughput calibration\n11. Aurora closeout"
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^after: ",
+          "glob": "projects/aurora/*.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^title: ",
+          "glob": "projects/aurora/*.md"
+        }
+      }
+    ],
+    "final_text": "Aurora's milestones in sequence order (following `after:` forward from the kickoff):\n1. Aurora kickoff\n2. Science requirements signed off\n3. Optical design review\n4. Grating procurement\n5. Detector cooldown test\n6. Slit mask fabrication\n7. Bench alignment\n8. Integration with the dome\n9. First light\n10. Throughput calibration\n11. Aurora closeout"
+  },
+  "notes": "Graph traversal along a frontmatter relation. `after:` names the note BEFORE this one (Brendan's `terms/fields/after.md`: 'the documents that come before this one in a sequence'; each note carries one side), so the forward walk is the inverse relation — `follow ^docs collect { where after == ^_path }` (spec/oqx §follow: a destination block computes the successors per frontier row). OQX caps a walk at depth 8 (the seed is depth 1), so an 11-note chain takes two walks: the first ends on `Integration with the dome` with `$frontier: true`, the second re-seeds from it. `refs(after)` walks the chain backwards from the closeout just as well. The date decoy: `Detector cooldown test` (when 2027-01-29) slipped past `Slit mask fabrication` (2026-12-18), so `order by when` is wrong and the check's regex pins the chain order. The sibling decoy: cirrus's `Dome slit alignment to the spectrograph` is tagged `aurora` and names Aurora in its body (a grep for 'aurora' finds it) but is not in the chain (cirrus also has a bare `Design review` near Aurora's `Optical design review`, a name decoy the check cannot forbid without forbidding the right answer). On bare files: grep the ten `after:` lines and the eleven `title:` lines under projects/aurora/ and chain them by hand — no file name carries an ordinal."
+}

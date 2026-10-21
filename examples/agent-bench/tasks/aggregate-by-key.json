@@ -1,0 +1,56 @@
+{
+  "id": "aggregate-by-key",
+  "corpus": "timeline",
+  "prompt": "Across the Meridian programme, how many milestones per project still have `status: open` (exactly that status — not blocked, not dropped)? Give the count for every one of the six projects as a digit, including any project with zero, and say which project has the most. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": [
+        "/(delta[\\s\\S]{0,40}\\b5\\b|\\b5\\b[\\s\\S]{0,40}delta)/",
+        "/(fjord[\\s\\S]{0,40}\\b4\\b|\\b4\\b[\\s\\S]{0,40}fjord)/",
+        "/(cirrus[\\s\\S]{0,40}\\b3\\b|\\b3\\b[\\s\\S]{0,40}cirrus)/",
+        "/(aurora[\\s\\S]{0,40}\\b2\\b|\\b2\\b[\\s\\S]{0,40}aurora)/",
+        "/(basalt[\\s\\S]{0,40}\\b1\\b|\\b1\\b[\\s\\S]{0,40}basalt)/",
+        "/(ember[\\s\\S]{0,40}\\b0\\b|\\b0\\b[\\s\\S]{0,40}ember|ember[\\s\\S]{0,40}\\bnone\\b|ember[\\s\\S]{0,40}\\bno\\b)/",
+        "/(most[\\s\\S]{0,80}delta|delta[\\s\\S]{0,80}most)/"
+      ]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select project, n: count() from docs where type == \"milestone\" and status == \"open\" group by project order by count() desc"
+        }
+      },
+      {
+        "tool": "query",
+        "args": {
+          "query": "select slug from docs where type == \"project\" order by slug"
+        }
+      }
+    ],
+    "final_text": "Open milestones per project: delta 5, fjord 4, cirrus 3, aurora 2, basalt 1, ember 0. Delta has the most (5)."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^status: open$",
+          "glob": "projects/*/*.md"
+        }
+      },
+      {
+        "tool": "list_files",
+        "args": {
+          "dir": "projects"
+        }
+      }
+    ],
+    "final_text": "Open milestones per project: delta 5, fjord 4, cirrus 3, aurora 2, basalt 1, ember 0. Delta has the most (5)."
+  },
+  "notes": "Cross-document aggregation: `group by project` with `count()` (spec/oqx §24; `order by count() desc` — an alias cannot be ordered on). A group-by never yields the empty group, so the zero (ember, whose eight milestones are all done or dropped) needs the project list. Decoys: `blocked` (cirrus shutter-commissioning) and `dropped` (ember battery-backup, delta had none) are not `open`. On bare files: grep the 15 `status: open` lines under projects/ (the path carries the project) and tally by hand; list projects/ for the zero."
+}

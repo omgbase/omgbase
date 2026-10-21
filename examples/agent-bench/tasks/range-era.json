@@ -1,0 +1,36 @@
+{
+  "id": "range-era",
+  "prompt": "Which practitioners in this knowledge base worked between 700 and 1600 CE inclusive, going by the `era` frontmatter field of the practitioner notes (`type: practitioner`)? Answer with each one's name and note path. List only the practitioners that qualify — do not name the ones outside the range or notes of other types. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": ["jabir", "paracelsus", "/practitioners/jabir-ibn-hayyan.md", "/practitioners/paracelsus.md"],
+      "must_not_mention": ["maria", "newton", "emerald"]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, _title, era from docs where type == \"practitioner\" and era in 700..1600 order by era"
+        }
+      }
+    ],
+    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530)."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^era: ",
+          "glob": "practitioners/*.md"
+        }
+      }
+    ],
+    "final_text": "Two practitioners fall in 700–1600 CE: Jabir ibn Hayyan (/practitioners/jabir-ibn-hayyan.md, era 800) and Paracelsus (/practitioners/paracelsus.md, era 1530)."
+  },
+  "notes": "Range inclusion over a numeric frontmatter field: `era in 700..1600` (spec/oqx §10; the alchemy fixture `range-passthrough` pins it). Decoys: Maria Prophetissa (era 250) and Newton (1680) fall outside; the Emerald Tablet has `era: 800` but is a text, not a practitioner — `type == \"practitioner\"` excludes it. On bare files: one grep over the practitioner notes' `era:` lines and a comparison by hand. A pure retrieval: `unchanged_all` fails the run if anything was written."
+}

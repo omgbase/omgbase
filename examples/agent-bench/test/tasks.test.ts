@@ -18,11 +18,37 @@ describe("tasks/*.json", () => {
     expect(problems).toEqual([]);
   });
 
-  it("the thirteen scenarios of the brief are present, one file each, id = file name", () => {
+  it("the thirteen editing scenarios and the nine retrieval tasks are present, one file each, id = file name", () => {
     expect(tasks.map((t) => t.id)).toEqual([
-      "append-under-heading", "bulk-check-off", "contradiction", "create-then-section", "doc-move", "frontmatter-edit",
-      "insert-after-block", "link-retarget", "merge-paragraphs", "noop", "rollup", "split-paragraph", "stale-plan-retry",
+      "aggregate-by-key", "append-under-heading", "backlinks-with-context", "bulk-check-off", "contradiction", "create-then-section", "doc-move", "frontmatter-edit",
+      "insert-after-block", "link-retarget", "merge-paragraphs", "noop", "open-tasks-across-corpus", "range-era", "range-window-includes", "rollup-filtered", "rollup",
+      "semantic-find", "split-paragraph", "stale-plan-retry", "timeline-between", "timeline-follow",
     ]);
+  });
+
+  it("the retrieval tasks: a corpus each (timeline for the programme ones), an answer check, unchanged_all on the pure reads, requires only on the semantic one", () => {
+    const retrieval = ["range-era", "range-window-includes", "timeline-follow", "timeline-between", "backlinks-with-context", "aggregate-by-key", "open-tasks-across-corpus", "semantic-find", "rollup-filtered"];
+    const timeline = tasks.filter((t) => t.corpus === "timeline").map((t) => t.id);
+    expect(timeline).toEqual(["aggregate-by-key", "open-tasks-across-corpus", "range-window-includes", "rollup-filtered", "timeline-between", "timeline-follow"]);
+    for (const id of retrieval) {
+      const t = tasks.find((x) => x.id === id)!;
+      expect(t.checks.some((c) => c.kind === "answer")).toBe(true);
+      if (id === "rollup-filtered") {
+        expect(t.unchanged_all).toBeUndefined();
+        expect(t.checks.map((c) => c.kind)).toEqual(["read", "answer"]);
+      } else {
+        expect(t.unchanged_all).toBe(true);
+        // a pure retrieval writes nothing in either solution
+        expect(t.solution.steps.filter((s) => isWriteTool(s.tool))).toEqual([]);
+        expect(t.solution_fs.steps.filter((s) => isWriteTool(s.tool))).toEqual([]);
+      }
+    }
+    expect(tasks.filter((t) => t.requires).map((t) => t.id)).toEqual(["semantic-find"]);
+    // the editing tasks are untouched: alchemy, no answer check
+    for (const t of tasks) if (!retrieval.includes(t.id)) {
+      expect(t.corpus).toBeUndefined();
+      expect(t.checks.some((c) => c.kind === "answer")).toBe(false);
+    }
   });
 
   it("exactly one task carries the stale-plan hook, and it is the disk edit", () => {
@@ -45,13 +71,13 @@ describe("tasks/*.json", () => {
     }
   });
 
-  it("every task carries an fs solution that uses only the seven file tools; the no-op and the contradiction write nothing", () => {
+  it("every task carries an fs solution that uses only the seven file tools; the no-op, the contradiction and the pure retrievals write nothing", () => {
     for (const t of tasks) {
       expect(t.solution_fs.final_text.length).toBeGreaterThan(0);
       expect(t.solution_fs.steps.length).toBeGreaterThan(0);
       for (const step of t.solution_fs.steps) expect(FS_TOOL_NAMES).toContain(step.tool);
       const writes = t.solution_fs.steps.filter((s) => isWriteTool(s.tool)).length;
-      if (t.id === "noop" || t.id === "contradiction") expect(writes).toBe(0);
+      if (t.id === "noop" || t.id === "contradiction" || t.unchanged_all) expect(writes).toBe(0);
       else expect(writes).toBeGreaterThan(0);
     }
     // the hook analog: read, a write the hook fires before, a re-read, the corrective edit

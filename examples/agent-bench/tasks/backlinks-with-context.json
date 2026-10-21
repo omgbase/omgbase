@@ -1,0 +1,47 @@
+{
+  "id": "backlinks-with-context",
+  "prompt": "Which documents link to /processes/calcination.md from their body text, and under which heading does each link appear? Give one line per linking document with its path and the nearest heading above the link (the most specific one). Count only real links in the body — a frontmatter reference does not count, and a document that merely mentions calcination in prose without linking does not count; do not list those. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": [
+        "/(index\\.md[\\s\\S]{0,160}Processes|Processes[\\s\\S]{0,160}index\\.md)/",
+        "/(2026-01-notes\\.md[\\s\\S]{0,160}Laboratory notes|Laboratory notes[\\s\\S]{0,160}2026-01-notes\\.md)/",
+        "/(magnum-opus\\.md[\\s\\S]{0,160}Operations|Operations[\\s\\S]{0,160}magnum-opus\\.md)/",
+        "/(prima-materia\\.md[\\s\\S]{0,160}Relation to the Great Work|Relation to the Great Work[\\s\\S]{0,160}prima-materia\\.md)/",
+        "/(salt\\.md[\\s\\S]{0,160}Practical extraction|Practical extraction[\\s\\S]{0,160}salt\\.md)/"
+      ],
+      "must_not_mention": ["review.md", "kickoff.md"]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, heading: _block._section collect { _name order by level desc limit 1 } from links where _dst_path == \"/processes/calcination.md\" and _block_id != null order by _path"
+        }
+      }
+    ],
+    "final_text": "Five documents link to /processes/calcination.md from their body:\n- /index.md — under \"Processes\"\n- /lab/2026-01-notes.md — under \"Laboratory notes — January\" (the H1; the link is in the opening paragraph)\n- /processes/magnum-opus.md — under \"Operations\"\n- /substances/prima-materia.md — under \"Relation to the Great Work\"\n- /substances/salt.md — under \"Practical extraction\""
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "processes/calcination\\.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^#{1,6} "
+        }
+      }
+    ],
+    "final_text": "Five documents link to /processes/calcination.md from their body:\n- /index.md — under \"Processes\"\n- /lab/2026-01-notes.md — under \"Laboratory notes — January\" (the H1; the link is in the opening paragraph)\n- /processes/magnum-opus.md — under \"Operations\"\n- /substances/prima-materia.md — under \"Relation to the Great Work\"\n- /substances/salt.md — under \"Practical extraction\""
+  },
+  "notes": "Backlinks with their section: the `links` rows whose `_dst_path` is the target, each joined to its source block's enclosing `md:section` nodes (`_block._section`, deepest first — spec/surface §1.2). The target is calcination, not salt as first planned: `[[salt]]` wikilinks resolve to `phantom:salt` in this engine (no basename resolution), so salt has no `_dst_path` backlinks to find; calcination is linked by path from five documents. Decoys: `/timeline/review.md` names 'the calcination series' in prose without a link, `/timeline/kickoff.md` names 'the first calcination' in prose AND carries `see_also: [processes/calcination.md, …]` in frontmatter (a grep for the path finds that line), so both must be left out. On bare files: grep the path (six hits, one of them kickoff's frontmatter), grep every heading line, and pair each link's line number with the nearest heading above it."
+}

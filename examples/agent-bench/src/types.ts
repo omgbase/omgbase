@@ -77,7 +77,25 @@ export interface FinalTextCheck {
   matches: string;
 }
 
-export type Check = QueryCheck | ReadCheck | UnchangedCheck | FinalTextCheck;
+/**
+ * `answer`: a retrieval task ends with an ANSWER, not a write — the model's final
+ * text must mention every entry of `must_mention` and none of `must_not_mention`
+ * (the decoys), and `count.pattern` must match exactly `count.equals` times. An
+ * entry is a case-insensitive substring, or a regex when written `/…/` (flags
+ * "is" — so `/a[\s\S]*b/` asserts order); `count.pattern` is always a regex
+ * (flags "gis").
+ */
+export interface AnswerCheck {
+  kind: "answer";
+  must_mention: string[];
+  must_not_mention?: string[];
+  count?: { pattern: string; equals: number };
+}
+
+export type Check = QueryCheck | ReadCheck | UnchangedCheck | FinalTextCheck | AnswerCheck;
+
+/** The capabilities a task may require; a profile that lacks one skips the task instead of failing it. */
+export const REQUIREMENTS: readonly string[] = ["semantic"];
 
 // ---- hooks ------------------------------------------------------------------------
 
@@ -124,8 +142,22 @@ export interface Task {
   id: string;
   /** what the model is asked to do — identical across profiles */
   prompt: string;
+  /** the corpus the workspace is built from: `alchemy` (default) or `timeline` (src/workspace.ts `CORPORA`) */
+  corpus?: string;
+  /**
+   * capabilities the task needs from an omgbase profile (`semantic`: an embedding
+   * provider — the bench's `--embedder`); without them the cell is reported as
+   * skipped, not failed. The `fs` profile never needs one (grep is the comparison).
+   */
+  requires?: string[];
   /** every check must pass — through omgbase, under every profile */
   checks: Check[];
+  /**
+   * a pure-retrieval task: after the loop the vault's bytes must equal the corpus
+   * file for file (nothing added, removed or edited) and no `api`-origin commit may
+   * exist anywhere — the agent must not have written.
+   */
+  unchanged_all?: boolean;
   hook?: Hook;
   /** the oracle for the omgbase profiles: a scripted call sequence in `minimal`'s tools that reaches the end state (dry run + tests) */
   solution: Solution;
@@ -148,9 +180,13 @@ export interface TokenUsage {
 
 export interface RunMetrics extends TokenUsage {
   task: string;
+  /** the corpus the cell ran on (`alchemy` | `timeline`) */
+  corpus: string;
   profile: Profile;
   run: number;
   model: string;
+  /** set when the cell did not run because the profile lacks a capability the task requires (`needs --embedder`); the run is neither passed nor failed */
+  skipped?: string;
   /** model requests (assistant turns) */
   turns: number;
   tool_calls: number;
@@ -188,4 +224,6 @@ export type TranscriptEvent =
   | { type: "sync"; t: string; scanned: number; ingested: string[]; deleted: string[]; conflicted: string[] }
   | { type: "end"; t: string; turns: number; hit_turn_cap: boolean; final_text: string }
   | { type: "check"; t: string; passed: boolean; failures: string[] }
+  /** the cell did not run: the profile lacks a capability the task requires */
+  | { type: "skip"; t: string; task: string; profile: Profile; run: number; reason: string }
   | { type: "error"; t: string; message: string };

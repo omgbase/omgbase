@@ -1,0 +1,51 @@
+{
+  "id": "range-window-includes",
+  "corpus": "timeline",
+  "prompt": "Which milestones of the Meridian programme were in flight on 2027-03-15 — that is, whose `window` frontmatter range (`first-day..last-day`, both ends inclusive) contains that date? Consider milestone notes only (`type: milestone`), not project or journal notes. List only the matches, each with its title and path; do not name milestones that were not in flight. Change nothing.",
+  "unchanged_all": true,
+  "checks": [
+    {
+      "kind": "answer",
+      "must_mention": [
+        "Bench alignment", "/projects/aurora/bench-alignment.md",
+        "Drainage works", "/projects/basalt/drainage-works.md",
+        "Shutter fabrication", "/projects/cirrus/shutter-fabrication.md",
+        "Pipeline v1", "/projects/delta/pipeline-v1.md",
+        "Chiller commissioning", "/projects/ember/chiller-commissioning.md",
+        "Visitor centre brief", "/projects/fjord/visitor-centre-brief.md"
+      ],
+      "must_not_mention": ["Pier foundation pour", "Integration with the dome", "Battery backup", "Partner agreements", "journal/2027-03"]
+    }
+  ],
+  "solution": {
+    "steps": [
+      {
+        "tool": "query",
+        "args": {
+          "query": "select _path, title, window from docs where type == \"milestone\" and \"2027-03-15\" in range(window) order by _path"
+        }
+      }
+    ],
+    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30)."
+  },
+  "solution_fs": {
+    "steps": [
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^window: ",
+          "glob": "projects/*/*.md"
+        }
+      },
+      {
+        "tool": "grep",
+        "args": {
+          "pattern": "^title: ",
+          "glob": "projects/*/*.md"
+        }
+      }
+    ],
+    "final_text": "Six milestones were in flight on 2027-03-15: Bench alignment (/projects/aurora/bench-alignment.md, 2027-02-01..2027-03-15), Drainage works (/projects/basalt/drainage-works.md), Shutter fabrication (/projects/cirrus/shutter-fabrication.md), Pipeline v1 (/projects/delta/pipeline-v1.md), Chiller commissioning (/projects/ember/chiller-commissioning.md, 2027-02-15..2027-03-15) and Visitor centre brief (/projects/fjord/visitor-centre-brief.md, 2027-03-15..2027-04-30)."
+  },
+  "notes": "Range inclusion over a date-shaped frontmatter string: the engine stores `window: 2027-02-01..2027-03-15` as a range (spec/properties §2.2 — full ISO dates; a `YYYY-MM` bound is not range-shaped, which is why the corpus uses days) and `\"2027-03-15\" in range(window)` tests it with inclusive ends. Boundary decoys: bench-alignment and chiller-commissioning END on the date and visitor-centre-brief STARTS on it (all three in flight); foundation-pour ends 03-14, integration-with-dome and battery-backup start 03-16 (not); partner-agreements ends 03-12 but was closed 03-15 (a date that is not the window); the journal for 2027-03 and the six project indexes also carry windows that contain the date — `type == \"milestone\"` excludes them. On bare files: grep the 69 `window:` lines under projects/ (63 milestones + 6 project indexes) and compare dates by hand, then grep the titles."
+}
