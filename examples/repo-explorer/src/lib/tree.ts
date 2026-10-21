@@ -1,10 +1,13 @@
-// The repository tree: `docs_tree { path, depth: 1 }` per directory (`path` is
-// a prefix — a role, so bare), loaded lazily as folders open (spec/surface §2,
-// 5.0: entries are `dir` rows — `{ _path (rooted, ending "/"), kind: "dir",
-// docs, blocks, _updated_at }` — or `doc` rows — `{ _id, _path, kind: "doc",
-// docs: 1, blocks, _updated_at }` — ordered by path and paged by a `[path]`
-// keyset cursor; `total` covers everything under the prefix). The pure side:
-// wire → entries, the level table, and the names.
+// The repository tree: `docs_tree { path, depth: 1, files: true }` per
+// directory (`path` is a prefix — a role, so bare), loaded lazily as folders
+// open (spec/surface §2, 5.1: by default the page is a directory rollup —
+// `{ _path (rooted, ending "/"), docs, blocks }` rows and `files_here`, the
+// documents directly in the prefix counted, not listed; `files: true` lists
+// them too as `{ _id, _path, blocks }`; `_updated_at` rides only with
+// `updated: true`, which this pane does not ask for — ordered by path and paged
+// by a `[path]` keyset cursor; `total` covers everything under the prefix). A
+// row is a directory when its `_path` ends in `/`, a document when it carries
+// an `_id`. The pure side: wire → entries, the level table, and the names.
 
 import { repoArg, type Caller, type Wire } from "./mcp-client.ts";
 import { ancestorsOf, baseName, rooted } from "./paths.ts";
@@ -17,6 +20,8 @@ export interface TreeLevel {
   prefix: string;
   entries: TreeEntry[];
   total: { docs: number; blocks: number };
+  /** The documents directly in `prefix` (5.1), whether or not they are listed. */
+  filesHere: number;
   truncated: boolean;
   cursor: string | null;
 }
@@ -28,8 +33,8 @@ const num = (v: unknown): number => (typeof v === "number" ? v : 0);
 export function entryOf(e: Wire): TreeEntry | null {
   const path = str(e._path);
   if (!path) return null;
-  if (e.kind === "dir") return { kind: "dir", path: rooted(path).replace(/\/*$/, "/"), docs: num(e.docs), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
-  if (e.kind === "doc") return { kind: "doc", id: str(e._id), path: rooted(path), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
+  if (path.endsWith("/")) return { kind: "dir", path: rooted(path), docs: num(e.docs), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
+  if (typeof e._id === "string") return { kind: "doc", id: e._id, path: rooted(path), blocks: num(e.blocks), updatedAt: strOrNull(e._updated_at) };
   return null;
 }
 
@@ -41,14 +46,15 @@ export function levelOf(page: Wire): TreeLevel {
     prefix: str(page.prefix) || "/",
     entries,
     total: { docs: num(total.docs), blocks: num(total.blocks) },
+    filesHere: num(page.files_here),
     truncated: page.truncated === true,
     cursor: strOrNull(page.cursor),
   };
 }
 
-/** The entries a `dir` entry's children are loaded with: `docs_tree { path, depth: 1 }`. */
+/** The entries a `dir` entry's children are loaded with: `docs_tree { path, depth: 1, files: true }` (the pane lists documents, so it asks for them — 5.1). */
 export function treeArgs(prefix: string, repo: string | null, cursor: string | null = null): Record<string, unknown> {
-  return { ...(prefix === "/" ? {} : { path: prefix }), depth: 1, ...(cursor ? { cursor } : {}), ...repoArg(repo) };
+  return { ...(prefix === "/" ? {} : { path: prefix }), depth: 1, files: true, ...(cursor ? { cursor } : {}), ...repoArg(repo) };
 }
 
 /** How many pages one level follows before giving up (a directory of thousands is still shown truncated). */

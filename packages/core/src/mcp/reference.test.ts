@@ -28,7 +28,7 @@
 //     carries its `from`, so it is a query and must parse.
 import { describe, it, expect } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { QUERY_SYNTAX } from "./reference.js";
+import { QUERY_SYNTAX, QUERY_SYNTAX_CARD, QUERY_SYNTAX_SECTIONS, QUERY_SYNTAX_SECTION_NAMES, querySyntaxSection } from "./reference.js";
 
 const PLACEHOLDER = /<[A-Za-z][A-Za-z_| …]*>/;
 const ROOT_CONSUMER = /^(docs|blocks|nodes|links|revisions) (collect|exists|none|count|first|single|distinct|\{)/;
@@ -117,5 +117,51 @@ describe("query_syntax (reference.ts)", () => {
     const m = /OQX clause order is ([a-z, ]+?)(?: \(|$)/.exec(message);
     expect(m, message).not.toBeNull();
     expect(QUERY_SYNTAX).toContain(`CLAUSE ORDER IS FIXED: ${m![1]}`);
+    expect(QUERY_SYNTAX_CARD).toContain(`CLAUSE ORDER IS FIXED: ${m![1]}`);
+  });
+});
+
+// The card and the chapters (spec/surface §4 `query_syntax`, 5.1).
+describe("query_syntax card and sections (reference.ts)", () => {
+  it("the card is small, every one of its examples parses, and it names the chapters", () => {
+    expect(QUERY_SYNTAX_CARD.length).toBeLessThan(4000);
+    const { queries } = extractExamples(QUERY_SYNTAX_CARD);
+    expect(queries.length).toBeGreaterThanOrEqual(10);
+    const failures: string[] = [];
+    for (const { line, query } of queries) {
+      try {
+        parse(query);
+      } catch (e) {
+        failures.push(`line ${line}: ${query}\n    ${(e as Error).message}`);
+      }
+    }
+    expect(failures, `card examples that do not parse:\n${failures.join("\n")}`).toEqual([]);
+    for (const s of QUERY_SYNTAX_SECTIONS) expect(QUERY_SYNTAX_CARD).toContain(s.slug);
+    expect(QUERY_SYNTAX_CARD).toContain("data.fix");
+  });
+
+  it("the section table is exactly the manual's `##` headings, in order, each slug unique; `all` closes the names", () => {
+    const headings = QUERY_SYNTAX.split("\n").filter((l) => l.startsWith("## ")).map((l) => l.slice(3));
+    expect(QUERY_SYNTAX_SECTIONS.map((s) => s.heading)).toEqual(headings);
+    const slugs = QUERY_SYNTAX_SECTIONS.map((s) => s.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const s of slugs) expect(s).toMatch(/^[a-z]+$/);
+    expect(QUERY_SYNTAX_SECTION_NAMES).toEqual([...slugs, "all"]);
+  });
+
+  it("a section is its heading through the line before the next heading, trailing blanks dropped; the sections concatenate back to the manual's body", () => {
+    for (const { slug, heading } of QUERY_SYNTAX_SECTIONS) {
+      const text = querySyntaxSection(slug)!;
+      expect(text.startsWith(`## ${heading}\n`)).toBe(true);
+      expect(text.endsWith("\n")).toBe(true);
+      expect(text.endsWith("\n\n")).toBe(false);
+      expect(text.indexOf("\n## "), `${slug} holds a second heading`).toBe(-1);
+    }
+    expect(querySyntaxSection("all")).toBe(QUERY_SYNTAX);
+    expect(querySyntaxSection("nope")).toBeNull();
+    // Every line of the manual after the intro belongs to exactly one section.
+    const body = QUERY_SYNTAX.slice(QUERY_SYNTAX.indexOf("\n## ") + 1);
+    const joined = QUERY_SYNTAX_SECTIONS.map((s) => querySyntaxSection(s.slug)!).join("\n");
+    expect(joined.replace(/\n+/g, "\n")).toBe(body.replace(/\n+/g, "\n"));
   });
 });

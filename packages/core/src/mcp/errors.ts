@@ -21,7 +21,9 @@ export type ErrorCode =
   // spec/mutate §11.8 (3.1): the selector binding's codes
   | "ambiguous_target" | "selection_too_large"
   // spec/surface 4.9 / spec/store 15.0: a read of an archived revision whose segment is not attached or not on disk
-  | "revision_archived";
+  | "revision_archived"
+  // spec/surface 5.1: `execute { plan_id }` alone names a plan this server does not remember
+  | "plan_unknown";
 
 export interface EngineErrorBody {
   error: ErrorCode;

@@ -9,7 +9,8 @@ import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
-import { buildServer, MINIMAL_TOOLS, PROFILES, TOOLS_PROFILES, parseToolsProfile, unknownTool } from "./server.js";
+import { buildServer, MINIMAL_TOOLS, PLAN_MEMORY, PROFILES, TOOLS_PROFILES, parseToolsProfile, unknownTool } from "./server.js";
+import { QUERY_SYNTAX, QUERY_SYNTAX_CARD, QUERY_SYNTAX_SECTIONS } from "./reference.js";
 
 let store: Store;
 let repoId: string;
@@ -57,31 +58,61 @@ describe("MCP server skeleton", () => {
     }
   });
 
-  it("query_syntax returns the reference doc", async () => {
-    const { payload: q } = (await call("query_syntax", {})) as { payload: { syntax: string } };
-    expect(q.syntax).toContain("path.startsWith");
-    expect(q.syntax).toContain("select");
+  it("query_syntax serves the card, one chapter, or the whole manual; an unknown section is an argument error with a fix (5.1)", async () => {
+    const { payload: card } = (await call("query_syntax", {})) as { payload: { syntax: string; sections: string[] } };
+    expect(card.syntax).toBe(QUERY_SYNTAX_CARD);
+    expect(card.syntax.length).toBeLessThan(4000);
+    expect(card.sections).toEqual(QUERY_SYNTAX_SECTIONS.map((s) => s.slug));
+    expect(Object.keys(card)).toEqual(["syntax", "sections"]);
+    const { payload: follow } = (await call("query_syntax", { section: "follow" })) as { payload: { section: string; syntax: string } };
+    expect(Object.keys(follow)).toEqual(["section", "syntax"]);
+    expect(follow.section).toBe("follow");
+    expect(follow.syntax.startsWith("## Graph traversal (follow) and links\n")).toBe(true);
+    expect(follow.syntax).toContain("follow _out_links collect { from _dst depth 3 }");
+    expect(follow.syntax).not.toContain("## semantic grain");
+    expect(follow.syntax.endsWith("compiles to a follow query.)\n")).toBe(true);
+    const { payload: all } = (await call("query_syntax", { section: "all" })) as { payload: { section: string; syntax: string } };
+    expect(all.section).toBe("all");
+    expect(all.syntax).toBe(QUERY_SYNTAX);
+    expect(all.syntax).toContain("path.startsWith");
+    const { payload: bad, isError } = (await call("query_syntax", { section: "folow" })) as { payload: { error: string; message: string; data: { hint: string; fix: string } }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(bad.error).toBe("filter_invalid");
+    expect(bad.message).toBe("unknown section `folow`; the sections are sugar, paths, targets, scoping, scalars, predicates, nested, select, flatten, order, follow, semantic, examples, all (query_syntax takes section?)");
+    expect(bad.data).toEqual({ reason: bad.message, hint: "arguments", fix: "{\"section\":\"follow\"}" });
+    const { payload: far } = (await call("query_syntax", { section: "grammar" })) as { payload: { data: { fix: string } } };
+    expect(far.data.fix).toBe("{\"section\":\"all\"}");
   });
 
-  it("docs_tree collapses dirs at depth and carries the whole-prefix total", async () => {
+  it("docs_tree rolls up to directories by default; files lists lean document rows; updated adds _updated_at (5.1)", async () => {
     ingestFile(store, repoId, "projects/a.md", "# a\n");
     ingestFile(store, repoId, "projects/deep/b.md", "# b\n\ntext\n");
     const { payload } = (await call("docs_tree", {})) as {
-      payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; entries: { _path: string; kind: string; docs: number }[]; truncated: boolean; cursor: string | null };
+      payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; files_here: number; entries: Record<string, unknown>[]; truncated: boolean; cursor: string | null };
     };
+    expect(Object.keys(payload)).toEqual(["prefix", "depth", "total", "files_here", "entries", "truncated", "cursor"]);
     expect(payload.prefix).toBe("/");
     expect(payload.depth).toBe(1);
     expect(payload.total.docs).toBe(3);
-    expect(payload.entries.map((e) => [e._path, e.kind, e.docs])).toEqual([["/notes.md", "doc", 1], ["/projects/", "dir", 2]]);
+    expect(payload.files_here).toBe(1);
+    expect(payload.entries).toEqual([{ _path: "/projects/", docs: 2, blocks: 3 }]);
     expect(payload.truncated).toBe(false);
     expect(payload.cursor).toBeNull();
 
-    const { payload: scoped } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1 })) as { payload: { entries: { _path: string }[]; truncated: boolean; cursor: string | null } };
-    expect(scoped.entries.map((e) => e._path)).toEqual(["/projects/a.md"]);
+    const { payload: deep } = (await call("docs_tree", { depth: 2 })) as { payload: { entries: Record<string, unknown>[] } };
+    expect(deep.entries).toEqual([{ _path: "/projects/", docs: 2, blocks: 3 }, { _path: "/projects/deep/", docs: 1, blocks: 2 }]);
+
+    const { payload: scoped } = (await call("docs_tree", { path: "projects", files: true, limit: 1 })) as { payload: { files_here: number; entries: Record<string, unknown>[]; truncated: boolean; cursor: string | null } };
+    expect(scoped.files_here).toBe(1);
+    expect(scoped.entries).toEqual([{ _id: expect.stringMatching(/^d_/), _path: "/projects/a.md", blocks: 1 }]);
     expect(scoped.truncated).toBe(true);
-    const { payload: rest } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1, cursor: scoped.cursor })) as { payload: { entries: { _path: string; kind: string }[]; truncated: boolean } };
-    expect(rest.entries.map((e) => [e._path, e.kind])).toEqual([["/projects/deep/", "dir"]]);
+    const { payload: rest } = (await call("docs_tree", { path: "projects", files: true, limit: 1, cursor: scoped.cursor })) as { payload: { entries: Record<string, unknown>[]; truncated: boolean } };
+    expect(rest.entries).toEqual([{ _path: "/projects/deep/", docs: 1, blocks: 2 }]);
     expect(rest.truncated).toBe(false);
+
+    const { payload: updated } = (await call("docs_tree", { files: true, updated: true })) as { payload: { entries: Record<string, unknown>[] } };
+    expect(updated.entries.map((e) => Object.keys(e))).toEqual([["_id", "_path", "blocks", "_updated_at"], ["_path", "docs", "blocks", "_updated_at"]]);
+    expect(updated.entries.every((e) => typeof e._updated_at === "string")).toBe(true);
   });
 
   it("docs_list is a page under the uniform list contract (items + truncated + cursor)", async () => {
@@ -472,6 +503,47 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(rest).toEqual(lean.payload.preview);
     const off = (await call("plan", { effects, diffs: false })) as { payload: { preview: Record<string, unknown> } };
     expect(Object.keys(off.payload.preview)).toEqual(["results", "revisions", "summary"]);
+  });
+
+  it("`execute { plan_id }` alone runs the plan this server remembers; an unknown id is plan_unknown; a remembered plan whose document moved on is stale_plan (5.1)", async () => {
+    const effects = [{ op: "set", target: { kind: "document", _path: "notes.md" }, field: "_frontmatter.status", value: "active" }];
+    const planned = (await call("plan", { effects })) as { payload: { plan_id: string; preview: { summary: string[] } }; isError: boolean };
+    expect(planned.isError).toBe(false);
+    // The memory survives an intervening unrelated call.
+    await call("docs_read", { _path: "notes.md" });
+    const unknown = (await call("execute", { plan_id: "0".repeat(64) })) as { payload: { error: string; message: string; data: unknown; retriable: boolean }; isError: boolean };
+    expect(unknown.isError).toBe(true);
+    expect(unknown.payload).toEqual({
+      error: "plan_unknown",
+      message: `this server has no plan ${"0".repeat(64)} — re-run plan, or pass the plan (or \`plan_id\` + \`effects\`) with execute`,
+      data: { plan_id: "0".repeat(64) },
+      retriable: true,
+    });
+    const done = (await call("execute", { plan_id: planned.payload.plan_id, reason: "by id" })) as { payload: { plan_id: string; committed: boolean; summary: string[]; revisions: { _path: string }[] }; isError: boolean };
+    expect(done.isError).toBe(false);
+    expect(done.payload.plan_id).toBe(planned.payload.plan_id);
+    expect(done.payload.committed).toBe(true);
+    expect(done.payload.summary).toEqual(planned.payload.preview.summary);
+    expect(done.payload.revisions.map((r) => r._path)).toEqual(["/notes.md"]);
+    expect(readFileSync(join(root, "notes.md"), "utf8")).toContain("status: active");
+    // The same id again: the plan form's own precondition check — stale_plan, not plan_mismatch and not plan_unknown.
+    const again = (await call("execute", { plan_id: planned.payload.plan_id })) as { payload: { error: string; retriable: boolean }; isError: boolean };
+    expect(again.isError).toBe(true);
+    expect(again.payload.error).toBe("stale_plan");
+    expect(again.payload.retriable).toBe(true);
+    // The id with `select`/`expect` but no `effects` is still the half digest form; `effects` alone too.
+    const half = (await call("execute", { plan_id: planned.payload.plan_id, expect: { max: 1 } })) as { payload: { message: string }; isError: boolean };
+    expect(half.isError).toBe(true);
+    expect(half.payload.message.startsWith("the digest form needs both `plan_id` and `effects` (")).toBe(true);
+    const none = (await call("execute", {})) as { payload: { message: string } };
+    expect(none.payload.message.startsWith("pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (")).toBe(true);
+    const both = (await call("execute", { plan: {}, plan_id: "x" })) as { payload: { message: string } };
+    expect(both.payload.message.startsWith("pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (")).toBe(true);
+    // The memory is bounded: the oldest plan leaves after PLAN_MEMORY newer ones.
+    const oldest = (await call("plan", { effects: [{ op: "set", target: { kind: "document", _path: "notes.md" }, field: "_frontmatter.n", value: -1 }] })) as { payload: { plan_id: string } };
+    for (let i = 0; i < PLAN_MEMORY; i++) await call("plan", { effects: [{ op: "set", target: { kind: "document", _path: "notes.md" }, field: "_frontmatter.n", value: i }] });
+    const evicted = (await call("execute", { plan_id: oldest.payload.plan_id })) as { payload: { error: string }; isError: boolean };
+    expect(evicted.payload.error).toBe("plan_unknown");
   });
 
   it("a string-list argument takes one bare string as a one-element list; a comma-joined string is the array error with the split list as its fix (4.5)", async () => {

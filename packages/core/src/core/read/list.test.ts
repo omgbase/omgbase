@@ -94,43 +94,63 @@ describe("docsTree — directory-aware orientation", () => {
     expect(normalizeTreePrefix("/projects/")).toBe("projects/");
   });
 
-  it("depth 1 at the root collapses each top-level dir into one entry with totals", () => {
+  it("depth 1 at the root is one row per top-level dir with totals; the root's own documents are counted, not listed (5.1)", () => {
     const tree = docsTree(store, repoId);
     expect(tree.prefix).toBe("/");
     expect(tree.depth).toBe(1);
     const rows = docsList(store, repoId).items;
     const blocksUnder = (prefix: string): number => rows.filter((r) => r._path.startsWith(prefix)).reduce((n, r) => n + r.blocks, 0);
     expect(tree.total).toEqual({ docs: 8, blocks: blocksUnder("/") });
+    expect(tree.files_here).toBe(1);
     expect(tree.truncated).toBe(false);
-    expect(tree.entries.map((e) => [e._path, e.kind, e.docs])).toEqual([
-      ["/AGENTS.md", "doc", 1],
-      ["/projects/", "dir", 3],
-      ["/scratch/", "dir", 1],
-      ["/terms/", "dir", 3],
+    expect(tree.entries.map((e) => [e._path, e.docs])).toEqual([
+      ["/projects/", 3],
+      ["/scratch/", 1],
+      ["/terms/", 3],
     ]);
     const projects = tree.entries.find((e) => e._path === "/projects/")!;
+    expect(Object.keys(projects)).toEqual(["_path", "docs", "blocks"]);
     expect(projects.blocks).toBe(blocksUnder("/projects/"));
     expect(projects.blocks).toBeGreaterThan(rows.find((r) => r._path === "/projects/omg.md")!.blocks);
-    expect(typeof projects._updated_at).toBe("string");
-    // total blocks == sum over entries when nothing is paged out
-    expect(tree.entries.reduce((n, e) => n + e.blocks, 0)).toBe(tree.total.blocks);
+    // the dirs' blocks + the root's own documents' blocks == total when nothing is paged out
+    const rootDocs = rows.filter((r) => !r._path.slice(1).includes("/")).reduce((n, r) => n + r.blocks, 0);
+    expect(tree.entries.reduce((n, e) => n + e.blocks, 0) + rootDocs).toBe(tree.total.blocks);
   });
 
-  it("a prefix scopes the tree and depth expands it", () => {
+  it("files lists the documents as lean rows and updated adds _updated_at to every entry (5.1)", () => {
+    const tree = docsTree(store, repoId, { files: true, updated: true });
+    expect(tree.entries.map((e) => [e._path, e._id !== undefined, e.docs])).toEqual([
+      ["/AGENTS.md", true, undefined],
+      ["/projects/", false, 3],
+      ["/scratch/", false, 1],
+      ["/terms/", false, 3],
+    ]);
+    const agents = tree.entries[0]!;
+    expect(Object.keys(agents)).toEqual(["_id", "_path", "blocks", "_updated_at"]);
+    expect(typeof agents._updated_at).toBe("string");
+    expect(Object.keys(tree.entries[1]!)).toEqual(["_path", "docs", "blocks", "_updated_at"]);
+    expect(typeof tree.entries[1]!._updated_at).toBe("string");
+  });
+
+  it("a prefix scopes the tree and depth descends into nested directories (each listed after its parent)", () => {
     const one = docsTree(store, repoId, { path: "projects" });
     expect(one.prefix).toBe("/projects/");
     expect(one.total.docs).toBe(3);
-    expect(one.entries.map((e) => [e._path, e.kind])).toEqual([
-      ["/projects/muviz.md", "doc"],
-      ["/projects/omg.md", "doc"],
-      ["/projects/omg/", "dir"],
-    ]);
+    expect(one.files_here).toBe(2);
+    expect(one.entries.map((e) => [e._path, e.docs])).toEqual([["/projects/omg/", 1]]);
+    const files = docsTree(store, repoId, { path: "projects", files: true });
+    expect(files.entries.map((e) => e._path)).toEqual(["/projects/muviz.md", "/projects/omg.md", "/projects/omg/"]);
 
     const two = docsTree(store, repoId, { path: "/terms/", depth: 2 });
-    expect(two.entries.map((e) => [e._path, e.kind])).toEqual([
-      ["/terms/fields/type.md", "doc"],
-      ["/terms/rules/a.md", "doc"],
-      ["/terms/types/concept.md", "doc"],
+    expect(two.files_here).toBe(0);
+    expect(two.entries.map((e) => [e._path, e.docs])).toEqual([
+      ["/terms/fields/", 1],
+      ["/terms/rules/", 1],
+      ["/terms/types/", 1],
+    ]);
+    const deep = docsTree(store, repoId, { depth: 2, files: true });
+    expect(deep.entries.map((e) => e._path)).toEqual([
+      "/AGENTS.md", "/projects/", "/projects/muviz.md", "/projects/omg.md", "/projects/omg/", "/scratch/", "/scratch/x.md", "/terms/", "/terms/fields/", "/terms/rules/", "/terms/types/",
     ]);
   });
 
@@ -142,14 +162,16 @@ describe("docsTree — directory-aware orientation", () => {
   });
 
   it("pages entries under limit/cursor while total stays whole-prefix", () => {
-    const first = docsTree(store, repoId, { limit: 2 });
+    const first = docsTree(store, repoId, { files: true, limit: 2 });
     expect(first.entries.map((e) => e._path)).toEqual(["/AGENTS.md", "/projects/"]);
     expect(first.truncated).toBe(true);
     expect(first.total.docs).toBe(8);
-    const second = docsTree(store, repoId, { limit: 2, cursor: first.cursor });
+    expect(first.files_here).toBe(1);
+    const second = docsTree(store, repoId, { files: true, limit: 2, cursor: first.cursor });
     expect(second.entries.map((e) => e._path)).toEqual(["/scratch/", "/terms/"]);
     expect(second.truncated).toBe(false);
     expect(second.cursor).toBeNull();
+    expect(second.files_here).toBe(1);
   });
 
   it("budget_tokens truncates with a resumable cursor", () => {

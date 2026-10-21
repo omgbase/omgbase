@@ -1168,14 +1168,27 @@ result shape; the 5.0 case `unknown-engine-name-is-loud`); the moved cases of
   current revision's commit ts or null), blocks (live count — a role, bare) }`,
   fetched `limit + 1`, keyset cursor `[path]` (values, so unchanged by the
   3.0 or 5.0 key names), budget as above (at least one row).
-  **`docs_tree(path?, depth = 1, …)`** (`path` here is a prefix — a role
-  argument, §4): the prefix normalized (either form accepted; reported rooted
-  — `/` for the repo root, else `/<dir>/`); every live doc under it collapsed
-  at `depth` segments into `dir` entries (`{ _path (rooted, ending `/`),
-  kind: "dir", docs, blocks, _updated_at (the max under it) }`) or `doc`
-  entries (`{ _id, _path, kind: "doc", docs: 1, blocks, _updated_at }`) —
-  `kind`, `docs` and `blocks` are roles; `total` over everything under the
-  prefix; ordered by path and paged the same way.
+  **`docs_tree(path?, depth = 1, files = false, updated = false, …)`** (5.1;
+  `path` here is a prefix — a role argument, §4): the prefix normalized
+  (either form accepted; reported rooted — `/` for the repo root, else
+  `/<dir>/`). **The page is a directory rollup**: one entry per directory
+  within `depth` segments under the prefix — `{ _path (rooted, ending `/`),
+  docs, blocks }`, the totals over everything beneath it, a nested directory
+  listed after its parent in path order (`/projects/`, `/projects/aurora/`,
+  …) — and the documents directly in the prefix are COUNTED as `files_here`,
+  not listed. **`files: true`** lists the documents within `depth` segments
+  too, interleaved in path order as `{ _id, _path, blocks }` (no `docs`: a
+  document is one; no `kind`: a directory ends in `/`, a document carries an
+  `_id`). **`updated: true`** adds `_updated_at` to every entry (a directory's
+  the latest last-commit time beneath it). `total: { docs, blocks }` and
+  `files_here` cover everything under the prefix whatever the page; `depth`
+  below 1 reads as 1; ordered by path and paged the same way (`limit`,
+  `cursor` = `[path]`, `budget_tokens`, `truncated`). Through 5.0 every entry
+  was `{ _id?, _path, kind: "dir" | "doc", docs, blocks, _updated_at }` and
+  the documents were always listed, so `depth: 2` on a flat 348-document
+  repository was a 29 kB two-page listing (`files_here` and the nested
+  directory rows are new; the 5.0 page is not reproducible exactly — §9,
+  Decisions 2026-10-21). Pinned by `reads::tree-rollup`.
 
 ## 3. History
 
@@ -1258,7 +1271,11 @@ query-directed admission refuses, `data: { reason, hint: "selection" }`,
 4.1), `budget_exceeded`,
 `provider_unavailable` (3.0; `semantic_unavailable` before), `embedder_failed`,
 `repo_not_found`, `ambiguous_heading`, `block_not_container` (3.0),
-`conflicted_document`, `ambiguous_locator`, `seed_unresolved`. Any other
+`conflicted_document`, `ambiguous_locator`, `seed_unresolved`, `plan_unknown`
+(5.1: `execute { plan_id }` alone naming a plan this server does not remember
+— `data: { plan_id }`, retriable, the message "this server has no plan <id> —
+re-run plan, or pass the plan (or `plan_id` + `effects`) with execute" spelled
+alike by both engines and pinned, `reads::plan-memory`). Any other
 failure is `repo_not_found` with the message (§9).
 
 **Arguments (3.0, normative; 5.0 spelling).** A tool's prefix names the row
@@ -1404,12 +1421,22 @@ string-method rung (`_title.lower().contains("salt")`, the comment naming
 and paging example into the frontmatter one to stay in budget; `plan`'s
 summary line names `diffs: true` — since 4.11 as the opt-in it is (`Need
 file bodies? add diffs: true.`; through 4.10 it read `diffs: true for file
-bodies.` and every `plan` call of the 2026-10-17 agent-bench run passed it).
+bodies.` and every `plan` call of the 2026-10-17 agent-bench run passed it)
+and since 5.1 tells the model what comes next: `Commit: execute { plan_id }.`
+— the id alone (the 2026-10-21 run echoed every Plan back whole as
+`execute`'s input, 5.7 kB mean, 19 kB max of output tokens); the `execute`
+ladder's one rung is `{"plan_id":"4cebb67f…"}` — the id of the `plan`
+ladder's first rung, which the suite's server remembers — and its prose names
+the plan and digest forms. Since 5.1 the `query_syntax` ladder has three rungs
+(`{}` the card, `{"section":"follow"}` a chapter, `{"section":"all"}` the
+manual) and the `docs_tree` ladder teaches the rollup (`{}`), a directory's
+documents (`{"path":"/processes/","files":true}`) and the nested rollup
+(`{"depth":2,"updated":true}`).
 Since 4.7 the `docs_read` ladder carries
 the time-travel rung `{"_path":"/processes/calcination.md","at":"r_7"}` (the
 comment pointing at `from revisions where _path == …` for the ids; `r_7` is
 the revision the fixture minter gives that document's ingest, so the rung
-runs before any write) — 29 steps. The ladders are the first of
+runs before any write) — 31 steps since 5.1 (29 through 5.0). The ladders are the first of
 three teaching surfaces: the second is the error `fix` — every error the
 engine can correct carries `data.fix`, a literal corrected call (§9;
 `spec/mutate` §8) — and the third the plan's `summary`, one line in words per
@@ -1491,15 +1518,15 @@ identity consequences the 3.x result carried are the Plan's
 | `blocks_read` | `_id`, `resolution?` | §2 (the document inferred from the block; `_id` is a block id — an `n_` id is `block_missing` naming `nodes_block_read`; `nodes_get { doc?, path?, id }`, then `blocks_get`, before 3.0) |
 | `nodes_block_read` | `_id`, `resolution?` | §2 (3.0 follow-up): `_id` is a node id; the block it was projected from, exactly as `blocks_read` renders it |
 | `blocks_read_many` | `_ids[]`, `resolution?`, `budget_tokens?` | §2 (`nodes_get_many`, then `blocks_get_many`, before 3.0) |
-| `docs_tree` / `docs_list` | §2 args | §2 |
-| `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
+| `docs_tree` / `docs_list` | §2 args (`docs_tree`: `path?`, `depth?`, `files?`, `updated?`, `limit?`, `cursor?`, `budget_tokens?` — 5.1) | §2 (`docs_tree`: `{ prefix, depth, total, files_here, entries, truncated, cursor }`, 5.1) |
+| `query_syntax` | `section?` (5.1) | **(5.1)** without `section` the **card**: `{ syntax, sections }` — `syntax` a ~3.5 kB hand-written card (the grammar skeleton and clause order, the names rule with the engine names per kind, the handles and reach-throughs, scoping, the consumers, `follow` in two lines, search, eleven examples, the `data.fix` sentence, the chapter names) and `sections` the chapter names in order; `{ section: "<name>" }` one chapter, `{ section, syntax }` — the manual's `##` headings slugified, in order: `sugar`, `paths`, `targets`, `scoping`, `scalars`, `predicates`, `nested`, `select`, `flatten`, `order`, `follow`, `semantic`, `examples` — the text from that heading up to the next one (trailing blank lines dropped, one trailing newline); `{ section: "all" }` the whole manual (`{ section: "all", syntax }`, the 38 kB text `{ syntax }` carried through 5.0). An unknown name is `filter_invalid { hint: "arguments", fix }`: "unknown section `<name>`; the sections are sugar, …, examples, all (query_syntax takes section?)", `fix` the call respelled with the nearest name (§4 "Arguments": Levenshtein ≤ 2 or a prefix) or `all`. Both engines serve every text byte for byte (the reference's `mcp/reference.ts` is the source; the Rust twin's tests compare against it); pinned by `reads::query-syntax` and the ladders |
 | `query` | `query`, `limit?`, `cursor?`, `bare?` (4.2) | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ _id, _path, degree, frontier, ...select }], links: [{ _id, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _dst_kind, _predicate, _provenance, _anchor, _field }], frontier: [{ _id, _path, degree }], truncated, queries }` (`roots`, `degrees`, `direction`, `degree`, `frontier`, `truncated`, `queries` are roles) — compiled to `follow distinct _out_links collect { from _dst }` / `follow distinct _in_links collect { from _doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's attributes under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `_id`/`_path` selection collapses onto the envelope key exactly as a `query` hit's does, any other name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (3.0; `text_search` before surface 3.0): `{ hits: [{ _id (the block), _doc_id, _path (reference form), _type, _text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (3.0; `resolve` before surface 3.0; vector fused when a provider exists): `[{ _id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
 | `apply` | `effects[]`, `select?`, `expect?`, `reason?` | (4.0) `spec/mutate` §11.7: plan + execute under the one tool-call lock and one transaction → the Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids: { "$new.n": id }, committed: true, summary: [string] }` — `summary` (4.4) the plan's `preview.summary`, one line in words per effect (`spec/mutate` §11.9); `revisions[]._path` in the reference form, `_hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3), `commit` `null` when the plan had nothing to commit; `origin.actor = "agent:mcp"`. The effects' targets are `{ kind: "document", _id? | _path? }`, `{ kind: "block", _id }`, `{ kind: "node", _id }` (or the bare forms — a path, a `b_`/`d_`/`n_` id, `$new.n`; `{ kind: "section", heading_id }` unchanged) and their fields `_frontmatter.<key>`, `_attrs.checked`, `content`, `markdown` (`spec/mutate` 4.0 §11). **Every mutating tool below returns this Receipt** (its extras noted per row). `effects` missing → `filter_invalid` "`effects` is required"; the 3.x inputs → the retired-name errors above (`ops` — the kernel ops `apply` took through 3.x are a library/fixture contract, `spec/mutate` §4 — and `dry_run`: the preview is `plan`). **Query-directed (4.1, `spec/mutate` §11.8)**: with `select` (an OQX query string) the `effects` are templates bound to the selector's hits exactly as `plan` does below, and `expect: { max }` is **required** — missing → `filter_invalid { hint: "selection" }` ("`expect.max` is required on `apply` with `select`"); more hits than `max` → `selection_too_large`, nothing written; zero hits → the Receipt with `commit: null`. `expect` without `select` is `filter_invalid` too |
 | `plan` | `effects[]`, `select?`, `expect?`, `diffs?` | (3.1) `spec/mutate` §11.6: the Plan `{ version, planner_v, effects, opset, preconditions, new_ids, selection?, plan_id, diagnostics, preview }` with `preview` included — `preview.summary` (4.4, `spec/mutate` §11.9) one line in words per effect, the plan as a worked example. **`diffs` (4.5, default `false`)**: `preview.diffs` — the whole before/after bytes of every touched document, 13–19 kB for one `retarget`/`move` and carried through every later turn by a client that then executes by `plan_id` — is returned only when `diffs: true`; otherwise the `preview` omits the `diffs` member and is otherwise identical (`results`, `revisions`, `summary`, `identity?`, `retarget?`). The `preview` is outside the digest, so `plan_id` is the same either way; the `spec/mutate` Plan object is unchanged (a library caller always has the diffs). The CLI's `--server` dry runs pass `diffs: true` because they print them. **The executable core is returned verbatim in the storage form** — `effects[].target._path`, `preconditions.docs[]._path`, `preconditions.absent_paths`, `opset.creates[].path`, `opset.moves[].from/to`, `opset.tombstones[]._path` — because `plan_id` digests exactly those bytes and the client hands the object back to `execute` (the one result the path rule of §1 exempts, as `dangling[].target` is); only `preview.revisions[]._path`, the `preview.diffs` keys and `preview.retarget[].hits[]._path` are rooted. The Plan's row-bearing members spell the row attributes (5.0, `spec/mutate` 4.0): `preconditions.docs[{ _id, _path, base_revision, _hash }]`, `preconditions.blocks[{ _id, content_hash }]`, `opset.moves[{ _id, from, to }]`, `opset.tombstones[{ _id, _path }]`, `preview.revisions[{ _id, _path, _hash }]` — so every pinned `plan_id` moved with 5.0; `effects` (as given), `opset.ops` (the kernel-op grammar), `set_frontmatter[{ doc, raw }]`, `preconditions.parents[{ doc, parent, parent_children_hash }]`, `absent_paths`, `new_ids`, `selection` and the rest of `preview` keep their role names. `preview` (4.0, `spec/mutate` §11.4) also carries `identity` when the plan has a `set content` — per document `{ matcher_v, summary, ops: [{ op_index, disposition, blocks, confidence, reason, detail? }], diagnostics }`, the whole-document planner's annotations (the 3.x `docs_update { dry_run }` result) — and `retarget` when it has a `retarget` effect: `[{ effect_index, hits: [{ _id, _path, oldRaw, newRaw }], pairs: [{ from, to, hits }] }]` (the 3.x `links_*` dry run). A malformed effect is `filter_invalid` (`hint: "arguments"`, the message naming `effects[i]` and the member), a contradiction `conflicting_effects`, a stale guard `stale_expectation` / `stale_plan` — `spec/mutate` §8/§11. Listed with the write tools: it runs under the lock. It is **the** preview: no tool takes `dry_run` (4.0). **Query-directed (4.1, `spec/mutate` §11.8)**: `select` is an OQX query over `docs`, `blocks` or `nodes` whose hits, bound to the `effects` as templates (a template without a target writes to the hit; a target or value member may be `{ "oqx": "<expression>" }` over the hit's row), ARE the planned effects — the Plan's `effects` are the concrete expansion in hit order and `selection: { query, expect?, templates, cardinality, identities }` (the selector and templates as given, the hit ids) joins the digested core, `planner_v` `p3`; `expect: { max }` bounds the selection (`selection_too_large { cardinality, max, implicit? }` beyond it, or beyond 1000 without one); the admission refusals (`offset`, `distinct`, `values`, `follow`, body `from`, `links`, a non-row consumer, a reserved `__omg_`/`__oqx_` alias, a `retarget` template, `{ oqx }` out of a slot) are `filter_invalid { hint: "selection" }`; a target expression yielding nothing is `target_missing { effect_index, template_index, row, expression }` (`row` the hit as `{ _id, _path }`), one yielding a list `ambiguous_target { …, count }`; zero hits is an empty plan (`effects: []`, `selection.cardinality: 0`). `expect` is `{ max: <non-negative integer> }` and nothing else (the argument check: "`expect` must be an object", a nested `max` problem named by path) |
-| `execute` | `plan` (an object) or `plan_id` + `effects[]` + `select?` + `expect?` (exactly one form, else `filter_invalid` "pass exactly one of `plan` or `plan_id` + `effects`" — `select`/`expect` count as the digest form; half of the digest form → "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits — a query-directed plan carries its `selection` and replays without OQX (4.1); the digest form re-plans (with the selector when `select` is given, 4.1: the hits are digested, so a hit that appeared or vanished is `plan_mismatch`) and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable — its `data.fix` the `apply` that re-plans and commits in one call, `spec/mutate` §8). The Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids: { "$new.n": id }, committed: true, summary }`, `revisions[]._path` rooted; `origin.actor = "agent:mcp"` |
+| `execute` | `plan` (an object), or `plan_id` alone (5.1), or `plan_id` + `effects[]` + `select?` + `expect?` (exactly one form, else `filter_invalid` "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects`" (5.1 wording; "pass exactly one of `plan` or `plan_id` + `effects`" through 5.0) — `select`/`expect` count as the digest form, so `plan_id` with `expect` but no `effects`, or `effects` alone, is "the digest form needs both `plan_id` and `effects`"), `reason?` | (3.1) `spec/mutate` §11.7: the plan form admits (`unsupported_plan_version { version, supported: [1] }`, `filter_invalid`, `plan_mismatch { expected, actual }`) then commits — a query-directed plan carries its `selection` and replays without OQX (4.1); the digest form re-plans (with the selector when `select` is given, 4.1: the hits are digested, so a hit that appeared or vanished is `plan_mismatch`) and commits on digest equality else `plan_mismatch`; the committed plan's preconditions re-validated in the transaction (`stale_plan`, retriable — its `data.fix` the `apply` that re-plans and commits in one call, `spec/mutate` §8). **The id alone (5.1, the server's memory).** A server REMEMBERS the plans it produced in this process — every `plan` result (plain or query-directed), keyed by `plan_id`, the most recent 64 (`PLAN_MEMORY`; the least recently produced is evicted first; a re-planned id moves to the front) — and `execute { plan_id }` with nothing else runs the remembered Plan through the FULL plan form: `stale_plan` and `plan_mismatch` are told apart exactly as if the client had echoed the object, a selector plan replays without OQX, the Receipt's `summary` is the plan's, and the client sends 64 hex instead of 5–19 kB. A `plan_id` this server does not remember — another server's, a restart's, an evicted or never-planned one — is `plan_unknown { plan_id }` (retriable, §4 codes). The memory is a layer on `spec/mutate` §11.7, not a change to it: an executed plan stays remembered and its replay fails `stale_plan` by its preconditions (no idempotent replay, no server-held handle beyond the lookup); the memory survives any intervening call; nothing else about `execute` depends on it. Pinned by `reads::plan-memory` (both forms, the unknown id, the half forms, the eviction is a unit test) and the `execute` ladder. The Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids: { "$new.n": id }, committed: true, summary }`, `revisions[]._path` rooted; `origin.actor = "agent:mcp"` |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }` | the Receipt; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
 | `blocks_update` | `_id`, `markdown?`, `checked?`, `expect?` | the Receipt (4.0; `{ id, ids, ...apply result }` and an `attrs` bag through 3.x — `attrs` is a retired name); 3.2: `set markdown` and/or `set _attrs.checked` (`attrs.checked` through `spec/mutate` 3.x) — `expect: {}` or an order-only guard with `markdown` is completed by the planner (`stale_expectation` "expect.content_hash required" before), `markdown` + `checked` is two effects in one plan |
 | `blocks_move` | `blocks[]` (non-empty), `to`, `at?`, `expect? { parent_children_hash? }` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
@@ -1538,6 +1565,9 @@ locator), `doc`, `rev`, `reason`, `hint`, `expected_revision`, `retriable`
 are roles and unchanged. **`revision_archived`
 (4.9)** carries `{ rev, archive, path? }` — the revision, the segment id
 its `archive` column names, and the recorded file when there is one (§2).
+**`plan_unknown` (5.1)** carries `{ plan_id }` — the id as given (a role);
+`plan_id` joins the keys that mark an error as the surface's own, so its
+message is recorded by the fixtures (§6).
 
 **`fix` (4.4).** An error the engine can correct carries `data.fix`, a
 **literal corrected call**: the arguments as `spec/mutate` §11.5 canonical
@@ -1696,8 +1726,10 @@ necessary.
   `query_syntax`, `query`, `blocks_resolve` (reads over the pristine corpus),
   `apply` (three commits under `ts: 2026-10-13T00:00:00.000Z`), `plan` (five
   previews over the written state, burning nothing; without `diffs` since
-  4.5), `execute` (the digest form; `plan_mismatch` would show the rung's
-  `plan_id` is stale), `changes_since`, `version` — 29 steps since 4.7 (the
+  4.5), `execute` (5.1: the id alone — the suite's server remembers the
+  `plan` ladder's first rung; `plan_unknown` would show the rung's `plan_id`
+  is stale; the digest form through 5.0), `changes_since`, `version` — 31
+  steps since 5.1 (`query_syntax`'s two chapter rungs; 29 since 4.7, the
   `docs_read` ladder's `at` rung; 28 through 4.6, 27 through 4.4). The
   steps are WRITTEN by the extraction test
   (`packages/core/src/mcp/examples.test.ts` under `SURFACE_SPEC_UPDATE=1`,
@@ -2285,6 +2317,56 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-21, surface 5.1 (the payload diet; Brendan's decisions, measured in
+  the agent-bench run `results/2026-10-21T02-33-11Z` over the 348-document
+  timeline corpus, where three payloads — each replayed as cached prefix on
+  every later turn — took most of the agents' tokens). **(1) `docs_tree` rolls
+  up to directories by default** (§2): the page is one row per directory
+  within `depth` segments — `{ _path, docs, blocks }` — plus `files_here`, the
+  documents at the prefix itself counted, not listed; `files: true` lists them
+  as `{ _id, _path, blocks }` and `updated: true` adds `_updated_at`. Measured
+  on the timeline corpus: `docs_tree { depth: 2 }` was 26.9 kB (200 rows,
+  `kind: "doc"`, `docs: 1` and an identical `_updated_at` per row, then a
+  cursor to a second page — 57 calls across two profiles); the rollup is 0.9 kB
+  (15 directory rows, one page). The 5.0 page is NOT reproducible exactly —
+  `files: true, updated: true` lists the documents with their timestamps but
+  the rows carry no `kind`/`docs: 1`, and the nested directories now appear
+  as rows beside the documents they hold (`tree -L 2` prints the directory
+  line too) — so this is a result-shape change; payload wins, and a minor,
+  because `kind` was a role a reader can derive (a path ending in `/`) and
+  the orientation call now does what its name says. **(2) `execute { plan_id
+  }` alone** (§4): the server remembers the plans it produced (the last 64, by
+  id) and runs the remembered Plan through the full plan form, so `stale_plan`
+  and `plan_mismatch` are told apart exactly as when the client echoed the
+  object — which the 2026-10-21 run did on every write, 5.7 kB mean and 19 kB
+  max of OUTPUT tokens per `execute`. A memory the server never had is
+  `plan_unknown` (retriable: re-plan). `spec/mutate` §11.7 is unchanged — the
+  memory is a lookup in front of the plan form, the pinned "the digest form
+  cannot tell stale from edited" stands, and an executed plan's replay still
+  fails by its preconditions. The `plan` ladder's summary line now says what
+  comes next (`Commit: execute { plan_id }.`) and the `execute` ladder's rung
+  is the id alone. **(3) `query_syntax` serves a card** (§4): `{}` is a ~3.5 kB
+  hand-written card plus the chapter names, `{ section }` one chapter of the
+  manual (its `##` headings slugified), `{ section: "all" }` the 38 kB text
+  5.0 returned for `{}` (fetched twelve times in the run). The card is the
+  single most-read text on the surface, so it was written by hand and every
+  example on it is parsed by the reference's and the twin's tests; both
+  engines serve every text byte for byte. Not done: the `query` error hints
+  do not yet name a chapter (`data.section`) — the error classes map to
+  chapters loosely and the mapping would have to be mirrored byte for byte.
+  Fixtures: `reads::tree-rollup`, `reads::plan-memory`, `reads::query-syntax`
+  (new); `reads::orientation`/`budgets`/`alchemy` and `interop::read-listing`,
+  `write-docs-create-move`, `write-docs-set-meta-delete`, `clock-seam` moved
+  with the tree shape (the paging/budget steps now pass `files: true` so they
+  keep pinning the floor and the cursor); `interop::write-effects-stale-plan`
+  gained the id-alone form (an unknown id → `plan_unknown`, the writer's own
+  plan → `stale_plan`) and its old `{ plan_id: "x" }` half-digest step became
+  that form (the half-digest pin is now `effects` alone); `examples::ladders`
+  29 → 31 steps (the `query_syntax` chapter rungs; the `execute` rung by id);
+  `tool-descriptions.json` for `docs_tree`, `query_syntax`, `plan`, `execute`.
+  Two arguments, one result key, one tool argument, one error code added; one
+  result shape changed in a way the catalog's own description called out as
+  the orientation call: a minor.
 - 2026-10-20, surface 5.0 ("underscore = engine"; Brendan's decision of
   2026-10-19; with `spec/mutate` 4.0, `spec/sync` 3.0, `spec/search` 3.0,
   `spec/graph` 2.0 and `spec/cli` 5.0): **on every record kind a BARE name is

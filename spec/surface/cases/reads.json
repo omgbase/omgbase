@@ -47,7 +47,8 @@
           "read": {
             "tool": "docs_tree",
             "args": {
-              "limit": 1
+              "limit": 1,
+              "files": true
             }
           }
         },
@@ -56,7 +57,8 @@
             "tool": "docs_tree",
             "args": {
               "limit": 1,
-              "cursor": "WyIvZ3VpZGUubWQiXQ"
+              "cursor": "WyIvZ3VpZGUubWQiXQ",
+              "files": true
             }
           }
         },
@@ -280,21 +282,12 @@
               "docs": 2,
               "blocks": 21
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/guide.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
-              },
-              {
                 "_path": "/notes/",
-                "kind": "dir",
                 "docs": 1,
-                "blocks": 4,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
+                "blocks": 4
               }
             ],
             "truncated": false,
@@ -307,16 +300,8 @@
               "docs": 1,
               "blocks": 4
             },
-            "entries": [
-              {
-                "_id": "d_1",
-                "_path": "/notes/one.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 4,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
-              }
-            ],
+            "files_here": 1,
+            "entries": [],
             "truncated": false,
             "cursor": null
           },
@@ -327,22 +312,12 @@
               "docs": 2,
               "blocks": 21
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/guide.md",
-                "kind": "doc",
+                "_path": "/notes/",
                 "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
-              },
-              {
-                "_id": "d_1",
-                "_path": "/notes/one.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 4,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
+                "blocks": 4
               }
             ],
             "truncated": false,
@@ -355,14 +330,12 @@
               "docs": 2,
               "blocks": 21
             },
+            "files_here": 1,
             "entries": [
               {
                 "_id": "d_0",
                 "_path": "/guide.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
+                "blocks": 17
               }
             ],
             "truncated": true,
@@ -375,13 +348,12 @@
               "docs": 2,
               "blocks": 21
             },
+            "files_here": 1,
             "entries": [
               {
                 "_path": "/notes/",
-                "kind": "dir",
                 "docs": 1,
-                "blocks": 4,
-                "_updated_at": "2026-09-27T10:00:00.000Z"
+                "blocks": 4
               }
             ],
             "truncated": false,
@@ -394,6 +366,7 @@
               "docs": 0,
               "blocks": 0
             },
+            "files_here": 0,
             "entries": [],
             "truncated": false,
             "cursor": null
@@ -3274,7 +3247,8 @@
           "read": {
             "tool": "docs_tree",
             "args": {
-              "budget_tokens": 1
+              "budget_tokens": 1,
+              "files": true
             }
           }
         }
@@ -3388,14 +3362,12 @@
               "docs": 2,
               "blocks": 4
             },
+            "files_here": 2,
             "entries": [
               {
                 "_id": "d_0",
                 "_path": "/a.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 2,
-                "_updated_at": "2026-09-27T09:00:00.000Z"
+                "blocks": 2
               }
             ],
             "truncated": true,
@@ -6618,7 +6590,8 @@
             "args": {
               "path": "substances",
               "depth": 1,
-              "limit": 2
+              "limit": 2,
+              "files": true
             }
           }
         },
@@ -6721,7 +6694,8 @@
             "tool": "docs_tree",
             "args": {
               "path": "/substances",
-              "depth": 1
+              "depth": 1,
+              "files": true
             }
           }
         },
@@ -9446,49 +9420,32 @@
               "docs": 18,
               "blocks": 314
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/index.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 31,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
                 "_path": "/lab/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 51,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 51
               },
               {
                 "_path": "/practitioners/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 56,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 56
               },
               {
                 "_path": "/processes/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 71,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 71
               },
               {
                 "_path": "/substances/",
-                "kind": "dir",
                 "docs": 5,
-                "blocks": 80,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 80
               },
               {
                 "_path": "/texts/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 25,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 25
               }
             ],
             "truncated": false,
@@ -9501,22 +9458,17 @@
               "docs": 5,
               "blocks": 80
             },
+            "files_here": 5,
             "entries": [
               {
                 "_id": "d_11",
                 "_path": "/substances/mercury.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 17
               },
               {
                 "_id": "d_12",
                 "_path": "/substances/philosophers-stone.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 21,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 21
               }
             ],
             "truncated": true,
@@ -9529,42 +9481,26 @@
               "docs": 18,
               "blocks": 314
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_5",
-                "_path": "/practitioners/newton.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 14,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/processes/",
+                "docs": 4,
+                "blocks": 71
               },
               {
-                "_id": "d_6",
-                "_path": "/practitioners/paracelsus.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 16,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/substances/",
+                "docs": 5,
+                "blocks": 80
               },
               {
-                "_id": "d_7",
-                "_path": "/processes/calcination.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 20,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
-                "_id": "d_8",
-                "_path": "/processes/coagulation.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 14,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/texts/",
+                "docs": 2,
+                "blocks": 25
               }
             ],
-            "truncated": true,
-            "cursor": "WyIvcHJvY2Vzc2VzL2NvYWd1bGF0aW9uLm1kIl0"
+            "truncated": false,
+            "cursor": null
           },
           {
             "items": [
@@ -9891,46 +9827,32 @@
               "docs": 5,
               "blocks": 80
             },
+            "files_here": 5,
             "entries": [
               {
                 "_id": "d_11",
                 "_path": "/substances/mercury.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 17
               },
               {
                 "_id": "d_12",
                 "_path": "/substances/philosophers-stone.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 21,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 21
               },
               {
                 "_id": "d_13",
                 "_path": "/substances/prima-materia.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 14,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 14
               },
               {
                 "_id": "d_14",
                 "_path": "/substances/salt.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 20,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 20
               },
               {
                 "_id": "d_15",
                 "_path": "/substances/sulphur.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 8,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 8
               }
             ],
             "truncated": false,
@@ -14989,6 +14911,1154 @@
               "summary": [
                 "create /attn/d.json (1 block)"
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tree-rollup",
+      "notes": "§2 docs_tree (5.1): the directory rollup. By default one row per directory within `depth` segments — `{ _path (rooted, ending /), docs, blocks }`, totals beneath it, a nested directory after its parent in path order — and the documents directly in the prefix counted as `files_here`, never listed; `files: true` lists the documents within `depth` as `{ _id, _path, blocks }` interleaved in path order; `updated: true` adds `_updated_at` to every row (a directory's the latest beneath it). `total` and `files_here` cover the whole prefix whatever the page; paging (`limit`/`cursor` = base64url(JSON [path]), `budget_tokens`) and an unknown prefix as before; `depth: 0` reads as 1. The 29 kB page the 2026-10-21 agent-bench replayed per turn is the reason: a 348-document repository's depth-2 rollup is one small page.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "README.md",
+                "source": "# Readme\n\nTop.\n"
+              },
+              {
+                "path": "projects/index.md",
+                "source": "# Projects\n"
+              },
+              {
+                "path": "projects/aurora/plan.md",
+                "source": "# Aurora\n\n- [ ] one\n"
+              },
+              {
+                "path": "projects/aurora/notes/2026-01.md",
+                "source": "# Jan\n\nText.\n"
+              },
+              {
+                "path": "projects/basalt/plan.md",
+                "source": "# Basalt\n"
+              },
+              {
+                "path": "journal/2026-01-01.md",
+                "source": "# Day\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "depth": 2
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "depth": 3,
+              "files": true,
+              "updated": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "projects",
+              "files": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "/projects/aurora/",
+              "files": true,
+              "limit": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "/projects/aurora/",
+              "files": true,
+              "limit": 1,
+              "cursor": "WyIvcHJvamVjdHMvYXVyb3JhL25vdGVzLyJd"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "budget_tokens": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "files": false,
+              "updated": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "nowhere",
+              "files": true
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "depth": 0
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "files": "yes"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "README.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "projects/index.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "projects/aurora/plan.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            },
+            {
+              "path": "projects/aurora/notes/2026-01.md",
+              "echo": false,
+              "doc": "d_3",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "projects/basalt/plan.md",
+              "echo": false,
+              "doc": "d_4",
+              "commit": "c_4",
+              "rev": "r_4",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "journal/2026-01-01.md",
+              "echo": false,
+              "doc": "d_5",
+              "commit": "c_5",
+              "rev": "r_5",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "prefix": "/",
+            "depth": 1,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1
+              },
+              {
+                "_path": "/projects/",
+                "docs": 4,
+                "blocks": 7
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/",
+            "depth": 2,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1
+              },
+              {
+                "_path": "/projects/",
+                "docs": 4,
+                "blocks": 7
+              },
+              {
+                "_path": "/projects/aurora/",
+                "docs": 2,
+                "blocks": 5
+              },
+              {
+                "_path": "/projects/basalt/",
+                "docs": 1,
+                "blocks": 1
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/",
+            "depth": 3,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_id": "d_0",
+                "_path": "/README.md",
+                "blocks": 2,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_id": "d_5",
+                "_path": "/journal/2026-01-01.md",
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/projects/",
+                "docs": 4,
+                "blocks": 7,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/projects/aurora/",
+                "docs": 2,
+                "blocks": 5,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/projects/aurora/notes/",
+                "docs": 1,
+                "blocks": 2,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_id": "d_2",
+                "_path": "/projects/aurora/plan.md",
+                "blocks": 3,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/projects/basalt/",
+                "docs": 1,
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_id": "d_4",
+                "_path": "/projects/basalt/plan.md",
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_id": "d_1",
+                "_path": "/projects/index.md",
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/projects/",
+            "depth": 1,
+            "total": {
+              "docs": 4,
+              "blocks": 7
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/projects/aurora/",
+                "docs": 2,
+                "blocks": 5
+              },
+              {
+                "_path": "/projects/basalt/",
+                "docs": 1,
+                "blocks": 1
+              },
+              {
+                "_id": "d_1",
+                "_path": "/projects/index.md",
+                "blocks": 1
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/projects/aurora/",
+            "depth": 1,
+            "total": {
+              "docs": 2,
+              "blocks": 5
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/projects/aurora/notes/",
+                "docs": 1,
+                "blocks": 2
+              }
+            ],
+            "truncated": true,
+            "cursor": "WyIvcHJvamVjdHMvYXVyb3JhL25vdGVzLyJd"
+          },
+          {
+            "prefix": "/projects/aurora/",
+            "depth": 1,
+            "total": {
+              "docs": 2,
+              "blocks": 5
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_id": "d_2",
+                "_path": "/projects/aurora/plan.md",
+                "blocks": 3
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/",
+            "depth": 1,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1
+              }
+            ],
+            "truncated": true,
+            "cursor": "WyIvam91cm5hbC8iXQ"
+          },
+          {
+            "prefix": "/",
+            "depth": 1,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              },
+              {
+                "_path": "/projects/",
+                "docs": 4,
+                "blocks": 7,
+                "_updated_at": "2026-09-27T10:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/nowhere/",
+            "depth": 1,
+            "total": {
+              "docs": 0,
+              "blocks": 0
+            },
+            "files_here": 0,
+            "entries": [],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "prefix": "/",
+            "depth": 1,
+            "total": {
+              "docs": 6,
+              "blocks": 10
+            },
+            "files_here": 1,
+            "entries": [
+              {
+                "_path": "/journal/",
+                "docs": 1,
+                "blocks": 1
+              },
+              {
+                "_path": "/projects/",
+                "docs": 4,
+                "blocks": 7
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "`files` must be a boolean (docs_tree takes budget_tokens?, cursor?, depth?, files?, limit?, path?, repo?, updated?)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "plan-memory",
+      "workspace": true,
+      "notes": "§4 execute (5.1): `execute { plan_id }` alone runs the plan this server remembers under that id — the FULL plan form, so a document that moved on is stale_plan and never plan_mismatch — through an intervening unrelated call, for a plain plan and a selector plan (replayed without OQX); an id the server never produced is plan_unknown (retriable, the message pinned); the same id after its commit is stale_plan (the preconditions decide, no idempotent replay); `plan_id` with `select`/`expect` but no `effects` is still the half digest form; no form, or two, is the argument error naming the three forms. The plan ids in the arguments are the ones the plan steps return under the fixture minter.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro.\n\n- [ ] open task\n"
+              },
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nText.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": "/guide.md",
+                  "field": "_frontmatter.verified",
+                  "value": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6",
+              "reason": "by id"
+            },
+            "ts": "2026-10-21T00:00:01.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": "/notes/one.md",
+                  "field": "_frontmatter.status",
+                  "value": "draft"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_set_meta",
+            "args": {
+              "_path": "/notes/one.md",
+              "set": {
+                "owner": "bb"
+              }
+            },
+            "ts": "2026-10-21T00:00:02.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "78f68dc82931e5c755097532624d28cb93a5c50ef8412d428465588c63513d13"
+            },
+            "ts": "2026-10-21T00:00:03.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6",
+              "expect": {
+                "max": 1
+              }
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan": {
+                "version": 1
+              },
+              "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "plan",
+            "args": {
+              "select": "from blocks where _type == \"task\" and not checked and _path == \"/guide.md\"",
+              "effects": [
+                {
+                  "op": "set",
+                  "field": "_attrs.checked",
+                  "value": true
+                }
+              ],
+              "expect": {
+                "max": 5
+              }
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "6e327486e8df7cb18a32adcbd4d1f429e9a7011fdad966cbd25cd1420e129266"
+            },
+            "ts": "2026-10-21T00:00:04.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "execute",
+            "args": {
+              "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6"
+            },
+            "ts": "2026-10-21T00:00:05.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            },
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "_id": "d_0",
+                  "_path": "guide.md"
+                },
+                "field": "_frontmatter.verified",
+                "value": true
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_0",
+                  "raw": "---\ntitle: Guide\nverified: true\n---\n\n"
+                }
+              ],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "_id": "d_0",
+                  "_path": "guide.md",
+                  "base_revision": "r_0",
+                  "_hash": "81ea447e17e510bfd02f8e560077fc1232003cba2913a6ff0ce03aace9dbe41a"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [
+                {
+                  "_id": "d_0",
+                  "_path": "/guide.md",
+                  "_hash": "5db32317ac652a1ed7f5ab69631670429d372a28c76585a8ecc8fbcfff2502a9"
+                }
+              ],
+              "summary": [
+                "set _frontmatter.verified = true in /guide.md"
+              ]
+            }
+          },
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "title": "Guide"
+              },
+              "inline": {},
+              "computed": {
+                "_title": "Guide"
+              }
+            },
+            "_raw": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro.\n\n- [ ] open task\n"
+          },
+          {
+            "plan_id": "6a438740500f433fda546ade0e52aaa2142d637e6306cfdd3a96a04c3b5562f6",
+            "commit": "c_2",
+            "revisions": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "_hash": "5db32317ac652a1ed7f5ab69631670429d372a28c76585a8ecc8fbcfff2502a9"
+              }
+            ],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "set _frontmatter.verified = true in /guide.md"
+            ]
+          },
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_2",
+            "properties": {
+              "frontmatter": {
+                "title": "Guide",
+                "verified": true
+              },
+              "inline": {},
+              "computed": {
+                "_title": "Guide"
+              }
+            },
+            "_raw": "---\ntitle: Guide\nverified: true\n---\n\n# Guide\n\nIntro.\n\n- [ ] open task\n"
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "_id": "d_1",
+                  "_path": "notes/one.md"
+                },
+                "field": "_frontmatter.status",
+                "value": "draft"
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [
+                {
+                  "doc": "d_1",
+                  "raw": "---\nstatus: draft\n---\n\n"
+                }
+              ],
+              "ops": []
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "_id": "d_1",
+                  "_path": "notes/one.md",
+                  "base_revision": "r_1",
+                  "_hash": "22b600e8d0687206ab5133730306ab3e4dd6ab32a3c149f089b6281f7b0e6e1b"
+                }
+              ],
+              "blocks": [],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "plan_id": "78f68dc82931e5c755097532624d28cb93a5c50ef8412d428465588c63513d13",
+            "diagnostics": [],
+            "preview": {
+              "results": [],
+              "revisions": [
+                {
+                  "_id": "d_1",
+                  "_path": "/notes/one.md",
+                  "_hash": "4cd20ac0047f6484c0c9016b7ee4cc18518f79df7454070f290e4cc78dc0dd0c"
+                }
+              ],
+              "summary": [
+                "set _frontmatter.status = \"draft\" in /notes/one.md"
+              ]
+            }
+          },
+          {
+            "plan_id": "b2d8bd3a57bb6ea985782882d0af424cc85252603b3589419ff5efe3a481d199",
+            "commit": "c_3",
+            "revisions": [
+              {
+                "_id": "d_1",
+                "_path": "/notes/one.md",
+                "_hash": "2d89a47be9471a682183b804970689af8d66a4cb945c729659e06314bfcb0de3"
+              }
+            ],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "set _frontmatter.owner = \"bb\" in /notes/one.md"
+            ]
+          },
+          {
+            "error": "stale_plan",
+            "retriable": true,
+            "data": {
+              "doc": "d_1",
+              "expected_revision": "r_1",
+              "current": {
+                "revision": "r_3",
+                "_hash": "2d89a47be9471a682183b804970689af8d66a4cb945c729659e06314bfcb0de3"
+              },
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"_frontmatter.status\",\"op\":\"set\",\"target\":{\"_id\":\"d_1\",\"_path\":\"notes/one.md\",\"kind\":\"document\"},\"value\":\"draft\"}]}"
+            }
+          },
+          {
+            "error": "plan_unknown",
+            "retriable": true,
+            "message": "this server has no plan 0000000000000000000000000000000000000000000000000000000000000000 — re-run plan, or pass the plan (or `plan_id` + `effects`) with execute",
+            "data": {
+              "plan_id": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)"
+          },
+          {
+            "version": 1,
+            "planner_v": "p3",
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "block",
+                  "_id": "b_3"
+                },
+                "field": "_attrs.checked",
+                "value": true
+              }
+            ],
+            "opset": {
+              "creates": [],
+              "moves": [],
+              "tombstones": [],
+              "set_frontmatter": [],
+              "ops": [
+                {
+                  "op": "update",
+                  "block": "b_3",
+                  "attrs": {
+                    "checked": true
+                  },
+                  "expect": {
+                    "content_hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+                  }
+                }
+              ]
+            },
+            "preconditions": {
+              "docs": [
+                {
+                  "_id": "d_0",
+                  "_path": "guide.md",
+                  "base_revision": "r_2",
+                  "_hash": "5db32317ac652a1ed7f5ab69631670429d372a28c76585a8ecc8fbcfff2502a9"
+                }
+              ],
+              "blocks": [
+                {
+                  "_id": "b_3",
+                  "content_hash": "cfef6a468aa11b127940c8c6dd34e3c8128029ce52b8793b6d15b8927a6bf188"
+                }
+              ],
+              "parents": [],
+              "absent_paths": []
+            },
+            "new_ids": [],
+            "selection": {
+              "query": "from blocks where _type == \"task\" and not checked and _path == \"/guide.md\"",
+              "expect": {
+                "max": 5
+              },
+              "templates": [
+                {
+                  "op": "set",
+                  "field": "_attrs.checked",
+                  "value": true
+                }
+              ],
+              "cardinality": 1,
+              "identities": [
+                "b_3"
+              ]
+            },
+            "plan_id": "6e327486e8df7cb18a32adcbd4d1f429e9a7011fdad966cbd25cd1420e129266",
+            "diagnostics": [],
+            "preview": {
+              "results": [
+                {
+                  "ids": [
+                    "b_3"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "_id": "d_0",
+                  "_path": "/guide.md",
+                  "_hash": "300d8337ea36d600b3d5fb4a91b36bb0ab2e9326c7e736d110450c2f5ceec2b6"
+                }
+              ],
+              "summary": [
+                "check task b_3 in /guide.md"
+              ]
+            }
+          },
+          {
+            "plan_id": "6e327486e8df7cb18a32adcbd4d1f429e9a7011fdad966cbd25cd1420e129266",
+            "commit": "c_4",
+            "revisions": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "_hash": "300d8337ea36d600b3d5fb4a91b36bb0ab2e9326c7e736d110450c2f5ceec2b6"
+              }
+            ],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "check task b_3 in /guide.md"
+            ]
+          },
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_4",
+            "properties": {
+              "frontmatter": {
+                "title": "Guide",
+                "verified": true
+              },
+              "inline": {},
+              "computed": {
+                "_title": "Guide"
+              }
+            },
+            "_raw": "---\ntitle: Guide\nverified: true\n---\n\n# Guide\n\nIntro.\n\n- [x] open task\n"
+          },
+          {
+            "error": "stale_plan",
+            "retriable": true,
+            "data": {
+              "doc": "d_0",
+              "expected_revision": "r_0",
+              "current": {
+                "revision": "r_4",
+                "_hash": "300d8337ea36d600b3d5fb4a91b36bb0ab2e9326c7e736d110450c2f5ceec2b6"
+              },
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"_frontmatter.verified\",\"op\":\"set\",\"target\":{\"_id\":\"d_0\",\"_path\":\"guide.md\",\"kind\":\"document\"},\"value\":true}]}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "query-syntax",
+      "notes": "§4 query_syntax (5.1): `{}` is the card `{ syntax, sections }` (the grammar skeleton, the names rule and the engine names per kind, the handles, the consumers, follow, the examples agents reach for first); `{ section }` one chapter `{ section, syntax }` — the manual's `##` headings slugified; `all` the whole manual; an unknown name is filter_invalid naming the sections, its `fix` the call respelled with the nearest name (Levenshtein ≤ 2 or a prefix) or `all`. Both engines serve the texts byte for byte.",
+      "steps": [
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {
+              "section": "follow"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {
+              "section": "examples"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {
+              "section": "all"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {
+              "section": "folow"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query_syntax",
+            "args": {
+              "section": "grammar"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "syntax": "# query — OQX card. Chapters: query_syntax { section: \"<name>\" }; the manual: { section: \"all\" }\n\nOne OQX string; limit/cursor page the hits; bare: true drops the { _id, _path } envelope.\n  [select <items>] from <target> [where <pred>] [follow <dest> { … }] [order by <expr> [desc]] [limit N] [offset N]\n  <target> count|exists|none|first|single { <block> }     a scalar or one row\nCLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset.\nand / or / not. Comparisons strict and typed; null == a missing field. A list key: \"x\" in tags, never tags == \"x\".\nStrings .contains(\"s\") .startsWith(\"p\") .lower(); x ~* \"re\" (ci regex), x !~ \"re\". Dates date(\"today\"),\ndate(due) < date(\"today\").minus(dur(\"30 days\")), _updated_at >= \"2026-08-01\".\n\nNAMES: a BARE name is YOURS (frontmatter, inline key:: value, a block's attrs); an UNDERSCORE name is the ENGINE's;\n$ is OQX's ($it $key $depth $stop $ordinal). title tags path id are your keys; _title _tags _path _id the engine's.\n  docs       _id _path _raw _hash _updated_at _created_at _title _tags _format | _data _frontmatter _inline | _blocks _nodes _out_links _in_links _revisions\n  blocks     _id _path _doc_id _raw _hash _type _text _attrs _depth _ordinal | _doc | _children _nodes _out_links _section\n  nodes      _id _path _doc_id _block_id _kind _name _value _attrs | _doc _block | _blocks _subsections _children\n  links      _id _path _doc_id _block_id _via_id _dst_id _dst_path _uri _dst_kind _predicate _provenance _anchor _field | _doc _dst _block\n  revisions  _id _path _rev _seq _doc_id _commit _ts _origin _actor _reason _hash _is_current _archived | _doc\nHandles _data.<k> ≡ <k>, _frontmatter.<k> / _inline.<k>; entries(_data) the bag as rows ($key, $it). Reach-through\n_doc.<k> the owning document, _dst.<k> a link's target. Scoping: a bare name is the CURRENT row; ^name one scope\nout; ^docs ^blocks ^nodes ^links the repository from a row. An unknown bare name is absent plus a hints line.\n\nNESTED: <receiver> collect|exists|none|count|first|single { [select …] [where …] [order by …] [limit N] } over a\nrelation, a list key, entries(x) or ^docs; no consumer = collect, a leading predicate = where: docs { type == \"x\" }.\nFOLLOW: from docs where <seed> follow _out_links collect { from _dst depth 3 }   links out; _in_links { from _doc }\nbacklinks; refs(before) a property's documents; $depth per row. SEARCH: text(\"words\") prunes; order by semantic(\"…\") desc.\n\n  from docs where layer == \"working\"\n  select _title, stage from docs where \"process\" in tags order by _path limit 5\n  select _type, _text from blocks where _path == \"/processes/calcination.md\"\n  select _path, _value from nodes where _kind == \"md:task\" and not checked\n  select _path, _block_id from links where _dst_path == \"/processes/calcination.md\"\n  from docs where _title.lower().contains(\"salt\") and _updated_at >= \"2026-01-01\"\n  from docs where _nodes exists { where _kind == \"md:task\" and not checked }\n  select _path, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)\n  docs count { where layer == \"canon\" }\n  select _seq, _ts, _hash from revisions where _path == \"/processes/calcination.md\" order by _seq desc\n  select tags, n: count() from docs flatten tags group by tags order by count() desc\n\nEvery error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.\nChapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.\n",
+            "sections": [
+              "sugar",
+              "paths",
+              "targets",
+              "scoping",
+              "scalars",
+              "predicates",
+              "nested",
+              "select",
+              "flatten",
+              "order",
+              "follow",
+              "semantic",
+              "examples"
+            ]
+          },
+          {
+            "section": "follow",
+            "syntax": "## Graph traversal (follow) and links\n\n  The citation graph is the LINK ROWS walked through a destination block:\n  _dst is a link's destination document (absent for an external or dangling\n  link — it then contributes no successor), _doc its source.\n  from docs where <seed> follow _out_links collect { from _dst }     docs the seed links TO\n  from docs where <seed> follow _in_links collect { from _doc }      backlinks\n    follow _out_links collect { from _dst depth 3 }                  bound (1..8, default 8) — a clause of the block\n    follow _out_links collect { from _dst where layer == \"canon\" }   keep only matching successors\n    follow _in_links collect { from _doc where ^_path in list(before) }   ^ = the row being expanded\n                                                   (^^ = the walk's enclosing scope)\n    follow _out_links collect { from _dst where _predicate == \"depends_on\" }   one predicate only\n    follow _out_links collect { from _dst }, _in_links collect { from _doc }\n                                                   several destinations: their union\n                                                   (one step dedups by identity)\n    follow ^docs { where _out_links exists { where _dst_path == ^^_path } }\n                                                   a destination block over the root's\n                                                   documents, re-read per frontier row\n                                                   (^ = that row) = the backlinks walk\n    follow _out_links collect { from _dst frontier type == \"practitioner\" }   cut, keeping the frontier row\n    from docs where type == \"process\" frontier !verified follow _out_links collect { from _dst }\n                                                   the BODY's frontier applies to the seeds:\n                                                   an unverified seed is kept, not expanded\n    follow distinct _out_links collect { from _dst } / … { $key: group from _dst }   identity control ($key)\n    follow refs(before), ^docs { where ^_path in list(after) }    forward over `before`, backward\n                                                   over every doc whose `after` names me\n  Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|\n  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the\n  walk, ordered by depth then path — `order by $ordinal` for walk order,\n  `where $ordinal <= N` for a deterministic budget cut), $key — usable in\n  select/order by and the top-level post-walk where (a where conjunct that\n  reads one filters the walk's RESULT; the other conjuncts remain the seed\n  predicate), NOT metadata of the candidates a destination block's where reads,\n  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited\n  node is admitted once as a `$stop == \"cycle\"` occurrence and never\n  re-expanded. The default keeps one occurrence per distinct walk path;\n  `follow distinct` dedups reached rows by identity.\n  Destination blocks (OQX 0.20): a brace after ANY destination opens that\n  destination's block — _children { depth 2 }, refs(x) { depth 2 }, _out_links\n  collect { from _dst depth 2 }, ^docs { where ^_path in list(after) } — with the\n  0.17 body rules (where-first, projections) and two clauses of its own after\n  `where`: frontier <pred> (occurrences reached through this destination that\n  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>\n  (this destination expands a frontier row only while $depth < n). The body\n  that carries the follow may write frontier <pred> too, after its where and\n  before follow: it applies to the SEEDS (read like the body's where) — a\n  matching seed stays in the result with $stop == \"frontier\" and is not\n  expanded; each destination's frontier is its own. There is no options block;\n  the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an\n  error naming both block spellings.\n  Type-preserving relations: a block's _children; a section node's _children and\n  _subsections; the citation graph is _out_links collect { from _dst } / _in_links collect { from _doc }.\n  from links where _dst_path == \"/notes/x.md\"       inbound links to a doc, as rows\n  select d: _dst._title, k: _dst_kind from links       the destination document's title\n  from docs where _out_links exists { where _dst.layer == \"draft\" }   links into drafts\n  select b: _in_links collect distinct { from _doc } from docs     backlinks as { _id, _path }\n  select _doc_id, _dst_path from links where _predicate == \"depends_on\"\n  from docs where not _in_links exists { }      orphans (nothing links in)\n  (The `graph` tool is a convenience wrapper that compiles to a follow query.)\n"
+          },
+          {
+            "section": "examples",
+            "syntax": "## Examples\n\n  from docs where layer == \"working\"\n  from docs where _path.startsWith(\"/guides/\") and _updated_at >= \"2026-08-01\"\n  select layer, tags from docs where \"pricing\" in list(tags)\n  from docs where _inline.owner == \"alice\"\n  from docs where _title.lower().contains(\"q3 plan\")\n  from docs where _format == \"yaml\"\n  from docs where type == \"practitioner\" order by era desc limit 2\n  from docs where _nodes none { where _kind == \"md:task\" and not checked }\n  from docs where tags exists { where $it == \"tria-prima\" }\n  select fm: entries(_data) collect { k: $key, v: $it } from docs where _path == \"/x.md\"\n  select owner_id, owner: ^nodes single { where _kind == \"person\" and _attrs.id == ^owner_id } from docs\n  from blocks where _type == \"task\" and not checked and under_heading(\"Launch\") and _doc.layer == \"working\"\n  from blocks where _type == \"paragraph\" and has_edge(\"references\", \"d_92aaaaa\")\n  select _path, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)\n  select _path, next: ^docs collect { _path where ^_path in list(before) } from docs where type == \"milestone\"\n  select _path, n: size(^docs), repo: ^_id from docs limit 1\n  select path, title from docs where has(path)\n  docs { type == \"substance\" and not verified }\n  select subject, process: ^docs[slug == ^subject]!._path from docs where type == \"lab-note\"\n  select _path, back: _nodes first { select p: 0^docs collect { _path where ^^_path in list(after) } values } from docs where type == \"milestone\"\n  select _path, prior: refs(before) collect { _path, when } from docs where type == \"milestone\"\n  from blocks order by semantic(\"identity preservation across edits\") desc limit 10\n  select _uri from links where _dst_kind == \"external\"\n  docs count { where layer == \"canon\" }\n  select _seq, _origin, _ts, _hash from revisions where _path == \"/processes/calcination.md\" order by _seq desc\n  from docs where _revisions count { where _origin == \"api\" } > 0\n  select p: _path, d: _doc._path from revisions where _doc == null\n  select layer, n: count(), titles: collect(_title), open: rows count { where _nodes exists { where _kind == \"md:task\" and not checked } } from docs group by layer having count() > 1 order by count() desc\n  select _path, tag: tags from docs where \"process\" in tags flatten tags order by _path, tags\n\nCommon mistake: `$path`/`$id` — omgbase has no $ names; the engine's location and\nidentity are `_path`/`_id`. Another: the 4.x bare `path`/`id`/`title`/`tags` — a\nbare `path` is now YOUR `path:` key (absent when you wrote none, with a hint\npointing at `_path`); the engine's are `_path`/`_id`/`_title`/`_tags`; `select\ndata.path` is gone — write `path`. Another: `where tags == \"x\"` on a list-valued\nkey is false — write `\"x\" in tags`. Another: `select _path: _doc._path` — alias it\n(`p: _doc._path`).\n"
+          },
+          {
+            "section": "all",
+            "syntax": "# query — OQX syntax reference\n\nThe `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`, and\n`bare: true` to drop the automatic `_id`/`_path` envelope — needs a `select`).\nThere is no {from, filter, order} envelope: every concern is a clause of the\nstring. Two rules tell the two syntaxes apart: DOT navigation belongs to the\nhost object model (`_doc.layer`, `_section._blocks`, `_dst._title`); WHITESPACE\nquery directives belong to OQX — a nested query is `<receiver> collect|exists|\ncount|first|single { <block> }` (a postfix directive + a `{ … }` block), never a\nmethod. Its distinctive power is the receiver-constrained nested query that\ncorrelates to the current row: `from docs where _nodes exists { where _kind ==\n\"md:task\" }` returns only the docs that themselves contain a matching node.\n\n  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]\n                   [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]\n                   [order by <expr> [asc|desc], …] [limit N] [offset N]\n  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)\n\nCLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset —\neach at most once (`flatten` may repeat); an out-of-order clause is a parse error naming the order.\nOnly `select` may drop its keyword, and only as the first clause\n(`_path, era from docs where …`). A top-level predicate needs `where`, because\n`where` follows `from` (`era > 1600 from docs` is the clause-order error); a\nblock may LEAD with a predicate (see Sugar), but a predicate after a projection\nstill needs the keyword (`{ _name where _kind == \"md:task\" }`, not\n`{ _name, _kind == \"md:task\" }`); `from docs count` is an error (write\n`docs count { … }`). `where` and later `select` items may use the same body's\n`select` aliases (`select _path, old: era < 1000 from docs where old`; an alias\nshadows a same-named field there). `and` / `or` / `not` are the connectives;\nthe symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and\nwhat `print` writes).\n\n## Sugar (OQX 0.17)\n\nEvery form here is shorthand for an explicit directive (the AST is the explicit form):\n  nodes { _kind == \"md:task\" }       ≡ nodes collect { where _kind == \"md:task\" } — a receiver block with\n                                       no consumer is collect; a block whose LEADING expression is a predicate\n                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything\n                                       but a bare name, a dotted path or a ^lift) is where-first. Names still\n                                       project: _nodes { _name } ≡ _nodes collect { _name }; filter a bare field with\n                                       _nodes { is checked }. Wherever a value stands (0.20), call arguments included:\n                                       size(_children { is checked }); x distinct { … } ≡ x collect distinct { … }. After a\n                                       follow destination too: follow _children { depth 2 } is that destination's block.\n  (a, b)                              a tuple (0.20): two or more expressions, concatenated one level flat — a value\n                                       (size((tags, aliases)), \"x\" in (tags, aliases)) and a receiver ((a, b) { … },\n                                       follow (before, after) { depth 2 }); (a) alone is grouping\n  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});\n                                       out of range ⇒ absent; refs(x)[0]._path navigates the row\n  ^docs[_path == ^company]            ≡ ^docs first { where _path == ^company }   first match or absent\n  ^docs[_path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid\n  _title!                             required: _title, or an error naming the expression (and the row's $key — its _id)\n                                       — never a filter, never a coercion (0!, \"\"! are values); tightest: a!.b vs a.b!\n  is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)\n  x is y / x is not y                 identity ($key: a store row's id, else structural) — compares rows, which == does not;\n                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining\n  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: title or _title coalesces)\n  boss: ^docs[_path == ^manager], bossName: boss._title   a select item may use the items to its LEFT\n  Reserved words (never a bare field name): from where select is not and or, true false null.\n  Contextual words (limit order offset follow collect count first distinct desc by in frontier depth group having\n  flatten as) parse as fields in expression position (select o: order from docs).\n\nResults are LEAN hits — { _id, _path } + whatever `select` projects (or `values`,\n`count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's\n`_id` straight into `where _id == \"…\"` (no translation); `select _id, _path` is\nsimply the envelope (no duplicate columns); an alias `_id:`/`_path:` on any OTHER\nexpression is refused — `select _path: _doc._path from blocks` fails (\"projection\n`_path` collides with the hit envelope — alias it (`p: _doc._path`)\"); a row\nsurfacing as a value (an empty `collect { }`) is the same `{ _id, _path }`. Every\nother tool spells a row the same way (`docs_read` → `{ _id, _path, rev, properties,\n_raw }`, `blocks_read` → `{ _id, _type, _text, _raw, _hash, … }`, `docs_list` → `{ _id,\n_path, _updated_at, blocks }`, a revision → `{ _id, _path, _hash }`): hydrate by `_id`\nvia blocks_read/docs_read.\n\n## Paths\n\nEvery path the surface returns is `/`-rooted — the form a reference is\nwritten in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a\nhit's `_path`, an edge's `_dst_path`, every tool's paths. Every path it\naccepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,\n`within(...)`, and a string LITERAL compared with `_path`/`_dst_path` (on the row,\nor through a row handle: `_doc._path`, `_dst._path`, `$it._path`) by `==`/`!=` or\npassed to their `.startsWith(...)` (it is rooted first, so `_path == \"a.md\"` and\n`_path == \"/a.md\"` both match). A property holding a reference compares directly —\nand is never rooted: `where ^_path in list(after)`, `where customer == ^_path`,\n`where path == \"/x.md\"` (YOUR authored `path:` key — the bare name — compared as\nwritten) — no `\"/\" + ...` glue.\n\n## Targets & field namespaces\n\nTHE NAME RULE — one rule on every record kind: a BARE name is YOURS (an authored\nproperty: frontmatter + inline on a doc, an attrs key on a block or node), an\nUNDERSCORE-prefixed name is the ENGINE's (however derived: `_id`, `_path`,\n`_title`, `_updated_at`, `_doc`), and `$` belongs to OQX — $it, $key, $depth,\n$stop, $leaf, $frontier, $ordinal are values the LANGUAGE injects into a scope;\nomgbase adds NO $ names (a `$id` in a query is an unknown name, absent). Nothing\nbare is reserved: `title`, `tags`, `path`, `id`, `format`, `doc` are your keys\nwhen you wrote them. Collections stay bare (`from docs`, `^docs`, `docs count { … }`,\n`entries(^$it)`) — `from` names a collection, not a row property — and so do the\nrow functions in call position (`text(\"x\")`, `under(…)`, `refs(x)`): a call is\nnever an entry read. There is NO self alias (the 4.x `doc`/`block`/`section`):\n`$it` is the self, and `_doc`/`_block`/`_dst` reach ANOTHER row. So `_path` is the\nengine's /-rooted location and `path` your `path:` key; `_tags` is your tags ∪ the\nbody #hashtags and `tags` the authored list alone; `_title` the computed title (the\nfirst H1) and `title` your `title:`; `_data.<k>` ≡ `<k>` (the merged authored view —\nkept for `entries(_data)` and to reach an authored key that itself starts with\n`_`), `_frontmatter.<k>` / `_inline.<k>` one source each. Same value, same name\neverywhere: a hit's `_id` is docs_read's `_id` and the `_id` argument of blocks_read.\n\n  Engine names per kind (attributes | handles | relations):\n    docs    _id _path _raw _hash _updated_at _created_at _title _tags _format | _data _frontmatter _inline | _blocks _nodes _out_links _in_links _revisions\n    blocks  _id _path _doc_id _raw _hash _updated_at _created_at _type _text _attrs _depth _ordinal | _doc | _children _nodes _out_links _section\n    nodes   _id _path _doc_id _block_id _kind _name _value _attrs | _doc _block | _blocks _subsections _children\n    links   _id _path _doc_id _block_id _via_id _dst_id _dst_path _uri _field _dst_kind _predicate _provenance _anchor | _doc _dst _block | —\n    revisions  _id _path _rev _seq _doc_id _commit _ts _origin _actor _reason _hash _is_current _archived | _doc | —\n    root    _id (^_id, 0^_id) | — | docs blocks nodes links revisions\n  Every bare name is yours; `_attrs.<k>` on a block or node is the same read as\n  the bare attrs key `<k>`.\n  UNKNOWN NAMES: a bare name that no object of the kind in this repository\n  carries is a property read that yields absent — on docs/blocks/nodes the result\n  gains `hints` (one line per name, the nearest match drawn from your keys and the\n  engine names: \"no document in this repository carries a property `title`; did\n  you mean `_title`?\") and the rows still come back; in a plan/apply/execute\n  selector it is refused. On links and revisions (closed: no authored data reaches\n  them) a bare name is a filter_invalid error. A `_x` that is no engine name of\n  the kind is filter_invalid naming the kind's engine names. A property some\n  objects carry is known (partial presence is normal).\n\ndocs:\n  - bare identifier  = a document PROPERTY (frontmatter + inline `key:: value`,\n                       unioned; nested via dots: meta.owner). YAML/JSON docs\n                       expose the parsed object's keys the same way. Nothing is\n                       reserved: `title`, `tags`, `path`, `id` are your keys.\n  - source handles   = _data.<k> (the merged authored view — the same read as the\n                       bare key) / _frontmatter.<k> / _inline.<k>; the whole bag\n                       as a collection via entries(_data) / entries(_frontmatter)\n                       / entries(_inline) (see entries()).\n  - attributes       = _id, _path (/-rooted, see Paths), _updated_at (ISO-8601,\n                       sorts chronologically), _created_at, _raw (the whole file,\n                       frontmatter included), _hash (its sha256, 64 hex), _title\n                       (the computed title: the first H1; `title` is the authored\n                       key), _tags (authored tags ∪ body #hashtags, deduped,\n                       authored first; `tags` is the authored list), _format (the\n                       doc's format — \"markdown\"/\"yaml\"/\"json\"; present on EVERY\n                       doc, so has(_format) is always true and `_format == \"yaml\"`\n                       is the filter).\n  - relations        = _nodes, _blocks, _out_links / _in_links (a doc's links as\n                       rows; the documents at their other end are\n                       _out_links collect distinct { from _dst } and\n                       _in_links collect distinct { from _doc } — there is no\n                       out / in relation), _revisions (the document's stored\n                       revisions, oldest first — see revisions below).\n\nblocks:\n  - bare fields      = every attrs key FLATTENED onto the row (bare `checked`;\n                       `_attrs.<k>` is the same read; absent ⇒ false) — a block's\n                       authored side.\n  - attributes       = _id, _path (the owning doc's path), _doc_id (the owning\n                       doc), _type, _text (normalized), _ordinal (0-based among\n                       siblings), _depth (0 at the top level), _raw (the block's\n                       raw source — a container's raw holds its children), _hash\n                       (its sha256 — the value update/split expect as\n                       expect.content_hash), _updated_at, _created_at, _attrs.\n  - reach-through    = _doc.<key> / _doc._path / _doc._id / _doc._format = the\n                       CONTAINING doc (_doc._id and _doc._path cost nothing — they\n                       read the row's own _doc_id / joined path, no lookup).\n  - relations        = _children, _nodes, _out_links, _section (no self alias:\n                       the 4.x `block.children` is `_children`).\n  NOTE: inside a `follow`, $depth/$ordinal are ALWAYS the walk's metadata; a\n  block's own nesting is `_depth` / `_ordinal` everywhere.\n\nnodes:\n  - bare fields      = the attrs keys flattened onto the row (checked, level,\n                       first_ordinal; `_attrs.<k>` is the same read).\n  - attributes       = _id, _path, _doc_id, _block_id (null for a block-less\n                       node), _kind (md:task / md:link / md:section / yaml:…),\n                       _name, _value, _attrs.\n  - reach-through    = _doc.<key> / _doc._id / _doc._path, _block._type /\n                       _block._text / _block._id / _block._path.\n  - relations        = _blocks, _children, _subsections (a section node's; the\n                       4.x `section.blocks` is `_blocks`).\n\nlinks:  (the authored link graph as rows — one per open link: the relation a link\n        establishes; the md:link NODE is its occurrence in the text and _via_id\n        points at it — a frontmatter link has a row and no node)\n  - attributes       = _id, _path (the SOURCE doc's path), _doc_id (the SOURCE\n                       doc), _block_id (the source block; null for a frontmatter\n                       edge), _via_id, _dst_id (the destination node id: a doc id,\n                       an external node id or phantom:<path>), _dst_path (target\n                       doc path, /-rooted; NULL when dangling/external), _uri\n                       (external URL; NULL otherwise), _predicate\n                       (\"references\"/\"embeds\"/freeform), _provenance\n                       (\"link\"/\"frontmatter\"/\"inline_field\"/…), _dst_kind\n                       (\"document\"/\"external\"/\"collection\"), _anchor, _field (the\n                       frontmatter key / inline field it was authored in).\n  - reach-through    = _doc.<key> (the source document), _dst.<key> (the\n                       destination document; absent when dangling/external),\n                       _block.<key> (the source block). Closed: links carry no\n                       authored data, so a bare name is filter_invalid. There is\n                       no from_commit: a query sees open edges only (history is\n                       blocks_history/changes_since).\n  - text()/semantic() are N/A on links.\n\nrevisions:  (history as rows — one per stored revision of every document of the\n        repository, deleted documents included: what docs_history lists, queryable)\n  - attributes       = _id (the revision id, r_…), _rev (= _id), _seq (1, 2, … per\n                       document), _doc_id, _commit, _ts (the commit's time, sorts\n                       chronologically), _origin (\"observed\"/\"api\"/\"import\"/\n                       \"projection\"), _actor, _reason, _hash (the rendered file's\n                       sha256 — docs_history's _hash), _is_current (true for the\n                       document's current revision), _archived (true when the\n                       bodies moved to an archive segment: the row stays,\n                       docs_read { at } reads through the segment), _path (the\n                       path the revision was committed under — a move re-paths\n                       only the current revision, so earlier ones keep the old\n                       path).\n  - reach-through    = _doc.<key> reaches the document's CURRENT row; absent for\n                       a deleted document, so where _doc == null is the revisions\n                       of deleted documents. Closed: a bare name is filter_invalid.\n  - on docs          = _revisions is a relation (oldest first): a document with\n                       more than one version is docs { _revisions count { } > 1 }.\n  - text()/semantic() are N/A on revisions. The body as of a revision is\n    docs_read { _path, at: \"<rev>\" } (docs_read_at is the same call).\n\n## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL\n\n  name          the CURRENT row only — never falls through to an enclosing row\n                or the repository; an absent field is simply absent.\n  ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);\n                ^^name two scopes out. `^_path` = the enclosing row's path.\n  ^docs ^nodes ^blocks ^links ^revisions\n                THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root\n                scope's row, one scope out from a top-level row, so ^docs there is\n                the whole documents scan (uncorrelated until you add a ^ predicate);\n                one caret per enclosing block (^^docs from depth two), or the\n                absolute 0^docs from ANY depth. ^_id / 0^_id = the repository id.\n                ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the\n                five collections. At the root scope itself a bare target is the scan\n                (docs count { … }, from docs, entries(docs)).\n                ERRORS: a bare `docs` INSIDE a block reads a property of the current\n                row, which has none — refused (\"did you mean ^docs\"); so is a bare\n                `blocks`/`nodes`/`revisions` there (a doc's own relations are\n                `_blocks`/`_nodes`/`_revisions`); `^docs` AT THE TOP LEVEL reaches\n                past the root — refused (write the bare `docs`); so is `$repo`\n                (surface < 2.0; the message names the replacement).\n  $it           the current item itself (a row, or each ELEMENT when the\n                receiver is a list property); ^$it = the enclosing row, ^$it._id\n                its id. $value is NOT an intrinsic (since oqx 0.15): it reads a\n                property literally named $value, absent when there is none.\n  $key          the row's identity (0.20): a store row's id (doc/block/node/edge), an entries(x)\n                entry's key, a follow occurrence's walk identity; project $key: <expr> to rekey the\n                rows a block yields (a destination block's $key: is not a column).\n\n## Scalar semantics (@omgbase/oqx)\n\n  comparisons  ==  !=  <  <=  >  >=    strict & typed (5 == \"5\" is false); either\n                                       side may be a field (field-vs-field OK).\n  absence      null and a missing field are the same \"absent\" value; two absents\n               are EQUAL, so `absent != \"x\"` is TRUE and `absent == null` is TRUE.\n               Relational (< <= > >=) on an absent operand → FALSE. Bare `f` in\n               boolean position uses JS truthiness (absent/false/0/\"\" ⇒ false;\n               NOTE: \"false\", [] and {} are truthy). has(f) = explicit presence.\n  boolean      and  or  not    grouping ( … )   — && || ! are accepted synonyms\n  arithmetic   + - * / %    (+ concatenates if either side is a string)\n  membership   x in y       array → typed membership; string → substring;\n                            object → key exists; range → coverage. Any list\n                            property works directly: \"pricing\" in tags. list(f)\n                            coerces scalar-or-list (absent → []) — use it when a\n                            key is sometimes scalar, sometimes a list.\n  ranges       lo..hi (inclusive)  lo...hi (exclusive hi)  ..hi  lo..\n               era in 800..1680; works over ISO dates. range(prop) reads a\n               range-shaped STRING property as an interval: \"2026-01-15\" in range(window).\n  strings      x.contains(\"s\") x.startsWith(\"p\") x.endsWith(\"s\") x.matches(\"^re$\")\n               (real regex) x.lower() x.upper() size(x). ALL CASE-SENSITIVE —\n               fold with .lower(): _title.lower().contains(\"aurora\").\n               Infix regex: x ~ \"re\" is x.matches(\"re\"); x ~* \"re\" is the\n               case-insensitive match; x !~ \"re\" and x !~* \"re\" negate them.\n               Unanchored unless the pattern anchors; an absent x is false\n               under ~ and TRUE under !~ (not SQL's NULL).\n  functions    has(f)  size(x)  list(x)  entries(x)  range(s)\n  dates        a date is an ISO string, a duration a NUMBER OF SECONDS; arithmetic\n               is METHODS, never + or - (+ concatenates strings).\n               date(\"today\"|\"now\"|\"yesterday\"|\"tomorrow\"|\"sow\"|\"eow\"|\"som\"|\"eom\"|\n               \"soy\"|\"eoy\") — the host clock, UTC; date(\"2026-10-15\") canonical ISO\n               (absent if unparseable). dur(\"1h30m\") dur(\"2 days, 3 hours\")\n               dur(\"P1DT2H\") dur(90) → seconds (year = 365 d, month = 30 d).\n               d.plus(dur(\"30 days\"))  d.minus(86400)  d.plus(\"1 month\") (calendar:\n               Jan 31 → Feb 28)  a.until(b) → signed seconds  d.year() d.month()\n               d.day() d.weekday() (1 = Mon) d.hour() d.minute() d.second()\n               d.date()  d.format(\"EEE dd MMM yyyy\")  n.dur_text() → \"1h 30m\"\n               n.dur_iso() → \"PT1H30M\". Total: a non-date is absent, so\n               `where date(due) < date(\"today\").minus(dur(\"30 days\"))` just\n               filters. A datetime is never < its own date: compare\n               _updated_at.date() == date(\"today\"), or < date(\"tomorrow\").\n  literals     \"str\" 'str' 123 1.5 true false null\n  determinism  no random; the only clock is date(\"today\"/\"now\"/…), read once per\n               query. Lists/structs are not literals; ternary is not supported.\n               Errors surface as filter_invalid.\n  scalars vs lists  a list-authored key never == a scalar (tags == \"x\" is false\n               when tags is a list) — use `\"x\" in tags` / `in list(tags)`.\n\n## Domain predicates (omgbase)\n\n  text(\"terms\")        FTS5 PRUNING predicate (docs match via their blocks, nodes\n                       via the node index); composes anywhere, incl. nested scopes.\n  semantic(\"phrase\")   embedding cosine SCORE (docs/blocks): threshold it\n                       (semantic(\"x\") > 0.6), project it, or `order by semantic(\"x\")\n                       desc` for top-K. Needs a provider that has embedded the repository; else provider_unavailable.\n  blocks target only:\n    under(id_or_heading)      block in the containment subtree / section range\n    under_heading(\"Launch\")   an ancestor section heading contains the text (ci)\n    under_kind(type[, name])  an ancestor block has that type (name: its text\n                              contains / its key equals name)\n    within(\"path\" | \"d_..\")   containing doc = id, exact path, or path glob (*);\n                              either path form\n    yaml_path(\"a.b\")          YAML docs: the block at that key path\n    json_pointer(\"#/a/b\")     JSON docs: the block at that pointer\n    has_edge(\"pred\"[, target])  an open authored edge with that predicate leaves here\n    has_anchor()              block carries an authored ^ref\n    parent_type() == \"x\"      parent block's type (must be compared)\n    child_count() > 0         number of direct children (must be compared)\n  refs(x)              the live documents a property's document references name:\n                       x is a string, a list or absent; each \"/a/b.md\", \"a/b.md\"\n                       or \"d_…\" element resolves to that doc's row; dangling and\n                       non-string elements are dropped. Yields docs rows, so it is\n                       a source, a receiver or a follow destination:\n                       follow refs(before), refs(after) walks a timeline both ways.\n                       The reverse direction needs no function: a document's\n                       _path is already the reference form, so\n                       ^docs { where ^_path in list(after) } is\n                       \"the documents whose `after` names me\".\n  A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails\n                       (filter_invalid). `follow before` over a list of paths\n                       reaches the STRINGS — write `follow refs(before)`.\n\n## Nested queries & consumers\n\n  <receiver> collect|exists|none|count|first|single { <block> }\n    receiver = a relation (_nodes, _blocks, _doc._out_links, _section._blocks, …), a\n               reach-through row (_dst, _doc: one row — _dst { _title }), a\n    list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).\n    block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]\n               — the same fixed order as the top level (`from` optional; the\n               receiver supplies the rows). A leading name/alias list is the\n               projection (`select` dropped); a predicate always needs `where`.\n               A `from E` inside a block RE-PROJECTS the rows through a relation\n               (a typed flatMap): `docs collect { from _nodes where _kind == \"md:task\" }`\n               starts at docs, projects each through `_nodes`, and queries the\n               resulting nodes; a scalar relation (`from _doc`) contributes one\n               row; a missing or non-navigable relation is a loud error, never a\n               global scan.\n  exists    ≥1 row      _nodes exists { where _kind == \"md:task\" and not checked }\n  none      0 rows      _nodes none { where _kind == \"md:task\" and not checked }  (\"every task done\")\n  count     a number    _nodes count { where _kind == \"md:task\" } >= 2\n  collect   rows (default) — in select for nested results; in where with a lift\n  first / single   zero-or-one (single errors on >1) — lookups in select\n  distinct  on any consumer: dedup by projected value — _nodes count distinct { select _kind }\n  limit/offset  bound the block's rows AFTER where/order/distinct, BEFORE the\n            consumer reduces: _nodes exists { offset 1 } = at least two;\n            first { … offset 1 } = the second.\n  lift      `^name:` in a where-collect binds values outward:\n            select _path, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" and not checked }\n  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;\n            ^nodes single { where _kind == \"person\" and _attrs.id == ^owner_id }  lookup;\n            x in ^keys  membership over a lifted set.\n\n## select — projection\n\n  select a, alias: expr, nested: _nodes collect { … }\n  bare key → your property (scalar-authored → scalar; list → array); _name →\n  the engine's field (_id, _path, _title, …); _data.<k> is the bare key's read;\n  a call/arithmetic needs an alias (n: size(tags)) unless in values mode;\n  an output key of _id/_path other than the attribute itself needs an alias.\n  _raw        whole file bytes (docs) — docs_read is cheaper for one doc.\n  distinct    select distinct _type   (dedup hits by projected value)\n  values      select <ONE item> values → bare values instead of records:\n                select distinct type values from docs          → values: [\"hub\",\"lab-note\",…]\n                select _path values from docs                  → values: [\"/index.md\", …]\n                tags: tags collect { $it values }             → a plain array\n                h: _nodes first { _name values where _kind == \"md:section\" order by first_ordinal }\n  entries(x)  a record as a collection ($key / $it per entry), key order:\n                select fm: entries(_data) collect { k: $key, v: $it }\n                where entries(_frontmatter) exists { where $key == \"era\" and $it > 1600 }\n                entries(_inline), entries(_attrs), a nested map, or a list (index keys)\n  $semantic_score is not a field — project semantic(\"…\") under an alias instead.\n\n## flatten (OQX 0.25)\n\n  flatten <expr> [{ … }] [as <name>]      after follow, before group by; may repeat\n  Splits one value into rows. Every hit is still the PARENT row — its _id/_path\n  repeat per element, as Dataview's TABLE … FLATTEN — with <name> bound beside\n  its fields at the same depth: an array → one row per element (an empty list\n  yields none), a missing field → one row with the name absent (never dropped),\n  an object or a scalar → one row with the value. A plain navigation names\n  itself (flatten tags rebinds tags to each element); anything else needs as.\n  The block is the ordinary receiver block over the elements (where, a\n  projection, order by, limit, distinct), applied first. Later clauses read the\n  name — a later flatten (flatten jobs as j flatten j.tags as t), group by,\n  having, select, order by; where runs before it. A flattened query pages by\n  position (cursor null); as _id / as _path is refused (the envelope reads them).\n    select _path, tags from docs where type == \"process\" flatten tags order by _path, tags\n    select _path, t: b._text from docs flatten _blocks { where _type == \"task\" and not checked } as b\n    select tags, n: count() from docs flatten tags group by tags order by count() desc\n\n## order by, limit/offset, pagination\n\n  order by era desc, _path asc     absent values sort LAST (asc); ties → (_path, _id)\n  limit N / offset N               define the result SET (integer literals);\n                                   the tool's limit/cursor then page WITHIN it\n  cursor                           opaque keyset on (_path, _id); a custom order by\n                                   disables it (you get the top page + truncated)\n\n## Graph traversal (follow) and links\n\n  The citation graph is the LINK ROWS walked through a destination block:\n  _dst is a link's destination document (absent for an external or dangling\n  link — it then contributes no successor), _doc its source.\n  from docs where <seed> follow _out_links collect { from _dst }     docs the seed links TO\n  from docs where <seed> follow _in_links collect { from _doc }      backlinks\n    follow _out_links collect { from _dst depth 3 }                  bound (1..8, default 8) — a clause of the block\n    follow _out_links collect { from _dst where layer == \"canon\" }   keep only matching successors\n    follow _in_links collect { from _doc where ^_path in list(before) }   ^ = the row being expanded\n                                                   (^^ = the walk's enclosing scope)\n    follow _out_links collect { from _dst where _predicate == \"depends_on\" }   one predicate only\n    follow _out_links collect { from _dst }, _in_links collect { from _doc }\n                                                   several destinations: their union\n                                                   (one step dedups by identity)\n    follow ^docs { where _out_links exists { where _dst_path == ^^_path } }\n                                                   a destination block over the root's\n                                                   documents, re-read per frontier row\n                                                   (^ = that row) = the backlinks walk\n    follow _out_links collect { from _dst frontier type == \"practitioner\" }   cut, keeping the frontier row\n    from docs where type == \"process\" frontier !verified follow _out_links collect { from _dst }\n                                                   the BODY's frontier applies to the seeds:\n                                                   an unverified seed is kept, not expanded\n    follow distinct _out_links collect { from _dst } / … { $key: group from _dst }   identity control ($key)\n    follow refs(before), ^docs { where ^_path in list(after) }    forward over `before`, backward\n                                                   over every doc whose `after` names me\n  Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|\n  depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the\n  walk, ordered by depth then path — `order by $ordinal` for walk order,\n  `where $ordinal <= N` for a deterministic budget cut), $key — usable in\n  select/order by and the top-level post-walk where (a where conjunct that\n  reads one filters the walk's RESULT; the other conjuncts remain the seed\n  predicate), NOT metadata of the candidates a destination block's where reads,\n  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited\n  node is admitted once as a `$stop == \"cycle\"` occurrence and never\n  re-expanded. The default keeps one occurrence per distinct walk path;\n  `follow distinct` dedups reached rows by identity.\n  Destination blocks (OQX 0.20): a brace after ANY destination opens that\n  destination's block — _children { depth 2 }, refs(x) { depth 2 }, _out_links\n  collect { from _dst depth 2 }, ^docs { where ^_path in list(after) } — with the\n  0.17 body rules (where-first, projections) and two clauses of its own after\n  `where`: frontier <pred> (occurrences reached through this destination that\n  match are frontiers; ^ there is the walk's enclosing scope) and depth <n>\n  (this destination expands a frontier row only while $depth < n). The body\n  that carries the follow may write frontier <pred> too, after its where and\n  before follow: it applies to the SEEDS (read like the body's where) — a\n  matching seed stays in the result with $stop == \"frontier\" and is not\n  expanded; each destination's frontier is its own. There is no options block;\n  the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an\n  error naming both block spellings.\n  Type-preserving relations: a block's _children; a section node's _children and\n  _subsections; the citation graph is _out_links collect { from _dst } / _in_links collect { from _doc }.\n  from links where _dst_path == \"/notes/x.md\"       inbound links to a doc, as rows\n  select d: _dst._title, k: _dst_kind from links       the destination document's title\n  from docs where _out_links exists { where _dst.layer == \"draft\" }   links into drafts\n  select b: _in_links collect distinct { from _doc } from docs     backlinks as { _id, _path }\n  select _doc_id, _dst_path from links where _predicate == \"depends_on\"\n  from docs where not _in_links exists { }      orphans (nothing links in)\n  (The `graph` tool is a convenience wrapper that compiles to a follow query.)\n\n## semantic grain\n\nfrom docs ranks whole DOCUMENTS (one hit per file); from blocks ranks PASSAGES.\ntext()/where prune the candidate set; only order by reweights.\n\n## Examples\n\n  from docs where layer == \"working\"\n  from docs where _path.startsWith(\"/guides/\") and _updated_at >= \"2026-08-01\"\n  select layer, tags from docs where \"pricing\" in list(tags)\n  from docs where _inline.owner == \"alice\"\n  from docs where _title.lower().contains(\"q3 plan\")\n  from docs where _format == \"yaml\"\n  from docs where type == \"practitioner\" order by era desc limit 2\n  from docs where _nodes none { where _kind == \"md:task\" and not checked }\n  from docs where tags exists { where $it == \"tria-prima\" }\n  select fm: entries(_data) collect { k: $key, v: $it } from docs where _path == \"/x.md\"\n  select owner_id, owner: ^nodes single { where _kind == \"person\" and _attrs.id == ^owner_id } from docs\n  from blocks where _type == \"task\" and not checked and under_heading(\"Launch\") and _doc.layer == \"working\"\n  from blocks where _type == \"paragraph\" and has_edge(\"references\", \"d_92aaaaa\")\n  select _path, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)\n  select _path, next: ^docs collect { _path where ^_path in list(before) } from docs where type == \"milestone\"\n  select _path, n: size(^docs), repo: ^_id from docs limit 1\n  select path, title from docs where has(path)\n  docs { type == \"substance\" and not verified }\n  select subject, process: ^docs[slug == ^subject]!._path from docs where type == \"lab-note\"\n  select _path, back: _nodes first { select p: 0^docs collect { _path where ^^_path in list(after) } values } from docs where type == \"milestone\"\n  select _path, prior: refs(before) collect { _path, when } from docs where type == \"milestone\"\n  from blocks order by semantic(\"identity preservation across edits\") desc limit 10\n  select _uri from links where _dst_kind == \"external\"\n  docs count { where layer == \"canon\" }\n  select _seq, _origin, _ts, _hash from revisions where _path == \"/processes/calcination.md\" order by _seq desc\n  from docs where _revisions count { where _origin == \"api\" } > 0\n  select p: _path, d: _doc._path from revisions where _doc == null\n  select layer, n: count(), titles: collect(_title), open: rows count { where _nodes exists { where _kind == \"md:task\" and not checked } } from docs group by layer having count() > 1 order by count() desc\n  select _path, tag: tags from docs where \"process\" in tags flatten tags order by _path, tags\n\nCommon mistake: `$path`/`$id` — omgbase has no $ names; the engine's location and\nidentity are `_path`/`_id`. Another: the 4.x bare `path`/`id`/`title`/`tags` — a\nbare `path` is now YOUR `path:` key (absent when you wrote none, with a hint\npointing at `_path`); the engine's are `_path`/`_id`/`_title`/`_tags`; `select\ndata.path` is gone — write `path`. Another: `where tags == \"x\"` on a list-valued\nkey is false — write `\"x\" in tags`. Another: `select _path: _doc._path` — alias it\n(`p: _doc._path`).\n"
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown section `folow`; the sections are sugar, paths, targets, scoping, scalars, predicates, nested, select, flatten, order, follow, semantic, examples, all (query_syntax takes section?)",
+            "data": {
+              "fix": "{\"section\":\"follow\"}"
+            }
+          },
+          {
+            "error": "filter_invalid",
+            "retriable": false,
+            "message": "unknown section `grammar`; the sections are sugar, paths, targets, scoping, scalars, predicates, nested, select, flatten, order, follow, semantic, examples, all (query_syntax takes section?)",
+            "data": {
+              "fix": "{\"section\":\"all\"}"
             }
           }
         ]

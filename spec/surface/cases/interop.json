@@ -923,7 +923,8 @@
           "tool": "docs_tree",
           "args": {
             "path": "substances/",
-            "limit": 2
+            "limit": 2,
+            "files": true
           }
         },
         {
@@ -979,56 +980,37 @@
               "docs": 20,
               "blocks": 327
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/index.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 31,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
                 "_path": "/lab/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 51,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 51
               },
               {
                 "_path": "/practitioners/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 56,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 56
               },
               {
                 "_path": "/processes/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 71,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 71
               },
               {
                 "_path": "/substances/",
-                "kind": "dir",
                 "docs": 5,
-                "blocks": 80,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 80
               },
               {
                 "_path": "/texts/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 25,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 25
               },
               {
                 "_path": "/timeline/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 13,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 13
               }
             ],
             "truncated": false,
@@ -1041,40 +1023,8 @@
               "docs": 4,
               "blocks": 71
             },
-            "entries": [
-              {
-                "_id": "d_7",
-                "_path": "/processes/calcination.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 20,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
-                "_id": "d_8",
-                "_path": "/processes/coagulation.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 14,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
-                "_id": "d_9",
-                "_path": "/processes/dissolution.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 15,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
-                "_id": "d_10",
-                "_path": "/processes/magnum-opus.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 22,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              }
-            ],
+            "files_here": 4,
+            "entries": [],
             "truncated": false,
             "cursor": null
           },
@@ -1085,22 +1035,17 @@
               "docs": 5,
               "blocks": 80
             },
+            "files_here": 5,
             "entries": [
               {
                 "_id": "d_11",
                 "_path": "/substances/mercury.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 17,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 17
               },
               {
                 "_id": "d_12",
                 "_path": "/substances/philosophers-stone.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 21,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 21
               }
             ],
             "truncated": true,
@@ -1113,42 +1058,31 @@
               "docs": 20,
               "blocks": 327
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/index.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 31,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/lab/",
+                "docs": 2,
+                "blocks": 51
               },
               {
-                "_id": "d_1",
-                "_path": "/lab/2026-01-notes.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 28,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/practitioners/",
+                "docs": 4,
+                "blocks": 56
               },
               {
-                "_id": "d_2",
-                "_path": "/lab/2026-02-notes.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 23,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/processes/",
+                "docs": 4,
+                "blocks": 71
               },
               {
-                "_id": "d_3",
-                "_path": "/practitioners/jabir-ibn-hayyan.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 13,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "_path": "/substances/",
+                "docs": 5,
+                "blocks": 80
               }
             ],
             "truncated": true,
-            "cursor": "WyIvcHJhY3RpdGlvbmVycy9qYWJpci1pYm4taGF5eWFuLm1kIl0"
+            "cursor": "WyIvc3Vic3RhbmNlcy8iXQ"
           },
           {
             "items": [
@@ -8768,56 +8702,37 @@
               "docs": 21,
               "blocks": 329
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/index.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 31,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
                 "_path": "/lab/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 51,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 51
               },
               {
                 "_path": "/practitioners/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 56,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 56
               },
               {
                 "_path": "/processes/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 71,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 71
               },
               {
                 "_path": "/substances/",
-                "kind": "dir",
                 "docs": 6,
-                "blocks": 82,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 82
               },
               {
                 "_path": "/texts/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 25,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 25
               },
               {
                 "_path": "/timeline/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 13,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
+                "blocks": 13
               }
             ],
             "truncated": false,
@@ -8830,24 +8745,8 @@
               "docs": 2,
               "blocks": 25
             },
-            "entries": [
-              {
-                "_id": "d_16",
-                "_path": "/texts/emerald-tablet.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 13,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              },
-              {
-                "_id": "d_17",
-                "_path": "/texts/silent-book.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 12,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              }
-            ],
+            "files_here": 2,
+            "entries": [],
             "truncated": false,
             "cursor": null
           },
@@ -10058,16 +9957,8 @@
               "docs": 1,
               "blocks": 12
             },
-            "entries": [
-              {
-                "_id": "d_17",
-                "_path": "/texts/mutus-liber.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 12,
-                "_updated_at": "2026-09-27T00:00:00.000Z"
-              }
-            ],
+            "files_here": 1,
+            "entries": [],
             "truncated": false,
             "cursor": null
           },
@@ -11768,56 +11659,37 @@
               "docs": 20,
               "blocks": 327
             },
+            "files_here": 1,
             "entries": [
               {
-                "_id": "d_0",
-                "_path": "/index.md",
-                "kind": "doc",
-                "docs": 1,
-                "blocks": 31,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
-              },
-              {
                 "_path": "/lab/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 51,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 51
               },
               {
                 "_path": "/practitioners/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 56,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 56
               },
               {
                 "_path": "/processes/",
-                "kind": "dir",
                 "docs": 4,
-                "blocks": 71,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 71
               },
               {
                 "_path": "/substances/",
-                "kind": "dir",
                 "docs": 5,
-                "blocks": 80,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 80
               },
               {
                 "_path": "/texts/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 25,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 25
               },
               {
                 "_path": "/timeline/",
-                "kind": "dir",
                 "docs": 2,
-                "blocks": 13,
-                "_updated_at": "2026-10-01T12:34:56.789Z"
+                "blocks": 13
               }
             ],
             "truncated": false,
@@ -12580,7 +12452,7 @@
     },
     {
       "name": "write-effects-stale-plan",
-      "notes": "§4 (3.1; 4.0) the plan form and its refusals: `plan` freezes salt.md's triple; a `blocks_update` moves the document's revision; `execute { plan }` with the FULL Plan the reference produced (authored here verbatim — the digest check passes in both engines, then the triple fails) is `stale_plan` (retriable) with nothing written; the digest form with the old `plan_id` is `plan_mismatch { expected, actual }` (the re-plan's preconditions changed); a plan with `version: 2` is `unsupported_plan_version { version, supported }`; `apply` without `effects` (\"`effects` is required\"), with the retired `ops` (\"`ops` is no longer an argument …\"), with the retired `dry_run` (\"… preview with `plan { effects: [...] }`\"), `blocks_update` with the retired `attrs` (\"… pass `checked`\"), and `execute` with half of the digest form, are argument-shape `filter_invalid`s whose messages both engines compose alike (§4, the retired-name table). Reads: salt.md (only the blocks_update landed), the api feed.",
+      "notes": "§4 (3.1; 4.0) the plan form and its refusals: `plan` freezes salt.md's triple; a `blocks_update` moves the document's revision; `execute { plan }` with the FULL Plan the reference produced (authored here verbatim — the digest check passes in both engines, then the triple fails) is `stale_plan` (retriable) with nothing written; the digest form with the old `plan_id` is `plan_mismatch { expected, actual }` (the re-plan's preconditions changed); a plan with `version: 2` is `unsupported_plan_version { version, supported }`; `apply` without `effects` (\"`effects` is required\"), with the retired `ops` (\"`ops` is no longer an argument …\"), with the retired `dry_run` (\"… preview with `plan { effects: [...] }`\"), `blocks_update` with the retired `attrs` (\"… pass `checked`\"), and `execute` with half of the digest form (`effects` without `plan_id`), are argument-shape `filter_invalid`s whose messages both engines compose alike (§4, the retired-name table). 5.1: `execute { plan_id }` alone is the remembered-plan form — an id this writer never planned (`\"x\"`) is `plan_unknown` (retriable, the message pinned), and the first plan's own id, remembered by the writer, replays the FULL plan form and fails `stale_plan` exactly as the echoed Plan did (nothing written). Reads: salt.md (only the blocks_update landed), the api feed.",
       "writes": [
         {
           "tool": "plan",
@@ -12781,6 +12653,37 @@
           "args": {
             "plan_id": "x"
           }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "effects": [
+              {
+                "op": "set",
+                "target": {
+                  "kind": "document",
+                  "_path": "substances/salt.md"
+                },
+                "field": "_frontmatter.reviewed",
+                "value": "2026-10"
+              },
+              {
+                "op": "insert",
+                "into": {
+                  "kind": "section",
+                  "heading_id": "b_274"
+                },
+                "at": "end",
+                "markdown": "Checked against the 1702 edition."
+              }
+            ]
+          }
+        },
+        {
+          "tool": "execute",
+          "args": {
+            "plan_id": "f335580304a3644ea80e9bc3ea50865114861ae680aa1314064d56e57babae15"
+          }
         }
       ],
       "reads": [
@@ -12961,9 +12864,31 @@
             "message": "`attrs` is no longer an argument — pass `checked` (blocks_update takes _id, checked?, expect?, markdown?, repo?)"
           },
           {
+            "error": "plan_unknown",
+            "retriable": true,
+            "message": "this server has no plan x — re-run plan, or pass the plan (or `plan_id` + `effects`) with execute",
+            "data": {
+              "plan_id": "x"
+            }
+          },
+          {
             "error": "filter_invalid",
             "retriable": false,
             "message": "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)"
+          },
+          {
+            "error": "stale_plan",
+            "retriable": true,
+            "data": {
+              "doc": "d_14",
+              "expected_revision": "r_14",
+              "current": {
+                "revision": "r_20",
+                "_hash": "ba9a22102f82a6a528be11f689448fb1894798c217d370556849d666b52bcee9"
+              },
+              "retriable": true,
+              "fix": "{\"effects\":[{\"field\":\"_frontmatter.reviewed\",\"op\":\"set\",\"target\":{\"_id\":\"d_14\",\"_path\":\"substances/salt.md\",\"kind\":\"document\"},\"value\":\"2026-10\"},{\"at\":\"end\",\"into\":{\"heading_id\":\"b_274\",\"kind\":\"section\"},\"markdown\":\"Checked against the 1702 edition.\",\"op\":\"insert\"}]}"
+            }
           }
         ],
         "reads": [

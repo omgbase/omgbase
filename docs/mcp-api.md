@@ -46,10 +46,10 @@ docs_outline { _id?, _path?, resolution?: "skeleton"|"outline", depth?, budget_t
 Orientation call. Returns the indented compact text format (id, type, label per line; `§` marks section headings). `resolution` is only `skeleton` or `outline` (no `preview`/`section`/`annotate`). The workhorse orientation call.
 
 ```
-docs_tree { path?, depth?, limit?, cursor?, budget_tokens? }     // repo-shape orientation: tree -L depth + du
+docs_tree { path?, depth?, files?, updated?, limit?, cursor?, budget_tokens? }     // repo-shape orientation: tree -L depth -d + du (5.1: a directory rollup; files: true lists documents)
 docs_list { path_glob?, limit?, cursor?, budget_tokens? }        // flat `ls`, paged
 ```
-`docs_tree` is the **repo-level** orientation call — the answer to "what does this repo contain?" in one small page. The engine stores paths as flat strings; this is the one read that treats `/` as a separator. Every live document under `path` (a directory prefix in either form; omit for the root; reported as `prefix`, rooted — `/` for the root, else `/<dir>/`) is collapsed at `depth` segments (default 1 = immediate children): `entries` is one `{ _path, kind: "dir", docs, blocks, _updated_at }` per directory (a rooted path ending in `/`; `docs`/`blocks` are totals under it, `_updated_at` the latest last-commit time under it) or `{ _id, _path, kind: "doc", docs: 1, blocks, _updated_at }` per shallow document, ordered by path. `total: { docs, blocks }` always covers everything under `prefix` regardless of paging. Descend by re-calling with `path` set to a `dir` entry, or raise `depth`.
+`docs_tree` is the **repo-level** orientation call — the answer to "what does this repo contain?" in one small page. The engine stores paths as flat strings; this is the one read that treats `/` as a separator. Since surface 5.1 the page is a **directory rollup**: every directory within `depth` segments under `path` (a directory prefix in either form; omit for the root; reported as `prefix`, rooted — `/` for the root, else `/<dir>/`; default depth 1 = the immediate subdirectories) is one `{ _path, docs, blocks }` entry (a rooted path ending in `/`; `docs`/`blocks` the totals beneath it; a nested directory listed after its parent in path order), and the documents directly in `path` are counted as `files_here`, not listed. `files: true` lists the documents within `depth` too, as `{ _id, _path, blocks }` (a directory ends in `/`, a document carries an `_id` — there is no `kind`); `updated: true` adds `_updated_at` to every entry (a directory's the latest last-commit time beneath it). `total: { docs, blocks }` and `files_here` always cover everything under `prefix` regardless of paging. Descend by re-calling with `path` set to a directory entry, or raise `depth`. (Through 5.0 every entry was `{ _id?, _path, kind, docs, blocks, _updated_at }` and the documents were always listed — 27 kB and a second page for a 348-document repository at depth 2; the rollup is under 1 kB.)
 
 `docs_list` is the flat enumeration behind `omg ls`: `{ items: [{ _id, _path, _updated_at, blocks }], truncated, cursor }`, ordered by path (the row's own `_id`/`_path`/`_updated_at`, §1 rule 5; `{ id, path, updated_at, blocks }` through 4.11, `{ path, blocks, ts }` before 3.0). `path_glob` is a SQL `LIKE` match where `*` matches any run **including `/`** (`projects/*` is the whole subtree — there is no "immediate children only"; that is `docs_tree`'s job). Unscoped on a large repo it is hundreds of rows, so it is paged like every other list: `limit` (default 200) caps rows, `cursor` from a truncated page resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned so a paging client makes progress), and `truncated` is honest. A malformed `cursor` is `filter_invalid`. All keyset cursors on this surface (`query`'s collect page, `docs_list`, `docs_tree`) share one kernel encoding (`core/cursor.ts`: opaque base64url of a string tuple) and one rejection path — a cursor handed to a tool that did not issue it is loud, never a silent restart.
 
@@ -83,7 +83,7 @@ There is no polymorphic `read_ref` (removed in 3.0): an id carries its kind, so 
 
 ```
 query { query: "<OQX expression string>", limit?, cursor? }
-query_syntax {}                                              // returns the full OQX reference
+query_syntax { section? }                                    // the ~3.5 kB card { syntax, sections } (5.1); { section: "follow" } one chapter; { section: "all" } the whole manual
 blocks_search { q, limit? }                                    // FTS5 bm25 keyword search → { hits: [{ _id, _doc_id, _path, _type, _text, score }], truncated }
 blocks_resolve { query, limit? }                             // hybrid ranker → [{ _id, locator, preview, evidence }]  (resolve before 3.0; blocks_search was text_search)
 ```
@@ -103,7 +103,7 @@ Traversal proper is the OQX `follow` operator on the `query` tool, not a dedicat
 ```
 apply { effects[], reason? }                                 // the only real writer: plan + execute in one tx (ADR-021; 4.0: `ops` and `dry_run` retired — preview with plan)
 plan { effects[] }                                            // the frozen plan for these effects; writes nothing, burns no ids (3.1)
-execute { plan } | { plan_id, effects[] }                     // commit exactly that plan (preconditions re-validated in the tx) → receipt (3.1)
+execute { plan_id } | { plan } | { plan_id, effects[] }       // commit exactly that plan (preconditions re-validated in the tx) → receipt (3.1); 5.1: the id alone runs the plan this server remembers (its last 64 `plan` results), plan_unknown otherwise
 blocks_insert { to, markdown, at?, expect? }       // sugar: one insert op, ref-resolved server-side; expect = { parent_children_hash? }
 blocks_update { _id, markdown?, checked?, expect? }         // sugar: set markdown / set _attrs.checked, CAS planner-pinned (4.0: `attrs` bag retired)
 blocks_move { blocks[], to, at?, expect? }         // sugar: one move op; expect = { parent_children_hash? }

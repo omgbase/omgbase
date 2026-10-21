@@ -13,23 +13,23 @@ import { oqxRunAsync, collectSemanticPhrases, type EmbedQuery } from "../oqx/run
 import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
 import { EngineError, errorBody } from "./errors.js";
-import { argumentError, stringList, validateArguments, type ArgShape } from "./arguments.js";
+import { argumentError, nearest, stringList, validateArguments, type ArgShape } from "./arguments.js";
 import { linksRetarget, linksRepair } from "../mutate/macros.js";
 import { canonicalDocPath } from "../mutate/docs.js";
-import { applyEffects, executeByDigest, executePlan, planEffects, type Receipt } from "../mutate/plan.js";
+import { applyEffects, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../mutate/plan.js";
 import type { EffectTarget } from "../mutate/effects.js";
 import {
   appendEffects, applySugar, checkEffects, createEffects, deleteDocEffects, docsAppendEffects, insertEffects, mergeEffects, moveBlocksEffects, moveDocEffects,
   moveLinks, nodeSetEffects, removeBlocksEffects, requireAbsentPath, retargetEffects, setMetaEffects, splitEffects, updateBlockEffects, updateContentEffects, type Sugar,
 } from "../mutate/sugar.js";
-import { fixTool } from "../mutate/canonical.js";
+import { canonicalJson, fixTool } from "../mutate/canonical.js";
 import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { withWriterLockAsync, type WriterLockOptions } from "../sync/writer-lock.js";
-import { QUERY_SYNTAX } from "./reference.js";
+import { QUERY_SYNTAX_CARD, QUERY_SYNTAX_SECTION_NAMES, QUERY_SYNTAX_SECTIONS, querySyntaxSection } from "./reference.js";
 import { versionInfo, type HostInfo } from "../version.js";
 import { storagePath, referencePath } from "../core/paths.js";
 import { isContainerBlock } from "../format/index.js";
@@ -238,6 +238,19 @@ export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   "observe", "observe_many", "observe_delete",
 ]);
 
+/**
+ * How many plans a server remembers for `execute { plan_id }` alone (spec/surface
+ * §4 `execute`, 5.1): the most recent `plan` results of this process, by
+ * `plan_id`, least recently produced evicted first. The same bound as the Rust
+ * catalog's `PLAN_MEMORY`.
+ */
+export const PLAN_MEMORY = 64;
+
+/** The message of `plan_unknown` (5.1), spelled alike by both engines. */
+export function planUnknownMessage(planId: string): string {
+  return `this server has no plan ${planId} — re-run plan, or pass the plan (or \`plan_id\` + \`effects\`) with execute`;
+}
+
 export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: VERSION });
   const { store } = ctx;
@@ -268,6 +281,23 @@ export function buildServer(ctx: ServerContext): McpServer {
   const profile: ToolsProfile = ctx.tools ?? "full";
   const inProfile = PROFILES[profile];
   const registry = new Map<string, { shape: ArgShape; handler: (args: Record<string, unknown>) => Promise<ToolResult> }>();
+  // The plans this server produced (spec/surface §4 `execute`, 5.1): `plan`'s
+  // results by `plan_id`, the last PLAN_MEMORY of them, so `execute { plan_id }`
+  // alone runs the FULL plan form — `stale_plan` and `plan_mismatch` told apart
+  // exactly as if the client had echoed the Plan — without the client replaying
+  // 5–19 kB of plan as its own output. Per process: a plan_id this server never
+  // produced (another server's, a restart) is `plan_unknown`, retriable.
+  const plans = new Map<string, Plan>();
+  function rememberPlan(plan: Plan): void {
+    plans.delete(plan.plan_id);
+    plans.set(plan.plan_id, plan);
+    while (plans.size > PLAN_MEMORY) plans.delete(plans.keys().next().value!);
+  }
+  function rememberedPlan(planId: string): Plan {
+    const plan = plans.get(planId);
+    if (!plan) throw new EngineError("plan_unknown", planUnknownMessage(planId), { data: { plan_id: planId }, retriable: true });
+    return plan;
+  }
   function tool<S extends ArgShape>(
     name: string,
     def: { description: string; inputSchema: S },
@@ -684,15 +714,17 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_tree",
     {
       description: ladder(
-        "docs_tree — Orientation: the shape of a repo in one small call, like tree -L depth with document and block counts per entry.",
-        "{}   the root at depth 1: one entry per directory (_path ends in /) or shallow document, plus total",
-        "{\"path\":\"/processes/\",\"depth\":1}   descend into a directory entry (path is the prefix argument)",
-        "{\"depth\":2,\"limit\":5}   collapse deeper; limit/cursor page the entries, total always covers everything under path",
-        "Ranked or attribute-based discovery: blocks_resolve, or query (select _path from docs where ...). Grammar: query_syntax.",
+        "docs_tree — Orientation: the repo's directories with document and block counts, one small page (tree -L depth -d + du).",
+        "{}   the root: one row per directory ({ _path ending in /, docs, blocks }), files_here = documents at the root itself, total",
+        "{\"path\":\"/processes/\",\"files\":true}   descend (path is the prefix) and list its documents too ({ _id, _path, blocks })",
+        "{\"depth\":2,\"updated\":true}   nested directories to depth 2; updated adds _updated_at; limit/cursor page the rows",
+        "Find documents by attribute, not by path: query (select _path from docs where ...). Grammar: query_syntax.",
       ),
       inputSchema: {
         path: z.string().optional(),
         depth: z.number().int().optional(),
+        files: z.boolean().optional(),
+        updated: z.boolean().optional(),
         limit: z.number().int().optional(),
         cursor: z.string().nullable().optional(),
         budget_tokens: z.number().int().optional(),
@@ -706,6 +738,8 @@ export function buildServer(ctx: ServerContext): McpServer {
           docsTree(store, repoId, {
             ...(args.path !== undefined ? { path: args.path } : {}),
             ...(args.depth !== undefined ? { depth: args.depth } : {}),
+            ...(args.files !== undefined ? { files: args.files } : {}),
+            ...(args.updated !== undefined ? { updated: args.updated } : {}),
             ...(args.limit !== undefined ? { limit: args.limit } : {}),
             ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
             ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
@@ -751,13 +785,30 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query_syntax",
     {
       description: ladder(
-        "query_syntax — The full OQX reference: clause order, targets and fields, scalar semantics, nested queries and the root row, follow, paging, worked examples.",
-        "{}   no arguments; returns { syntax }",
-        "Call it before writing a non-trivial query; every other tool's examples end here, at query_syntax.",
+        "query_syntax — The OQX reference: a card (clause order, the names rule and engine names per kind, consumers, follow, examples), then one chapter at a time.",
+        "{}   the ~3 kB card: { syntax, sections } — enough for most queries",
+        "{\"section\":\"follow\"}   one chapter in full ({ section, syntax }); the names are the card's sections list",
+        "{\"section\":\"all\"}   the whole manual (38 kB) — rarely needed",
+        "Call the card before a non-trivial query; every other tool's examples end here, at query_syntax.",
       ),
-      inputSchema: {},
+      inputSchema: { section: z.string().optional() },
     },
-    async () => ok({ syntax: QUERY_SYNTAX }),
+    async (args) => {
+      try {
+        // (5.1) The card by default; a chapter by its slug; `all` the manual. An
+        // unknown name is an argument error naming the chapters, its `fix` the
+        // call respelled with the nearest name (or `all`).
+        if (args.section === undefined) return ok({ syntax: QUERY_SYNTAX_CARD, sections: QUERY_SYNTAX_SECTIONS.map((s) => s.slug) });
+        const syntax = querySyntaxSection(args.section);
+        if (syntax === null) {
+          const fix = canonicalJson({ section: nearest(args.section, QUERY_SYNTAX_SECTION_NAMES) ?? "all" });
+          throw argumentError("query_syntax", `unknown section \`${args.section}\`; the sections are ${QUERY_SYNTAX_SECTION_NAMES.join(", ")}`, registry.get("query_syntax")!.shape, fix);
+        }
+        return ok({ section: args.section, syntax });
+      } catch (e) {
+        return fail(e);
+      }
+    },
   );
 
   tool(
@@ -909,7 +960,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "plan",
     {
       description: ladder(
-        "plan — Preview a write: the Plan (summary, $new.n ids) burns no id; execute next. File bodies: add diffs: true.",
+        "plan — Preview: the Plan (summary, $new.n ids) burns no id. Commit: execute { plan_id }. Bodies: diffs: true.",
         "{\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   path = doc",
         "{\"effects\":[{\"op\":\"insert\",\"into\":{\"kind\":\"section\",\"heading_id\":\"b_153\"},\"markdown\":\"- [ ] Weigh the calx\"}]}   in a section",
         "{\"effects\":[{\"op\":\"create\",\"path\":\"lab/march.md\",\"markdown\":\"# March\\n\"},{\"op\":\"insert\",\"into\":\"$new.0\",\"markdown\":\"Hi.\"}]}   fill it: $new.0",
@@ -923,7 +974,11 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const plan = surfacePlan(planEffects(store, { repoId, rootPath, effects: args.effects, ...selectorArgs(args), ...LOCK_DIR }));
+        const planned = planEffects(store, { repoId, rootPath, effects: args.effects, ...selectorArgs(args), ...LOCK_DIR });
+        // (5.1) remembered for `execute { plan_id }` alone — the Plan as planned,
+        // preview included (its `summary` is the Receipt's).
+        rememberPlan(planned);
+        const plan = surfacePlan(planned);
         // (4.5) `preview.diffs` — whole before/after bodies of every touched
         // document — only on request: `diffs: true`. The digest is over the
         // core, never the preview, so `plan_id` is the same either way.
@@ -940,9 +995,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "execute",
     {
       description: ladder(
-        "execute — Commit exactly a plan from plan: the plan form (the whole Plan object) or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
-        "{\"plan_id\":\"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f\",\"effects\":[{\"op\":\"set\",\"target\":\"/processes/calcination.md\",\"field\":\"_frontmatter.verified\",\"value\":false}]}   digest form: the plan_id plan returned for these effects",
-        "Or pass the whole object: {\"plan\": the Plan as returned}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
+        "execute — Commit a plan from plan: by plan_id alone (this server remembers the plans it made), or the plan form (the whole Plan object), or the digest form (plan_id plus the same effects, re-planned and committed only if the digest still matches).",
+        "{\"plan_id\":\"4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f\"}   the id alone: the remembered plan runs; an id this server never planned is plan_unknown (re-run plan)",
+        "Or {\"plan\": the Plan as returned} or {\"plan_id\", \"effects\"}. A document that moved on fails stale_plan (retriable: call plan again). Grammar: query_syntax.",
       ),
       inputSchema: { plan: z.record(z.string(), z.unknown()).optional(), plan_id: z.string().optional(), effects: z.array(effectSchema).optional(), select: z.string().optional(), expect: selectionExpectSchema.optional(), reason: z.string().optional(), ...REPO_ARG },
     },
@@ -951,15 +1006,21 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const shape = registry.get("execute")!.shape;
+        // Three forms (spec/surface §4 `execute`): the plan form, the id alone
+        // (5.1: the plan this server remembers under it, run as the plan form),
+        // and the digest form (`plan_id` + `effects`, with `select`/`expect`).
         const planForm = args.plan !== undefined;
         const selector = args.select !== undefined || args.expect !== undefined;
-        const digestForm = args.plan_id !== undefined || args.effects !== undefined || selector;
-        if (planForm === digestForm) throw argumentError("execute", "pass exactly one of `plan` or `plan_id` + `effects`", shape);
+        const idForm = args.plan_id !== undefined && args.effects === undefined && !selector;
+        const digestForm = !idForm && (args.plan_id !== undefined || args.effects !== undefined || selector);
+        if (planForm === (idForm || digestForm)) throw argumentError("execute", "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects`", shape);
         if (digestForm && (args.plan_id === undefined || args.effects === undefined)) throw argumentError("execute", "the digest form needs both `plan_id` and `effects`", shape);
         const origin = { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) };
         const receipt = planForm
           ? executePlan(store, { repoId, rootPath, plan: args.plan, origin, ...LOCK_DIR })
-          : executeByDigest(store, { repoId, rootPath, planId: args.plan_id!, effects: args.effects, ...selectorArgs(args), origin, ...LOCK_DIR });
+          : idForm
+            ? executePlan(store, { repoId, rootPath, plan: rememberedPlan(args.plan_id!), origin, ...LOCK_DIR })
+            : executeByDigest(store, { repoId, rootPath, planId: args.plan_id!, effects: args.effects, ...selectorArgs(args), origin, ...LOCK_DIR });
         return okMutated(surfaceReceipt(receipt));
       } catch (e) {
         return fail(e);

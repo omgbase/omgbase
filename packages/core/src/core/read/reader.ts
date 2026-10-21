@@ -130,18 +130,21 @@ export function docsList(store: Store, repoId: string, opts: DocListOptions = {}
   return pagePathOrdered(rows.slice(0, limit), limit, opts.budgetTokens, moreBeyond);
 }
 
-/** One entry of the docs_tree surface: a live document (`kind: "doc"`, with
- *  its `_id`) or a collapsed directory (`kind: "dir"`, `_path` ends in `/`, no
- *  id) at the requested depth. `docs`/`blocks` are totals under the entry (a
- *  doc counts 1 doc); `_updated_at` is the latest last-commit timestamp under
- *  it (spec/surface §1.2, 5.0 names). */
+/** One entry of the docs_tree surface (spec/surface §2, 5.1): a directory
+ *  within `depth` segments under the prefix (`_path` ends in `/`, no `_id`;
+ *  `docs`/`blocks` are the totals beneath it) or — only with `files: true` — a
+ *  live document shallow enough to be listed (`_id`, `_path`, `blocks`; no
+ *  `docs`: a document is one). `_updated_at` (the latest last-commit timestamp
+ *  under the entry) rides only with `updated: true`. Through 5.0 every entry
+ *  carried `kind: "dir" | "doc"`, `docs` and `_updated_at` and the documents
+ *  were always listed — the 29 kB page the 2026-10-21 agent-bench replayed on
+ *  every turn; the directory rollup is the orientation call now. */
 export interface DocTreeEntry {
   _id?: string;
   _path: string;
-  kind: "dir" | "doc";
-  docs: number;
+  docs?: number;
   blocks: number;
-  _updated_at: string | null;
+  _updated_at?: string | null;
 }
 
 export interface DocTreePage {
@@ -151,6 +154,9 @@ export interface DocTreePage {
   depth: number;
   /** Totals over EVERYTHING under `prefix`, regardless of paging. */
   total: { docs: number; blocks: number };
+  /** The documents directly in `prefix` (one segment below it) — counted
+   *  whether or not `files` lists them. */
+  files_here: number;
   entries: DocTreeEntry[];
   truncated: boolean;
   cursor: string | null;
@@ -160,9 +166,13 @@ export interface DocTreeOptions {
   /** Directory to take the tree under (`projects` or `projects/`; leading `/`
    *  tolerated). Omit for the repo root. */
   path?: string;
-  /** How many path segments below `prefix` to expand before collapsing
-   *  (default 1 = immediate children, like `tree -L 1`). */
+  /** How many path segments below `prefix` to descend (default 1 = the
+   *  immediate subdirectories, like `tree -L 1 -d`). */
   depth?: number;
+  /** List the documents within `depth` segments too, as lean rows. */
+  files?: boolean;
+  /** Add `_updated_at` to every entry. */
+  updated?: boolean;
   limit?: number;
   cursor?: string | null;
   budgetTokens?: number;
@@ -177,53 +187,68 @@ export function normalizeTreePrefix(path: string | undefined): string {
   return trimmed === "" ? "" : trimmed + "/";
 }
 
-/** The path-separator-aware orientation read (`tree -L depth` + `du`): every
- *  live doc under `path` is collapsed at `depth` segments into one entry per
- *  directory (with doc/block totals + latest ts) or listed as a doc when it is
- *  shallow enough. Entries are ordered by path; dirs carry a trailing `/`. The
- *  result is paged under the same limit/cursor/budget contract as docsList,
- *  and always carries `total` for the whole prefix so an agent sees the size of
- *  what it is looking at even when the page is cut. Backs the `docs_tree` MCP
- *  tool. */
+/** The path-separator-aware orientation read (`tree -L depth -d` + `du`):
+ *  every directory within `depth` segments under `path` is one entry —
+ *  `{ _path (rooted, ending "/"), docs, blocks }`, the totals over everything
+ *  beneath it, a nested directory listed after its parent in path order — and
+ *  the documents directly in `path` are counted as `files_here`. With `files:
+ *  true` the documents within `depth` segments are listed too, as `{ _id,
+ *  _path, blocks }`; with `updated: true` every entry gains `_updated_at` (a
+ *  directory's is the latest beneath it). The result is paged under the same
+ *  limit/cursor/budget contract as docsList, and always carries `total` and
+ *  `files_here` for the whole prefix, so an agent sees the size of what it is
+ *  looking at even when the page is cut. Backs the `docs_tree` MCP tool. */
 export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}): DocTreePage {
   const prefix = normalizeTreePrefix(opts.path);
   const depth = Math.max(1, Math.floor(opts.depth ?? 1));
   const limit = Math.max(1, Math.floor(opts.limit ?? DOCS_TREE_DEFAULT_LIMIT));
+  const files = opts.files === true;
+  const updated = opts.updated === true;
   const like = prefix === "" ? "%" : globToLike(prefix) + "%";
   const rows = liveDocRows(store, repoId, like, null, null);
 
   // `liveDocRows` hands out reference paths; the tree is built over the storage
   // form and rooted again on the way out, so the entries, the prefix and the
   // cursor all speak the reference form.
-  const byPath = new Map<string, DocTreeEntry>();
+  interface Acc { _id?: string; _path: string; dir: boolean; docs: number; blocks: number; ts: string | null }
+  const byPath = new Map<string, Acc>();
   const total = { docs: 0, blocks: 0 };
+  let filesHere = 0;
   for (const row of rows) {
     const storage = storagePath(row._path);
     total.docs += 1;
     total.blocks += row.blocks;
     const segs = storage.slice(prefix.length).split("/");
-    if (segs.length <= depth) {
-      byPath.set(storage, { _id: row._id, _path: row._path, kind: "doc", docs: 1, blocks: row.blocks, _updated_at: row._updated_at });
-      continue;
+    if (segs.length === 1) filesHere += 1;
+    // Every directory above the document within `depth` segments rolls it up.
+    for (let d = 1; d < segs.length && d <= depth; d++) {
+      const dir = referencePath(prefix + segs.slice(0, d).join("/") + "/");
+      const cur = byPath.get(dir);
+      if (cur) {
+        cur.docs += 1;
+        cur.blocks += row.blocks;
+        if (row._updated_at !== null && (cur.ts === null || row._updated_at > cur.ts)) cur.ts = row._updated_at;
+      } else {
+        byPath.set(dir, { _path: dir, dir: true, docs: 1, blocks: row.blocks, ts: row._updated_at });
+      }
     }
-    const dir = referencePath(prefix + segs.slice(0, depth).join("/") + "/");
-    const cur = byPath.get(dir);
-    if (cur) {
-      cur.docs += 1;
-      cur.blocks += row.blocks;
-      if (row._updated_at !== null && (cur._updated_at === null || row._updated_at > cur._updated_at)) cur._updated_at = row._updated_at;
-    } else {
-      byPath.set(dir, { _path: dir, kind: "dir", docs: 1, blocks: row.blocks, _updated_at: row._updated_at });
-    }
+    if (files && segs.length <= depth) byPath.set(row._path, { _id: row._id, _path: row._path, dir: false, docs: 1, blocks: row.blocks, ts: row._updated_at });
   }
 
-  let entries = [...byPath.values()].sort((a, b) => (a._path < b._path ? -1 : a._path > b._path ? 1 : 0));
+  let accs = [...byPath.values()].sort((a, b) => (a._path < b._path ? -1 : a._path > b._path ? 1 : 0));
   if (opts.cursor) {
     const after = decodeListCursor(opts.cursor);
-    entries = entries.filter((e) => e._path > after);
+    accs = accs.filter((e) => e._path > after);
   }
+  const entries: DocTreeEntry[] = accs.map((a) => ({
+    ...(a.dir ? {} : { _id: a._id! }),
+    _path: a._path,
+    ...(a.dir ? { docs: a.docs } : {}),
+    blocks: a.blocks,
+    ...(updated ? { _updated_at: a.ts } : {}),
+  }));
   const { items, truncated, cursor } = pagePathOrdered(entries, limit, opts.budgetTokens, false);
-  return { prefix: referencePath(prefix), depth, total, entries: items, truncated, cursor };
+  return { prefix: referencePath(prefix), depth, total, files_here: filesHere, entries: items, truncated, cursor };
 }
 
 export interface BlockNode {

@@ -85,7 +85,7 @@ server's default repository is browsed.
 | feature | tool(s) | call |
 | --- | --- | --- |
 | connect: the surface gate, the profile label | `version`, `tools/list` | `version {}` → `specs.surface` (≥ 5.0), `profile`; the listing decides whether a picker is offered |
-| repository tree (left pane) | `docs_tree` | `{ depth: 1 }` for the root, `{ path: "/processes/", depth: 1 }` per folder as it opens (`path` is a prefix — a role, bare), `{ …, cursor }` while a level is truncated; entries are `{ _id?, _path, kind, docs, blocks, _updated_at }` — `dir` rows carry `docs` for the badge, `total` the header's counts |
+| repository tree (left pane) | `docs_tree` | `{ depth: 1, files: true }` for the root, `{ path: "/processes/", depth: 1, files: true }` per folder as it opens (`path` is a prefix — a role, bare; `files: true` because the pane lists documents — since surface 5.1 the default page is the directory rollup alone), `{ …, cursor }` while a level is truncated; entries are directory rows `{ _path (ending /), docs, blocks }` — `docs` for the badge — or document rows `{ _id, _path, blocks }`; `total` the header's counts, `files_here` the documents at the prefix itself |
 | document view | `docs_read` | `{ _path \| _id, include_ids: true }` → `_raw` (rendered as Markdown by markdown-it, or shown raw), `properties.frontmatter / inline / computed` (the property table; the computed title is `computed._title`), `ids` + `parents` + `hashes` (the block anchors, below) |
 | backlinks | `query` | `select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == "<path>"` |
 | outlinks | `query` | `select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == "<path>"` |
@@ -287,6 +287,9 @@ was made once against the live server:
 - `docs_tree {}` listed `/index.md` and six folders (`total` 20 docs, 327
   blocks); `{ path: "/processes/", depth: 1 }` four `doc` rows, each
   `{ _id, _path, kind, docs, blocks, _updated_at }` — exactly those keys.
+  (Surface 5.1 changed the page: the default is the directory rollup —
+  `{ _path, docs, blocks }` rows plus `files_here` — and the pane now asks
+  `files: true` to list the documents as `{ _id, _path, blocks }`.)
 - `docs_read { _path: "/processes/calcination.md", include_ids: true }`
   returned `{ _id, _path, rev, properties, _raw, ids, hashes, parents }`,
   `properties.computed` = `{ _title: "Calcination" }`, seven frontmatter keys

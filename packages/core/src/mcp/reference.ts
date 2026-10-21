@@ -5,6 +5,15 @@
 // tool handler stays thin. Semantics are the @omgbase/oqx contract (ADR-013);
 // when this text and the corpus (corpus/oqx/alchemy.test.ts) disagree, the
 // corpus wins.
+//
+// Three texts (spec/surface §4 `query_syntax`, 5.1): `QUERY_SYNTAX_CARD` is
+// what `query_syntax {}` returns — a ~3 kB card an agent can hold in context
+// (the 2026-10-21 agent-bench fetched the 38 kB manual twelve times and
+// replayed it as cached prefix on every later turn); `QUERY_SYNTAX` is the
+// whole manual (`section: "all"`); `querySyntaxSection(slug)` is one chapter of
+// it, by the slugs of `QUERY_SYNTAX_SECTIONS` (the manual's `##` headings). The
+// Rust twin (`crates/omgbase-surface/src/reference.rs`) mirrors all three byte
+// for byte; its tests compare against this file.
 
 export const QUERY_SYNTAX = `# query — OQX syntax reference
 
@@ -521,4 +530,98 @@ pointing at \`_path\`); the engine's are \`_path\`/\`_id\`/\`_title\`/\`_tags\`;
 data.path\` is gone — write \`path\`. Another: \`where tags == "x"\` on a list-valued
 key is false — write \`"x" in tags\`. Another: \`select _path: _doc._path\` — alias it
 (\`p: _doc._path\`).
+`;
+
+/**
+ * The manual's chapters (spec/surface §4 `query_syntax`, 5.1): one entry per
+ * `## ` heading of `QUERY_SYNTAX`, in order — the `section` argument's names.
+ * `querySyntaxSection(slug)` is the text from that heading up to the next one.
+ * The Rust twin pins the same table (its test checks every pair against this
+ * source).
+ */
+export const QUERY_SYNTAX_SECTIONS: readonly { slug: string; heading: string }[] = [
+  { slug: "sugar", heading: "Sugar (OQX 0.17)" },
+  { slug: "paths", heading: "Paths" },
+  { slug: "targets", heading: "Targets & field namespaces" },
+  { slug: "scoping", heading: "Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL" },
+  { slug: "scalars", heading: "Scalar semantics (@omgbase/oqx)" },
+  { slug: "predicates", heading: "Domain predicates (omgbase)" },
+  { slug: "nested", heading: "Nested queries & consumers" },
+  { slug: "select", heading: "select — projection" },
+  { slug: "flatten", heading: "flatten (OQX 0.25)" },
+  { slug: "order", heading: "order by, limit/offset, pagination" },
+  { slug: "follow", heading: "Graph traversal (follow) and links" },
+  { slug: "semantic", heading: "semantic grain" },
+  { slug: "examples", heading: "Examples" },
+];
+
+/** The `section` names a caller may pass: every slug, then `all` (the whole manual). */
+export const QUERY_SYNTAX_SECTION_NAMES: readonly string[] = [...QUERY_SYNTAX_SECTIONS.map((s) => s.slug), "all"];
+
+/**
+ * One chapter of the manual: the lines from `## <heading>` up to (not
+ * including) the next `## ` heading or the end, trailing blank lines dropped,
+ * one trailing newline. `"all"` is the whole manual; an unknown slug is `null`.
+ */
+export function querySyntaxSection(slug: string): string | null {
+  if (slug === "all") return QUERY_SYNTAX;
+  const entry = QUERY_SYNTAX_SECTIONS.find((s) => s.slug === slug);
+  if (!entry) return null;
+  const lines = QUERY_SYNTAX.split("\n");
+  const start = lines.indexOf(`## ${entry.heading}`);
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && !lines[end]!.startsWith("## ")) end++;
+  while (end > start + 1 && lines[end - 1]!.trim() === "") end--;
+  return lines.slice(start, end).join("\n") + "\n";
+}
+
+/**
+ * The card `query_syntax {}` returns (5.1): the grammar skeleton, the names
+ * rule and the engine names per kind, the handles, the consumers, follow in
+ * one line, the examples agents reach for first, and where the chapters are.
+ * Every indented example parses (reference.test.ts extracts them exactly as it
+ * extracts the manual's). Keep every line earning its place: this is the most
+ * read text on the surface.
+ */
+export const QUERY_SYNTAX_CARD = `# query — OQX card. Chapters: query_syntax { section: "<name>" }; the manual: { section: "all" }
+
+One OQX string; limit/cursor page the hits; bare: true drops the { _id, _path } envelope.
+  [select <items>] from <target> [where <pred>] [follow <dest> { … }] [order by <expr> [desc]] [limit N] [offset N]
+  <target> count|exists|none|first|single { <block> }     a scalar or one row
+CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset.
+and / or / not. Comparisons strict and typed; null == a missing field. A list key: "x" in tags, never tags == "x".
+Strings .contains("s") .startsWith("p") .lower(); x ~* "re" (ci regex), x !~ "re". Dates date("today"),
+date(due) < date("today").minus(dur("30 days")), _updated_at >= "2026-08-01".
+
+NAMES: a BARE name is YOURS (frontmatter, inline key:: value, a block's attrs); an UNDERSCORE name is the ENGINE's;
+$ is OQX's ($it $key $depth $stop $ordinal). title tags path id are your keys; _title _tags _path _id the engine's.
+  docs       _id _path _raw _hash _updated_at _created_at _title _tags _format | _data _frontmatter _inline | _blocks _nodes _out_links _in_links _revisions
+  blocks     _id _path _doc_id _raw _hash _type _text _attrs _depth _ordinal | _doc | _children _nodes _out_links _section
+  nodes      _id _path _doc_id _block_id _kind _name _value _attrs | _doc _block | _blocks _subsections _children
+  links      _id _path _doc_id _block_id _via_id _dst_id _dst_path _uri _dst_kind _predicate _provenance _anchor _field | _doc _dst _block
+  revisions  _id _path _rev _seq _doc_id _commit _ts _origin _actor _reason _hash _is_current _archived | _doc
+Handles _data.<k> ≡ <k>, _frontmatter.<k> / _inline.<k>; entries(_data) the bag as rows ($key, $it). Reach-through
+_doc.<k> the owning document, _dst.<k> a link's target. Scoping: a bare name is the CURRENT row; ^name one scope
+out; ^docs ^blocks ^nodes ^links the repository from a row. An unknown bare name is absent plus a hints line.
+
+NESTED: <receiver> collect|exists|none|count|first|single { [select …] [where …] [order by …] [limit N] } over a
+relation, a list key, entries(x) or ^docs; no consumer = collect, a leading predicate = where: docs { type == "x" }.
+FOLLOW: from docs where <seed> follow _out_links collect { from _dst depth 3 }   links out; _in_links { from _doc }
+backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("words") prunes; order by semantic("…") desc.
+
+  from docs where layer == "working"
+  select _title, stage from docs where "process" in tags order by _path limit 5
+  select _type, _text from blocks where _path == "/processes/calcination.md"
+  select _path, _value from nodes where _kind == "md:task" and not checked
+  select _path, _block_id from links where _dst_path == "/processes/calcination.md"
+  from docs where _title.lower().contains("salt") and _updated_at >= "2026-01-01"
+  from docs where _nodes exists { where _kind == "md:task" and not checked }
+  select _path, $depth from docs where _path == "/timeline/review.md" follow refs(before), refs(after)
+  docs count { where layer == "canon" }
+  select _seq, _ts, _hash from revisions where _path == "/processes/calcination.md" order by _seq desc
+  select tags, n: count() from docs flatten tags group by tags order by count() desc
+
+Every error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.
+Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.
 `;

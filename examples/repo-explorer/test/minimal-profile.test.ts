@@ -16,7 +16,7 @@ import { ScriptedCaller, page } from "./scripted.ts";
 
 function minimalServer(): ScriptedCaller {
   return new ScriptedCaller({
-    docs_tree: () => ({ prefix: "/", depth: 1, total: { docs: 1, blocks: 2 }, entries: [{ _id: "d_7", _path: "/calc.md", kind: "doc", docs: 1, blocks: 2, _updated_at: null }], truncated: false, cursor: null }),
+    docs_tree: () => ({ prefix: "/", depth: 1, total: { docs: 1, blocks: 2 }, files_here: 1, entries: [{ _id: "d_7", _path: "/calc.md", blocks: 2 }], truncated: false, cursor: null }),
     docs_read: (a) => {
       // 5.0: a document is addressed by `_id` or `_path`; a bare `id`/`path` is an argument error.
       if ("id" in a || "path" in a) return new OmgError("filter_invalid", "`path` is not an argument — the document's path is `_path` (an engine field: the bare namespace is the user's)", { hint: "arguments" });

@@ -126,7 +126,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     expect(dry.payload).toMatchObject({ error: "filter_invalid", message: "`dry_run` is no longer an argument — preview with `plan { effects: [...] }` (apply takes effects, expect?, reason?, repo?, select?)", data: { hint: "arguments" } });
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 0 });
     const none = await call("execute", {});
-    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
+    expect(none.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const half = await call("execute", { effects: SLICE1 });
     expect(half.payload).toMatchObject({ error: "filter_invalid", message: "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const bothForms = await call("execute", { plan: { version: 1 }, plan_id: "x", effects: [] });
@@ -214,7 +214,7 @@ describe("plan / execute / apply { effects } over MCP", () => {
     await seedNotes();
     const plan = await call("plan", { select: SELECT, effects: TEMPLATES, expect: { max: 5 } });
     const planForm = await call("execute", { plan: plan.payload, select: SELECT });
-    expect(planForm.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
+    expect(planForm.payload).toMatchObject({ error: "filter_invalid", message: "pass exactly one of `plan`, `plan_id` or `plan_id` + `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const half = await call("execute", { select: SELECT, plan_id: plan.payload.plan_id });
     expect(half.payload).toMatchObject({ error: "filter_invalid", message: "the digest form needs both `plan_id` and `effects` (execute takes effects?, expect?, plan?, plan_id?, reason?, repo?, select?)" });
     const noExpect = await call("execute", { plan_id: plan.payload.plan_id, select: SELECT, effects: TEMPLATES });
