@@ -5,12 +5,26 @@
 // committed with `execute` (the page does the calls; this element shows the
 // plan's summary and diff and asks for the confirmation).
 //
+// Task checkboxes (lib/tasks.ts): a rendered task item carries an
+// `<input type="checkbox" class="task-check" data-block="b_…">`, enabled only
+// when its block pairing verified and the server lists `apply`; a `change` on
+// one emits `task-toggle { blockId, checked, contentHash }` with the block's
+// hash from the read (the CAS), and the page applies it. While the toggle is in
+// flight (`taskPending`) the box keeps the state the user gave it, disabled;
+// when the page clears `taskPending` without a new rendering (the write failed)
+// the box falls back to the rendering's state. Undo / redo of the last toggles
+// are buttons by the title and ⌘Z / ⇧⌘Z (Ctrl on other platforms) while this
+// element has focus and the key did not land in a text field.
+//
 // Properties: `doc` (lib/document.ts DocRead), `rendered` (the body's HTML and
 // anchor verdicts), `view` ("rendered" | "raw"), `canWrite`, `pending` (the
 // plan awaiting confirmation, with its diff), `writeMessage`, `highlight` (a
-// block id to scroll to). Events: `open-doc { path }` (a link to another
-// document), `open-wiki { name }`, `view-change { view }`, `write-plan { key,
-// value, unset }`, `write-execute`, `write-cancel`.
+// block id to scroll to), `taskPending` (the toggle in flight), `undoLabel` /
+// `redoLabel` (what the compensation would do; null = nothing to undo/redo).
+// Events: `open-doc { path }` (a link to another document), `open-wiki { name }`,
+// `view-change { view }`, `write-plan { key, value, unset }`, `write-execute`,
+// `write-cancel`, `task-toggle { blockId, checked, contentHash }`, `task-undo`,
+// `task-redo`.
 
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -25,6 +39,23 @@ export interface OpenDocDetail { path: string }
 export interface OpenWikiDetail { name: string }
 export interface ViewChangeDetail { view: DocViewMode }
 export interface WritePlanDetail { key: string; value: string; unset: boolean }
+export interface TaskToggleDetail { blockId: string; checked: boolean; contentHash: string }
+export interface TaskPending { blockId: string; checked: boolean }
+
+/** Is the key's target a control that owns ⌘Z itself (text entry)? A checkbox or a button is not. */
+export function isTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
+  if (target instanceof HTMLInputElement) return !["checkbox", "radio", "button", "submit", "reset"].includes(target.type);
+  return false;
+}
+
+/** ⌘Z / Ctrl+Z → "undo", with Shift → "redo"; anything else null. */
+export function undoKey(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">): "undo" | "redo" | null {
+  if (e.altKey || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return null;
+  return e.shiftKey ? "redo" : "undo";
+}
 
 /** A property table with more rows than this starts collapsed. */
 const PROPS_OPEN_MAX = 8;
@@ -38,6 +69,11 @@ export class DocView extends LitElement {
     .head .path { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #5a6270; }
     .head .meta { font-size: 12px; color: #8a94a6; }
     .head .spacer { flex: 1; }
+    :host(:focus) { outline: none; }
+    :host(:focus-visible) .body { box-shadow: 0 0 0 2px #c5d8f5; border-radius: 4px; }
+    .undo { display: inline-flex; gap: 4px; }
+    .undo button { font: inherit; font-size: 12px; padding: 1px 8px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; color: #1e2430; }
+    .undo button:disabled { color: #a0a8b6; cursor: default; }
     .toggle { display: inline-flex; border: 1px solid #c9cdd6; border-radius: 4px; overflow: hidden; font-size: 12px; }
     .toggle button { font: inherit; border: 0; background: #fff; padding: 2px 8px; cursor: pointer; color: #5a6270; }
     .toggle button.on { background: #e3edfb; color: #0d47a1; }
@@ -91,6 +127,11 @@ export class DocView extends LitElement {
     .body a { color: #1565c0; }
     .body a.wikilink { color: #6a1b9a; text-decoration: none; border-bottom: 1px dashed #6a1b9a; }
     .body .image { color: #6a7382; font-style: italic; }
+    /* Task items: the checkbox stands where the bullet was. */
+    .body li.task { list-style: none; margin-left: -1.35em; }
+    .body li.task > input.task-check { margin: 0 0.45em 0 0; vertical-align: -1px; cursor: pointer; }
+    .body li.task > input.task-check:disabled { cursor: not-allowed; opacity: 0.55; }
+    .body li.task.busy { opacity: 0.6; }
     /* Every anchored block shows its id on hover and is a scroll target. */
     .body [data-block] { position: relative; scroll-margin-top: 8px; }
     .body [data-block]:hover::after { content: attr(data-block); position: absolute; right: -2px; top: -1.2em; font: 10.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #fff; background: #5a6270; padding: 0 5px; border-radius: 3px; pointer-events: none; }
@@ -107,14 +148,74 @@ export class DocView extends LitElement {
   @property({ attribute: false }) writeMessage: { kind: "error" | "info"; text: string; fix?: string | null } | null = null;
   @property({ type: Boolean }) writing = false;
   @property({ type: String }) highlight: string | null = null;
+  /** The task toggle in flight (its box stays as the user left it, disabled). */
+  @property({ attribute: false }) taskPending: TaskPending | null = null;
+  @property({ type: String }) undoLabel: string | null = null;
+  @property({ type: String }) redoLabel: string | null = null;
 
   @state() private editKey = "";
   @state() private editValue = "";
   /** Whether the properties table is expanded; null = not chosen yet (open when the table is short). */
   @state() private propsOpen: boolean | null = null;
 
+  override connectedCallback(): void {
+    super.connectedCallback();
+    // Focusable, so ⌘Z reaches the document view (a click anywhere in it focuses it).
+    if (!this.hasAttribute("tabindex")) this.tabIndex = 0;
+    this.addEventListener("keydown", this.onKeydown);
+  }
+
+  override disconnectedCallback(): void {
+    this.removeEventListener("keydown", this.onKeydown);
+    super.disconnectedCallback();
+  }
+
   private emit<T>(name: string, detail: T): void {
     this.dispatchEvent(new CustomEvent<T>(name, { detail, bubbles: true, composed: true }));
+  }
+
+  /** ⌘Z / ⇧⌘Z (Ctrl elsewhere) while focus is here and not in a text field: undo / redo the last task toggle. */
+  private onKeydown = (e: KeyboardEvent): void => {
+    const dir = undoKey(e);
+    if (!dir || isTextEntry(e.composedPath()[0] ?? e.target)) return;
+    if (dir === "undo" && !this.undoLabel) return;
+    if (dir === "redo" && !this.redoLabel) return;
+    e.preventDefault();
+    this.emit(dir === "undo" ? "task-undo" : "task-redo", {});
+  };
+
+  /** A `change` inside the rendered body: a task checkbox → the toggle, with the block's hash from the read (the CAS). */
+  private onBodyChange(e: Event): void {
+    const input = e.composedPath().find((n) => n instanceof HTMLInputElement && n.classList.contains("task-check")) as HTMLInputElement | undefined;
+    if (!input) return;
+    const blockId = input.getAttribute("data-block");
+    const contentHash = blockId ? this.doc?.blockIds?.hashes[blockId] : undefined;
+    if (!blockId || contentHash === undefined || this.taskPending) {
+      // No anchor or no hash on record (the box should have been disabled), or a toggle is already in flight: refuse, revert.
+      input.checked = input.defaultChecked;
+      return;
+    }
+    this.emit<TaskToggleDetail>("task-toggle", { blockId, checked: input.checked, contentHash });
+  }
+
+  /** Keep the pending box as the user left it, disabled; when the toggle ends
+   * without a new rendering (the write failed) fall back to the rendering's
+   * state — `defaultChecked` is the `checked` attribute the markdown gave. */
+  private syncPending(): void {
+    for (const el of this.renderRoot.querySelectorAll<HTMLInputElement>("input.task-check[data-pending]")) {
+      el.removeAttribute("data-pending");
+      el.disabled = el.hasAttribute("title");
+      el.checked = el.defaultChecked;
+      el.closest("li")?.classList.remove("busy");
+    }
+    const p = this.taskPending;
+    if (!p) return;
+    const el = this.renderRoot.querySelector<HTMLInputElement>(`input.task-check[data-block="${p.blockId}"]`);
+    if (!el) return;
+    el.setAttribute("data-pending", "");
+    el.checked = p.checked;
+    el.disabled = true;
+    el.closest("li")?.classList.add("busy");
   }
 
   /** A click inside the rendered body: a `/`-rooted or relative link opens that document here; a wikilink asks the page to resolve it. */
@@ -140,6 +241,7 @@ export class DocView extends LitElement {
         if (el) { el.classList.add("highlight"); el.scrollIntoView({ block: "start" }); }
       }
     }
+    if (changed.has("taskPending") || changed.has("rendered")) this.syncPending();
   }
 
   /** The editor's [×]: empty both fields (the pending plan, if any, is untouched). */
@@ -225,6 +327,10 @@ export class DocView extends LitElement {
         <span class="path">${doc.path}</span>
         <span class="meta">${doc.id} · ${doc.rev}</span>
         <span class="spacer"></span>
+        <span class="undo" role="group" aria-label="task toggles" data-undo>
+          <button type="button" title=${this.undoLabel ?? "nothing to undo (undoes the last task toggle; ⌘Z / Ctrl+Z)"} ?disabled=${!this.undoLabel || this.taskPending !== null} @click=${() => this.emit("task-undo", {})}>undo</button>
+          <button type="button" title=${this.redoLabel ?? "nothing to redo (⇧⌘Z / Ctrl+Shift+Z)"} ?disabled=${!this.redoLabel || this.taskPending !== null} @click=${() => this.emit("task-redo", {})}>redo</button>
+        </span>
         <span class="toggle" role="group" aria-label="view">
           <button type="button" class=${this.view === "rendered" ? "on" : ""} @click=${() => this.emit<ViewChangeDetail>("view-change", { view: "rendered" })}>rendered</button>
           <button type="button" class=${this.view === "raw" ? "on" : ""} @click=${() => this.emit<ViewChangeDetail>("view-change", { view: "raw" })}>raw</button>
@@ -236,8 +342,8 @@ export class DocView extends LitElement {
       ${this.view === "raw"
         ? html`<pre class="raw">${doc.raw}</pre>`
         : html`
-          ${summary ? html`<div class="anchors">${summary}${r && (r.unmatched > 0 || r.unverified > 0) ? html` <span class="warn">— hover a block for its id; an unverified anchor's raw did not hash to the stored block hash</span>` : html` — hover a block for its id (<code>include_ids</code>: ids, hashes, parents)`}</div>` : nothing}
-          <div class="body" @click=${this.onBodyClick}>${r ? unsafeHTML(r.html) : html`<em>rendering…</em>`}</div>`}
+          ${summary ? html`<div class="anchors">${summary}${r && (r.unmatched > 0 || r.unverified > 0) ? html` <span class="warn">— hover a block for its id; an unverified anchor's raw did not hash to the stored block hash</span>` : html` — hover a block for its id (<code>include_ids</code>: ids, hashes, parents)`}${r && r.tasks.total > 0 ? html` · ${r.tasks.total} task${r.tasks.total === 1 ? "" : "s"}${r.tasks.editable < r.tasks.total ? html` (<span class="warn">${r.tasks.total - r.tasks.editable} not editable — hover the box</span>)` : html` (toggle a box: one <code>apply</code>, CAS-pinned)`}` : nothing}</div>` : nothing}
+          <div class="body" @click=${this.onBodyClick} @change=${this.onBodyChange}>${r ? unsafeHTML(r.html) : html`<em>rendering…</em>`}</div>`}
     `;
   }
 }

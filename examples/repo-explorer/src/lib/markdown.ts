@@ -25,12 +25,76 @@
 // not fetched, external links opened in a new tab, a tiny inline rule for
 // `[[wikilinks]]` (rendered as `<a data-wiki>`; the page resolves one with a
 // query), and a `/`-rooted link kept as it is for the page to open in place.
+//
+// Task items: markdown-it renders `- [ ] x` as the text `[ ] x`. A core rule
+// (`taskList`) recognises the GFM marker at the start of a list item's first
+// paragraph — the engine's own rule (remark's `listItem.checked`, so the store
+// types the item `task`) — strips it from the text and puts a `task_checkbox`
+// token first, rendered as `<input type="checkbox" class="task-check">`; the
+// `<li>` gets `class="task"`. `html: false` stays: the input is our token, not
+// parsed HTML. The box is ENABLED only when the item's block pairing verified
+// (its `data-block` is then certain and `hashes[id]` is its CAS token) and the
+// server lists `apply`; otherwise it is disabled with the reason as its title.
 
 import MarkdownIt from "markdown-it";
-import type { MarkdownIt as Md, StateInline, Token } from "markdown-it";
+import type { MarkdownIt as Md, StateCore, StateInline, Token } from "markdown-it";
 import type { BlockIds } from "./document.ts";
+import { taskDisabledReason, taskMarker, type TaskGate } from "./tasks.ts";
 
 // ---- the parser ---------------------------------------------------------------------------
+
+/** The per-item state the task rule leaves on the `list_item_open` token's `meta` (read by `renderBody`). */
+export interface TaskMeta {
+  checked: boolean;
+  /** Index of the item's `task_checkbox` token. */
+  checkbox: number;
+}
+
+/** Core rule, after `inline`: a list item whose first paragraph's inline content
+ * opens with the task marker becomes a task item (the marker leaves the text, a
+ * `task_checkbox` token leads the children). Tokens: `list_item_open`,
+ * `paragraph_open`, `inline` — the shape of every item's own text, tight or loose. */
+function taskList(state: StateCore): void {
+  const tokens = state.tokens;
+  for (let i = 2; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.type !== "inline" || tokens[i - 1]!.type !== "paragraph_open" || tokens[i - 2]!.type !== "list_item_open") continue;
+    const marker = taskMarker(t.content);
+    if (!marker) continue;
+    const first = t.children?.[0];
+    if (!first || first.type !== "text" || !taskMarker(first.content)) continue;
+    first.content = first.content.slice(marker.length);
+    const box = new state.Token("task_checkbox", "input", 0);
+    box.meta = { checked: marker.checked };
+    t.children!.unshift(box);
+    const li = tokens[i - 2]!;
+    li.attrJoin("class", "task");
+    li.meta = { ...(li.meta as object | null), task: { checked: marker.checked, checkbox: i } satisfies TaskMeta };
+  }
+}
+
+/** A token's attribute as a string (markdown-it types `attrGet` as `string | number | null`). */
+function attrStr(token: Token, name: string): string | null {
+  const v = token.attrGet(name);
+  return v === null ? null : String(v);
+}
+
+/** The checkbox token's render: `checked` from the marker, `data-block` and
+ * `disabled`/`title` set by `renderBody` once the item's pairing is known (a
+ * token rendered without that step — no ids — is disabled, unanchored). */
+function renderTaskCheckbox(md: Md, token: Token): string {
+  const checked = (token.meta as { checked?: boolean } | null)?.checked === true;
+  const block = attrStr(token, "data-block");
+  const reason = attrStr(token, "title") ?? (block ? null : taskDisabledReason({ canApply: true, anchor: "none" }));
+  const attrs = [
+    'type="checkbox"',
+    'class="task-check"',
+    ...(block ? [`data-block="${md.utils.escapeHtml(block)}"`] : []),
+    ...(checked ? ["checked"] : []),
+    ...(reason ? ["disabled", `title="${md.utils.escapeHtml(reason)}"`] : []),
+  ];
+  return `<input ${attrs.join(" ")}> `;
+}
 
 function wikilink(state: StateInline, silent: boolean): boolean {
   const src = state.src;
@@ -56,6 +120,8 @@ export function markdown(): Md {
   const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
   md.renderer.rules.image = (tokens, idx) => `<span class="image">[image: ${md.utils.escapeHtml(tokens[idx]!.content)}]</span>`;
   md.inline.ruler.before("link", "wikilink", wikilink);
+  md.core.ruler.after("inline", "task_list", taskList);
+  md.renderer.rules.task_checkbox = (tokens, idx) => renderTaskCheckbox(md, tokens[idx]!);
   md.renderer.rules.wikilink = (tokens, idx) => {
     const [target, alias] = tokens[idx]!.content.split("|") as [string, string?];
     const t = md.utils.escapeHtml(target.trim());
@@ -248,13 +314,49 @@ export interface Rendered {
   unmatched: number;
   /** Anchors whose raw did not hash to the stored hash. */
   unverified: number;
+  /** Task items rendered, and how many of them have an enabled checkbox. */
+  tasks: { total: number; editable: number };
 }
 
-/** The body rendered, every paired block carrying `id`, `data-block` and `data-verified`. */
-export async function renderBody(body: string, ids: BlockIds | null): Promise<Rendered> {
+export interface RenderOptions {
+  /** The server lists `apply` (the page's `canApply`); false renders every task checkbox disabled, saying why. Default true. */
+  canApply?: boolean;
+}
+
+/** Each task item's gate from its pairing: the anchor on its `list_item_open` token, if any, and that anchor's verdict. */
+function taskGate(li: Token, verdictOf: (id: string) => boolean | undefined, canApply: boolean): TaskGate {
+  const id = attrStr(li, "data-block");
+  const verdict = id ? verdictOf(id) : undefined;
+  return { canApply, anchor: id === null ? "none" : verdict === true ? "verified" : "unverified" };
+}
+
+/** Set every task checkbox's `data-block` and `disabled`/`title` from its item's gate; returns the counts. */
+function gateTasks(tokens: Token[], verdictOf: (id: string) => boolean | undefined, canApply: boolean): Rendered["tasks"] {
+  let total = 0;
+  let editable = 0;
+  for (const t of tokens) {
+    const task = (t.meta as { task?: TaskMeta } | null)?.task;
+    if (t.type !== "list_item_open" || !task) continue;
+    total++;
+    const box = tokens[task.checkbox]!.children![0]!;
+    const id = attrStr(t, "data-block");
+    if (id) box.attrSet("data-block", id);
+    const reason = taskDisabledReason(taskGate(t, verdictOf, canApply));
+    if (reason) box.attrSet("title", reason);
+    else editable++;
+  }
+  return { total, editable };
+}
+
+/** The body rendered, every paired block carrying `id`, `data-block` and `data-verified`; every task item a checkbox, enabled only when verified and writable. */
+export async function renderBody(body: string, ids: BlockIds | null, options: RenderOptions = {}): Promise<Rendered> {
   const md = markdown();
   const tokens = md.parse(body, {});
-  if (!ids) return { html: md.renderer.render(tokens, md.options, {}), anchors: [], unmatched: 0, unverified: 0 };
+  const canApply = options.canApply ?? true;
+  if (!ids) {
+    const tasks = gateTasks(tokens, () => undefined, canApply);
+    return { html: md.renderer.render(tokens, md.options, {}), anchors: [], unmatched: 0, unverified: 0, tasks };
+  }
   const lines = body.split("\n");
   const { anchors, unmatched } = pairBlocks(mdBlockTree(tokens), ids);
   const verdicts = await verifyAnchors(anchors, lines, ids.hashes);
@@ -267,11 +369,13 @@ export async function renderBody(body: string, ids: BlockIds | null): Promise<Re
     t.attrSet("data-block", a.id);
     t.attrSet("data-verified", ok ? "true" : "false");
   }
+  const tasks = gateTasks(tokens, (id) => verdicts.get(id), canApply);
   return {
     html: md.renderer.render(tokens, md.options, {}),
     anchors: anchors.map((a) => ({ id: a.id, type: a.type, verified: verdicts.get(a.id) === true })),
     unmatched,
     unverified,
+    tasks,
   };
 }
 

@@ -5,7 +5,10 @@
 //   root level → the route (#doc=…) → the document (docs_read include_ids),
 //   its links (two queries over `links`), its history (`revisions { … }`), the
 //   live feed (changes_since polled) and the query console (query, query_syntax).
-//   Writes: plan { effects, diffs: true } → confirm → execute { plan_id, effects }.
+//   Writes: plan { effects, diffs: true } → confirm → execute { plan_id, effects };
+//   a task checkbox: ONE apply { set _attrs.checked, expect: { content_hash } } →
+//   re-read; undo/redo = a compensating apply, refused unless the block's hash
+//   is still the one the toggle left (lib/tasks.ts).
 //
 // Everything runs on the MINIMAL tools profile (lib/tools.ts): `repos` is the
 // one optional tool (a picker when it is listed; otherwise the server's default
@@ -28,10 +31,11 @@ import "./elements/query-console.ts";
 import "./elements/history-panel.ts";
 import "./elements/feed-strip.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
-import type { DocViewMode, OpenDocDetail, OpenWikiDetail, ViewChangeDetail, WritePlanDetail } from "./elements/doc-view.ts";
+import type { DocViewMode, OpenDocDetail, OpenWikiDetail, TaskPending, TaskToggleDetail, ViewChangeDetail, WritePlanDetail } from "./elements/doc-view.ts";
 import type { ConsoleOpenDetail, ConsoleRunDetail } from "./elements/query-console.ts";
 import type { HistorySelectDetail } from "./elements/history-panel.ts";
-import { OmgClient, OmgError, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
+import { OmgClient, OmgError, applyEffects, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
+import { EMPTY_LOG, MOVED_ON_MESSAGE, afterCompensation, compensation, isMovedOn, nextToggle, pushToggle, setCheckedEffect, toggleLabel, type Direction, type ToggleLog } from "./lib/tasks.ts";
 import { docLocator, profileOf, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { capabilities, missingToolsText, profileLabel, type Capabilities } from "./lib/tools.ts";
 import { fetchLevel, prefixesToOpen, type LevelState } from "./lib/tree.ts";
@@ -42,7 +46,7 @@ import { STARTER_QUERY, describeToolError, fetchSyntax, locatorQuery, nextPage, 
 import { runQuery, type QueryOptions, type QueryResult } from "./lib/query.ts";
 import { deletedRevisionsQuery, fetchDeleted, fetchRevisions, revisionsQuery, type DeletedDoc, type RevisionRow } from "./lib/history.ts";
 import { advanceCursor, fetchChanges, pollMs, prependDigests, startCursor, touchedPaths, type FeedEntry } from "./lib/feed.ts";
-import { executePlan, parseValue, planEffects, setFrontmatterEffect, unsetFrontmatterEffect, type Plan } from "./lib/writes.ts";
+import { executePlan, parseValue, planEffects, receiptOf, setFrontmatterEffect, unsetFrontmatterEffect, type Plan } from "./lib/writes.ts";
 import { DEFAULT_ROUTE, openDocRoute, parseRoute, routeHash, type Route, type Tab } from "./lib/route.ts";
 import { effect } from "./lib/effect.ts";
 import { hitPath, rooted } from "./lib/paths.ts";
@@ -69,6 +73,8 @@ const repo = signal<string>(localStorage.getItem(REPO_KEY) ?? "");
 const repoArgValue = computed<string | null>(() => repo.get() || null);
 /** Writes are possible when plan + execute are listed. */
 const canWrite = computed<boolean>(() => { const t = tools.get(); return t === null || (t.includes("plan") && t.includes("execute")); });
+/** Task checkboxes toggle when `apply` is listed (read-only servers render them disabled, saying why). */
+const canApply = computed<boolean>(() => { const t = tools.get(); return t === null || t.includes("apply"); });
 
 const route = signal<Route>(parseRoute(location.hash));
 
@@ -108,6 +114,13 @@ const pollSeconds = signal<number>(pollMs(localStorage.getItem(POLL_KEY)) / 1000
 const pendingPlan = signal<Plan | null>(null);
 const writing = signal(false);
 const writeMessage = signal<{ kind: "error" | "info"; text: string; fix?: string | null } | null>(null);
+
+/** The session's completed task toggles (lib/tasks.ts): undo/redo stacks, in memory only. */
+const taskLog = signal<ToggleLog>(EMPTY_LOG);
+/** The task write in flight (a toggle or a compensation), or null. */
+const taskPending = signal<TaskPending | null>(null);
+const undoLabel = computed(() => toggleLabel(nextToggle(taskLog.get(), "undo"), "undo"));
+const redoLabel = computed(() => toggleLabel(nextToggle(taskLog.get(), "redo"), "redo"));
 
 const splitPosition = signal<number>(Number(localStorage.getItem(SPLIT_KEY) ?? 24) || 24);
 
@@ -201,7 +214,7 @@ async function loadDocument(path: string): Promise<void> {
     if (gen !== docGeneration) return;
     doc.set(d);
     rendered.set(null);
-    const r = await renderBody(splitFrontmatter(d.raw).body, d.blockIds);
+    const r = await renderBody(splitFrontmatter(d.raw).body, d.blockIds, { canApply: canApply.get() });
     if (gen !== docGeneration) return;
     rendered.set(r);
     void loadLinks(d.path, gen);
@@ -425,6 +438,93 @@ async function executePending(): Promise<void> {
   }
 }
 
+// ---- task checkboxes --------------------------------------------------------------------------
+
+/** The document re-read after a task write: the open document reloaded (so the
+ * rendering, property table, history and links are the truth again, as after a
+ * frontmatter edit) when it is the one written, else a plain read — either way
+ * the fresh `blockIds` for the block's new hash. */
+async function rereadAfterTaskWrite(path: string): Promise<DocRead | null> {
+  if (doc.get()?.path === path) {
+    await loadDocument(path);
+    const d = doc.get();
+    if (d?.path === path) return d;
+  }
+  try { return await fetchDocument(client, docLocator(path), repoArgValue.get()); } catch { return null; }
+}
+
+/** A checkbox changed: ONE `apply` with `set _attrs.checked` pinned to the block's hash from the read; then re-read. */
+async function toggleTask(detail: TaskToggleDetail): Promise<void> {
+  const d = doc.get();
+  if (!d || taskPending.get() || !canApply.get()) return;
+  const from = !detail.checked;
+  taskPending.set({ blockId: detail.blockId, checked: detail.checked });
+  writeMessage.set(null);
+  try {
+    const receipt = receiptOf(await applyEffects(client, [setCheckedEffect(detail.blockId, detail.checked, detail.contentHash)], { repo: repoArgValue.get(), reason: "repo-explorer task toggle" }));
+    const after = await rereadAfterTaskWrite(d.path);
+    const hashAfter = after?.blockIds?.hashes[detail.blockId];
+    refreshLevels([d.path]);
+    if (hashAfter === undefined) {
+      writeMessage.set({ kind: "info", text: `${detail.checked ? "checked" : "unchecked"} ${detail.blockId}: committed ${receipt.commit ?? "nothing"} — but the re-read no longer has the block, so this toggle cannot be undone` });
+      return;
+    }
+    taskLog.set(pushToggle(taskLog.get(), { blockId: detail.blockId, path: d.path, from, to: detail.checked, hashBefore: detail.contentHash, hashAfter, receipt }));
+    writeMessage.set({ kind: "info", text: receipt.commit ? `${detail.checked ? "checked" : "unchecked"} ${detail.blockId}: committed ${receipt.commit} (${receipt.summary.join("; ")}) — undo with the button or ⌘Z` : `nothing to commit (${detail.blockId} already ${detail.checked ? "checked" : "unchecked"})` });
+  } catch (e) {
+    if (isMovedOn(e)) {
+      await rereadAfterTaskWrite(d.path);
+      writeMessage.set({ kind: "error", text: `${e.code}: ${MOVED_ON_MESSAGE}` });
+    } else {
+      const info = describeToolError(e);
+      writeMessage.set({ kind: "error", text: `apply: ${info.code} — ${info.message}`, fix: info.fix });
+    }
+  } finally {
+    taskPending.set(null);
+  }
+}
+
+/** Undo (or redo) the last task toggle: re-read the block's CURRENT hash, refuse
+ * unless it is the one the toggle left, else apply the compensating `set`
+ * pinned to that hash, re-read, and move the record to the other stack. */
+async function compensateTask(dir: Direction): Promise<void> {
+  const rec = nextToggle(taskLog.get(), dir);
+  if (!rec || taskPending.get() || !canApply.get()) return;
+  taskPending.set({ blockId: rec.blockId, checked: dir === "undo" ? rec.from : rec.to });
+  writeMessage.set(null);
+  try {
+    const current = await fetchDocument(client, docLocator(rec.path), repoArgValue.get()).then((d) => d.blockIds?.hashes[rec.blockId], () => undefined);
+    const c = compensation(rec, current, dir);
+    if (!c.ok) {
+      // Refused: the record stays where it is (a later undo re-checks), the page says why.
+      writeMessage.set({ kind: "error", text: c.reason });
+      if (doc.get()?.path === rec.path) await loadDocument(rec.path);
+      return;
+    }
+    const receipt = receiptOf(await applyEffects(client, [c.effect], { repo: repoArgValue.get(), reason: `repo-explorer task ${dir}` }));
+    const after = await rereadAfterTaskWrite(rec.path);
+    const hashNow = after?.blockIds?.hashes[rec.blockId];
+    refreshLevels([rec.path]);
+    if (hashNow === undefined) {
+      // The block vanished under the compensation (unlikely): drop the record rather than keep a hash we cannot vouch for.
+      taskLog.set({ done: taskLog.get().done.filter((r) => r !== rec), undone: taskLog.get().undone.filter((r) => r !== rec) });
+    } else {
+      taskLog.set(afterCompensation(taskLog.get(), rec, dir, hashNow));
+    }
+    writeMessage.set({ kind: "info", text: `${dir}: ${c.value ? "checked" : "unchecked"} ${rec.blockId} in ${rec.path} — committed ${receipt.commit ?? "nothing"}` });
+  } catch (e) {
+    if (isMovedOn(e)) {
+      await rereadAfterTaskWrite(rec.path);
+      writeMessage.set({ kind: "error", text: `${dir} refused — ${e.code}: the block changed between the check and the write; nothing was overwritten` });
+    } else {
+      const info = describeToolError(e);
+      writeMessage.set({ kind: "error", text: `${dir}: ${info.code} — ${info.message}`, fix: info.fix });
+    }
+  } finally {
+    taskPending.set(null);
+  }
+}
+
 // ---- connecting -----------------------------------------------------------------------------
 
 let whoamiPoll: ReturnType<typeof setTimeout> | null = null;
@@ -510,6 +610,7 @@ async function connect(): Promise<void> {
 function switchRepo(slug: string): void {
   repo.set(slug);
   localStorage.setItem(REPO_KEY, slug);
+  taskLog.set(EMPTY_LOG); // the toggles were in another repository
   doc.set(null);
   rendered.set(null);
   levels.set(new Map());
@@ -639,6 +740,10 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         <sl-tab slot="nav" panel="links" ?active=${r.tab === "links"}>links${links.get() ? ` (${links.get()!.inbound.length} in · ${links.get()!.outbound.length} out)` : ""}</sl-tab>
         <sl-tab-panel name="document" ?active=${r.tab === "document"}>
           <doc-view .doc=${d} .rendered=${rendered.get()} .view=${view.get()} ?canWrite=${canWrite.get()} .pending=${pendingPlan.get()} .writeMessage=${writeMessage.get()} ?writing=${writing.get()} .highlight=${r.block}
+            .taskPending=${taskPending.get()} .undoLabel=${undoLabel.get()} .redoLabel=${redoLabel.get()}
+            @task-toggle=${(e: CustomEvent<TaskToggleDetail>) => { void toggleTask(e.detail); }}
+            @task-undo=${() => { void compensateTask("undo"); }}
+            @task-redo=${() => { void compensateTask("redo"); }}
             @open-doc=${(e: CustomEvent<OpenDocDetail>) => openDoc(e.detail.path)}
             @open-wiki=${(e: CustomEvent<OpenWikiDetail>) => { void openWiki(e.detail.name); }}
             @view-change=${(e: CustomEvent<ViewChangeDetail>) => view.set(e.detail.view)}

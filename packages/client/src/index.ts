@@ -1,2 +1,5 @@
-// @omgbase/client — thin remote MCP client (placeholder)
-// Implementation deferred until omg serve (HTTP transport) exists.
+// @omgbase/client — the typed client, session and command layer over omgbase's
+// minimal MCP surface. Browser-safe; depends on @modelcontextprotocol/sdk alone.
+export * from "./client.js";
+export * from "./effects.js";
+export * from "./commands.js";

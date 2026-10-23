@@ -367,7 +367,14 @@ importers:
         specifier: ^0.8.1
         version: 0.8.1(vitest@2.1.9(@types/node@22.20.1)(supports-color@7.2.0))
 
-  packages/client: {}
+  packages/client:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/core:
     dependencies:

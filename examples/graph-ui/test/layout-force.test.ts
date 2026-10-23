@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { forceBounds, forceLayout } from "../src/lib/layout-force.ts";
-import { cardRadius } from "../src/lib/cards.ts";
+import { cardFor, cardRadius } from "../src/lib/cards.ts";
+import { cardSize, fixedMeasure } from "../src/lib/card-size.ts";
 import { fitTransform, contentToViewBox } from "../src/lib/viewport.ts";
 import type { GraphEdge } from "../src/lib/edges.ts";
 
@@ -46,6 +47,21 @@ describe("forceLayout", () => {
     expect(d("n0", "n1")).toBeLessThan(Math.min(d("n0", "n3"), d("n0", "n4"), d("n0", "n5")));
     // The old positional `ticks` argument still works.
     expect(forceLayout(ns, edges, 300)).toEqual(a);
+  });
+
+  it("places cards at the label fit's sizes — mixed widths and heights carried through, none overlapping", () => {
+    const m = fixedMeasure(10);
+    const choice = { label: "title", shown: ["title"] };
+    const titles = ["Kickoff", "A rather long document title that will not fit on a single card line", "word ".repeat(60).trim(), "mid-length title here", "x".repeat(40)];
+    for (const fit of ["wrap", "expand"] as const) {
+      const sized = titles.map((title, i) => ({ id: `n${i}`, ...cardSize(cardFor({ label: `n${i}`, row: { title } }, choice), fit, m) }));
+      const p = forceLayout(sized.map(({ id, width, height }) => ({ id, width, height })), [{ src: "n0", dst: "n1", rel: "r" }]);
+      for (const n of sized) expect(p.nodes.get(n.id)).toMatchObject({ width: n.width, height: n.height });
+      const placed = [...p.nodes.values()];
+      for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) expect(overlaps(placed[i]!, placed[j]!), `${fit}: ${i} vs ${j}`).toBe(false);
+      // The box grows with the bigger cards (their covering radius is what keeps them apart).
+      expect(forceBounds(sized)).toBeGreaterThanOrEqual(Math.max(...sized.map((n) => cardRadius(n.width, n.height))));
+    }
   });
 
   it("fits into a view: the settled box, fitted, is fully inside the viewport", () => {

@@ -147,6 +147,32 @@ export class OmgClient implements Caller {
     const { tools } = await this.withSession((client) => client.listTools());
     return tools.map((t) => t.name);
   }
+
+  /** `apply`: plan and commit effects in one call (spec/surface §4; after
+   * graph-ui's). The one write this page makes without a preview is a task
+   * checkbox toggle — a single `set _attrs.checked` pinned to the block's hash
+   * (lib/tasks.ts). The result is the Receipt `{ plan_id, commit, revisions:
+   * [{ _id, _path, _hash }], new_ids, committed, summary }`. */
+  apply(effects: Record<string, unknown>[], opts: ApplyOptions = {}): Promise<Wire> {
+    return this.call<Wire>("apply", applyArgs(effects, opts));
+  }
+}
+
+export interface ApplyOptions {
+  /** The repo slug; omitted (or empty/null) ⇒ the server's default. */
+  repo?: string | null;
+  /** The commit's reason (the revision's `_reason`). */
+  reason?: string;
+}
+
+/** The arguments of an `apply` call: `{ effects, reason?, repo? }` — a key only when it has a value. */
+export function applyArgs(effects: Record<string, unknown>[], opts: ApplyOptions = {}): Record<string, unknown> {
+  return { effects, ...(opts.reason ? { reason: opts.reason } : {}), ...repoArg(opts.repo) };
+}
+
+/** `apply` over any `Caller` (the feature modules take a Caller, not the client). */
+export async function applyEffects(caller: Caller, effects: Record<string, unknown>[], opts: ApplyOptions = {}): Promise<Wire> {
+  return caller.call<Wire>("apply", applyArgs(effects, opts));
 }
 
 /** The proxy's status endpoint for an MCP endpoint URL: same origin, path `/whoami`. */

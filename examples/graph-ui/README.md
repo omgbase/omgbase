@@ -463,7 +463,7 @@ consecutive result rows.
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }` |
+| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }` |
 
 ### The page chrome (Shoelace)
 
@@ -485,8 +485,8 @@ through every shadow root. `<oqx-graph>` watches its own size with a
 `ResizeObserver`: its `viewBox` is its client size and the picture is fitted by
 the pan/zoom transform (`fitTransform`, `src/lib/viewport.ts`), refitted on
 every pane resize until you pan or zoom (double-click fits again). The persisted
-UI record is `omgbase-graph-ui.ui`: `{ keepLastGraph, sections: { query,
-relationships, projection, settings }, splitPosition }`.
+UI record is `omgbase-graph-ui.ui`: `{ keepLastGraph, labelFit, sections: {
+query, relationships, projection, settings }, splitPosition }`.
 
 The graph's bottom-left legend lists the drawn relationships by colour (the
 axis marked); while the modifier is held in edit mode a second legend,
@@ -590,6 +590,26 @@ tooltip carries the path and every shown value in full. The card's width and
 height follow the shown lines, and the layout (elk or force) runs over those
 sizes, so changing the projection re-lays the graph out and edges keep
 attaching to the card border.
+
+**Label fit.** Long labels are cut by default; the **label fit** select under
+the field list (persisted with the other UI settings as `labelFit`) says how a
+card fits its title line, in three modes (`src/lib/card-size.ts`):
+**truncate** — one line ending in `…` at the card's width, the original cards,
+so a saved view does not jump; **wrap** — the label wraps onto several lines
+within the card's width (greedy on spaces, an over-long word broken by
+characters), the card growing by a line each up to four, the last line then
+ending in a measured-in `…`; **expand** — the card widens to fit the whole
+label on one line, up to 480 px, and wraps as above past that. The shown
+`key: value` lines keep their one-line treatment and the card's height still
+counts them. Labels are *measured*, not estimated: the element measures each
+label with a 2D canvas in the card's font (`12px system-ui`, the same string as
+the SVG's `.node text` rule, cached per string), the layout (elk's per-node
+`width`/`height`, force's covering radius) runs over the measured sizes, and
+the SVG draws the wrapped lines as one `<text>` with a `<tspan>` per line — so
+edges attach to the card's actual bounds. The measure is injected
+(`cardSize(card, mode, measure)`), so the wrapping is unit-tested with a fixed
+width per character (`test/card-size.test.ts`); without a canvas it falls
+back to the per-character estimate.
 
 **The view record.** The projection's overrides live beside the relationship
 overrides (`src/lib/view.ts`): the resolved view is

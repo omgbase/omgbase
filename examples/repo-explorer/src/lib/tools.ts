@@ -3,7 +3,8 @@
 // needs — and only ever treats anything else as a convenience: `repos` (a
 // repository picker; without it the server's default repo is the one browsed),
 // `docs_history` / `docs_diff_unified` are NOT used even when present, so the
-// same code path runs under both profiles.
+// same code path runs under both profiles. `apply` is used for exactly one
+// thing: a task checkbox toggle (and its undo), one CAS-pinned effect.
 
 /** The ten tools of `omg mcp --tools minimal`, in the catalog's registration order. */
 export const MINIMAL_TOOLS: readonly string[] = [
@@ -45,7 +46,7 @@ export const TOOL_FEATURES: Readonly<Record<string, string>> = {
   blocks_resolve: "the search box",
   plan: "frontmatter edits (the preview)",
   execute: "frontmatter edits (the commit)",
-  apply: "nothing here (the demo previews with plan and commits with execute)",
+  apply: "task checkboxes (toggle, undo); frontmatter edits preview with plan and commit with execute",
   changes_since: "the live feed",
   version: "the surface gate and the profile label",
 };

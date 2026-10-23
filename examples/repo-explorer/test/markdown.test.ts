@@ -156,3 +156,77 @@ describe("renderBody", () => {
     expect(docHrefPath("/a.md#x")).toBe("/a.md");
   });
 });
+
+describe("task items", () => {
+  // The alchemy corpus's Tasks section shape: a heading, a tight list of three tasks.
+  const TASKS = ["## Tasks", "", "- [x] Verify the weight gain on lead with a balance", "- [ ] Repeat with copper and record the colour sequence", "- [X] Chase down the [[salt]] *measurement*", ""].join("\n");
+  const items = ["- [x] Verify the weight gain on lead with a balance", "- [ ] Repeat with copper and record the colour sequence", "- [X] Chase down the [[salt]] *measurement*"];
+  const taskIds = (): BlockIds => ({
+    ids: ["b_h", "b_l", "b_t0", "b_t1", "b_t2"],
+    parents: { b_h: null, b_l: null, b_t0: "b_l", b_t1: "b_l", b_t2: "b_l" },
+    hashes: { b_h: sha("## Tasks"), b_l: sha(items.join("\n")), b_t0: sha(items[0]!), b_t1: sha(items[1]!), b_t2: sha(items[2]!) },
+  });
+  it("render an input first, checked from the marker, the marker gone from the text, the li classed task — enabled when verified and writable", async () => {
+    const r = await renderBody(TASKS, taskIds());
+    expect(r.unmatched).toBe(0);
+    expect(r.unverified).toBe(0);
+    expect(r.tasks).toEqual({ total: 3, editable: 3 });
+    expect(r.html).toContain('<li class="task" id="b_t0" data-block="b_t0" data-verified="true"><input type="checkbox" class="task-check" data-block="b_t0" checked> Verify the weight gain on lead with a balance</li>');
+    expect(r.html).toContain('<li class="task" id="b_t1" data-block="b_t1" data-verified="true"><input type="checkbox" class="task-check" data-block="b_t1"> Repeat with copper and record the colour sequence</li>');
+    expect(r.html).toContain('<input type="checkbox" class="task-check" data-block="b_t2" checked> Chase down the <a class="wikilink"');
+    expect(r.html).not.toContain("[x]");
+    expect(r.html).not.toContain("[ ]");
+    expect(r.html).not.toContain("disabled");
+  });
+  it("an unverified item's box is disabled with the reason; a read-only server disables every box", async () => {
+    const ids = taskIds();
+    ids.hashes.b_t1 = sha("edited elsewhere");
+    const r = await renderBody(TASKS, ids);
+    expect(r.unverified).toBe(1);
+    expect(r.tasks).toEqual({ total: 3, editable: 2 });
+    expect(r.html).toContain(`<li class="task" id="b_t1" data-block="b_t1" data-verified="false"><input type="checkbox" class="task-check" data-block="b_t1" disabled title="this item's block could not be verified against the store (its raw did not hash to the stored hash) — not editable here">`);
+    expect(r.html).toContain('data-block="b_t0" checked> Verify');
+    const ro = await renderBody(TASKS, taskIds(), { canApply: false });
+    expect(ro.tasks).toEqual({ total: 3, editable: 0 });
+    expect(ro.html.match(/disabled title="read-only: this server does not list `apply`"/g)).toHaveLength(3);
+    expect(ro.html).toContain('data-block="b_t0" checked disabled title=');
+  });
+  it("an item the pairing could not place (no ids, or a level whose counts disagree) has a disabled box and no data-block", async () => {
+    const none = await renderBody(TASKS, null);
+    expect(none.tasks).toEqual({ total: 3, editable: 0 });
+    expect(none.html).toContain(`<li class="task"><input type="checkbox" class="task-check" checked disabled title="this item has no block anchor (its level did not pair with the store's ids) — not editable here"> Verify`);
+    const ids = taskIds();
+    ids.ids = ids.ids.filter((i) => i !== "b_t2"); // the store has two items where the text has three
+    const r = await renderBody(TASKS, ids);
+    expect(r.unmatched).toBe(2);
+    expect(r.tasks).toEqual({ total: 3, editable: 0 });
+    expect(r.html).toContain('<ul id="b_l" data-block="b_l" data-verified="true">');
+    expect(r.html).not.toContain('data-block="b_t0"');
+  });
+  it("nested tasks pair with the nested list's children and each gets its own box; a plain item among tasks stays plain", async () => {
+    const body = "- [ ] parent\n  - [x] child one\n  - [ ] child two\n- plain item\n";
+    const ids: BlockIds = {
+      ids: ["b_l", "b_a", "b_al", "b_a1", "b_a2", "b_b"],
+      parents: { b_l: null, b_a: "b_l", b_al: "b_a", b_a1: "b_al", b_a2: "b_al", b_b: "b_l" },
+      hashes: { b_l: sha(body.trimEnd()), b_a: sha("- [ ] parent\n  - [x] child one\n  - [ ] child two"), b_al: sha("  - [x] child one\n  - [ ] child two"), b_a1: sha("  - [x] child one"), b_a2: sha("  - [ ] child two"), b_b: sha("- plain item") },
+    };
+    const r = await renderBody(body, ids);
+    expect(r.unmatched).toBe(0);
+    expect(r.unverified).toBe(0);
+    expect(r.tasks).toEqual({ total: 3, editable: 3 });
+    expect(r.html).toContain('<li class="task" id="b_a" data-block="b_a" data-verified="true"><input type="checkbox" class="task-check" data-block="b_a"> parent');
+    expect(r.html).toContain('<li class="task" id="b_a1" data-block="b_a1" data-verified="true"><input type="checkbox" class="task-check" data-block="b_a1" checked> child one</li>');
+    expect(r.html).toContain('<li class="task" id="b_a2" data-block="b_a2" data-verified="true"><input type="checkbox" class="task-check" data-block="b_a2"> child two</li>');
+    expect(r.html).toContain('<li id="b_b" data-block="b_b" data-verified="true">plain item</li>');
+  });
+  it("what is not a task: a link starting with [x], a marker without a space, a marker in a paragraph, a loose item keeps its <p>", async () => {
+    const r = await renderBody("- [x](https://example.com/x) a link\n- [ ]no space\n- [y] other\n\n[ ] a paragraph\n\n- [ ] loose\n\n  second paragraph\n", null);
+    expect(r.tasks.total).toBe(1);
+    expect(r.html).toContain('<li><a href="https://example.com/x" target="_blank" rel="noopener">x</a> a link</li>');
+    expect(r.html).toContain("<li>[ ]no space</li>");
+    expect(r.html).toContain("<li>[y] other</li>");
+    expect(r.html).toContain("<p>[ ] a paragraph</p>");
+    expect(r.html).toContain('<li class="task">\n<p><input type="checkbox" class="task-check" disabled title=');
+    expect(r.html).toContain("> loose</p>\n<p>second paragraph</p>");
+  });
+});

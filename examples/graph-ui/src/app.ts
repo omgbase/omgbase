@@ -37,6 +37,7 @@ import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSetti
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
+import { DEFAULT_LABEL_FIT, LABEL_FITS, isLabelFit, type LabelFit } from "./lib/card-size.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
 import { docLocator, hitId, hitPath, namesFor, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
 import { DEFAULT_QUERY } from "./lib/default-query.ts";
@@ -84,6 +85,9 @@ export interface UiSettings {
   /** Keep the previous result drawn when a query matches nothing (default: clear it,
    * so an empty result is never mistaken for a stale graph). */
   keepLastGraph: boolean;
+  /** How a node card fits its label: one line with an ellipsis (the default), wrapped
+   * within the card's width, or the card widened to the label (lib/card-size.ts). */
+  labelFit: LabelFit;
   /** Which side-panel sections are open. */
   sections: Record<SectionId, boolean>;
   /** The side panel's width as a percentage of the main area. */
@@ -92,13 +96,13 @@ export interface UiSettings {
 
 /** Read the persisted UI settings back, filling in defaults for anything missing or malformed. */
 export function parseUiSettings(raw: string | null): UiSettings {
-  const fallback: UiSettings = { keepLastGraph: false, sections: { ...DEFAULT_SECTIONS }, splitPosition: DEFAULT_SPLIT };
+  const fallback: UiSettings = { keepLastGraph: false, labelFit: DEFAULT_LABEL_FIT, sections: { ...DEFAULT_SECTIONS }, splitPosition: DEFAULT_SPLIT };
   try {
-    const saved = JSON.parse(raw ?? "{}") as { keepLastGraph?: unknown; sections?: Record<string, unknown>; splitPosition?: unknown };
+    const saved = JSON.parse(raw ?? "{}") as { keepLastGraph?: unknown; labelFit?: unknown; sections?: Record<string, unknown>; splitPosition?: unknown };
     const sections = { ...DEFAULT_SECTIONS };
     for (const id of SECTIONS) if (typeof saved.sections?.[id] === "boolean") sections[id] = saved.sections[id];
     const pos = typeof saved.splitPosition === "number" && Number.isFinite(saved.splitPosition) ? Math.min(90, Math.max(10, saved.splitPosition)) : DEFAULT_SPLIT;
-    return { keepLastGraph: saved.keepLastGraph === true, sections, splitPosition: pos };
+    return { keepLastGraph: saved.keepLastGraph === true, labelFit: isLabelFit(saved.labelFit) ? saved.labelFit : DEFAULT_LABEL_FIT, sections, splitPosition: pos };
   } catch {
     return fallback;
   }
@@ -652,6 +656,9 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     sl-details::part(summary-icon) { color: #8a94a6; }
     sl-details::part(content) { padding: 0 10px 10px; }
     sl-details .sub { font-size: 12px; color: #5a6270; text-transform: none; letter-spacing: 0; font-weight: normal; margin-left: 8px; }
+    /* The cards panel's label-fit control, under the field list. */
+    .fit { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; color: #5a6270; }
+    .fit select { font: inherit; padding: 2px 4px; }
     .graph-area { position: relative; height: 100%; min-height: 0; display: grid; padding-left: 10px; box-sizing: border-box; }
     oqx-graph { height: 100%; min-height: 0; }
     .try { font-size: 12px; color: #5a6270; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
@@ -895,11 +902,16 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             </oqx-relationship-picker>
           </sl-details>
           <sl-details data-section="projection" ?open=${ui.sections.projection} @sl-show=${this.onSectionToggle("projection", true)} @sl-hide=${this.onSectionToggle("projection", false)}>
-            <span slot="summary">cards<span class="sub">${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}</span></span>
+            <span slot="summary">cards<span class="sub">${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}${ui.labelFit === "truncate" ? "" : ` · ${ui.labelFit}`}</span></span>
             <oqx-projection-picker .fields=${proj.fields} .defaults=${proj.defaults} .overrides=${projectionOverrides.get()}
               @projection-change=${this.onProjectionChange}
               @field-hover=${(e: CustomEvent<FieldHoverDetail>) => { this.highlights = e.detail.field?.span ? [e.detail.field.span] : []; }}>
             </oqx-projection-picker>
+            <label class="fit" title="how a card fits its label: one line with an ellipsis; wrapped within the card's width (up to 4 lines); or the card widened to the label, wrapping past the maximum width">label fit
+              <select data-label-fit .value=${ui.labelFit} @change=${(e: Event) => { const fit = (e.target as HTMLSelectElement).value; if (isLabelFit(fit)) uiSettings.set({ ...uiSettings.get(), labelFit: fit }); }}>
+                ${LABEL_FITS.map((f) => html`<option value=${f} ?selected=${f === ui.labelFit}>${LABEL_FIT_LABEL[f]}</option>`)}
+              </select>
+            </label>
           </sl-details>
           ${this.renderEdit()}
           ${this.selected ? html`<section class="selection" data-selection>
@@ -932,7 +944,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         </div>
         <div class="graph-area" slot="end">
           <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
-            .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()}
+            .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()} .labelFit=${ui.labelFit}
             @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
             @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
             @axis-request=${this.onAxisRequest}
@@ -955,6 +967,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     `;
   }
 }
+
+/** The label-fit select's option texts. */
+const LABEL_FIT_LABEL: Record<LabelFit, string> = {
+  truncate: "truncate — one line",
+  wrap: "wrap — up to 4 lines",
+  expand: "expand — widen, then wrap",
+};
 
 const MODE_TITLE: Record<McpMode, string> = {
   local: "the local bridge serving ./sample over `omg mcp` (pnpm dev)",

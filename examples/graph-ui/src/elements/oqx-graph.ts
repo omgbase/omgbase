@@ -7,8 +7,12 @@
 // Cards: `view.projection` says which projected field is the title line (null =
 // the node's fallback label, the de-rooted path) and which fields are listed
 // under it as `key: value` lines (lib/cards.ts formats values compactly and
-// sizes the card); the layout runs over the card sizes, so a projection change
-// recomputes the layout and edges keep attaching to the card border.
+// sizes the card); `labelFit` says how the title line fits — `truncate` (one
+// line, ellipsis), `wrap` (several lines within the same width, the card grows)
+// or `expand` (the card widens to the label, then wraps) — through lib/card-size.ts,
+// which MEASURES the label with a canvas in the card's font; the layout runs over
+// the resulting sizes, so a projection or fit change recomputes the layout and
+// edges keep attaching to the card border.
 //
 // Arrows: an edge is stored owner → target (`src` → `dst`, what editing reasons
 // about) and DRAWN the way its relationship's direction says (lib/edges.ts
@@ -31,7 +35,8 @@
 //               fetchEdges ((candidate, paths) => Promise<GraphEdge[]>), selected (path | null),
 //               armed (Candidate | null — the relationship being edited),
 //               writable (string[] — relationships whose drawn edges can be ⌘-clicked away),
-//               pending (PendingEdge[] — optimistic adds/removes, drawn dashed)
+//               pending (PendingEdge[] — optimistic adds/removes, drawn dashed),
+//               labelFit ("truncate" | "wrap" | "expand" — how a card fits its label; attribute label-fit)
 //   events:     node-select  detail: { node: GraphNode | null }
 //               edge-toggle  detail: { candidate, from: GraphNode, to: GraphNode, present: boolean }
 //                            — ⌘-click (Ctrl-click) on a node with a selection and an armed
@@ -54,7 +59,7 @@
 // modifier previews its removal too. Pending (in-flight) edges keep their own,
 // static dashed style; a small legend names the three while in edit mode.
 
-import { LitElement, css, html, nothing, svg } from "lit";
+import { LitElement, css, html, nothing, svg, unsafeCSS } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { Candidate, Direction } from "../lib/candidates.ts";
@@ -66,6 +71,7 @@ import { forceLayout } from "../lib/layout-force.ts";
 import { isDrawn, midpoint, modified, modifierName, previewFor, type EdgePreview } from "../lib/preview.ts";
 import { NO_PROJECTION, axisStatus, type EdgeCounts, type View } from "../lib/view.ts";
 import { cardFor, cardTooltip, type Card } from "../lib/cards.ts";
+import { DEFAULT_LABEL_FIT, LABEL_FIT, canvasMeasure, cardSize, type LabelFit, type Measure } from "../lib/card-size.ts";
 import { IDENTITY, fitTransform, panBy, toViewBox, viewBoxMapping, wheelDeltaPx, zoomAbout, zoomFactor, type Transform, type ViewBoxMapping } from "../lib/viewport.ts";
 import { relationColor } from "./oqx-relationship-picker.ts";
 
@@ -110,6 +116,15 @@ export function edgeKey(e: Pick<GraphEdge, "src" | "dst" | "rel">): string {
   return `${e.rel} ${e.src}→${e.dst}`;
 }
 
+/** A card with the size it is laid out and drawn at under the label fit. */
+export interface SizedCard {
+  card: Card;
+  width: number;
+  height: number;
+  /** The label as drawn, one `<tspan>` per entry. */
+  labelLines: string[];
+}
+
 const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward" }, projection: NO_PROJECTION };
 const elk = new ELK();
 
@@ -120,7 +135,7 @@ export class OqxGraph extends LitElement {
     svg { display: block; width: 100%; height: 100%; min-height: 320px; cursor: grab; user-select: none; }
     svg.dragging { cursor: grabbing; }
     .node rect { fill: #fff; stroke: #8a94a6; stroke-width: 1; rx: 5; }
-    .node text { font: 12px system-ui, sans-serif; fill: #1e2430; pointer-events: none; }
+    .node text { font: ${unsafeCSS(LABEL_FIT.font)}; fill: #1e2430; pointer-events: none; }
     .node text.line { font-size: 11px; fill: #3a4250; }
     .node text.line .key { fill: #7a8290; }
     .node .rule { stroke: #e3e6ec; stroke-width: 1; }
@@ -186,11 +201,13 @@ export class OqxGraph extends LitElement {
   @property({ attribute: false }) armed: Candidate | null = null;
   @property({ attribute: false }) writable: string[] = [];
   @property({ attribute: false }) pending: PendingEdge[] = [];
+  /** How a card fits its label (lib/card-size.ts); the default keeps the one-line cards. */
+  @property({ attribute: "label-fit" }) labelFit: LabelFit = DEFAULT_LABEL_FIT;
 
   @state() private edges: GraphEdge[] = [];
   @state() private positioned: Positioned | null = null;
-  /** The cards as laid out (by path), from the nodes and `view.projection`. */
-  @state() private cards: Map<string, Card> = new Map();
+  /** The cards as laid out (by path), from the nodes, `view.projection` and `labelFit`. */
+  @state() private cards: Map<string, SizedCard> = new Map();
   @state() private cycles: string[][] = [];
   @state() private layoutKind: "elk" | "force" | null = null;
   @state() private busy = false;
@@ -208,6 +225,8 @@ export class OqxGraph extends LitElement {
 
   private generation = 0;
   private edgeCache = new Map<string, Promise<GraphEdge[]>>();
+  /** The label measure (a canvas in the label font), made on first use. */
+  private measureFn: Measure | null = null;
   /** The transform is the fitted one (no pan/zoom since): a resize refits. */
   private fitted = true;
   private resizeObserver: ResizeObserver | null = null;
@@ -289,8 +308,16 @@ export class OqxGraph extends LitElement {
     return orientEdge(e, this.directionFor(e.rel));
   }
 
+  /** The card for a node at the size it takes under the current label fit. */
+  private sizeCard(node: GraphNode, view: View = this.view): SizedCard {
+    this.measureFn ??= canvasMeasure();
+    const card = cardFor(node, view.projection);
+    const size = cardSize(card, this.labelFit, this.measureFn);
+    return { card, width: size.width, height: size.height, labelLines: size.lines };
+  }
+
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
-    if (changed.has("nodes") || changed.has("view") || changed.has("candidates") || changed.has("fetchEdges")) {
+    if (changed.has("nodes") || changed.has("view") || changed.has("candidates") || changed.has("fetchEdges") || changed.has("labelFit")) {
       if (changed.has("nodes") || changed.has("fetchEdges")) this.edgeCache.clear();
       void this.recompute();
     }
@@ -357,7 +384,8 @@ export class OqxGraph extends LitElement {
       const all = perRel.flat();
       const counts: Record<string, number> = {};
       names.forEach((name, i) => { counts[name] = perRel[i]!.length; });
-      const cards = new Map(nodes.map((n) => [n.path, cardFor(n, view.projection)] as const));
+      // Sized under the label fit (lib/card-size.ts): what elk / force place and the SVG draws.
+      const cards = new Map(nodes.map((n) => [n.path, this.sizeCard(n, view)] as const));
       const layoutNodes = nodes.map((n) => { const c = cards.get(n.path)!; return { id: n.path, width: c.width, height: c.height }; });
       // Laid out as drawn: the axis's edges under the chosen direction, the rest under their own.
       const drawnEdges = all.map((e) => orientEdge(e, e.rel === view.layout.axis ? view.layout.direction : (this.candidates.find((c) => c.name === e.rel)?.defaults.direction ?? "forward")));
@@ -587,17 +615,22 @@ export class OqxGraph extends LitElement {
             const dim = focus !== null && focus !== n.path && !touching.has(n.path);
             const target = arming && this.hovered === n.path && n.path !== this.selected;
             const source = editMode && this.selected === n.path;
-            const card = this.cards.get(n.path) ?? cardFor(n, this.view.projection);
-            const labelY = card.lines.length === 0 ? p.height / 2 + 4 : 20;
+            const sized = this.cards.get(n.path) ?? this.sizeCard(n);
+            const card = sized.card;
+            const labelLines = sized.labelLines;
+            // A one-line label with no field lines sits centred (the original card); otherwise
+            // the label starts at the top and every row below shifts down by the extra label lines.
+            const labelY = labelLines.length === 1 && card.lines.length === 0 ? p.height / 2 + 4 : 20;
+            const extra = (labelLines.length - 1) * LABEL_FIT.lineHeight;
             return svg`<g class="node ${this.selected === n.path ? "selected" : ""} ${inCycle.has(n.path) ? "cycle" : ""} ${dim && !target ? "dim" : ""} ${target ? "target" : ""} ${source ? "source" : ""}"
-              transform="translate(${p.x} ${p.y})" data-lines=${card.lines.length}
+              transform="translate(${p.x} ${p.y})" data-lines=${card.lines.length} data-label-lines=${labelLines.length}
               @pointerenter=${() => { this.hovered = n.path; }} @pointerleave=${() => { this.hovered = null; }}
               @click=${(ev: MouseEvent) => this.onNodeClick(ev, n)}>
               ${source ? svg`<rect class="ring" x="-4" y="-4" width=${p.width + 8} height=${p.height + 8} rx="8"></rect>` : nothing}
               <rect width=${p.width} height=${p.height}></rect>
-              <text class="label" x=${p.width / 2} y=${labelY} text-anchor="middle">${card.label}</text>
-              ${card.lines.length > 0 ? svg`<line class="rule" x1="6" x2=${p.width - 6} y1="26" y2="26"></line>` : nothing}
-              ${card.lines.map((l, i) => svg`<text class="line" x="9" y=${38 + i * 15} data-key=${l.key}><tspan class="key">${l.key}:</tspan> ${l.text}</text>`)}
+              <text class="label" x=${p.width / 2} y=${labelY} text-anchor="middle">${labelLines.map((t, i) => svg`<tspan x=${p.width / 2} y=${labelY + i * LABEL_FIT.lineHeight}>${t}</tspan>`)}</text>
+              ${card.lines.length > 0 ? svg`<line class="rule" x1="6" x2=${p.width - 6} y1=${26 + extra} y2=${26 + extra}></line>` : nothing}
+              ${card.lines.map((l, i) => svg`<text class="line" x="9" y=${38 + extra + i * 15} data-key=${l.key}><tspan class="key">${l.key}:</tspan> ${l.text}</text>`)}
               <title>${cardTooltip(n.path, card, this.view.projection)}${arming && n.path !== this.selected ? `\n${mod}-click to toggle ${this.armed!.name} with ${this.selected}` : ""}</title>
             </g>`;
           }) : nothing}

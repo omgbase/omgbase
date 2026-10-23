@@ -1,23 +1,129 @@
 # @omgbase/client
 
-**Private placeholder — not published, not functional.**
+A typed, browser-safe client, session and command layer over omgbase's **minimal MCP surface** — the ten tools an app and its elements share: `query`, `query_syntax`, `docs_read`, `docs_tree`, `blocks_resolve`, `changes_since`, `plan`, `execute`, `apply`, `version`. It depends on `@modelcontextprotocol/sdk` (and its required peer `zod`) alone; nothing from `@omgbase/core` enters a bundle built on it.
 
-`@omgbase/client` is reserved for a thin remote MCP client for omgbase: a small library that lets a program drive a remote or headless omgbase engine over the Model Context Protocol (calling the same `query`, `docs_*`, `blocks_*`, `observe*` tools an agent uses) without linking the full engine. Its implementation is deferred until omgbase has its own HTTP serving transport.
+Still `private: true` — it is consumed from the workspace while the Explorer demos (`examples/graph-ui`, `examples/repo-explorer`, `examples/live-tail`, `examples/attn`) move onto it; each of those carries its own copy of this client today.
 
-## What exists today
+The registrations in `packages/core/src/mcp/server.ts` are the wire truth this package types; `spec/surface` §4 is the contract behind them.
 
-Almost nothing, honestly:
+## Install / import
 
-- `package.json` — `"private": true`, version `0.0.0`, no dependencies, `test` and `lint` scripts that just echo.
-- `src/index.ts` — two comment lines and no exports.
+```ts
+import { OmgClient, OmgError, classifyError } from "@omgbase/client";
+import { setBlockAttr, setFrontmatter } from "@omgbase/client/effects";
+import { CommandLog, taskCheckCommand } from "@omgbase/client/commands";
+```
 
-Building the package produces an empty module. Nothing in the monorepo imports it.
+## The client
 
-## Use `omg --server` instead
+```ts
+const client = new OmgClient({
+  url: "/mcp",                 // the MCP endpoint; relative URLs resolve against the page (or `baseUrl`)
+  repo: "notes",               // optional: the slug every repo-scoped call carries unless the call names its own
+  authProvider,                // optional: the SDK's OAuthClientProvider — a 401 runs its flow, surfaced as AuthRequiredError
+  clientInfo: { name: "my-app", version: "1.0.0" },
+  onSessionLost: (e) => toast("reconnected"),
+});
+```
 
-The working remote path today is the CLI's global `--server <cmd|url>` flag, implemented in `packages/cli/src/cmd/_remote.ts` on top of `@omgbase/sync`'s `connectStdioEngine` / `connectHttpEngine`. It connects to a remote engine as an MCP client — over stdio to a spawned `omg mcp -C /path` command, or over Streamable HTTP to an `http(s)` URL (extra headers via `-H "Name: value"`) — and runs the same commands (`ls`, `cat`, `query`, `done`, `sync`, `shell`, …) against it with identically shaped results. See the [CLI README](../cli/README.md#remote-mode) and `docs/surface-map.md`.
+### Session
 
-If you need a programmatic remote client now, `@omgbase/sync` exposes the `McpEngineClient` used by `--server`; when that seam settles, it is the likely seed for this package.
+- `connect()` opens the session now (every call opens it on demand); `close()` drops it; `connected` says whether one is open.
+- **Recovery.** A Streamable HTTP server forgets a session (a proxy after its idle timeout or a restart) and answers the next POST with 404 — or relays a `-32000 unknown session` body. The SDK does not re-initialize; the client does: the failing call drops the session, opens a fresh one against the same URL and retries **once**. Concurrent failures share the one reconnect; `recoveries` counts them; `onSessionLost` fires once per recovered session. A second failure reaches the caller.
+- `finishAuth(code)` completes an OAuth redirect through the SDK transport (the OAuth implementation itself stays in the app).
+- `transportFactory` (tests) injects any `Transport` in place of the SDK's Streamable HTTP client.
+
+### Calls
+
+- `call<T>(name, args)` — any tool. Decodes the envelope (`{ content: [{ type: "text", text: <JSON> }], isError? }`), returns the parsed body (the text itself when it is not JSON), throws `OmgError` for an `isError` result. A repo-scoped tool gets the client's default `repo` unless `args.repo` names one; `repo: null` omits the argument (the server's default repo). A tool the server's profile hides is the JSON-RPC `unknown tool <name>`, surfaced as `OmgError` code `unknown_tool`.
+- `tools()` — the names the server lists.
+- `capabilities()` — one `version` + one `tools/list` per session, cached: `{ engine, version, surface, profile, tools, minimal, canWrite /* apply listed */, canPlan /* plan + execute listed */ }`.
+
+Typed methods (each sends exactly the tool's arguments, no `undefined` keys):
+
+| Method | Tool | Notes |
+| --- | --- | --- |
+| `query(oqx, { limit, cursor, bare, repo })` → `QueryResult` | `query` | a discriminated union on `consumer`: `collect`/`first`/`single` carry `hits` (and `values` for a `values` projection); `count` carries `count`; `exists`/`none` a boolean |
+| `queryAll(oqx, { max = 2000, pageSize = 500, repo })` → `Hit[]` | `query` | follows `cursor` while `truncated` |
+| `querySyntax(section?)` | `query_syntax` | the card `{ syntax, sections }`, or `{ section, syntax }` |
+| `docsRead({ _id \| _path }, { includeIds, repo })` → `DocsReadResult` | `docs_read` | `_raw`, `properties { frontmatter, inline, computed }`, `rev`; with ids: `ids`, `hashes` (the `expect.content_hash` tokens), `parents` |
+| `docsReadAt(locator, rev, { repo })` → `DocsReadAtResult` | `docs_read { at }` | bytes as of a revision; no `include_ids` |
+| `docsTree({ path, depth, files, updated, limit, cursor, budgetTokens, repo })` | `docs_tree` | directory rollup `{ prefix, depth, total, files_here, entries, truncated, cursor }` |
+| `blocksResolve(term, { limit, repo })` → `ResolveHit[]` | `blocks_resolve` | **the body is a bare array** `[{ _id, locator, preview, evidence }]` |
+| `changesSince({ cursor, limit, origin, repo })` | `changes_since` | `{ digests, cursor, truncated, head }`; `cursor`/`head` are numeric seqs; `origin` ∈ `api \| observed \| import` |
+| `apply({ effects, select, expect, reason, repo })` → `Receipt` | `apply` | `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids, committed, summary }` |
+| `plan({ effects, select, expect, diffs, repo })` → `Plan` | `plan` | `preview.summary`; `preview.diffs` only with `diffs: true` |
+| `execute({ plan_id } \| { plan_id, effects, select?, expect? } \| { plan }, reason?, repo?)` → `Receipt` | `execute` | the id form uses the server's plan memory (`plan_unknown` when it has none) |
+| `version()` → `VersionInfo` | `version` | `profile: "full" \| "minimal"` |
+
+### Errors
+
+`OmgError { code, message, data, retriable, tool, fix }` — the server's envelope plus the tool called; `fix` is `data.fix` when the engine offered a literal corrected call (a JSON string of arguments, optionally prefixed by another tool's name).
+
+`classifyError(e)` → one of seven classes a UI can act on:
+
+| Class | When |
+| --- | --- |
+| `auth` | `AuthRequiredError` / the SDK's `UnauthorizedError` |
+| `capability` | `unknown_tool` (hidden by the profile), `repo_not_found`, `provider_unavailable`, `embedder_failed`, `unsupported_plan_version` |
+| `transport` | a lost session (`isSessionLost`), a network failure — any non-SDK `Error` that is not an `OmgError` |
+| `stale` | `stale_plan`, `plan_mismatch`, `stale_expectation`, `plan_unknown` — read again and re-plan |
+| `write` | the planner's and kernel's refusals (`conflicting_effects`, `ambiguous_target`, `selection_too_large`, `type_mismatch`, `path_taken`, …), and any read-shaped code raised by `apply`/`plan`/`execute` (a `set` on a missing document, a malformed effect's `filter_invalid`) |
+| `query` | `filter_invalid`, `budget_exceeded`, `doc_missing`, `block_missing`, `target_missing`, `revision_archived`, … from a read |
+| `unknown` | an unrecognized code, an SDK `McpError` that is not `unknown tool`, a non-`Error` value |
+
+Predicates: `isSessionLost`, `isUnknownTool`, `isStale`, `isAuthRequired`, `isRepoNotFound`.
+
+## Effects (`@omgbase/client/effects`)
+
+Builders that return exactly the wire object of `plan`/`execute`/`apply.effects` (spec/mutate §11), targets in the explicit form:
+
+- targets: `documentTarget("/a.md" | { _id } | { _path })`, `blockTarget(id)`, `nodeTarget(id)`, `sectionTarget(headingId)`, `newSymbol(n)` (`$new.n`)
+- blocks: `setBlockAttr(id, "checked", value, { contentHash })`, `setBlockMarkdown(id, md, { contentHash })`, `insertMarkdown(into, at, md, { parentChildrenHash })`, `removeBlocks(ids, expectMap)`, `moveBlocks(ids, into, at, { parentChildrenHash })`
+- documents: `setFrontmatter(doc, key, value, { revision })`, `unsetFrontmatter(doc, key, { revision })`, `setContent(doc, body, { revision })`, `createDocument(path, md, frontmatter?)`, `moveDocument(doc, to, { retargetInbound })`, `removeDocument(doc)`
+
+A guard is spelled only when given: `expect: { content_hash }` for a block, `expect: { revision }` for a document, `expect: { parent_children_hash }` for a destination parent. A failed hash guard is `stale_expectation`; a failed revision guard is `stale_plan`.
+
+## Commands (`@omgbase/client/commands`)
+
+A session-local undo/redo log (nothing is persisted). Three kinds:
+
+- **`view` / `query`** commands change client state and carry `redo()` (the forward action; `run` calls it first) and `undo()` closures — `localCommand(kind, label, redo, undo, { coalesceKey })`.
+- **`repository`** commands write through `apply`:
+  - `apply(ctx, { redo, previous })` performs the write and returns `Applied { receipts, revisions, state }` — the receipts, the touched revisions, and whatever post-state the compensation needs (a block's new hash, the key's previous value). On redo it runs again with **fresh preconditions** (`previous` is what the first run applied).
+  - `compensate(ctx, applied)` is asked at undo time and must **re-check its preconditions against the current repository** — re-read the block's hash, the document's revision — returning `{ effects, reason }` to commit or `{ refused: why }` when the world moved on. Undo is a new forward write, never a rollback.
+
+`CommandLog(ctx, { limit = 200 })`:
+
+- `run(command)` — the newest history entry; consecutive commands sharing a `coalesceKey` fold into the last entry while it is still applied and unsealed (one drag = one entry with many steps). A run drops the redo stack. `seal()` ends a group.
+- `undo()` — the most recent applied (or partial) entry. A repository entry's steps are compensated **in reverse, every compensation computed first**, and committed as **one** `apply`; one refusal refuses the whole undo and leaves the entry applied (`state: "refused"`, off the undo path). A `stale` error from the commit is a refusal too; any other error leaves the entry applied with `error` recorded (retry is possible).
+- `redo()` — the most recently undone entry, every step re-applied in order with fresh preconditions.
+- `canUndo` / `canRedo` / `nextUndo` / `nextRedo` / `history` / `subscribe((event, log) => …)` (events `run`, `undo`, `redo`, `seal`, `clear`).
+
+Entry states are honest: `applied`, `partial` (a multi-step `apply` threw `PartialFailure(applied, cause)` after committing some steps — the entry is undoable over what landed; `ctx.report(progress)` is the per-step hook), `undone`, `failed` (nothing was applied; not undoable), `refused` (still applied; its compensation refused). The entry keeps the **intent** (`steps[].command`) apart from **what was applied** (`steps[].applied`) and from the undo's `compensation` receipt.
+
+Two commands every Explorer needs ship with the module:
+
+- `taskCheckCommand({ blockId, checked, contentHash, repo?, coalesceKey? })` — `set _attrs.checked` pinned to the hash the UI read (a redo re-reads it); the compensation re-reads `blocks { select _hash where _id == … }` and refuses when the block is gone or is no longer the one the write produced.
+- `frontmatterCommand({ doc, key, value, repo?, coalesceKey? })` — set (or, with `value: undefined`, unset) one key, pinned to the document's revision at read time; the compensation re-reads and refuses when the key no longer holds the value the command wrote.
+
+```ts
+const log = new CommandLog({ client });
+await log.run(taskCheckCommand({ blockId: hit._id, checked: true, contentHash: doc.hashes[hit._id] }));
+const entry = await log.undo();           // → state "undone", or "refused" with entry.refusal
+```
+
+## Facts worth knowing about the surface
+
+- Every repo-scoped tool takes an optional `repo` slug; `query_syntax` and `version` do not. An unknown slug is `repo_not_found`.
+- The error envelope always carries `retriable`.
+- `blocks_resolve` returns a bare array, not `{ hits }`.
+- `changes_since` cursors are numeric commit seqs (per repo), not strings; `docs_tree` and `query` cursors are opaque strings.
+- `execute` also accepts `select`/`expect` (the digest form) and `reason`.
+
+## Scripts
+
+`pnpm --filter @omgbase/client build | test | lint | typecheck`. The tests run the client against a fake omgbase MCP server over the SDK's `InMemoryTransport` (`src/fake-server.test-support.ts`): the ten tools, the real envelope, stale guards, and a session-loss switch.
 
 ## License
 

@@ -2,22 +2,63 @@
   "name": "@omgbase/client",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base — thin remote MCP client",
+  "description": "Open Markdown Graph Base — typed, browser-safe client, session and command layer over the minimal MCP surface (query, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/omgbase/omgbase#readme",
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "keywords": [
+    "markdown",
+    "knowledge-graph",
+    "mcp",
+    "model-context-protocol",
+    "omgbase",
+    "client",
+    "browser",
+    "undo"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo"
+  ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
+    },
+    "./commands": {
+      "import": "./dist/src/commands.js",
+      "types": "./dist/src/commands.d.ts"
+    },
+    "./effects": {
+      "import": "./dist/src/effects.js",
+      "types": "./dist/src/effects.d.ts"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'no tests yet'",
-    "lint": "echo 'no lint yet'"
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  }
 }

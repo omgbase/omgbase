@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": ".",
-    "composite": true
+    "composite": true,
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

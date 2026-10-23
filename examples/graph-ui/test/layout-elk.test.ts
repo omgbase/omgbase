@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildElkGraph, findCycles, readElkLayout } from "../src/lib/layout-elk.ts";
 import type { GraphEdge } from "../src/lib/edges.ts";
+import { cardSize, fixedMeasure } from "../src/lib/card-size.ts";
+import { cardFor } from "../src/lib/cards.ts";
 
 const N = ["a", "b", "c", "d"].map((id) => ({ id, width: 100, height: 30 }));
 const E: GraphEdge[] = [
@@ -23,6 +25,26 @@ describe("buildElkGraph", () => {
   it("reverses the axis edges for a backward relationship", () => {
     const { graph } = buildElkGraph(N, E, "backward");
     expect(graph.edges?.map((e) => [e.sources[0], e.targets[0]])).toEqual([["b", "a"], ["c", "b"]]);
+  });
+
+  it("gives every elk child the card's own size — the label fit's width and height, not a fixed box", () => {
+    const m = fixedMeasure(10);
+    const choice = { label: "title", shown: ["title"] };
+    const rows = [
+      { id: "short", title: "Kickoff" },
+      { id: "long", title: "A rather long document title that will not fit on a single card line" },
+    ];
+    for (const fit of ["truncate", "wrap", "expand"] as const) {
+      const sized = rows.map((r) => ({ id: r.id, ...cardSize(cardFor({ label: r.id, row: r }, choice), fit, m) }));
+      const { graph } = buildElkGraph(sized.map(({ id, width, height }) => ({ id, width, height })), [], "forward");
+      expect(graph.children?.map((c) => [c.id, c.width, c.height])).toEqual(sized.map((n) => [n.id, n.width, n.height]));
+    }
+    // And the fits differ where it matters: wrap is taller, expand wider, than truncate.
+    const long = cardFor({ label: "long", row: rows[1]! }, choice);
+    const t = cardSize(long, "truncate", m), w = cardSize(long, "wrap", m), x = cardSize(long, "expand", m);
+    expect(w.height).toBeGreaterThan(t.height);
+    expect(w.width).toBe(t.width);
+    expect(x.width).toBeGreaterThan(t.width);
   });
 });
 
