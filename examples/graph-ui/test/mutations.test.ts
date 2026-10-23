@@ -7,16 +7,16 @@ const beta = { id: "d_beta000", path: "timeline/beta.md" };
 
 function fakeClient(frontmatter: Record<string, Record<string, unknown>>) {
   const reads: string[] = [];
-  const writes: { doc: string; patch: unknown; repo?: string }[] = [];
+  const writes: { doc: string; effects: unknown; repo?: string }[] = [];
   const client: MetaClient = {
     async docsRead(doc) {
       reads.push(doc);
       const fm = frontmatter[doc];
       if (!fm) throw new Error(`doc_missing: ${doc}`);
-      return { properties: { frontmatter: fm } };
+      return { rev: "r_7", properties: { frontmatter: fm } };
     },
-    async docsSetMeta(doc, patch, repo) {
-      writes.push({ doc, patch, ...(repo ? { repo } : {}) });
+    async applyFrontmatter(doc, effects, repo) {
+      writes.push({ doc, effects, ...(repo ? { repo } : {}) });
       return { plan_id: "p", commit: "c_x", revisions: [{ _id: "d_x", _path: doc, _hash: "h" }], new_ids: {}, committed: true, summary: [] };
     },
   };
@@ -75,23 +75,26 @@ describe("currentFieldValue", () => {
 describe("prepareToggle + applyToggle", () => {
   const options = { shape: "list" as const, emptyListBehavior: "unset" as const };
 
-  it("plans an add from a docs_read and writes set", async () => {
+  it("plans an add from a docs_read and writes a set effect with the revision as CAS", async () => {
     const { client, writes } = fakeClient({ "timeline/beta.md": { after: ["/timeline/alpha.md"] } });
     const plan = await prepareToggle(client, { owner: beta, target: { id: "d_gamma00", path: "timeline/gamma.md" }, field: "after", present: false, form: DEFAULT_FORM, options, row: undefined, projected: false, repo: "sample" });
     expect(plan.previous).toEqual(["/timeline/alpha.md"]);
-    expect(plan.args).toEqual({ set: { after: ["/timeline/alpha.md", "/timeline/gamma.md"] } });
+    expect(plan.revision).toBe("r_7");
+    expect(plan.effects).toEqual([{ op: "set", field: "_frontmatter.after", value: ["/timeline/alpha.md", "/timeline/gamma.md"], expect: { revision: "r_7" } }]);
     await applyToggle(client, new PerKeyQueue(), plan, "sample");
-    expect(writes).toEqual([{ doc: "timeline/beta.md", patch: { set: { after: ["/timeline/alpha.md", "/timeline/gamma.md"] } }, repo: "sample" }]);
+    expect(writes).toEqual([{ doc: "timeline/beta.md", effects: plan.effects, repo: "sample" }]);
   });
 
   it("plans a remove that empties the list as unset; no-ops write nothing", async () => {
     const { client, writes } = fakeClient({});
     const row = { id: "d_beta000", path: "timeline/beta.md", after: ["/timeline/alpha.md"] };
     const plan = await prepareToggle(client, { owner: beta, target: alpha, field: "after", present: true, form: DEFAULT_FORM, options, row, projected: true });
-    expect(plan.args).toEqual({ unset: ["after"] });
+    // the value came from the row: no revision is known, so no CAS
+    expect(plan.revision).toBeNull();
+    expect(plan.effects).toEqual([{ op: "unset", field: "_frontmatter.after" }]);
     const noop = await prepareToggle(client, { owner: beta, target: alpha, field: "after", present: false, form: DEFAULT_FORM, options, row, projected: true });
     expect(noop.patch).toEqual({ kind: "noop", reason: "already present" });
-    expect(noop.args).toBeNull();
+    expect(noop.effects).toBeNull();
     expect(await applyToggle(client, new PerKeyQueue(), noop)).toBeNull();
     expect(writes).toEqual([]);
   });
@@ -99,8 +102,10 @@ describe("prepareToggle + applyToggle", () => {
 
 describe("describeMutationError", () => {
   it("adds the gateway allowlist hint to a refusal", () => {
-    expect(describeMutationError(new Error("MCP error -32602: Tool docs_set_meta not found"))).toMatch(/allowlist must include docs_set_meta/);
+    expect(describeMutationError(new Error("MCP error -32602: Tool apply not found"))).toMatch(/allowlist must include apply/);
     expect(describeMutationError(new Error("tool not allowed by policy"))).toMatch(/gateway/);
+    expect(describeMutationError(new Error("document d_x is at revision r_8, not r_7; re-plan"))).toMatch(/changed since it was read/);
+    expect(describeMutationError(Object.assign(new Error("re-plan"), { code: "stale_plan" }))).toMatch(/changed since it was read/);
   });
 
   it("passes other errors through", () => {

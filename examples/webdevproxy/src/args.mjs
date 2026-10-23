@@ -26,7 +26,9 @@ export const DEFAULT_CALLBACK_PORT = 8790;
 /** The listener binds here and nowhere else: this is a dev-only proxy. */
 export const LISTEN_HOST = "127.0.0.1";
 
-const VALUE_FLAGS = ["local", "omg", "remote", "client-id", "callback-port", "port", "path", "idle", "origin", "token-file"];
+const VALUE_FLAGS = ["local", "omg", "remote", "client-id", "callback-port", "port", "path", "idle", "origin", "token-file", "repo", "tools"];
+/** The catalog profiles `omg mcp --tools` serves. */
+export const TOOLS_PROFILES = ["full", "minimal"];
 const BOOL_FLAGS = ["logout", "no-browser", "reset-client", "help"];
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +56,8 @@ export function omgCommand(omg) {
  * @typedef {object} ProxyArgs
  * @property {string | null} local       workspace directory for `omg mcp -C <dir>`
  * @property {string} omg                the `omg` entry (`.js`) or binary
+ * @property {string | null} repo        the repository slug: local mode passes it to `omg mcp --repo`; every mode reports it on /whoami so a page can send it as the `repo` argument
+ * @property {string | null} tools       the catalog profile the local `omg mcp` serves (`--tools full|minimal`); reported on /whoami
  * @property {string | null} remote      the upstream MCP URL
  * @property {string | null} clientId    a pre-registered public OAuth client to present instead of registering one (remote mode)
  * @property {number | null} callbackPort  bind the sign-in loopback listener to this port (null: ephemeral — or DEFAULT_CALLBACK_PORT with a client id)
@@ -100,6 +104,8 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
   return {
     local: local ? resolve(local) : null,
     omg: flags.omg ?? defaultOmg(env),
+    repo: flags.repo ?? envTrim("WEBDEVPROXY_REPO"),
+    tools: flags.tools ?? envTrim("WEBDEVPROXY_TOOLS"),
     remote,
     clientId: flags["client-id"] ?? envTrim("WEBDEVPROXY_CLIENT_ID"),
     callbackPort: callbackPort === null ? null : Number(callbackPort),
@@ -123,6 +129,8 @@ export function parseArgs(argv = process.argv.slice(2), env = process.env) {
 export function validateArgs(o) {
   if (o.help || o.logout) return null;
   if (o.local && o.remote) return "--local and --remote are exclusive: proxy either a workspace or a remote, not both";
+  if (o.tools !== null && !TOOLS_PROFILES.includes(o.tools)) return `--tools must be one of ${TOOLS_PROFILES.join("|")} (got ${JSON.stringify(o.tools)})`;
+  if (o.tools !== null && !o.local) return "--tools applies to the local `omg mcp` (--local); a remote server serves its own profile";
   if (!o.local && !o.remote) return "nothing to proxy: give --local <workspace-dir> or --remote <mcp-url>";
   if (o.remote) {
     try {
@@ -149,7 +157,7 @@ export const USAGE = `webdevproxy — a development-only local web proxy for MCP
      holds your bearer tokens) !!
 
 usage:
-  webdevproxy --local <workspace-dir> [--omg <omg entry or binary>]
+  webdevproxy --local <workspace-dir> [--omg <omg entry or binary>] [--repo <slug>] [--tools full|minimal]
   webdevproxy --remote <mcp-url> [--client-id <id> [--callback-port <n>]] [--reset-client] [--no-browser] [--token-file <file>]
   webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 
@@ -157,6 +165,11 @@ options:
   --local <dir>        spawn \`omg mcp -C <dir>\` per browser session
   --omg <path>         the omg CLI: a .js entry (run with node) or a binary
                        (default: the monorepo's packages/cli build, else \`omg\` on PATH)
+  --repo <slug>        the repository: in local mode \`omg mcp --repo <slug>\` makes it the server's
+                       default; every mode reports it on /whoami, so a page whose server offers no
+                       \`repos\` tool (the minimal profile) knows which \`repo\` argument to send
+  --tools <profile>    the catalog profile the local \`omg mcp\` serves: full or minimal
+                       (\`omg mcp --tools\`; default: the workspace's setting, else full); reported on /whoami
   --remote <url>       relay to a remote MCP endpoint; the proxy is the OAuth client
   --client-id <id>     present this pre-registered public client to the issuer instead of registering
                        one dynamically (RFC 7591) — one application for every run, so an issuer that

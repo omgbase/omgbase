@@ -36,10 +36,11 @@ const NO_STREAM = /Failed to (open|reconnect) SSE stream|Maximum reconnection at
 // ---- upstreams ---------------------------------------------------------------------
 
 /** `--local`: one `omg mcp` child per session. */
-function stdioUpstream({ omg, local }) {
+function stdioUpstream({ omg, local, repo, tools }) {
   const { command, args } = omgCommand(omg);
+  const mcpArgs = ["mcp", "-C", local, ...(repo ? ["--repo", repo] : []), ...(tools ? ["--tools", tools] : [])];
   return async () => {
-    const child = new StdioClientTransport({ command, args: [...args, "mcp", "-C", local], stderr: "inherit" });
+    const child = new StdioClientTransport({ command, args: [...args, ...mcpArgs], stderr: "inherit" });
     await child.start();
     return {
       transport: child,
@@ -164,6 +165,10 @@ export async function startProxy(options = {}) {
     mode: remote ? "remote" : "local",
     upstream: remote ? remote.serverUrl : `omg mcp -C ${o.local}`,
     identity: remote ? remote.identity() : null,
+    // The repository and catalog profile the proxy was started for (`--repo`, `--tools`): a
+    // page whose server offers no `repos` tool reads the slug here.
+    repo: o.repo ?? null,
+    tools: o.tools ?? null,
     // `client`: which OAuth client the proxy presents — `--client-id` (`configured`) or the file's registration (`registered`, `id` null before the first one).
     auth: remote ? { ...remote.status, issuer: remote.status.issuer ?? remote.issuer(), client: remote.client() } : { state: "none" },
     tokenFile: remote ? remote.file : null,

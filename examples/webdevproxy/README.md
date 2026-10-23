@@ -43,6 +43,8 @@ webdevproxy --logout [--remote <mcp-url>] [--token-file <file>]
 | flag | meaning |
 | --- | --- |
 | `--local <dir>` | spawn `omg mcp -C <dir>` per browser session |
+| `--repo <slug>` | the repository: in local mode `omg mcp --repo <slug>` makes it the server's default; every mode reports it on `/whoami` (`repo`), so a page whose server offers no `repos` tool — the minimal profile — knows which `repo` argument to send (`WEBDEVPROXY_REPO`) |
+| `--tools <profile>` | the catalog profile the local `omg mcp` serves, `full` or `minimal` (`omg mcp --tools`; default: the workspace's `mcp.tools` setting, else full); reported on `/whoami` (`tools`). Local mode only (`WEBDEVPROXY_TOOLS`) |
 | `--omg <path>` | the omg CLI: a `.js` entry (run with the current `node`) or a binary; default `WEBDEVPROXY_OMG`, else the monorepo's `packages/cli/dist/src/main.js` when it exists, else `omg` on `PATH` |
 | `--remote <url>` | relay to a remote MCP endpoint (`http(s)`); the proxy signs in |
 | `--client-id <id>` | present this **pre-registered public client** to the issuer instead of registering one dynamically — one application for every run, so an issuer that caps registrations (Auth0's `too_many_entities`) never fills up; the id is configuration, not state (`--logout` and `l` keep it). Settings the application needs: [below](#a-pre-registered-client---client-id) |

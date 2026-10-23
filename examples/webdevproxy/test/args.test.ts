@@ -35,6 +35,18 @@ describe("parseArgs", () => {
     expect(parseArgs(["--logout"], {}).logout).toBe(true);
     expect(parseArgs(["--help"], {}).help).toBe(true);
   });
+
+  it("--repo and --tools: the repository and the catalog profile of the local `omg mcp`, reported on /whoami", () => {
+    const o = parseArgs(["--local", "ws", "--repo", "notes", "--tools", "minimal"], {});
+    expect(o).toMatchObject({ repo: "notes", tools: "minimal" });
+    expect(validateArgs(o)).toBeNull();
+    expect(parseArgs([], { WEBDEVPROXY_REPO: " env-repo ", WEBDEVPROXY_TOOLS: "full" })).toMatchObject({ repo: "env-repo", tools: "full" });
+    expect(parseArgs(["--local", "ws"], {})).toMatchObject({ repo: null, tools: null });
+    expect(validateArgs(parseArgs(["--local", "ws", "--tools", "tiny"], {}))).toMatch(/--tools must be one of full\|minimal/);
+    // a remote serves its own profile; the repo still travels to the page
+    expect(validateArgs(parseArgs(["--remote", REMOTE, "--tools", "minimal"], {}))).toMatch(/--tools applies to the local/);
+    expect(validateArgs(parseArgs(["--remote", REMOTE, "--repo", "notes"], {}))).toBeNull();
+  });
 });
 
 describe("validateArgs", () => {

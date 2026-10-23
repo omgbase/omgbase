@@ -6,6 +6,10 @@ export interface ProxyArgs {
   local: string | null;
   /** The `omg` entry (`.js`, run with node) or binary. */
   omg: string;
+  /** `--repo` / `WEBDEVPROXY_REPO`: the repository slug — passed to the local `omg mcp --repo`, reported on `/whoami` in every mode. */
+  repo: string | null;
+  /** `--tools` / `WEBDEVPROXY_TOOLS`: the catalog profile the local `omg mcp` serves (`"full" | "minimal"`); reported on `/whoami`. */
+  tools: string | null;
   /** The upstream MCP URL. */
   remote: string | null;
   /** `--client-id` / `WEBDEVPROXY_CLIENT_ID`: a pre-registered public OAuth client to present instead of registering one dynamically; null = register. */
@@ -37,6 +41,10 @@ export interface WhoAmI {
   mode: "local" | "remote";
   upstream: string;
   identity: Identity | null;
+  /** The repository the proxy was started for (`--repo`), or null: the server's default. */
+  repo: string | null;
+  /** The catalog profile the local `omg mcp` serves (`--tools`), or null: the server's own. */
+  tools: string | null;
   auth: {
     state: "none" | "unknown" | "ok" | "waiting" | "error";
     issuer?: string;

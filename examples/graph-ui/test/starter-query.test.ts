@@ -91,10 +91,13 @@ describe("timelineStarter", () => {
 describe("isSampleRepository", () => {
   it("is the sample slug with its timeline start document; an unanswered probe on that slug still counts", () => {
     expect(isSampleRepository(SAMPLE)).toBe(true);
-    expect(isSampleRepository({ slug: SAMPLE_REPO, hasProbeDoc: null })).toBe(true);
+    // The probe document decides: the slug is a designation the server never confirmed
+    // (no `repos` tool in the minimal profile), and a failed probe (null) is not the sample.
+    expect(isSampleRepository({ slug: SAMPLE_REPO, hasProbeDoc: null })).toBe(false);
     expect(isSampleRepository({ slug: SAMPLE_REPO, hasProbeDoc: false })).toBe(false);
     expect(isSampleRepository(NOTES)).toBe(false);
-    expect(isSampleRepository({ slug: "notes", hasProbeDoc: true })).toBe(false);
+    expect(isSampleRepository({ slug: "notes", hasProbeDoc: true })).toBe(true);
+    expect(isSampleRepository({ slug: "", hasProbeDoc: true })).toBe(true);
   });
 });
 

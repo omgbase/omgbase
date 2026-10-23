@@ -59,6 +59,10 @@ export class OqxRelationshipPicker extends LitElement {
     .badge.inferred { background: #fff8e1; color: #8d6e00; }
     .badge.orderby { background: #ede7f6; color: #4a148c; }
     .badge.builtin { background: #e8f5e9; color: #1b5e20; }
+    .badge.nested { background: #e0f2f1; color: #004d40; }
+    /* where a nested mention sits (candidates.ts rule 6): "inside reach" */
+    .inside { color: #7a8290; font-size: 11px; margin-left: 2px; white-space: nowrap; cursor: help; }
+    .inside code { font-family: ui-monospace, monospace; }
     .foot { display: flex; align-items: center; gap: 12px; padding: 6px 8px; color: #5a6270; }
     .foot select, .foot button { font: inherit; }
     .empty { padding: 8px; color: #7a8290; }
@@ -176,7 +180,9 @@ export class OqxRelationshipPicker extends LitElement {
               <tr class="cand ${armed ? "armed" : ""} ${c.pair ? "pair" : ""} ${member ? "member" : ""}" data-candidate=${c.name} @mouseenter=${() => this.hover(c)}>
                 <td><span class="swatch" style="background:${relationColor(this.candidates, c.name)}"></span><span class="name ${edgeOverridden ? "overridden" : ""}" title=${edgeOverridden ? `overridden — inferred default was ${c.defaults.edge ? "drawn" : "not drawn"}` : c.pair ? `one sequence read from both ends: \`${c.pair.forward}\` edges as authored, \`${c.pair.backward}\` edges flipped, all pointing earlier → later (recognised by ${c.pair.by === "name" ? "name" : "reciprocal rows"})` : c.name}>${c.name}</span>
                   <span class="badge">${c.kind}</span>${c.pair ? html`<span class="members">= ${c.pair.forward} ∪ ${c.pair.backward}⁻¹</span>` : nothing}</td>
-                <td>${c.sources.map((s) => html`<span class="badge ${s.replace(" ", "")}">${s}</span>`)}</td>
+                <td>${c.sources.map((s) => html`<span class="badge ${s.replace(" ", "")}">${s}</span>`)}${c.nested
+                  ? html`<span class="inside" data-nested title="mentioned inside a nested body — ${c.nested.label}; a relationship only a nested body names is listed, not drawn and never the axis">inside <code>${c.nested.label}</code></span>`
+                  : nothing}</td>
                 <td class="center">
                   <input type="checkbox" .checked=${drawn} title="draw ${c.name} as edges${count !== undefined ? ` (${count} among the shown documents)` : ""}"
                     @change=${(e: Event) => { this.overrides = withEdge(this.overrides, c.name, (e.target as HTMLInputElement).checked); }}>

@@ -40,7 +40,7 @@ describe("startProxy (local)", () => {
     const res = await fetch(`http://127.0.0.1:${proxy.port}/whoami`);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.json()).toEqual({ mode: "local", upstream: `omg mcp -C ${join(dir, "ws")}`, identity: null, auth: { state: "none" }, tokenFile: null, sessions: [] });
+    expect(await res.json()).toEqual({ mode: "local", upstream: `omg mcp -C ${join(dir, "ws")}`, identity: null, repo: null, tools: null, auth: { state: "none" }, tokenFile: null, sessions: [] });
     expect(logs.join("\n")).toMatch(/dev-only, 127\.0\.0\.1 only/);
   });
 

@@ -76,18 +76,20 @@ export function existsQuery(path: string, names: EngineNames = NAMES_5): string 
 }
 
 export interface RepositoryShape {
-  /** The connected repo's `repos` slug. */
+  /** The repository designation the page sends as `repo` ("" = the server's default; the
+   * minimal profile has no `repos` tool to list slugs, so the slug is what the user or the
+   * bridge said, not something the server confirmed). */
   slug: string;
   /** Whether `SAMPLE_PROBE_PATH` exists there; null when the probe failed. */
   hasProbeDoc: boolean | null;
 }
 
-/** The sample workspace is the sample slug WITH the timeline's start document;
+/** The sample workspace is the one holding the timeline's start document;
  * a repo under another slug, or one missing the document, is not. An
  * unanswered probe on the sample slug is taken as the sample (the default
  * query still has every chance of working there). */
 export function isSampleRepository(repo: RepositoryShape): boolean {
-  return repo.slug === SAMPLE_REPO && repo.hasProbeDoc !== false;
+  return repo.hasProbeDoc === true;
 }
 
 /** What the editor should hold once the repository is known: null = leave it

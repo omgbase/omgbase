@@ -48,6 +48,10 @@ export function devArgs(argv = process.argv.slice(2), env = process.env) {
     local: o.remote ? null : (o.local ?? WORKSPACE),
     // dev-workspace.mjs builds the sample with this `omg`; the proxy serves it with the same one.
     omg: omgGiven || merged.WEBDEVPROXY_OMG?.trim() ? o.omg : OMG,
+    // The local `omg mcp` serves the MINIMAL catalog unless told otherwise: the
+    // page is built for the ten minimal tools (query, docs_read, apply, version, …),
+    // and running it against that profile keeps it honest. `--tools full` opts out.
+    tools: o.remote ? null : (o.tools ?? "minimal"),
     proxyOnly,
   };
 }

@@ -55,9 +55,10 @@ sample*. Only *direct* is yours to choose and is never overridden.
 
 **First run against a real repository.** The sample's default query walks
 `/timeline/kickoff.md`, which your repository does not have, so the page does
-not use it there: once connected it asks `repos` for the slug and, for the
-sample slug only, probes `/timeline/kickoff.md` with one `limit 1` query
-(`lib/starter-query.ts`); any repository that is not the sample gets the
+not use it there: once connected it probes `/timeline/kickoff.md` with one
+`limit 1` query (`lib/starter-query.ts`; the server offers no `repos` tool
+under the minimal profile, so the repository is a *designation* — see
+[Data access](#data-access) — not something the page lists); any repository that is not the sample gets the
 **starter** instead — while the editor still holds a preset (the sample default
 or the starter itself), never a query you edited:
 
@@ -172,7 +173,9 @@ MCP-conformant gateway with these three behaves the same.)
 
 ```sh
 pnpm install && pnpm build          # at the repository root (the demo spawns the built `omg`)
-pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample and indexes it, starts the MCP proxy, starts Vite
+pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample and indexes it, starts the MCP proxy (omg mcp --tools minimal), starts Vite
+pnpm --filter graph-ui dev --repo notes      # the repository to query: `omg mcp --repo notes` locally, and the page sends `repo: "notes"`
+pnpm --filter graph-ui dev --tools full      # serve every tool instead of the minimal catalog (the page needs only the minimal one)
 ```
 
 Open <http://localhost:5173>. Vite proxies `/mcp` and `/whoami` to the bridge
@@ -316,9 +319,22 @@ and the dev script's arguments; the proxy's own behaviour is tested in
 ### Data access
 
 The browser only ever speaks MCP: `@modelcontextprotocol/sdk`'s `Client` over
-the **Streamable HTTP** transport, calling the `repos` and `query` tools (plus
-`tools/list`, `docs_read` and `docs_set_meta` for [editing edges](#editing-edges)).
-Nothing imports `@omgbase/core`.
+the **Streamable HTTP** transport, calling `version` (once, for the surface),
+`query` (every read: rows, edges, the sample probe) and, for [editing
+edges](#editing-edges), `docs_read` and `apply` (plus `tools/list` to see whether
+`apply` is offered). Those are all in omgbase's **minimal tool profile**
+(`omg mcp --tools minimal`: `query`, `query_syntax`, `docs_read`, `docs_tree`,
+`blocks_resolve`, `changes_since`, `plan`, `execute`, `apply`, `version`), which
+is what `pnpm dev` serves the sample under, so the demo stays honest about
+needing nothing else. Nothing imports `@omgbase/core`.
+
+**Which repository.** The minimal profile has no `repos` tool, so the page never
+lists repositories: it sends a *designation* as the `repo` argument of every
+call — the header field (persisted), else `?repo=<slug>` in the page URL, else
+the repository the bridge was started for (`pnpm dev --repo <slug>` → `omg mcp
+--repo <slug>` locally, and `/whoami` reports `repo` in every mode), else nothing
+(the server's default repo). The header says which (`repo notes · surface 5.1`,
+or `default repo · …`); an unknown slug is the server's `repo_not_found` error.
 
 The *MCP settings* panel offers three ways to reach a server:
 
@@ -632,7 +648,7 @@ selected document (`selected.before` gains the target); for a *backward* one
 (`after`, drawn target → selected) it is the clicked document (`target.after`
 gains the selected one). By default a one-line strip shows the file, the field
 and the new value before anything is written (`write /timeline/beta.md · set
-after: […] via docs_set_meta?`); untick *confirm before writing* to skip it.
+after: […] via apply (expecting revision r_…)?`); untick *confirm before writing* to skip it.
 
 **What gets written.** The field's current value comes from the result row when
 the query projected the field under its own name (`select … after`), else from
@@ -640,13 +656,19 @@ the query projected the field under its own name (`select … after`), else from
 select. A scalar field is set to the reference (or unset on remove); a list is
 appended to / filtered, order preserved, duplicates (by identity, in any
 spelling) dropped; a list that loses its last member is unset (the *emptied
-list* setting can keep `[]` instead). The call is `docs_set_meta { _path | _id, set: {
-field: value } }` or `{ _path | _id, unset: [field] }` (the document argument is
-`docLocator(doc, names)` — `{ path }`/`{ id }` on a 4.x server; a 5.0 server
+list* setting can keep `[]` instead). The call is one `apply` whose effect is
+`{ op: "set", target: { kind: "document", _path | _id }, field:
+"_frontmatter.<field>", value }` or `{ op: "unset", target, field }` (the target
+is `docLocator(doc, names)` — `{ path }`/`{ id }` on a 4.x server; a 5.0 server
 refuses the bare spelling with `filter_invalid` and a `fix`), answered with the
-Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], committed, summary }`; writes to one document are queued so
-two quick toggles cannot race (there is no CAS on `docs_set_meta`). Then the
-query re-runs and the edges are refetched.
+Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], committed, summary }`.
+When the value was read with `docs_read` the effect carries `expect: { revision }`
+— the document's revision at read time — so a document that changed in between
+fails `stale_plan` ("document … is at revision r_…, not r_…; re-plan") instead of
+being overwritten (the strip says so and the graph refreshes); a value taken
+from the result row has no revision to expect.
+Writes to one document are also queued so two quick toggles cannot race. Then
+the query re-runs and the edges are refetched.
 
 **Value form.** New references are spelled the way the field already spells
 them, inferred from its values across the rows: leading `/` or not, `.md` or
@@ -670,10 +692,10 @@ or doc ids; the tooltip says where the form came from and that a field mixing
 forms is refused).
 
 **Gateway allowlist.** Through a gateway (proxy or direct mode) the gateway's
-tool allowlist must include `docs_set_meta` (and `docs_read`, used when the
-field was not projected). The page lists the server's tools on connect and
-shows every relationship read-only when `docs_set_meta` is missing; a refusal at
-write time is reported with the same hint.
+tool allowlist must include `apply` (and `docs_read`, used when the
+field was not projected) — both in the minimal profile. The page lists the
+server's tools on connect and shows every relationship read-only when `apply` is
+missing; a refusal at write time is reported with the same hint.
 
 **Limits.** Body links (`_out_links`, `_in_links`) and derived sequences
 are read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
@@ -687,9 +709,12 @@ scalar `/people/….md`) and the list path with the default query's `after`.
 
 ## Inference rules (`src/lib/candidates.ts`)
 
-The one module that reads the AST. When omgbase ships a `query_analyze` tool
-returning candidates with roles, the page feeds that into the picker and this
-module becomes the fallback.
+The one module that reads the AST — every body of it: the top-level clauses
+and, through the generic `visit` walk (`spec/oqx/AST.md` §5), every nested
+block (a select item's value, a where-position directive, a `flatten` block, a
+destination block), since OQX 0.26 allows `follow` in each. When omgbase ships
+a `query_analyze` tool returning candidates with roles, the page feeds that
+into the picker and this module becomes the fallback.
 
 1. **`follow` destinations.** `refs(<field>)` (and `refs(^<field>)`) names the
    frontmatter relation `<field>` with direction *forward* — the frontier row
@@ -738,12 +763,39 @@ module becomes the fallback.
 5. **Inverse pairs** — see the next section: two frontmatter candidates that are
    one sequence read from both ends get a combined candidate (`before/after`,
    kind `sequence`, source `pair`) inserted just before its first member.
+6. **Nested bodies** (source `nested`). Every `follow` below the top level is
+   read by rule 1 verbatim — the per-row reach `reach: ^docs count { where
+   _path == ^_path follow distinct 0^docs { where ^_path in list(after) depth
+   4 } }` names `after`, *backward*; the nested backlinks walk `n: _in_links
+   count { follow _in_links { from _doc } }` names `_in_links`; a `before`
+   walk inside a where-position lifting `collect` names `before` — and so is
+   the **receiver** of a nested directive *where relevant*: when it names a
+   document relationship — the link rows (`n: _in_links count` → `_in_links`;
+   `desc: _out_links { from _dst follow … }` → `_out_links`), `refs(<field>)`
+   (`where refs(after) exists { … }` → `after`, *forward*: the row's own field
+   names the documents) or a root block (`^docs` / `0^docs { where … }`), read
+   through its correlated `where` exactly as a destination block is. A receiver
+   that is not a relationship — a list field (`tags`), `entries(x)`, `rows`, a
+   plain name (`jobs`) — names nothing, whatever its body does. Scoping: inside
+   a block the root collection is **not** `^docs` (that is the enclosing row, a
+   document with no `docs` property) but `0^docs` (absolute; the parser
+   desugars it to an `outer` whose `levels` is the block's depth) or `^^docs`
+   — an `outer` naming a root collection is the root scan whatever its
+   `levels`. A correlation with the frontier is an outer read exactly **one**
+   scope out of the block (`^_path`); a deeper reference (`1^_path` or
+   `^^_path` from the block) reaches an enclosing row and names no walk
+   relation. Each mention keeps its span (hovering the row highlights it) and
+   the candidate says where it sits — the select item's alias (`inside reach`),
+   `where`, `flatten`, `order by`.
 
 Defaults: a pair is drawn and its members are not; otherwise every `follow`
 candidate is drawn; inferred fields are drawn only when the query has no
 `follow`; the builtin `_out_links` is drawn only when nothing else is (no
 `follow`, no inferred field); `_in_links` and sequences are never drawn by
-default. The layout axis is the first pair, else the first `follow` candidate,
+default. A candidate whose only source is `nested` is listed but not drawn and
+never the axis; one mentioned both at the top level and nested keeps the
+top-level defaults, and the builtin rule looks at the top-level `follow`
+alone (a nested walk does not switch the link graph off). The layout axis is the first pair, else the first `follow` candidate,
 else the first sequence key, else the first inferred field (timeline words
 first), else none (force) — a builtin is never the axis. Overrides live beside
 the view (`src/lib/view.ts`), as the projection's do ([Choosing what a card
@@ -835,11 +887,17 @@ engine's own `refs(<field>)` when no bare destination names the field.
   kinder to tools.
 - **`@omgbase/fs-adapter` crashes on `EPIPE`** when its parent `omg mcp` exits
   (noise in the bridge log, not a UI gap).
-- **No CAS on `docs_set_meta`.** The patch is merged into whatever the file
-  holds when it lands; the UI serializes its own writes per document but cannot
-  detect a concurrent edit (an `expect: { rev }` like the block ops' `expect`
-  would). There is also no server-side list toggle (`add`/`remove` a member),
-  so the client reads the whole value, edits it, and writes it back.
+- ~~**No CAS on `docs_set_meta`.**~~ Closed by writing through `apply`: a
+  `set`/`unset` effect takes `expect: { revision }`, so a document that changed
+  since it was read fails `stale_plan`. Still open: there is no
+  server-side list toggle (`add`/`remove` a member), so the client reads the
+  whole value, edits it, and writes it back — and a value taken from the result
+  row carries no revision to expect.
+- **No `repos` in the minimal profile.** The page cannot list repositories, so
+  the repository is a designation it is told (`--repo`, the header field,
+  `?repo=`); a wrong slug is only discovered as `repo_not_found` on the first
+  call. A `version`-sized "which repo am I on" answer (the root row's `_id`
+  and slug) would let the page confirm it.
 - **No inverse-field knowledge.** Editing `after` does not maintain `before`;
   a field definition with `inverse_of` would let the UI (or the engine) keep both
   — and would replace the pair detection in `candidates.ts` (vocabulary plus
@@ -864,6 +922,21 @@ cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.
 
 ## Verified headlessly
+
+Minimal profile (2026-10-23; the TS `omg` at surface 5.1 / `omgbase` 0.26.2,
+the proxy started by `dev.mjs --proxy-only --repo sample` — so `omg mcp -C
+.dev-workspace --repo sample --tools minimal` — and a Node script issuing the
+page's exact MCP calls against it): `/whoami` reported `repo: "sample", tools:
+"minimal"`; `tools/list` was the ten minimal tools (no `repos`, no
+`docs_set_meta`); `version` answered `surface 5.1`, `profile minimal`; the
+default query returned 9 rows with `repo: "sample"`; `docs_read` of `loop-a.md`
+gave its `rev`; `apply { effects: [{ op: "set", target: { kind: "document",
+_path }, field: "_frontmatter.after", value, expect: { revision } }] }`
+committed (Receipt `revisions[0]._path = /timeline/loop-a.md`); the same effect
+replayed with the now-stale revision was refused `stale_plan` ("document … is
+at revision r_…, not r_…; re-plan"); `unset` with the fresh revision restored
+the file; a `repos` call was `unknown tool`; `repo: "nope"` was
+`repo_not_found`. The browser flow itself was not re-driven for this change.
 
 Surface 5.0 (2026-10-20; the TS `omg` at surface 5.0 / `omgbase` 0.26.1; Chrome
 `--headless=new` over CDP, the dev flow as documented — `dev:workspace --force`,

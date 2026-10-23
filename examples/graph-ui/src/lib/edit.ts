@@ -1,6 +1,6 @@
 // Edge editing — the pure half. Which relationships can be written, who owns
 // the edge, what shape and spelling the new value takes, and the exact
-// `docs_set_meta` patch for one toggle. Nothing here talks to a server; the
+// `apply` effects for one toggle. Nothing here talks to a server; the
 // page (app.ts) and lib/mutations.ts do the I/O.
 //
 // Rules:
@@ -217,14 +217,14 @@ export type Editability =
   | { writable: false; reason: string };
 
 /** Rule 1 + rule 3 for one candidate. `serverCanWrite` is false when the server
- * (or the gateway in front of it) does not offer `docs_set_meta`. */
+ * (or the gateway in front of it) does not offer `apply`. */
 export function editability(c: Pick<Candidate, "name" | "kind"> & { pair?: Pick<InversePair, "forward" | "backward"> }, rows: readonly Row[], serverCanWrite = true): Editability {
   if (c.kind === "links" || c.kind === "backlinks") return { writable: false, reason: "links live in the body" };
   // The combined pair is both fields read one way; the edit belongs to a field.
   if (c.pair) return { writable: false, reason: `edit \`${c.pair.forward}\` or \`${c.pair.backward}\` directly` };
   if (c.kind === "sequence") return { writable: false, reason: `derived from order by ${c.name}` };
   if (c.name.includes(".") || c.name.startsWith("$") || c.name.startsWith("_")) return { writable: false, reason: "not a frontmatter field" };
-  if (!serverCanWrite) return { writable: false, reason: "the server offers no docs_set_meta tool (a gateway's tool allowlist must include it)" };
+  if (!serverCanWrite) return { writable: false, reason: "the server offers no apply tool (a gateway's tool allowlist must include it)" };
   const values = fieldValues(rows, c.name);
   if (values.length > 0 && !allRefs(values)) return { writable: false, reason: "values are not document references" };
   const form = inferRefForm(values);
@@ -316,10 +316,23 @@ export function planToggle(current: unknown, target: DocRef, present: boolean, f
   return { kind: "refuse", reason: `the field holds a ${typeof current} value, not a reference` };
 }
 
-/** The `docs_set_meta` arguments for a patch (null when nothing is written). */
-export function setMetaArgs(field: string, patch: Patch): { set: Record<string, unknown> } | { unset: string[] } | null {
-  if (patch.kind === "set") return { set: { [field]: patch.value } };
-  if (patch.kind === "unset") return { unset: [field] };
+/** One `apply` effect on the owner document — the target is added by the
+ * client, which knows the server's spelling of the locator. `expect.revision`
+ * is the CAS: the write fails `stale_plan` when the document moved on
+ * since it was read. */
+export interface FrontmatterEffect {
+  op: "set" | "unset";
+  field: string;
+  value?: unknown;
+  expect?: { revision: string };
+}
+
+/** The `apply` effects for a patch (null when nothing is written): `set` /
+ * `unset` of `_frontmatter.<field>`, with the revision CAS when one is known. */
+export function frontmatterEffects(field: string, patch: Patch, revision: string | null = null): FrontmatterEffect[] | null {
+  const expect = revision ? { expect: { revision } } : {};
+  if (patch.kind === "set") return [{ op: "set", field: `_frontmatter.${field}`, value: patch.value, ...expect }];
+  if (patch.kind === "unset") return [{ op: "unset", field: `_frontmatter.${field}`, ...expect }];
   return null;
 }
 

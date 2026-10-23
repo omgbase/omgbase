@@ -174,10 +174,6 @@ export class OmgClient {
     return body as T;
   }
 
-  repos(): Promise<{ repos: { slug: string; hasSource: boolean }[] }> {
-    return this.call("repos", {});
-  }
-
   /** The tool names the server (or the gateway in front of it) offers. */
   async tools(): Promise<string[]> {
     const { tools } = await this.withSession((client) => client.listTools());
@@ -193,12 +189,15 @@ export class OmgClient {
     return this.call("docs_read", { ...locator, ...(repo ? { repo } : {}) });
   }
 
-  /** `docs_set_meta`: set and/or unset frontmatter keys on one document (its
-   * argument from `docLocator`; re-ingested server-side; no CAS). The result
-   * is the Receipt — `{ plan_id, commit, revisions: [{ _id, _path, _hash }],
-   * committed, summary }` (lib/shapes.ts `docOpOf`). */
-  docsSetMeta(locator: Record<string, string>, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string): Promise<Record<string, unknown>> {
-    return this.call("docs_set_meta", { ...locator, ...patch, ...(repo ? { repo } : {}) });
+  /** `apply`: plan and commit effects in one call (spec/surface §4; the one
+   * write tool of the minimal profile). The demo's effects are `set` / `unset`
+   * of `_frontmatter.<key>` on a document target (`{ kind: "document", _id |
+   * _path }` from `docLocator`), each with `expect: { revision }` when the
+   * document's revision is known — the CAS `docs_set_meta` never had. The
+   * result is the Receipt — `{ plan_id, commit, revisions: [{ _id, _path,
+   * _hash }], committed, summary }` (lib/shapes.ts `docOpOf`). */
+  apply(effects: Record<string, unknown>[], opts: { repo?: string; reason?: string } = {}): Promise<Record<string, unknown>> {
+    return this.call("apply", { effects, ...(opts.reason ? { reason: opts.reason } : {}), ...(opts.repo ? { repo: opts.repo } : {}) });
   }
 
   version(): Promise<Record<string, unknown>> {

@@ -3,7 +3,7 @@ import { parse } from "@omgbase/oqx";
 import { inferCandidates, type Candidate, type Row } from "../src/lib/candidates.ts";
 import {
   DEFAULT_FORM, ID_FORM, classifyRef, dedupeRefs, describeForm, describePatch, dominantForm, editability, formatRef, inferRefForm, inferShape,
-  isDocId, ownerFor, planToggle, projectedFields, refKey, refValuedFields, sameRef, setMetaArgs, type RefForm,
+  isDocId, ownerFor, planToggle, projectedFields, refKey, refValuedFields, sameRef, frontmatterEffects, type RefForm,
 } from "../src/lib/edit.ts";
 
 const alpha = { id: "d_alpha00", path: "timeline/alpha.md" };
@@ -129,10 +129,10 @@ describe("editability (rule 1)", () => {
     expect(editability(cand("before"), [])).toEqual({ writable: true, form: ROOTED, shape: "list", formSource: "default" });
   });
 
-  it("is read-only when the server offers no docs_set_meta", () => {
+  it("is read-only when the server offers no apply tool", () => {
     const e = editability(cand("after"), rows, false);
     expect(e.writable).toBe(false);
-    if (!e.writable) expect(e.reason).toMatch(/docs_set_meta.*allowlist/);
+    if (!e.writable) expect(e.reason).toMatch(/apply.*allowlist/);
   });
 });
 
@@ -204,11 +204,13 @@ describe("planToggle (rule 4)", () => {
     expect(dedupeRefs(["/a.md", "a.md", "/b.md", "d_0", "b"])).toEqual(["/a.md", "/b.md", "d_0"]);
   });
 
-  it("setMetaArgs and describePatch", () => {
-    expect(setMetaArgs("after", { kind: "set", value: ["/x.md"] })).toEqual({ set: { after: ["/x.md"] } });
-    expect(setMetaArgs("after", { kind: "unset" })).toEqual({ unset: ["after"] });
-    expect(setMetaArgs("after", { kind: "noop", reason: "r" })).toBeNull();
-    expect(setMetaArgs("after", { kind: "refuse", reason: "r" })).toBeNull();
+  it("frontmatterEffects and describePatch", () => {
+    expect(frontmatterEffects("after", { kind: "set", value: ["/x.md"] })).toEqual([{ op: "set", field: "_frontmatter.after", value: ["/x.md"] }]);
+    expect(frontmatterEffects("after", { kind: "unset" })).toEqual([{ op: "unset", field: "_frontmatter.after" }]);
+    // the revision read with the value is the CAS
+    expect(frontmatterEffects("after", { kind: "set", value: "/x.md" }, "r_7")).toEqual([{ op: "set", field: "_frontmatter.after", value: "/x.md", expect: { revision: "r_7" } }]);
+    expect(frontmatterEffects("after", { kind: "noop", reason: "r" })).toBeNull();
+    expect(frontmatterEffects("after", { kind: "refuse", reason: "r" })).toBeNull();
     expect(describePatch(beta, "after", { kind: "set", value: ["/x.md"] }, ["/y.md"])).toBe('timeline/beta.md · set after: ["/x.md"] (was ["/y.md"])');
     expect(describePatch(beta, "after", { kind: "unset" }, "/x.md")).toBe('timeline/beta.md · unset after (was "/x.md")');
     expect(describePatch(beta, "after", { kind: "noop", reason: "already present" }, undefined)).toBe("timeline/beta.md · after unchanged — already present");

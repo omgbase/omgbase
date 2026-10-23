@@ -5,10 +5,12 @@
 //   pnpm --filter graph-ui dev                                   # the local sample (builds ./sample into .dev-workspace first)
 //   pnpm --filter graph-ui dev --remote https://mcp.example.com/omg   # proxy to a remote omg MCP; the proxy signs in for you
 //   pnpm --filter graph-ui dev:mcp [--remote <url>]              # the proxy alone (= `dev --proxy-only`)
+//   pnpm --filter graph-ui dev --repo <slug>                      # the repository to serve/query (the page sends it as `repo`)
+//   pnpm --filter graph-ui dev --tools full                       # the local `omg mcp` serves every tool (default: minimal)
 //   env: WEBDEVPROXY_REMOTE=<url> (or the older GRAPH_UI_REMOTE) is the same as --remote
 //
 // The proxy's flags (--remote, --no-browser, --token-file, --port, --path,
-// --idle, --origin, --omg; this demo's --workspace <dir> = --local) are consumed
+// --idle, --origin, --omg, --repo, --tools; this demo's --workspace <dir> = --local) are consumed
 // here; everything else (e.g. --open, --host) goes to Vite. The proxy's port and
 // path reach vite.config.ts through WEBDEVPROXY_PORT / WEBDEVPROXY_PATH.
 

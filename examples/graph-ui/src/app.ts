@@ -31,7 +31,7 @@ import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
 import { projectionOf, type Projection } from "./lib/projection.ts";
 import { edgeQueries, edgesFromRows, type GraphEdge } from "./lib/edges.ts";
-import { describePatch, editability, projectedFields, type Editability, type EmptyListBehavior } from "./lib/edit.ts";
+import { describePatch, editability, projectedFields, type Editability, type EmptyListBehavior, type FrontmatterEffect } from "./lib/edit.ts";
 import { PerKeyQueue, applyToggle, describeMutationError, prepareToggle, type TogglePlan } from "./lib/mutations.ts";
 import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSettings } from "./lib/mcp-client.ts";
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
@@ -41,7 +41,7 @@ import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
 import { docLocator, hitId, hitPath, namesFor, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
 import { DEFAULT_QUERY } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
-import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
+import { SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
 import { emptyStateText, firstWhereText, missingPathLiterals, pathLiterals, type EmptyState } from "./lib/empty-state.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
@@ -129,6 +129,11 @@ function loadSettings(): McpSettings {
       directUrl: saved.directUrl ?? DEFAULT_SETTINGS.directUrl,
       repo: saved.repo ?? DEFAULT_SETTINGS.repo,
     };
+    // `?repo=<slug>` in the page URL names the repository for this visit (a
+    // hosted deployment or a shared link whose server has no `repos` tool);
+    // it is kept in the settings like a typed one.
+    const fromUrl = typeof location === "undefined" ? null : new URL(location.href).searchParams.get("repo");
+    if (fromUrl !== null && fromUrl.trim()) s.repo = fromUrl.trim();
     // Settings written before modes existed had one `url`.
     if (saved.url && saved.mode === undefined) {
       if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(saved.url)) s.bridgeUrl = saved.url;
@@ -152,7 +157,11 @@ const parseError = signal<OqxErrorInfo | null>(null);
 const rows = signal<Row[]>([]);
 const truncated = signal(false);
 const queryError = signal<string | null>(null);
-const repos = signal<string[]>([]);
+/** The repository designation sent as the `repo` argument of every call: the
+ * settings' override, else the one the bridge was started for (`/whoami`
+ * `repo`, from `--repo`), else "" — the server's default repo. The minimal
+ * profile has no `repos` tool, so the page never lists repositories. */
+const repoInUse = computed<string>(() => settings.get().repo || bridge.get()?.repo || "");
 const connection = signal<"idle" | "connecting" | "ok" | "error" | "sign-in">("idle");
 const connectionMessage = signal<string>("");
 const identity = signal<Identity | null>(null);
@@ -207,7 +216,7 @@ const repoShape = signal<RepositoryShape | null>(null);
 
 /** The server's tool names (null until listed, or when listing failed — then assume the full set). */
 const tools = signal<string[] | null>(null);
-const canWrite = computed<boolean>(() => tools.get()?.includes("docs_set_meta") ?? true);
+const canWrite = computed<boolean>(() => tools.get()?.includes("apply") ?? true);
 const editable = computed<Record<string, Editability>>(() =>
   Object.fromEntries(candidates.get().map((c) => [c.name, editability(c, rows.get(), canWrite.get())])));
 const writable = computed<string[]>(() => Object.entries(editable.get()).filter(([, e]) => e.writable).map(([name]) => name));
@@ -307,12 +316,12 @@ function watchBridgeSignIn(): void {
       connection.set("error");
       connectionMessage.set(`bridge sign-in failed: ${info.auth.error ?? "unknown error"}`);
     } else if (connection.get() !== "ok") {
-      void refreshRepos();
+      void connectServer();
     }
   }, 1500);
 }
 
-async function refreshRepos(): Promise<void> {
+async function connectServer(): Promise<void> {
   const s = settings.get();
   const url = serverUrl.get();
   if (!url) {
@@ -339,10 +348,7 @@ async function refreshRepos(): Promise<void> {
     // speaks surface 3.0 and later (5.0's `_`-prefixed engine names, the bare
     // ones before — `names`) and says so, loudly, when the server does not —
     // instead of drawing a silently empty graph. A server without the tool is older still.
-    const [{ repos: list }, surface] = await Promise.all([
-      c.repos(),
-      c.version().then(surfaceOf, () => null),
-    ]);
+    const surface = await c.version().then(surfaceOf, () => null);
     const problem = surfaceProblem(surface);
     if (problem) {
       connection.set("error");
@@ -350,14 +356,13 @@ async function refreshRepos(): Promise<void> {
       return;
     }
     serverSurface.set(surface);
-    repos.set(list.map((r) => r.slug));
-    // Which tools the server (or the gateway in front of it) offers decides whether edges can be edited.
+    // Which tools the server (or the gateway in front of it) offers decides whether edges can be edited (`apply`).
     c.tools().then((names) => tools.set(names), () => tools.set(null));
-    if (!list.some((r) => r.slug === s.repo)) settings.set({ ...settings.get(), repo: list[0]?.slug ?? "" });
     if (s.mode === "direct") identity.set(providerFor(url).identity());
     else { const info = await refreshBridge(); if (info?.identity) identity.set(info.identity); }
     connection.set("ok");
-    connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"} · surface ${surface}`);
+    const repo = repoInUse.get();
+    connectionMessage.set(`${repo ? `repo ${repo}` : "default repo"} · surface ${surface}`);
   } catch (e) {
     if (e instanceof AuthRequiredError) return; // the browser is on its way to the authorization server
     if (s.mode !== "direct") {
@@ -383,7 +388,6 @@ function disconnect(): void {
   void client?.close();
   client = null;
   identity.set(null);
-  repos.set([]);
   rows.set([]);
   emptyResult.set(null);
   repoShape.set(null);
@@ -422,7 +426,7 @@ async function finishSignIn(): Promise<boolean> {
 /** Does `path` exist in the current repository? null when the probe failed. */
 async function docExists(path: string): Promise<boolean | null> {
   try {
-    const r = await clientFor(serverUrl.get()).query(existsQuery(path, names.get()), { repo: settings.get().repo, limit: 1 });
+    const r = await clientFor(serverUrl.get()).query(existsQuery(path, names.get()), { repo: repoInUse.get(), limit: 1 });
     return r.hits.length > 0;
   } catch {
     return null;
@@ -430,11 +434,12 @@ async function docExists(path: string): Promise<boolean | null> {
 }
 
 let probeGeneration = 0;
-/** Which repository this is: the sample (its slug AND its timeline start
- * document present — one `limit 1` query) or another one. */
+/** Which repository this is: the sample (its timeline start document present
+ * — one `limit 1` query) or another one. The slug is only a designation: with
+ * no `repos` tool (the minimal profile) the probe document is what decides. */
 async function detectRepository(repo: string): Promise<void> {
   const gen = ++probeGeneration;
-  const hasProbeDoc = repo === SAMPLE_REPO ? await docExists(SAMPLE_PROBE_PATH) : false;
+  const hasProbeDoc = await docExists(SAMPLE_PROBE_PATH);
   if (gen !== probeGeneration) return;
   repoShape.set({ slug: repo, hasProbeDoc });
 }
@@ -442,16 +447,15 @@ async function detectRepository(repo: string): Promise<void> {
 let runGeneration = 0;
 async function runQuery(): Promise<void> {
   const q = ast.get();
-  const s = settings.get();
   const url = serverUrl.get();
   const text = source.get();
-  if (!q || !s.repo || !url) return;
+  if (!q || !url || serverSurface.get() === null) return;
   const gen = ++runGeneration;
   queryError.set(null);
   querying.set(true);
   let empty: EmptyState | null = null;
   try {
-    const result = await clientFor(url).query(text, { repo: s.repo, limit: 200 });
+    const result = await clientFor(url).query(text, { repo: repoInUse.get(), limit: 200 });
     if (gen !== runGeneration) return;
     truncated.set(result.truncated);
     // An empty result clears the graph (an empty result must not look like a
@@ -474,21 +478,22 @@ async function runQuery(): Promise<void> {
 
 /** The graph's edge source: generated OQX over the link rows (`links { … }`) via the `query` tool. */
 async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphEdge[]> {
-  const s = settings.get();
   const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths, names.get())) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
+  for (const q of edgeQueries(candidate, paths, names.get())) all.push(...(await clientFor(url).queryAll(q, { repo: repoInUse.get() })));
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
 /** The edit tools with the document argument spelled for the server (`{ _id }`
  * or `{ _path }` — `{ id }`/`{ path }` on 4.x; lib/paths.ts `docLocator`); the
- * plans and the graph speak rooted paths. */
+ * plans and the graph speak rooted paths. A write is one `apply` whose effects
+ * target the owner document (`{ kind: "document", … }`). */
 function metaClientFor(url: string) {
   const c = clientFor(url);
   return {
     docsRead: (doc: string, repo?: string) => c.docsRead(docLocator(doc, names.get()), repo),
-    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(docLocator(doc, names.get()), patch, repo),
+    applyFrontmatter: (doc: string, effects: FrontmatterEffect[], repo?: string) =>
+      c.apply(effects.map((e) => ({ ...e, target: { kind: "document", ...docLocator(doc, names.get()) } })), { ...(repo ? { repo } : {}), reason: "graph-ui edge toggle" }),
   };
 }
 
@@ -504,7 +509,6 @@ async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
     editMessage.set({ kind: "error", text: `${candidate.name} is read-only: ${ed?.reason ?? "unknown relationship"}` });
     return;
   }
-  const s = settings.get();
   editBusy.set(true);
   try {
     const plan = await prepareToggle(metaClientFor(serverUrl.get()), {
@@ -516,7 +520,7 @@ async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
       options: { shape: ed.shape, emptyListBehavior: editSettings.get().emptyListBehavior },
       row: owner.row,
       projected: projectedFields(ast.get()).includes(candidate.name),
-      ...(s.repo ? { repo: s.repo } : {}),
+      ...(repoInUse.get() ? { repo: repoInUse.get() } : {}),
     });
     if (plan.patch.kind === "noop" || plan.patch.kind === "refuse") {
       editMessage.set({ kind: plan.patch.kind === "noop" ? "info" : "error", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
@@ -539,7 +543,7 @@ async function writeToggle(plan: TogglePlan): Promise<void> {
   pending.set([...pending.get(), preview]);
   editBusy.set(true);
   try {
-    await applyToggle(metaClientFor(serverUrl.get()), mutations, plan, settings.get().repo || undefined);
+    await applyToggle(metaClientFor(serverUrl.get()), mutations, plan, repoInUse.get() || undefined);
     editMessage.set({ kind: "info", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
     settlePending = true;
     await runQuery();
@@ -579,14 +583,14 @@ void (async () => {
     last = key;
     discovery.set(null);
     serverSurface.set(null); // unknown until the new server answers `version`
-    void refreshRepos();
+    void connectServer();
   });
-  // Which repository: re-probed whenever the repo or the connection changes.
+  // Which repository: re-probed whenever the repo designation or the connection changes.
   effect(() => {
-    const repo = settings.get().repo;
+    const repo = repoInUse.get();
     const surface = serverSurface.get();
     repoShape.set(null);
-    if (!repo || surface === null) return;
+    if (surface === null) return;
     void detectRepository(repo);
   });
   // The preset query follows the repository AND the server's spelling: the
@@ -613,8 +617,8 @@ void (async () => {
   });
   effect(() => {
     const q = ast.get();
-    const repo = settings.get().repo;
-    if (!q || !repo) return;
+    repoInUse.get(); // a changed designation re-runs the query
+    if (!q || serverSurface.get() === null) return;
     void runQuery();
   });
 })();
@@ -628,6 +632,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #e3e6ec; }
     header h1 { font-size: 15px; margin: 0; font-weight: 600; }
     header .spacer { flex: 1; }
+    header input.repo { font: inherit; width: 11em; margin-left: 4px; }
     header .conn { font-size: 12px; color: #5a6270; }
     header .conn.error { color: #c62828; }
     header .conn.sign-in { color: #b26a00; }
@@ -747,7 +752,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     settings.set({ ...s, mode }); // to or from direct: the URL effect reconnects
     // local ↔ proxy is the same bridge: ask it again who it is — the mode
     // follows its answer, so picking the wrong one of the two snaps back.
-    if (mode !== "direct" && s.mode !== "direct") void refreshRepos();
+    if (mode !== "direct" && s.mode !== "direct") void connectServer();
   }
 
   private connect(): void {
@@ -756,7 +761,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const url = (this.urlDraft ?? current).trim();
     this.urlDraft = null;
     if (url !== current) settings.set(s.mode === "direct" ? { ...s, directUrl: url } : { ...s, bridgeUrl: url }); // the URL effect reconnects
-    else void refreshRepos();
+    else void connectServer();
   }
 
   private renderBridgeHint(info: BridgeInfo | null, mode: McpMode) {
@@ -825,7 +830,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     if (!a && !p && !m && Object.keys(editable.get()).length === 0) return nothing;
     return html`<section class="edit">
       ${p ? html`<div class="strip">
-        <span>write <code>${describePatch(p.owner, p.field, p.patch, p.previous)}</code> via <code>docs_set_meta</code>?</span>
+        <span>write <code>${describePatch(p.owner, p.field, p.patch, p.previous)}</code> via <code>apply</code>${p.revision ? html` (expecting revision <code>${p.revision}</code>)` : ""}?</span>
         <button ?disabled=${busy} @click=${() => { void writeToggle(p); }}>apply</button>
         <button ?disabled=${busy} @click=${() => proposal.set(null)}>cancel</button>
       </div>` : nothing}
@@ -867,10 +872,9 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <h1>omgbase graph UI</h1>
         <span class="conn ${conn === "error" ? "error" : conn === "sign-in" ? "sign-in" : ""}">${headerLabel(s.mode, info, shownUrl)} · ${connText}${who?.email ? ` · ${who.email}` : ""}</span>
         <span class="spacer"></span>
-        <label>repo
-          <select .value=${s.repo} @change=${(e: Event) => settings.set({ ...settings.get(), repo: (e.target as HTMLSelectElement).value })}>
-            ${repos.get().map((slug) => html`<option value=${slug} ?selected=${slug === s.repo}>${slug}</option>`)}
-          </select>
+        <label title="the repository sent as the repo argument of every call; empty = what the bridge was started for (--repo), else the server's default">repo
+          <input class="repo" type="text" .value=${s.repo} placeholder=${info?.repo ?? "server default"} spellcheck="false"
+            @change=${(e: Event) => settings.set({ ...settings.get(), repo: (e.target as HTMLInputElement).value.trim() })}>
         </label>
       </header>
       <main>

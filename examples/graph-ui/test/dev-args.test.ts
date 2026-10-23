@@ -8,6 +8,11 @@ describe("devArgs", () => {
   it("defaults to the sample workspace served by the monorepo's omg on 8787 and keeps Vite's flags in rest", () => {
     const o = devArgs(["--open", "--host"], {});
     expect(o).toMatchObject({ local: WORKSPACE, omg: OMG, remote: null, port: 8787, path: "/mcp", idleSeconds: 3600, proxyOnly: false, logout: false, rest: ["--open", "--host"] });
+    // the local sample is served under the MINIMAL catalog unless told otherwise; a remote serves its own
+    expect(o.tools).toBe("minimal");
+    expect(devArgs(["--tools", "full"], {}).tools).toBe("full");
+    expect(devArgs(["--repo", "notes"], {})).toMatchObject({ repo: "notes", tools: "minimal" });
+    expect(devArgs(["--remote", REMOTE], {}).tools).toBeNull();
   });
   it("names a remote instead of the workspace, spells --workspace as the proxy's --local, and strips --proxy-only", () => {
     const r = devArgs(["--remote", REMOTE, "--port", "9000", "--no-browser", "--token-file", "/t.json", "--open"], {});

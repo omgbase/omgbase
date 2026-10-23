@@ -64,23 +64,46 @@
 //        member field instead); hovering it highlights both members. When the
 //        repository's field definitions carry `inverse_of`, that is the source
 //        of truth and this detection becomes the fallback.
+//   6. NESTED bodies — OQX 0.26 allows `follow` in every body, so the generic
+//        walk (`visit`, spec/oqx/AST.md §5) reads every nested block too: a
+//        nested `follow`'s destinations by rule 1 verbatim (`reach: ^docs count
+//        { … follow 0^docs { where ^_path in list(after) } }` → `after`
+//        backward), and the RECEIVER of a nested directive when it names a
+//        document relationship — the link rows (`n: _in_links count` →
+//        `_in_links`), `refs(<field>)` (`where refs(after) exists { … }` →
+//        `after` forward) or a root block (`^docs` / `0^docs { where … }`, read
+//        through its correlated `where` exactly as a destination block is). A
+//        receiver that is not a relationship (`tags`, `entries(x)`, `rows`,
+//        `jobs`) names nothing, whatever its body re-projects. Scoping: inside
+//        a block the root is NOT `^docs` (that is the enclosing row) but
+//        `0^docs` (absolute; the parser desugars it to an `outer` whose
+//        `levels` is the block's depth) or `^^docs` — an `outer` naming a root
+//        collection is the root scan whatever its `levels`. A correlation with
+//        the FRONTIER is an outer read exactly ONE scope out of the block
+//        (`^_path`); a deeper reference (`1^_path`, `^^_path` from the block)
+//        reaches an enclosing row and names no walk relation. Source `nested`,
+//        labelled with where the mention sits (the select item's alias,
+//        `where`, `flatten`, `order by`).
 // Edge default: a pair is drawn and its members are not; otherwise every
 // `follow` candidate is drawn; inferred path fields are drawn only when the
 // query has no `follow`; the builtin `_out_links` is drawn only when nothing
 // else is (no follow, no inferred field); `_in_links` and sequence candidates
 // are never drawn by default. Layout default: the first pair, else the first follow
 // candidate, else the first sequence key, else the first inferred field
-// (timeline words first), else none (force) — a builtin is never the axis.
+// (timeline words first), else none (force) — a builtin is never the axis. A
+// candidate whose ONLY source is `nested` is listed, not drawn and never the
+// axis; one also mentioned at the top level keeps the top-level defaults, and
+// the builtin rule (4) looks at the top-level `follow` alone.
 //
 // A `refs(before)` candidate IS the `before` candidate: same name, same kind,
 // merged with the inferred one from the rows, written the same way (lib/edit.ts
 // looks only at name, kind and the rows).
 
-import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
+import { visit, type AstNode, type Expr, type Follow, type OpNode, type Query, type Span, type Where } from "@omgbase/oqx";
 import { HIT_ENVELOPE_KEYS, NAMES_4, NAMES_5, hitPath, isEngineAttribute, rowRef, type EngineNames } from "./paths.ts";
 
 export type Direction = "forward" | "backward";
-export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
+export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair" | "nested";
 export type CandidateKind =
   | "frontmatter" // a frontmatter relation: link rows whose authored `field` == name
   | "links" // _out_links (the walk `_out_links { from _dst }`) — authored links
@@ -109,6 +132,10 @@ export interface Candidate {
   defaults: { edge: boolean; layout: boolean; direction: Direction };
   /** Set on a combined inverse-pair candidate (rule 5): its two member fields. */
   pair?: InversePair;
+  /** Set when a mention sits in a nested body (rule 6): where — the select
+   * item's alias (`reach`), `where`, `flatten`, `order by`; several places
+   * joined by `, `. The picker shows it as "inside `reach`". */
+  nested?: { label: string };
 }
 
 export type Row = Record<string, unknown>;
@@ -182,7 +209,14 @@ interface Mention {
   source: CandidateSource;
   span: Span;
   direction: Direction;
+  /** The nested body the mention sits in (source `nested` only). */
+  nested?: string;
 }
+
+/** The host's root collections (spec/surface §1): an `outer` naming one of
+ * these is the root scan whatever its `levels` — `^docs` from a top-level row,
+ * `0^docs` / `^^docs` from inside a block (rule 6). */
+const ROOT_COLLECTIONS = new Set(["docs", "blocks", "nodes", "links", "revisions"]);
 
 /** The pure inference. `query` may be null (unparsable source) — rows alone
  * still yield inferred candidates. `names` spells the builtin candidates for
@@ -198,6 +232,7 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = [], 
       }
     }
   }
+  if (query) mentions.push(...nestedMentions(query));
   for (const name of pathValuedFields(rows)) {
     mentions.push({
       name, kind: "frontmatter", source: "inferred", span: [0, 0],
@@ -317,15 +352,23 @@ function merge(mentions: Mention[]): Candidate[] {
     if (existing) {
       if (!existing.sources.includes(m.source)) existing.sources.push(m.source);
       if (m.span[1] > m.span[0]) existing.spans.push(m.span);
+      if (m.nested !== undefined) existing.nested = { label: joinLabels(existing.nested?.label, m.nested) };
       continue;
     }
     byName.set(key, {
       name: m.name, kind: m.kind, sources: [m.source],
       spans: m.span[1] > m.span[0] ? [m.span] : [],
       defaults: { edge: false, layout: false, direction: m.direction },
+      ...(m.nested !== undefined ? { nested: { label: m.nested } } : {}),
     });
   }
   return [...byName.values()];
+}
+
+/** `a, b` — the nested places a candidate is mentioned in, deduped, in order. */
+function joinLabels(existing: string | undefined, label: string): string {
+  const parts = existing === undefined ? [] : existing.split(", ");
+  return parts.includes(label) ? existing! : [...parts, label].join(", ");
 }
 
 function roleDefaults(candidates: Candidate[]): Candidate[] {
@@ -439,6 +482,77 @@ function destinationBlockMentions(op: OpNode): Mention[] {
   return out;
 }
 
+// ---- nested bodies (rule 6) ---------------------------------------------------
+
+/** Every mention in a NESTED body: the destinations of every `follow` below
+ * the top level (read by `followMentions`, rule 1 verbatim) and the receiver
+ * of every nested directive that names a document relationship (read by
+ * `destinationBlockMentions`: the link rows, `refs(<field>)`, a root block
+ * through its correlated `where`). The top-level `follow` is rule 1's; the
+ * directives it already read through a destination block's `where` are not
+ * read twice. Each mention is labelled with the body it sits in. */
+function nestedMentions(query: Query): Mention[] {
+  const out: Mention[] = [];
+  const covered = new Set<AstNode>();
+  if (query.follow) for (const dest of query.follow.destinations) if (dest.kind === "op") cover(dest, covered);
+  visit(query, {
+    enter(node, ctx) {
+      const parent = ctx.path[ctx.path.length - 1];
+      if (node.kind === "follow") {
+        if (parent?.kind === "query") return; // rule 1 read it
+        const label = nestedLabel(ctx.path, node);
+        for (const m of followMentions(node)) out.push({ ...m, source: "nested", nested: label });
+        for (const dest of node.destinations) if (dest.kind === "op") cover(dest, covered);
+        return;
+      }
+      if (node.kind !== "op" || parent?.kind === "follow" || covered.has(node)) return;
+      if (!namesRelationship(node.receiver)) return;
+      const label = nestedLabel(ctx.path, node);
+      for (const m of destinationBlockMentions(node)) out.push({ ...m, source: "nested", nested: label });
+      cover(node, covered);
+    },
+  });
+  return out;
+}
+
+/** Mark a block and the directives `destinationBlockMentions` reads inside its
+ * `where` (through `forEachOp`) as read. */
+function cover(op: OpNode, covered: Set<AstNode>): void {
+  covered.add(op);
+  if (op.sub.where) forEachOp(op.sub.where, (inner) => covered.add(inner));
+}
+
+/** Does a directive's receiver name a document relationship — the link rows
+ * (`_in_links`, `$it._out_links`, `^links`), `refs(<field>)`, or a root
+ * collection (`^docs`, `0^docs`, `^^docs` — any `levels`)? A list field
+ * (`tags`), `entries(x)`, `rows`, `jobs` do not. */
+function namesRelationship(receiver: Expr): boolean {
+  if (linkRowsReceiver(receiverPath(receiver)) !== null) return true;
+  if (refsField(receiver) !== null) return true;
+  return receiver.kind === "outer" && ROOT_COLLECTIONS.has(receiver.name);
+}
+
+/** Where a nested node sits, for the picker: the alias of the select item
+ * whose value the body is (`reach`; `select` when unaliased), else `where`
+ * (a where-position directive, `having` too), `flatten`, `order by`,
+ * `group by`, `frontier` — the innermost such place. */
+function nestedLabel(path: readonly AstNode[], node: AstNode): string {
+  let child: AstNode = node;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const p = path[i]!;
+    if (p.kind === "field" || p.kind === "collect") return p.name || "select";
+    if (p.kind === "flatten") return "flatten";
+    if (p.kind === "order") return "order by";
+    if (p.kind === "key") return "group by";
+    if (p.kind === "query" || p.kind === "subquery") {
+      if (p.where === child || p.having === child) return "where";
+      if (p.frontier === child) return "frontier";
+    }
+    child = p;
+  }
+  return "query";
+}
+
 /** The link-row attributes whose literal names a frontmatter relation, in both spellings. */
 const LINK_FIELD_NAMES = [NAMES_5.field, "_predicate", NAMES_4.field, "predicate"];
 
@@ -465,8 +579,11 @@ export function refsField(expr: Expr): { name: string; outer: boolean } | null {
 
 // ---- AST helpers (public AST only) -----------------------------------------
 
-/** Does the body's `where` compare a property with an outer reference anywhere
- * (`^path in list(after)`, `after.contains(^path)`, `path in ^before`)? */
+/** Does the body's `where` compare a property with the FRONTIER anywhere
+ * (`^path in list(after)`, `after.contains(^path)`, `path in ^before`)? The
+ * frontier is exactly one scope out of the block's rows; a deeper reference
+ * (`^^_path`, `1^_path` from a depth-3 block) reaches an enclosing row and is
+ * a filter, not the walk's relation. */
 function correlatesWithOuter(where: Where): boolean {
   let found = false;
   forEachScalar(where, (expr) => {
@@ -509,9 +626,10 @@ function walk(expr: Expr, f: (e: Expr) => void): void {
   for (const c of children(expr)) walk(c, f);
 }
 
+/** Does the expression read the row one scope out (`^name`, `levels` 1)? */
 function mentionsOuter(expr: Expr): boolean {
   let found = false;
-  walk(expr, (e) => { if (e.kind === "outer") found = true; });
+  walk(expr, (e) => { if (e.kind === "outer" && e.levels === 1) found = true; });
   return found;
 }
 
@@ -524,11 +642,12 @@ function rowProps(expr: Expr): string[] {
   return [...new Set(names)];
 }
 
-/** `^name` reads that are properties (not `^path`-style attributes). */
+/** `^name` reads of the row one scope out that are properties (not
+ * `^path`-style attributes); deeper reads (`^^before`) are not the frontier's. */
 function outerProps(expr: Expr): string[] {
   const names: string[] = [];
   walk(expr, (e) => {
-    if (e.kind === "outer" && !isAttributeName(e.name)) names.push(e.name);
+    if (e.kind === "outer" && e.levels === 1 && !isAttributeName(e.name)) names.push(e.name);
   });
   return [...new Set(names)];
 }

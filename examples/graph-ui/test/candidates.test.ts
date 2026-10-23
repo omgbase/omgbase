@@ -423,3 +423,127 @@ describe("refsField / relationKind", () => {
     expect(["before", "owner", "meta.rel"].map(relationKind)).toEqual(["frontmatter", "frontmatter", "frontmatter"]);
   });
 });
+
+describe("nested bodies (rule 6) — OQX 0.26 allows `follow` in every body", () => {
+  const brief = (c: ReturnType<typeof inferCandidates>) => c.map((x) => [x.name, x.kind, x.sources, x.defaults.direction, x.nested?.label ?? null]);
+
+  it("reads the per-row reach metric: the nested `0^docs { where ^_path in list(after) }` walk names `after` backward, inside `reach` — listed, undrawn, never the axis; the builtins stay", () => {
+    const src = `docs { select _path, _title, reach: ^docs count { where _path == ^_path follow distinct 0^docs { where ^_path in list(after) depth 4 } } }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)).toEqual([
+      ["after", "frontmatter", ["nested"], "backward", "reach"],
+      ["_out_links", "links", ["builtin"], "forward", null],
+      ["_in_links", "backlinks", ["builtin"], "backward", null],
+    ]);
+    const after = c[0]!;
+    expect(after.defaults).toEqual({ edge: false, layout: false, direction: "backward" });
+    expect(after.spans.map((s) => src.slice(...s))).toEqual(["^_path in list(after)"]);
+    // No top-level follow: the builtin link graph is offered as before and `_out_links` is still the one drawn; nothing is the axis.
+    expect(c.map((x) => x.defaults.edge)).toEqual([false, true, false]);
+    expect(c.some((x) => x.defaults.layout)).toBe(false);
+  });
+
+  it("reads the nested backlinks walk `n: _in_links count { follow _in_links { from _doc } }`: one `_in_links` candidate from the receiver and the walk, merged with the builtin", () => {
+    const src = `docs { select _path, n: _in_links count { follow _in_links { from _doc } } }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)).toEqual([
+      ["_in_links", "backlinks", ["nested", "builtin"], "backward", "n"],
+      ["_out_links", "links", ["builtin"], "forward", null],
+    ]);
+    // the receiver and the destination are both mentions; the label is not repeated
+    expect(c[0]!.spans.map((s) => src.slice(...s))).toEqual(["_in_links", "_in_links"]);
+    expect(c[0]!.defaults).toEqual({ edge: false, layout: false, direction: "backward" });
+    expect(c[1]!.defaults.edge).toBe(true);
+  });
+
+  it("reads a where-position lifting collect: the `before` walk inside `^docs { ^reach: _path … follow 0^docs { where _path in ^before } }` is forward, inside `where`", () => {
+    const src = `docs { where ^docs { ^reach: _path where _path == "/x.md" follow distinct 0^docs { where _path in ^before depth 3 } } and _path in reach }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)[0]).toEqual(["before", "frontmatter", ["nested"], "forward", "where"]);
+    expect(c[0]!.spans.map((s) => src.slice(...s))).toEqual(["_path in ^before"]);
+    expect(c.map((x) => x.name)).toEqual(["before", "_out_links", "_in_links"]);
+    // `^_path in list(before)` reads the same relation the other way round: the candidate's `before` names the frontier.
+    const back = inferCandidates(parse(`docs { where ^docs { ^reach: _path where _path == "/x.md" follow 0^docs { where ^_path in list(before) } } and _path in reach }`), []);
+    expect(brief(back)[0]).toEqual(["before", "frontmatter", ["nested"], "backward", "where"]);
+    // A body that reads only the candidate's own properties (`_path in list(before)`: its path against its own list) correlates with
+    // nothing, so it names no walk relation — the reader cannot classify it.
+    const own = inferCandidates(parse(`docs { where ^docs { ^reach: _path where _path == "/x.md" follow 0^docs { where _path in list(before) } } and _path in reach }`), []);
+    expect(own.map((x) => x.name)).toEqual(["_out_links", "_in_links"]);
+  });
+
+  it("reads a links walk nested in a select block whose receiver is the links relation: `desc: _out_links { from _dst follow _out_links { from _dst depth 2 } }` — one `_out_links`, still drawn by the builtin rule", () => {
+    const src = `docs { select _path, desc: _out_links { from _dst follow _out_links { from _dst depth 2 } } }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)).toEqual([
+      ["_out_links", "links", ["nested", "builtin"], "forward", "desc"],
+      ["_in_links", "backlinks", ["builtin"], "backward", null],
+    ]);
+    expect(c[0]!.spans.map((s) => src.slice(...s))).toEqual(["_out_links", "_out_links"]);
+    expect(c[0]!.defaults).toEqual({ edge: true, layout: false, direction: "forward" });
+  });
+
+  it("reads the receiver of a nested directive with no follow when it names a relationship: `n: _in_links count`, `where refs(after) exists { … }`, a correlated root block", () => {
+    const count = inferCandidates(parse(`docs { select _path, n: _in_links count }`), []);
+    expect(brief(count)).toEqual([
+      ["_in_links", "backlinks", ["nested", "builtin"], "backward", "n"],
+      ["_out_links", "links", ["builtin"], "forward", null],
+    ]);
+    const src = `docs { where refs(after) exists { _path == "/x.md" } }`;
+    const refs = inferCandidates(parse(src), []);
+    expect(brief(refs)[0]).toEqual(["after", "frontmatter", ["nested"], "forward", "where"]);
+    expect(refs[0]!.spans.map((s) => src.slice(...s))).toEqual(["refs(after)"]);
+    expect(refs[0]!.defaults).toEqual({ edge: false, layout: false, direction: "forward" });
+    // `^docs exists { after.contains(^_path) }` in where position: the other document's `after` names this row — backward.
+    const root = inferCandidates(parse(`docs { where ^docs exists { after.contains(^_path) } }`), []);
+    expect(brief(root)[0]).toEqual(["after", "frontmatter", ["nested"], "backward", "where"]);
+    // in a select item the alias is the label; `refs(after)` is the row's own field, forward
+    const sel = inferCandidates(parse(`docs { select _path, a: refs(after) collect { _title } }`), []);
+    expect(brief(sel)[0]).toEqual(["after", "frontmatter", ["nested"], "forward", "a"]);
+    // a flatten block over the link rows: the receiver names the links, a `_field` literal the relation, both inside `flatten`
+    const flat = inferCandidates(parse(`docs { select _path flatten _out_links { where _field == "owner" } as l }`), []);
+    expect(brief(flat)).toEqual([
+      ["_out_links", "links", ["nested", "builtin"], "forward", "flatten"],
+      ["owner", "frontmatter", ["nested"], "backward", "flatten"],
+      ["_in_links", "backlinks", ["builtin"], "backward", null],
+    ]);
+  });
+
+  it("keeps the top-level defaults when the same relation is also mentioned nested, and unions the sources", () => {
+    const src = `docs { select _path, n: _in_links count { follow _in_links { from _doc } } follow _in_links { from _doc } }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)).toEqual([["_in_links", "backlinks", ["follow", "nested"], "backward", "n"]]);
+    expect(c[0]!.defaults).toEqual({ edge: true, layout: true, direction: "backward" });
+    expect(c[0]!.spans).toHaveLength(3);
+    // with a top-level follow there is no builtin pair, nested walks or not
+    expect(c.some((x) => x.sources.includes("builtin"))).toBe(false);
+    // a nested mention in two places lists both
+    const two = inferCandidates(parse(`docs { select _path, n: _in_links count where _in_links exists { _field == "x" } }`), []);
+    expect(two.find((x) => x.name === "_in_links")!.nested).toEqual({ label: "n, where" });
+  });
+
+  it("yields no candidate for a nested body over a non-relation receiver: a list field, entries(), rows, a plain name, an uncorrelated structural walk", () => {
+    const only = ["_out_links", "_in_links"];
+    expect(inferCandidates(parse(`docs { select _path, t: tags count, e: entries(meta) collect { key }, j: jobs collect { where x == 1 } }`), []).map((x) => x.name)).toEqual(only);
+    expect(inferCandidates(parse(`docs { select phase, n: rows count { where x == 1 } group by phase }`), []).map((x) => x.name)).toEqual(only);
+    expect(inferCandidates(parse(`docs { select _path, j: jobs collect { follow $it._blocks { where kind == "x" } } }`), []).map((x) => x.name)).toEqual(only);
+    // a nested root block whose where does not correlate with the enclosing row names nothing either
+    expect(inferCandidates(parse(`docs { select _path, n: 0^docs count { where phase == "x" } }`), []).map((x) => x.name)).toEqual(only);
+  });
+
+  it("reads outer references by their levels relative to the block: `0^docs` / `^^docs` are the root, `^_path` the frontier, `1^_path` from a depth-3 block an enclosing row (no walk relation)", () => {
+    const src = `docs { select _path, r: ^docs count { where 1^_path == _path follow ^^docs { where ^_path in list(after) and 1^_path in list(see_also) } } }`;
+    const c = inferCandidates(parse(src), []);
+    expect(brief(c)).toEqual([
+      ["after", "frontmatter", ["nested"], "backward", "r"],
+      ["_out_links", "links", ["builtin"], "forward", null],
+      ["_in_links", "backlinks", ["builtin"], "backward", null],
+    ]);
+    expect(c[0]!.spans.map((s) => src.slice(...s))).toEqual(["^_path in list(after)"]);
+    // the same walk spelled with the absolute root and the frontier's own field: forward
+    const fwd = inferCandidates(parse(`docs { select _path, r: ^docs count { where _path == ^_path follow 0^docs { where _path in ^before } } }`), []);
+    expect(brief(fwd)[0]).toEqual(["before", "frontmatter", ["nested"], "forward", "r"]);
+    // `^^links` / `0^links` from a block are the link rows; a `_predicate` literal under them names the relation
+    const links = inferCandidates(parse(`docs { select _path, r: ^docs count { where 0^links exists { _predicate == "owner" && _dst_path == ^_path } } }`), []);
+    expect(brief(links)[0]).toEqual(["owner", "frontmatter", ["nested"], "forward", "r"]);
+  });
+});

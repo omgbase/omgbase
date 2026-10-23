@@ -88,7 +88,7 @@ export function docOf(d: Wire): GraphToolDoc | null {
   return { id, path: rooted(path), degree: num(d.degree), frontier: d.frontier === true, fields };
 }
 
-// ---- docs_read / docs_set_meta -------------------------------------------------------
+// ---- docs_read / apply -----------------------------------------------------------------
 
 /** `docs_read`: `{ _id, _path, rev, properties, _raw }` (4.x: `{ id, path, rev, properties, raw }`). */
 export interface DocRead {
@@ -111,8 +111,8 @@ export function docReadOf(r: Wire): DocRead {
   };
 }
 
-/** A document write's result — `docs_set_meta`, `docs_create`, `docs_append`, …
- * are sugar over `apply`, so they answer with the RECEIPT (spec/surface §4,
+/** A document write's result — `apply` (and the full profile's sugar over it,
+ * `docs_set_meta`, `docs_create`, …) answers with the RECEIPT (spec/surface §4,
  * spec/mutate §11): `{ plan_id, commit, revisions: [{ _id, _path, _hash }],
  * new_ids, committed, summary }` (4.x: `revisions: [{ id, path, hash }]`). The
  * demo reads the one document it wrote: the first revision's identity. */
