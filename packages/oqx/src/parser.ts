@@ -24,16 +24,26 @@
 // that destination's block, whose body admits two clauses no other block has —
 // `frontier P` and `depth n`, in the clause order after `where`.
 //
-// Every clause is optional except that a top-level body needs `from` (the
-// receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
-// source itself, so its block's `from` is an optional re-projection). Only
+// A query names its source BEFORE its body (0.26, the collection-scoped form):
+// `<collection> [<consumer>] [distinct] { body }` — the receiver supplies the
+// rows, so the body never names its source and its `from` is the re-projection
+// (a flatMap). The clause form `select … from S …` is still read as the same
+// tree (its top-level body needs `from`); the printer never writes it. Only
 // `select` may drop its keyword, and only when it is the first clause written
-// (`name, age from people`); every other clause always carries its keyword. A
-// BLOCK may instead lead with a predicate (since 0.17): a leading expression that
-// is syntactically a predicate — not a bare name, a dotted navigation or a lift —
-// opens a `where`-first body (`people exists { age > 50 }`); at the top level a
-// leading predicate is still an error, since `where` would precede `from`. An
+// (`people { name, age }`); every other clause always carries its keyword. A
+// body with a receiver may instead lead with a predicate (since 0.17): a
+// leading expression that is syntactically a predicate — not a bare name, a
+// dotted navigation or a lift — opens a `where`-first body (`people { age > 50
+// }`, `people exists { age > 50 }`); at the clause form's top level a leading
+// predicate is still an error, since `where` would precede `from`. An
 // out-of-order clause is a parse error naming the order.
+//
+// Two 0.26 shapes desugar HERE as well: a consumer word with no block is the
+// directive over the empty block (`jobs first` ≡ `jobs first { }`, `jobs count
+// > 1`, `_nodes exists`; a consumer word right after a complete receiver can be
+// nothing else), and a projection-only block over a `collect`/`first`/`single`
+// directive whose block projects nothing is that directive's projection
+// (`jobs[0] { name }` ≡ `jobs first { name offset 0 }`, `mergeProjectionBlock`).
 //
 // Sugar (0.17) desugars HERE, to existing nodes: `x { … }` is `x collect { … }`
 // wherever a value stands (a select item, a where leaf, a follow destination, a
@@ -87,6 +97,7 @@ import type {
 } from "./ast.ts";
 import { AGGREGATE_NAMES, isAggregateName } from "./ast.ts";
 import { resolveSelect, resolveWhere } from "./resolve.ts";
+import { visit } from "./walk.ts";
 import { printTemplate } from "./print.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
@@ -170,6 +181,30 @@ interface BodyClauses {
   offset: Expr | null;
 }
 
+/** The clauses of an omitted block (`jobs first` — the empty block `{ }`). */
+function emptyBody(): BodyClauses {
+  return { froms: [], where: null, select: [], orderBy: null, follow: null, frontier: null, depth: null, flatten: [], groupBy: null, having: null, distinct: false, values: false, limit: null, offset: null };
+}
+
+/** The names a projection would shadow in a `where` of the same body: every
+ * item's name except a plain self-projection (`pay: pay`, `pay`), which
+ * substitutes a name for itself. */
+function shadowingNames(items: SelectItem[]): string[] {
+  return items
+    .filter((it) => it.name !== "" && !(it.kind === "field" && it.lift === 0 && it.expr.kind === "ident" && it.expr.name === it.name))
+    .map((it) => it.name);
+}
+
+/** Whether a bare identifier anywhere under `w` has one of `names` (the alias
+ * guard of the projection-block merge; conservative: nested blocks included). */
+function readsAnyOf(w: Where, names: string[]): boolean {
+  const wanted = new Set(names.filter((n) => n !== ""));
+  if (wanted.size === 0) return false;
+  let found = false;
+  visit(w, { enter(node) { if (node.kind === "ident" && wanted.has(node.name)) found = true; return !found; } });
+  return found;
+}
+
 // A copy of a node with another span (a parenthesized operand takes the span of
 // its parentheses).
 function withSpan<T extends { span: Span }>(node: T, span: Span): T {
@@ -188,6 +223,11 @@ class Parser {
    * top-level row's clauses, one deeper per block body and per follow `where`.
    * An absolute reference `N^name` reads `depth − N` scopes out. */
   private depth = 0;
+  /** Whether a consumer word with no block is read as a directive over the
+   * empty block (`jobs first` ≡ `jobs first { }`, since 0.26). Off only while
+   * the clause form's top-level `from` expression is read, so `from people
+   * count` keeps its whole-query hint (a count is never a source). */
+  private bareDirectives = true;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -230,9 +270,10 @@ class Parser {
     const start = this.start();
     // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
     let directive = this.tryOp(false);
-    if (directive && !this.at("eof") && (this.at("lbracket") || this.atValueDirective())) {
+    if (directive && !this.at("eof") && (this.at("lbracket") || this.atBlock() !== null)) {
       // A longer chain whose outermost node is still a directive
-      // (`people first { } first { }` — how `people[p][0]` prints back).
+      // (`people first { } first { }` — how `people[p][0]` prints back; a block
+      // over the directive, `people[0] { name }`, merges into it, 0.26).
       const save = this.pos;
       try {
         const e = this.parsePostfix(directive);
@@ -264,7 +305,7 @@ class Parser {
     const body = this.parseBody(TOP_CTX);
     if (!this.at("eof")) this.fail(`unexpected ${this.tokDesc()} after the query — nothing may follow the last clause`);
     if (body.froms.length === 0) {
-      this.fail("a query must name its source with `from <collection>` (or be `<collection> <consumer> { … }`)");
+      this.fail("a query must name its source before its body: `<collection> { … }` (or `<collection> <consumer> { … }`; the clause form `select … from <collection> …` is still read)");
     }
     return {
       kind: "query",
@@ -350,7 +391,12 @@ class Parser {
       if (this.at("kw", "from")) {
         enter("from");
         this.next();
-        froms.push(this.parseValueExpr());
+        // At the clause form's top level a consumer word after the source is the
+        // whole-query mistake (`from people count`): kept as the hint below,
+        // not read as a braceless directive (a count is never a source).
+        const bare = this.bareDirectives;
+        if (ctx.top) this.bareDirectives = false;
+        try { froms.push(this.parseValueExpr()); } finally { this.bareDirectives = bare; }
         continue;
       }
       if (this.at("kw", "where")) {
@@ -980,7 +1026,7 @@ class Parser {
       for (const it of items) {
         if (it.name === "") {
           if (it.kind === "collect") this.fail("a nested block in a projection needs a name (`name: <relation> collect { … }`); as a predicate, a consumer test is written `where <relation> exists { … }`");
-          if (ctx.top) this.fail("a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` after `from` — at the top level a predicate is never implicit (the clause order puts `from` first)");
+          if (ctx.top) this.fail("a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `<collection> { <predicate> }`, or write `where …` after `from` — at the top level of the clause form a predicate is never implicit (the clause order puts `from` first)");
           this.fail("an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` after the projection (a block may lead with a predicate only when nothing is projected: `{ age > 18 }`)");
         }
         const key = `${"^".repeat(it.kind === "field" ? it.lift : 0)}${it.name}`;
@@ -1009,8 +1055,9 @@ class Parser {
       this.next(); // ':'
       const op = this.tryOp(false);
       if (op) {
-        // `name: jobs first { }.pay`: the directive is the head of a longer value.
-        if (this.atScalarContinuation() || this.atValueDirective()) return this.finishItem(name, this.parseOr(op), lift, start);
+        // `name: jobs first { }.pay`: the directive is the head of a longer value
+        // (a block over it, `jobs[0] { name }`, merges into it — 0.26).
+        if (this.atScalarContinuation() || this.atBlock() !== null) return this.finishItem(name, this.parseOr(op), lift, start);
         if (op.op !== "collect" && op.op !== "first" && op.op !== "single" && op.op !== "count") {
           this.fail(`projection '${name}' must use collect/first/single/count, not ${op.op} (exists/none are where-position tests; \`count { … }\` is a value since 0.24)`);
         }
@@ -1267,13 +1314,18 @@ class Parser {
   }
 
   // The cursor is at a consumer word that opens a block — `<op> {` or
-  // `<op> distinct {`. Consumes nothing.
+  // `<op> distinct {` — or, since 0.26, at the word alone: a consumer word
+  // right after a complete receiver can be nothing else (OQX never places two
+  // operands side by side), and it reads as the directive over the empty block
+  // (`jobs first` ≡ `jobs first { }`, `_nodes exists`, `jobs count > 1`). The
+  // braceless reading is off only inside the clause form's top-level `from`
+  // (`bareDirectives`). Consumes nothing.
   private atConsumerBlock(): Consumer | null {
     if (!this.at("ident") || !CONSUMERS.has(this.peek().value)) return null;
     const after = this.peekAt(1);
     const opThenBrace = after?.type === "lbrace";
     const opDistinctBrace = after?.type === "ident" && after.value === "distinct" && this.peekAt(2)?.type === "lbrace";
-    return opThenBrace || opDistinctBrace ? (this.peek().value as Consumer) : null;
+    return opThenBrace || opDistinctBrace || this.bareDirectives ? (this.peek().value as Consumer) : null;
   }
 
   // `[<op>] [distinct] { <sub> }` over an already-parsed receiver; the cursor is
@@ -1285,20 +1337,32 @@ class Parser {
     if (this.at("ident") && CONSUMERS.has(this.peek().value)) this.next(); // the consumer word (absent for `x { … }`)
     let distinct = false;
     if (this.at("ident", "distinct")) { this.next(); distinct = true; }
-    const lbrace = this.next().pos; // '{'
-    const defer = this.deferLookup;
-    this.deferLookup = false;
-    // The receiver was read at the enclosing depth; the block's rows are one deeper.
-    const body = this.atDepth(this.depth + 1, () => this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect", destination }));
-    this.deferLookup = defer;
-    if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
-    this.next();
-    // `x collect distinct { group by k }`: the directive's distinct is as
-    // redundant as the body's own (checked in parseBody).
-    if (distinct && body.groupBy) this.failAt(body.groupBy.span[0], DISTINCT_WITH_GROUP);
+    let body: BodyClauses;
+    let subSpan: Span;
+    if (this.at("lbrace")) {
+      const lbrace = this.next().pos; // '{'
+      const defer = this.deferLookup;
+      this.deferLookup = false;
+      // The receiver was read at the enclosing depth; the block's rows are one deeper.
+      body = this.atDepth(this.depth + 1, () => this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect", destination }));
+      this.deferLookup = defer;
+      if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
+      this.next();
+      // `x collect distinct { group by k }`: the directive's distinct is as
+      // redundant as the body's own (checked in parseBody).
+      if (distinct && body.groupBy) this.failAt(body.groupBy.span[0], DISTINCT_WITH_GROUP);
+      subSpan = this.sp(lbrace);
+    } else {
+      // A consumer word with no block (0.26) is the directive over the empty
+      // block `{ }` — the word was written (only a brace makes a bare
+      // `collect`), so nothing more is consumed; the block spans nothing, at
+      // the end of the word.
+      body = emptyBody();
+      subSpan = [this.end(), this.end()];
+    }
     const sub: Subquery = {
       kind: "subquery",
-      span: this.sp(lbrace),
+      span: subSpan,
       from: body.froms,
       where: body.where,
       select: body.select,
@@ -1313,7 +1377,34 @@ class Parser {
       limit: body.limit,
       offset: body.offset,
     };
-    return { kind: "op", span: this.sp(startPos), receiver, op, sub, countCmp: null, distinct: distinct || body.distinct };
+    return this.mergeProjectionBlock(receiver, op, distinct || body.distinct, sub, startPos);
+  }
+
+  // A projection-only block over a `collect`/`first`/`single` directive whose
+  // own block projects nothing IS that directive's projection (0.26):
+  // `jobs[0] { name }` ≡ `jobs first { name offset 0 }`, `jobs[p] { name }` ≡
+  // `jobs first { name where p }`, `jobs[0] { }` ≡ `jobs[0]`. The outer items
+  // are read on the very rows the inner block filtered, at the same depth, so
+  // the merge is exact — except when the outer block carries a clause of its
+  // own (those run AFTER the pick: `jobs[0] { name where pay > 2 }` is the
+  // first job, kept only if it pays), when the inner directive dedups
+  // (`distinct` compares the projection), or when an outer alias would shadow a
+  // bare name the inner `where` reads (`jobs[pay > 2] { pay: employer }`): then
+  // the two directives stay.
+  private mergeProjectionBlock(receiver: Expr, op: Consumer, distinct: boolean, sub: Subquery, startPos: number): OpNode {
+    const plain: OpNode = { kind: "op", span: this.sp(startPos), receiver, op, sub, countCmp: null, distinct };
+    if (receiver.kind !== "op" || op !== "collect") return plain;
+    const inner = receiver;
+    if ((inner.op !== "collect" && inner.op !== "first" && inner.op !== "single") || inner.distinct || inner.countCmp !== null) return plain;
+    if (inner.sub.select.length > 0 || inner.sub.values) return plain;
+    const projectionOnly = sub.from.length === 0 && sub.where === null && sub.orderBy === null && sub.follow === null && sub.frontier === null
+      && sub.depth === null && sub.flatten.length === 0 && sub.groupBy === null && sub.having === null && sub.limit === null && sub.offset === null;
+    if (!projectionOnly) return plain;
+    if (inner.sub.where && readsAnyOf(inner.sub.where, shadowingNames(sub.select))) return plain;
+    return {
+      kind: "op", span: this.sp(startPos), receiver: inner.receiver, op: inner.op, countCmp: null, distinct,
+      sub: { ...inner.sub, select: sub.select, values: sub.values, span: [inner.sub.span[0], sub.span[1]] },
+    };
   }
 
   // A tuple `(e1, e2, …)` at the cursor's `(` (0.20): two or more comma-separated

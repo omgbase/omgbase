@@ -9,15 +9,15 @@ describe("edgeQueries", () => {
     const qs = edgeQueries({ name: "before", kind: "frontmatter" }, paths);
     expect(qs).toHaveLength(3);
     for (const q of qs) expect(() => parse(q)).not.toThrow();
-    expect(qs[0]).toMatch(/^select src: _path, dst: _dst_path from links where _field == "before" && _provenance == "frontmatter" && \(_path == "\/d\/0\.md" \|\| /);
+    expect(qs[0]).toMatch(/^links \{ select src: _path, dst: _dst_path where _field == "before" && _provenance == "frontmatter" && \(_path == "\/d\/0\.md" \|\| /);
     for (const q of edgeQueries({ name: "before", kind: "frontmatter" }, paths, NAMES_4)) expect(() => parse(q)).not.toThrow();
   });
 
-  it("spells `from links` with `_path`/`_dst_path`/`_field` (spec/surface 5.0 §1.1–§1.2) — bare for a 4.x server; the aliases are the demo's own", () => {
-    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"])[0]).toBe('select src: _path, dst: _dst_path from links where _field == "before" && _provenance == "frontmatter" && (_path == "/a.md")');
-    expect(edgeQueries({ name: "_out_links", kind: "links" }, ["/a.md"])[0]).toBe('select src: _path, dst: _dst_path from links where _provenance == "link" && _dst_kind == "document" && (_path == "/a.md")');
-    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"], NAMES_4)[0]).toBe('select src: path, dst: dst_path from links where field == "before" && provenance == "frontmatter" && (path == "/a.md")');
-    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"], NAMES_4)[0]).toBe('select src: path, dst: dst_path from links where provenance == "link" && dst_kind == "document" && (path == "/a.md")');
+  it("spells `links { … }` with `_path`/`_dst_path`/`_field` (spec/surface 5.0 §1.1–§1.2) — bare for a 4.x server; the aliases are the demo's own", () => {
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"])[0]).toBe('links { select src: _path, dst: _dst_path where _field == "before" && _provenance == "frontmatter" && (_path == "/a.md") }');
+    expect(edgeQueries({ name: "_out_links", kind: "links" }, ["/a.md"])[0]).toBe('links { select src: _path, dst: _dst_path where _provenance == "link" && _dst_kind == "document" && (_path == "/a.md") }');
+    expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"], NAMES_4)[0]).toBe('links { select src: path, dst: dst_path where field == "before" && provenance == "frontmatter" && (path == "/a.md") }');
+    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"], NAMES_4)[0]).toBe('links { select src: path, dst: dst_path where provenance == "link" && dst_kind == "document" && (path == "/a.md") }');
   });
 
   it("spells the path literals rooted whatever form the keys came in", () => {

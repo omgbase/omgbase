@@ -89,18 +89,63 @@ bind the whole string [`template-literals`].
 
 ## 2. Query structure
 
-A query is one of two forms:
+A query names its **source** — the collection — before its body (since 0.26
+the canonical form; it is the directive form of 0.17 with the implicit
+`collect`):
 
 ```
-query      = body                      ; the body's `from` is the source ("collect")
-           | receiver consumer [ "distinct" ] "{" body "}"    ; directive form
-           | receiver [ "distinct" ] "{" body "}"              ; ≡ receiver collect [distinct] { body }   (0.17; `distinct` 0.20)
-           | receiver bracket                                   ; `people[age > 40]` ≡ people first { where age > 40 }   (0.17)
+query      = receiver [ consumer ] [ "distinct" ] "{" body "}"   ; collection-scoped: the receiver is the source
+           | receiver consumer [ "distinct" ]                     ; the block omitted: the empty block (`people count`, `people first`; 0.26)
+           | receiver bracket                                     ; `people[age > 40]` ≡ people first { where age > 40 }   (0.17)
+           | body                                                 ; the clause form — the body's `from` is the source, the consumer `collect`; accepted, never printed
 ```
 
-The **directive form** consumes the whole query with the named consumer; nothing
-may follow its closing brace. The **body form** always has the `collect`
-consumer and must contain `from`.
+```
+modules {
+  select id, name, status, depth: $depth
+  where id == "launch"
+  follow distinct ^modules { where id in ^needs depth 2 }
+  order by $depth, name
+}
+```
+
+`<collection> { … }` reads the collection and shapes its rows with the body's
+clauses (§3), each clause with its keyword in the fixed order below. A
+**consumer word** between the receiver and the brace — `modules count { … }`,
+`modules first { … }`, `exists`, `none`, `single` — consumes the whole query
+with that consumer; without one the consumer is `collect`. `distinct` after the
+receiver or after the consumer word is the body's `distinct` (`modules distinct
+{ status }`). **A consumer word may stand without a block** (since 0.26): the
+omitted block is the empty block, so `people count` ≡ `people count { }`,
+`people first` ≡ `people first { }`, `people exists`, `people count distinct` —
+a consumer word right after a complete receiver can be nothing else, since OQX
+never places two operands side by side; the bare brace is what makes a
+`collect`, so `people collect` is spelled `people { }`. **Nothing may follow
+the closing brace** (`unexpected 'order' after the top-level directive`), and
+nothing follows a whole-query bare consumer (`people count > 1` is the same
+error: the `count { … } <relop> N` comparison is a `where` test, §3). The receiver is a §5 receiver — a bare name, a
+dotted navigation (`cfg.items { … }`), a free-function call (`entries(cfg) { …
+}`), a binding, a tuple — or a postfix chain headed by one (`modules[id == "x"]
+{ name }` reads the one row the lookup yields). A literal cannot head a body
+(`"abc" { }` is `` `"abc"` is a literal, not a collection ``).
+
+**Inside a body the collection is implicit**: the receiver supplied the rows,
+so a body never names its source — a nested block's receiver is its source
+(`people { name, js: jobs { employer } }`), exactly as the whole query's is, and
+`^` reaches the enclosing rows and the named roots as it always did (§4,
+SEMANTICS §2). The one clause that still spells `from` is the **re-projection**
+(§3 `from`): `from E` inside a body fans each of the receiver's rows out through
+`E`.
+
+**The clause form** `select … from S …` (`name, id from people where …`) is the
+pre-0.26 spelling of `S { select name, id where … }` and parses to the identical
+tree (AST.md §2: nothing records which was written). It stays accepted so
+existing queries keep working; the canonical printer never writes it (AST.md
+§6) and the documentation teaches the collection-scoped form. A query that
+neither heads its body with a collection nor writes `from` is the parse error
+`` a query must name its source before its body: `<collection> { … }` (or
+`<collection> <consumer> { … }`; the clause form `select … from <collection> …`
+is still read) `` [`collection-scoped`, `clause-order`].
 
 **A receiver block without a consumer is `collect`** (since 0.17): `x { … }` ≡
 `x collect { … }` **wherever a value expression is accepted** (since 0.20 without
@@ -144,18 +189,21 @@ from where frontier depth follow flatten group by having order by limit offset`.
   also names `depth`: `… where, frontier, depth, follow, …`).
 - A repeated clause is `` duplicate `<clause>` clause `` — except `flatten`,
   which may repeat (each binds its own name).
-- Every clause is optional, except that a top-level body must have `from`
-  (`a query must name its source …`). Inside a consumer block, `from E`
-  re-projects each of the receiver's rows through `E` (a flatMap), because the
-  receiver already supplied the rows.
+- Every clause is optional. A body whose receiver supplied the rows — every
+  block, and so the top level of a collection-scoped query — never names its
+  source: there `from E` **re-projects** each of the receiver's rows through
+  `E` (a flatMap, §3 `from`). Only the clause form's top-level body must have
+  `from` (`a query must name its source …`).
 - **Only `select` may drop its keyword, and only when it is the first clause
-  written.** `name, id from people` ≡ `select name, id from people`. After any
-  clause, a keyword-less run is an error: there is **no implicit `where` after a
-  clause** (`from people active`, `people exists { name age > 50 }` are parse
-  errors whose message says to write `where`).
-- **A where-first body** (since 0.17, blocks only): a block body whose **leading
-  expression is syntactically a predicate** drops the `where` keyword instead —
-  `people exists { age > 50 }` ≡ `people exists { where age > 50 }`,
+  written.** `people { name, id }` ≡ `people { select name, id }` (and `name, id
+  from people` ≡ `select name, id from people`). After any clause, a
+  keyword-less run is an error: there is **no implicit `where` after a
+  clause** (`people { from jobs active }`, `people exists { name age > 50 }`,
+  `from people active` are parse errors whose message says to write `where`).
+- **A where-first body** (since 0.17; every body with a receiver): a body whose
+  **leading expression is syntactically a predicate** drops the `where` keyword
+  instead — `people { age > 50 }` ≡ `people { where age > 50 }`, `people exists
+  { age > 50 }` ≡ `people exists { where age > 50 }`,
   `jobs collect { pay > 2 }` ≡ `jobs collect { where pay > 2 }`. Such a body has
   **no `select` and no `from`** (a `from`/`select` after it is the ordinary
   clause-order error) and may continue with `follow`, `order by`, `limit`,
@@ -171,11 +219,13 @@ from where frontier depth follow flatten group by having order by limit offset`.
   filter keeps the keyword: `docs { name where age >= 18 }`. A comma after the
   leading predicate (`{ age >= 18, name }`) is a parse error whose message
   suggests `{ <projection> where age >= 18 }`.
-- **The top level is unchanged**: `age > 15 from people` stays the parse error
-  it was (`… needs an alias … at the top level a predicate is never implicit`),
-  because a predicate there would be a `where` written *before* `from`, which the
-  clause order forbids; the top-level projection is the only keyword-less
-  clause. [`sugar`, `errors-parse`]
+- **The clause form's top level has no implicit `where`**: `age > 15 from
+  people` stays the parse error it was (`… needs an alias … write `<collection>
+  { <predicate> }` … at the top level of the clause form a predicate is never
+  implicit`), because a predicate there would be a `where` written *before*
+  `from`, which the clause order forbids; the projection is that form's only
+  keyword-less clause. The collection-scoped `people { age > 15 }` is the
+  filter. [`sugar`, `errors-parse`, `collection-scoped`]
 - A consumer word directly after `from` gets a specific hint
   (`` unexpected `count` after `from` — a whole-query consumer is written `<collection> count { … }` … ``).
 - **Only `}` ends a block, and only the end of input ends the query.** A stray
@@ -255,11 +305,17 @@ scoperef   = "^" { "^" }                                  ; relative: one scope 
 
 [`projection`, `values`, `lifts`, `aliases`]
 
-### `from` — source
+### `from` — re-projection
 
-`from expr`: any value expression; evaluated at the enclosing scope and coerced
-to rows (SEMANTICS §collections). Typically a bare root name, a dotted
-navigation (`cfg.items`), a binding, or a function call (`entries(x)`, `list(x)`).
+`from expr` inside a body: any value expression, read in the row's scope and
+coerced to rows (SEMANTICS §3) — each of the body's rows is replaced by the rows
+`expr` yields on it (a flatMap). `people { select employer from jobs }` is every
+job's employer across all people; omgbase's `follow _out_links { from _dst }`
+walks a link row to the document at its other end. Typically a relation name, a
+dotted navigation, a binding, or a function call (`entries(x)`, `list(x)`). A
+body never names its source with `from` — the collection before the body is the
+source (§2); only in the **clause form** (§2) does the top-level `from` name the
+source instead (`select name from people`, evaluated at the root scope).
 
 ### `where` — predicate
 
@@ -271,7 +327,7 @@ where    = or
 or       = and { ("||" | "or") and }
 and      = primary { ("&&" | "and") primary }
 primary  = { "!" } group
-         | { "!" } receiver consumer [ "distinct" ] "{" body "}" [ relop integer ]   ; consumer test
+         | { "!" } receiver consumer [ "distinct" ] [ "{" body "}" ] [ relop integer ]   ; consumer test (the block omitted ≡ `{ }`, 0.26: `jobs exists`, `jobs count > 1`)
          | cmp                                                                    ; a scalar leaf (its own `!` is unary, §4)
 group    = "(" where ")"                       ; a predicate group …
          | "(" where ")" scalar-tail           ; … or, when a scalar operator follows, a scalar operand
@@ -493,7 +549,7 @@ top-level row is `limit ^n`). The value is checked at evaluation time
 
 Value position (`select`, `order by`, `from`, function arguments, a destination
 block's `frontier`, a template literal's `${…}` interpolation) accepts the full
-grammar. Precedence, loosest to tightest:
+grammar; the collection before a body is a receiver (§5), not a value. Precedence, loosest to tightest:
 
 | Level | Operators | Notes |
 | --- | --- | --- |
@@ -527,7 +583,7 @@ aggname  = "count" | "sum" | "min" | "max" | "avg" | "collect" | "first" | "last
 suffix   = "." ident [ "(" args ")" ]                       ; navigation, method call
          | "!"                                               ; required (0.17)
          | bracket                                           ; lookup (0.17)
-         | ("collect" | "first" | "single" | "count") [ "distinct" ] "{" body "}"   ; value-position directive (0.17; `count` 0.24)
+         | ("collect" | "first" | "single" | "count") [ "distinct" ] [ "{" body "}" ]   ; value-position directive (0.17; `count` 0.24; the block omitted ≡ `{ }`, 0.26: `jobs first.pay`, `n: jobs count`)
          | [ "distinct" ] "{" body "}"                        ; ≡ collect [distinct] { body }   (0.20)
 bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
          | "[" where "]" [ "!" ]                             ; predicate
@@ -701,6 +757,24 @@ integer literal or a binding`). Every bracket desugars in the parser to the
 directive it means (AST.md §2): there is no bracket node, `print` writes the
 directive, and the directive's span covers the sugar as written.
 
+**A projection block over a lookup is the lookup's projection** (since 0.26).
+`jobs[0] { name }` ≡ `jobs first { name offset 0 }`, `jobs[p] { name, pay }` ≡
+`jobs first { name, pay where p }`, `jobs[0] { }` ≡ `jobs[0]`: a block that
+holds nothing but a projection (`select`, with or without `values`), written
+over a `collect`/`first`/`single` directive whose own block projects nothing,
+merges into that directive — the items read the very rows the inner block
+filtered, at the same depth, so the two spellings are one tree. The merge is
+refused, and the two directives stay (`jobs first { offset 0 } collect { … }`),
+when the outer block carries any clause of its own (those run **after** the
+pick: `jobs[0] { name where pay > 2 }` is the first job, kept only if it pays),
+when the inner directive is `distinct` (it compares whole rows; the merged form
+would compare projections), or when an outer alias would shadow a bare name the
+inner `where` reads (`jobs[pay > 2] { pay: employer }`; a self-projection
+`pay: pay` shadows nothing). A consequence of the merge: `jobs[0] { name }` over
+a row with no jobs is **absent** (`first` of none), where the two-directive tree
+of 0.25 yielded `[]` (a `collect` over an absent receiver, SEMANTICS §3).
+[`directive-sugar`]
+
 ### Value-position directives (since 0.17)
 
 `recv first { … }`, `recv single { … }` and `recv collect { … }` — and the
@@ -733,9 +807,14 @@ That is: a binding; a dotted navigation whose head is a bare name, an outer
 reference (`^people`, `^^root.rel`, `0^people`, `0^$it.docs`), or a
 free-function call (`entries(prefs)`); or a tuple (`(mom, dad) { name }`, §4).
 Method calls, operators, and the literal words `true`/`false`/`null` are not
-receivers. A directive is recognized only when the receiver is immediately
-followed by `{`, `distinct {`, or a consumer word and then `{` (or `distinct
-{`); otherwise the tokens are re-read as an ordinary expression. A dangling `.` in a receiver or a value
+receivers. A directive is recognized when the receiver is immediately followed
+by `{`, `distinct {`, or a consumer word — with `{` / `distinct {` after it, or
+alone (since 0.26 the omitted block is the empty block: `jobs first`, `jobs
+count distinct`); otherwise the tokens are re-read as an ordinary expression.
+The one place a bare consumer word is not read as a directive is the clause
+form's top-level `from` expression, where `from people count` keeps the
+whole-query hint (`` unexpected `count` after `from` — a whole-query consumer is
+written `<collection> count { … }` ``): a count is never a source. A dangling `.` in a receiver or a value
 is the same parse error (`expected a property name after '.'`).
 [`consumers`, `outer-refs`, `entries`, `errors-parse`]
 
@@ -746,6 +825,7 @@ Every failure is an `OqxError` with a `stage`:
 - `lex` — an unexpected character, an unterminated string, an unterminated
   template literal or interpolation (since 0.21), or a malformed number.
 - `parse` — everything the grammar above rejects, including clause order,
+  a whole-query bare consumer followed by anything (`people count > 1`),
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
   a comma after a where-first predicate, misplaced lifts, alias cycles and
   forward references, a `depth` clause outside a destination block or out of
@@ -765,8 +845,7 @@ Every failure is an `OqxError` with a `stage`:
   expression.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
-  (including a bracket index binding), `follow` inside a where-position
-  directive, a scalar in row position (`` `s` is a string ("abc"), not a
+  (including a bracket index binding), a scalar in row position (`` `s` is a string ("abc"), not a
   collection or an object ``, SEMANTICS §3), a list, record or range interpolated
   into a template literal (`cannot interpolate …`, SEMANTICS §7b; since 0.21),
   `sum`/`avg` over a present non-number (`cannot sum …`, SEMANTICS §24; since

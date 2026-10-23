@@ -14,16 +14,16 @@
 //          frontier row owns the field and names its successors).
 //        - the link graph, walked through the LINK ROWS (spec/surface §1.2: a
 //          link row has `_dst`, its destination document, beside `_doc`, its
-//          source): `follow _out_links collect { from _dst }` is the link graph
+//          source): `follow _out_links { from _dst }` is the link graph
 //          (`$it._out_links`, or any body — the RECEIVER names the relation),
-//          `follow _in_links collect { from _doc }` the backlink graph
+//          `follow _in_links { from _doc }` the backlink graph
 //          (direction `backward`: stored edges point successor → frontier).
 //          The 4.x spellings — `out_links`, `doc.out_links`, `from dst`, `from
 //          doc` — read the same. Any other bare name is taken as a frontmatter relation,
 //          although `follow before` over a list of paths follows the STRINGS
 //          (the engine refuses the hit; lib/hints.ts says so under the editor).
-//        - a destination block (`^docs collect { where … }`, `in_links collect
-//          { from doc where … }`, `refs(before) collect { … }`) whose receiver
+//        - a destination block (`^docs { where … }`, `in_links collect
+//          { from doc where … }`, `refs(before) { … }`) whose receiver
 //          is not the link rows: a `refs(<field>)` receiver names `<field>`
 //          `forward` (the frontier's field); then every frontmatter-looking
 //          property its correlated `where` reads — a bare ident on the
@@ -31,7 +31,7 @@
 //          `after`, direction `backward` (the edge lives on the successor and
 //          points at the frontier); an outer ref (`path in ^before`) →
 //          `before`, direction `forward`; a `refs(<field>)` receiver of a nested
-//          directive (`refs(after) exists { where path == ^^path }`) → the same
+//          directive (`refs(after) exists { path == ^^path }`) → the same
 //          two cases (`refs(after)` backward, `refs(^before)` forward); a
 //          literal compared with `_field` / `_predicate` under `_in_links` /
 //          `_out_links` / `^links` (spec/surface §1.1–§1.2; the bare `field` /
@@ -83,8 +83,8 @@ export type Direction = "forward" | "backward";
 export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
 export type CandidateKind =
   | "frontmatter" // a frontmatter relation: link rows whose authored `field` == name
-  | "links" // _out_links (the walk `_out_links collect { from _dst }`) — authored links
-  | "backlinks" // _in_links (`_in_links collect { from _doc }`) — authored links, reversed
+  | "links" // _out_links (the walk `_out_links { from _dst }`) — authored links
+  | "backlinks" // _in_links (`_in_links { from _doc }`) — authored links, reversed
   | "sequence"; // an order-by key (consecutive result rows) or an inverse pair (both fields, one direction)
 
 /** The two fields of an inverse pair, by the way their stored edges run along
@@ -376,11 +376,11 @@ function followMentions(follow: Follow): Mention[] {
  * correlated (`^` = the frontier row). Read the relation names off it. */
 function destinationBlockMentions(op: OpNode): Mention[] {
   const out: Mention[] = [];
-  // `_out_links collect { from _dst }` / `_in_links collect { from _doc }` (the
+  // `_out_links { from _dst }` / `_in_links { from _doc }` (the
   // link graph walked through the link rows) — the RECEIVER names the
   // relation, whatever the body re-projects; the candidate is named as written.
   // Unless the body CORRELATES the reached document with the frontier
-  // (`_in_links collect { from _doc where ^_path in list(after) }`): then the walk
+  // (`_in_links { from _doc where ^_path in list(after) }`): then the walk
   // means that frontmatter relation — the backlinks `after` says so — and only
   // the relation is offered (below), not the whole link graph.
   const rows = linkRowsReceiver(receiverPath(op.receiver));
@@ -390,12 +390,12 @@ function destinationBlockMentions(op: OpNode): Mention[] {
     const kind: CandidateKind = rows === "out" ? "links" : "backlinks";
     out.push({ name: receiverPath(op.receiver), kind, source: "follow", span: op.receiver.span, direction: rows === "out" ? "forward" : "backward" });
   }
-  // `refs(before) collect { where … }` — the receiver is the frontier's field.
+  // `refs(before) { where … }` — the receiver is the frontier's field.
   const receiver = refsField(op.receiver);
   if (receiver) out.push({ name: receiver.name, kind: "frontmatter", source: "follow", span: op.receiver.span, direction: "forward" });
   if (!where) return out;
   if (rows === "in" || rows === "out") {
-    // `_out_links collect { from _dst where _field == "owner" }` — a `_field` /
+    // `_out_links { from _dst where _field == "owner" }` — a `_field` /
     // `_predicate` literal filtering the link rows names a frontmatter relation
     // too (`out_*` backward, `in_*` forward), as it does under a nested
     // directive below.
@@ -418,7 +418,7 @@ function destinationBlockMentions(op: OpNode): Mention[] {
     }
   });
   forEachOp(where, (inner) => {
-    // `refs(after) exists { where path == ^^path }` — the candidate row's field
+    // `refs(after) exists { path == ^^path }` — the candidate row's field
     // names the frontier (backward); `refs(^before) exists { … }` — the frontier's
     // field names the candidate (forward).
     const ref = refsField(inner.receiver);
@@ -426,7 +426,7 @@ function destinationBlockMentions(op: OpNode): Mention[] {
       out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: inner.receiver.span, direction: ref.outer ? "forward" : "backward" });
       return;
     }
-    // `_in_links exists { where _field == "before" … }` (or _out_links / ^links).
+    // `_in_links exists { _field == "before" … }` (or _out_links / ^links).
     const via = linkRowsReceiver(receiverPath(inner.receiver));
     if (via === null) return;
     const viaOut = via === "out";

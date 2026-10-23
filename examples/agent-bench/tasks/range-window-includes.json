@@ -29,7 +29,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, title, window from docs where type == \"milestone\" and \"2027-03-15\" in range(window) order by _path"
+          "query": "docs { select _path, title, window where type == \"milestone\" and \"2027-03-15\" in range(window) order by _path }"
         }
       }
     ],

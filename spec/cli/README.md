@@ -1146,8 +1146,8 @@ the hit ids (`_id`); `--jsonl` one hit per line (`{ _id, _path, ... }`);
 | exists? | none? | values?, hints? }`, every hit `{ _id, _path, ...projection }` —
 `spec/surface` §1.4, 5.0; copy a hit's `_id` into the next `where _id == "…"`
 unchanged; the source itself spells engine names with the underscore and
-authored keys bare — `omg q 'from docs where layer == "canon" select _title,
-_path'` — and a bare `title`/`id`/`path` reads the authored key, with the
+authored keys bare — `omg q 'docs { select _title, _path where layer ==
+"canon" }'` — and a bare `title`/`id`/`path` reads the authored key, with the
 result's `hints` pointing at `_title`/`_id`/`_path` when no document carries
 one). `--bare` (4.1) is the tool's `bare: true` passed through
 (`spec/surface` §1.4, 4.2): every hit is its projection alone, rendered as

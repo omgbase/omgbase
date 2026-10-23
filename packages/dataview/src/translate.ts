@@ -8,7 +8,7 @@
 //     each conjunct reads (below, "the WHERE split");
 //   - SORTs compose: a later SORT re-sorts with the earlier order as the tie
 //     break, so `SORT a SORT b` is `order by b, a`; a SORT before GROUP BY is
-//     the order of the rows inside each group (carried into `rows collect { … }`);
+//     the order of the rows inside each group (carried into `rows { … }`);
 //   - LIMIT must be the last command (OQX bounds the final row set);
 //   - FLATTENs chain in order as `flatten <expr> as <name>` clauses (spec/oqx
 //     0.25); a FLATTEN after GROUP BY has no place in the clause order;
@@ -23,7 +23,7 @@
 //     Dataview applies commands sequentially, but a page predicate holds the
 //     same before and after the fan-out, so moving it is semantics-preserving;
 //   - a conjunct that reads only ONE bound element → that flatten's block
-//     (`flatten _blocks collect { where _type == "task" and checked } as t`):
+//     (`flatten _blocks { where _type == "task" and checked } as t`):
 //     filtering the elements before the fan-out is filtering the flattened rows
 //     by the element, and a parent whose elements all fail yields no row —
 //     Dataview's result for the same WHERE;
@@ -31,7 +31,7 @@
 //     (`t.completed & status = "open"` as one `|`-joined predicate, `a.x = b.y`)
 //     → `unsupported` naming the construct: it has no spelling.
 // Two refinements: an implicit list field (`file.tags`, `file.aliases`) always
-// gets a block (`_tags collect { }`), because Dataview's value is `[]` on a page
+// gets a block (`_tags { }`), because Dataview's value is `[]` on a page
 // without tags — no row — while OQX fans an absent value out to one row (§25);
 // an authored field with an element conjunct is read through `list(…)` (a block
 // over a scalar is an eval error; `list` makes a scalar a one-row collection and
@@ -383,10 +383,10 @@ class Translator {
   }
 
   /** The value a FLATTEN splits, as the element kind decides (see the header):
-   * `file.tasks` / `file.lists` → `_blocks collect { where _type == … }`;
-   * `file.outlinks` / `file.inlinks` → `_out_links collect { from _dst }` /
-   * `_in_links collect { from _doc }`; `file.tags` / `file.etags` → `_tags
-   * collect { }`, `file.aliases` → `aliases collect { }` (the block makes the
+   * `file.tasks` / `file.lists` → `_blocks { where _type == … }`;
+   * `file.outlinks` / `file.inlinks` → `_out_links { from _dst }` /
+   * `_in_links { from _doc }`; `file.tags` / `file.etags` → `_tags
+   * { }`, `file.aliases` → `aliases { }` (the block makes the
    * value a collection, Dataview's `[]`); anything else — an authored field, a
    * bound name's member, a computed value — the expression itself, a block
    * added only for an element WHERE. */
@@ -510,7 +510,7 @@ class Translator {
 }
 
 /** A select item for a translated value: a `collect` item when the value is a
- * directive (`rows collect { … }`, `_in_links collect { from _doc }`), else a field. */
+ * directive (`rows { … }`, `_in_links { from _doc }`), else a field. */
 function item(alias: string, v: Typed): SelectItem {
   const e: Expr = v.expr;
   if (e.kind === "op" && (e.op === "collect" || e.op === "first" || e.op === "single")) return build.collect(alias, e);

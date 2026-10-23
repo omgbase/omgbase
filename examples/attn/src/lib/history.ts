@@ -3,7 +3,7 @@
 // states IS the episode history, and the open episode's start is the current
 // `since`. With what omgbase already has:
 //
-//   select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq
+//   revisions { select _rev, _seq, _ts where _path == "/attn/focus.md" order by _seq }
 //   docs_read { _path: "/attn/focus.md", at: <rev> }     per revision → _raw → focused_intent / since / return_stack
 //
 // (`docs_read { at }` carries no `properties`, so the frontmatter is read from
@@ -32,7 +32,7 @@ export interface PointerRevision {
 export interface PointerSnapshot extends PointerRevision, PointerState {}
 
 /** The pointer's revisions, oldest first. */
-export const REVISIONS_QUERY = `select _rev, _seq, _ts from revisions where _path == ${JSON.stringify(POINTER_PATH)} order by _seq`;
+export const REVISIONS_QUERY = `revisions { select _rev, _seq, _ts where _path == ${JSON.stringify(POINTER_PATH)} order by _seq }`;
 
 export async function fetchPointerRevisions(caller: Caller, repo: string | null): Promise<PointerRevision[]> {
   const hits = await queryAll(caller, REVISIONS_QUERY, repo);

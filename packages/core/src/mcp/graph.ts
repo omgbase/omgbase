@@ -3,7 +3,7 @@
 // ADR-006: OQX `follow` is the ONE traversal engine; the removed
 // graph_traverse/path/subgraph tools are not resurrected. This macro owns NO
 // graph-walking logic — it compiles its arguments into an OQX `follow _out_links
-// collect { from _dst }` / `follow _in_links collect { from _doc }` query (the
+// { from _dst }` / `follow _in_links { from _doc }` query (the
 // exact walk the `query` tool exposes over the link rows),
 // runs it through the shared runner (oqxRunAsync), and then only SHAPES the
 // walk's own output (its `$depth`/`$stop` intrinsics and projected edges) into
@@ -13,8 +13,8 @@
 // Mapping (args → follow query):
 //   roots      → the seed `where _id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
 //   degrees    → `follow … collect { … depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
-//   direction  → `follow _out_links collect { from _dst }` (the linked documents)
-//                | `follow _in_links collect { from _doc }` (the linking documents)
+//   direction  → `follow _out_links { from _dst }` (the linked documents)
+//                | `follow _in_links { from _doc }` (the linking documents)
 //                | both (two walks, unioned)
 //   predicate  → restricts the neighborhood to docs reachable via that predicate
 //                (recomputed over the walk's collected edges; no `via` clause)
@@ -143,7 +143,7 @@ function buildUserSelect(select: string[] | undefined): { items: SelectItem[]; o
 function userItems(src: string, alias: string): SelectItem[] {
   let q: Query;
   try {
-    q = parse(`select ${alias}: ${src} from docs`);
+    q = parse(`docs { select ${alias}: ${src} }`);
   } catch (e) {
     if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
     throw e;
@@ -172,8 +172,8 @@ const LINKS_ALIAS = "_links";
 // The walk, as an AST (spec/oqx/AST.md §7) printed canonically — never spliced
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
-//   select _depth: $depth, _stop: $stop, _links: _<dir>_links collect { <edge fields> } <user items>
-//   from docs where _id == <root> or … follow distinct _<dir>_links collect { from <_dst | _doc> depth <depth> }
+//   docs { _depth: $depth, _stop: $stop, _links: _<dir>_links { <edge fields> } <user items>
+//          where _id == <root> or … follow distinct _<dir>_links { from <_dst | _doc> depth <depth> } }
 //
 // The destination block walks the link rows to the documents at their other
 // end (spec/surface §1.2, 3.0 follow-up: there are no `out`/`in` relations —

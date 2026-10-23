@@ -68,7 +68,7 @@ describe("MCP server skeleton", () => {
     expect(Object.keys(follow)).toEqual(["section", "syntax"]);
     expect(follow.section).toBe("follow");
     expect(follow.syntax.startsWith("## Graph traversal (follow) and links\n")).toBe(true);
-    expect(follow.syntax).toContain("follow _out_links collect { from _dst depth 3 }");
+    expect(follow.syntax).toContain("follow _out_links { from _dst depth 3 }");
     expect(follow.syntax).not.toContain("## semantic grain");
     expect(follow.syntax.endsWith("compiles to a follow query.)\n")).toBe(true);
     const { payload: all } = (await call("query_syntax", { section: "all" })) as { payload: { section: string; syntax: string } };

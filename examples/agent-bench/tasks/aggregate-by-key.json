@@ -22,13 +22,13 @@
       {
         "tool": "query",
         "args": {
-          "query": "select project, n: count() from docs where type == \"milestone\" and status == \"open\" group by project order by count() desc"
+          "query": "docs { select project, n: count() where type == \"milestone\" and status == \"open\" group by project order by count() desc }"
         }
       },
       {
         "tool": "query",
         "args": {
-          "query": "select slug from docs where type == \"project\" order by slug"
+          "query": "docs { select slug where type == \"project\" order by slug }"
         }
       }
     ],

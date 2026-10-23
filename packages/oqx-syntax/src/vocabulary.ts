@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.25";
+export const LANGUAGE_VERSION = "0.26";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -138,7 +138,7 @@ export const LANGUAGE = {
  * document, an `attrs` key on a block or node) and an UNDERSCORE-prefixed name
  * is engine-provided — the attributes, the source handles, the reach-throughs
  * and the relations below all start with `_`. The collections stay bare
- * (`from docs`, `^docs`) because `from` names a collection, not a row property,
+ * (`docs { … }`, `^docs`) because the source names a collection, not a row property,
  * and so do the row functions in call position (a call is never an entry
  * read). `$` stays OQX's (`$it`, `$key`, `$depth`, …): omgbase adds no `$`
  * names, and the self aliases of 4.x (`doc`, `block`, `section`) are gone —
@@ -178,7 +178,7 @@ export const OMGBASE = {
   /** Reach-throughs: `_doc` (a block's, node's, link's or revision's document), `_block` (a node's or link's block), `_dst` (a link's destination document). */
   reachThroughs: ["_doc", "_block", "_dst"],
   /** Relations and reach-throughs of a row (`follow _children`, `_nodes exists { … }`,
-   * `follow _out_links collect { from _dst }`, `follow _in_links collect { from _doc }`). */
+   * `follow _out_links { from _dst }`, `follow _in_links { from _doc }`). */
   relations: [
     "_nodes", "_blocks", "_out_links", "_in_links", "_revisions",
     "_children", "_section", "_subsections", "_doc", "_block", "_dst",

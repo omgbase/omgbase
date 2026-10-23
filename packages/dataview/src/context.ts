@@ -47,7 +47,7 @@ export interface Ctx {
   groupKey: string | null;
   /** A SORT written before GROUP BY: the order of the rows inside each group. */
   rowsOrder: OrderSpec[] | null;
-  /** Whether some `rows collect { … }` carried `rowsOrder` (else it is warned about). */
+  /** Whether some `rows { … }` carried `rowsOrder` (else it is warned about). */
   rowsOrderUsed: boolean;
   /** The engine features the output relies on (checked against `capabilities`). */
   features: Set<"dates" | "groupBy" | "flatten">;

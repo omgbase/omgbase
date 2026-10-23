@@ -12,15 +12,17 @@ const NOTES = { slug: "notes", hasProbeDoc: false };
 
 describe("STARTER_QUERY", () => {
   it("is the generic recent-documents query, in the 5.0 engine names (bare for a 4.x server)", () => {
-    expect(STARTER_QUERY).toBe(`select _path, _title
-from docs
-order by _updated_at desc
-limit 40`);
+    expect(STARTER_QUERY).toBe(`docs {
+  select _path, _title
+  order by _updated_at desc
+  limit 40
+}`);
     expect(starterQuery(NAMES_5)).toBe(STARTER_QUERY);
-    expect(starterQuery(NAMES_4)).toBe(`select path, title
-from docs
-order by updated_at desc
-limit 40`);
+    expect(starterQuery(NAMES_4)).toBe(`docs {
+  select path, title
+  order by updated_at desc
+  limit 40
+}`);
     for (const src of [STARTER_QUERY, starterQuery(NAMES_4)]) {
       const q = parse(src);
       expect(q.follow).toBeNull();
@@ -52,20 +54,22 @@ limit 40`);
     expect(isPresetQuery(DEFAULT_QUERY)).toBe(true);
     expect(isPresetQuery(defaultQuery(NAMES_4))).toBe(true);
     expect(isPresetQuery(`${STARTER_QUERY}\nlimit 5`)).toBe(false);
-    expect(isStarterQuery("select _path from docs")).toBe(false);
+    expect(isStarterQuery("docs { select _path }")).toBe(false);
   });
 });
 
 describe("timelineStarter", () => {
   it("is the sample default's walk from a chosen document (rooted), or a placeholder — in the server's spelling", () => {
-    expect(timelineStarter("/notes/kickoff.md")).toBe(`select _path, _title, before, after
-from docs
-where _path == "/notes/kickoff.md"
-follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }`);
-    expect(timelineStarter("/notes/kickoff.md", NAMES_4)).toBe(`select path, title, before, after
-from docs
-where path == "/notes/kickoff.md"
-follow distinct refs(before), in_links collect { from doc where ^path in list(after) }`);
+    expect(timelineStarter("/notes/kickoff.md")).toBe(`docs {
+  select _path, _title, before, after
+  where _path == "/notes/kickoff.md"
+  follow distinct refs(before), _in_links { from _doc where ^_path in list(after) }
+}`);
+    expect(timelineStarter("/notes/kickoff.md", NAMES_4)).toBe(`docs {
+  select path, title, before, after
+  where path == "/notes/kickoff.md"
+  follow distinct refs(before), in_links { from doc where ^path in list(after) }
+}`);
     expect(timelineStarter("notes/kickoff.md")).toContain(`where _path == "/notes/kickoff.md"`);
     expect(timelineStarter()).toContain(`where _path == "/path/to/start.md"`);
     for (const names of [NAMES_5, NAMES_4]) {
@@ -77,8 +81,8 @@ follow distinct refs(before), in_links collect { from doc where ^path in list(af
   });
 
   it("existsQuery probes one path with limit 1, rooted", () => {
-    expect(existsQuery(SAMPLE_PROBE_PATH)).toBe(`select _path from docs where _path == "/timeline/kickoff.md" limit 1`);
-    expect(existsQuery(SAMPLE_PROBE_PATH, NAMES_4)).toBe(`select path from docs where path == "/timeline/kickoff.md" limit 1`);
+    expect(existsQuery(SAMPLE_PROBE_PATH)).toBe(`docs { select _path where _path == "/timeline/kickoff.md" limit 1 }`);
+    expect(existsQuery(SAMPLE_PROBE_PATH, NAMES_4)).toBe(`docs { select path where path == "/timeline/kickoff.md" limit 1 }`);
     expect(existsQuery("timeline/kickoff.md")).toBe(existsQuery(SAMPLE_PROBE_PATH));
     expect(() => parse(existsQuery('odd "quoted".md'))).not.toThrow();
   });
@@ -122,7 +126,7 @@ describe("chooseQuery", () => {
     expect(chooseQuery(edited, NOTES)).toBeNull();
     expect(chooseQuery(edited, SAMPLE)).toBeNull();
     expect(chooseQuery(edited, SAMPLE, NAMES_4)).toBeNull();
-    expect(chooseQuery("select _path from docs", NOTES)).toBeNull();
+    expect(chooseQuery("docs { select _path }", NOTES)).toBeNull();
     expect(chooseQuery(timelineStarter("/a.md"), NOTES)).toBeNull(); // the suggestion, once taken, is the user's
   });
 });

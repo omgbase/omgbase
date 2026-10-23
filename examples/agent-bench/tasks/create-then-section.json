@@ -4,7 +4,7 @@
   "checks": [
     {
       "kind": "query",
-      "query": "select type, layer from docs where _path == \"/processes/sublimation.md\"",
+      "query": "docs { select type, layer where _path == \"/processes/sublimation.md\" }",
       "hits": [
         {
           "type": "process",
@@ -14,7 +14,7 @@
     },
     {
       "kind": "query",
-      "query": "select _name from nodes where _kind == \"md:section\" and _path == \"/processes/sublimation.md\" order by _name",
+      "query": "nodes { select _name where _kind == \"md:section\" and _path == \"/processes/sublimation.md\" order by _name }",
       "hits": [
         {
           "_name": "Procedure"

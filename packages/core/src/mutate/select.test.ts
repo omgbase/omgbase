@@ -69,11 +69,11 @@ afterEach(() => {
 describe("the rewrite (§11.8 step 2)", () => {
   it("appends one reserved field per slot after the user's items; the worked example prints as pinned", () => {
     expect(print(selectionQuery(COMPLETED, ROLLUP))).toBe(
-      'select __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + _title + "](" + _path + ")" from docs where type == "workstream" and status == "completed"',
+      'docs { __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + _title + "](" + _path + ")" where type == "workstream" and status == "completed" }',
     );
     // A user alias stays first, so the runner's alias resolution inlines it into the slots.
     expect(print(selectionQuery(`select hub: project ${COMPLETED}`, [{ op: "insert", into: { kind: "document", _path: { oqx: "hub" } }, markdown: "x" }]))).toBe(
-      `select hub: project, __omg_sel_0_into: hub ${COMPLETED}`,
+      'docs { hub: project, __omg_sel_0_into: hub where type == "workstream" and status == "completed" }',
     );
     // Every slot kind has its name: target/into/targets_k/at/markdown/to/path/separator/value/fm_j.
     const q = selectionQuery("from blocks", [
@@ -134,7 +134,7 @@ describe("static admission (§11.8 step 1)", () => {
     ["an unknown op", COMPLETED, [{ op: "frobnicate" }], "`op` must be one of"],
     ["a selector parse error", "from docs where", MARK, "select:"],
     ["an expression parse error (offset shifted back by the wrapper)", COMPLETED, [{ op: "set", field: "_frontmatter.x", value: { oqx: "1 +" } }], "(at offset 4)"],
-    ["a query smuggled into a slot (the wrapper's trailing `from docs` makes it a parse error)", COMPLETED, [{ op: "set", field: "_frontmatter.x", value: { oqx: "title from blocks" } }], "effects[0].value:"],
+    ["a query smuggled into a slot (the wrapper's body reads its `from` as a re-projection: not one expression)", COMPLETED, [{ op: "set", field: "_frontmatter.x", value: { oqx: "title from blocks" } }], "effects[0].value:"],
     ["`$repo` (the root-row spellings are checked)", "from docs where $repo.x == 1", MARK, "select:"],
   ])("refuses %s with filter_invalid { hint: \"selection\" }", (_what, select, effects, message) => {
     const e = refused(select, effects);
@@ -434,8 +434,8 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       expect(e.data).toMatchObject({ hint: "selection" });
       expect(e.message).toContain("effects[2].markdown:");
       expect(e.message).toContain("(at offset 7)"); // "-> 1 +" — the error at the end of the 7-char string
-      // a query smuggled into the leader: the wrapper's trailing `from docs` makes it a parse error, as for `{ oqx }`
-      expect(failure(() => desugarEffect(insert("hub.md", "-> _title from blocks"), 0)).message).toContain("effects[0].markdown: duplicate `from`");
+      // a query smuggled into the leader: the wrapper's body reads its `from` as a re-projection, so it is not one expression — as for `{ oqx }`
+      expect(failure(() => desugarEffect(insert("hub.md", "-> _title from blocks"), 0)).message).toContain("effects[0].markdown: `oqx` must be one expression over the hit, not a query");
     });
   });
 
@@ -511,7 +511,7 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       expect(sugar.selection!.templates[0]).toEqual(insert("-> project", "-> `- completed: [${_title}](${_path})`", { at: "end" }));
       expect(sugar).not.toHaveProperty("templates");
       expect(print(selectionQuery(COMPLETED, sugar.selection!.templates))).toBe(
-        "select __omg_sel_0_into: project, __omg_sel_0_markdown: `- completed: [${_title}](${_path})` from docs where type == \"workstream\" and status == \"completed\"",
+        "docs { __omg_sel_0_into: project, __omg_sel_0_markdown: `- completed: [${_title}](${_path})` where type == \"workstream\" and status == \"completed\" }",
       );
     });
 
@@ -547,7 +547,7 @@ describe("the `-> ` sugar (§11.8 Sugar, 3.2)", () => {
       expect(a.effects).toEqual(c.effects);
       expect(b.effects).toEqual(c.effects);
       expect(a.opset).toEqual(c.opset);
-      expect(print(selectionQuery(COMPLETED, a.selection!.templates))).toBe(COMPLETED); // no slot item: nothing to evaluate
+      expect(print(selectionQuery(COMPLETED, a.selection!.templates))).toBe('docs { where type == "workstream" and status == "completed" }'); // no slot item: nothing to evaluate
     });
   });
 

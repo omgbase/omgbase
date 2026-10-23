@@ -2,8 +2,9 @@
 
 # OQX tutorial · 8. Sugar — brackets, `!`, where-first blocks, `is` — and `refs()`
 
-Every query on the previous pages was written in the explicit form. OQX 0.17
-adds shorthand for the shapes you write most often. Each form **desugars in the
+The previous pages already leaned on one shorthand — a filter that leads the
+body needs no `where`. OQX 0.17 added it, and the rest of the shorthand for the
+shapes you write most often. Each form **desugars in the
 parser** to a directive you already know, so nothing here carries new semantics
 except the postfix `!` and the infix `is`; the explicit form is always still
 accepted.
@@ -35,7 +36,7 @@ Projection and filter together keep the keyword — names first, then `where`
 (`{ _name where … }`; `{ age >= 18, name }` is an error that points you here):
 
 ```console
-$ omg query 'select outline: _nodes { _name where _kind == "md:section" } from docs where _path == "/processes/magnum-opus.md"' --jsonl
+$ omg query 'docs { select outline: _nodes { _name where _kind == "md:section" } where _path == "/processes/magnum-opus.md" }' --jsonl
 {"_id":"d_m67jwv8","_path":"/processes/magnum-opus.md","outline":[{"_name":"The magnum opus"},{"_name":"The four stages"},{"_name":"Why colour"},{"_name":"Operations"},{"_name":"Open questions"}]}
 ```
 
@@ -43,7 +44,7 @@ The lab notes' open tasks from [correlated-subqueries.md](./correlated-subquerie
 in the short form:
 
 ```console
-$ omg query 'select _path, open: _nodes { _value where _kind == "md:task" and not checked } from docs where type == "lab-note"' --jsonl
+$ omg query 'docs { select _path, open: _nodes { _value where _kind == "md:task" and not checked } where type == "lab-note" }' --jsonl
 {"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","open":[{"_value":"Repeat the series with copper"},{"_value":"Plot mass gain against heating time"},{"_value":"Tabulate the metal sulphides by colour"}]}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","open":[{"_value":"Assay cycle 1 and cycle 4 crops for iron"},{"_value":"Write the plateau result up for the coagulation note"}]}
 ```
@@ -51,11 +52,11 @@ $ omg query 'select _path, open: _nodes { _value where _kind == "md:task" and no
 The sugar reaches everywhere a value stands (OQX 0.20): a call argument
 (`size(_nodes { is checked })`), and a `follow` destination — `follow _children {
 depth 2 }` is that destination's block, with `depth`/`frontier` as its own
-clauses after `where` (the citation walk's block, `follow _out_links collect {
-from _dst depth 2 }`, carries them the same way; there is no second brace).
-`x distinct { … }` is `x collect distinct { … }`. The top level is unchanged:
-`type == "substance" from docs` is still the clause-order error, because
-`where` follows `from`.
+clauses after `where` (the citation walk's block, `follow _out_links { from _dst
+depth 2 }`, carries them the same way; there is no second brace). `x distinct {
+… }` is `x collect distinct { … }`. The clause form (`select … from docs …`,
+still read) is unchanged: there `type == "substance" from docs` is still the
+clause-order error, because `where` follows `from`.
 
 ## Brackets: `x[p]`, `x[p]!`, `x[n]`
 
@@ -63,7 +64,7 @@ from _dst depth 2 }`, carries them the same way; there is no second brace).
 from [joins-and-lifts.md](./joins-and-lifts.md), navigated straight to a field:
 
 ```console
-$ omg query 'select subject, process: ^docs[slug == ^subject]._path from docs where type == "lab-note"' --jsonl
+$ omg query 'docs { select subject, process: ^docs[slug == ^subject]._path where type == "lab-note" }' --jsonl
 {"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","subject":"calcination","process":"/processes/calcination.md"}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","subject":"coagulation","process":"/processes/coagulation.md"}
 ```
@@ -72,14 +73,14 @@ $ omg query 'select subject, process: ^docs[slug == ^subject]._path from docs wh
 a lookup that doubles as an assertion. The one practitioner after 1600:
 
 ```console
-$ omg query 'select who: ^docs[type == "practitioner" and era > 1600]!._title from docs where _path == "/index.md"' --jsonl
+$ omg query 'docs { select who: ^docs[type == "practitioner" and era > 1600]!._title where _path == "/index.md" }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","who":"Isaac Newton"}
 ```
 
 Drop the era bound and four practitioners match — `single` refuses:
 
 ```console
-$ omg query 'select who: ^docs[type == "practitioner"]!._title from docs where _path == "/index.md"'
+$ omg query 'docs { select who: ^docs[type == "practitioner"]!._title where _path == "/index.md" }'
 error[filter_invalid]: single { … } for 'receiver' matched 4 rows
   {
     "reason": "single { … } for 'receiver' matched 4 rows",
@@ -91,7 +92,7 @@ error[filter_invalid]: single { … } for 'receiver' matched 4 rows
 is absent, not an error. (`refs()` is explained below.)
 
 ```console
-$ omg query 'select first_before: refs(before)[0]._path from docs where type == "milestone"' --jsonl
+$ omg query 'docs { select first_before: refs(before)[0]._path where type == "milestone" }' --jsonl
 {"_id":"d_q3f4m8t","_path":"/timeline/kickoff.md"}
 {"_id":"d_3n5zn8a","_path":"/timeline/review.md","first_before":"/timeline/kickoff.md"}
 ```
@@ -103,7 +104,7 @@ coercion (`0!` and `""!` are values): use it to insist that a field is present
 before you rely on it. Both texts carry an `era`:
 
 ```console
-$ omg query 'select era! from docs where type == "text"' --jsonl
+$ omg query 'docs { select era! where type == "text" }' --jsonl
 {"_id":"d_wc1napn","_path":"/texts/emerald-tablet.md","era":800}
 {"_id":"d_f7w5k26","_path":"/texts/mutus-liber.md","era":1677}
 ```
@@ -111,7 +112,7 @@ $ omg query 'select era! from docs where type == "text"' --jsonl
 The substances do not — the error names the expression and the row:
 
 ```console
-$ omg query 'select era! from docs where type == "substance"'
+$ omg query 'docs { select era! where type == "substance" }'
 error[filter_invalid]: `era!` is absent on "d_0vsapzt"
   {
     "reason": "`era!` is absent on \"d_0vsapzt\"",
@@ -130,10 +131,10 @@ infix `x is y` / `x is not y` compares **identity** — a row's id when it has o
 else the value itself. `x is null` is the idiomatic absence test:
 
 ```console
-$ omg query 'from docs where type == "text" and era is not null'
+$ omg query 'docs { type == "text" and era is not null }'
 d_wc1napn  /texts/emerald-tablet.md
 d_f7w5k26  /texts/mutus-liber.md
-$ omg query 'from docs where type == "practitioner" and era is null'
+$ omg query 'docs { type == "practitioner" and era is null }'
   no hits
 ```
 
@@ -147,7 +148,7 @@ An alias is usable by the items after it (inlined before evaluation, as a
 `where` alias is). Look a row up once, then navigate it twice:
 
 ```console
-$ omg query 'select hub: ^docs[type == "hub"], hub_path: hub._path from docs where type == "lab-note"' --jsonl
+$ omg query 'docs { select hub: ^docs[type == "hub"], hub_path: hub._path where type == "lab-note" }' --jsonl
 {"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","hub":{"_id":"d_sz1e8z0","_path":"/index.md"},"hub_path":"/index.md"}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","hub":{"_id":"d_sz1e8z0","_path":"/index.md"},"hub_path":"/index.md"}
 ```
@@ -161,7 +162,7 @@ and `after:` hold paths — the `/`-rooted reference form, a bare repo-relative
 path, and a reference to a note that does not exist (yet):
 
 ```console
-$ omg query 'select _path, before, after from docs where type == "milestone"' --jsonl
+$ omg query 'docs { select _path, before, after where type == "milestone" }' --jsonl
 {"_id":"d_q3f4m8t","_path":"/timeline/kickoff.md","after":"/timeline/review.md"}
 {"_id":"d_3n5zn8a","_path":"/timeline/review.md","before":["/timeline/kickoff.md","processes/dissolution.md","/timeline/lost-notes.md"],"after":"/timeline/next-season.md"}
 ```
@@ -172,7 +173,7 @@ name — either path form, or a `d_…` id — and drops what resolves to nothin
 a receiver …
 
 ```console
-$ omg query 'select _path, prior: refs(before) collect { _path, when } from docs where type == "milestone"' --jsonl
+$ omg query 'docs { select _path, prior: refs(before) { _path, when } where type == "milestone" }' --jsonl
 {"_id":"d_q3f4m8t","_path":"/timeline/kickoff.md","prior":[]}
 {"_id":"d_3n5zn8a","_path":"/timeline/review.md","prior":[{"_path":"/timeline/kickoff.md","when":"2026-01-05"},{"_path":"/processes/dissolution.md"}]}
 ```
@@ -182,7 +183,7 @@ $ omg query 'select _path, prior: refs(before) collect { _path, when } from docs
 `order by` makes the two depth-2 rows print in path order):
 
 ```console
-$ omg query 'select _path, $depth from docs where _path == "/timeline/review.md" follow refs(before), refs(after) order by $depth asc, _path asc' --jsonl
+$ omg query 'docs { select _path, $depth where _path == "/timeline/review.md" follow refs(before), refs(after) order by $depth asc, _path asc }' --jsonl
 {"_id":"d_3n5zn8a","_path":"/timeline/review.md","$depth":1}
 {"_id":"d_91vsvhk","_path":"/processes/dissolution.md","$depth":2}
 {"_id":"d_q3f4m8t","_path":"/timeline/kickoff.md","$depth":2}
@@ -194,7 +195,7 @@ form, "the documents whose `before` names me" is a membership test against the
 outer row's path — here in the short block form:
 
 ```console
-$ omg query 'select _path, next: ^docs { ^_path in list(before) } from docs where type == "milestone"' --jsonl
+$ omg query 'docs { select _path, next: ^docs { ^_path in list(before) } where type == "milestone" }' --jsonl
 {"_id":"d_q3f4m8t","_path":"/timeline/kickoff.md","next":[{"_id":"d_3n5zn8a","_path":"/timeline/review.md"}]}
 {"_id":"d_3n5zn8a","_path":"/timeline/review.md","next":[]}
 ```
@@ -203,7 +204,7 @@ And the mistake `refs()` exists to catch: `follow before` reaches the strings
 themselves, and a hit must be a store row —
 
 ```console
-$ omg query 'from docs where _path == "/timeline/review.md" follow before'
+$ omg query 'docs { where _path == "/timeline/review.md" follow before }'
 error[filter_invalid]: a hit must be a document, block, node, link or revision row — the query reached a string ("/timeline/kickoff.md"); to follow document references held in a property use refs(<field>)
   {
     "reason": "a hit must be a document, block, node, link or revision row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)",

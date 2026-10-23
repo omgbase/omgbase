@@ -65,10 +65,10 @@ describe("errors", () => {
     expect(isRunShortcut({ key: "a", metaKey: true, ctrlKey: false })).toBe(false);
   });
   it("locatorQuery: how a clicked id finds its document (5.0 names)", () => {
-    expect(locatorQuery("b_153")).toBe('select _path from blocks where _id == "b_153"');
-    expect(locatorQuery("n_1")).toBe('select _path from nodes where _id == "n_1"');
-    expect(locatorQuery("e_1")).toBe('select _path from links where _id == "e_1"');
-    expect(locatorQuery("r_7")).toBe('select _path, _doc_id from revisions where _rev == "r_7"');
+    expect(locatorQuery("b_153")).toBe('blocks { select _path where _id == "b_153" }');
+    expect(locatorQuery("n_1")).toBe('nodes { select _path where _id == "n_1" }');
+    expect(locatorQuery("e_1")).toBe('links { select _path where _id == "e_1" }');
+    expect(locatorQuery("r_7")).toBe('revisions { select _path, _doc_id where _rev == "r_7" }');
     expect(locatorQuery("d_1")).toBeNull();
     expect(locatorQuery("c_1")).toBeNull();
   });
@@ -80,19 +80,19 @@ describe("the console over a scripted minimal server", () => {
       query: (a, n) => (n === 0 ? page([{ _id: "d_1", _path: "/a.md" }], { truncated: true, cursor: "c1" }) : page([{ _id: "d_2", _path: "/b.md" }])),
       query_syntax: () => ({ syntax: "# query — OQX syntax reference" }),
     });
-    const first = await runConsole(s, "from docs", { repo: null });
+    const first = await runConsole(s, "docs { }", { repo: null });
     const next = nextPage(first, { repo: null })!;
-    const second = await runConsole(s, "from docs", next);
+    const second = await runConsole(s, "docs { }", next);
     expect(second.hits).toEqual([{ _id: "d_2", _path: "/b.md" }]);
     expect(await fetchSyntax(s)).toBe("# query — OQX syntax reference");
     expect(s.calls).toEqual([
-      { name: "query", args: { query: "from docs", limit: DEFAULT_LIMIT } },
-      { name: "query", args: { query: "from docs", limit: DEFAULT_LIMIT, cursor: "c1" } },
+      { name: "query", args: { query: "docs { }", limit: DEFAULT_LIMIT } },
+      { name: "query", args: { query: "docs { }", limit: DEFAULT_LIMIT, cursor: "c1" } },
       { name: "query_syntax", args: {} },
     ]);
   });
   it("surfaces the engine's error envelope", async () => {
     const s = new ScriptedCaller({ query: () => new OmgError("filter_invalid", "`target` is not a field of links (fields: _id, _path, …)", { hint: "OQX" }) });
-    await expect(runConsole(s, "select target from links")).rejects.toMatchObject({ code: "filter_invalid" });
+    await expect(runConsole(s, "links { select target }")).rejects.toMatchObject({ code: "filter_invalid" });
   });
 });

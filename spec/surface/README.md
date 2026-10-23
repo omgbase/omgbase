@@ -81,8 +81,8 @@ block's equality probe over a root scan** from the store's indexes
 (implementation note, 2026-10-08: `oqx-js/store-index.ts`,
 `omgbase-surface::store_index`): a root (`^<target>` from a row, a bare target
 at the root scope) is handed to the engine lazily and a block whose top-level
-conjunct is `local == outer` — `^docs collect { where customer == ^_path
-}`, `^links exists { where _dst_id == ^_id }`, `^docs single { where
+conjunct is `local == outer` — `^docs { customer == ^_path }`,
+`^links exists { _dst_id == ^_id }`, `^docs single {
 type == "x" }` — is served by one indexed statement per probe (docs `_id`,
 `_path`, `_title`, any property key by typed value; blocks `_id`, `_doc_id`,
 `_type`, `_path`; nodes `_id`, `_doc_id`, `_kind`, `_name`, `_path`; links
@@ -176,8 +176,9 @@ proves each decline: `query-errors::planned-*` and the `planned-*` cases of
 
 ### 1.1 Roots and rows
 
-`from docs | blocks | nodes | links | revisions` — and, from inside a row,
-`^docs | ^blocks | ^nodes | ^links | ^revisions` (the root row, below) — scan
+`docs | blocks | nodes | links | revisions { … }` — the collection heading the
+body — and, from inside a row, `^docs | ^blocks | ^nodes | ^links | ^revisions`
+(the root row, below) — scan
 the repo's rows in a fixed order (the four **live** collections, and the
 history, 4.7):
 
@@ -274,9 +275,9 @@ names** — a `$id` or `$path` in a query is an unknown OQX identifier, absent
 runner spells a bare row function as a method on `$it` (`text("x")` →
 `$it.text("x")`), the language's own name for the scope's row, and keeps no
 receiver token of its own (`query-errors::dollar-self-is-not-a-name`, 4.11).
-**Collections stay bare** — `from docs`, `^docs`, `0^docs`, `docs count { … }`,
-`entries(^$it)` yields `docs blocks nodes links revisions` — because `from`
-names a collection, not a row property (§1.1); and so do the **row functions
+**Collections stay bare** — `docs { … }`, `^docs`, `0^docs`, `docs count { … }`,
+`entries(^$it)` yields `docs blocks nodes links revisions` — because the
+collection heading a body names a collection, not a row property (§1.1); and so do the **row functions
 in call position** (`text("x")`, `semantic(…)`, `under(…)`, `refs(x)`,
 `date(x)`, …): a call is never an entry read (§1.3). **The self aliases are
 gone**: `doc` on a document, `block` on a block and `section` on a node
@@ -337,7 +338,7 @@ blocks and nodes an `_attrs` key, on links and revisions nothing):
 Language words that can never be a bare field: `select from where is not and
 or`, the literals `true false null`. Contextual words (`limit order offset
 follow collect count first distinct desc by in`) parse as fields in
-expression position (`select o: order, l: limit from docs`;
+expression position (`docs { select o: order, l: limit }`;
 `query-docs::contextual-words-are-fields-in-expression-position`,
 `reads::bare-attributes`).
 
@@ -398,17 +399,17 @@ pre-order rank, then `span_start`, then `node_id` — §9), `_blocks` (live,
 **document order**: pre-order over the tree — §9), `_out_links` / `_in_links`
 (open edges, `(predicate, edge_id)` order). There is **no `_out` / `_in`
 relation** (3.0 follow-up, §9): the documents a doc links TO are its link
-rows' destinations, `_out_links collect distinct { from _dst }`, and the
-documents linking to it their sources, `_in_links collect distinct { from
+rows' destinations, `_out_links distinct { from _dst }`, and the
+documents linking to it their sources, `_in_links distinct { from
 _doc }` (`from` over an absent `_dst` — an external link, a dangling
 `[[wikilink]]` — contributes no row); the citation walk is `follow _out_links
-collect { from _dst }` / `follow _in_links collect { from _doc }`, with
-`depth`/`frontier` as clauses of the block (oqx 0.20: `… collect { from _dst
+{ from _dst }` / `follow _in_links { from _doc }`, with
+`depth`/`frontier` as clauses of the block (oqx 0.20: `… { from _dst
 depth 2 }`) and a body-level `frontier <pred>` before `follow` applying to
 the seeds (`query-follow::body-frontier-keeps-seeds-unexpanded`);
 `_revisions` (4.7) — the document's revision rows (below), **oldest first**
-(`_seq`), so `_revisions count { where _origin == "api" } > 0` is "edited
-through the API" and `_revisions collect { _seq, _ts }` its timeline
+(`_seq`), so `_revisions count { _origin == "api" } > 0` is "edited
+through the API" and `_revisions { _seq, _ts }` its timeline
 (`query-revisions::docs-relation-*`; `_doc._revisions` from a block or link
 row reaches the same list). A bare `out`, `in`, `doc` or any other bare name
 on a doc reads an authored property — except the five root names, which
@@ -501,7 +502,7 @@ exactly as `_dst_path` is), absent (`undefined`) for a `block` or `external`
 destination and for a phantom (the kind with no row). `_dst` never reaches
 into a block. So `_dst._title` is the destination's computed title, `_dst {
 _title }` a one-element list (or empty), `_dst values` the row as `{ _id,
-_path }` (or null), `_out_links exists { where _dst.layer == "draft" }` a
+_path }` (or null), `_out_links exists { _dst.layer == "draft" }` a
 doc-level filter on what is linked to, and `_dst._id` / `_dst._path` read
 `_dst_id` / `_dst_path` wherever `_dst` exists (`query-links::dst-reach-through`,
 `::dst-block-sugar`, `::dst-identity-reads-the-foreign-key`,
@@ -566,9 +567,9 @@ reference, a non-string element) is **dropped** — no phantom row, no error.
 Order is preserved and duplicates are kept (a `follow` step's union dedups
 them anyway). The rows are docs rows exactly as the root scan constructs them,
 each found by one indexed lookup under the scan's guards (`docs` is never read
-whole), so `refs(x)` serves wherever rows do: a source (`from refs("/a.md")`),
-a directive receiver (`refs(see_also) collect { _path }`, `refs(before) exists
-{ where _path == "x" }`), a `follow` destination (`follow refs(before),
+whole), so `refs(x)` serves wherever rows do: a source (`refs("/a.md") { … }`),
+a directive receiver (`refs(see_also) { _path }`, `refs(before) exists
+{ _path == "x" }`), a `follow` destination (`follow refs(before),
 refs(after)` walks a timeline both ways), a nested `from` (`from
 refs(^before)`), or a value (`size(refs(before))`; as a `values` item its rows
 render `{ _id, _path }`, §1.4). It is the remedy for `follow before` over a
@@ -727,8 +728,8 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   spelling): the row's identity under the *same* engine names the expression
   language reads, injected first, then whatever `select` projected. The
   envelope keys are the attributes, so a key copied from a hit is valid in
-  the next `where` with no translation — `select _id from docs where _id ==
-  "d_14"` returns `{ _id: "d_14", _path: "/substances/salt.md" }`
+  the next `where` with no translation — `docs { select _id where _id ==
+  "d_14" }` returns `{ _id: "d_14", _path: "/substances/salt.md" }`
   (`query-docs::hit-envelope-round-trip`, `reads::hit-envelope-round-trip`,
   §7 `read-query`). **Projections may not overwrite the envelope**: `select
   _id, _path` is simply the envelope (the attribute collapses onto its own
@@ -760,7 +761,7 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   or `single` query must be a docs, blocks, nodes, links or (4.7) revisions
   row; a query whose rows reach anything else — `follow before` over a
   frontmatter list of paths (the strings), a block re-projected to scalars
-  (`docs collect { select $it from tags }`) — fails as `filter_invalid` with
+  (`docs { select $it from tags }`) — fails as `filter_invalid` with
   the message `` a hit must be a document, block, node, link or revision row —
   the query reached a string ("/timeline/kickoff.md"); to follow document
   references held in a property use refs(<field>) `` (`… node or link row …`
@@ -772,7 +773,7 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   scalars (`follow before` with `select $it values` yields the seed as `{ _id,
   _path }` and then the raw strings; `query-refs::values-mode-over-scalar-rows-is-exempt`),
   and a nested block's rows are never hits — rows as values below is unchanged
-  (`tags collect { }` is the tag strings).
+  (`tags { }` is the tag strings).
 - `collect`: a top-level `select distinct` dedups hits by the user
   projection (every key but the envelope's `_id`/`_path`; first wins), the
   query's own `limit`/`offset` (integer literals only, else `filter_invalid`)
@@ -788,7 +789,7 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   `hits` empty — no hits, so the envelope does not apply
   (`query-docs::values-mode-is-unchanged-by-the-envelope`).
 - **`bare` (4.2).** With `bare: true` every hit is its **projection only** —
-  no automatic `_id`/`_path` members — so `select _title, era from docs …`
+  no automatic `_id`/`_path` members — so `docs { select _title, era … }`
   yields `{ _title, era }` rows (`query-docs::bare-projection`; `first`/
   `single` return their one hit bare too, `::bare-first-is-the-projection`).
   The rules, checked in this order over the resolved query before the engine
@@ -813,7 +814,7 @@ truncated, cursor, consumer, count?, exists?, none?, values? }`:
   the query's own `limit`/`offset` and the keyset page — so `truncated` and
   `cursor` are exactly the enveloped query's and a cursor continues a bare
   sequence (`::bare-paging-keeps-cursor` issues the same cursor as the
-  enveloped `select _title from docs` with `limit 2`;
+  enveloped `docs { select _title }` with `limit 2`;
   `::bare-paging-continues-from-cursor`). `follow` results and nested
   `collect`/`first`/`single` blocks are values, not hits, and are untouched
   (rows as values below still render `{ _id, _path }`). The default envelope is
@@ -863,7 +864,7 @@ The generic decoder (`cursor.json`) is unchanged.
 ### 1.5 Unknown names (4.6; one tier since 5.0)
 
 A query that projects, filters or orders by a name no row of the scope's kind
-can carry used to run silently: `select _path, target from links` (links have
+can carry used to run silently: `links { select _path, target }` (links have
 `_dst_path`) returned rows of an absent column; `where target == "x"` matched
 nothing, `where target != "x"` and `not has(target)` matched **everything** —
 and a write selector aimed by such a name would have selected every row. Since
@@ -880,8 +881,8 @@ AST.md §5b (`references`): every bare identifier, every dotted navigation
 headed by one (`_doc.layer`, `meta.owner`, `_data.x`), every outer reference
 (`^stage`, `^_title`), in `select` items, `where`, `order by`, `frontier`, a
 `follow` destination (plain or the receiver of a destination block) and inside
-every nested block (`_nodes exists { where _kind == … }` judges `_kind` against
-nodes; `^docs exists { where layer == … }` judges `layer` against docs), and
+every nested block (`_nodes exists { _kind == … }` judges `_kind` against
+nodes; `^docs exists { layer == … }` judges `layer` against docs), and
 the receiver of a method call (`target.contains("x")` references `target`).
 The kind a name is judged against is the kind of the rows of its scope,
 resolved along the scope's row chain: the root collection, each `from`, each
@@ -894,7 +895,7 @@ aliases where the language resolves them (the same body's `where` and later
 items — `resolve` already validates them), names a nested block lifts onto the
 scope (`^open: value`), `$`-names (`$it`, `$key`, `$depth`, …), `${}` bindings,
 function and method names (a call is never an entry read), root names (`docs`
-in `from docs`, `^docs`; an unknown one is §1.1's error), the member tail under
+heading a body, `^docs`; an unknown one is §1.1's error), the member tail under
 an engine attribute (`_attrs.anything`, `_tags.size()`), a scope whose kind
 cannot be determined (a `refs(x)`-free value receiver, a walk over mixed
 kinds), and the root scope (depth 0).
@@ -1246,7 +1247,7 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   _ts, _origin, _actor, _hash (the rendered hash), _is_current, _archived
   (4.9) }] }` oldest first. **A version is a `revisions` row** (5.0), under
   the row's names exactly — the same list is the `revisions` query target
-  (§1.2, 4.7): `from revisions where _path == … order by _seq`, so a key
+  (§1.2, 4.7): `revisions { _path == … order by _seq }`, so a key
   copied from a version is valid in the next query (through 4.11 a version
   spelled `updated_at` for the row's `ts` and `isCurrent` for `is_current`);
   `deleted` and `currentRev` are roles of the document entry. A `select
@@ -1414,8 +1415,8 @@ budget). Since 4.4 the write rungs are spelled in the `spec/mutate` 3.2 sugar
 expression — and each trailing comment teaches one thing; the plans they
 produce equal the 4.3 object-form rungs' where the intent is the same
 (`mcp/examples.test.ts` pins those digests). Since 4.5 the `query` ladder
-carries a `links` rung (`select _path, _block_id from links where _dst_path ==
-"/processes/calcination.md"` — inbound links, `_path` the source) and a
+carries a `links` rung (`links { select _path, _block_id where _dst_path ==
+"/processes/calcination.md" }` — inbound links, `_path` the source) and a
 string-method rung (`_title.lower().contains("salt")`, the comment naming
 `matches("^Merc")` for a regex), its first rung folding the tag-membership
 and paging example into the frontmatter one to stay in budget; `plan`'s
@@ -1434,7 +1435,7 @@ documents (`{"path":"/processes/","files":true}`) and the nested rollup
 (`{"depth":2,"updated":true}`).
 Since 4.7 the `docs_read` ladder carries
 the time-travel rung `{"_path":"/processes/calcination.md","at":"r_7"}` (the
-comment pointing at `from revisions where _path == …` for the ids; `r_7` is
+comment pointing at `revisions { _path == … }` for the ids; `r_7` is
 the revision the fixture minter gives that document's ingest, so the rung
 runs before any write) — 31 steps since 5.1 (29 through 5.0). The ladders are the first of
 three teaching surfaces: the second is the error `fix` — every error the
@@ -1521,7 +1522,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_tree` / `docs_list` | §2 args (`docs_tree`: `path?`, `depth?`, `files?`, `updated?`, `limit?`, `cursor?`, `budget_tokens?` — 5.1) | §2 (`docs_tree`: `{ prefix, depth, total, files_here, entries, truncated, cursor }`, 5.1) |
 | `query_syntax` | `section?` (5.1) | **(5.1)** without `section` the **card**: `{ syntax, sections }` — `syntax` a ~3.5 kB hand-written card (the grammar skeleton and clause order, the names rule with the engine names per kind, the handles and reach-throughs, scoping, the consumers, `follow` in two lines, search, eleven examples, the `data.fix` sentence, the chapter names) and `sections` the chapter names in order; `{ section: "<name>" }` one chapter, `{ section, syntax }` — the manual's `##` headings slugified, in order: `sugar`, `paths`, `targets`, `scoping`, `scalars`, `predicates`, `nested`, `select`, `flatten`, `order`, `follow`, `semantic`, `examples` — the text from that heading up to the next one (trailing blank lines dropped, one trailing newline); `{ section: "all" }` the whole manual (`{ section: "all", syntax }`, the 38 kB text `{ syntax }` carried through 5.0). An unknown name is `filter_invalid { hint: "arguments", fix }`: "unknown section `<name>`; the sections are sugar, …, examples, all (query_syntax takes section?)", `fix` the call respelled with the nearest name (§4 "Arguments": Levenshtein ≤ 2 or a prefix) or `all`. Both engines serve every text byte for byte (the reference's `mcp/reference.ts` is the source; the Rust twin's tests compare against it); pinned by `reads::query-syntax` and the ladders |
 | `query` | `query`, `limit?`, `cursor?`, `bare?` (4.2) | §1.4; `semantic(...)` with no provider → `provider_unavailable` (`data: { provider: null }`, the message naming what to configure); a provider whose model has embedded nothing in the repository → `provider_unavailable` too (`data: { provider, model }`), never path-ordered rows with no score (3.0) |
-| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ _id, _path, degree, frontier, ...select }], links: [{ _id, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _dst_kind, _predicate, _provenance, _anchor, _field }], frontier: [{ _id, _path, degree }], truncated, queries }` (`roots`, `degrees`, `direction`, `degree`, `frontier`, `truncated`, `queries` are roles) — compiled to `follow distinct _out_links collect { from _dst }` / `follow distinct _in_links collect { from _doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's attributes under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `_id`/`_path` selection collapses onto the envelope key exactly as a `query` hit's does, any other name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
+| `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ roots, degrees, direction, documents: [{ _id, _path, degree, frontier, ...select }], links: [{ _id, _doc_id, _block_id, _via_id, _dst_id, _dst_path, _uri, _dst_kind, _predicate, _provenance, _anchor, _field }], frontier: [{ _id, _path, degree }], truncated, queries }` (`roots`, `degrees`, `direction`, `degree`, `frontier`, `truncated`, `queries` are roles) — compiled to `follow distinct _out_links { from _dst }` / `follow distinct _in_links { from _doc }` (the link rows walked to the documents at their other end, §1.2; `follow doc.out`/`doc.in` before the 3.0 follow-up) with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a link row carries the `links` target's attributes under their own names (§1.2, 3.0 — `edges[]` until the name pass, and before that a rename table spelled `src`/`dst`/`dst_uri`/`src_field`); an `_id`/`_path` selection collapses onto the envelope key exactly as a `query` hit's does, any other name is its own column (deduped by suffix) and an expression is `sel_<i>` — a `graph` selection can never overwrite the envelope |
 | `blocks_search` | `q`, `limit?` | `spec/search` §1.3 (3.0; `text_search` before surface 3.0): `{ hits: [{ _id (the block), _doc_id, _path (reference form), _type, _text, score }], truncated }` |
 | `blocks_resolve` | `query`, `limit?` | `spec/search` §4 (3.0; `resolve` before surface 3.0; vector fused when a provider exists): `[{ _id, locator, preview, evidence }]`, the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
 | `apply` | `effects[]`, `select?`, `expect?`, `reason?` | (4.0) `spec/mutate` §11.7: plan + execute under the one tool-call lock and one transaction → the Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], new_ids: { "$new.n": id }, committed: true, summary: [string] }` — `summary` (4.4) the plan's `preview.summary`, one line in words per effect (`spec/mutate` §11.9); `revisions[]._path` in the reference form, `_hash` the document's hash after the commit (the rendered bytes' sha256; the same shape as a `changes_since` revision, §3), `commit` `null` when the plan had nothing to commit; `origin.actor = "agent:mcp"`. The effects' targets are `{ kind: "document", _id? | _path? }`, `{ kind: "block", _id }`, `{ kind: "node", _id }` (or the bare forms — a path, a `b_`/`d_`/`n_` id, `$new.n`; `{ kind: "section", heading_id }` unchanged) and their fields `_frontmatter.<key>`, `_attrs.checked`, `content`, `markdown` (`spec/mutate` 4.0 §11). **Every mutating tool below returns this Receipt** (its extras noted per row). `effects` missing → `filter_invalid` "`effects` is required"; the 3.x inputs → the retired-name errors above (`ops` — the kernel ops `apply` took through 3.x are a library/fixture contract, `spec/mutate` §4 — and `dry_run`: the preview is `plan`). **Query-directed (4.1, `spec/mutate` §11.8)**: with `select` (an OQX query string) the `effects` are templates bound to the selector's hits exactly as `plan` does below, and `expect: { max }` is **required** — missing → `filter_invalid { hint: "selection" }` ("`expect.max` is required on `apply` with `select`"); more hits than `max` → `selection_too_large`, nothing written; zero hits → the Receipt with `commit: null`. `expect` without `select` is `filter_invalid` too |

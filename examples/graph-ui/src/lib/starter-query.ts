@@ -38,10 +38,11 @@ export const SAMPLE_PROBE_PATH = "/timeline/kickoff.md";
  * no correlation). `_title` is the computed title attribute (spec/surface
  * §1.2), the authored one being the bare `title`. */
 export function starterQuery(names: EngineNames = NAMES_5): string {
-  return `select ${names.path}, ${names.title}
-from docs
-order by ${names.updated_at} desc
-limit 40`;
+  return `docs {
+  select ${names.path}, ${names.title}
+  order by ${names.updated_at} desc
+  limit 40
+}`;
 }
 
 /** The starter in the native (5.0) spelling. */
@@ -61,16 +62,17 @@ export function isPresetQuery(source: string): boolean {
  * placeholder when none is known). */
 export function timelineStarter(start: string | null = null, names: EngineNames = NAMES_5): string {
   const literal = start === null ? "/path/to/start.md" : rooted(start);
-  return `select ${names.path}, ${names.title}, before, after
-from docs
-where ${names.path} == ${JSON.stringify(literal)}
-follow distinct refs(before), ${names.in_links} collect { from ${names.doc} where ^${names.path} in list(after) }`;
+  return `docs {
+  select ${names.path}, ${names.title}, before, after
+  where ${names.path} == ${JSON.stringify(literal)}
+  follow distinct refs(before), ${names.in_links} { from ${names.doc} where ^${names.path} in list(after) }
+}`;
 }
 
 /** The one cheap probe: does `path` exist in the repository? (`limit 1`, so a
  * `hits.length > 0` answer.) */
 export function existsQuery(path: string, names: EngineNames = NAMES_5): string {
-  return `select ${names.path} from docs where ${names.path} == ${JSON.stringify(rooted(path))} limit 1`;
+  return `docs { select ${names.path} where ${names.path} == ${JSON.stringify(rooted(path))} limit 1 }`;
 }
 
 export interface RepositoryShape {

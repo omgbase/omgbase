@@ -15,7 +15,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "from blocks where _path == \"/processes/magnum-opus.md\" and _type == \"table\""
+          "query": "blocks { _path == \"/processes/magnum-opus.md\" and _type == \"table\" }"
         }
       },
       {

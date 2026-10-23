@@ -109,7 +109,7 @@ export class QueryConsole extends LitElement {
         <button type="button" @click=${this.openSyntax}>syntax</button>
         <button type="button" class="primary" ?disabled=${this.running || !this.query.trim()} @click=${this.run} title="⌘/Ctrl + Enter">${this.running ? "running…" : "run"}</button>
       </div>
-      <textarea spellcheck="false" .value=${this.query} placeholder="select _title, layer from docs where …   (⌘/Ctrl+Enter runs)"
+      <textarea spellcheck="false" .value=${this.query} placeholder="docs { select _title, layer where … }   (⌘/Ctrl+Enter runs)"
         @input=${(e: Event) => { this.query = (e.target as HTMLTextAreaElement).value; this.emit("console-input", { query: this.query }); }}
         @keydown=${this.onKeydown}></textarea>
       ${r?.hints?.length ? html`<div class="hints" data-hints>${r.hints.map((h) => html`<div>${renderBackticks(h)}</div>`)}</div>` : nothing}

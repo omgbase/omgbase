@@ -103,7 +103,7 @@ function authoredKey(recv: Expr | null, name: string, ctx: Ctx): Expr {
   return recv ? member(recv, name) : ident(name);
 }
 
-/** A relation rendered as a collect: `_in_links collect { from _doc }`, `_blocks collect { where _type == "task" }`. */
+/** A relation rendered as a collect: `_in_links { from _doc }`, `_blocks { where _type == "task" }`. */
 function collectOf(receiver: Expr, body: CollectBody): Expr {
   switch (body) {
     case "from _doc": return build.op(receiver, "collect", build.subquery({ from: [ident("_doc")] }));
@@ -261,7 +261,7 @@ export function rebaseWhere(w: Where, name: string): Where {
 }
 
 /** `collect(x)` — or, when a SORT preceded the GROUP BY, the block form that
- * carries the row order: `rows collect { x values order by … }`. */
+ * carries the row order: `rows { x values order by … }`. */
 function aggregateOf(ctx: Ctx, fn: "collect" | "sum" | "min" | "max" | "avg" | "first" | "last" | "any" | "all", value: Expr): Expr {
   if (ctx.rowsOrder && (fn === "collect" || fn === "first" || fn === "last")) {
     ctx.rowsOrderUsed = true;
@@ -273,8 +273,8 @@ function aggregateOf(ctx: Ctx, fn: "collect" | "sum" | "min" | "max" | "avg" | "
   return call(null, fn, [value]);
 }
 
-/** The group's rows as records: `rows collect { select _path }` (docs) or
- * `rows collect { select _id, _text, checked, _path }` (tasks), ordered by the
+/** The group's rows as records: `rows { select _path }` (docs) or
+ * `rows { select _id, _text, checked, _path }` (tasks), ordered by the
  * pre-group SORT when there was one. */
 export function rowsCollect(ctx: Ctx): Expr {
   if (ctx.rowsOrder) ctx.rowsOrderUsed = true;

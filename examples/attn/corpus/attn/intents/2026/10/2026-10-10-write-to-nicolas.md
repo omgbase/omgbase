@@ -9,8 +9,9 @@ cues:
   - id: when-resting
     on: focus
     query: |
-      from docs
-      where type == "/terms/types/intent.md" and "rest" in tags
+      docs {
+        where type == "/terms/types/intent.md" and "rest" in tags
+      }
 ---
 
 # Write to Nicolas about the furnace

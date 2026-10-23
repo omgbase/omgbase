@@ -24,8 +24,8 @@ function minimalServer(): ScriptedCaller {
     },
     query: (a) => {
       const q = String(a.query);
-      if (q.startsWith("select _rev,")) return page([{ _id: "r_7", _path: "/calc.md", _rev: "r_7", _seq: 1, _ts: "t", _origin: "observed", _actor: null, _reason: null, _hash: "h", _is_current: true, _doc_id: "d_7" }]);
-      if (q.includes("from links")) return page([]);
+      if (q.startsWith("revisions { select _rev,")) return page([{ _id: "r_7", _path: "/calc.md", _rev: "r_7", _seq: 1, _ts: "t", _origin: "observed", _actor: null, _reason: null, _hash: "h", _is_current: true, _doc_id: "d_7" }]);
+      if (q.startsWith("links {")) return page([]);
       return page([{ _id: "d_7", _path: "/calc.md" }]);
     },
     query_syntax: () => ({ syntax: "# query" }),
@@ -44,7 +44,7 @@ describe("every feature over exactly the minimal ten", () => {
     expect(doc).toMatchObject({ id: "d_7", path: "/calc.md", raw: "# New\n" });
     await fetchLinks(s, doc.path, null);                              // 3. backlinks + outlinks
     await resolveWikilink(s, "salt", null);                           //    a [[wikilink]]
-    await runConsole(s, "from docs", {});                             // 4. the console
+    await runConsole(s, "docs { }", {});                             // 4. the console
     await fetchSyntax(s);                                             //    the syntax drawer
     const revs = await fetchRevisions(s, doc.id, null);               // 5. history
     expect(revs).toHaveLength(1);

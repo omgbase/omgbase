@@ -13,7 +13,7 @@ npm install -g @omgbase/embedder                              # puts omgbase-emb
 omg config set embedding.provider omgbase-embedder --repo ""  # workspace layer ⇒ every repo shares one vector space
 omg embed status && omg embed drain                           # queue depth / embed now
 omg find "how are ids kept stable"                            # hybrid FTS ⊕ vector (RRF)
-omg q 'from blocks order by semantic("crash safety") desc' -n 5
+omg q 'blocks { order by semantic("crash safety") desc }' -n 5
 ```
 
 `omg init` offers to set this automatically when `omgbase-embedder` is already on `PATH` (`--yes` accepts, `--embedder <cmd|url>` sets any provider verbatim, `--no-embedder` skips). Without a provider, semantic ranking simply reports `semantic_unavailable` and everything else works. A provider that *is* configured but fails to spawn or handshake is a loud `embedder_failed` — never a silent downgrade. In a checkout, `omg init --embedder <repo>/packages/embedder/dist/src/bin.js` works as well: the build (`pnpm build`, `node dist/src/postbuild.js` after `tsc`) sets the executable bit on `bin.js`, and when a `.js` provider cannot be spawned (EACCES/ENOENT) the error says to run it through node (`node <path>`).

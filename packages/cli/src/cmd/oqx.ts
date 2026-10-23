@@ -18,9 +18,12 @@ import { readStdin } from "./_mutate.js";
 // nodes … }` re-projects each doc through its nodes). Clause order is fixed
 // (ADR-020): `select … from … where … follow … order by … limit … offset …`,
 // each at most once, at the top level and inside every block. Only `select` may
-// drop its keyword, and only as the first clause (`_nodes collect { _name }`
-// projects); a predicate always needs `where` (`_nodes exists { where _kind ==
-// "md:task" }`), so a bare boolean property projects rather than filters.
+// drop its keyword, and only as the first clause (`_nodes { _name }` projects);
+// a predicate that LEADS a body needs no `where` (`_nodes exists { _kind ==
+// "md:task" }`, oqx 0.17) but a bare name there projects rather than filters
+// (`{ is checked }` filters), and a predicate after a projection keeps the
+// keyword; a consumer word with no block is the empty block (`_nodes exists`,
+// oqx 0.26).
 // `where` may use the body's select aliases. Features: a boolean where
 // tree over scalar predicates and consumer directives, count comparisons
 // (`nodes count { … } >= 2`), nestable collect, one-scope lifts (^name:) that
@@ -74,30 +77,30 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
         "examples:",
       ],
     });
-    cli.io.out("  e.g. query 'from docs where _nodes count { where _kind == \"md:task\" } >= 2'");
-    cli.io.out("       query 'select items: _blocks collect { where _type == \"list_item\" } from nodes where _kind == \"md:section\"'");
-    cli.io.out("       query 'select _title, open from docs where _nodes collect { ^open: _value where _kind == \"md:task\" and not checked }'");
-    cli.io.out("       query 'select owner_id, owner: ^nodes single { where _kind == \"person\" and id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^_id / 0^_id = the repository id");
-    cli.io.out("       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
-    cli.io.out("       query 'from docs where _nodes none { where _kind == \"md:task\" and not checked }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
-    cli.io.out("       query 'from docs where era is not null and (layer == \"canon\" or layer == \"working\")'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent");
+    cli.io.out("  e.g. query 'docs { _nodes count { _kind == \"md:task\" } >= 2 }'");
+    cli.io.out("       query 'nodes { select items: _blocks { _type == \"list_item\" } where _kind == \"md:section\" }'");
+    cli.io.out("       query 'docs { select _title, open where _nodes { ^open: _value where _kind == \"md:task\" and not checked } }'");
+    cli.io.out("       query 'docs { select owner_id, owner: ^nodes single { _kind == \"person\" and id == ^owner_id } }'   # ^docs/^nodes/^blocks/^links: the repository (the root row) from inside a row; 0^docs from any depth; ^_id / 0^_id = the repository id");
+    cli.io.out("       query 'docs count { layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
+    cli.io.out("       query 'docs { _nodes none { _kind == \"md:task\" and not checked } }'   # none = zero rows (≡ not … exists; \"every\" = none over the complement)");
+    cli.io.out("       query 'docs { era is not null and (layer == \"canon\" or layer == \"working\") }'   # and / or / not are the connectives (&& || ! accepted); x is y / x is not y = identity, x is null = absent");
     cli.io.out("       query 'docs { type == \"substance\" and not verified }'   # sugar: a block without a consumer is collect; a leading predicate drops `where` (bare names still project — filter a bare field with `is x`); after a follow destination too: follow _children { depth 2 } is its block");
-    cli.io.out("       query 'select subject, process: ^docs[slug == ^subject]._path from docs where type == \"lab-note\"'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; _title! = the value or a loud error; a select item may use the items to its left");
-    cli.io.out("       query 'select _title, $depth from docs where _path == \"/timeline/review.md\" follow refs(before), refs(after)'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination");
-    cli.io.out("       query 'select _title, next: ^docs { ^_path in list(before) } from docs where type == \"milestone\"'   # paths are /-rooted on the surface (_path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^_path directly");
-    cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
-    cli.io.out("       query 'select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(_data), entries(_attrs), entries(_inline)");
-    cli.io.out("       query 'select _path values from docs where layer == \"canon\"'   # `values`: bare values, no {_id,_path} hits (one item only)");
-    cli.io.out("       query 'select _title, tags: _tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag); _tags = authored tags ∪ #hashtags, bare `tags` the authored key alone");
-    cli.io.out("       query 'docs collect { from _nodes where _kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
-    cli.io.out("       query 'from docs where text(\"philosophers stone\") and layer == \"canon\"'   # full-text prune");
-    cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");
-    cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
-    cli.io.out("       query 'select t: _text, d: $depth, s: $stop from blocks where _id == \"b_x\" follow _children'   # recursive walk ($depth/$stop metadata)");
-    cli.io.out("       query 'from nodes where _name == \"Overview\" follow _subsections { depth 3 }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)");
-    cli.io.out("       query 'select p: _doc._path, d: $depth, s: $stop from docs where _path == \"/index.md\" follow _out_links collect { from _dst }'   # citation graph (cyclic-safe: $stop=cycle)");
-    cli.io.out("       query 'from blocks where _type == \"list_item\" and $leaf follow _children'   # $leaf/$depth/$stop filter the walk result post-walk");
-    cli.io.out("       query 'select src: _doc_id, to: _dst_path from links where _predicate == \"depends_on\"'   # the links target: _predicate/_provenance/_dst_kind + _doc_id/_dst_path/_uri");
+    cli.io.out("       query 'docs { select subject, process: ^docs[slug == ^subject]._path where type == \"lab-note\" }'   # x[p] = first match or absent; x[p]! = exactly one, required; x[n] = positional; _title! = the value or a loud error; a select item may use the items to its left");
+    cli.io.out("       query 'docs { select _title, $depth where _path == \"/timeline/review.md\" follow refs(before), refs(after) }'   # refs(field): the live documents a property's references name (either path form or a d_ id; dangling dropped) — a receiver, a source or a follow destination");
+    cli.io.out("       query 'docs { select _title, next: ^docs { ^_path in list(before) } where type == \"milestone\" }'   # paths are /-rooted on the surface (_path == \"/x.md\"; inputs accept both forms), so a property's reference compares with ^_path directly");
+    cli.io.out("       query 'docs { type == \"practitioner\" order by era desc limit 2 offset 1 }'   # limit/offset bound the set (after order/distinct, before the consumer)");
+    cli.io.out("       query 'docs { select fm: entries(_frontmatter) { k: $key, v: $it } where _path == \"/x.md\" }'   # a record as a collection ($key/$it); also entries(_data), entries(_attrs), entries(_inline)");
+    cli.io.out("       query 'docs { select _path values where layer == \"canon\" }'   # `values`: bare values, no {_id,_path} hits (one item only)");
+    cli.io.out("       query 'docs { select _title, tags: _tags { $it values where $it != \"draft\" } }'   # $it = the current item (here: each tag); _tags = authored tags ∪ #hashtags, bare `tags` the authored key alone");
+    cli.io.out("       query 'docs { from _nodes where _kind == \"md:task\" }'   # `from E` inside a body re-projects the rows (→ nodes)");
+    cli.io.out("       query 'docs { text(\"philosophers stone\") and layer == \"canon\" }'   # full-text prune");
+    cli.io.out("       query 'blocks { select s: semantic(\"the great work\") where semantic(\"the great work\") > 0.6 }'  # embedding score (needs a provider)");
+    cli.io.out("       query 'docs { type == \"practitioner\" order by era desc }'   # order by <expr> [asc|desc]");
+    cli.io.out("       query 'blocks { select t: _text, d: $depth, s: $stop where _id == \"b_x\" follow _children }'   # recursive walk ($depth/$stop metadata)");
+    cli.io.out("       query 'nodes { _name == \"Overview\" follow _subsections { depth 3 } }'   # follow [distinct] <dest> [{ where … frontier … depth n }] — a brace after any destination is that destination's block (identity is $key: project $key: <expr> to rekey a walk)");
+    cli.io.out("       query 'docs { select p: _doc._path, d: $depth, s: $stop where _path == \"/index.md\" follow _out_links { from _dst } }'   # citation graph (cyclic-safe: $stop=cycle)");
+    cli.io.out("       query 'blocks { _type == \"list_item\" and $leaf follow _children }'   # $leaf/$depth/$stop filter the walk result post-walk");
+    cli.io.out("       query 'links { select src: _doc_id, to: _dst_path where _predicate == \"depends_on\" }'   # the links target: _predicate/_provenance/_dst_kind + _doc_id/_dst_path/_uri");
     return EXIT_OK;
   }
 

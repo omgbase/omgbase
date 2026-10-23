@@ -5,7 +5,7 @@
 `follow <relation>` walks a relation **recursively**, so a query closed over its
 row type expands along that relation. omgbase exposes a few:
 
-- `_out_links collect { from _dst }` / `_in_links collect { from _doc }` — the
+- `_out_links { from _dst }` / `_in_links { from _doc }` — the
   citation graph (Markdown links and `[[wikilinks]]` become `references`
   edges): a *destination block* that walks a document's link rows to the
   documents at their other end — `_dst` is a link's destination document (absent
@@ -19,13 +19,13 @@ on: `$depth` (hops from the seed, seed = 1), `$stop` (why the walk stopped here)
 and `$ordinal` (a deterministic 1..N rank over the walk). `distinct` collapses
 the walk to the set of reached rows.
 
-## The citation closure (`_out_links collect { from _dst }`)
+## The citation closure (`_out_links { from _dst }`)
 
 Everything `index.md` reaches by following links, transitively. We print just
 the paths, sorted, for a stable set:
 
 ```console
-$ omg query 'from docs where _path == "/index.md" follow distinct _out_links collect { from _dst }' | awk '{print $2}' | sort
+$ omg query 'docs { _path == "/index.md" follow distinct _out_links { from _dst } }' | awk '{print $2}' | sort
 /index.md
 /lab/2026-02-notes.md
 /practitioners/jabir-ibn-hayyan.md
@@ -42,16 +42,16 @@ $ omg query 'from docs where _path == "/index.md" follow distinct _out_links col
 /texts/mutus-liber.md
 ```
 
-## Backlinks (`_in_links collect { from _doc }`)
+## Backlinks (`_in_links { from _doc }`)
 
-`_in_links collect { from _doc }` walks the edges backwards — the inbound link
+`_in_links { from _doc }` walks the edges backwards — the inbound link
 rows to their source documents. The walk's knobs are clauses of that destination
 block, written after its `from`/`where`. Bound the walk to one hop (`depth 2`)
 and keep only that hop (`$depth == 2`) to get the documents that *directly* cite
 the magnum opus:
 
 ```console
-$ omg query 'from docs where _path == "/processes/magnum-opus.md" and $depth == 2 follow _in_links collect { from _doc depth 2 }' | awk '{print $2}' | sort
+$ omg query 'docs { _path == "/processes/magnum-opus.md" and $depth == 2 follow _in_links { from _doc depth 2 } }' | awk '{print $2}' | sort
 /index.md
 /practitioners/maria-prophetissa.md
 /practitioners/newton.md
@@ -68,7 +68,7 @@ why each row ended: `interior` (expanded), `leaf` (no further edges), `frontier`
 citations but treating practitioner pages as the frontier:
 
 ```console
-$ omg query 'select stop: $stop from docs where _path == "/index.md" follow distinct _out_links collect { from _dst frontier type == "practitioner" } order by _path asc' --jsonl
+$ omg query 'docs { select stop: $stop where _path == "/index.md" follow distinct _out_links { from _dst frontier type == "practitioner" } order by _path asc }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","stop":"interior"}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","stop":"interior"}
 {"_id":"d_nzb61j9","_path":"/practitioners/jabir-ibn-hayyan.md","stop":"frontier"}
@@ -92,7 +92,7 @@ destination block's `frontier` keeps governing the rows it reaches. Walking the
 citations of every process but refusing to expand the unverified one:
 
 ```console
-$ omg query 'select stop: $stop, verified from docs where type == "process" frontier !verified follow distinct _out_links collect { from _dst depth 2 } order by _path asc' --jsonl
+$ omg query 'docs { select stop: $stop, verified where type == "process" frontier !verified follow distinct _out_links { from _dst depth 2 } order by _path asc }' --jsonl
 {"_id":"d_e9q7sfr","_path":"/lab/2026-02-notes.md","stop":"depth","verified":true}
 {"_id":"d_r4afgjj","_path":"/processes/calcination.md","stop":"leaf","verified":true}
 {"_id":"d_zkbth9e","_path":"/processes/coagulation.md","stop":"interior","verified":true}
@@ -112,7 +112,7 @@ outline one level per hop — the magnum opus's section and its four subsections
 (`$depth` 1 then 2):
 
 ```console
-$ omg query 'select _name, depth: $depth, stop: $stop from nodes where _kind == "md:section" and _name == "The magnum opus" follow _children order by $depth asc, _name asc' --jsonl
+$ omg query 'nodes { select _name, depth: $depth, stop: $stop where _kind == "md:section" and _name == "The magnum opus" follow _children order by $depth asc, _name asc }' --jsonl
 {"_id":"n_7a874b74b236","_path":"/processes/magnum-opus.md","_name":"The magnum opus","depth":1,"stop":"interior"}
 {"_id":"n_cb7296cac24a","_path":"/processes/magnum-opus.md","_name":"Open questions","depth":2,"stop":"leaf"}
 {"_id":"n_e7364dec9d89","_path":"/processes/magnum-opus.md","_name":"Operations","depth":2,"stop":"leaf"}
@@ -123,7 +123,7 @@ $ omg query 'select _name, depth: $depth, stop: $stop from nodes where _kind == 
 Other knobs, briefly: `order by $ordinal` yields the walk's natural 1..N order
 (seed first); a destination block may project `$key: <expr>` to re-key the
 identity that `distinct` and cycle detection compare (`follow distinct
-_out_links collect { $key: type from _dst }` keeps one document per *type*);
+_out_links { $key: type from _dst }` keeps one document per *type*);
 and every walk is capped at depth 8. On a block, `_children` walks a list down
 to its items the same way.
 

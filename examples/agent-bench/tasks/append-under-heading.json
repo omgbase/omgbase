@@ -11,12 +11,12 @@
     },
     {
       "kind": "query",
-      "query": "nodes count { where _kind == \"md:task\" and _path == \"/processes/calcination.md\" }",
+      "query": "nodes count { _kind == \"md:task\" and _path == \"/processes/calcination.md\" }",
       "count": 4
     },
     {
       "kind": "query",
-      "query": "select checked from nodes where _kind == \"md:task\" and _path == \"/processes/calcination.md\" and _value == \"Weigh the calx after cooling\"",
+      "query": "nodes { select checked where _kind == \"md:task\" and _path == \"/processes/calcination.md\" and _value == \"Weigh the calx after cooling\" }",
       "hits": [
         {
           "checked": false

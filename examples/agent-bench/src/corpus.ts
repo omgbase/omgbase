@@ -2,7 +2,7 @@
 // The `timeline` corpus: a fictional multi-year programme ("Meridian", a mountain
 // observatory, 2026–2028) of six projects, each a chain of 8–13 milestone notes
 // linked by `after:` (the note before me — repository-root paths, one side only,
-// the forward direction derived: `^docs collect { where after == ^_path }`), with
+// the forward direction derived: `^docs { where after == ^_path }`), with
 // `when:` dates, `window:` date ranges (spec/properties §2.2), `status`, `owner`
 // (people notes), `tags`, a categorical `track`, a numeric `effort`, bodies with
 // path links across projects, `- [ ]` tasks, `#hashtags`, and deliberate decoys

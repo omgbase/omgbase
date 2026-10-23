@@ -37,10 +37,10 @@ export interface Intent {
 }
 
 /** Every intent (active and released), most recently edited first, with its cues and the virtual `#focus` column. */
-export const INTENTS_QUERY = `select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path } from docs where type == ${JSON.stringify(INTENT_TYPE)} and _path.startsWith(${JSON.stringify(INTENTS_DIR)}) order by _updated_at desc`;
+export const INTENTS_QUERY = `docs { select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path } where type == ${JSON.stringify(INTENT_TYPE)} and _path.startsWith(${JSON.stringify(INTENTS_DIR)}) order by _updated_at desc }`;
 
 /** The intent in focus, as a semi-join — the README's one-row form of the virtual `#focus`. */
-export const VIRTUAL_FOCUS_QUERY = `select _path, title, status, tags from docs where type == ${JSON.stringify(INTENT_TYPE)} and status == "active" and ^docs exists { where _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path }`;
+export const VIRTUAL_FOCUS_QUERY = `docs { select _path, title, status, tags where type == ${JSON.stringify(INTENT_TYPE)} and status == "active" and ^docs exists { _path == ${JSON.stringify(POINTER_PATH)} and focused_intent == ^_path } }`;
 
 export function intentOf(hit: Record<string, unknown>): Intent {
   const focus = record(hit.focus);

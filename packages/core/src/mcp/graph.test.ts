@@ -9,8 +9,8 @@ import { graphNeighborhood } from "./graph.js";
 import { EngineError } from "./errors.js";
 import "../format/index.js";
 
-// `graph` is a MACRO over OQX `follow _out_links collect { from _dst }` /
-// `_in_links collect { from _doc }` — it compiles args into a
+// `graph` is a MACRO over OQX `follow _out_links { from _dst }` /
+// `_in_links { from _doc }` — it compiles args into a
 // follow query and runs it through the shared runner. Edges are populated by the
 // sync path (extraction + resolution + maintainEdges), so these tests write real
 // files and run processCheckpoint, exactly like follow-graph.test.ts.
@@ -55,11 +55,11 @@ beforeEach(() => {
 });
 
 describe("graph — neighborhood macro over OQX follow", () => {
-  it("delegates: the generated query is an OQX `follow _out_links collect { from _dst }`", async () => {
+  it("delegates: the generated query is an OQX `follow _out_links { from _dst }`", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
     expect(r.queries).toHaveLength(1);
-    expect(r.queries[0]).toContain("follow distinct _out_links collect { from _dst depth 2 }");
-    expect(r.queries[0]).toMatch(/^select _depth: \$depth, .* from docs where _id == "d_/);
+    expect(r.queries[0]).toContain("follow distinct _out_links { from _dst depth 2 }");
+    expect(r.queries[0]).toMatch(/^docs \{ _depth: \$depth, .* where _id == "d_/);
   });
 
   it("degrees 0 — roots only (no hops); roots are the frontier", async () => {
@@ -69,7 +69,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(r.documents[0]!.frontier).toBe(true);
     expect(r.frontier.map((f) => f._path)).toEqual(["/a.md"]);
     // depth 1 walk ⇒ seed only.
-    expect(r.queries[0]).toContain("collect { from _dst depth 1 }");
+    expect(r.queries[0]).toContain("{ from _dst depth 1 }");
   });
 
   it("1-hop out — reaches directly linked docs; frontier is the outer ring", async () => {
@@ -95,7 +95,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // c → a and d → a link to a.
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "in" });
     expect(r.documents.map((d) => d._path).sort()).toEqual(["/a.md", "/c.md", "/d.md"]);
-    expect(r.queries[0]).toContain("follow distinct _in_links collect { from _doc depth 2 }");
+    expect(r.queries[0]).toContain("follow distinct _in_links { from _doc depth 2 }");
   });
 
   it("both directions — unions out and in neighbors", async () => {
@@ -103,8 +103,8 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // out: b ; in: c, d ; plus the root a.
     expect(r.documents.map((d) => d._path).sort()).toEqual(["/a.md", "/b.md", "/c.md", "/d.md"]);
     expect(r.queries).toHaveLength(2);
-    expect(r.queries[0]).toContain("_out_links collect { from _dst depth 2 }");
-    expect(r.queries[1]).toContain("_in_links collect { from _doc depth 2 }");
+    expect(r.queries[0]).toContain("_out_links { from _dst depth 2 }");
+    expect(r.queries[1]).toContain("_in_links { from _doc depth 2 }");
   });
 
   it("edges carry provenance and preserve external + phantom endpoints", async () => {

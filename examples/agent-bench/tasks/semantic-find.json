@@ -18,7 +18,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, _text from blocks where _type == \"paragraph\" and _doc.type == \"lab-note\" order by semantic(\"repeating a purification does not amount to a transformation; refining again and again cannot turn a thing into something else\") desc limit 3"
+          "query": "blocks { select _path, _text where _type == \"paragraph\" and _doc.type == \"lab-note\" order by semantic(\"repeating a purification does not amount to a transformation; refining again and again cannot turn a thing into something else\") desc limit 3 }"
         }
       }
     ],

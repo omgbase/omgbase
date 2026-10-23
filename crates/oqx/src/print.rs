@@ -1,9 +1,11 @@
 //! The canonical printer (`spec/oqx/AST.md` §6; port of
 //! `packages/oqx/src/print.ts`): the one source text of a tree. Single spaces,
 //! double-quoted strings with GRAMMAR §1 escapes, the minimal parentheses the
-//! precedence table (GRAMMAR §4) needs, `select` written at the top level, every
-//! clause in its canonical position (a destination block's `frontier` and
-//! `depth` after its `where`, since 0.20). The law both spec runners enforce over
+//! precedence table (GRAMMAR §4) needs, the collection-scoped form `<source> { … }`
+//! for every query whose source can head a block (since 0.26; `collect` is the
+//! bare brace, every other consumer its word), the projection leading its body
+//! without `select`, every clause in its canonical position (a destination
+//! block's `frontier` and `depth` after its `where`, since 0.20). The law both spec runners enforce over
 //! every fixture query:
 //!
 //! ```text
@@ -16,8 +18,8 @@
 //! instead.
 
 use crate::ast::{
-    BinaryOp, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp, OpNode,
-    OrderSpec, Query, SelectItem, Subquery, TemplatePart, Where,
+    BinaryOp, Consumer, Expr, Flatten, Follow, FollowDestination, GroupBy, GroupKey, LogicalOp,
+    OpNode, OrderSpec, Query, SelectItem, Subquery, TemplatePart, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::value::{Value, js_number_to_string};
@@ -28,7 +30,7 @@ use crate::walk::Node;
 /// it as `parse_template(&strings, count)` with the values permuted by
 /// `indices`. In a tree straight from `parse_template`, `indices` is
 /// `0..count` unless the canonical clause order moved a binding past another
-/// (`${0} collect { x: ${1} }` prints as `select x: ${1} from ${0}`).
+/// (`select x: ${1} from ${0}` prints as `${0} { x: ${1} }`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Template {
     pub strings: Vec<String>,
@@ -175,35 +177,16 @@ fn render(n: Node<'_>) -> Out {
 // ---- query / bodies -----------------------------------------------------------
 
 fn query(q: &Query) -> Out {
-    // Body form for `collect` — unless the query carries body-level `from`
-    // re-projections, which only a block can hold (a second top-level `from` is
-    // a duplicate clause): then the directive form `source collect { … from E }`.
-    if q.consumer == crate::ast::Consumer::Collect && q.from.is_empty() {
-        // `select` is always written — except for a leading bare item literally
-        // named `distinct`, which the keyword would swallow as the modifier.
-        let bare_distinct = !q.distinct
-            && matches!(
-                q.select.first(),
-                Some(SelectItem::Field { name, expr: Expr::Ident { name: e, .. }, .. })
-                    if name == "distinct" && e == "distinct"
-            );
-        let mut clauses: Vec<Out> = Vec::new();
+    // The collection-scoped form (since 0.26): `<source> [<consumer>] [distinct]
+    // { body }` — the source heads the body, `collect` is the bare brace (the
+    // directive word is written after an `op` source, where a bare brace is not
+    // read as a block), `distinct` stays on the head.
+    if can_head_block(&q.source) {
+        let mut body_clauses: Vec<Out> = Vec::new();
         if !q.select.is_empty() {
-            let items = projection(&q.select, q.values);
-            clauses.push(if bare_distinct {
-                items
-            } else {
-                cat(vec![
-                    text(format!(
-                        "select {}",
-                        if q.distinct { "distinct " } else { "" }
-                    )),
-                    items,
-                ])
-            });
+            body_clauses.push(projection(&q.select, q.values));
         }
-        clauses.push(cat(vec![text("from "), expr(&q.source)]));
-        clauses.extend(tail(
+        body_clauses.extend(tail(
             &q.from,
             q.r#where.as_ref(),
             q.frontier.as_ref(),
@@ -216,14 +199,40 @@ fn query(q: &Query) -> Out {
             q.limit.as_ref(),
             q.offset.as_ref(),
         ));
-        return join(clauses, " ");
+        return cat(vec![
+            expr(&q.source),
+            directive(q.consumer, q.distinct, &q.source, body_clauses),
+        ]);
     }
-    // Directive form: `<source> <consumer> [distinct] { body }`.
-    let mut body_clauses: Vec<Out> = Vec::new();
+    // A source that cannot head a block — a literal, a template, a range,
+    // arithmetic, a logical or `in` operand, a unary, an aggregate: every one an
+    // eval error or a degenerate query — keeps the clause form `select … from S …`
+    // (a `collect`; another consumer over such a source is unparseable either
+    // way). `select` is always written — except for a leading bare item literally
+    // named `distinct`, which the keyword would swallow as the modifier.
+    let bare_distinct = !q.distinct
+        && matches!(
+            q.select.first(),
+            Some(SelectItem::Field { name, expr: Expr::Ident { name: e, .. }, .. })
+                if name == "distinct" && e == "distinct"
+        );
+    let mut clauses: Vec<Out> = Vec::new();
     if !q.select.is_empty() {
-        body_clauses.push(projection(&q.select, q.values));
+        let items = projection(&q.select, q.values);
+        clauses.push(if bare_distinct {
+            items
+        } else {
+            cat(vec![
+                text(format!(
+                    "select {}",
+                    if q.distinct { "distinct " } else { "" }
+                )),
+                items,
+            ])
+        });
     }
-    body_clauses.extend(tail(
+    clauses.push(cat(vec![text("from "), expr(&q.source)]));
+    clauses.extend(tail(
         &q.from,
         q.r#where.as_ref(),
         q.frontier.as_ref(),
@@ -236,15 +245,45 @@ fn query(q: &Query) -> Out {
         q.limit.as_ref(),
         q.offset.as_ref(),
     ));
-    cat(vec![
-        expr(&q.source),
-        text(format!(
-            " {}{} ",
-            q.consumer.as_str(),
-            if q.distinct { " distinct" } else { "" }
-        )),
-        braces(body_clauses),
-    ])
+    join(clauses, " ")
+}
+
+/// Whether `e { … }` parses with `e` as the receiver (GRAMMAR §5 and the postfix
+/// chain of §4): a tuple, or a chain — navigation, calls, `!`, directives —
+/// whose head is a bare name, an outer reference, a binding or a free call. A
+/// literal or template head is "not a collection"; an operator (`-x`, `a + b`,
+/// `a..b`, `a in b`, `a or b`) or an aggregate cannot head a receiver.
+fn can_head_block(e: &Expr) -> bool {
+    match e {
+        Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } | Expr::Tuple { .. } => true,
+        Expr::Call { recv, .. } => recv.as_deref().is_none_or(chain_head),
+        Expr::Member { recv, .. } => chain_head(recv),
+        Expr::Required { expr, .. } => chain_head(expr),
+        Expr::Op(op) => chain_head(&op.receiver),
+        _ => false,
+    }
+}
+
+/// The head of a postfix chain that may take a block: as [`can_head_block`], but
+/// a tuple is a receiver only on its own (`(a, b).x { … }` is not read as one).
+fn chain_head(e: &Expr) -> bool {
+    !matches!(e, Expr::Tuple { .. }) && can_head_block(e)
+}
+
+/// The text between a receiver and its block: ` ` for the bare-brace `collect`
+/// (since 0.26 the canonical spelling), ` distinct ` for a distinct collect,
+/// ` <op> [distinct] ` for the other consumers — and for a `collect` over an
+/// `op` receiver, where a bare brace right after a written directive is not
+/// read as a block (`jobs first { offset 0 } collect { … }`).
+fn directive_word(consumer: Consumer, distinct: bool, receiver: &Expr) -> String {
+    if consumer == Consumer::Collect && !matches!(receiver, Expr::Op(_)) {
+        return if distinct { " distinct " } else { " " }.to_string();
+    }
+    format!(
+        " {}{} ",
+        consumer.as_str(),
+        if distinct { " distinct" } else { "" }
+    )
 }
 
 // The clauses after `from` (a query) or after the projection (a block): the
@@ -309,6 +348,10 @@ fn tail(
 // A block body: the projection leads without its keyword (the body's first
 // clause is always the projection, so the keyword adds nothing there).
 fn block(s: &Subquery) -> Out {
+    braces(block_clauses(s))
+}
+
+fn block_clauses(s: &Subquery) -> Vec<Out> {
     let mut clauses: Vec<Out> = Vec::new();
     if !s.select.is_empty() {
         clauses.push(projection(&s.select, s.values));
@@ -326,7 +369,19 @@ fn block(s: &Subquery) -> Out {
         s.limit.as_ref(),
         s.offset.as_ref(),
     ));
-    braces(clauses)
+    clauses
+}
+
+// A directive's word and block after its receiver: the bare brace for
+// `collect`, the word for every other consumer — and, when the word is written
+// and the block is empty, the word alone (`jobs first`, `_nodes exists`, `jobs
+// count distinct`; since 0.26 an omitted block is the empty block).
+fn directive(consumer: Consumer, distinct: bool, receiver: &Expr, clauses: Vec<Out>) -> Out {
+    let word = directive_word(consumer, distinct, receiver);
+    if word != " " && word != " distinct " && clauses.is_empty() {
+        return text(word.trim_end().to_owned());
+    }
+    cat(vec![text(word), braces(clauses)])
 }
 
 fn braces(clauses: Vec<Out>) -> Out {
@@ -373,12 +428,7 @@ fn order(o: &OrderSpec) -> Out {
 fn op_node(o: &OpNode) -> Out {
     cat(vec![
         receiver(&o.receiver),
-        text(format!(
-            " {}{} ",
-            o.op.as_str(),
-            if o.distinct { " distinct" } else { "" }
-        )),
-        block(&o.sub),
+        directive(o.op, o.distinct, &o.receiver, block_clauses(&o.sub)),
         text(match &o.count_cmp {
             Some(c) => format!(" {} {}", c.op.as_str(), js_number_to_string(c.value)),
             None => String::new(),

@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
 import { defaultChoice, isIntrinsic, projectionOf, rowFields, selectKind } from "../src/lib/projection.ts";
 
-const TIMELINE = `select _path, _title, phase, before, after
-from docs
-where _path == "/timeline/kickoff.md"
-follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }
-order by $ordinal`;
+const TIMELINE = `docs {
+  select _path, _title, phase, before, after
+  where _path == "/timeline/kickoff.md"
+  follow distinct refs(before), _in_links { from _doc where ^_path in list(after) }
+  order by $ordinal
+}`;
 
 describe("projectionOf", () => {
   it("lists the select items in order with their kinds; the label defaults to `_title`, shown is the label alone", () => {
@@ -24,36 +25,36 @@ describe("projectionOf", () => {
   });
 
   it("the starter: the _title attribute is the label, the attributes are intrinsics (5.0's `_title`, or 4.x's `_title`)", () => {
-    const p = projectionOf(parse(`select _path, _title from docs order by _updated_at desc limit 40`), []);
+    const p = projectionOf(parse(`docs { select _path, _title order by _updated_at desc limit 40 }`), []);
     expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["_path", "intrinsic"], ["_title", "intrinsic"]]);
     expect(p.defaults).toEqual({ label: "_title", shown: ["_title"] });
     // The authored _title is a navigation off the `_data` handle: a field.
-    expect(projectionOf(parse(`select _path, t: _data.title from docs`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
+    expect(projectionOf(parse(`docs { select _path, t: _data.title }`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
     // The 4.x spelling reads the same way.
-    const old = projectionOf(parse(`select path, title from docs order by updated_at desc limit 40`), []);
+    const old = projectionOf(parse(`docs { select path, title order by updated_at desc limit 40 }`), []);
     expect(old.fields.map((f) => [f.name, f.kind])).toEqual([["path", "intrinsic"], ["title", "intrinsic"]]);
     expect(old.defaults).toEqual({ label: "title", shown: ["title"] });
-    expect(projectionOf(parse(`select path, t: data.title from docs`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
+    expect(projectionOf(parse(`docs { select path, t: data.title }`), []).fields.map((f) => f.kind)).toEqual(["intrinsic", "field"]);
   });
 
   it("keys an item by its alias or its navigation's last segment; an aliased intrinsic is still intrinsic-valued", () => {
-    const p = projectionOf(parse(`select t: _title, meta.slug, n: size(before), _id, d: $depth from docs`), []);
+    const p = projectionOf(parse(`docs { select t: _title, meta.slug, n: size(before), _id, d: $depth }`), []);
     expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["t", "intrinsic"], ["slug", "field"], ["n", "field"], ["_id", "intrinsic"], ["d", "intrinsic"]]);
     // No `_title`/`name` key → the path is the label and nothing else is shown.
     expect(p.defaults).toEqual({ label: null, shown: [] });
   });
 
   it("nested blocks (collect / first / single) are nested", () => {
-    const src = `select name, jobs: jobs collect { employer }, last: jobs first { employer }, one: jobs single { employer } from people`;
+    const src = `people { select name, jobs: jobs { employer }, last: jobs first { employer }, one: jobs single { employer } }`;
     const p = projectionOf(parse(src), []);
     expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["name", "field"], ["jobs", "nested"], ["last", "nested"], ["one", "nested"]]);
     expect(p.defaults.label).toBe("name");
-    expect(src.slice(...p.fields[1]!.span!)).toBe("jobs: jobs collect { employer }");
+    expect(src.slice(...p.fields[1]!.span!)).toBe("jobs: jobs { employer }");
   });
 
   it("values mode is a single unnamed value", () => {
-    expect(projectionOf(parse(`title values from docs`), []).fields).toEqual([{ name: "title", kind: "values", span: [0, 5], source: "select" }]);
-    const p = projectionOf(parse(`name.upper() values from people`), []);
+    expect(projectionOf(parse(`docs { title values }`), []).fields).toEqual([{ name: "title", kind: "values", span: [7, 12], source: "select" }]);
+    const p = projectionOf(parse(`people { name.upper() values }`), []);
     expect(p.fields.map((f) => [f.name, f.kind])).toEqual([["value", "values"]]);
     expect(p.defaults).toEqual({ label: null, shown: [] });
   });
@@ -64,7 +65,7 @@ describe("projectionOf", () => {
       { _id: "d_1", _path: "/a.md", _title: "A", tags: null, $depth: 1 },
       { _id: "d_2", _path: "/b.md", tags: ["x", "y"], meta: { k: 1 }, count: 3, done: false },
     ];
-    const fromDocs = projectionOf(parse(`from docs where _path == "/a.md"`), rows);
+    const fromDocs = projectionOf(parse(`docs { _path == "/a.md" }`), rows);
     expect(fromDocs.fields.map((f) => [f.name, f.kind, f.source])).toEqual([
       ["_title", "intrinsic", "row"], // a 5.0 row's `_title` is the computed title: an engine value
       ["tags", "nested", "row"], // null first, then a list: the list decides
@@ -76,13 +77,13 @@ describe("projectionOf", () => {
     expect(rowFields([]).length).toBe(0);
   });
 
-  it("a bare `from docs` offers nothing: the envelope is all the rows carry (in either spelling)", () => {
+  it("a bare `docs { }` offers nothing: the envelope is all the rows carry (in either spelling)", () => {
     expect(rowFields([{ _id: "d_1", _path: "/a.md" }, { _id: "d_2", _path: "/b.md" }])).toEqual([]);
     expect(rowFields([{ _id: "d_1", _path: "/a.md" }, { _id: "d_2", _path: "/b.md" }])).toEqual([]);
-    const p = projectionOf(parse(`from docs`), [{ _id: "d_1", _path: "/a.md" }]);
+    const p = projectionOf(parse(`docs { }`), [{ _id: "d_1", _path: "/a.md" }]);
     expect(p).toEqual({ fields: [], defaults: { label: null, shown: [] } });
     // A 5.0 row's `_title` is the computed title and the label; the walk's `$depth` an intrinsic.
-    const five = projectionOf(parse(`from docs where _path == "/a.md"`), [{ _id: "d_1", _path: "/a.md", _title: "A", phase: "plan", $depth: 0 }]);
+    const five = projectionOf(parse(`docs { _path == "/a.md" }`), [{ _id: "d_1", _path: "/a.md", _title: "A", phase: "plan", $depth: 0 }]);
     expect(five.fields.map((f) => [f.name, f.kind])).toEqual([["_title", "intrinsic"], ["phase", "field"], ["$depth", "intrinsic"]]);
     expect(five.defaults).toEqual({ label: "_title", shown: ["_title"] });
   });
@@ -101,15 +102,15 @@ describe("defaultChoice", () => {
 
 describe("selectKind / isIntrinsic", () => {
   const exprOf = (src: string) => {
-    const item = parse(`select x: ${src} from docs`).select[0]!;
+    const item = parse(`docs { select x: ${src} }`).select[0]!;
     return item.kind === "field" ? item.expr : null!;
   };
 
   it("reads one item: attributes, $it and navigations off it, and lifts (no key on the row)", () => {
-    const q = parse(`select _path, $it, x: $it.title, _updated_at, phase from docs`);
+    const q = parse(`docs { select _path, $it, x: $it.title, _updated_at, phase }`);
     expect(q.select.map((item) => selectKind(item))).toEqual(["intrinsic", "field", "field", "intrinsic", "field"]);
     // A lift lives in a where-position collect; it binds outward and projects nothing here.
-    const where = parse(`select name from people where jobs collect { ^emp: employer }`).where!;
+    const where = parse(`people { select name where jobs { ^emp: employer } }`).where!;
     expect(where.kind).toBe("op");
     if (where.kind === "op") expect(where.sub.select.map((item) => selectKind(item))).toEqual([null]);
   });

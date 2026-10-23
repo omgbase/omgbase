@@ -14,19 +14,19 @@ const cue = (over: Partial<Cue>): Cue => ({ intent: SALT, id: "c", on: "focus", 
 
 describe("shapes", () => {
   const list = [
-    { id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' },
+    { id: "when-opus-focused", on: "focus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n' },
     { id: "review-tomorrow", on: "time", at: "2026-10-15T09:00:00-06:00" },
-    { id: "new-parser-issues", on: "query-enter", query: 'from docs\nwhere status == "open"\n' },
-    { id: "gone", on: "query-exit", query: "from docs" },
+    { id: "new-parser-issues", on: "query-enter", query: 'docs {\n  where status == "open"\n}\n' },
+    { id: "gone", on: "query-exit", query: "docs { }" },
     { on: "focus", query: "no id" },
     { id: "odd", on: "semantic", query: "unknown variant" },
   ];
   it("cuesOf reads the list as a query hit carries it — wrapped once ([[…]]) or flat — and skips entries without an id or with an unknown `on`", () => {
     const expected = [
-      { intent: SALT, id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n', at: null },
+      { intent: SALT, id: "when-opus-focused", on: "focus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n', at: null },
       { intent: SALT, id: "review-tomorrow", on: "time", query: null, at: "2026-10-15T09:00:00-06:00" },
-      { intent: SALT, id: "new-parser-issues", on: "query-enter", query: 'from docs\nwhere status == "open"\n', at: null },
-      { intent: SALT, id: "gone", on: "query-exit", query: "from docs", at: null },
+      { intent: SALT, id: "new-parser-issues", on: "query-enter", query: 'docs {\n  where status == "open"\n}\n', at: null },
+      { intent: SALT, id: "gone", on: "query-exit", query: "docs { }", at: null },
     ];
     expect(cuesOf(SALT, [list])).toEqual(expected);
     expect(cuesOf(SALT, list)).toEqual(expected);
@@ -55,12 +55,12 @@ describe("on: focus — membership", () => {
   });
   it("one query per focus cue, run AS AUTHORED (every page); matched when the focused intent is among the hits; a query that does not parse is the engine's filter_invalid for that cue alone", async () => {
     const cues = [
-      cue({ id: "opus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' }),
-      cue({ id: "rest", intent: DEW, query: 'from docs where "rest" in tags' }),
-      cue({ id: "bad", query: "from docs where project == " }),
+      cue({ id: "opus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n' }),
+      cue({ id: "rest", intent: DEW, query: 'docs { "rest" in tags }' }),
+      cue({ id: "bad", query: "docs { where project == " }),
       cue({ id: "none", query: null }),
       cue({ id: "time", on: "time", at: "2026-10-13T16:00:00Z" }),
-      cue({ id: "enter", on: "query-enter", query: "from docs" }),
+      cue({ id: "enter", on: "query-enter", query: "docs { }" }),
     ];
     const s = new ScriptedCaller({
       query: (a) => {
@@ -79,7 +79,7 @@ describe("on: focus — membership", () => {
     ]);
     expect(r[2]!.error).toMatchObject({ hint: "OQX", message: expect.stringContaining("unexpected end") });
     expect(s.names()).toEqual(["query", "query", "query"]);
-    expect(s.argsOf("query", 0)).toEqual({ query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n', limit: 500 });
+    expect(s.argsOf("query", 0)).toEqual({ query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n', limit: 500 });
   });
 });
 
@@ -89,7 +89,7 @@ describe("on: time", () => {
       cue({ id: "a", on: "time", at: "2026-10-13T16:00:00Z" }),
       cue({ id: "b", on: "time", at: "2026-10-14T09:00:00.000Z" }),
       cue({ id: "d", on: "time", at: "soon" }),
-      cue({ id: "e", on: "focus", query: "from docs" }),
+      cue({ id: "e", on: "focus", query: "docs { }" }),
     ];
     expect(dueTimeCues(cues, "2026-10-14T08:00:00.000Z").map((c) => c.id)).toEqual(["a"]);
     expect(dueTimeCues(cues, "2026-10-14T09:00:00.000Z").map((c) => c.id)).toEqual(["a", "b"]);
@@ -97,8 +97,8 @@ describe("on: time", () => {
 });
 
 describe("on: query-enter / query-exit", () => {
-  const enter = cue({ id: "new", on: "query-enter", query: 'from docs where type == "/terms/types/intent.md"' });
-  const exit = cue({ id: "gone", on: "query-exit", query: 'from docs where status == "active"' });
+  const enter = cue({ id: "new", on: "query-enter", query: 'docs { type == "/terms/types/intent.md" }' });
+  const exit = cue({ id: "gone", on: "query-exit", query: 'docs { status == "active" }' });
   it("the first run only takes the checkpoint; later runs fire on ids that entered (enter) or left (exit)", async () => {
     let hits = [{ _id: "d_1", _path: "/attn/intents/2026/10/a.md" }, { _id: "d_2", _path: "/attn/intents/2026/10/b.md" }];
     const s = new ScriptedCaller({ query: () => page(hits) });

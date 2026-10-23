@@ -135,8 +135,9 @@ export function whereRaiseFree(w: Where, ctx: RuleContext): boolean {
 
 /** A where-position directive that can neither raise nor bind: `exists`,
  * `none` or `count` (never `single`, which raises on several rows; `collect`
- * binds lifts; `first`/`single` project), without `follow` (raises in where
- * position), without a bound (an invalid value raises), without `distinct`
+ * binds lifts; `first`/`single` project), without `follow` (a walk's
+ * destinations may raise, and a walk is never a cardinality answer), without a
+ * bound (an invalid value raises), without `distinct`
  * (dedup projects, and a projected range raises), whose receiver, `from`,
  * `where` and `order by` (evaluated by `count`) are raise-free and which lifts
  * nothing anywhere. */

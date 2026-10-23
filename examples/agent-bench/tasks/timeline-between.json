@@ -22,7 +22,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, title, $depth from docs where _path == \"/projects/delta/archive-schema-freeze.md\" follow ^docs collect { where after == ^_path frontier _path == \"/projects/delta/quicklook-viewer.md\" } order by $ordinal"
+          "query": "docs { select _path, title, $depth where _path == \"/projects/delta/archive-schema-freeze.md\" follow ^docs { after == ^_path frontier _path == \"/projects/delta/quicklook-viewer.md\" } order by $ordinal }"
         }
       }
     ],

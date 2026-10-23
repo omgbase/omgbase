@@ -12,8 +12,9 @@ cues:
   - id: something-new-has-your-attention
     on: query-enter
     query: |
-      from docs
-      where type == "/terms/types/intent.md" and status == "active"
+      docs {
+        where type == "/terms/types/intent.md" and status == "active"
+      }
 ---
 
 # Read the Mutus Liber, plate IV

@@ -3,7 +3,7 @@
 //   connect → (whoami: proxy mode + sign-in state) → version (surface ≥ 5.0, the
 //   profile) + tools/list (what is served) → [repos, when listed] → the tree's
 //   root level → the route (#doc=…) → the document (docs_read include_ids),
-//   its links (two queries over `links`), its history (`from revisions`), the
+//   its links (two queries over `links`), its history (`revisions { … }`), the
 //   live feed (changes_since polled) and the query console (query, query_syntax).
 //   Writes: plan { effects, diffs: true } → confirm → execute { plan_id, effects }.
 //
@@ -688,7 +688,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
             <repo-tree .levels=${levels.get()} .open=${open.get()} .selected=${r.doc}
               @tree-toggle=${(e: CustomEvent<TreeToggleDetail>) => toggleLevel(e.detail.prefix, e.detail.open)}
               @tree-open=${(e: CustomEvent<TreeOpenDetail>) => openDoc(e.detail.path)}></repo-tree>
-            <a class="deleted-link" href="#deleted" @click=${(e: Event) => { e.preventDefault(); setRoute({ ...DEFAULT_ROUTE, deleted: true }); }}>deleted documents (from revisions where _doc == null)</a>
+            <a class="deleted-link" href="#deleted" @click=${(e: Event) => { e.preventDefault(); setRoute({ ...DEFAULT_ROUTE, deleted: true }); }}>deleted documents (revisions { _doc == null })</a>
           </div>
           <div class="right" slot="end">
             <div class="main">${this.renderMain()}</div>

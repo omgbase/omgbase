@@ -8,20 +8,22 @@ import { queryHints } from "../src/lib/hints.ts";
 describe("DEFAULT_QUERY", () => {
   it("walks the sample timeline from kickoff both ways: refs(before) and the backlink block over the link rows — in the 5.0 engine names", () => {
     expect(DEFAULT_START).toBe("/timeline/kickoff.md");
-    expect(DEFAULT_QUERY).toBe(`select _path, _title, phase, before, after
-from docs
-where _path == "/timeline/kickoff.md"
-follow distinct refs(before), _in_links collect { from _doc where ^_path in list(after) }
-order by $ordinal`);
+    expect(DEFAULT_QUERY).toBe(`docs {
+  select _path, _title, phase, before, after
+  where _path == "/timeline/kickoff.md"
+  follow distinct refs(before), _in_links { from _doc where ^_path in list(after) }
+  order by $ordinal
+}`);
     expect(defaultQuery(NAMES_5)).toBe(DEFAULT_QUERY);
   });
 
   it("spells the same walk bare for a 3.x/4.x server", () => {
-    expect(defaultQuery(NAMES_4)).toBe(`select path, title, phase, before, after
-from docs
-where path == "/timeline/kickoff.md"
-follow distinct refs(before), in_links collect { from doc where ^path in list(after) }
-order by $ordinal`);
+    expect(defaultQuery(NAMES_4)).toBe(`docs {
+  select path, title, phase, before, after
+  where path == "/timeline/kickoff.md"
+  follow distinct refs(before), in_links { from doc where ^path in list(after) }
+  order by $ordinal
+}`);
   });
 
   it("parses in both spellings, yields the pair and its two fields as candidates, and raises no hint", () => {
@@ -36,6 +38,6 @@ order by $ordinal`);
     expect(isDefaultQuery(DEFAULT_QUERY)).toBe(true);
     expect(isDefaultQuery(defaultQuery(NAMES_4))).toBe(true);
     expect(isDefaultQuery(`${DEFAULT_QUERY}\nlimit 5`)).toBe(false);
-    expect(isDefaultQuery("select _path from docs")).toBe(false);
+    expect(isDefaultQuery("docs { select _path }")).toBe(false);
   });
 });

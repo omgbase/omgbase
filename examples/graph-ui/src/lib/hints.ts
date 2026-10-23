@@ -9,7 +9,7 @@
 //      follows the STRINGS, and the server refuses the hit (`filter_invalid`,
 //      "a hit must be a document, block, node or edge row"). `follow
 //      refs(before)` resolves the references to the documents. Not flagged:
-//      `refs(…)`, a destination block (`_out_links collect { from _dst }`), a
+//      `refs(…)`, a destination block (`_out_links { from _dst }`), a
 //      dotted path (`$it._out_links`, 4.x's `doc.out_links`), a `$`-name
 //      (OQX's own), and the structural relations (`_out_links`, `_in_links`,
 //      `_children`, `_subsections`, … and their bare 4.x spellings) which

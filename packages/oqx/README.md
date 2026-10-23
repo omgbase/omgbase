@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.17"`); the patch digit is this implementation's own.
+> `"0.26"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -32,9 +32,10 @@ const people = [
 const company = "Globocorp";
 
 const employees = oqx`
-  name, id, title
-  from ${people}
-  where jobs exists { where employer == ${company} and not end_date }
+  ${people} {
+    select name, id, title
+    where jobs exists { employer == ${company} and not end_date }
+  }
 `;
 // → [{ name: "Bob", id: 124, title: "Engineer" }, …]  (current Globocorp employees)
 ```
@@ -42,42 +43,63 @@ const employees = oqx`
 ## Why a tagged template
 
 Interpolations cross the host/OQX boundary as **typed value bindings, never as
-source text** — prepared-statement semantics. A `${…}` in `from` position is the
-collection being queried; a `${…}` in a predicate is an ordinary host value.
+source text** — prepared-statement semantics. A `${…}` heading the body
+(`${people} { … }`) is the collection being queried; a `${…}` in a predicate is an ordinary host value.
 Because values are never spliced into the query text, they cannot alter the
 grammar and there is no injection surface. The compiled query is cached by the
 template's identity and re-runs with fresh bindings each call.
 
 ## Language tutorial
 
-A query is a list of clauses in a **fixed order**. Each clause appears at most
-once, and every one is optional except `from` at the top level:
+A query names its **source collection** and then, in braces, its **body** — a
+list of clauses in a **fixed order**. Each clause appears at most once, and
+every one is optional:
 
 ```
-[ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
-from <collection>          from ${people}
-[ where <predicate> ]      where age >= 18 and jobs exists { where not end }
-[ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people { where … })
-[ group by <key>, … ]      group by city, decade: (age - age % 10) / 10     (0.24; then select reads keys, aggregates, rows)
-[ having <predicate> ]     having count() > 1
-[ order by <expr> … ]      order by age desc, name
-[ limit N ]                limit 10
-[ offset N ]               offset 20
+<collection> { … }           ${people} { … }        (a binding, a named root, a navigation or a call may head the body)
+<collection> count { … }     a consumer word before the brace reduces the whole query (count, exists, none, first, single)
+
+  [ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
+  [ from <expr> ]            from jobs                     (re-projection: each row replaced by the rows `jobs` yields — never the source)
+  [ where <predicate> ]      where age >= 18 and jobs exists { not end }
+  [ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people { where … })
+  [ flatten <expr> … ]       flatten tags as t               (0.25; the one clause that may repeat)
+  [ group by <key>, … ]      group by city, decade: (age - age % 10) / 10     (0.24; then select reads keys, aggregates, rows)
+  [ having <predicate> ]     having count() > 1
+  [ order by <expr> … ]      order by age desc, name
+  [ limit N ]                limit 10
+  [ offset N ]               offset 20
 ```
+
+**The collection heads the body, and nothing follows the closing brace.** The
+collection before the brace supplies the rows, so a body never names its
+source; the one clause that still spells `from` is the **re-projection** —
+`${people} { from jobs where !end }` is every current job across all people.
+The same body grammar applies inside every nested block (`jobs { … }`, `jobs
+exists { … }`, …): a block's receiver is its source exactly as the whole
+query's is.
 
 **`select` is the only keyword you may drop, and only when the projection comes
-first** (`name, id from ${people}`). Every other clause always carries its
-keyword — with one piece of sugar (0.17): a **block** whose leading expression
-is syntactically a predicate is a `where`-first body (`jobs exists { !end }` ≡
-`jobs exists { where !end }`; a bare name still projects, so `jobs { employer }`
-projects and `jobs { is current }` filters — see §10). At the top level a
-predicate always needs `where`, and `from ${people} count` is an error rather
-than a projection of a field called `count`. Writing a clause out of
-order is a parse error that names the order (`` `select` must come before
-`from` — OQX clause order is select, from, where, frontier, follow, group by,
-having, order by, limit, offset ``). The same body grammar applies inside every consumer block
-(`collect { … }`, `exists { … }`, …), where `from` is optional because the
-receiver supplies the rows.
+first** (`${people} { name, id }`). Every other clause always carries its
+keyword — with one piece of sugar (0.17): a body whose leading expression
+is syntactically a predicate is a `where`-first body (`${people} { age > 40 }` ≡
+`${people} { where age > 40 }`, `jobs exists { !end }` ≡ `jobs exists { where
+!end }`; a bare name still projects, so `${people} { active }` selects the field
+`active` and `${people} { is active }` — or `{ where active }` — filters; see
+§10). A consumer is a word before the brace, never a projection: `${people}
+count { … }` counts, `${people} { count }` projects a field called `count`.
+Writing a clause out of order is a parse error that names the order (`` `select`
+must come before `from` — OQX clause order is select, from, where, frontier,
+follow, flatten, group by, having, order by, limit, offset ``).
+
+**The clause form** — `select name, id from ${people} where …`, the source
+written as a `from` clause — is the pre-0.26 spelling. It is still accepted and
+parses to the identical tree, so existing queries keep working; `print` no
+longer writes it (it renders every query collection-scoped), and this README
+teaches the collection-scoped form throughout. In that form the top-level
+`from` is required, a predicate there always needs `where` (`age > 15 from
+${people}` is an error, because `where` would precede `from`), and `from
+${people} count` is an error that points at `${people} count { … }`.
 
 The examples below all use this dataset:
 
@@ -94,14 +116,15 @@ const people = [
 ];
 ```
 
-### 1. Source: `from`
+### 1. Source: the collection before the brace
 
-Every query reads from a source collection. In the tagged template the source is
-normally an interpolated value; it may also be a named root or a navigation (see
+Every query reads from a source collection, written before its body. In the
+tagged template the source is normally an interpolated value; it may also be a
+named root, a navigation or a free-function call (see
 [data context](#data-context-string-queries-and-named-roots)).
 
 ```js
-oqx`name from ${people}`;
+oqx`${people} { select name }`;
 // [{ name: "Bob" }, { name: "Alice" }, { name: "Carol" }]
 ```
 
@@ -110,10 +133,10 @@ oqx`name from ${people}`;
 List the fields to keep. With **no** projection you get the raw rows unchanged.
 
 ```js
-oqx`name, id from ${people}`;
+oqx`${people} { select name, id }`;
 // [{ name: "Bob", id: 124 }, { name: "Alice", id: 7 }, { name: "Carol", id: 55 }]
 
-oqx`from ${people} where active`;                 // no projection → whole objects
+oqx`${people} { where active }`;                  // no projection → whole objects
 // [ <Bob>, <Alice> ]
 ```
 
@@ -123,10 +146,10 @@ A projection item can be:
 - a **dotted navigation**, keyed by its last segment — `meta.slug` produces
   `{ slug: … }`;
 - an **alias / value expression** — `label: name`, `decade: age / 10`;
-- a **nested collection** — `current: jobs collect { … }` (see §6).
+- a **nested collection** — `current: jobs { … }` (see §6).
 
 ```js
-oqx`label: name, decade: age / 10 from ${people} where name == "Bob"`;
+oqx`${people} { select label: name, decade: age / 10 where name == "Bob" }`;
 // [{ label: "Bob", decade: 4.1 }]
 ```
 
@@ -135,24 +158,24 @@ no natural key, so it must be aliased (`n: size(jobs)`), unless the projection i
 in `values` mode (next).
 
 The `select` keyword may be dropped when the projection is the first clause —
-`select name from …` is identical to `name from …`. The keyword form hosts
-`select distinct` (§6), and is the only way to write a projection whose first
-item would otherwise be misread (there is no other keyword-less clause). The
-projection always comes *before* `from`: `from ${people} select name` is an
-ordering error.
+`${people} { select name }` is identical to `${people} { name }`. The keyword
+form hosts `select distinct` (§6), and is the only way to write a projection
+whose first item would otherwise be read as a predicate (§10; there is no other
+keyword-less clause). The projection always comes *first* in a body:
+`${people} { where active select name }` is an ordering error.
 
 **`values` — scalar projection.** Ordinarily every row projects to a record. Add
 `values` after a projection of exactly **one** item to get the value itself:
 
 ```js
-oqx`name values from ${people}`;                       // ["Bob", "Alice", "Carol"]
-oqx`name.upper() values from ${people} where age < 30`; // ["CAROL"]  (no alias needed)
-oqx`${people} first { name values where age > 50 }`;    // "Alice"
+oqx`${people} { select name values }`;                        // ["Bob", "Alice", "Carol"]
+oqx`${people} { select name.upper() values where age < 30 }`;  // ["CAROL"]  (no alias needed)
+oqx`${people} first { name values where age > 50 }`;           // "Alice"
 ```
 
 `values` is a result-shape mode, not a consumer: it works in the top-level
 projection and inside any `collect` / `first` / `single` block, and composes with
-`distinct` (`select distinct employer values from ${jobs}` is the distinct set of
+`distinct` (`${jobs} { select distinct employer values }` is the distinct set of
 employers as strings, not `{ employer }` records). An alias, if present, is
 ignored; a lift (`^name:`) cannot be combined with it.
 
@@ -165,14 +188,14 @@ first-class:
 
 ```js
 const scores = [10, 60, 70, 45];
-oqx`$it values from ${scores} where $it > 50`;              // [60, 70]
-oqx`$it values from ${scores} order by $it desc`;           // [70, 60, 45, 10]
+oqx`${scores} { select $it values where $it > 50 }`;        // [60, 70]
+oqx`${scores} { select $it values order by $it desc }`;     // [70, 60, 45, 10]
 
 const players = [{ name: "Ann", scores: [10, 60, 70] }, { name: "Ben", scores: [45] }];
-oqx`name, big: scores collect { $it values where $it > 50 } from ${players}`;
+oqx`${players} { select name, big: scores { $it values where $it > 50 } }`;
 // [{ name: "Ann", big: [60, 70] }, { name: "Ben", big: [] }]
 
-oqx`employee: $it from ${people} where name == "Bob"`;         // [{ employee: <Bob> }]
+oqx`${people} { select employee: $it where name == "Bob" }`;   // [{ employee: <Bob> }]
 ```
 
 Inside a nested block `$it` is the inner item; the enclosing row is `^$it`
@@ -187,22 +210,22 @@ reads absent. A row that itself owns a `$it` property is shadowed by the
 intrinsic; reach it with `^` from a nested scope or rename it upstream.
 
 **`entries(x)` and `$key` — records to collections, explicitly.** A plain object
-is **not** iterable: `from ${obj}` is one row (the object). `entries(obj)`
+is **not** iterable: `${obj} { … }` is one row (the object). `entries(obj)`
 converts it into a collection of entries, and inside such a scope the current
 item is the property's **value** — `$it` and bare names read it — while
 **`$key`** is the property's key:
 
 ```js
 const settings = { theme: "dark", fontSize: 14, autosave: true };
-oqx`key: $key, value: $it from entries(${settings})`;
+oqx`entries(${settings}) { select key: $key, value: $it }`;
 // [{ key: "theme", value: "dark" }, { key: "fontSize", value: 14 }, { key: "autosave", value: true }]
-oqx`$key values from entries(${settings}) where $it != "dark"`;   // ["fontSize", "autosave"]
+oqx`entries(${settings}) { select $key values where $it != "dark" }`;   // ["fontSize", "autosave"]
 
 const flags = { beta: { on: true }, legacy: { on: false } };
-oqx`$key values from entries(${flags}) where on`;                    // ["beta"]  (bare `on` reads the value)
+oqx`entries(${flags}) { select $key values where on }`;                 // ["beta"]  (bare `on` reads the value)
 
-oqx`name, on: entries(prefs) collect { $key values where $it } from ${users}`;   // as a nested receiver
-oqx`name from ${users} where entries(prefs) exists { where $key == "dark" and $it }`;
+oqx`${users} { select name, on: entries(prefs) { $key values where $it } }`;   // as a nested receiver
+oqx`${users} { select name where entries(prefs) exists { $key == "dark" and $it } }`;
 ```
 
 `entries(array)` yields numeric index keys, a `Map` yields its entries, and
@@ -218,15 +241,16 @@ ask for one. As a plain value (not a source) `entries(x)` is an array of
 `where` filters rows. The predicate language has comparisons (`== != < <= > >=`),
 boolean operators — the words `and`, `or`, `not`; the symbols `&& || !` are
 accepted synonyms — with grouping `( )`, membership (`in`), arithmetic
-(`+ - * / %`), and bare truthiness. The `where` keyword is always written — a
-leading expression without it is a projection, and a bare comparison in that
-position is an error that points you at `where`.
+(`+ - * / %`), and bare truthiness. With a projection the `where` keyword is
+written (`{ name where age >= 18 }`); a body that is *only* a predicate may lead
+with it (`${people} { age >= 18 }`, §10) — but a leading bare name is a
+projection, so the bare-field filter is `{ is active }` or `{ where active }`.
 
 ```js
 const min = 40;
-oqx`name from ${people} where age >= ${min}`;      // → Bob, Alice
-oqx`name from ${people} where city in ${["SF", "LA"]}`;   // → Alice
-oqx`name from ${people} where !active`;            // → Carol
+oqx`${people} { select name where age >= ${min} }`;         // → Bob, Alice
+oqx`${people} { select name where city in ${["SF", "LA"]} }`; // → Alice
+oqx`${people} { select name where !active }`;               // → Carol
 ```
 
 Equality is **typed and strict** (`5 == "5"` is false); a comparison against an
@@ -247,11 +271,11 @@ ordering rules as `<`/`<=`, so ranges work over numbers and over ISO-8601
 date/time strings alike:
 
 ```js
-oqx`name from ${people} where age in 40..50`;   // 40 ≤ age ≤ 50
-oqx`name from ${people} where age in 40...50`;  // 40 ≤ age < 50 (excludes 50)
-oqx`name from ${people} where age in 40..`;     // 40 and up
-oqx`name from ${people} where age in ..29`;     // up to and including 29
-oqx`label from ${events} where on in "2026-01-01".."2026-03-31"`;   // dates in Q1
+oqx`${people} { select name where age in 40..50 }`;   // 40 ≤ age ≤ 50
+oqx`${people} { select name where age in 40...50 }`;  // 40 ≤ age < 50 (excludes 50)
+oqx`${people} { select name where age in 40.. }`;     // 40 and up
+oqx`${people} { select name where age in ..29 }`;     // up to and including 29
+oqx`${events} { select label where on in "2026-01-01".."2026-03-31" }`;   // dates in Q1
 ```
 
 Bounds may be interpolated (`where age in ${lo}..${hi}`). A range membership is
@@ -276,9 +300,9 @@ what you wrote), so it costs nothing at run time and a storage planner still
 sees an ordinary predicate:
 
 ```js
-oqx`select name, adult: age >= 18 from ${people} where adult`;        // ≡ where age >= 18
-oqx`select name, active: age > 50 from ${people} where active`;       // the ALIAS, not the field → Alice
-oqx`select name, current: jobs collect { employer where !end } from ${people} where current`;
+oqx`${people} { select name, adult: age >= 18 where adult }`;        // ≡ where age >= 18
+oqx`${people} { select name, active: age > 50 where active }`;       // the ALIAS, not the field → Alice
+oqx`${people} { select name, current: jobs { employer where !end } where current }`;
 // a collect alias in predicate position means "non-empty" → Bob, Carol
 ```
 
@@ -303,10 +327,10 @@ const accounts = [
   { owner: "x", budget: 100, orders: [{ amount: 50 }, { amount: 150 }] },
   { owner: "y", budget: 200, orders: [{ amount: 250 }] },
 ];
-oqx`owner from ${accounts} where orders exists { where amount > ^budget }`;
+oqx`${accounts} { select owner where orders exists { amount > ^budget } }`;
 // [{ owner: "x" }, { owner: "y" }]   — `^budget` is the enclosing account's budget
 
-oqx`owner from ${accounts} where orders exists { where amount > budget }`;
+oqx`${accounts} { select owner where orders exists { amount > budget } }`;
 // []   — a bare `budget` is the ORDER's own budget: absent, so `>` is false
 ```
 
@@ -324,7 +348,7 @@ from a row nested one level deeper. A receiver may start with `^` too, which is
 how a nested consumer runs over a named root or an enclosing row's relation:
 
 ```js
-execute("name, peers: ^people collect { name where city == ^city and name != ^name } from people", { people });
+execute("people { select name, peers: ^people { name where city == ^city and name != ^name } }", { people });
 ```
 
 **Correlated subqueries.** Because inner and outer rows often share names, the
@@ -338,9 +362,10 @@ const family = [
   { name: "Cy",  parent: "Sam" },
 ];
 oqx`
-  name,
-  siblings: ${family} collect { name where parent == ^parent and name != ^name }
-  from ${family}
+  ${family} {
+    select name,
+           siblings: ${family} { name where parent == ^parent and name != ^name }
+  }
 `;
 // [{ name: "Ada", siblings: [{ name: "Ben" }] },
 //  { name: "Ben", siblings: [{ name: "Ada" }] },
@@ -360,10 +385,10 @@ Methods on a value: `contains`, `startsWith`, `endsWith`, `matches` (regex),
 `has(x)`, `range(s)` (§3), `entries(x)` (§2).
 
 ```js
-oqx`name from ${people} where title.startsWith("Eng")`;      // → Bob
-oqx`name from ${people} where title.lower() == "director"`;  // → Alice
-oqx`name from ${people} where has(age) and not has(nickname)`;   // present vs absent
-oqx`name from ${people} where tags.contains("admin")`;       // array membership
+oqx`${people} { select name where title.startsWith("Eng") }`;      // → Bob
+oqx`${people} { select name where title.lower() == "director" }`;  // → Alice
+oqx`${people} { select name where has(age) and not has(nickname) }`;   // present vs absent
+oqx`${people} { select name where tags.contains("admin") }`;       // array membership
 ```
 
 - `has(x)` is true when `x` is **present** — anything other than `null` /
@@ -385,9 +410,9 @@ oqx`name from ${people} where tags.contains("admin")`;       // array membership
   (`not a ~ b` is `(!a) ~ b`; write `a !~ b` or `not (a ~ b)`).
 
   ```js
-  oqx`name from ${people} where title ~ "^Eng"`;          // → Bob
-  oqx`name from ${people} where title ~* "director"`;     // → Alice
-  oqx`name from ${people} where title !~ "Eng"`;          // → Alice, Carol
+  oqx`${people} { select name where title ~ "^Eng" }`;          // → Bob
+  oqx`${people} { select name where title ~* "director" }`;     // → Alice
+  oqx`${people} { select name where title !~ "Eng" }`;          // → Alice, Carol
   ```
 
 Anything not in these tables is an **eval error** (`unknown function 'f(…)'` /
@@ -418,11 +443,11 @@ baseline is `invalid regular expression …`; a bad flag is `unknown regex flag`
 `RegExp` sees it (`src/regex.ts`), so JavaScript-only behavior never leaks.
 
 ```js
-oqx`name from ${people} where title.matches("^(eng|dir)", "i")`;   // Bob, Alice
-oqx`x: "a\nb".matches("a.b") from ${one}`;                         // false: . stops at \n
-oqx`x: "a\nb".matches("a.b", "s") from ${one}`;                    // true
-oqx`x: "٣".matches(${"\\d"}) from ${one}`;                         // false: \d is ASCII
-oqx`x: "é".matches(${"^\\u{e9}$"}) from ${one}`;                   // true
+oqx`${people} { select name where title.matches("^(eng|dir)", "i") }`;   // Bob, Alice
+oqx`${one} { select x: "a\nb".matches("a.b") }`;                         // false: . stops at \n
+oqx`${one} { select x: "a\nb".matches("a.b", "s") }`;                    // true
+oqx`${one} { select x: "٣".matches(${"\\d"}) }`;                         // false: \d is ASCII
+oqx`${one} { select x: "é".matches(${"^\\u{e9}$"}) }`;                   // true
 ```
 
 A pattern with backslashes is easiest to pass as a binding (`${"\\d"}`): the
@@ -447,11 +472,11 @@ A consumer shapes a result set. There are six:
 | `first`   | one record, or `null`          |
 | `single`  | one record, or `null`; throws if more than one matches |
 
-The bare `from … ` form is always `collect`. To reduce the **whole** query with a
-different consumer, use the directive form `<source> <consumer> { <body> }` — note
-this is *not* SQL: `count from people` projects a field called `count`, and
-`from people count` is a parse error that points at the directive form. A real
-reduction is a directive:
+A bare `${people} { … }` is always `collect`. To reduce the **whole** query with
+a different consumer, put the consumer word between the collection and the brace
+— `<source> <consumer> { <body> }` — note this is *not* SQL: `${people} { count }`
+projects a field called `count` (and in the clause form `from people count` is a
+parse error that points here). A real reduction is a directive:
 
 ```js
 oqx`${people} exists { where active }`;            // true
@@ -459,11 +484,12 @@ oqx`${people} count { where active }`;             // 2
 oqx`${people} first { name where age > 50 }`;      // { name: "Alice" }
 ```
 
-(A consumer block follows the same clause grammar as the top level, with `from`
-optional. A leading bare identifier **projects** — `count { active }` selects a
-field named `active`; write `count { where active }` to filter, and always write
-`where` before a predicate: `exists { !end }` is an error, `exists { where !end }`
-is the test.)
+(A consumer block follows the same clause grammar as every body — the receiver
+supplies the rows, so a `from` inside it re-projects rather than naming a
+source. A leading bare identifier **projects** — `count { active }` selects a
+field named `active`; write `count { where active }` or `count { is active }` to
+filter. A leading predicate-shaped expression is the filter without the
+keyword: `exists { !end }` ≡ `exists { where !end }`, §10.)
 
 ### 6. Nested collections and relations
 
@@ -474,39 +500,40 @@ In `where`, an `exists { … }` tests non-emptiness and `count { … } <op> N` c
 cardinality:
 
 ```js
-oqx`name from ${people} where jobs exists { where !end }`;   // has a current job → Bob, Carol
-oqx`name from ${people} where jobs count {} >= 2`;     // ≥2 jobs → Bob, Alice
-oqx`name from ${people} where jobs none { where end }`; // no past job → Carol
+oqx`${people} { select name where jobs exists { !end } }`;   // has a current job → Bob, Carol
+oqx`${people} { select name where jobs count >= 2 }`;     // ≥2 jobs → Bob, Alice
+oqx`${people} { select name where jobs none { where end } }`; // no past job → Carol
 ```
 
 `none { … }` is exactly `!… exists { … }`, kept as its own word because the
 cardinality is the point. It is also how you say "every": *all* members active is
-`members none { where !active }` — there is deliberately no `all { … }`, whose
+`members none { !active }` — there is deliberately no `all { … }`, whose
 block would have to mean something different from every other consumer's.
 
-In a projection, `collect` yields a nested array; `first` / `single` yield one
-nested record:
+In a projection, a bare block (`collect`) yields a nested array; `first` /
+`single` yield one nested record:
 
 ```js
-oqx`name, current: jobs collect { employer where !end } from ${people} where name == "Bob"`;
+oqx`${people} { select name, current: jobs { employer where !end } where name == "Bob" }`;
 // [{ name: "Bob", current: [{ employer: "Globocorp" }] }]
 
-oqx`name, firstJob: jobs first { employer } from ${people} where name == "Alice"`;
+oqx`${people} { select name, firstJob: jobs first { employer } where name == "Alice" }`;
 // [{ name: "Alice", firstJob: { employer: "Initech" } }]
 ```
 
 A relation is just an expression evaluated on the row and coerced to a collection,
 so nested blocks compose to any depth and can navigate dotted paths
-(`author.books collect { … }`).
+(`author.books { … }`).
 
 **`distinct`** dedups the rows a consumer sees by their **projected value**, so
 counts and collections are over distinct projections rather than raw rows. Spell
-it after the consumer (`count distinct { … }`) or inside via `select distinct`:
+it after the consumer (`count distinct { … }`, `jobs distinct { … }` for a
+`collect`) or inside via `select distinct`:
 
 ```js
-oqx`select distinct employer from ${jobs}`;            // distinct employers
-oqx`n: jobs collect distinct { select employer } from ${people}`; // per person, unique employers
-oqx`name from ${people} where jobs count distinct { select employer } == 1`; // worked at exactly one employer
+oqx`${jobs} { select distinct employer }`;             // distinct employers
+oqx`${people} { select n: jobs distinct { select employer } }`;   // per person, unique employers
+oqx`${people} { select name where jobs count distinct { select employer } == 1 }`; // worked at exactly one employer
 ```
 
 An empty projection dedups by row identity (`count distinct { }` = distinct rows).
@@ -514,15 +541,16 @@ An empty projection dedups by row identity (`count distinct { }` = distinct rows
 ### 7. Lifts (`^`)
 
 Sometimes you want to filter by a nested collection *and* keep a value from it.
-A `^name:` item inside a `collect { … }` that sits directly in the top-level
-`where` does both: it filters (non-empty) and binds `name` into the outer
+A `^name:` item inside a `{ … }` block (a `collect`) that sits directly in the
+top-level `where` does both: it filters (non-empty) and binds `name` into the outer
 projection as a per-row array.
 
 ```js
 oqx`
-  name, currentEmployers
-  from ${people}
-  where jobs collect { ^currentEmployers: employer where !end }
+  ${people} {
+    select name, currentEmployers
+    where jobs { ^currentEmployers: employer where !end }
+  }
 `;
 // [{ name: "Bob", currentEmployers: ["Globocorp"] },
 //  { name: "Carol", currentEmployers: ["Globocorp"] }]
@@ -541,9 +569,10 @@ const departments = [
   { name: "Sales", teams: [{ id: "t3", members: [{ name: "Dee" }] }] },
 ];
 oqx`
-  name, teamIds, allMembers
-  from ${departments}
-  where teams collect { ^teamIds: id where members collect { ^^allMembers: name } }
+  ${departments} {
+    select name, teamIds, allMembers
+    where teams { ^teamIds: id where members { ^^allMembers: name } }
+  }
 `;
 // [{ name: "Eng",   teamIds: ["t1", "t2"], allMembers: ["Ada", "Ben", "Cy"] },
 //  { name: "Sales", teamIds: ["t3"],       allMembers: ["Dee"] }]
@@ -562,7 +591,7 @@ intrinsics) — it is not rewritten against the `select` aliases, so
 `order by decade` sorts by a field called `decade`, not by `decade: age / 10`.
 
 ```js
-oqx`name from ${people} where city == "NYC" order by age desc`;
+oqx`${people} { select name where city == "NYC" order by age desc }`;
 // [{ name: "Bob" }, { name: "Carol" }]
 ```
 
@@ -577,10 +606,10 @@ outer reference — `limit ^n` reads the enclosing row's `n`, as `^` does everyw
 inside `{ … }`; it must be a non-negative integer.
 
 ```js
-oqx`name values from ${people} order by age desc limit 2`;                 // ["Alice", "Bob"]
-oqx`name values from ${people} order by age desc limit 1 offset 1`;        // ["Bob"]
-oqx`name, latest: jobs collect { employer values order by start desc limit 1 } from ${people}`;
-oqx`name from ${people} where jobs exists { offset 1 }`;                   // has a second job
+oqx`${people} { select name values order by age desc limit 2 }`;            // ["Alice", "Bob"]
+oqx`${people} { select name values order by age desc limit 1 offset 1 }`;   // ["Bob"]
+oqx`${people} { select name, latest: jobs { employer values order by start desc limit 1 } }`;
+oqx`${people} { select name where jobs exists { offset 1 } }`;              // has a second job
 ```
 
 A storage adapter that pushes the whole query may translate them to SQL
@@ -595,16 +624,16 @@ aliased expression (`decade: (age - age % 10) / 10`); key values compare as
 identities (absent ≡ `null`), groups come in first-appearance order. After the
 grouping the body reads the **group**: a select item, `having` and `order by`
 may name a key, an **aggregate** over the group's rows, or `rows` — the group's
-rows, a value and a receiver (`rows collect { name values }`, `rows count { where
+rows, a value and a receiver (`rows { name values }`, `rows count { where
 active }`, `rows first { … }`); any other bare name is a parse error naming it.
 Without a `select` the projection is the keys plus `count: count()`.
 
 ```js
-oqx`from ${people} group by city`;
+oqx`${people} { group by city }`;
 // [{ city: "NYC", count: 2 }, { city: "SF", count: 1 }]
-oqx`select city, n: count(), oldest: max(age), names: collect(name) from ${people} group by city order by count() desc`;
-oqx`select city, active: rows count { where active } from ${people} group by city having count() > 1`;
-oqx`select decade, n: count() from ${people} group by decade: (age - age % 10) / 10 order by decade`;
+oqx`${people} { select city, n: count(), oldest: max(age), names: collect(name) group by city order by count() desc }`;
+oqx`${people} { select city, active: rows count { where active } group by city having count() > 1 }`;
+oqx`${people} { select decade, n: count() group by decade: (age - age % 10) / 10 order by decade }`;
 oqx`${people} count { group by city }`;   // the number of groups
 ```
 
@@ -619,8 +648,8 @@ Aggregates do not nest. `having` is the post-group `where` (it may name a select
 alias: `having n > 1`); `order by` reads the group scope and is not rewritten
 against aliases (`order by count()`, not `order by n`); `limit`/`offset` bound
 the groups; `distinct` with `group by` is an error (redundant). `count { … }` is
-now a value wherever a value stands (`n: jobs count { where pay > 1 }`), in or
-out of a group. A nested block may group too (`jobs collect { employer, total:
+now a value wherever a value stands (`n: jobs count { pay > 1 }`), in or
+out of a group. A nested block may group too (`jobs { employer, total:
 sum(pay) group by employer }`), and every consumer reduces the groups (`jobs
 count { group by employer }`). Spec: `spec/oqx/SEMANTICS.md` §24.
 
@@ -635,8 +664,8 @@ row with the name absent** (a missing field never drops the row); a scalar →
 one row with the scalar (not the §3 error — nothing is sourced from it). A plain
 navigation names itself by its last segment (`flatten tags` rebinds `tags`;
 `flatten tags as t` keeps the list readable); anything else needs `as`. The
-block is the receiver block over the elements, applied first (`flatten tags {
-where $it != "b" } as t`; `flatten jobs { employer values order by pay desc limit
+block is the receiver block over the elements, applied first (`flatten tags { $it
+!= "b" } as t`; `flatten jobs { employer values order by pay desc limit
 1 } as j`). Flattens chain (`flatten jobs as j flatten j.tags as t`), `where`
 runs before them, `group by` groups the flattened rows (a bound name is a key),
 `order by`/`limit` and every consumer apply to them, and a flattened row's
@@ -644,10 +673,10 @@ runs before them, `group by` groups the flattened rows (a bound name is a key),
 `(doc, "a")` from `(doc, "b")`.
 
 ```js
-oqx`select name, tags from ${people} flatten tags`;
+oqx`${people} { select name, tags flatten tags }`;
 // [{ name: "Bob", tags: "a" }, { name: "Bob", tags: "b" }, { name: "Carol" }]   (Carol has no tags)
-oqx`select name, t from ${people} flatten tags { where $it != "b" } as t`;
-oqx`select t, n: count() from ${people} flatten tags as t group by t order by count() desc`;
+oqx`${people} { select name, t flatten tags { $it != "b" } as t }`;
+oqx`${people} { select t, n: count() flatten tags as t group by t order by count() desc }`;
 oqx`${people} count { flatten tags as t }`;   // the number of (person, tag) rows
 ```
 
@@ -666,7 +695,7 @@ const tree = [{ id: "root", children: [
   { id: "b", children: [] },
 ]}];
 
-oqx`id, depth: $depth from ${tree} follow children order by $depth, id`;
+oqx`${tree} { select id, depth: $depth follow children order by $depth, id }`;
 // [{ id: "root", depth: 1 }, { id: "a", depth: 2 }, { id: "b", depth: 2 }, { id: "a1", depth: 3 }]
 ```
 
@@ -681,12 +710,12 @@ whose body has two clauses of its own after `where`: `depth <n>` and
 `frontier <pred>`:
 
 ```js
-oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by $ordinal`;
+oqx`${tree} { select id, stop: $stop follow children { depth 2 } order by $ordinal }`;
 // a1 is never reached; a and b report stop:"depth"
 ```
 
 The intrinsics belong to the reached row's own scope like any other name: inside
-a nested block (`kids: children collect { … }`) a bare `$depth` is the nested
+a nested block (`kids: children { … }`) a bare `$depth` is the nested
 row's own `$depth` property (absent unless the data carries one), and the
 occurrence's depth is `^$depth`. The same holds everywhere the metadata is not
 present — outside a `follow`, `$depth`/`$ordinal`/`$stop`/`$leaf`/`$frontier`
@@ -706,7 +735,7 @@ A **plain destination** is a relation of the current row (`children`, `doc.out`,
 `entries(kids)`, a tuple `(before, after)` — one destination over the union of
 its elements; an outer reference `^rel` on its own or a literal is a parse
 error). A **destination block** is a receiver followed by a block — `children {
-depth 2 }`, `^people { where manager == ^id }`, `(before, after) { depth 2 }`,
+depth 2 }`, `^people { manager == ^id }`, `(before, after) { depth 2 }`,
 or with its consumer, `^chain first distinct { … }` — the same directive you
 would write in `select`, re-evaluated per frontier row with `^` bound to that
 row. Its receiver *may* be an outer reference, so a walk can compute successors
@@ -715,13 +744,13 @@ that destination's block** (there is no options block any more):
 
 ```js
 const people = [{ id: 1, manager: null }, { id: 2, manager: 1 }, { id: 3, manager: 1 }, { id: 4, manager: 2 }];
-oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id } order by $ordinal`;
+oqx`${people} { select id values where id == 1 follow ^people { manager == ^id } order by $ordinal }`;
 // [1, 2, 3, 4] — the reporting tree under person 1 (`^people` names the root from a top-level walk)
-oqx`id values from ${people} where id == 1 follow ^people { where manager == ^id depth 2 } order by $ordinal`;
+oqx`${people} { select id values where id == 1 follow ^people { manager == ^id depth 2 } order by $ordinal }`;
 // [1, 2, 3] — `depth` is a clause of the destination block, after its `where`
 
 const chain = [{ id: "a" }, { id: "b", prev: "a" }, { id: "c", prev: "b" }];
-oqx`id values from ${chain} where id == "b" follow distinct ^chain { where id == ^prev }, ^chain { where prev == ^id } order by $ordinal`;
+oqx`${chain} { select id values where id == "b" follow distinct ^chain { id == ^prev }, ^chain { prev == ^id } order by $ordinal }`;
 // ["b", "a", "c"] — both directions of a chain; a block may order, bound and `distinct` its rows
 ```
 
@@ -741,14 +770,14 @@ and `depth <n>` (1–8: this destination expands a frontier row only while its
 the candidate successor's scope whose parent is the frontier row's — a bare name
 is the candidate's own property, `^name` is the row being expanded, `^^name` the
 walk's enclosing scope (language 0.14; before, `^` skipped the frontier row). So
-`follow doc.in { where before.contains(^$path) }` steps only into rows that
+`follow doc.in { before.contains(^$path) }` steps only into rows that
 name the row they were reached from. `frontier` is not correlated: it reads the
 occurrence with `^` the enclosing scope, as the body does; seeds are reached
 through no destination and are never frontiers by a destination's rule. **The
 body that carries the `follow` may write `frontier <pred>` too**, after its
 `where` and before `follow`: it applies to the seeds — a matching seed stays in
-the result with `$stop == "frontier"` and is not expanded (`id from tree frontier
-!active follow children { depth 2 }`); read in the seed's scope like the body's
+the result with `$stop == "frontier"` and is not expanded (`tree { id frontier
+!active follow children { depth 2 } }`); read in the seed's scope like the body's
 `where`. Each destination's `frontier` is its own; without a `follow`, a
 body-level `frontier` is a parse error.
 
@@ -764,9 +793,9 @@ their shape):
 
 ```js
 const n1 = { id: 1 }, n2 = { id: 2, next: [n1] }; n1.next = [n2];   // a cyclic graph of fresh references
-oqx`id, stop: $stop, $key: id from ${[n1]} follow next { $key: id } order by $ordinal`;
+oqx`${[n1]} { select id, stop: $stop, $key: id follow next { $key: id } order by $ordinal }`;
 // [{ id: 1, stop: "interior", $key: 1 }, { id: 2, stop: "interior", $key: 2 }, { id: 1, stop: "cycle", $key: 1 }]
-oqx`name, $key: email from ${people} follow next { $key: email }`;   // known by email at every step
+oqx`${people} { select name, $key: email follow next { $key: email } }`;   // known by email at every step
 ```
 
 Identities are compared as values across the whole walk, so destinations that
@@ -780,7 +809,8 @@ In row position an **array** is a collection and a non-array **object** is one
 row: a block over it yields **one record** (or absent, when the row is filtered
 out) rather than a one-element list, `values` the one value, `first`/`single`
 that object — `doc { title }` is `{ title }`, `doc { status == "active" }` is the
-object or absent (a conditional reach-through), `title from doc` the same record.
+object or absent (a conditional reach-through) — at the top level exactly as in
+a nested block.
 A scalar in row position is an eval error (`list(s)` says "one element"
 explicitly); a `from` re-projection or a `follow` is plural. A host says which
 of its objects are collections through `DataContext.isSingle` (a lazy handle);
@@ -789,7 +819,7 @@ by default a non-iterable object is one row.
 ```js
 oqx`${settings} { theme }`;             // { theme: "dark" }      (one object → one record)
 oqx`${[settings]} { theme }`;           // [{ theme: "dark" }]    (a collection → a list)
-oqx`from list(${settings})`;            // [settings]             (the explicit one-element collection)
+oqx`list(${settings}) { }`;             // [settings]             (the explicit one-element collection)
 ```
 
 A **tuple** `(e1, e2, …)` — two or more expressions in parentheses — is a value
@@ -798,10 +828,10 @@ collection contributes its items, a row itself; an absent element nothing, a
 `null` is kept; duplicates kept). One parenthesized expression is grouping.
 
 ```js
-oqx`n: size((tags, aliases)) from ${people}`;                       // one count over both lists
-oqx`name from ${people} where "x" in (tags, aliases)`;              // membership in the union
-oqx`n: (mom, dad, siblings) { name values } from ${people}`;        // one block over the union
-oqx`id from ${g} follow (before, after) { depth 2 }`;               // one destination over the union
+oqx`${people} { select n: size((tags, aliases)) }`;                 // one count over both lists
+oqx`${people} { select name where "x" in (tags, aliases) }`;        // membership in the union
+oqx`${people} { select n: (mom, dad, siblings) { name values } }`;  // one block over the union
+oqx`${g} { select id follow (before, after) { depth 2 } }`;         // one destination over the union
 ```
 
 ### 9c. Template literals (0.21)
@@ -816,10 +846,10 @@ literal may span lines. An interpolation holds any expression with balanced
 braces — a `{ … }` block or another template literal included.
 
 ```js
-oqx`label: \`\${title} (\${era})\` from ${docs}`;                             // "Alpha (3)"
-oqx`x: \`\${jobs single { employer values where primary }}\` from ${docs}`;  // the block's one value
-oqx`title from ${docs} where \`\${title}!\` == "Alpha!"`;
-oqx`x: jobs collect { label: \`\${^title}: \${employer}\` values } from ${docs}`;  // `^` reads the enclosing row
+oqx`${docs} { select label: \`\${title} (\${era})\` }`;                             // "Alpha (3)"
+oqx`${docs} { select x: \`\${jobs single { employer values where primary }}\` }`;  // the block's one value
+oqx`${docs} { select title where \`\${title}!\` == "Alpha!" }`;
+oqx`${docs} { select x: jobs { label: \`\${^title}: \${employer}\` values } }`;  // `^` reads the enclosing row
 ```
 
 Two rules keep it honest: **absent propagates** — any absent interpolation makes
@@ -836,59 +866,62 @@ unterminated-literal error).
 Every form below is shorthand for an explicit directive — it **desugars in the
 parser** to the nodes you already know (`print` writes the explicit form, the
 optimizer and any pushdown planner see it), so nothing here has semantics of its
-own except the postfix `!` and the infix `is`:
+own except the postfix `!` and the infix `is`. (`print` writes the explicit
+form — `where` for a leading predicate, `first { offset 0 }` for `[0]` — except
+that `collect` itself prints as the bare brace, 0.26.)
 
 ```js
 // A receiver block without a consumer is `collect` — wherever a value stands
-// (language 0.20): a select item, a where leaf, a follow destination, a call
-// argument; `x distinct { … }` is `x collect distinct { … }`. A block whose
-// LEADING expression is syntactically a predicate drops `where`.
-oqx`name, current: jobs { !end_date } from ${people}`
-//   ≡ name, current: jobs collect { where !end_date } from ${people}
+// (language 0.20): the whole query, a select item, a where leaf, a follow
+// destination, a call argument; `x distinct { … }` is `x collect distinct { … }`.
+// A block whose LEADING expression is syntactically a predicate drops `where`.
+oqx`${people} { name, current: jobs { !end_date } }`
+//   ≡ ${people} collect { select name, current: jobs collect { where !end_date } }
 oqx`${people} { age > 40 }`                  // ≡ ${people} collect { where age > 40 }
-oqx`n: size(jobs { !end_date }) from ${people}`   // a block as a call argument
+oqx`${people} { n: size(jobs { !end_date }) }`   // a block as a call argument
 oqx`${people} distinct { city }`             // ≡ ${people} collect distinct { city }
-oqx`${people} count { jobs exists { } }`     // a consumer test is predicate-shaped too
+oqx`${people} count { jobs exists }`         // a consumer test is predicate-shaped too (a consumer word alone is the empty block, 0.26)
 oqx`${people} first { name }`                // a bare name still projects — unchanged
 oqx`${people} first { is active }`           // the bare-field filter: `is x` ≡ `!!x`, `not x` ≡ `!x`
 
 // Brackets: `[p]` is `first { where p }`, `[n]` is `first { offset n }`;
 // a trailing `!` requires the result (and makes the predicate form `single`).
-oqx`name, boss: ^people[id == ^manager].name from ${people}`   // the first match, navigated
-oqx`name, first_job: jobs[0], primary: jobs[pay > 2]! from ${people}`
+oqx`${people} { name, boss: ^people[id == ^manager].name }`   // the first match, navigated
+oqx`${people} { name, first_job: jobs[0], primary: jobs[pay > 2]! }`
 //   jobs[0]          ≡ jobs first { offset 0 }        (out of range ⇒ absent)
 //   jobs[pay > 2]!   ≡ jobs single { where pay > 2 }!  (zero or many matches ⇒ an eval error)
 
 // Postfix `!` — required: the value, or an eval error naming the expression
 // (and the row's `$key` when scalar). Never a filter, never a coercion: 0! and ""! are values.
-oqx`select id!, title from ${docs}`           // insist on an identity before a write
+oqx`${docs} { select id!, title }`            // insist on an identity before a write
 // Tightest precedence: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name.
 
 // `is` / `is not` compare IDENTITY (`$key`: the host's, else structural — §9):
-oqx`name from ${people} where manager is null`            // absent (same as == null)
+oqx`${people} { name where manager is null }`             // absent (same as == null)
 oqx`${people} count { ^people exists { $it is ^$it } }`   // rows compare; `==` leaves that unspecified
 // `and` / `or` / `not` are the canonical connectives; `&&` / `||` / `!` are exact
 // synonyms (`title or path` coalesces). `print` writes the words (language 0.18); `!` stays `!`.
 
 // A select item may use the items to its left (inlined like a `where` alias):
-oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
+oqx`${people} { boss: ^people[id == ^manager], bossName: boss.name }`
 ```
 
 Reserved words, never a bare field name: `from where select is not and or` and
-the literal words `true false null`. The top level is unchanged — `age > 15
-from ${people}` stays an error, because `where` would precede `from`. One
-carve-out: after a `follow` destination that is a relation of the current row
-(a bare name, a call, a binding) a brace is still the **options** block (`follow
-children { depth 2 }`), never a collect; only over an outer-reference receiver,
-which cannot be a plain destination, is the brace a destination block with the
-implicit `collect` (`follow ^people { where … }`, language 0.19).
+the literal words `true false null`. The clause form's top level is unchanged —
+`age > 15 from ${people}` stays an error, because `where` would precede `from`;
+the collection-scoped `${people} { age > 15 }` is the filter. A brace after
+*any* `follow` destination opens that destination's block with the implicit
+`collect` (`follow children { depth 2 }`, `follow ^people { where … }`; the
+options block of 0.19 is gone since language 0.20).
 
 ### Cheat-sheet
 
 ```
-select … from … where … follow … order by … limit N offset N   the fixed clause order (each at most once)
-name, alias: expr, nested: rel collect { … }   projection (`select` may be dropped only here, in first position)
-from ${source}                                  source collection (required at the top level)
+${source} { … }  /  ${source} count { … }      a query: the collection heads the body; a consumer word may stand before the brace; nothing follows it
+select … from … where … follow … flatten … group by … having … order by … limit N offset N   the fixed clause order inside a body (each at most once)
+name, alias: expr, nested: rel { … }            projection (`select` may be dropped only here, in first position)
+from rel                                        re-projection: each row replaced by the rows `rel` yields (flatMap) — a body never names its source
+select name from ${source} where …              the clause form (pre-0.26): still read, same tree, no longer printed
 where a == b and rel exists { where … } or not c  predicate tree + nested ops (`&&`/`||`/`!` are accepted synonyms)
 rel { pay > 2 }  /  rel { employer }            a block without a consumer is collect; a leading predicate is where-first, a bare name projects
 rel[p]  /  rel[p]!  /  rel[0]  /  rel[0]!       first match / exactly one (required) / positional / required positional
@@ -900,17 +933,17 @@ where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl.
 where x in range(field)                          coerce a string field to a range, then test coverage
 name                                             the CURRENT row's field only (never climbs)
 $it                                              the current item itself (a scalar row, or the whole object)
-from entries(obj) … $key / $it                   a record's properties as a collection (key + value; bare names read the value)
+entries(obj) { … $key / $it }                   a record's properties as a collection (key + value; bare names read the value)
 <expr> values                                    scalar projection: the value, not a { name: value } record
 ^name / ^^name                                   read an enclosing row's field (exactly N scopes out); ^$it = the enclosing row
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
-^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
+^rel { … }  /  ^^root exists { … }               nested consumer over an enclosing row's relation / a named root
 entries(rel) exists { … }                        a free-function call may be a receiver
 order by expr desc, expr2                        ordering
 limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
 follow rel { where … frontier … depth n }       recursion ($depth/$stop/$leaf/$frontier/$key); the brace is the destination's block, `^name` in its where the frontier row
 follow before, after  /  follow (before, after)  several destinations: the union of their rows (per step, by identity) / one tuple destination
-follow ^people { where manager == ^id }         a destination block: successors computed per frontier row (`^` = that row; `collect` implicit, 0.20)
+follow ^people { manager == ^id }               a destination block: successors computed per frontier row (`^` = that row; `collect` implicit, 0.20)
 $key  /  $key: expr                              the identity a row is known by (the host's, else structural) / give the rows a block yields that identity
 (a, b)  /  rel distinct { … }                   a tuple: the elements, one level flat (a value and a receiver) / collect distinct (0.20)
 `${title} (${era})`                             a template literal: text + string forms; absent anywhere → absent; a list/record → error (0.21)
@@ -943,7 +976,7 @@ data (no parent pointers, no methods) and *are* the JSON shape.
 ```js
 import { parse, visit, transform, print, printTemplate, toJSON, stripSpans, build } from "@omgbase/oqx";
 
-const q = parse('select name, n: jobs collect { employer } from people where jobs exists { where !end }');
+const q = parse('people { select name, n: jobs { employer } where jobs exists { !end } }');
 
 // visit: every node, with its ancestors, the clause it sits in, and the scope depth
 const relations = [];
@@ -957,11 +990,12 @@ visit(q, {
 // transform: rebuild with every expression mapped (children first; untouched nodes keep identity + spans)
 const rewritten = transform(q, (e) => (e.kind === "ident" && e.name === "name" ? build.member(build.ident("person"), "name") : e));
 
-// print: the canonical source — single spaces, `select` written, minimal parentheses
+// print: the canonical source — collection-scoped, single spaces, the projection leading
+// without `select`, every item aliased, `collect` as the bare brace, minimal parentheses
 print(rewritten);
-// 'select name: person.name, n: jobs collect { employer: employer } from people where jobs exists { where !end }'
+// 'people { name: person.name, n: jobs { employer: employer } where jobs exists { where !end } }'
 
-toJSON(q);        // { oqx: "0.17", kind: "query", span: [0, 93], … } — the shared JSON document
+toJSON(q);        // { oqx: "0.26", kind: "query", span: [0, 71], … } — the shared JSON document
 stripSpans(q);    // the same tree without spans, for shape comparisons
 ```
 
@@ -980,8 +1014,9 @@ place.
 `print(parse(q)) === q` is *not* a law — spelling is normalized. A binding is a
 value, never source text: `print` throws (`OqxError`, stage `"print"`) on one,
 and `printTemplate(node)` returns `{ strings, count, indices }` — the fragments
-around each binding and the binding each gap stands for (the canonical clause
-order can move one past another), to re-run with `parseTemplate(strings,
+around each binding and the binding each gap stands for (the canonical form
+can move one past another: the clause form `select x: ${1} from ${0}` prints as
+`${0} { x: ${1} }`, `indices = [1, 0]`), to re-run with `parseTemplate(strings,
 count)` and the values permuted by `indices`.
 
 `build.*` constructs nodes with the empty span `[0, 0]` and the materialized
@@ -996,8 +1031,8 @@ it is read from — so a host that knows what rows an expression yields can say
 which names exist there:
 
 ```ts
-references(parse('select title, age from docs where blocks exists { where text == ^titel }'));
-// [ { name: "title", clause: "select", scope: { depth: 1, steps: [{ expr: <docs>, depth: 1 }] }, span: [7, 12] },
+references(parse('docs { select title, age where blocks exists { text == ^titel } }'));
+// [ { name: "title", clause: "select", scope: { depth: 1, steps: [{ expr: <docs>, depth: 1 }] }, span: [14, 19] },
 //   { name: "age",   clause: "select", scope: { depth: 1, steps: [<docs>@1] }, … },
 //   { name: "docs",  clause: "source", scope: { depth: 0, steps: [] }, … },          // a root name
 //   { name: "blocks", clause: "where", scope: { depth: 1, steps: [<docs>@1] }, … },
@@ -1021,8 +1056,8 @@ When you don't need interpolation, `execute` runs a plain string query against a
 ```js
 import { execute } from "@omgbase/oqx";
 
-execute("name from people where age >= 18", { people });
-// `from people` resolves the `people` root
+execute("people { select name where age >= 18 }", { people });
+// the collection `people` resolves the root of that name
 ```
 
 `parse(source)` returns a reusable AST and `run(query, { values, roots })` returns
@@ -1070,7 +1105,7 @@ const graph = {
   toRows: (v) => v == null ? [] : Array.isArray(v) ? v : [v],
   identityOf: (row) => row.id,                              // `$key`: for follow dedup, distinct, `is` (optional; default: structural)
 };
-run(parse("id, depth: $depth from tree follow children"), { context: graph });
+run(parse("tree { select id, depth: $depth follow children }"), { context: graph });
 ```
 
 #### Custom functions and methods
@@ -1101,7 +1136,7 @@ const ctx = {
     return builtins.callMethod(name, recv, args);
   },
 };
-run(parse("id from tree where age(born) > 18 and title.slug() == 'x'"), { context: ctx });
+run(parse("tree { select id where age(born) > 18 and title.slug() == 'x' }"), { context: ctx });
 ```
 
 The simplest route is to `extends DefaultContext` and `super.callFunction(...)`
@@ -1127,7 +1162,7 @@ import { parse, PlannedEngine } from "@omgbase/oqx";
 import { SqliteTable } from "@omgbase/oqx/sqlite";
 
 const planner = new SqliteTable(db, "emp", { columns: ["id", "name", "dept", "level"] });
-new PlannedEngine(planner).run(parse('name from emp where dept == "eng" and level >= 5'), []);
+new PlannedEngine(planner).run(parse('emp { select name where dept == "eng" and level >= 5 }'), []);
 // → `dept`/`level` pushed to SQL; anything untranslatable finishes in-memory
 ```
 
@@ -1142,9 +1177,9 @@ A nested block runs once per enclosing row, so the natural way to join two
 collections —
 
 ```js
-oqx`select id, total, customer: ${customers} first { where id == ^customer_id } from ${orders}`;
-oqx`select name, orders: ${orders} collect { id, total where customer_id == ^id } from ${customers}`;
-oqx`select id from ${orders} where ${customers} exists { where id == ^customer_id }`;
+oqx`${orders} { select id, total, customer: ${customers} first { id == ^customer_id } }`;
+oqx`${customers} { select name, orders: ${orders} { id, total where customer_id == ^id } }`;
+oqx`${orders} { select id where ${customers} exists { id == ^customer_id } }`;
 ```
 
 — would be quadratic if the block scanned its receiver each time. It does not:
@@ -1170,7 +1205,7 @@ results and on errors.
   objects and arrays by reference. 5 000 orders × 5 000 customers zip in a few
   milliseconds; the scan takes seconds.
 - **Invariant blocks run once.** A block that reads nothing from any enclosing
-  row (`^customers collect { name values }` from a top-level row) and lifts
+  row (`^customers { name values }` from a top-level row) and lifts
   nothing is evaluated the first time it is reached and its value reused for
   every other row (the same array/record by reference).
 - **Semi/anti-join short-circuit.** `exists` and `none` stop at the first bucket
@@ -1202,8 +1237,8 @@ bindings (`^customers`, `${customers}`, `^^config.items`) is evaluated once per
 run — its rows are read once and reused across the enclosing rows, with or
 without a correlation — and indexed once per path even if the context hands out
 a fresh array per read. Any other receiver is indexed the second time the
-**same object** is probed, so a per-row relation (`lines collect { … where cid
-== ^id }` with a different `lines` array per row) is scanned, not indexed. A
+**same object** is probed, so a per-row relation (`lines { … where cid ==
+^id }` with a different `lines` array per row) is scanned, not indexed. A
 scalar receiver is one row.
 
 **Pre-built indexes.** `DataContext.indexFor(collection, path)` is an optional
@@ -1234,7 +1269,7 @@ materialize` is the same seam for a `Value` that cannot be lazy on its own.
 ```js
 import { parse, run, IndexedCollection } from "@omgbase/oqx";
 const orders = new IndexedCollection("orders", orderRows, ["customer_id"]);
-run(parse("select name, o: ^orders collect { id values where customer_id == ^id } from customers"),
+run(parse("customers { select name, o: ^orders { id values where customer_id == ^id } }"),
     { context: orders.context({ customers }) });   // probes the pre-built index
 ```
 
@@ -1359,7 +1394,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   import { parse, run, IndexedCollection, PlannedEngine } from "@omgbase/oqx";
   const planner = new IndexedCollection("people", people, ["city", "title"]);
   const engine = new PlannedEngine(planner, planner.context());
-  run(parse('name from people where city == "NYC" and age > 30'), { engine });
+  run(parse('people { select name where city == "NYC" and age > 30 }'), { engine });
   // city probe from the index; `age > 30` finished in-memory over the candidates
   ```
 
@@ -1389,7 +1424,8 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   (`Visitor`, `VisitContext`, `Clause` are the types); `CHILDREN` — the
   child-key table per node kind that drives them.
 - `print(node)` / `printTemplate(node)` — the canonical printer (`Template` is
-  `{ strings, count, indices }`).
+  `{ strings, count, indices }`); it writes the collection-scoped form
+  `S [consumer] [distinct] { … }` (0.26) and never the clause form.
 - `resolveAliases(query)` — the `select`-alias substitution the entry points
   apply before evaluation (SEMANTICS §14).
 - `references(query)` — every name the query reads from a row, with its
@@ -1400,7 +1436,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   the display source of a template.
 - `build` — the node builders (`build.query`, `build.op`, `build.subquery`,
   `build.field`, `build.ident`, …).
-- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.17"`).
+- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.26"`).
 
 **Types**
 

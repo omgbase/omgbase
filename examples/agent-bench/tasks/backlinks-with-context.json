@@ -26,7 +26,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, heading: _block._section collect { _name order by level desc limit 1 } from links where _dst_path == \"/processes/calcination.md\" and _block_id != null order by _path"
+          "query": "links { select _path, heading: _block._section { _name order by level desc limit 1 } where _dst_path == \"/processes/calcination.md\" and _block_id != null order by _path }"
         }
       }
     ],

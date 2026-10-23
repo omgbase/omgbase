@@ -72,9 +72,9 @@ describe("which revisions to diff", () => {
 
 describe("recent documents", () => {
   it("asks for the most recently updated documents — the 5.0 engine names by default, the bare 4.x ones on request", () => {
-    expect(recentQuery()).toBe("select _path, _title, _updated_at from docs order by _updated_at desc limit 25");
+    expect(recentQuery()).toBe("docs { select _path, _title, _updated_at order by _updated_at desc limit 25 }");
     expect(recentQuery("")).toBe(recentQuery());
-    expect(recentQuery("", NAMES_4)).toBe("select path, title, updated_at from docs order by updated_at desc limit 25");
+    expect(recentQuery("", NAMES_4)).toBe("docs { select path, title, updated_at order by updated_at desc limit 25 }");
   });
   it("reads hits: the envelope's _id/_path with the projected _title/_updated_at", () => {
     const hit = { _id: "d_a", _path: "/notes/alpha.md", _title: "Alpha", _updated_at: "2026-10-10T12:00:00Z" };
@@ -161,58 +161,58 @@ describe("the card", () => {
 
 describe("the filter", () => {
   it("recentQuery: the filter becomes the where clause; none or blank leaves the plain query (no empty where)", () => {
-    expect(recentQuery('status == "active"')).toBe('select _path, _title, _updated_at from docs where status == "active" order by _updated_at desc limit 25');
-    expect(recentQuery("  a == 1 or b == 2  ")).toBe("select _path, _title, _updated_at from docs where a == 1 or b == 2 order by _updated_at desc limit 25");
-    expect(recentQuery("")).toBe("select _path, _title, _updated_at from docs order by _updated_at desc limit 25");
+    expect(recentQuery('status == "active"')).toBe('docs { select _path, _title, _updated_at where status == "active" order by _updated_at desc limit 25 }');
+    expect(recentQuery("  a == 1 or b == 2  ")).toBe("docs { select _path, _title, _updated_at where a == 1 or b == 2 order by _updated_at desc limit 25 }");
+    expect(recentQuery("")).toBe("docs { select _path, _title, _updated_at order by _updated_at desc limit 25 }");
     expect(recentQuery("   ")).toBe(recentQuery(""));
-    expect(recentQuery('status == "active"', NAMES_4)).toBe('select path, title, updated_at from docs where status == "active" order by updated_at desc limit 25');
+    expect(recentQuery('status == "active"', NAMES_4)).toBe('docs { select path, title, updated_at where status == "active" order by updated_at desc limit 25 }');
   });
-  it("frameFor, filled (idle or editing): three lines, the filter in the hole on the where line; the same tokens as recentQuery", () => {
+  it("frameFor, filled (idle or editing): five lines, the filter in the hole on the where line; the same tokens as recentQuery", () => {
     for (const editing of [false, true]) {
       const f = frameFor('status == "active"', { editing });
-      expect(f.text).toBe('select _path, _title, _updated_at from docs\nwhere status == "active"\norder by _updated_at desc limit 25');
+      expect(f.text).toBe('docs {\n  select _path, _title, _updated_at\n  where status == "active"\n  order by _updated_at desc limit 25\n}');
       expect(f.where).toBe(true);
-      expect(f.text.split("\n")).toHaveLength(3);
-      expect(f.text.replace(/\n/g, " ")).toBe(recentQuery('status == "active"'));
+      expect(f.text.split("\n")).toHaveLength(5);
+      expect(f.text.replace(/\s+/g, " ")).toBe(recentQuery('status == "active"'));
       expect(f.text.slice(f.hole.from, f.hole.to)).toBe('status == "active"');
       expect(f.text.slice(0, f.hole.from)).toBe(FRAME_BEFORE);
       expect(f.text.slice(f.hole.to)).toBe(FRAME_AFTER);
-      expect(f.text.split("\n")[1]).toBe('where status == "active"'); // the hole lives on the second line alone
+      expect(f.text.split("\n")[2]).toBe('  where status == "active"'); // the hole lives on the third line alone
     }
     const astral = frameFor('title == "𝒜"'); // offsets are UTF-16, as CodeMirror counts
     expect(astral.text.slice(astral.hole.from, astral.hole.to)).toBe('title == "𝒜"');
     // The 4.x names spell the frame bare; the hole is the same text.
     const old = frameFor('status == "active"', { names: NAMES_4 });
-    expect(old.text).toBe('select path, title, updated_at from docs\nwhere status == "active"\norder by updated_at desc limit 25');
+    expect(old.text).toBe('docs {\n  select path, title, updated_at\n  where status == "active"\n  order by updated_at desc limit 25\n}');
     expect(old.text.slice(old.hole.from, old.hole.to)).toBe('status == "active"');
-    expect(old.text.replace(/\n/g, " ")).toBe(recentQuery('status == "active"', NAMES_4));
+    expect(old.text.replace(/\s+/g, " ")).toBe(recentQuery('status == "active"', NAMES_4));
   });
   it("frameFor, empty + editing: the where line with an empty hole after `where `, for the caret", () => {
     const f = frameFor("", { editing: true });
-    expect(f.text).toBe("select _path, _title, _updated_at from docs\nwhere \norder by _updated_at desc limit 25");
+    expect(f.text).toBe("docs {\n  select _path, _title, _updated_at\n  where \n  order by _updated_at desc limit 25\n}");
     expect(f.where).toBe(true);
     expect(f.hole).toEqual({ from: FRAME_BEFORE.length, to: FRAME_BEFORE.length });
-    expect(f.text.split("\n")[1]).toBe("where ");
+    expect(f.text.split("\n")[2]).toBe("  where ");
   });
-  it("frameFor, empty + idle: two lines, no where at all, a closed zero-width hole; the same tokens as recentQuery('')", () => {
+  it("frameFor, empty + idle: four lines, no where at all, a closed zero-width hole at the end of the select line; the same tokens as recentQuery('')", () => {
     const f = frameFor("");
-    expect(f.text).toBe("select _path, _title, _updated_at from docs\norder by _updated_at desc limit 25");
+    expect(f.text).toBe("docs {\n  select _path, _title, _updated_at\n  order by _updated_at desc limit 25\n}");
     expect(f.where).toBe(false);
-    expect(f.text.split("\n")).toHaveLength(2);
-    expect(f.text.replace(/\n/g, " ")).toBe(recentQuery(""));
-    expect(f.hole).toEqual({ from: "select _path, _title, _updated_at from docs".length, to: "select _path, _title, _updated_at from docs".length });
+    expect(f.text.split("\n")).toHaveLength(4);
+    expect(f.text.replace(/\s+/g, " ")).toBe(recentQuery(""));
+    expect(f.hole).toEqual({ from: "docs {\n  select _path, _title, _updated_at".length, to: "docs {\n  select _path, _title, _updated_at".length });
     expect(frameFor("", { editing: false })).toEqual(f);
   });
   it("matchQuery: ONE query per poll projecting _path and _title, the filter (when any) and-ed with the paths or-ed together, rooted, deduped, JSON-quoted; null without paths", () => {
     expect(matchQuery('status == "active"', ["/notes/alpha.md", "notes/beta.md", "/notes/alpha.md"]))
-      .toBe('select _path, _title from docs where (status == "active") and (_path == "/notes/alpha.md" or _path == "/notes/beta.md")');
-    expect(matchQuery("", ["/notes/alpha.md", "/notes/beta.md"])).toBe('select _path, _title from docs where (_path == "/notes/alpha.md" or _path == "/notes/beta.md")');
-    expect(matchQuery("  ", ["/a.md"])).toBe('select _path, _title from docs where (_path == "/a.md")');
-    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('select _path, _title from docs where (x) and (_path == "/odd \\"quoted\\" name.md")');
+      .toBe('docs { select _path, _title where (status == "active") and (_path == "/notes/alpha.md" or _path == "/notes/beta.md") }');
+    expect(matchQuery("", ["/notes/alpha.md", "/notes/beta.md"])).toBe('docs { select _path, _title where (_path == "/notes/alpha.md" or _path == "/notes/beta.md") }');
+    expect(matchQuery("  ", ["/a.md"])).toBe('docs { select _path, _title where (_path == "/a.md") }');
+    expect(matchQuery("x", ['/odd "quoted" name.md'])).toBe('docs { select _path, _title where (x) and (_path == "/odd \\"quoted\\" name.md") }');
     expect(matchQuery('status == "active"', [])).toBeNull();
     expect(matchQuery("", [])).toBeNull();
     // The 4.x names, bare.
-    expect(matchQuery('status == "active"', ["/notes/alpha.md"], NAMES_4)).toBe('select path, title from docs where (status == "active") and (path == "/notes/alpha.md")');
+    expect(matchQuery('status == "active"', ["/notes/alpha.md"], NAMES_4)).toBe('docs { select path, title where (status == "active") and (path == "/notes/alpha.md") }');
   });
   it("titlesByPath: rooted path → title; a blank title is null, a hit without a path is skipped; a 4.x hit reads the same", () => {
     const titles = titlesByPath([

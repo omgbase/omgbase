@@ -25,8 +25,8 @@ document-level properties, uniformly and index-fast:
    parsed YAML fence (`layer: canon`, `tags: [a, b]`), or — since properties
    1.2 (2026-10-17) — a **YAML or JSON document's whole top-level mapping**.
    The same `source = 'frontmatter'` rows, because it is the same thing (the
-   authored key/value mapping), so `select focused_intent from docs where _path
-   == "/attn/focus.yaml"`, `_data.<k>`, `entries(_frontmatter)`, the pushdown
+   authored key/value mapping), so `docs { select focused_intent where _path
+   == "/attn/focus.yaml" }`, `_data.<k>`, `entries(_frontmatter)`, the pushdown
    and `docs_read.properties.frontmatter` work on a `.yaml`/`.json` file
    exactly as on a fence. A YAML stream's first document is the mapping; a
    non-mapping root, a parse error or an empty file yields no rows. No inline

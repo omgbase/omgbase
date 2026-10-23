@@ -8,25 +8,25 @@ A **top-level** consumer — `<target> <op> { … }` — reduces the whole
 matching set instead of listing rows. `count` yields a number:
 
 ```console
-$ omg query 'docs count { }'
+$ omg query 'docs count'
 20
-$ omg query 'docs count { where type == "substance" }'
+$ omg query 'docs count { type == "substance" }'
 5
 ```
 
 `exists` yields a boolean:
 
 ```console
-$ omg query 'docs exists { where layer == "draft" }'
+$ omg query 'docs exists { layer == "draft" }'
 true
-$ omg query 'docs exists { where layer == "legendary-only" }'
+$ omg query 'docs exists { layer == "legendary-only" }'
 false
 ```
 
 `first` returns zero-or-one row (here the first in path order):
 
 ```console
-$ omg query 'docs first { }'
+$ omg query 'docs first'
 d_sz1e8z0  /index.md
 ```
 
@@ -34,7 +34,7 @@ d_sz1e8z0  /index.md
 one, so it doubles as an assertion. Exactly one document is a draft:
 
 ```console
-$ omg query 'docs single { where layer == "draft" }'
+$ omg query 'docs single { layer == "draft" }'
 d_f7w5k26  /texts/mutus-liber.md
 ```
 
@@ -56,7 +56,7 @@ error[filter_invalid]: single { … } matched 13 rows; use first { … } for zer
 that mentions mercury:
 
 ```console
-$ omg query 'from docs where text("mercury")'
+$ omg query 'docs { text("mercury") }'
 d_sz1e8z0  /index.md
 d_b089t54  /lab/2026-01-notes.md
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
@@ -72,7 +72,7 @@ It composes with ordinary predicates — full-text prunes, the scalar narrows.
 Adding `layer == "canon"` drops the working-layer lab note and Newton:
 
 ```console
-$ omg query 'from docs where text("mercury") and layer == "canon"'
+$ omg query 'docs { text("mercury") and layer == "canon" }'
 d_sz1e8z0  /index.md
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_t5nvj1g  /practitioners/paracelsus.md
@@ -86,7 +86,7 @@ And it works **inside** a correlated subquery — "documents with a task node wh
 text mentions recrystallization" (a query the flat search surface can't express):
 
 ```console
-$ omg query 'from docs where _nodes exists { where _kind == "md:task" and text("recrystallization") }'
+$ omg query 'docs { _nodes exists { _kind == "md:task" and text("recrystallization") } }'
 d_w18c2st  /lab/2026-02-notes.md
 d_jtnqxt2  /processes/coagulation.md
 ```

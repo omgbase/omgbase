@@ -102,8 +102,8 @@ use crate::query::{
 pub const HINT: &str = "selection";
 /// The prefix of the slot projections the rewrite appends: `__omg_sel_<t>_<slot>`.
 pub const SLOT_PREFIX: &str = "__omg_sel_";
-const WRAP_HEAD: &str = "select __omg_x: ";
-const WRAP_TAIL: &str = " from docs";
+const WRAP_HEAD: &str = "docs { select __omg_x: ";
+const WRAP_TAIL: &str = " }";
 /// The stand-in a slot takes in the template's static shape check (the
 /// reference's `$sel`).
 const PROBE: &str = "$sel";
@@ -1446,7 +1446,7 @@ fn admit_selector(select: &str, request: Option<&fixes::Request>) -> Result<(Que
     let root = match root_target(&raw.source) {
         None => {
             return Err(refused_with(
-                "select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`",
+                "select: a selector scans a root collection — `docs { … }`, `blocks { … }` or `nodes { … }`",
                 root_fix(false),
             ));
         }
@@ -2624,7 +2624,7 @@ mod tests {
         let c = compile(&req(ROLLUP, rollup_templates(), None)).unwrap();
         assert_eq!(
             oqx::print_query(&c.rewritten).unwrap(),
-            "select __omg_sel_0_into: project, __omg_sel_0_markdown: \"- completed: [\" + title + \"](\" + path + \")\" from docs where type == \"workstream\" and status == \"completed\""
+            "docs { __omg_sel_0_into: project, __omg_sel_0_markdown: \"- completed: [\" + title + \"](\" + path + \")\" where type == \"workstream\" and status == \"completed\" }"
         );
         assert_eq!(
             c.templates[0].slot_names(),
@@ -2641,11 +2641,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             oqx::print_query(&c.rewritten).unwrap(),
-            "select hub: project, __omg_sel_0_into: hub from docs"
+            "docs { hub: project, __omg_sel_0_into: hub }"
         );
         assert_eq!(
             oqx::print_query(&oqx::resolve_aliases(&c.rewritten).unwrap()).unwrap(),
-            "select hub: project, __omg_sel_0_into: project from docs"
+            "docs { hub: project, __omg_sel_0_into: project }"
         );
         assert_eq!((c.bound, c.implicit()), (5, false));
         // A value-position directive is an expression too; `^` validates at depth 1.
@@ -2658,7 +2658,7 @@ mod tests {
         assert!(
             oqx::print_query(&c.rewritten)
                 .unwrap()
-                .starts_with("select __omg_sel_0_target: ^docs single {"),
+                .starts_with("docs { __omg_sel_0_target: ^docs single {"),
         );
     }
 
@@ -2733,7 +2733,7 @@ mod tests {
             ),
             (
                 "entries(docs) collect { }",
-                "select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`",
+                "select: a selector scans a root collection — `docs { … }`, `blocks { … }` or `nodes { … }`",
             ),
             (
                 "from docs follow refs(\"a\")",
@@ -2913,7 +2913,7 @@ mod tests {
         );
         assert_eq!(
             e.message,
-            "effects[0].value: unexpected 'from' — expected a value (at offset 4)"
+            "effects[0].value: unexpected '}' — expected a value (at offset 4)"
         );
         let e = refuse(
             "from docs",
@@ -2922,7 +2922,7 @@ mod tests {
         );
         assert_eq!(
             e.message,
-            "effects[0].value: duplicate `from` clause (at offset 14)"
+            "effects[0].value: `oqx` must be one expression over the hit, not a query"
         );
     }
 
@@ -3353,12 +3353,13 @@ mod tests {
         assert_eq!(data(&e)["hint"], HINT);
         assert_eq!(
             e.message,
-            "effects[0].markdown: unexpected 'from' — expected a value (at offset 7)"
+            "effects[0].markdown: unexpected '}' — expected a value (at offset 7)"
         );
         let e =
             desugar(json!({ "op": "insert", "into": "hub.md", "markdown": "-> a from blocks" }))
                 .unwrap_err();
-        assert!(e.message.ends_with("(at offset 17)"), "{}", e.message);
+        // the wrapper's body reads `from blocks` as a re-projection, so the slot is a query
+        assert!(e.message.ends_with("not a query"), "{}", e.message);
     }
 
     /// Bare targets: a path, an id by its prefix, a `$new.n` (provisional

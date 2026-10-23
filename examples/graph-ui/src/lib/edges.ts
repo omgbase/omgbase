@@ -1,12 +1,12 @@
 // Edge fetching through the `query` tool, by generated OQX.
 //
-// Strategy: the link rows (`from links`, spec/surface §1.1), restricted to the
+// Strategy: the link rows (`links { … }`, spec/surface §1.1), restricted to the
 // shown nodes with a chunked disjunction — OQX has no array literal (`_path in
 // [...]` is a lex error) and `in` only takes a lifted set or a range, so the
 // node set is spelled `(_path == "a" || _path == "b" || …)` in chunks of CHUNK
 // paths. The result is filtered client-side so only edges between SHOWN nodes
 // remain (the disjunction constrains the source only). The alternative — a
-// nested `_out_links collect { … }` per doc — also works against the engine
+// nested `_out_links { … }` per doc — also works against the engine
 // but returns one row per doc with the edges inlined; the flat edge rows are
 // simpler to merge across chunks and page with the tool's cursor. An edge is a
 // link row read source → destination: its `_path` (the source document,
@@ -59,7 +59,7 @@ export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: 
       ? `${names.field} == ${oqxString(candidate.name)} && ${names.provenance} == "frontmatter"`
       : `${names.provenance} == "link" && ${names.dst_kind} == "document"`;
   return chunked(paths).map(
-    (chunk) => `select src: ${names.path}, dst: ${names.dst_path} from links where ${relation} && ${pathDisjunction(chunk.map(rooted), names.path)}`,
+    (chunk) => `links { select src: ${names.path}, dst: ${names.dst_path} where ${relation} && ${pathDisjunction(chunk.map(rooted), names.path)} }`,
   );
 }
 

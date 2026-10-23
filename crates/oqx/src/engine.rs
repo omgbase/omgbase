@@ -1489,11 +1489,6 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     fn eval_where_op(&self, op: &OpNode, scope: &Scope<'_>) -> Result<bool> {
-        if op.sub.follow.is_some() {
-            return Err(OqxError::eval(
-                "`follow` is only valid on a select-position collect { … }, not a where op",
-            ));
-        }
         let plan = self.plan_of(op, scope);
         if !plan.invariant {
             return self.eval_where_op_planned(op, &plan, scope);
@@ -1515,7 +1510,13 @@ impl<'e, C: DataContext> Exec<'e, C> {
         match op.op {
             Consumer::Exists | Consumer::None | Consumer::Count => {
                 let acc = self.access(op, plan, scope)?;
-                let n = if plan.from_cardinality && acc.predicate().is_none() {
+                // A block with a `follow` (legal in every body since 0.26)
+                // yields its walk's occurrences: no cardinality answer, no
+                // first-match stop — the walk is run and counted like any
+                // other rows.
+                let n = if op.sub.follow.is_some() {
+                    self.op_rows(op, scope, bound, Some(acc), false)?.len()
+                } else if plan.from_cardinality && acc.predicate().is_none() {
                     // Nothing left to evaluate per row: the accessed rows ARE
                     // the matched rows, and the consumer only needs their count
                     // after the bound.
@@ -1532,7 +1533,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     // materialize the set.
                     usize::from(!self.match_rows(op, scope, Some(1), Some(acc))?.is_empty())
                 } else {
-                    self.op_rows(op, scope, bound, Some(acc))?.len()
+                    self.op_rows(op, scope, bound, Some(acc), false)?.len()
                 };
                 Ok(match op.op {
                     Consumer::Count => match &op.count_cmp {
@@ -1544,7 +1545,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 })
             }
             Consumer::Collect => {
-                let matched = self.op_rows(op, scope, bound, None)?;
+                let matched = self.op_rows(op, scope, bound, None, false)?;
                 for item in &op.sub.select {
                     let SelectItem::Field {
                         name, expr, lift, ..
@@ -1581,27 +1582,77 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 Ok(!matched.is_empty())
             }
             Consumer::First | Consumer::Single => {
-                Ok(!self.op_rows(op, scope, bound, None)?.is_empty())
+                Ok(!self.op_rows(op, scope, bound, None, false)?.is_empty())
             }
         }
     }
-    // The rows a consumer op reduces: matched → flattened → grouped → ordered → distinct → bounded.
+    /// The rows a consumer op reduces — in every position (a where-position
+    /// test, a select-position directive, a destination block): matched (or,
+    /// with a `follow`, the walk's occurrences over the matched seeds) →
+    /// flattened → grouped → ordered → distinct → bounded. `destination` marks
+    /// a follow destination block: its `frontier` is the destination's (read by
+    /// the outer walk), never a seed frontier for a `follow` of its own.
     fn op_rows<'p>(
         &self,
         op: &OpNode,
         scope: &'p Scope<'p>,
         bound: Bound,
         acc: Option<Access>,
+        destination: bool,
     ) -> Result<Vec<Scope<'p>>> {
-        let mut scopes = self.match_rows(op, scope, None, acc)?;
-        if !op.sub.flatten.is_empty() {
-            scopes = self.flatten_scopes(scopes, &op.sub.flatten)?;
+        let sub = &op.sub;
+        let mut scopes = if let Some(follow) = &sub.follow {
+            // The seeds are the matched rows themselves (`follow_walk` enters
+            // them); a follow block is never correlated, so the predicate left
+            // by the access is the whole `where`.
+            let Access {
+                rows,
+                predicate,
+                plan: accessed,
+                ..
+            } = match acc {
+                Some(a) => a,
+                None => self.access(op, &self.plan_of(op, scope), scope)?,
+            };
+            let w = predicate.resolve(&accessed);
+            let mut seeds = Vec::with_capacity(rows.len());
+            for r in rows {
+                let keep = match w {
+                    None => true,
+                    Some(w) => self.eval_where(w, &self.enter(r.clone(), scope, None))?,
+                };
+                if keep {
+                    seeds.push(r);
+                }
+            }
+            let seed_frontier = if destination {
+                None
+            } else {
+                sub.frontier.as_ref()
+            };
+            let occ = self.follow_walk(
+                self.keyed(seeds, Projection::from(sub), scope)?,
+                follow,
+                seed_frontier,
+                scope,
+            )?;
+            occ.into_iter()
+                .map(|o| self.enter(o.row, scope, Some(o.meta)))
+                .collect()
+        } else {
+            self.match_rows(op, scope, None, acc)?
+        };
+        if !sub.flatten.is_empty() {
+            scopes = self.flatten_scopes(scopes, &sub.flatten)?;
         }
-        if let Some(g) = &op.sub.group_by {
-            scopes = self.group_scopes(scopes, g, op.sub.having.as_ref(), scope)?;
+        if let Some(g) = &sub.group_by {
+            scopes = self.group_scopes(scopes, g, sub.having.as_ref(), scope)?;
         }
-        self.apply_key(&mut scopes, Projection::from(&op.sub))?;
-        scopes = self.sort_scopes(scopes, op.sub.order_by.as_deref())?;
+        // An occurrence's `$key` is the walk's identity (`keyed` gave the seeds theirs).
+        if sub.follow.is_none() {
+            self.apply_key(&mut scopes, Projection::from(sub))?;
+        }
+        scopes = self.sort_scopes(scopes, sub.order_by.as_deref())?;
         if op.distinct {
             scopes = self.dedup_by_projection(scopes, Projection::from(&op.sub))?;
         }
@@ -1960,62 +2011,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
     ) -> Result<(Vec<Scope<'p>>, bool)> {
         let sub = &op.sub;
         let bound = self.bound_of(sub.limit.as_ref(), sub.offset.as_ref(), scope)?;
-        let proj = Projection::from(sub);
-        let mut single = false;
-        let scopes: Vec<Scope<'p>> = if let Some(follow) = &sub.follow {
-            // The seeds are the matched rows themselves (`follow_walk` enters
-            // them); a follow block is never correlated, so the predicate left
-            // by the access is the whole `where`.
-            let Access {
-                rows,
-                predicate,
-                plan: accessed,
-                ..
-            } = self.access(op, plan, scope)?;
-            let w = predicate.resolve(&accessed);
-            let mut seeds = Vec::with_capacity(rows.len());
-            for r in rows {
-                let keep = match w {
-                    None => true,
-                    Some(w) => self.eval_where(w, &self.enter(r.clone(), scope, None))?,
-                };
-                if keep {
-                    seeds.push(r);
-                }
-            }
-            // A destination block's `frontier` is the destination's (read by
-            // the outer walk), never a seed frontier for a `follow` of its own.
-            let seed_frontier = if destination {
-                None
-            } else {
-                sub.frontier.as_ref()
-            };
-            let occ = self.follow_walk(
-                self.keyed(seeds, proj, scope)?,
-                follow,
-                seed_frontier,
-                scope,
-            )?;
-            let mut scopes: Vec<Scope<'p>> = occ
-                .into_iter()
-                .map(|o| self.enter(o.row, scope, Some(o.meta)))
-                .collect();
-            if !sub.flatten.is_empty() {
-                scopes = self.flatten_scopes(scopes, &sub.flatten)?;
-            }
-            if let Some(g) = &sub.group_by {
-                scopes = self.group_scopes(scopes, g, sub.having.as_ref(), scope)?;
-            }
-            scopes = self.sort_scopes(scopes, sub.order_by.as_deref())?;
-            if op.distinct {
-                scopes = self.dedup_by_projection(scopes, proj)?;
-            }
-            slice_bound(scopes, bound)
+        let acc = self.access(op, plan, scope)?;
+        // A walk is always plural (SEMANTICS §20).
+        let single = if sub.follow.is_some() {
+            false
         } else {
-            let acc = self.access(op, plan, scope)?;
-            single = acc.single;
-            self.op_rows(op, scope, bound, Some(acc))?
+            acc.single
         };
+        let scopes = self.op_rows(op, scope, bound, Some(acc), destination)?;
         match op.op {
             Consumer::Collect | Consumer::Count => Ok((scopes, single)),
             Consumer::First => Ok((scopes.into_iter().take(1).collect(), single)),
@@ -3546,10 +3549,12 @@ mod tests {
             json!({ "t": [{ "label": "root", "children": [{ "label": "a" }, { "label": "b" }] }] }),
             json!([{ "label": "root", "stop": "interior" }, { "label": "a", "stop": "leaf" }, { "label": "b", "stop": "leaf" }]),
         );
-        check_err(
+        // a where-position directive may carry a follow (0.26): its block yields
+        // the walk, and `exists` over a walk is the seeds' existence
+        check(
             "id from tree where children exists { follow children }",
             tree,
-            &["follow"],
+            json!([{ "id": "root" }]),
         );
         // Path components compare as values: 9 < 10, numbers before strings,
         // strings by code point ("10" < "9"), then other kinds by canonical key.

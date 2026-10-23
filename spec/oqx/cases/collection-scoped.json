@@ -1,0 +1,1644 @@
+{
+  "suite": "collection-scoped",
+  "cases": [
+    {
+      "name": "the collection heads the body",
+      "tags": [
+        "source",
+        "follow",
+        "order"
+      ],
+      "notes": "The 0.26 form: the source is the receiver of the whole-query block, every clause keeps its keyword and its position (the body's `select` reads the rows, `^modules` from a destination block is the named root, `^needs` the frontier row's field). The same query as a clause-form body (`select … from modules …`) is the next case; the two are one tree (the `ast` cases below).",
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules {\n  select id, name, status, depth: $depth\n  where id == \"launch\"\n  follow distinct ^modules {\n    where id in ^needs\n    depth 2\n  }\n  order by $depth, name\n}",
+      "expect": {
+        "result": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "depth": 1
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "depth": 2
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "depth": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "the clause form is still read and is the same query",
+      "tags": [
+        "source",
+        "legacy"
+      ],
+      "notes": "`select … from S …` stays an accepted spelling of `S { select … }` (the printer never writes it).",
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "select id, name, status, depth: $depth\nfrom modules\nwhere id == \"launch\"\nfollow distinct ^modules {\n  where id in ^needs\n  depth 2\n}\norder by $depth, name",
+      "expect": {
+        "result": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "depth": 1
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "depth": 2
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "depth": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "ast: the collection-scoped form",
+      "tags": [
+        "ast",
+        "source"
+      ],
+      "query": "modules {\n  select id, name, status, depth: $depth\n  where id == \"launch\"\n  follow distinct ^modules {\n    where id in ^needs\n    depth 2\n  }\n  order by $depth, name\n}",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "modules"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": "launch"
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "status",
+              "expr": {
+                "kind": "ident",
+                "name": "status"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "depth",
+              "expr": {
+                "kind": "ident",
+                "name": "$depth"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": [
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "$depth"
+              },
+              "desc": false
+            },
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "desc": false
+            }
+          ],
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "modules"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "in",
+                      "left": {
+                        "kind": "ident",
+                        "name": "id"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "needs"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": 2,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": true
+          },
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ast: the clause form is the identical tree",
+      "tags": [
+        "ast",
+        "source",
+        "legacy"
+      ],
+      "notes": "The source is `query.source` either way; nothing records which spelling was written.",
+      "query": "select id, name, status, depth: $depth\nfrom modules\nwhere id == \"launch\"\nfollow distinct ^modules {\n  where id in ^needs\n  depth 2\n}\norder by $depth, name",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "modules"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": "launch"
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "status",
+              "expr": {
+                "kind": "ident",
+                "name": "status"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "depth",
+              "expr": {
+                "kind": "ident",
+                "name": "$depth"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": [
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "$depth"
+              },
+              "desc": false
+            },
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "desc": false
+            }
+          ],
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "modules"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "in",
+                      "left": {
+                        "kind": "ident",
+                        "name": "id"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "needs"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": 2,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": true
+          },
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "select with its keyword inside the body",
+      "tags": [
+        "select",
+        "where",
+        "order"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { select id, name where status == \"open\" order by name }",
+      "expect": {
+        "result": [
+          {
+            "id": "auth",
+            "name": "Auth"
+          },
+          {
+            "id": "launch",
+            "name": "Launch"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the projection may lead without its keyword",
+      "tags": [
+        "select"
+      ],
+      "notes": "The block rule (GRAMMAR §2): a leading bare name is the projection.",
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { id, name where status == \"open\" order by name }",
+      "expect": {
+        "result": [
+          {
+            "id": "auth",
+            "name": "Auth"
+          },
+          {
+            "id": "launch",
+            "name": "Launch"
+          }
+        ]
+      }
+    },
+    {
+      "name": "select distinct and values inside the body",
+      "tags": [
+        "distinct",
+        "values"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { select distinct status values order by status }",
+      "expect": {
+        "result": [
+          "done",
+          "open"
+        ]
+      }
+    },
+    {
+      "name": "distinct on the head is the body's distinct",
+      "tags": [
+        "distinct"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules distinct { status order by status }",
+      "expect": {
+        "result": [
+          {
+            "status": "done"
+          },
+          {
+            "status": "open"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a leading predicate is the filter at the top level",
+      "tags": [
+        "where",
+        "sugar"
+      ],
+      "notes": "The top level is a block since the source heads it, so the where-first rule of GRAMMAR §2 applies: the rows that pass, unprojected.",
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { status == \"done\" }",
+      "expect": {
+        "result": [
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a leading predicate then the later clauses",
+      "tags": [
+        "where",
+        "order",
+        "limit"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { status == \"open\" order by name desc limit 1 }",
+      "expect": {
+        "result": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an empty body yields every row",
+      "tags": [
+        "source"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { }",
+      "expect": {
+        "result": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit and offset inside the body",
+      "tags": [
+        "limit",
+        "offset",
+        "values"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { id values order by id limit 2 offset 1 }",
+      "expect": {
+        "result": [
+          "infra",
+          "launch"
+        ]
+      }
+    },
+    {
+      "name": "a consumer stands between the collection and its body",
+      "tags": [
+        "count",
+        "first"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules count { status == \"open\" }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "first with a projection and an order",
+      "tags": [
+        "first",
+        "order"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules first { select name order by name }",
+      "expect": {
+        "result": {
+          "name": "Auth"
+        }
+      }
+    },
+    {
+      "name": "nested blocks are collection-scoped too",
+      "tags": [
+        "select",
+        "nested"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "end": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { name, jobs: jobs { employer where !end } }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a correlated block reads the enclosing row with ^",
+      "tags": [
+        "nested",
+        "outer"
+      ],
+      "notes": "`^people` from a top-level row is the named root; `^id` inside the nested block is the enclosing person's id — the scoping of SEMANTICS §2, unchanged.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "end": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { name, reports: ^people { name where manager == ^id } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "reports": [
+              {
+                "name": "Bob"
+              },
+              {
+                "name": "Carol"
+              }
+            ]
+          },
+          {
+            "name": "Bob",
+            "reports": []
+          },
+          {
+            "name": "Carol",
+            "reports": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "absolute scope references are unchanged",
+      "tags": [
+        "nested",
+        "absolute"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "end": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { name, reports: 0^people { name where manager == 1^id } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "reports": [
+              {
+                "name": "Bob"
+              },
+              {
+                "name": "Carol"
+              }
+            ]
+          },
+          {
+            "name": "Bob",
+            "reports": []
+          },
+          {
+            "name": "Carol",
+            "reports": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a where-position block binds its lifts",
+      "tags": [
+        "where",
+        "lift"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "end": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { name, employers where jobs { ^employers: employer where !end } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "employers": [
+              "Initech"
+            ]
+          },
+          {
+            "name": "Bob",
+            "employers": [
+              "Initech"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "from inside a body re-projects the receiver's rows",
+      "tags": [
+        "from"
+      ],
+      "notes": "`from` keeps its one remaining meaning: inside a body it fans each of the receiver's rows out through the relation (a flatMap, SEMANTICS §3). It never names the source any more.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "manager": 2,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "end": true
+              },
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech"
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "manager": 2,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select employer from jobs order by employer }",
+      "expect": {
+        "result": [
+          {
+            "employer": "Globocorp"
+          },
+          {
+            "employer": "Initech"
+          },
+          {
+            "employer": "Initech"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block with a frontier",
+      "tags": [
+        "follow",
+        "frontier"
+      ],
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules { id, depth: $depth, stop: $stop where id == \"launch\" follow ^modules { where id in ^needs frontier status == \"done\" } order by $depth, id }",
+      "expect": {
+        "result": [
+          {
+            "id": "launch",
+            "depth": 1,
+            "stop": "interior"
+          },
+          {
+            "id": "auth",
+            "depth": 2,
+            "stop": "interior"
+          },
+          {
+            "id": "infra",
+            "depth": 2,
+            "stop": "frontier"
+          },
+          {
+            "id": "net",
+            "depth": 3,
+            "stop": "frontier"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a binding may head the body",
+      "tags": [
+        "binding",
+        "source"
+      ],
+      "template": {
+        "strings": [
+          "",
+          " { name where status == \"open\" order by name }"
+        ],
+        "values": [
+          [
+            {
+              "id": "launch",
+              "name": "Launch",
+              "status": "open",
+              "needs": [
+                "infra",
+                "auth"
+              ]
+            },
+            {
+              "id": "infra",
+              "name": "Infra",
+              "status": "done",
+              "needs": [
+                "net"
+              ]
+            },
+            {
+              "id": "auth",
+              "name": "Auth",
+              "status": "open",
+              "needs": [
+                "net"
+              ]
+            },
+            {
+              "id": "net",
+              "name": "Net",
+              "status": "done",
+              "needs": []
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Auth"
+          },
+          {
+            "name": "Launch"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bracket lookup may head the body",
+      "tags": [
+        "bracket",
+        "source",
+        "cardinality"
+      ],
+      "notes": "`modules[p]` is `modules first { where p }` — one object — so the body yields one record (SEMANTICS §3).",
+      "roots": {
+        "modules": [
+          {
+            "id": "launch",
+            "name": "Launch",
+            "status": "open",
+            "needs": [
+              "infra",
+              "auth"
+            ]
+          },
+          {
+            "id": "infra",
+            "name": "Infra",
+            "status": "done",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "auth",
+            "name": "Auth",
+            "status": "open",
+            "needs": [
+              "net"
+            ]
+          },
+          {
+            "id": "net",
+            "name": "Net",
+            "status": "done",
+            "needs": []
+          }
+        ]
+      },
+      "query": "modules[id == \"launch\"] { name }",
+      "expect": {
+        "result": {
+          "name": "Launch"
+        }
+      }
+    },
+    {
+      "name": "a free-function source",
+      "tags": [
+        "source",
+        "entries"
+      ],
+      "roots": {
+        "cfg": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "query": "entries(cfg) { key: $key, value: $it order by $key }",
+      "expect": {
+        "result": [
+          {
+            "key": "a",
+            "value": 1
+          },
+          {
+            "key": "b",
+            "value": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a dotted source",
+      "tags": [
+        "source",
+        "member"
+      ],
+      "roots": {
+        "cfg": {
+          "items": [
+            {
+              "n": 2
+            },
+            {
+              "n": 1
+            }
+          ]
+        }
+      },
+      "query": "cfg.items { n order by n }",
+      "expect": {
+        "result": [
+          {
+            "n": 1
+          },
+          {
+            "n": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a literal cannot head a body",
+      "tags": [
+        "errors"
+      ],
+      "query": "\"abc\" { name }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "is a literal, not a collection"
+          ]
+        }
+      }
+    },
+    {
+      "name": "nothing may follow the body",
+      "tags": [
+        "errors"
+      ],
+      "query": "modules { name } order by name",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "after the top-level directive"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a body with no collection before it has no source",
+      "tags": [
+        "errors"
+      ],
+      "query": "name where active",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "must name its source",
+            "<collection> { … }"
+          ]
+        }
+      }
+    },
+    {
+      "name": "references: a destination step prints collection-scoped",
+      "tags": [
+        "references",
+        "print"
+      ],
+      "notes": "The canonical print (AST.md §6) writes `collect` as the bare brace, so a `follow` step's expression reads as the user writes it.",
+      "query": "modules { id follow ^modules { where id in ^needs } }",
+      "expect": {
+        "references": [
+          {
+            "name": "id",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "modules",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "modules",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "modules",
+            "clause": "follow.destination",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "id",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "modules",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow ^modules { where id in ^needs }",
+                  "depth": 1
+                },
+                {
+                  "expr": "^modules",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "needs",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "modules",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow ^modules { where id in ^needs }",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

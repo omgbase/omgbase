@@ -7,7 +7,7 @@ the CLI actually behaves.
 
 Read in order:
 
-1. **[filtering.md](./filtering.md)** — `from` / `where`, and the scalar
+1. **[filtering.md](./filtering.md)** — `<target> { … }`, and the scalar
    predicate surface: frontmatter, numbers, ranges, booleans, `and`/`or`/`not`,
    `_path` and `/`-rooted paths, `list()`, `$it`, `entries()`.
 2. **[targets.md](./targets.md)** — the three targets `docs` / `blocks` /

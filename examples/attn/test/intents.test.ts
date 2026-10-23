@@ -17,7 +17,7 @@ const LUNCH = "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md";
 const CINNABAR = "/attn/intents/2026/10/2026-10-03-grind-the-cinnabar.md";
 
 const HITS = [
-  { _id: "d_2qgjkps", _path: SALT, title: "Calcine the salt", status: "active", tags: ["fire", "laboratory"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-13T08:17:55.962Z", cues: [[{ id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' }, { id: "off-the-fire", on: "time", at: "2026-10-13T16:00:00Z" }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
+  { _id: "d_2qgjkps", _path: SALT, title: "Calcine the salt", status: "active", tags: ["fire", "laboratory"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-13T08:17:55.962Z", cues: [[{ id: "when-opus-focused", on: "focus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n' }, { id: "off-the-fire", on: "time", at: "2026-10-13T16:00:00Z" }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
   { _id: "d_n8gzkm4", _path: DEW, title: "Distil the May dew", status: "active", tags: ["aqua", "laboratory"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-14T08:17:55.962Z", focus: null },
   { _id: "d_n06c3kt", _path: LUNCH, title: "Enjoy lunch", status: "active", tags: ["rest"], _updated_at: "2026-10-12T08:17:55.962Z", focus: null },
   { _id: "d_x", _path: CINNABAR, title: "Grind the cinnabar", status: "released", tags: ["laboratory", "fire"], project: "/projects/magnum-opus.md", _updated_at: "2026-10-14T09:00:00.000Z", cues: [[{ id: "released-cue", on: "time", at: "2026-10-01T00:00:00Z" }]], focus: null },
@@ -25,8 +25,8 @@ const HITS = [
 
 describe("the query", () => {
   it("is pinned: cues and _updated_at projected, the virtual #focus a correlated join against the pointer, most recently edited first; the engine's names `_`-prefixed, attn's keys bare", () => {
-    expect(INTENTS_QUERY).toBe('select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } from docs where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc');
-    expect(VIRTUAL_FOCUS_QUERY).toBe('select _path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where _path == "/attn/focus.md" and focused_intent == ^_path }');
+    expect(INTENTS_QUERY).toBe('docs { select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc }');
+    expect(VIRTUAL_FOCUS_QUERY).toBe('docs { select _path, title, status, tags where type == "/terms/types/intent.md" and status == "active" and ^docs exists { _path == "/attn/focus.md" and focused_intent == ^_path } }');
     // `title` is the authored key (every intent carries one), not the computed `_title`; `tags` the authored list, not `_tags` (∪ body hashtags).
     expect(INTENTS_QUERY).not.toMatch(/\b_title\b|\b_tags\b/);
   });
@@ -41,7 +41,7 @@ describe("the query", () => {
       ["Enjoy lunch", "active", null, 0],
     ]);
     expect(is[2]!).toMatchObject({ id: "d_2qgjkps", path: SALT, updatedAt: "2026-10-13T08:17:55.962Z" });
-    expect(is[2]!.cues[0]).toEqual({ intent: SALT, id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n', at: null });
+    expect(is[2]!.cues[0]).toEqual({ intent: SALT, id: "when-opus-focused", on: "focus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n', at: null });
     expect(intentOf({ _id: "d", _path: "/attn/intents/2026/10/2026-10-14-no-title.md" })).toMatchObject({ title: "2026-10-14-no-title", tags: [], project: null, focusSince: null, cues: [] });
     expect(sortByEdited([]).length).toBe(0);
   });

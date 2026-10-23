@@ -58,16 +58,18 @@ cues:                                         # optional — the intent's cues, 
   - id: when-the-opus-is-focused              # intent-local, stable
     on: focus
     query: |
-      from docs
-      where project == "/projects/magnum-opus.md" and status == "active"
+      docs {
+        where project == "/projects/magnum-opus.md" and status == "active"
+      }
   - id: review-tomorrow
     on: time
     at: "2026-10-15T09:00:00Z"
   - id: new-rest-intents
     on: query-enter
     query: |
-      from docs
-      where type == "/terms/types/intent.md" and "rest" in tags
+      docs {
+        where type == "/terms/types/intent.md" and "rest" in tags
+      }
 ---
 # Distil the May dew
 Twelve flasks gathered from the linen sheets at dawn. …
@@ -134,7 +136,7 @@ _frontmatter.cues` when none remain):
 
 ```json
 [{ "op": "set", "target": "/attn/intents/2026/10/2026-10-08-enjoy-lunch.md", "field": "_frontmatter.cues", "value": [
-  { "id": "after-the-salt", "on": "focus", "query": "from docs\nwhere \"fire\" in tags\n" },
+  { "id": "after-the-salt", "on": "focus", "query": "docs {\n  where \"fire\" in tags\n}\n" },
   { "id": "review-tomorrow", "on": "time", "at": "2026-10-15T09:00:00Z" }
 ] }]
 ```
@@ -169,7 +171,7 @@ Nothing is logged on a switch. The sequence of pointer states **is** the
 episode history, and the open episode's start is the current `since`:
 
 ```
-select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq
+revisions { select _rev, _seq, _ts where _path == "/attn/focus.md" order by _seq }
 docs_read { _path: "/attn/focus.md", at: <rev> }       — per revision not yet cached → _raw → focused_intent / since / return_stack
 ```
 
@@ -193,12 +195,12 @@ design note's position, left for later.
 | --- | --- | --- |
 | connect: the surface gate (≥ 5.0), the profile label | `version`, `tools/list` | `version {}` → `specs.surface`, `profile`; the listing decides whether a repo picker is offered (`repos`, the one tool beyond the ten, only when listed) |
 | the focus bar: the pointer (and the CAS token) | `docs_read` | `{ _path: "/attn/focus.md" }` → `properties.frontmatter.focused_intent / since / return_stack`, `rev`, `_id`; `doc_missing` = never focused anything |
-| the feed: every intent with its cues, most recently edited first, the **virtual `#focus`** | `query` | `select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } from docs where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc` — `focus` is `{ since }` on the focused row, null on every other; no intent is ever tagged. `_path` / `_updated_at` are the engine's names; `title`, `tags`, `status`, `project`, `cues`, `focused_intent` are attn's frontmatter keys (bare — an intent always carries an authored `title`, so the bare key is the one meant, not the computed `_title`) |
-| the one intent in focus (the where-form of the same join) | `query` | `select _path, title, status, tags from docs where type == "/terms/types/intent.md" and status == "active" and ^docs exists { where _path == "/attn/focus.md" and focused_intent == ^_path }` |
+| the feed: every intent with its cues, most recently edited first, the **virtual `#focus`** | `query` | `docs { select _path, title, status, tags, project, _updated_at, cues, focus: ^docs first { select since where _path == "/attn/focus.md" and focused_intent == ^_path } where type == "/terms/types/intent.md" and _path.startsWith("/attn/intents/") order by _updated_at desc }` — `focus` is `{ since }` on the focused row, null on every other; no intent is ever tagged. `_path` / `_updated_at` are the engine's names; `title`, `tags`, `status`, `project`, `cues`, `focused_intent` are attn's frontmatter keys (bare — an intent always carries an authored `title`, so the bare key is the one meant, not the computed `_title`) |
+| the one intent in focus (the where-form of the same join) | `query` | `docs { select _path, title, status, tags where type == "/terms/types/intent.md" and status == "active" and ^docs exists { _path == "/attn/focus.md" and focused_intent == ^_path } }` |
 | an `on: focus` cue, on every focus change | `query` (one per cue) | the cue's `query` **as authored**, every page; matched when the focused intent's `_path` (or `_id`) is among the hits; a query that does not parse is the engine's `filter_invalid` (`data.hint: "OQX"`), shown under the feed per cue, never a crash |
 | an `on: time` cue | — | `at` ≤ the client clock, on open and every 30 s |
 | an `on: query-enter` / `query-exit` cue, after each poll | `query` | the cue's `query` as authored, every page (`limit: 500`, the cursor followed); the hit ids diffed against the checkpoint in `localStorage`; ids entering (or leaving) fire the cue, the first run only takes the checkpoint |
-| the Stream: the pointer's history | `query`, `docs_read` | `select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq`, then `{ _path: "/attn/focus.md", at: "<rev>" }` per revision not cached → `_raw`; episodes, durations and `#tag` totals computed in the browser; the day picker over the days the history covers |
+| the Stream: the pointer's history | `query`, `docs_read` | `revisions { select _rev, _seq, _ts where _path == "/attn/focus.md" order by _seq }`, then `{ _path: "/attn/focus.md", at: "<rev>" }` per revision not cached → `_raw`; episodes, durations and `#tag` totals computed in the browser; the day picker over the days the history covers |
 | switch / interrupt / back / stop / add / add + focus | `apply` | the effect lists above, `reason: "attn switch"` etc.; the Receipt's `revisions[{ _id, _path, _hash }]`; `stale_plan` → the fix shown, the pointer reloaded |
 | release / reactivate / edit / remove a cue | `apply` | one `set _frontmatter.status`, one `set content`, one `set _frontmatter.cues` (the list minus the cue) |
 | define a cue | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<intent>", field: "_frontmatter.cues", value: [...] }], diffs: true }` → the summary and the document after; `execute { plan_id, effects }` |
@@ -241,8 +243,8 @@ salt is a work of the Opus) and "Tend the garden" (a due time cue) in **Cued**.
 ```sh
 pnpm --filter attn dev --full                               # the same workspace, the whole catalog
 pnpm --filter attn dev --remote https://mcp.example.com/omg     # a real server (your notes); the proxy signs in for you
-omg -C examples/attn/.dev-workspace query 'select focused_intent, since from docs where _path == "/attn/focus.md"'
-omg -C examples/attn/.dev-workspace query 'select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq'
+omg -C examples/attn/.dev-workspace query 'docs { select focused_intent, since where _path == "/attn/focus.md" }'
+omg -C examples/attn/.dev-workspace query 'revisions { select _rev, _seq, _ts where _path == "/attn/focus.md" order by _seq }'
 ```
 
 The proxy is the [`webdevproxy`](../webdevproxy/README.md) workspace package;

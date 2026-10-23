@@ -2,7 +2,7 @@
   {
     "name": "contains-string",
     "dql": "LIST WHERE contains(title, \"plan\")",
-    "oqx": "select _path from docs where \"plan\" in title",
+    "oqx": "docs { select _path where \"plan\" in title }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -19,7 +19,7 @@
   {
     "name": "contains-list-field",
     "dql": "LIST WHERE contains(authors, \"ada\")",
-    "oqx": "select _path from docs where \"ada\" in authors",
+    "oqx": "docs { select _path where \"ada\" in authors }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -36,7 +36,7 @@
   {
     "name": "contains-file-tags-prefix",
     "dql": "LIST WHERE contains(file.tags, \"#project\")",
-    "oqx": "select _path from docs where _tags exists { where $it == \"project\" or $it.startsWith(\"project/\") }",
+    "oqx": "docs { select _path where _tags exists { where $it == \"project\" or $it.startsWith(\"project/\") } }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -53,7 +53,7 @@
   {
     "name": "contains-file-etags-exact",
     "dql": "LIST WHERE contains(file.etags, \"#project/alpha\")",
-    "oqx": "select _path from docs where \"project/alpha\" in _tags",
+    "oqx": "docs { select _path where \"project/alpha\" in _tags }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -70,7 +70,7 @@
   {
     "name": "contains-file-tags-in-value-position-warns",
     "dql": "TABLE contains(file.tags, \"#project\") FROM \"a\"",
-    "oqx": "select _path, c0: \"project\" in _tags from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: \"project\" in _tags where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -94,7 +94,7 @@
   {
     "name": "contains-inlinks",
     "dql": "LIST WHERE contains(file.inlinks, [[Index]])",
-    "oqx": "select _path from docs where _in_links exists { where _doc._path.endsWith(\"/Index.md\") }",
+    "oqx": "docs { select _path where _in_links exists { where _doc._path.endsWith(\"/Index.md\") } }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -116,7 +116,7 @@
         "Index": "/Index.md"
       }
     },
-    "oqx": "select _path from docs where _out_links exists { where _dst._path == \"/Index.md\" }",
+    "oqx": "docs { select _path where _out_links exists { where _dst._path == \"/Index.md\" } }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -133,7 +133,7 @@
   {
     "name": "contains-outlinks-negated",
     "dql": "LIST WHERE !contains(file.outlinks, [[Index]])",
-    "oqx": "select _path from docs where !_out_links exists { where _dst._path.endsWith(\"/Index.md\") }",
+    "oqx": "docs { select _path where !_out_links exists { where _dst._path.endsWith(\"/Index.md\") } }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -172,7 +172,7 @@
   {
     "name": "econtains",
     "dql": "LIST WHERE econtains(tags, \"draft\")",
-    "oqx": "select _path from docs where \"draft\" in tags",
+    "oqx": "docs { select _path where \"draft\" in tags }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -189,7 +189,7 @@
   {
     "name": "icontains",
     "dql": "LIST WHERE icontains(title, \"PLAN\")",
-    "oqx": "select _path from docs where title.lower().contains(\"plan\")",
+    "oqx": "docs { select _path where title.lower().contains(\"plan\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -206,7 +206,7 @@
   {
     "name": "containsword",
     "dql": "LIST WHERE containsword(title, \"a.b\")",
-    "oqx": "select _path from docs where title ~ \"\\\\ba\\\\.b\\\\b\"",
+    "oqx": "docs { select _path where title ~ \"\\\\ba\\\\.b\\\\b\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -223,7 +223,7 @@
   {
     "name": "length",
     "dql": "TABLE length(authors), length(file.inlinks), length(file.outlinks) FROM \"a\"",
-    "oqx": "select _path, c0: size(authors), c1: size(_in_links), c2: size(_out_links) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: size(authors), c1: size(_in_links), c2: size(_out_links) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -253,7 +253,7 @@
   {
     "name": "lower-upper",
     "dql": "TABLE lower(title), upper(status) FROM \"a\"",
-    "oqx": "select _path, c0: title.lower(), c1: status.upper() from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: title.lower(), c1: status.upper() where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -279,7 +279,7 @@
   {
     "name": "startswith-endswith",
     "dql": "LIST WHERE startswith(title, \"A\") & endswith(file.path, \".md\")",
-    "oqx": "select _path from docs where title.startsWith(\"A\") and _path.endsWith(\".md\")",
+    "oqx": "docs { select _path where title.startsWith(\"A\") and _path.endsWith(\".md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -296,7 +296,7 @@
   {
     "name": "regextest-unanchored",
     "dql": "LIST WHERE regextest(\"^20[0-9]{2}\", title)",
-    "oqx": "select _path from docs where title ~ \"^20[0-9]{2}\"",
+    "oqx": "docs { select _path where title ~ \"^20[0-9]{2}\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -313,7 +313,7 @@
   {
     "name": "regexmatch-anchored",
     "dql": "LIST WHERE regexmatch(\"a.*\", title)",
-    "oqx": "select _path from docs where title ~ \"^(?:a.*)$\"",
+    "oqx": "docs { select _path where title ~ \"^(?:a.*)$\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -330,7 +330,7 @@
   {
     "name": "regexmatch-computed-pattern-warns",
     "dql": "LIST WHERE regexmatch(pattern, title)",
-    "oqx": "select _path from docs where title ~ pattern",
+    "oqx": "docs { select _path where title ~ pattern }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -349,7 +349,7 @@
   {
     "name": "string",
     "dql": "TABLE string(pages) FROM \"a\"",
-    "oqx": "select _path, c0: `${pages}` from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: `${pages}` where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -371,7 +371,7 @@
   {
     "name": "default",
     "dql": "TABLE default(rating, 0) FROM \"a\"",
-    "oqx": "select _path, c0: rating or 0 from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: rating or 0 where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -393,7 +393,7 @@
   {
     "name": "case-insensitive-function-names",
     "dql": "TABLE LOWER(title), Length(authors) FROM \"a\"",
-    "oqx": "select _path, c0: title.lower(), c1: size(authors) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: title.lower(), c1: size(authors) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,

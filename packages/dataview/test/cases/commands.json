@@ -2,7 +2,7 @@
   {
     "name": "two-wheres-and-in-order",
     "dql": "LIST FROM \"a\" WHERE status = \"open\" WHERE due",
-    "oqx": "select _path from docs where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and status == \"open\" and due",
+    "oqx": "docs { select _path where (_path.startsWith(\"/a/\") or _path == \"/a.md\") and status == \"open\" and due }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -19,7 +19,7 @@
   {
     "name": "where-with-or-and-not",
     "dql": "LIST WHERE (status = \"open\" | status = \"blocked\") & !archived",
-    "oqx": "select _path from docs where (status == \"open\" or status == \"blocked\") and !archived",
+    "oqx": "docs { select _path where (status == \"open\" or status == \"blocked\") and !archived }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -36,7 +36,7 @@
   {
     "name": "where-and-or-words",
     "dql": "LIST WHERE status = \"open\" and !archived or pinned",
-    "oqx": "select _path from docs where status == \"open\" and !archived or pinned",
+    "oqx": "docs { select _path where status == \"open\" and !archived or pinned }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -53,7 +53,7 @@
   {
     "name": "sort-asc-default",
     "dql": "LIST SORT file.mtime",
-    "oqx": "select _path from docs order by _updated_at",
+    "oqx": "docs { select _path order by _updated_at }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -70,7 +70,7 @@
   {
     "name": "sort-descending-word",
     "dql": "LIST SORT file.mtime DESCENDING",
-    "oqx": "select _path from docs order by _updated_at desc",
+    "oqx": "docs { select _path order by _updated_at desc }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -87,7 +87,7 @@
   {
     "name": "sort-multiple-keys",
     "dql": "TABLE priority, due SORT priority DESC, due ASC",
-    "oqx": "select _path, priority, due from docs order by priority desc, due",
+    "oqx": "docs { select _path, priority, due order by priority desc, due }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -113,7 +113,7 @@
   {
     "name": "later-sort-wins-earlier-breaks-ties",
     "dql": "LIST SORT due SORT priority DESC",
-    "oqx": "select _path from docs order by priority desc, due",
+    "oqx": "docs { select _path order by priority desc, due }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -130,7 +130,7 @@
   {
     "name": "sort-by-derived-field-warns",
     "dql": "LIST SORT file.name",
-    "oqx": "select _path from docs order by _path",
+    "oqx": "docs { select _path order by _path }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -149,7 +149,7 @@
   {
     "name": "limit",
     "dql": "LIST FROM \"a\" LIMIT 5",
-    "oqx": "select _path from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\" limit 5",
+    "oqx": "docs { select _path where _path.startsWith(\"/a/\") or _path == \"/a.md\" limit 5 }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -166,7 +166,7 @@
   {
     "name": "where-sort-limit",
     "dql": "TABLE file.mtime FROM \"notes\" WHERE file.mtime >= date(today) - dur(7 days) SORT file.mtime DESC LIMIT 20",
-    "oqx": "select _path, _updated_at from docs where (_path.startsWith(\"/notes/\") or _path == \"/notes.md\") and _updated_at >= date(\"today\").minus(\"7 days\") order by _updated_at desc limit 20",
+    "oqx": "docs { select _path, _updated_at where (_path.startsWith(\"/notes/\") or _path == \"/notes.md\") and _updated_at >= date(\"today\").minus(\"7 days\") order by _updated_at desc limit 20 }",
     "render": {
       "type": "table",
       "withoutId": false,

@@ -19,7 +19,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, _text from blocks order by semantic(\"Where did someone argue that buying the backup detector was a mistake?\") desc limit 5"
+          "query": "blocks { select _path, _text order by semantic(\"Where did someone argue that buying the backup detector was a mistake?\") desc limit 5 }"
         }
       },
       {

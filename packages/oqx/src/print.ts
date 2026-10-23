@@ -1,10 +1,12 @@
 // The canonical printer (spec/oqx/AST.md §6): the one source text of a tree.
 // Single spaces, double-quoted strings with GRAMMAR §1 escapes, the minimal
-// parentheses the precedence table (GRAMMAR §4) needs, `select` written at the
-// top level, the connectives as the words `and` / `or` (since 0.18; `!` stays
-// `!`), every clause in its canonical position (a destination block's
-// `frontier` and `depth` after its `where`, since 0.20). The law both spec runners
-// enforce over every fixture query:
+// parentheses the precedence table (GRAMMAR §4) needs, the collection-scoped
+// form `<source> { … }` for every query whose source can head a block (since
+// 0.26; `collect` is the bare brace, every other consumer its word), the
+// projection leading its body without `select`, the connectives as the words
+// `and` / `or` (since 0.18; `!` stays `!`), every clause in its canonical
+// position (a destination block's `frontier` and `depth` after its `where`,
+// since 0.20). The law both spec runners enforce over every fixture query:
 //
 //   strip(parse(print(parse(q)))) ≡ strip(parse(q))
 //
@@ -19,8 +21,8 @@ import { OqxError } from "./errors.ts";
  * stands for the binding `indices[i]` of the printed tree, so a caller re-runs it
  * as `parseTemplate(strings, count)` with the values permuted by `indices`. In a
  * tree straight from `parseTemplate`, `indices` is `0..count-1` unless the
- * canonical clause order moved a binding past another (`${0} collect { x: ${1} }`
- * prints as `select x: ${1} from ${0}`). */
+ * canonical form moved a binding past another (`select x: ${1} from ${0}` prints
+ * as `${0} { x: ${1} }`). */
 export interface Template {
   strings: string[];
   count: number;
@@ -96,26 +98,62 @@ function render(n: AstNode): Out {
 // ---- query / bodies ---------------------------------------------------------
 
 function query(q: Query): Out {
-  // Body form for `collect` — unless the query carries body-level `from`
-  // re-projections, which only a block can hold (a second top-level `from` is a
-  // duplicate clause): then the directive form `source collect { … from E }`.
-  if (q.consumer === "collect" && q.from.length === 0) {
-    // `select` is always written — except for a leading bare item literally
-    // named `distinct`, which the keyword would swallow as the modifier.
-    const first = q.select[0];
-    const bareDistinct = !q.distinct && first?.kind === "field" && first.name === "distinct"
-      && first.expr.kind === "ident" && first.expr.name === "distinct";
-    const clauses: Out[] = [];
-    if (q.select.length > 0) {
-      const items = projection(q.select, q.values);
-      clauses.push(bareDistinct ? items : cat(`select ${q.distinct ? "distinct " : ""}`, items));
-    }
-    clauses.push(cat("from ", expr(q.source)));
-    clauses.push(...tail(q));
-    return join(clauses, " ");
+  // The collection-scoped form (since 0.26): `<source> [<consumer>] [distinct]
+  // { body }` — the source heads the body, `collect` is the bare brace (the
+  // directive word is written after an `op` source, where a bare brace is not
+  // read as a block), `distinct` stays on the head.
+  if (canHeadBlock(q.source)) {
+    return cat(expr(q.source), directive(q.consumer, q.distinct, q.source, q));
   }
-  // Directive form: `<source> <consumer> [distinct] { body }`.
-  return cat(expr(q.source), ` ${q.consumer}${q.distinct ? " distinct" : ""} `, braces(body(q)));
+  // A source that cannot head a block — a literal, a template, a range,
+  // arithmetic, a logical or `in` operand, a unary, an aggregate: every one an
+  // eval error or a degenerate query — keeps the clause form `select … from S …`
+  // (a `collect`; another consumer over such a source is unparseable either way).
+  // `select` is always written — except for a leading bare item literally named
+  // `distinct`, which the keyword would swallow as the modifier.
+  const first = q.select[0];
+  const bareDistinct = !q.distinct && first?.kind === "field" && first.name === "distinct"
+    && first.expr.kind === "ident" && first.expr.name === "distinct";
+  const clauses: Out[] = [];
+  if (q.select.length > 0) {
+    const items = projection(q.select, q.values);
+    clauses.push(bareDistinct ? items : cat(`select ${q.distinct ? "distinct " : ""}`, items));
+  }
+  clauses.push(cat("from ", expr(q.source)));
+  clauses.push(...tail(q));
+  return join(clauses, " ");
+}
+
+// Whether `e { … }` parses with `e` as the receiver (GRAMMAR §5 and the postfix
+// chain of §4): a tuple, or a chain — navigation, calls, `!`, directives — whose
+// head is a bare name, an outer reference, a binding or a free call. A literal
+// or template head is "not a collection"; an operator (`-x`, `a + b`, `a..b`,
+// `a in b`, `a or b`) or an aggregate cannot head a receiver.
+function canHeadBlock(e: Expr): boolean {
+  switch (e.kind) {
+    case "ident": case "outer": case "binding": case "tuple": return true;
+    case "call": return e.recv === null || chainHead(e.recv);
+    case "member": return chainHead(e.recv);
+    case "required": return chainHead(e.expr);
+    case "op": return chainHead(e.receiver);
+    default: return false;
+  }
+}
+
+// The head of a postfix chain that may take a block: as `canHeadBlock`, but a
+// tuple is a receiver only on its own (`(a, b).x { … }` is not read as one).
+function chainHead(e: Expr): boolean {
+  return e.kind !== "tuple" && canHeadBlock(e);
+}
+
+// The text between a receiver and its block: ` { ` for the bare-brace `collect`
+// (since 0.26 the canonical spelling), ` distinct { ` for a distinct collect,
+// ` <op> [distinct] { ` for the other consumers — and for a `collect` over an
+// `op` receiver, where a bare brace right after a written directive is not
+// read as a block (`jobs first { offset 0 } collect { … }`).
+function directiveWord(consumer: OpNode["op"], distinct: boolean, receiver: Expr): string {
+  if (consumer === "collect" && receiver.kind !== "op") return distinct ? " distinct " : " ";
+  return ` ${consumer}${distinct ? " distinct" : ""} `;
 }
 
 type Body = Pick<Subquery, "select" | "values" | "from" | "where" | "follow" | "flatten" | "groupBy" | "having" | "orderBy" | "limit" | "offset">
@@ -174,10 +212,25 @@ function order(o: OrderSpec): Out {
 function op(o: OpNode): Out {
   return cat(
     receiver(o.receiver),
-    ` ${o.op}${o.distinct ? " distinct" : ""} `,
-    block(o.sub),
+    directive(o.op, o.distinct, o.receiver, o.sub),
     o.countCmp ? ` ${o.countCmp.op} ${number(o.countCmp.value)}` : "",
   );
+}
+
+// A directive's word and block after its receiver: the bare brace for
+// `collect`, the word for every other consumer — and, when the word is written
+// and the block is empty, the word alone (`jobs first`, `_nodes exists`, `jobs
+// count distinct`; since 0.26 an omitted block is the empty block).
+function directive(consumer: OpNode["op"], distinct: boolean, receiver: Expr, b: Body): Out {
+  const word = directiveWord(consumer, distinct, receiver);
+  if (word !== " " && word !== " distinct " && emptyBody(b)) return [word.trimEnd()];
+  return cat(word, braces(body(b)));
+}
+
+function emptyBody(b: Body): boolean {
+  return b.select.length === 0 && !b.values && b.from.length === 0 && b.where === null && (b.frontier ?? null) === null && (b.depth ?? null) === null
+    && b.follow === null && b.flatten.length === 0 && b.groupBy === null && b.having === null && (b.orderBy === null || b.orderBy.length === 0)
+    && b.limit === null && b.offset === null;
 }
 
 function follow(f: Follow): Out {

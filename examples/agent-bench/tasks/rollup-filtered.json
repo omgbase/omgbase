@@ -32,7 +32,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, project, closed from docs where type == \"milestone\" and status == \"done\" and owner == \"/people/mara-lindqvist.md\" and closed in \"2027-01-01\"..\"2027-12-31\" order by closed"
+          "query": "docs { select _path, project, closed where type == \"milestone\" and status == \"done\" and owner == \"/people/mara-lindqvist.md\" and closed in \"2027-01-01\"..\"2027-12-31\" order by closed }"
         }
       },
       {

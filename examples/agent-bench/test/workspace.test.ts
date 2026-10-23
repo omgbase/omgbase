@@ -20,9 +20,9 @@ async function fresh(profile = "full"): Promise<{ ws: Workspace; server: OmgServ
   return { ws, server };
 }
 
-// The hit envelope is `{ _id, _path, … }` (spec/surface §1.4, 5.0); `from docs` and the row functions stay bare.
+// The hit envelope is `{ _id, _path, … }` (spec/surface §1.4, 5.0); `docs { … }` and the row functions stay bare.
 async function docs(server: OmgServer): Promise<{ _id: string; _path: string }[]> {
-  const r = await server.call("query", { query: "from docs order by _path" });
+  const r = await server.call("query", { query: "docs { order by _path }" });
   expect(r.ok).toBe(true);
   return (r.result as { hits: { _id: string; _path: string }[] }).hits;
 }
@@ -38,9 +38,9 @@ describe("the workspace", () => {
     expect(da.find((d) => d._path === "/index.md")?._id).toBe("d_0");
     expect(da.find((d) => d._path === "/substances/salt.md")?._id).toBe("d_14");
     // the ids the tasks name — a node's engine attributes are `_kind`, `_name`, `_block_id`, `_path`
-    const tasks = await a.server.call("query", { query: 'select _block_id from nodes where _kind == "md:section" and _name == "Tasks" and _path == "/processes/calcination.md"' });
+    const tasks = await a.server.call("query", { query: 'nodes { select _block_id where _kind == "md:section" and _name == "Tasks" and _path == "/processes/calcination.md" }' });
     expect((tasks.result as { hits: { _block_id: string }[] }).hits).toEqual([expect.objectContaining({ _block_id: "b_153" })]);
-    const processes = await a.server.call("query", { query: 'select _block_id from nodes where _kind == "md:section" and _name == "Processes" and _path == "/index.md"' });
+    const processes = await a.server.call("query", { query: 'nodes { select _block_id where _kind == "md:section" and _name == "Processes" and _path == "/index.md" }' });
     expect((processes.result as { hits: { _block_id: string }[] }).hits).toEqual([expect.objectContaining({ _block_id: "b_12" })]);
   });
 

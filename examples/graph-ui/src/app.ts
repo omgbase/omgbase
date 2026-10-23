@@ -472,7 +472,7 @@ async function runQuery(): Promise<void> {
   if (gen === runGeneration && missing.length > 0) emptyResult.set({ ...empty, missing });
 }
 
-/** The graph's edge source: generated OQX over the link rows (`from links`) via the `query` tool. */
+/** The graph's edge source: generated OQX over the link rows (`links { … }`) via the `query` tool. */
 async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphEdge[]> {
   const s = settings.get();
   const url = serverUrl.get();

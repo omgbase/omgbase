@@ -1,13 +1,19 @@
 <!-- recital include: ../_fragments/attached-alchemy.md -->
 
-# OQX tutorial · 1. Filtering with `from` / `where`
+# OQX tutorial · 1. Filtering: the target and `where`
 
 OQX is omgbase's one query language. Every query names a **target** to draw rows
-from and, usually, a **filter** that keeps some of them:
+from — the collection that heads the query — and, in the braces after it,
+usually a **filter** that keeps some of them:
 
 ```
-from <target> where <filter>
+<target> { <filter> }
 ```
+
+A predicate that leads the body needs no `where` — the keyword is implied when
+the first thing in the braces is a comparison, a call, an `in`, a `not` … (the
+long form `<target> { where <filter> }` is read too, and `where` is written out
+once a projection comes first; see [shaping-results.md](./shaping-results.md)).
 
 `omg query` runs a query (`omg q` is the short alias). In human output each hit
 prints as `<id>  <locator>` — a stable id paired with a readable locator. (Ids
@@ -23,7 +29,7 @@ A document's YAML frontmatter keys (`type:`, `layer:`, `era:`, `tags:` …) are
 just fields you filter on. The five substances:
 
 ```console
-$ omg query 'from docs where type == "substance"'
+$ omg query 'docs { type == "substance" }'
 d_0vsapzt  /substances/mercury.md
 d_1rren8z  /substances/philosophers-stone.md
 d_prj3j7a  /substances/prima-materia.md
@@ -40,9 +46,9 @@ The practitioners carry an `era:` year. Comparisons are numeric, not textual —
 so `> 1600` finds the one modern practitioner rather than mis-sorting by digits:
 
 ```console
-$ omg query 'from docs where type == "practitioner" and era > 1600'
+$ omg query 'docs { type == "practitioner" and era > 1600 }'
 d_rw4ygr0  /practitioners/newton.md
-$ omg query 'from docs where era < 1000'
+$ omg query 'docs { era < 1000 }'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_9px29y1  /practitioners/maria-prophetissa.md
 d_wc1napn  /texts/emerald-tablet.md
@@ -55,7 +61,7 @@ A Ruby-style range tests membership in an interval. `lo..hi` includes both ends;
 through Newton (1680), inclusive:
 
 ```console
-$ omg query 'from docs where era in 800..1680'
+$ omg query 'docs { era in 800..1680 }'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_rw4ygr0  /practitioners/newton.md
 d_t5nvj1g  /practitioners/paracelsus.md
@@ -66,7 +72,7 @@ d_f7w5k26  /texts/mutus-liber.md
 Make the high end exclusive with `...` and Newton (exactly 1680) drops out:
 
 ```console
-$ omg query 'from docs where era in 800...1680'
+$ omg query 'docs { era in 800...1680 }'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_t5nvj1g  /practitioners/paracelsus.md
 d_wc1napn  /texts/emerald-tablet.md
@@ -77,10 +83,10 @@ Either end may be omitted for an open-ended range — `1600..` is "1600 and up",
 `..300` is "up to and including 300":
 
 ```console
-$ omg query 'from docs where era in 1600..'
+$ omg query 'docs { era in 1600.. }'
 d_rw4ygr0  /practitioners/newton.md
 d_f7w5k26  /texts/mutus-liber.md
-$ omg query 'from docs where era in ..300'
+$ omg query 'docs { era in ..300 }'
 d_9px29y1  /practitioners/maria-prophetissa.md
 ```
 
@@ -95,9 +101,9 @@ wrap it in `range(...)` to read it as an interval and ask which document's range
 **contains** a point. The two lab notes carry a monthly `window`:
 
 ```console
-$ omg query 'from docs where "2026-01-15" in range(window)'
+$ omg query 'docs { "2026-01-15" in range(window) }'
 d_labjan1  /lab/2026-01-notes.md
-$ omg query 'from docs where "2026-02-10" in range(window)'
+$ omg query 'docs { "2026-02-10" in range(window) }'
 d_labfeb1  /lab/2026-02-notes.md
 ```
 
@@ -106,9 +112,9 @@ the same — magnum-opus records `stage_range: 1..4`, so stage 2 is inside it bu
 stage 5 is past the end:
 
 ```console
-$ omg query 'from docs where 2 in range(stage_range)'
+$ omg query 'docs { 2 in range(stage_range) }'
 d_magnop1  /processes/magnum-opus.md
-$ omg query 'from docs where 5 in range(stage_range)'
+$ omg query 'docs { 5 in range(stage_range) }'
 ```
 
 `range(...)` is the explicit opt-in: a bare `window` is just its string, so a
@@ -117,12 +123,14 @@ ask for a range.
 
 ## Booleans, and absence
 
-A bare field name is a boolean test; `not` negates it (`!` is accepted too). A
-**missing** key counts as false, so `not verified` returns both the documents
-that set `verified: false` and those that never mention it:
+A bare field name is a boolean test; `not` negates it (`!` is accepted too; a
+bare name standing alone in the braces would project instead — filter on it with
+`is verified` or `where verified`). A **missing** key counts as false, so `not
+verified` returns both the documents that set `verified: false` and those that
+never mention it:
 
 ```console
-$ omg query 'from docs where not verified'
+$ omg query 'docs { not verified }'
 d_m67jwv8  /processes/magnum-opus.md
 d_1rren8z  /substances/philosophers-stone.md
 d_prj3j7a  /substances/prima-materia.md
@@ -137,9 +145,9 @@ symbols `&&`, `||`, `!` are accepted as exact synonyms; the words are the
 canonical spelling (and what the engine prints a query back as):
 
 ```console
-$ omg query 'from docs where type == "practitioner" and tradition == "western" and era > 1600'
+$ omg query 'docs { type == "practitioner" and tradition == "western" and era > 1600 }'
 d_rw4ygr0  /practitioners/newton.md
-$ omg query 'from docs where type == "practitioner" and (tradition == "islamic" or tradition == "alexandrian")'
+$ omg query 'docs { type == "practitioner" and (tradition == "islamic" or tradition == "alexandrian") }'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_9px29y1  /practitioners/maria-prophetissa.md
 ```
@@ -153,7 +161,7 @@ is the document's `/`-rooted path (a `path:` key of your own would be the bare
 `path`), with the usual string methods:
 
 ```console
-$ omg query 'from docs where _path.startsWith("/practitioners/")'
+$ omg query 'docs { _path.startsWith("/practitioners/") }'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_9px29y1  /practitioners/maria-prophetissa.md
 d_rw4ygr0  /practitioners/newton.md
@@ -167,9 +175,9 @@ a string literal compared with `_path` by `==`/`!=` or passed to its
 `startsWith(…)` is rooted before the comparison, so both spellings match:
 
 ```console
-$ omg query 'from docs where _path == "/timeline/kickoff.md"'
+$ omg query 'docs { _path == "/timeline/kickoff.md" }'
 d_q3f4m8t  /timeline/kickoff.md
-$ omg query 'from docs where _path == "timeline/kickoff.md"'
+$ omg query 'docs { _path == "timeline/kickoff.md" }'
 d_q3f4m8t  /timeline/kickoff.md
 ```
 
@@ -183,7 +191,7 @@ compare directly (see [sugar.md](./sugar.md) for `refs()` and
 both uniformly, so a membership test works regardless of how a document wrote it:
 
 ```console
-$ omg query 'from docs where "goal" in list(tags)'
+$ omg query 'docs { "goal" in list(tags) }'
 d_1rren8z  /substances/philosophers-stone.md
 ```
 
@@ -191,7 +199,7 @@ d_1rren8z  /substances/philosophers-stone.md
 body. Only calcination declares `element:: fire`:
 
 ```console
-$ omg query 'from docs where "fire" in list(element)'
+$ omg query 'docs { "fire" in list(element) }'
 d_zdac7ww  /processes/calcination.md
 ```
 
@@ -206,7 +214,7 @@ a collection). So this is the element-wise spelling of `"tria-prima" in
 list(tags)`:
 
 ```console
-$ omg query 'from docs where _tags exists { where $it == "tria-prima" }'
+$ omg query 'docs { _tags exists { $it == "tria-prima" } }'
 d_h73rhv8  /substances/salt.md
 d_5zmf9f7  /substances/sulphur.md
 ```
@@ -217,7 +225,7 @@ scalar-authored `tags: substance` is one element of `_tags`, so mercury's list
 empties):
 
 ```console
-$ omg query 'select tags: _tags collect { $it values where $it != "substance" } from docs where type == "substance"' --jsonl
+$ omg query 'docs { select tags: _tags { $it values where $it != "substance" } where type == "substance" }' --jsonl
 {"_id":"d_0vsapzt","_path":"/substances/mercury.md","tags":[]}
 {"_id":"d_1rren8z","_path":"/substances/philosophers-stone.md","tags":["goal","legendary"]}
 {"_id":"d_prj3j7a","_path":"/substances/prima-materia.md","tags":["theory"]}
@@ -233,7 +241,7 @@ key and `$it` the value. Salt's frontmatter as `{k, v}` rows — the list key
 comes back as an array, exactly as a bare `tags` reads:
 
 ```console
-$ omg query 'select fm: entries(_frontmatter) collect { k: $key, v: $it } from docs where _path == "/substances/salt.md"' --jsonl
+$ omg query 'docs { select fm: entries(_frontmatter) { k: $key, v: $it } where _path == "/substances/salt.md" }' --jsonl
 {"_id":"d_h73rhv8","_path":"/substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
 ```
 
@@ -241,7 +249,7 @@ Keys are queryable too, so you can filter on a key you name at query time
 (here it is the same set as `era > 1600`):
 
 ```console
-$ omg query 'from docs where entries(_frontmatter) exists { where $key == "era" and $it > 1600 }'
+$ omg query 'docs { entries(_frontmatter) exists { $key == "era" and $it > 1600 } }'
 d_rw4ygr0  /practitioners/newton.md
 d_f7w5k26  /texts/mutus-liber.md
 ```

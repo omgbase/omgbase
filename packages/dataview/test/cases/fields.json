@@ -2,7 +2,7 @@
   {
     "name": "file-attributes",
     "dql": "TABLE file.path, file.name, file.folder, file.link, file.ext, file.size, file.mtime, file.mday FROM \"x\"",
-    "oqx": "select _path, c0: _path, c1: _path, c2: _path, c3: _path, c4: _path, c5: size(_raw), _updated_at, c7: _updated_at.date() from docs where _path.startsWith(\"/x/\") or _path == \"/x.md\"",
+    "oqx": "docs { select _path, c0: _path, c1: _path, c2: _path, c3: _path, c4: _path, c5: size(_raw), _updated_at, c7: _updated_at.date() where _path.startsWith(\"/x/\") or _path == \"/x.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -58,7 +58,7 @@
   {
     "name": "file-tags-and-etags",
     "dql": "TABLE file.tags, file.etags, file.aliases FROM \"x\"",
-    "oqx": "select _path, _tags, c1: _tags, aliases from docs where _path.startsWith(\"/x/\") or _path == \"/x.md\"",
+    "oqx": "docs { select _path, _tags, c1: _tags, aliases where _path.startsWith(\"/x/\") or _path == \"/x.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -88,7 +88,7 @@
   {
     "name": "file-relations",
     "dql": "TABLE file.inlinks, file.outlinks, file.tasks, file.lists FROM \"x\"",
-    "oqx": "select _path, c0: _in_links collect { from _doc }, c1: _out_links collect { from _dst }, c2: _blocks collect { where _type == \"task\" }, c3: _blocks collect { where _type == \"list_item\" } from docs where _path.startsWith(\"/x/\") or _path == \"/x.md\"",
+    "oqx": "docs { select _path, c0: _in_links { from _doc }, c1: _out_links { from _dst }, c2: _blocks { where _type == \"task\" }, c3: _blocks { where _type == \"list_item\" } where _path.startsWith(\"/x/\") or _path == \"/x.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -122,7 +122,7 @@
   {
     "name": "file-frontmatter",
     "dql": "TABLE file.frontmatter, file.frontmatter.author FROM \"x\"",
-    "oqx": "select _path, c0: entries(_frontmatter), c1: _frontmatter.author from docs where _path.startsWith(\"/x/\") or _path == \"/x.md\"",
+    "oqx": "docs { select _path, c0: entries(_frontmatter), c1: _frontmatter.author where _path.startsWith(\"/x/\") or _path == \"/x.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -148,7 +148,7 @@
   {
     "name": "file-name-equals-literal",
     "dql": "LIST WHERE file.name = \"Index\"",
-    "oqx": "select _path from docs where _path.endsWith(\"/Index.md\")",
+    "oqx": "docs { select _path where _path.endsWith(\"/Index.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -165,7 +165,7 @@
   {
     "name": "file-name-not-equals-literal",
     "dql": "LIST WHERE file.name != \"Index\"",
-    "oqx": "select _path from docs where !_path.endsWith(\"/Index.md\")",
+    "oqx": "docs { select _path where !_path.endsWith(\"/Index.md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -182,7 +182,7 @@
   {
     "name": "file-folder-equals-literal",
     "dql": "LIST WHERE file.folder = \"projects/active\"",
-    "oqx": "select _path from docs where _path ~ \"^/projects/active/[^/]+$\"",
+    "oqx": "docs { select _path where _path ~ \"^/projects/active/[^/]+$\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -199,7 +199,7 @@
   {
     "name": "file-folder-is-root",
     "dql": "LIST WHERE file.folder = \"\"",
-    "oqx": "select _path from docs where _path ~ \"^/[^/]+$\"",
+    "oqx": "docs { select _path where _path ~ \"^/[^/]+$\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -216,7 +216,7 @@
   {
     "name": "file-ext-equals-literal",
     "dql": "LIST WHERE file.ext = \"md\"",
-    "oqx": "select _path from docs where _path.endsWith(\".md\")",
+    "oqx": "docs { select _path where _path.endsWith(\".md\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -236,7 +236,7 @@
     "options": {
       "thisPath": "a/b.md"
     },
-    "oqx": "select _path from docs where _path != \"/a/b.md\"",
+    "oqx": "docs { select _path where _path != \"/a/b.md\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -253,7 +253,7 @@
   {
     "name": "file-name-string-tests",
     "dql": "LIST WHERE startswith(file.name, \"2026-\") | endswith(file.name, \"-notes\") | contains(file.name, \"draft\")",
-    "oqx": "select _path from docs where _path ~ \"/2026-[^/]*\\\\.md$\" or _path.endsWith(\"-notes.md\") or _path ~ \"/[^/]*draft[^/]*\\\\.md$\"",
+    "oqx": "docs { select _path where _path ~ \"/2026-[^/]*\\\\.md$\" or _path.endsWith(\"-notes.md\") or _path ~ \"/[^/]*draft[^/]*\\\\.md$\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -270,7 +270,7 @@
   {
     "name": "file-folder-string-tests",
     "dql": "LIST WHERE startswith(file.folder, \"projects\") | endswith(file.folder, \"archive\") | contains(file.folder, \"old\")",
-    "oqx": "select _path from docs where _path.startsWith(\"/projects\") or _path ~ \"archive/[^/]*$\" or _path ~ \"old[^/]*/\"",
+    "oqx": "docs { select _path where _path.startsWith(\"/projects\") or _path ~ \"archive/[^/]*$\" or _path ~ \"old[^/]*/\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -309,7 +309,7 @@
   {
     "name": "file-ctime-is-created-at",
     "dql": "TABLE file.ctime FROM \"a\"",
-    "oqx": "select _path, _created_at from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, _created_at where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -333,7 +333,7 @@
   {
     "name": "file-cday-is-created-at-date",
     "dql": "TABLE file.cday FROM \"a\"",
-    "oqx": "select _path, c0: _created_at.date() from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: _created_at.date() where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -390,7 +390,7 @@
   {
     "name": "task-fields",
     "dql": "TASK WHERE text != \"\" & !checked & fullyCompleted & path = \"a.md\" & blockId",
-    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and _text != \"\" and !checked and checked and _path == \"a.md\" and _id",
+    "oqx": "blocks { select _path, _id, _text, checked where _type == \"task\" and _text != \"\" and !checked and checked and _path == \"a.md\" and _id }",
     "render": {
       "type": "task",
       "grouped": false,
@@ -414,7 +414,7 @@
   {
     "name": "task-file-fields-go-through-doc",
     "dql": "TASK WHERE file.mtime > date(2026-01-01) & contains(file.tags, \"#work\") & file.name = \"Today\"",
-    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and _doc._updated_at > date(\"2026-01-01\") and _doc._tags exists { where $it == \"work\" or $it.startsWith(\"work/\") } and _path.endsWith(\"/Today.md\")",
+    "oqx": "blocks { select _path, _id, _text, checked where _type == \"task\" and _doc._updated_at > date(\"2026-01-01\") and _doc._tags exists { where $it == \"work\" or $it.startsWith(\"work/\") } and _path.endsWith(\"/Today.md\") }",
     "render": {
       "type": "task",
       "grouped": false,
@@ -436,7 +436,7 @@
   {
     "name": "task-outlinks",
     "dql": "TASK WHERE contains(outlinks, [[Home]]) | contains(file.inlinks, [[Index]])",
-    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and (_out_links exists { where _dst._path.endsWith(\"/Home.md\") } or _doc._in_links exists { where _doc._path.endsWith(\"/Index.md\") })",
+    "oqx": "blocks { select _path, _id, _text, checked where _type == \"task\" and (_out_links exists { where _dst._path.endsWith(\"/Home.md\") } or _doc._in_links exists { where _doc._path.endsWith(\"/Index.md\") }) }",
     "render": {
       "type": "task",
       "grouped": false,
@@ -458,7 +458,7 @@
   {
     "name": "task-inline-field-reads-the-page",
     "dql": "TASK WHERE due < date(today)",
-    "oqx": "select _path, _id, _text, checked from blocks where _type == \"task\" and date(_doc.due) < date(\"today\")",
+    "oqx": "blocks { select _path, _id, _text, checked where _type == \"task\" and date(_doc.due) < date(\"today\") }",
     "render": {
       "type": "task",
       "grouped": false,

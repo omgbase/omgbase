@@ -19,7 +19,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, _text from blocks order by semantic(\"Which note explains why the camera would not stay cold overnight?\") desc limit 5"
+          "query": "blocks { select _path, _text order by semantic(\"Which note explains why the camera would not stay cold overnight?\") desc limit 5 }"
         }
       },
       {

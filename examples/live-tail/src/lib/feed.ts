@@ -36,36 +36,46 @@ export interface DocVersions { id: string; path: string; deleted: boolean; curre
 
 export const RECENT_LIMIT = 25;
 
-/** The recent query's first line — the projection (`_title` is the computed
- * title attribute, spec/surface §1.2; the bare `title` under the 4.x names). */
+/** The recent query's projection line — `select` + the attributes (`_title` is
+ * the computed title attribute, spec/surface §1.2; the bare `title` under the
+ * 4.x names). The collection heads the body: `docs {` is the first line, `}`
+ * the last (`RECENT_OPEN` / `RECENT_CLOSE`). */
 export function recentSelect(names: EngineNames = NAMES_5): string {
-  return `select ${names.path}, ${names.title}, ${names.updated_at} from docs`;
+  return `select ${names.path}, ${names.title}, ${names.updated_at}`;
 }
-/** Its last line — newest first, the page's cap. */
+/** Its last clause line — newest first, the page's cap. */
 export function recentTail(names: EngineNames = NAMES_5): string {
   return `order by ${names.updated_at} desc limit ${RECENT_LIMIT}`;
 }
-/** The two lines in the demo's native (5.0) spelling. */
+/** The body's brackets: the collection with its opening brace, the closing brace. */
+export const RECENT_OPEN = "docs {";
+export const RECENT_CLOSE = "}";
+/** The indent of a clause line inside the frame. */
+export const RECENT_INDENT = "  ";
+/** The two clause lines in the demo's native (5.0) spelling. */
 export const RECENT_SELECT = recentSelect();
 export const RECENT_TAIL = recentTail();
 
 /** The query behind the initial view, narrowed by the filter (an OQX `where`
- * predicate over `docs`) when there is one; one line. With a filter its tokens
- * are exactly the framed field's (`frameFor`, which lays the same text out on
- * three lines); without one the `where` clause is omitted (an empty `where`
- * would not parse). */
+ * predicate over `docs`) when there is one; one line, `docs { select … where
+ * <filter> order by … }`. With a filter its tokens are exactly the framed
+ * field's (`frameFor`, which lays the same text out on five lines); without
+ * one the `where` clause is omitted (an empty `where` would not parse). */
 export function recentQuery(filter = "", names: EngineNames = NAMES_5): string {
   const f = filter.trim();
   const select = recentSelect(names);
   const tail = recentTail(names);
-  return f ? `${select} where ${f} ${tail}` : `${select} ${tail}`;
+  return f ? `${RECENT_OPEN} ${select} where ${f} ${tail} ${RECENT_CLOSE}` : `${RECENT_OPEN} ${select} ${tail} ${RECENT_CLOSE}`;
 }
 
 /** The read-only frame the field shows around the hole when there is a `where`
- * line — the `select … from docs` line, `where ` + the hole, the `order by …
- * limit` line. */
+ * line — `docs {`, the `select …` line, `where ` + the hole, the `order by …
+ * limit` line, `}`; the clause lines indented by `RECENT_INDENT`. */
 export function frameParts(names: EngineNames = NAMES_5): { before: string; after: string } {
-  return { before: `${recentSelect(names)}\nwhere `, after: `\n${recentTail(names)}` };
+  return {
+    before: `${RECENT_OPEN}\n${RECENT_INDENT}${recentSelect(names)}\n${RECENT_INDENT}where `,
+    after: `\n${RECENT_INDENT}${recentTail(names)}\n${RECENT_CLOSE}`,
+  };
 }
 /** The frame in the native (5.0) spelling. */
 export const FRAME_BEFORE = frameParts().before;
@@ -80,18 +90,18 @@ export interface Frame {
 }
 
 /** The framed field's text and the hole in it. With a filter, or while the
- * field is being edited, three lines: the filter between `FRAME_BEFORE` and
- * `FRAME_AFTER`, so the second line is `where <filter>` (an empty filter is an
- * empty hole after `where `, where the caret waits). Idle and empty, two lines
- * with no `where` at all and a closed, zero-width hole at the end of the first.
- * Joined with spaces instead of its newlines the text is `recentQuery(filter,
- * names)` in every state. */
+ * field is being edited, five lines: the filter between `FRAME_BEFORE` and
+ * `FRAME_AFTER`, so the third line is `  where <filter>` (an empty filter is an
+ * empty hole after `where `, where the caret waits). Idle and empty, four lines
+ * with no `where` at all and a closed, zero-width hole at the end of the
+ * `select` line. With its line breaks and indentation collapsed to single
+ * spaces the text is `recentQuery(filter, names)` in every state. */
 export function frameFor(filter: string, { editing = false, names = NAMES_5 }: { editing?: boolean; names?: EngineNames } = {}): Frame {
-  const select = recentSelect(names);
+  const head = `${RECENT_OPEN}\n${RECENT_INDENT}${recentSelect(names)}`;
   const { before, after } = frameParts(names);
   if (filter === "" && !editing) {
-    const at = select.length;
-    return { text: `${select}${after}`, hole: { from: at, to: at }, where: false };
+    const at = head.length;
+    return { text: `${head}${after}`, hole: { from: at, to: at }, where: false };
   }
   const from = before.length;
   return { text: `${before}${filter}${after}`, hole: { from, to: from + filter.length }, where: true };
@@ -360,7 +370,7 @@ export function matchQuery(filter: string, paths: readonly string[], names: Engi
   if (unique.length === 0) return null;
   const alternatives = unique.map((p) => `${names.path} == ${JSON.stringify(p)}`).join(" or ");
   const f = filter.trim();
-  return `select ${names.path}, ${names.title} from docs where ${f ? `(${f}) and ` : ""}(${alternatives})`;
+  return `docs { select ${names.path}, ${names.title} where ${f ? `(${f}) and ` : ""}(${alternatives}) }`;
 }
 
 /** The lookup query's hits as rooted path → title (null for a blank or

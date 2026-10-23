@@ -1,5 +1,5 @@
-// <history-panel>: a document's revisions (`from revisions where _doc_id == …
-// order by _seq desc`) as a list — seq, time, origin/actor, reason, hash,
+// <history-panel>: a document's revisions (`revisions { _doc_id == … order by
+// _seq desc }`) as a list — seq, time, origin/actor, reason, hash,
 // current — and, for the selected one, the body as of that revision
 // (`docs_read { at }`) beside the current body with a client-side unified diff
 // (lib/diff.ts). Properties: `revisions`, `selected` (a rev), `current` (the

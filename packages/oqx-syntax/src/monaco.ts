@@ -5,7 +5,7 @@
 //   import * as monaco from "monaco-editor";
 //   import { registerOqx } from "@omgbase/oqx-syntax/monaco";
 //   registerOqx(monaco);
-//   monaco.editor.create(el, { language: "oqx", value: "name from people" });
+//   monaco.editor.create(el, { language: "oqx", value: "people { select name }" });
 
 import { oqxLanguageConfiguration, type LanguageConfiguration } from "./language-configuration.js";
 import { oqxMonarchGrammar, type MonarchGrammar } from "./monarch.js";

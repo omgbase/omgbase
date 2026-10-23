@@ -19,7 +19,12 @@
 //! order by …  limit N  offset N
 //! ```
 //!
-//! Every clause is optional except that a top-level body needs `from` (the
+//! A query names its source BEFORE its body (0.26, the collection-scoped form):
+//! `<collection> [<consumer>] [distinct] { body }` — the receiver supplies the
+//! rows, so the body never names its source and its `from` is the re-projection
+//! (a flatMap). The clause form `select … from S …` is still read as the same
+//! tree (its top-level body needs `from`); the printer never writes it.
+//! Every clause is optional except that a clause-form top-level body needs `from` (the
 //! receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
 //! source itself, so its block's `from` is an optional re-projection). Only
 //! `select` may drop its keyword, and only when it is the first clause written
@@ -116,7 +121,7 @@ use crate::lexer::{TokType, Token, lex_string, lex_template};
 use crate::print::print_template;
 use crate::resolve::{resolve_select, resolve_where};
 use crate::value::Value;
-use crate::walk::{Node, template_exprs};
+use crate::walk::{Node, VisitContext, Visitor, template_exprs, visit};
 
 const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "single"];
 
@@ -314,6 +319,11 @@ struct Parser {
     /// `first`/`single` leaf is not rejected on sight: the body decides after
     /// the run is classified (`reject_bare_lookups`).
     defer_lookup: bool,
+    /// Whether a consumer word with no block is read as a directive over the
+    /// empty block (`jobs first` ≡ `jobs first { }`, since 0.26). Off only while
+    /// the clause form's top-level `from` expression is read, so `from people
+    /// count` keeps its whole-query hint (a count is never a source).
+    bare_directives: bool,
     /// The scope depth (SEMANTICS §2) at which the construct being parsed is
     /// evaluated: 0 at the root (the top-level source and bounds), 1 for a
     /// top-level row's clauses, one deeper per block body and per follow
@@ -328,6 +338,79 @@ enum LeadingRun {
     Projection(Vec<SelectItem>, bool),
 }
 
+/// Whether a block holds nothing but its projection (the merge of
+/// `merge_projection_block`).
+fn projection_only(sub: &Subquery) -> bool {
+    sub.from.is_empty()
+        && sub.r#where.is_none()
+        && sub.order_by.is_none()
+        && sub.follow.is_none()
+        && sub.frontier.is_none()
+        && sub.depth.is_none()
+        && sub.flatten.is_empty()
+        && sub.group_by.is_none()
+        && sub.having.is_none()
+        && sub.limit.is_none()
+        && sub.offset.is_none()
+}
+
+/// The names a projection would shadow in a `where` of the same body: every
+/// item's name except a plain self-projection (`pay: pay`, `pay`), which
+/// substitutes a name for itself.
+fn shadowing_names(items: &[SelectItem]) -> Vec<&str> {
+    items
+        .iter()
+        .filter_map(|it| match it {
+            SelectItem::Field {
+                name,
+                expr: Expr::Ident { name: e, .. },
+                lift: 0,
+                ..
+            } if e == name => None,
+            SelectItem::Field { name, .. } | SelectItem::Collect { name, .. }
+                if name.is_empty() =>
+            {
+                None
+            }
+            SelectItem::Field { name, .. } | SelectItem::Collect { name, .. } => {
+                Some(name.as_str())
+            }
+        })
+        .collect()
+}
+
+/// Whether a bare identifier anywhere under `w` has one of `names` (the alias
+/// guard of the projection-block merge; conservative: nested blocks included).
+fn reads_any_of(w: &Where, names: &[&str]) -> bool {
+    struct Reads<'n> {
+        names: &'n [&'n str],
+        found: bool,
+    }
+    impl<'a> Visitor<'a> for Reads<'_> {
+        fn enter(&mut self, node: Node<'a>, _ctx: &VisitContext<'a>) -> bool {
+            if let Node::Expr(Expr::Ident { name, .. }) = node
+                && self.names.contains(&name.as_str())
+            {
+                self.found = true;
+            }
+            !self.found
+        }
+    }
+    if names.is_empty() {
+        return false;
+    }
+    let mut v = Reads {
+        names,
+        found: false,
+    };
+    let root = match w {
+        Where::Op(op) => Node::Op(op),
+        other => Node::Where(other),
+    };
+    visit(root, &mut v);
+    v.found
+}
+
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
         debug_assert!(tokens.last().is_some_and(|t| t.kind == TokType::Eof));
@@ -335,6 +418,7 @@ impl Parser {
             tokens,
             pos: 0,
             defer_lookup: false,
+            bare_directives: true,
             depth: 0,
         }
     }
@@ -405,7 +489,7 @@ impl Parser {
         let start = self.start();
         // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
         if let Some(mut directive) = self.try_op(false, false)? {
-            if !self.at(TokType::Eof) && (self.at(TokType::LBracket) || self.at_value_directive()) {
+            if !self.at(TokType::Eof) && (self.at(TokType::LBracket) || self.at_block().is_some()) {
                 // A longer chain whose outermost node is still a directive
                 // (`people first { } first { }` — how `people[p][0]` prints back).
                 let save = self.pos;
@@ -453,7 +537,7 @@ impl Parser {
         }
         if body.froms.is_empty() {
             return self.fail(
-                "a query must name its source with `from <collection>` (or be `<collection> <consumer> { … }`)",
+                "a query must name its source before its body: `<collection> { … }` (or `<collection> <consumer> { … }`; the clause form `select … from <collection> …` is still read)",
             );
         }
         let source = body.froms.remove(0);
@@ -541,8 +625,17 @@ impl Parser {
             if self.at_word(TokType::Kw, "from") {
                 self.enter(&mut stage, Clause::From, ctx)?;
                 self.next();
-                let e = self.parse_value_expr()?;
-                body.froms.push(e);
+                // At the clause form's top level a consumer word after the source
+                // is the whole-query mistake (`from people count`): kept as the
+                // hint below, not read as a braceless directive (a count is never
+                // a source).
+                let bare = self.bare_directives;
+                if ctx == BodyCtx::Top {
+                    self.bare_directives = false;
+                }
+                let e = self.parse_value_expr();
+                self.bare_directives = bare;
+                body.froms.push(e?);
                 continue;
             }
             if self.at_word(TokType::Kw, "where") {
@@ -1686,7 +1779,7 @@ impl Parser {
                     }
                     if ctx == BodyCtx::Top {
                         return self.fail(
-                            "a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` after `from` — at the top level a predicate is never implicit (the clause order puts `from` first)",
+                            "a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `<collection> { <predicate> }`, or write `where …` after `from` — at the top level of the clause form a predicate is never implicit (the clause order puts `from` first)",
                         );
                     }
                     return self.fail(
@@ -1735,7 +1828,7 @@ impl Parser {
             self.next(); // ':'
             if let Some(op) = self.try_op(false, false)? {
                 // `name: jobs first { }.pay`: the directive is the head of a longer value.
-                if self.at_scalar_continuation() || self.at_value_directive() {
+                if self.at_scalar_continuation() || self.at_block().is_some() {
                     let expr = self.parse_or(Some(Expr::Op(Box::new(op))))?;
                     return self.finish_item(name, expr, lift, start);
                 }
@@ -2377,7 +2470,11 @@ impl Parser {
         let op_distinct_brace = after
             .is_some_and(|a| a.kind == TokType::Ident && a.value == "distinct")
             && self.peek_at(2).is_some_and(|a| a.kind == TokType::LBrace);
-        (op_then_brace || op_distinct_brace).then_some(op)
+        // Since 0.26 the word alone is the directive over the empty block
+        // (`jobs first` ≡ `jobs first { }`): a consumer word right after a
+        // complete receiver can be nothing else — except inside the clause
+        // form's top-level `from` (`bare_directives`).
+        (op_then_brace || op_distinct_brace || self.bare_directives).then_some(op)
     }
 
     // `[<op>] [distinct] { <sub> }` over an already-parsed receiver; the cursor
@@ -2401,31 +2498,42 @@ impl Parser {
             self.next();
             distinct = true;
         }
-        let lbrace = self.next().pos; // '{'
-        let ctx = BodyCtx::Block {
-            op,
-            lifts_allowed: in_where && op == Consumer::Collect,
-            destination,
+        let (body, sub_span) = if self.at(TokType::LBrace) {
+            let lbrace = self.next().pos; // '{'
+            let ctx = BodyCtx::Block {
+                op,
+                lifts_allowed: in_where && op == Consumer::Collect,
+                destination,
+            };
+            let defer = self.defer_lookup;
+            self.defer_lookup = false;
+            // The receiver was read at the enclosing depth; the block's rows are one deeper.
+            let depth = self.depth + 1;
+            let body = self.with_depth(depth, |p| p.parse_body(ctx));
+            self.defer_lookup = defer;
+            let body = body?;
+            if !self.at(TokType::RBrace) {
+                return self.fail(format!(
+                    "expected '}}' to close the {} {{ … }} block",
+                    op.as_str()
+                ));
+            }
+            self.next();
+            // `x collect distinct { group by k }`: the directive's distinct is as
+            // redundant as the body's own (checked in parse_body).
+            if distinct && let Some(g) = &body.group_by {
+                return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
+            }
+            (body, self.sp(lbrace))
+        } else {
+            // A consumer word with no block (0.26) is the directive over the
+            // empty block `{ }` — the word was written (only a brace makes a
+            // bare `collect`), so nothing more is consumed; the block spans
+            // nothing, at the end of the word.
+            let end = self.end();
+            (BodyClauses::default(), Span::new(end, end))
         };
-        let defer = self.defer_lookup;
-        self.defer_lookup = false;
-        // The receiver was read at the enclosing depth; the block's rows are one deeper.
-        let depth = self.depth + 1;
-        let body = self.with_depth(depth, |p| p.parse_body(ctx));
-        self.defer_lookup = defer;
-        let body = body?;
-        if !self.at(TokType::RBrace) {
-            return self.fail(format!(
-                "expected '}}' to close the {} {{ … }} block",
-                op.as_str()
-            ));
-        }
-        self.next();
-        // `x collect distinct { group by k }`: the directive's distinct is as
-        // redundant as the body's own (checked in parse_body).
-        if distinct && let Some(g) = &body.group_by {
-            return self.fail_at(g.span.start, DISTINCT_WITH_GROUP);
-        }
+        let distinct = distinct || body.distinct;
         let sub = Subquery {
             from: body.froms,
             r#where: body.r#where,
@@ -2440,16 +2548,74 @@ impl Parser {
             values: body.values,
             limit: body.limit,
             offset: body.offset,
-            span: self.sp(lbrace),
+            span: sub_span,
         };
-        Ok(OpNode {
-            receiver,
-            op,
-            sub,
+        Ok(self.merge_projection_block(receiver, op, distinct, sub, start))
+    }
+
+    // A projection-only block over a `collect`/`first`/`single` directive whose
+    // own block projects nothing IS that directive's projection (0.26):
+    // `jobs[0] { name }` ≡ `jobs first { name offset 0 }`, `jobs[p] { name }` ≡
+    // `jobs first { name where p }`, `jobs[0] { }` ≡ `jobs[0]`. The outer items
+    // are read on the very rows the inner block filtered, at the same depth, so
+    // the merge is exact — except when the outer block carries a clause of its
+    // own (those run AFTER the pick: `jobs[0] { name where pay > 2 }` is the
+    // first job, kept only if it pays), when the inner directive dedups
+    // (`distinct` compares the projection), or when an outer alias would shadow
+    // a bare name the inner `where` reads (`jobs[pay > 2] { pay: employer }`):
+    // then the two directives stay.
+    fn merge_projection_block(
+        &self,
+        receiver: Expr,
+        op: Consumer,
+        distinct: bool,
+        sub: Subquery,
+        start: usize,
+    ) -> OpNode {
+        let span = self.sp(start);
+        let inner = match receiver {
+            Expr::Op(inner)
+                if op == Consumer::Collect
+                    && matches!(
+                        inner.op,
+                        Consumer::Collect | Consumer::First | Consumer::Single
+                    )
+                    && !inner.distinct
+                    && inner.count_cmp.is_none()
+                    && inner.sub.select.is_empty()
+                    && !inner.sub.values
+                    && projection_only(&sub)
+                    && !inner
+                        .sub
+                        .r#where
+                        .as_ref()
+                        .is_some_and(|w| reads_any_of(w, &shadowing_names(&sub.select))) =>
+            {
+                *inner
+            }
+            other => {
+                return OpNode {
+                    receiver: other,
+                    op,
+                    sub,
+                    count_cmp: None,
+                    distinct,
+                    span,
+                };
+            }
+        };
+        let mut merged = inner.sub;
+        merged.select = sub.select;
+        merged.values = sub.values;
+        merged.span = Span::new(merged.span.start, sub.span.end);
+        OpNode {
+            receiver: inner.receiver,
+            op: inner.op,
+            sub: merged,
             count_cmp: None,
-            distinct: distinct || body.distinct,
-            span: self.sp(start),
-        })
+            distinct,
+            span,
+        }
     }
 
     // ---- expression Pratt parser ----------------------------------------------

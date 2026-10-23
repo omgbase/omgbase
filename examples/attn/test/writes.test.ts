@@ -88,14 +88,14 @@ describe("the intent edits", () => {
   });
   it("define-cue is set _frontmatter.cues with the WHOLE list; queries end in a newline (a `query: |` block); no cues left is unset", () => {
     const cues = [
-      { id: "when-opus-focused", on: "focus" as const, query: 'from docs\nwhere project == "/projects/magnum-opus.md"', at: null },
+      { id: "when-opus-focused", on: "focus" as const, query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}', at: null },
       { id: "review-tomorrow", on: "time" as const, query: null, at: "2026-10-15T09:00:00Z" },
-      { id: "new-rest", on: "query-enter" as const, query: 'from docs where "rest" in tags\n\n', at: null },
+      { id: "new-rest", on: "query-enter" as const, query: 'docs { "rest" in tags }\n\n', at: null },
     ];
     expect(setCuesEffect(SALT, cues)).toEqual({ op: "set", target: SALT, field: "_frontmatter.cues", value: [
-      { id: "when-opus-focused", on: "focus", query: 'from docs\nwhere project == "/projects/magnum-opus.md"\n' },
+      { id: "when-opus-focused", on: "focus", query: 'docs {\n  where project == "/projects/magnum-opus.md"\n}\n' },
       { id: "review-tomorrow", on: "time", at: "2026-10-15T09:00:00Z" },
-      { id: "new-rest", on: "query-enter", query: 'from docs where "rest" in tags\n' },
+      { id: "new-rest", on: "query-enter", query: 'docs { "rest" in tags }\n' },
     ] });
     expect(setCuesEffect(SALT, [])).toEqual({ op: "unset", target: SALT, field: "_frontmatter.cues" });
     expect(wireCue({ id: "t", on: "time", query: "ignored", at: null })).toEqual({ id: "t", on: "time" });
@@ -121,10 +121,10 @@ describe("the calls", () => {
   });
   it("a new cue is plan { effects, diffs: true } then execute { plan_id, effects } with the same effects", async () => {
     const s = new ScriptedCaller({
-      plan: () => ({ plan_id: "p7", preview: { revisions: [{ _id: "d_1", _path: SALT, _hash: "h" }], summary: [`set _frontmatter.cues = [{"id":"a","on":"focus","query":"from docs\\n"}] in ${SALT}`], diffs: { [SALT]: { before: "---\n…", after: "---\ncues:\n  - id: a\n…" } } } }),
+      plan: () => ({ plan_id: "p7", preview: { revisions: [{ _id: "d_1", _path: SALT, _hash: "h" }], summary: [`set _frontmatter.cues = [{"id":"a","on":"focus","query":"docs { }\\n"}] in ${SALT}`], diffs: { [SALT]: { before: "---\n…", after: "---\ncues:\n  - id: a\n…" } } } }),
       execute: (a) => ({ ...RECEIPT, plan_id: a.plan_id }),
     });
-    const effects = [setCuesEffect(SALT, [{ id: "a", on: "focus", query: "from docs", at: null }])];
+    const effects = [setCuesEffect(SALT, [{ id: "a", on: "focus", query: "docs { }", at: null }])];
     const plan = await planEffects(s, effects, "attn");
     expect(plan.summary[0]).toMatch(/^set _frontmatter\.cues = /);
     expect(plan.revisions).toEqual([{ _id: "d_1", _path: SALT, _hash: "h" }]);

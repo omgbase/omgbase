@@ -1,24 +1,29 @@
 // <oqx-framed-filter>: the recent query as ONE CodeMirror 6 editor with OQX
 // highlighting from @omgbase/oqx-syntax, in which only the hole — the `where`
-// predicate — can be edited. Idle with no filter it is the plain two-line query,
+// predicate — can be edited. Idle with no filter it is the plain four-line query,
 //
-//   select _path, _title, _updated_at from docs
-//   order by _updated_at desc limit 25
+//   docs {
+//     select _path, _title, _updated_at
+//     order by _updated_at desc limit 25
+//   }
 //
 // (the bare `path, title, updated_at` against a 3.x/4.x server — the `names`
 // property, lib/paths.ts) — focusing it (a click anywhere) opens the `where ` line with the caret in
 // the empty hole right after the keyword,
 //
-//   select _path, _title, _updated_at from docs
-//   where ⟨hole⟩
-//   order by _updated_at desc limit 25
+//   docs {
+//     select _path, _title, _updated_at
+//     where ⟨hole⟩
+//     order by _updated_at desc limit 25
+//   }
 //
 // and the line stays while there is a filter, or while the field is focused
 // with an empty hole (the caret needs somewhere to be); blurring with an empty
 // hole — leaving after a clear — removes it again. The frame (lib/feed.ts
 // `frameFor`) is read-only and dimmed, the hole has a faint background, and an
 // empty hole shows an example as a placeholder. Token for token the text is
-// `recentQuery(value)` in every state (the server gets the one-line form).
+// `recentQuery(value)` in every state (the server gets the one-line form,
+// `docs { select … where <hole> order by … }`).
 //
 // Read-only is a transaction filter (lib/hole.ts): a transaction whose changes
 // touch text outside the hole, or would insert a line break (the where line is

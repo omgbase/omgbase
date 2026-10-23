@@ -4,12 +4,12 @@ import { changesInside, holeField, holeState, holeText, mapHole, reframeSpec } f
 import { NAMES_4, NAMES_5 } from "../src/lib/paths.ts";
 
 describe("the framed filter's hole", () => {
-  it("starts as the three-line frame with the filter in the hole, cursor at its end", () => {
+  it("starts as the five-line frame with the filter in the hole, cursor at its end", () => {
     const s = holeState('status == "active"');
     expect(s.doc.toString()).toBe(frameFor('status == "active"').text);
-    expect(s.doc.lines).toBe(3);
-    expect(s.doc.line(2).text).toBe('where status == "active"');
-    expect(s.doc.toString().replace(/\n/g, " ")).toBe(recentQuery('status == "active"'));
+    expect(s.doc.lines).toBe(5);
+    expect(s.doc.line(3).text).toBe('  where status == "active"');
+    expect(s.doc.toString().replace(/\s+/g, " ")).toBe(recentQuery('status == "active"'));
     expect(holeText(s)).toBe('status == "active"');
     expect(s.field(holeField).where).toBe(true);
     expect(s.selection.main.head).toBe(FRAME_BEFORE.length + 'status == "active"'.length);
@@ -36,7 +36,7 @@ describe("the framed filter's hole", () => {
     unchanged(s.update({ changes: { from: h.from - 1, to: h.from } })); // backspace at the hole's start eats the frame
     unchanged(s.update({ changes: { from: h.to, to: h.to + 1 } })); // delete at its end
     unchanged(s.update({ changes: { from: h.from - 3, to: h.from + 1, insert: "q" } })); // straddling
-    unchanged(s.update({ changes: { from: 0, to: s.doc.length, insert: "select 1 from docs" } })); // select-all + type
+    unchanged(s.update({ changes: { from: 0, to: s.doc.length, insert: "docs { select 1 }" } })); // select-all + type
     unchanged(s.update({ changes: { from: s.doc.length, insert: " offset 5" } })); // appending to the frame
     // The same, as the view would ask them, is what changesInside answers.
     expect(changesInside(s.update({ changes: { from: h.from, to: h.to, insert: "b" } }, { filter: false }), h)).toBe(true);
@@ -50,7 +50,7 @@ describe("the framed filter's hole", () => {
     expect(s.update({ changes: { from: h.from - 1, to: h.from, insert: "" } }).docChanged).toBe(false); // joining with line 1 touches the frame
     const ok = s.update({ changes: { from: h.to, insert: " and b" } });
     expect(ok.docChanged).toBe(true);
-    expect(ok.state.doc.lines).toBe(3);
+    expect(ok.state.doc.lines).toBe(5);
   });
   it("moves a selection that lands in the frame to the nearest end of the hole", () => {
     const s = holeState("a == 1");
@@ -61,9 +61,9 @@ describe("the framed filter's hole", () => {
     const range = s.update({ selection: { anchor: 0, head: s.doc.length } }).state.selection.main; // select all → the hole
     expect([range.from, range.to]).toEqual([h.from, h.to]);
   });
-  it("idle and empty: two lines, no where, and nothing is editable until a reframe opens the where line", () => {
+  it("idle and empty: four lines, no where, and nothing is editable until a reframe opens the where line", () => {
     const idle = holeState("");
-    expect(idle.doc.lines).toBe(2);
+    expect(idle.doc.lines).toBe(4);
     expect(idle.doc.toString()).toBe(frameFor("").text);
     expect(idle.field(holeField).where).toBe(false);
     const h = idle.field(holeField);
@@ -71,27 +71,27 @@ describe("the framed filter's hole", () => {
     expect(idle.update({ changes: { from: idle.doc.length, insert: " where x" } }).docChanged).toBe(false);
     // focus → the editing frame, caret after `where `
     const editing = idle.update(reframeSpec(idle, "", true)).state;
-    expect(editing.doc.lines).toBe(3);
-    expect(editing.doc.line(2).text).toBe("where ");
+    expect(editing.doc.lines).toBe(5);
+    expect(editing.doc.line(3).text).toBe("  where ");
     expect(editing.field(holeField)).toEqual({ from: FRAME_BEFORE.length, to: FRAME_BEFORE.length, where: true });
     expect(editing.selection.main.head).toBe(FRAME_BEFORE.length);
     const typed = editing.update({ changes: { from: FRAME_BEFORE.length, insert: "a" } }).state;
     expect(holeText(typed)).toBe("a");
-    // blur with an empty hole → back to two lines
+    // blur with an empty hole → back to four lines
     const emptied = typed.update({ changes: { from: FRAME_BEFORE.length, to: FRAME_BEFORE.length + 1 } }).state;
     expect(holeText(emptied)).toBe("");
-    expect(emptied.doc.lines).toBe(3); // still focused: the line stays so the caret has somewhere to be
+    expect(emptied.doc.lines).toBe(5); // still focused: the line stays so the caret has somewhere to be
     const back = emptied.update(reframeSpec(emptied, holeText(emptied), false)).state;
     expect(back.doc.toString()).toBe(frameFor("").text);
     expect(back.field(holeField).where).toBe(false);
   });
-  it("a reframe replaces the whole document and takes the new hole; a filled frame stays three lines when idle", () => {
+  it("a reframe replaces the whole document and takes the new hole; a filled frame stays five lines when idle", () => {
     const s = holeState("a == 1");
     const next = s.update(reframeSpec(s, "", true)).state;
     expect(next.doc.toString()).toBe(frameFor("", { editing: true }).text);
     expect(holeText(next)).toBe("");
     const filledIdle = next.update(reframeSpec(next, 'b == "x"', false)).state;
-    expect(filledIdle.doc.lines).toBe(3);
+    expect(filledIdle.doc.lines).toBe(5);
     expect(holeText(filledIdle)).toBe('b == "x"');
     expect(filledIdle.field(holeField).where).toBe(true);
   });
@@ -104,9 +104,9 @@ describe("the framed filter's hole", () => {
   });
   it("spells the frame with the engine attributes (5.0's `_`-prefixed by default; the bare 4.x names on request); a reframe keeps the hole's text", () => {
     const s = holeState('status == "active"');
-    expect(s.doc.toString()).toBe("select _path, _title, _updated_at from docs\nwhere status == \"active\"\norder by _updated_at desc limit 25");
+    expect(s.doc.toString()).toBe("docs {\n  select _path, _title, _updated_at\n  where status == \"active\"\n  order by _updated_at desc limit 25\n}");
     const old = holeState('status == "active"', { names: NAMES_4 });
-    expect(old.doc.toString()).toBe("select path, title, updated_at from docs\nwhere status == \"active\"\norder by updated_at desc limit 25");
+    expect(old.doc.toString()).toBe("docs {\n  select path, title, updated_at\n  where status == \"active\"\n  order by updated_at desc limit 25\n}");
     expect(holeText(old)).toBe('status == "active"');
     // Switching the names reframes around the same hole text.
     const switched = old.update(reframeSpec(old, holeText(old), false, NAMES_5)).state;

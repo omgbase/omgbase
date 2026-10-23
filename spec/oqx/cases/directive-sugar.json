@@ -1,0 +1,1589 @@
+{
+  "suite": "directive-sugar",
+  "cases": [
+    {
+      "name": "a consumer word alone is the directive over the empty block",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, n: jobs count, f: jobs first order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "n": 1,
+            "f": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          },
+          {
+            "name": "Bob",
+            "n": 2,
+            "f": {
+              "employer": "Globocorp",
+              "pay": 3,
+              "end": true
+            }
+          },
+          {
+            "name": "Carol",
+            "n": 0,
+            "f": null
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "count",
+        "first"
+      ],
+      "notes": "Since 0.26 `jobs count` ≡ `jobs count { }` and `jobs first` ≡ `jobs first { }`: a consumer word right after a complete receiver can be nothing else."
+    },
+    {
+      "name": "exists and none without a block in where",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name where jobs exists and !jobs none order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "exists",
+        "none"
+      ]
+    },
+    {
+      "name": "a bare count takes its comparison",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name where jobs count > 1 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "count"
+      ]
+    },
+    {
+      "name": "a bare count is truthy when non-zero",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name where jobs count order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "count"
+      ]
+    },
+    {
+      "name": "distinct after a bare consumer word",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, d: jobs count distinct, e: jobs { employer } count distinct order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "d": 1,
+            "e": 1
+          },
+          {
+            "name": "Bob",
+            "d": 2,
+            "e": 2
+          },
+          {
+            "name": "Carol",
+            "d": 0,
+            "e": 0
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "distinct"
+      ],
+      "notes": "`count distinct` with no block dedups the rows by identity; `jobs { employer } count distinct` counts the distinct projections of the inner block."
+    },
+    {
+      "name": "a bare lookup continues as a value",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, h: jobs first.employer, p: jobs first!.pay where jobs exists order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "h": "Initech",
+            "p": 5
+          },
+          {
+            "name": "Bob",
+            "h": "Globocorp",
+            "p": 3
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "first",
+        "navigation"
+      ]
+    },
+    {
+      "name": "the whole query may be a bare consumer",
+      "tags": [
+        "bare",
+        "top-level"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people count",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "a bare first as the whole query",
+      "tags": [
+        "bare",
+        "top-level"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people first",
+      "expect": {
+        "result": {
+          "id": 1,
+          "name": "Bob",
+          "jobs": [
+            {
+              "employer": "Globocorp",
+              "pay": 3,
+              "end": true
+            },
+            {
+              "employer": "Initech",
+              "pay": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bare exists as the whole query",
+      "tags": [
+        "bare",
+        "top-level"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people exists",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a bare follow destination block",
+      "tags": [
+        "bare",
+        "follow"
+      ],
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "kids": [
+              {
+                "id": 2,
+                "kids": []
+              },
+              {
+                "id": 3,
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "t { select id, depth: $depth where id == 1 follow kids first order by $depth, id }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "depth": 1
+          },
+          {
+            "id": 2,
+            "depth": 2
+          }
+        ]
+      },
+      "notes": "`follow kids first` is the destination block `kids first { }`: one successor per frontier row."
+    },
+    {
+      "name": "a bare directive as a flatten value",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, j: j.employer flatten jobs first as j order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "j": "Initech"
+          },
+          {
+            "name": "Bob",
+            "j": "Globocorp"
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      },
+      "tags": [
+        "bare",
+        "flatten"
+      ]
+    },
+    {
+      "name": "ast: the omitted block is an empty subquery",
+      "query": "people { n: jobs count }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "count",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "bare",
+        "ast"
+      ]
+    },
+    {
+      "name": "ast: the omitted block spans nothing, at the end of the word",
+      "tags": [
+        "bare",
+        "ast",
+        "spans"
+      ],
+      "spans": true,
+      "query": "r { n: xs count }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            17
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              0,
+              1
+            ],
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "span": [
+                4,
+                15
+              ],
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "span": [
+                  7,
+                  15
+                ],
+                "receiver": {
+                  "kind": "ident",
+                  "span": [
+                    7,
+                    9
+                  ],
+                  "name": "xs"
+                },
+                "op": "count",
+                "sub": {
+                  "kind": "subquery",
+                  "span": [
+                    15,
+                    15
+                  ],
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "notes": "No token produced the block, so its span is empty at the end of the consumer word — not `[0, 0]`, which marks a built node."
+    },
+    {
+      "name": "a bare lookup alone in where is still the select-position error",
+      "query": "people { where jobs first }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select-position lookup"
+          ]
+        }
+      },
+      "tags": [
+        "bare",
+        "errors"
+      ]
+    },
+    {
+      "name": "a bare consumer at the top level takes no comparison",
+      "query": "people count > 1",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "after the top-level directive"
+          ]
+        }
+      },
+      "tags": [
+        "bare",
+        "errors"
+      ],
+      "notes": "`count { … } <relop> N` is a where-position test; a whole-query `count` is the number."
+    },
+    {
+      "name": "the clause form keeps its whole-query hint",
+      "query": "from people count",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected `count` after `from`",
+            "<collection> count { … }"
+          ]
+        }
+      },
+      "tags": [
+        "bare",
+        "errors",
+        "legacy"
+      ],
+      "notes": "Inside the clause form's top-level `from` a consumer word is not read as a braceless directive (a count is never a source); the hint names the directive form."
+    },
+    {
+      "name": "ast: a projection block over a positional lookup is one directive",
+      "query": "jobs[0] { name }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": {
+            "kind": "lit",
+            "value": 0
+          }
+        }
+      },
+      "tags": [
+        "merge",
+        "ast"
+      ],
+      "notes": "`jobs[0] { name }` ≡ `jobs first { name offset 0 }` — the outer block only projects and the inner block projects nothing, so the two directives are one."
+    },
+    {
+      "name": "ast: the same tree written as one directive",
+      "query": "jobs first { name offset 0 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": {
+            "kind": "lit",
+            "value": 0
+          }
+        }
+      },
+      "tags": [
+        "merge",
+        "ast"
+      ]
+    },
+    {
+      "name": "ast: a projection block over a predicate lookup",
+      "query": "jobs[pay > 2] { name, pay }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "pay"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 2
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "pay",
+              "expr": {
+                "kind": "ident",
+                "name": "pay"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "merge",
+        "ast"
+      ],
+      "notes": "≡ `jobs first { name, pay where pay > 2 }`."
+    },
+    {
+      "name": "ast: an empty block over a lookup is the lookup",
+      "query": "jobs[0] { }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": null,
+          "select": [],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": {
+            "kind": "lit",
+            "value": 0
+          }
+        }
+      },
+      "tags": [
+        "merge",
+        "ast"
+      ]
+    },
+    {
+      "name": "ast: a block with its own clause stays a second directive",
+      "query": "jobs[0] { name where pay > 2 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "first",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": null,
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "frontier": null,
+              "depth": null,
+              "flatten": [],
+              "groupBy": null,
+              "having": null,
+              "values": false,
+              "limit": null,
+              "offset": {
+                "kind": "lit",
+                "value": 0
+              }
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "pay"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 2
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "merge",
+        "ast"
+      ],
+      "notes": "The outer `where` runs after the pick (the first job, kept only if it pays), so the two directives are kept."
+    },
+    {
+      "name": "ast: an alias that would shadow a name the inner where reads keeps two directives",
+      "query": "jobs[pay > 2] { pay: employer }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "first",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": ">",
+                  "left": {
+                    "kind": "ident",
+                    "name": "pay"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 2
+                  }
+                }
+              },
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "frontier": null,
+              "depth": null,
+              "flatten": [],
+              "groupBy": null,
+              "having": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "pay",
+              "expr": {
+                "kind": "ident",
+                "name": "employer"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "merge",
+        "ast",
+        "alias"
+      ],
+      "notes": "Merged, `where pay > 2` would read the alias `pay` (the employer) instead of the field; so the merge is refused."
+    },
+    {
+      "name": "ast: a distinct projection block over a filtering block merges",
+      "query": "r { x: jobs { where pay > 1 } distinct { employer } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "x",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "countCmp": null,
+                "distinct": true,
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": ">",
+                      "left": {
+                        "kind": "ident",
+                        "name": "pay"
+                      },
+                      "right": {
+                        "kind": "lit",
+                        "value": 1
+                      }
+                    }
+                  },
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                }
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "merge",
+        "ast",
+        "distinct"
+      ],
+      "notes": "≡ `jobs distinct { employer where pay > 1 }`: the inner block did not dedup, so dedup by the projection is the same either way."
+    },
+    {
+      "name": "ast: a block over a distinct directive stays",
+      "query": "r { x: jobs distinct { where pay > 1 } { employer } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "r"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "x",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "collect",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "binary",
+                        "op": ">",
+                        "left": {
+                          "kind": "ident",
+                          "name": "pay"
+                        },
+                        "right": {
+                          "kind": "lit",
+                          "value": 1
+                        }
+                      }
+                    },
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "frontier": null,
+                    "depth": null,
+                    "flatten": [],
+                    "groupBy": null,
+                    "having": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": null
+                  },
+                  "countCmp": null,
+                  "distinct": true
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "frontier": null,
+                  "depth": null,
+                  "flatten": [],
+                  "groupBy": null,
+                  "having": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      },
+      "tags": [
+        "merge",
+        "ast",
+        "distinct"
+      ],
+      "notes": "The inner `distinct` compares whole rows; merged it would compare employers."
+    },
+    {
+      "name": "a projection block over a lookup yields the projected row",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, first: jobs[0] { employer, pay } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "first": {
+              "employer": "Initech",
+              "pay": 5
+            }
+          },
+          {
+            "name": "Bob",
+            "first": {
+              "employer": "Globocorp",
+              "pay": 3
+            }
+          },
+          {
+            "name": "Carol",
+            "first": null
+          }
+        ]
+      },
+      "tags": [
+        "merge"
+      ],
+      "notes": "The merged `first` yields the record or `null`: Carol has no jobs. (Through 0.25 the two-directive tree yielded `[]` there — a `collect` over an absent receiver; the 0.26 merge makes the sugar mean what `jobs first { employer, pay }` means.)"
+    },
+    {
+      "name": "a projection block over a predicate lookup",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, cheap: jobs[pay < 2] { employer } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "cheap": null
+          },
+          {
+            "name": "Bob",
+            "cheap": {
+              "employer": "Initech"
+            }
+          },
+          {
+            "name": "Carol",
+            "cheap": null
+          }
+        ]
+      },
+      "tags": [
+        "merge"
+      ]
+    },
+    {
+      "name": "a post-pick filter is not merged and filters after the pick",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, big: jobs[0] { employer where pay > 2 } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "big": {
+              "employer": "Initech"
+            }
+          },
+          {
+            "name": "Bob",
+            "big": {
+              "employer": "Globocorp"
+            }
+          },
+          {
+            "name": "Carol",
+            "big": []
+          }
+        ]
+      },
+      "tags": [
+        "merge",
+        "where"
+      ],
+      "notes": "Bob's first job pays 3 (kept); Alice's pays 5 (kept); Carol has none — and the unmerged `collect` over an absent lookup is `[]` (SEMANTICS §3), where the merged `first` of the cases above is `null`. Compare `jobs[pay > 2] { employer }`, which would pick the first job that pays."
+    },
+    {
+      "name": "the alias guard keeps the inner where reading the field",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "pay": 3,
+                "end": true
+              },
+              {
+                "employer": "Initech",
+                "pay": 1
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Alice",
+            "jobs": [
+              {
+                "employer": "Initech",
+                "pay": 5
+              }
+            ]
+          },
+          {
+            "id": 3,
+            "name": "Carol",
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, p: jobs[pay > 2] { pay: employer } order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "p": {
+              "pay": "Initech"
+            }
+          },
+          {
+            "name": "Bob",
+            "p": {
+              "pay": "Globocorp"
+            }
+          },
+          {
+            "name": "Carol",
+            "p": []
+          }
+        ]
+      },
+      "tags": [
+        "merge",
+        "alias"
+      ]
+    }
+  ]
+}

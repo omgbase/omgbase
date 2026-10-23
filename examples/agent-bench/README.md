@@ -393,7 +393,7 @@ tasks of the second, and the three **semantic-only** tasks of the third:
 | `contradiction` | edit | alchemy | two incompatible values for one field — report, do not force |
 | `range-era` | retrieval | alchemy | **range inclusion, numeric**: which practitioners worked between 700 and 1600 CE (`era in 700..1600`) — Jabir (800), Paracelsus (1530); decoys Maria (250), Newton (1680), the Emerald Tablet (a text with `era: 800`) |
 | `range-window-includes` | retrieval | timeline | **range inclusion, dates**: which milestones were in flight on 2027-03-15 (`"2027-03-15" in range(window)`, inclusive ends) — six, two of them ending and one starting on that very day; decoys end the day before / start the day after, a journal and the project indexes carry containing windows but are not milestones |
-| `timeline-follow` | retrieval | timeline | **graph traversal**: Aurora's eleven milestones in sequence order from the kickoff, walking the `after:` chain forward (`follow ^docs collect { where after == ^_path }`, two walks — the depth cap is 8); date order is wrong (one milestone slipped) and a sibling project's milestone names Aurora without being in the chain |
+| `timeline-follow` | retrieval | timeline | **graph traversal**: Aurora's eleven milestones in sequence order from the kickoff, walking the `after:` chain forward (`follow ^docs { after == ^_path }`, two walks — the depth cap is 8); date order is wrong (one milestone slipped) and a sibling project's milestone names Aurora without being in the chain |
 | `timeline-between` | retrieval | timeline | **bounded traversal**: what happened between two named Delta milestones — the three notes strictly between, in order (`frontier` at the far end); decoys are the neighbours just outside |
 | `backlinks-with-context` | retrieval | alchemy | **backlinks + section**: which documents link to `/processes/calcination.md` from their body, and under which heading (`links` rows joined to `_block._section`) — five; decoys mention calcination in prose or in a `see_also` frontmatter list |
 | `aggregate-by-key` | retrieval | timeline | **aggregation**: open milestones per project (`group by project`, `count()`), including the zero (ember), and which has the most (delta, 5); `blocked`/`dropped` are not `open`; the one retrieval task judged by `must_mention` alone (six counts, no `answer` block) |
@@ -636,7 +636,7 @@ both corpora.
 
 A note on `after:`. Following Brendan's field definition (`after` names the
 documents that come *before* this one in a sequence; each document carries one
-side and the other is derived — `^docs collect { where ^_path in list(after)
+side and the other is derived — `^docs { ^_path in list(after)
 }`), the forward walk is the inverse relation. The alchemy fixture's
 `timeline/kickoff.md` uses the word in the opposite sense (`after:
 /timeline/review.md`, a later note), which is why the retrieval prompts spell

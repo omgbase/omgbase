@@ -9,8 +9,9 @@ cues:
   - id: when-the-opus-is-focused
     on: focus
     query: |
-      from docs
-      where project == "/projects/magnum-opus.md" and status == "active"
+      docs {
+        where project == "/projects/magnum-opus.md" and status == "active"
+      }
 ---
 
 # Distil the May dew

@@ -4,7 +4,7 @@
   "checks": [
     {
       "kind": "query",
-      "query": "select checked from nodes where _kind == \"md:task\" and _path == \"/texts/mutus-liber.md\"",
+      "query": "nodes { select checked where _kind == \"md:task\" and _path == \"/texts/mutus-liber.md\" }",
       "hits": [
         {
           "checked": true
@@ -33,7 +33,7 @@
       {
         "tool": "apply",
         "args": {
-          "select": "from blocks where _type == \"task\" and not checked and _path == \"/texts/mutus-liber.md\"",
+          "select": "blocks { _type == \"task\" and not checked and _path == \"/texts/mutus-liber.md\" }",
           "effects": [
             {
               "op": "set",

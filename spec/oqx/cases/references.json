@@ -840,7 +840,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "expr": "follow out_links { from dst where layer == \"canon\" }",
                   "depth": 1
                 }
               ]
@@ -857,7 +857,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "expr": "follow out_links { from dst where layer == \"canon\" }",
                   "depth": 1
                 },
                 {
@@ -878,7 +878,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst where layer == \"canon\" }",
+                  "expr": "follow out_links { from dst where layer == \"canon\" }",
                   "depth": 1
                 },
                 {
@@ -924,7 +924,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "expr": "follow out_links { from dst frontier layer == \"canon\" }",
                   "depth": 1
                 }
               ]
@@ -941,7 +941,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "expr": "follow out_links { from dst frontier layer == \"canon\" }",
                   "depth": 1
                 },
                 {
@@ -962,7 +962,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst frontier layer == \"canon\" }",
+                  "expr": "follow out_links { from dst frontier layer == \"canon\" }",
                   "depth": 1
                 },
                 {
@@ -1033,7 +1033,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst }",
+                  "expr": "follow out_links { from dst }",
                   "depth": 1
                 }
               ]
@@ -1050,7 +1050,7 @@
                   "depth": 1
                 },
                 {
-                  "expr": "follow out_links collect { from dst }",
+                  "expr": "follow out_links { from dst }",
                   "depth": 1
                 },
                 {

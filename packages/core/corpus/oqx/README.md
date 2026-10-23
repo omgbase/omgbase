@@ -53,8 +53,8 @@ every page that ever raised a question.
 The one exception is `substances/salt.md`, which carries a short **supply** list
 ("buy more salt of tartar") — and every item is checked. That makes it the
 deliberate **discriminator**: it is the only substance page with task nodes, and
-it has no *open* ones, so `_nodes exists { where _kind == "md:task" }` and
-`_nodes exists { where _kind == "md:task" and not checked }` return provably
+it has no *open* ones, so `_nodes exists { _kind == "md:task" }` and
+`_nodes exists { _kind == "md:task" and not checked }` return provably
 different sets. Several tests depend on this; keep it fully checked.
 
 ### Structure the corpus exercises
@@ -86,15 +86,15 @@ different sets. Several tests depend on this; keep it fully checked.
   same content as `under_heading`).
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
-  `select _path, open from docs where _nodes collect { ^open: _value where _kind ==
-  "md:task" and not checked }` both filter to those docs and capture each
+  `docs { select _path, open where _nodes { ^open: _value where _kind ==
+  "md:task" and not checked } }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
 - **Correlation & joins (`^name` outer references + the root row's `^docs`/`^nodes` scans)** — the
   wikilink graph is the join fixture. `slug` on every substance/process is the
   key a `[[wikilink]]` value matches, so:
   - a *dependent join* resolves each document's outgoing wikilinks to the
-    documents they name (`^docs collect { where slug in ^refs }`), with
+    documents they name (`^docs { slug in ^refs }`), with
     `prima-materia.md`'s lone `[[nigredo]]` (no target document) as the dangling
     reference that resolves to `[]`;
   - a *semi-join* finds the substances any wikilink actually points to —
@@ -117,13 +117,13 @@ different sets. Several tests depend on this; keep it fully checked.
   `docs exists` to a boolean, `docs first` to the first document in path
   order (`index.md`, which sorts before every subdirectory), and `docs single`
   to the sole `draft` document (`texts/mutus-liber.md`) — while
-  `docs single { where layer == "canon" }` fails loudly because 13 documents
+  `docs single { layer == "canon" }` fails loudly because 13 documents
   match.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
   doc→doc `references` edges (89 open edges — wikilinks resolve by path, so every `[[slug]]` is a `phantom:` stub), which the **citation-graph** demos
-  walk: `follow _out_links collect { from _dst }` (outgoing), `follow _in_links
-  collect { from _doc }` (backlinks — the link rows walked to the documents at
+  walk: `follow _out_links { from _dst }` (outgoing), `follow _in_links {
+  from _doc }` (backlinks — the link rows walked to the documents at
   their other end; there is no `out`/`in` relation since the 3.0 follow-up). It exercises
   every follow feature — `distinct` (philosophers-stone's 10-document transitive
   citation closure) vs default per-path occurrences (56), a post-walk `$depth`
@@ -132,13 +132,13 @@ different sets. Several tests depend on this; keep it fully checked.
   `frontier type == "practitioner"` (biographies as the edge of the walk),
   `$key: type` (re-keying identity — oqx 0.20 — so the walk stops when a
   document *type* repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a
-  **correlated destination-block `where`** (`follow _out_links collect { from _dst
+  **correlated destination-block `where`** (`follow _out_links { from _dst
   where type == ^type }`, `^` being the frontier row), a **destination list**
-  (`follow _out_links collect { from _dst depth 2 }, _in_links collect { from _doc
+  (`follow _out_links { from _dst depth 2 }, _in_links { from _doc
   depth 2 }`, unioned by identity within a step, each block with its own
   `depth`) and a **destination block over the root's documents**
-  (`follow ^docs collect { where _out_links exists { where _dst_path == ^^_path }
-  }`, backlinks computed per frontier row, equal to `_in_links collect { from
+  (`follow ^docs { _out_links exists { _dst_path == ^^_path }
+  }`, backlinks computed per frontier row, equal to `_in_links { from
   _doc }`). The **structural** relations ride the heading
   outline (a section node's `_children` — magnum-opus's `#` over four `##`, with `$leaf`)
   and the block tree (a block's `_children` — a bullet list down to its items),
@@ -154,10 +154,10 @@ different sets. Several tests depend on this; keep it fully checked.
 - **`$it` / `values`** (oqx ≥ 0.8) — `select era values order by era` yields
   the bare `[250, 800, 1530, 1680]`; `select distinct type values` the six type
   strings; `values` pages like hits (5 + 13 = 18 paths). Inside a block,
-  `tags collect { $it values where $it != "substance" }` names each tag
+  `tags { $it values where $it != "substance" }` names each tag
   element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
   the list-authored substances keep their extras — and
-  `tags exists { where $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
+  `tags exists { $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
 - **The root row (`^docs`, `^_id`, `0^docs`; surface 2.0)** — the repository is
   the root scope's row: from a top-level row `^docs` is the documents scan
   (`size(^docs)` is 20), `^_id` the repository id, `entries(^$it)` names the
@@ -175,13 +175,13 @@ different sets. Several tests depend on this; keep it fully checked.
   hub_path: hub._path` reuses a select alias to its left.
 - **`refs(x)` (surface 1.5)** — the milestones' `before`/`after`/`see_also`
   resolve to live document rows in either path form or by id, dangling
-  references dropped: `refs(before) collect { _path, when }` on `review` yields
+  references dropped: `refs(before) { _path, when }` on `review` yields
   kickoff and dissolution (not `lost-notes`); `follow refs(before), refs(after)`
   from `review` walks review → {dissolution, kickoff} → review (a cycle, admitted
   once); the reverse join is `^docs { ^_path in list(before) }` — live because
   `_path` is the `/`-rooted reference form; `follow before` (the strings) is the
   "a hit must be a document, block, node or link row" error.
-- **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `_nodes none { where _kind ==
+- **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `_nodes none { _kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");
   `docs none { … }` is the scalar form. `order by era desc limit 2` /
@@ -191,7 +191,7 @@ different sets. Several tests depend on this; keep it fully checked.
   `count { … } >= 4`; a non-literal bound is `filter_invalid`.
 - **`entries()` / `$key`** (oqx ≥ 0.10) — salt's frontmatter comes back as seven
   `{k, v}` entries in key order, valued exactly like the bare reads (`tags` →
-  the array); `entries(_frontmatter) exists { where $key == "era" and $it >
+  the array); `entries(_frontmatter) exists { $key == "era" and $it >
   1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(_inline)` is
   non-empty for exactly the docs with `md:inline_field` nodes (Jabir's keys:
   `century`, `known_for`); `entries(_attrs)` on task nodes inspects the attrs

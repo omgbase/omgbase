@@ -136,37 +136,37 @@ describe("the timeline corpus through a workspace", () => {
 
   it("ingests all 361 documents, and the tasks' oracle queries answer exactly what the task files expect", async () => {
     const server = await timeline();
-    expect((await server.call("query", { query: "docs count { }" })).result).toMatchObject({ count: 361 });
+    expect((await server.call("query", { query: "docs count" })).result).toMatchObject({ count: 361 });
     expect(fixtureBytes("/index.md", "timeline")).toMatch(/^---\ntype: hub\n/);
 
     // range-window-includes: six in flight on 2027-03-15, the boundary ones included
-    const inFlight = await hits(server, 'select title from docs where type == "milestone" and "2027-03-15" in range(window) order by _path');
+    const inFlight = await hits(server, 'docs { select title where type == "milestone" and "2027-03-15" in range(window) order by _path }');
     expect(inFlight.map((h) => h.title)).toEqual(["Bench alignment", "Drainage works", "Shutter fabrication", "Pipeline v1", "Chiller commissioning", "Visitor centre brief"]);
 
     // aggregate-by-key: the counts, delta on top, ember absent (zero)
-    const open = await hits(server, 'select project, n: count() from docs where type == "milestone" and status == "open" group by project order by count() desc');
+    const open = await hits(server, 'docs { select project, n: count() where type == "milestone" and status == "open" group by project order by count() desc }');
     expect(open.map((h) => [h.project, h.n])).toEqual([["delta", 5], ["fjord", 4], ["cirrus", 3], ["aurora", 2], ["basalt", 1]]);
 
     // timeline-follow: the forward walk over the inverse `after:` relation, capped at depth 8, re-seeded from the frontier
-    const first = await hits(server, 'select title, $frontier from docs where _path == "/projects/aurora/kickoff.md" follow ^docs collect { where after == ^_path depth 8 } order by $ordinal');
+    const first = await hits(server, 'docs { select title, $frontier where _path == "/projects/aurora/kickoff.md" follow ^docs { after == ^_path depth 8 } order by $ordinal }');
     expect(first.map((h) => h.title)).toEqual(chainOf("aurora").slice(0, 8).map((m) => m.title));
     expect(first[7]).toMatchObject({ title: "Integration with the dome", $frontier: true });
-    const rest = await hits(server, 'select title from docs where _path == "/projects/aurora/integration-with-dome.md" follow ^docs collect { where after == ^_path } order by $ordinal');
+    const rest = await hits(server, 'docs { select title where _path == "/projects/aurora/integration-with-dome.md" follow ^docs { after == ^_path } order by $ordinal }');
     expect(rest.map((h) => h.title)).toEqual(chainOf("aurora").slice(7).map((m) => m.title));
 
     // timeline-between: the walk bounded by a frontier
-    const between = await hits(server, 'select title from docs where _path == "/projects/delta/archive-schema-freeze.md" follow ^docs collect { where after == ^_path frontier _path == "/projects/delta/quicklook-viewer.md" } order by $ordinal');
+    const between = await hits(server, 'docs { select title where _path == "/projects/delta/archive-schema-freeze.md" follow ^docs { after == ^_path frontier _path == "/projects/delta/quicklook-viewer.md" } order by $ordinal }');
     expect(between.map((h) => h.title)).toEqual(["Archive schema freeze", "Storage procurement", "Pipeline v1", "Calibration database", "Quick-look viewer"]);
 
     // open-tasks-across-corpus: fourteen md:task nodes unchecked — the fenced example is not one
-    const tasks = await hits(server, 'select _path, _value from nodes where _kind == "md:task" and not checked order by _path');
+    const tasks = await hits(server, 'nodes { select _path, _value where _kind == "md:task" and not checked order by _path }');
     expect(tasks.map((h) => [h._path, h._value])).toEqual([...OPEN_TASKS].sort((a, b) => (a.path < b.path ? -1 : 1)).map((t) => [t.path, t.text]));
 
     // rollup-filtered: Mara Lindqvist's done-in-2027 milestones, by closing date; Mara Lind's Open day is not hers
-    const mara = await hits(server, 'select _path, project from docs where type == "milestone" and status == "done" and owner == "/people/mara-lindqvist.md" and closed in "2027-01-01".."2027-12-31" order by closed');
+    const mara = await hits(server, 'docs { select _path, project where type == "milestone" and status == "done" and owner == "/people/mara-lindqvist.md" and closed in "2027-01-01".."2027-12-31" order by closed }');
     expect(mara.map((h) => `${h._path}: ${h.project}`)).toEqual(["/projects/cirrus/dome-slit-alignment.md: cirrus", "/projects/aurora/bench-alignment.md: aurora", "/projects/aurora/integration-with-dome.md: aurora"]);
     // `owner` is a frontmatter link too (spec/graph §3), so the person has in-links
-    const owner = await hits(server, 'select n: _in_links count { where _field == "owner" } from docs where _path == "/people/mara-lind.md"');
+    const owner = await hits(server, 'docs { select n: _in_links count { _field == "owner" } where _path == "/people/mara-lind.md" }');
     expect(owner[0]).toMatchObject({ n: 1 });
   }, 120_000);
 });

@@ -11,7 +11,7 @@
     },
     {
       "kind": "query",
-      "query": "blocks count { where _path == \"/texts/emerald-tablet.md\" and _type == \"paragraph\" }",
+      "query": "blocks count { _path == \"/texts/emerald-tablet.md\" and _type == \"paragraph\" }",
       "count": 8
     }
   ],

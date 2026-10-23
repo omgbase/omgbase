@@ -127,7 +127,7 @@ Format is auto-detected from file extension. Each format adapter declares progre
 | **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | yes | full structure |
 | **JSON** | `.json` | yes | yes | `$ref` `$schema` path values | `json:ref` `json:schema` | yes | full object |
 
-Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that one OQX `follow out_links collect { from dst }` query (or the `graph` MCP tool, which compiles to it) walks in one call.
+Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that one OQX `follow out_links { from dst }` query (or the `graph` MCP tool, which compiles to it) walks in one call.
 
 Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc.
 
@@ -139,7 +139,7 @@ Document-level properties live in one indexed `properties` table (design in `doc
 - **inline** — dataview-style `key:: value` fields in body text, accumulating across occurrences;
 - **computed** — engine-derived values stored under `$title` (the first H1) and `$tags` (body `#hashtags`); the surface reads them as the `title` / `tags` attributes.
 
-An OQX bare key (`from docs where layer == "canon"`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source and `data.<k>` is the union by name; the engine attributes `title` (the computed title) and `tags` (authored ∪ hashtags) win over an authored key of the same name, which is then `data.title` / `data.tags`. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — the `@omgbase/oqx` scalar semantics hold across the row-backed store (see `docs/query-language.md`).
+An OQX bare key (`docs { layer == "canon" }`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source and `data.<k>` is the union by name; the engine attributes `title` (the computed title) and `tags` (authored ∪ hashtags) win over an authored key of the same name, which is then `data.title` / `data.tags`. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — the `@omgbase/oqx` scalar semantics hold across the row-backed store (see `docs/query-language.md`).
 
 ### Structural query functions
 
@@ -190,8 +190,8 @@ Reads are **current by default**: before each command a freshness sweep re-inges
 ```bash
 omg outline notes/hub.md                       # compact orientation outline (stable wire format)
 omg cat notes/hub.md                            # exact file bytes, reconstructed from the DB
-omg query 'from docs where layer == "canon"'    # query documents by frontmatter
-omg q 'from nodes where kind == "md:task" && !attrs.checked' --ids | omg cat -   # pipe ids as fuel
+omg query 'docs { layer == "canon" }'           # query documents by frontmatter
+omg q 'nodes { kind == "md:task" && !attrs.checked }' --ids | omg cat -   # pipe ids as fuel
 omg find "stable identity rationale" -1         # top hybrid-search hit's id alone
 omg log --since 24h                             # one commit digest per line
 ```
@@ -201,7 +201,7 @@ omg log --since 24h                             # one commit digest per line
 Every mutation renders by splice, writes the file atomically, and records a revision; conflicts are typed and carry current truth.
 
 ```bash
-omg q 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' --ids | omg done -
+omg q 'blocks { type == "task" && !attrs.checked && under_heading("Launch") }' --ids | omg done -
 echo '# New idea' | omg new notes/idea.md -     # create a document from bytes on stdin (or: -f file.md)
 omg edit b_k7z2p9q                              # $EDITOR round-trip on one block, CAS-pinned
 omg retarget old.md new.md                      # rewrite links; plan by default, --apply to commit
@@ -264,14 +264,14 @@ Because the engine's database already holds a **byte-exact** representation of e
 `omg shell` opens a persistent in-process session: one workspace/store stays open, so the per-command startup cost is paid once. Beyond speed it adds **ephemeral typed session bindings** over results — a command's structured result (the same object `--json` emits) is captured *before* rendering and becomes addressable with `@`. Filtering, traversal, and projection stay in OQX; the shell just stores and dereferences.
 
 ```
-omg> query 'from docs where layer == "canon"'
+omg> query 'docs { layer == "canon" }'
 d_a83f  projects/foo.md
 d_194c  projects/bar.md
   2 rows — address with @1..@2
 omg> show @1                       # @N = row N of the last displayed collection (1-based)
-omg> let canon = query 'from docs where layer == "canon"'   # let binds a snapshot, not a live query
+omg> let canon = query 'docs { layer == "canon" }'   # let binds a snapshot, not a live query
 omg> show @canon[1]                # @name[i] / @name.field — shallow addressing only
-omg> query 'from nodes where kind == "md:task" && !attrs.checked'
+omg> query 'nodes { kind == "md:task" && !attrs.checked }'
 omg> done @1                       # references substitute into any command's args
 ```
 
@@ -319,13 +319,13 @@ const { repoId } = ingestDirectory(store, "my-vault", "/path/to/vault");
 
 // OQX is the one query + traversal language (see docs/query-language.md).
 // Blocks under a heading:
-const tasks = oqxRun(store, repoId, 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")', { limit: 50 });
+const tasks = oqxRun(store, repoId, 'blocks { type == "task" && !attrs.checked && under_heading("Launch") }', { limit: 50 });
 
 // Across formats — YAML configs referencing a specific host:
-const configs = oqxRun(store, repoId, 'from docs where format == "yaml" && database.host == "localhost"');
+const configs = oqxRun(store, repoId, 'docs { format == "yaml" && database.host == "localhost" }');
 
 // Nodes — unchecked tasks across all markdown files:
-const openTasks = oqxRun(store, repoId, 'from nodes where kind == "md:task" && attrs.checked == false');
+const openTasks = oqxRun(store, repoId, 'nodes { kind == "md:task" && attrs.checked == false }');
 console.log(tasks.hits, configs.hits, openTasks.hits);
 
 // Compact orientation outline of one document.
@@ -427,7 +427,7 @@ Semantic ranking needs an embedding provider, opt-in. `embedding.provider` names
 omg config set embedding.provider omgbase-embedder --repo ""   # a command (stdio), workspace-wide …
 omg config set embedding.provider https://embed.internal/embed --repo ""   # … or an http endpoint
 omg embed drain                         # embed the corpus (prints an egress note for remote providers)
-omg q 'from blocks order by semantic("crash safety and durability") desc' -n 5   # semantic top-5: a score function becomes a ranking
+omg q 'blocks { order by semantic("crash safety and durability") desc }' -n 5   # semantic top-5: a score function becomes a ranking
 omg find "how are ids kept stable" -n 5 # hybrid FTS ⊕ vector (RRF) by default when a provider is set
 ```
 

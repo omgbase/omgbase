@@ -148,7 +148,7 @@ export class IntentFeed extends LitElement {
       ${this.newOn === "time"
         ? html`<div class="row"><input class="wide mono" placeholder="ISO time, e.g. 2026-10-15T09:00:00Z" .value=${this.newAt} @input=${(e: Event) => { this.newAt = (e.target as HTMLInputElement).value; }}></div>
           <div class="help">fires when the client clock passes it (checked on open and every 30 s)</div>`
-        : html`<div class="row"><textarea class="mono" rows="3" placeholder=${this.newOn === "focus" ? 'from docs\nwhere project == "/projects/magnum-opus.md"' : 'from docs\nwhere type == "/terms/types/intent.md" and status == "active"'} .value=${this.newQuery} @input=${(e: Event) => { this.newQuery = (e.target as HTMLTextAreaElement).value; }}></textarea></div>
+        : html`<div class="row"><textarea class="mono" rows="3" placeholder=${this.newOn === "focus" ? 'docs {\n  where project == "/projects/magnum-opus.md"\n}' : 'docs {\n  where type == "/terms/types/intent.md" and status == "active"\n}'} .value=${this.newQuery} @input=${(e: Event) => { this.newQuery = (e.target as HTMLTextAreaElement).value; }}></textarea></div>
           <div class="help">${this.newOn === "focus" ? "a whole OQX query over docs; the cue matches when the newly focused intent is among its hits" : "run after each changes_since poll; ids entering / leaving the result fire the cue (the checkpoint lives in this browser)"}</div>`}
       <div class="row">
         <button type="button" class="primary" ?disabled=${this.busy} @click=${() => this.planCue(intent)}>preview (plan)</button>

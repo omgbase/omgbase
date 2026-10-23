@@ -159,7 +159,7 @@ or `id:` key of your own is the bare `title` / `id`, and the engine's are
 list plus any `#hashtags` in the body:
 
 ```console
-$ omg query 'select _title, title, tags from docs where _path == "/substances/sulphur.md"'
+$ omg query 'docs { select _title, title, tags where _path == "/substances/sulphur.md" }'
 _id        _path                   _title   title  tags
 d_s67d0jy  /substances/sulphur.md  Sulphur         ["substance","tria-prima"]
 ```

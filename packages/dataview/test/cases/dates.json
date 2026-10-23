@@ -2,7 +2,7 @@
   {
     "name": "named-date-points",
     "dql": "TABLE date(today), date(now), date(yesterday), date(tomorrow), date(sow), date(eow), date(som), date(eom), date(soy), date(eoy) FROM \"a\"",
-    "oqx": "select _path, c0: date(\"today\"), c1: date(\"now\"), c2: date(\"yesterday\"), c3: date(\"tomorrow\"), c4: date(\"sow\"), c5: date(\"eow\"), c6: date(\"som\"), c7: date(\"eom\"), c8: date(\"soy\"), c9: date(\"eoy\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"today\"), c1: date(\"now\"), c2: date(\"yesterday\"), c3: date(\"tomorrow\"), c4: date(\"sow\"), c5: date(\"eow\"), c6: date(\"som\"), c7: date(\"eom\"), c8: date(\"soy\"), c9: date(\"eoy\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -60,7 +60,7 @@
   {
     "name": "iso-date-literals",
     "dql": "TABLE date(2026-10-15), date(2026-10), date(2026), date(2026-10-15T09:30), date(2026-10-15T09:30:00Z) FROM \"a\"",
-    "oqx": "select _path, c0: date(\"2026-10-15\"), c1: date(\"2026-10\"), c2: date(\"2026\"), c3: date(\"2026-10-15T09:30\"), c4: date(\"2026-10-15T09:30:00Z\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"2026-10-15\"), c1: date(\"2026-10\"), c2: date(\"2026\"), c3: date(\"2026-10-15T09:30\"), c4: date(\"2026-10-15T09:30:00Z\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -98,7 +98,7 @@
   {
     "name": "quoted-date-canonicalizes",
     "dql": "TABLE date(\"Today\"), date(\"2026-10-15\") FROM \"a\"",
-    "oqx": "select _path, c0: date(\"today\"), c1: date(\"2026-10-15\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"today\"), c1: date(\"2026-10-15\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -124,7 +124,7 @@
   {
     "name": "date-of-a-field-stays-a-call",
     "dql": "TABLE date(due), date(file.mtime) FROM \"a\"",
-    "oqx": "select _path, c0: date(due), c1: date(_updated_at) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(due), c1: date(_updated_at) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -161,7 +161,7 @@
   {
     "name": "duration-literals",
     "dql": "TABLE dur(1 hour 30 minutes), dur(1h30m), dur(2 weeks, 3 days), dur(PT1H30M), dur(3 days) FROM \"a\"",
-    "oqx": "select _path, c0: dur(\"1 hour 30 minutes\"), c1: dur(\"1h30m\"), c2: dur(\"2 weeks, 3 days\"), c3: dur(\"PT1H30M\"), c4: dur(\"3 days\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: dur(\"1 hour 30 minutes\"), c1: dur(\"1h30m\"), c2: dur(\"2 weeks, 3 days\"), c3: dur(\"PT1H30M\"), c4: dur(\"3 days\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -199,7 +199,7 @@
   {
     "name": "dur-of-a-field-stays-a-call",
     "dql": "TABLE dur(day), dur(elapsed) FROM \"a\"",
-    "oqx": "select _path, c0: dur(day), c1: dur(elapsed) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: dur(day), c1: dur(elapsed) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -225,7 +225,7 @@
   {
     "name": "date-plus-duration",
     "dql": "TABLE date(today) + dur(1 day), dur(1 day) + date(today), due + dur(1 week) FROM \"a\"",
-    "oqx": "select _path, c0: date(\"today\").plus(\"1 day\"), c1: date(\"today\").plus(\"1 day\"), c2: due.plus(\"1 week\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"today\").plus(\"1 day\"), c1: date(\"today\").plus(\"1 day\"), c2: due.plus(\"1 week\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -257,7 +257,7 @@
   {
     "name": "date-minus-duration",
     "dql": "TABLE date(today) - dur(7 days), file.mtime - dur(1 hour) FROM \"a\"",
-    "oqx": "select _path, c0: date(\"today\").minus(\"7 days\"), c1: _updated_at.minus(\"1 hour\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"today\").minus(\"7 days\"), c1: _updated_at.minus(\"1 hour\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -283,7 +283,7 @@
   {
     "name": "date-minus-date-is-until",
     "dql": "TABLE date(today) - file.mtime, due - date(today), date(today) - due FROM \"a\"",
-    "oqx": "select _path, c0: _updated_at.until(date(\"today\")), c1: date(\"today\").until(date(due)), c2: date(due).until(date(\"today\")) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: _updated_at.until(date(\"today\")), c1: date(\"today\").until(date(due)), c2: date(due).until(date(\"today\")) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -315,7 +315,7 @@
   {
     "name": "duration-arithmetic-stays-numeric",
     "dql": "TABLE dur(2 hours) + dur(30 minutes), dur(1 day) * 2, dur(1 week) - dur(1 day) FROM \"a\"",
-    "oqx": "select _path, c0: dur(\"2 hours\") + dur(\"30 minutes\"), c1: dur(\"1 day\") * 2, c2: dur(\"1 week\") - dur(\"1 day\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: dur(\"2 hours\") + dur(\"30 minutes\"), c1: dur(\"1 day\") * 2, c2: dur(\"1 week\") - dur(\"1 day\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -345,7 +345,7 @@
   {
     "name": "date-compared-with-a-field-wraps-the-field",
     "dql": "LIST WHERE due < date(today) & date(today) <= deadline & file.mtime >= date(2026-01-01)",
-    "oqx": "select _path from docs where date(due) < date(\"today\") and date(\"today\") <= date(deadline) and _updated_at >= date(\"2026-01-01\")",
+    "oqx": "docs { select _path where date(due) < date(\"today\") and date(\"today\") <= date(deadline) and _updated_at >= date(\"2026-01-01\") }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -362,7 +362,7 @@
   {
     "name": "date-members",
     "dql": "TABLE file.mtime.year, file.mtime.month, file.mtime.day, file.mtime.weekday, file.mtime.hour, file.mtime.minute, file.mtime.second, date(due).date FROM \"a\"",
-    "oqx": "select _path, c0: _updated_at.year(), c1: _updated_at.month(), c2: _updated_at.day(), c3: _updated_at.weekday(), c4: _updated_at.hour(), c5: _updated_at.minute(), c6: _updated_at.second(), c7: date(due).date() from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: _updated_at.year(), c1: _updated_at.month(), c2: _updated_at.day(), c3: _updated_at.weekday(), c4: _updated_at.hour(), c5: _updated_at.minute(), c6: _updated_at.second(), c7: date(due).date() where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -434,7 +434,7 @@
   {
     "name": "dateformat-and-striptime",
     "dql": "TABLE dateformat(file.mtime, \"yyyy-MM-dd\"), dateformat(due, \"MMMM\"), striptime(file.mtime), striptime(due) FROM \"a\"",
-    "oqx": "select _path, c0: _updated_at.format(\"yyyy-MM-dd\"), c1: date(due).format(\"MMMM\"), c2: _updated_at.date(), c3: date(due).date() from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: _updated_at.format(\"yyyy-MM-dd\"), c1: date(due).format(\"MMMM\"), c2: _updated_at.date(), c3: date(due).date() where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -513,7 +513,7 @@
         "dates": false
       }
     },
-    "oqx": "select _path from docs where due < \"2026-01-01\"",
+    "oqx": "docs { select _path where due < \"2026-01-01\" }",
     "render": {
       "type": "list",
       "withoutId": false,
@@ -530,7 +530,7 @@
   {
     "name": "duration-literal-shift-is-the-calendar-string",
     "dql": "TABLE date(2026-01-31) + dur(1 month), file.mtime - dur(1 year), due + dur(elapsed) FROM \"a\"",
-    "oqx": "select _path, c0: date(\"2026-01-31\").plus(\"1 month\"), c1: _updated_at.minus(\"1 year\"), c2: due.plus(dur(elapsed)) from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: date(\"2026-01-31\").plus(\"1 month\"), c1: _updated_at.minus(\"1 year\"), c2: due.plus(dur(elapsed)) where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -562,7 +562,7 @@
   {
     "name": "dateformat-luxon-tokens-warn",
     "dql": "TABLE dateformat(file.mtime, \"EEEE, MMMM d\") FROM \"a\"",
-    "oqx": "select _path, c0: _updated_at.format(\"EEEE, MMMM d\") from docs where _path.startsWith(\"/a/\") or _path == \"/a.md\"",
+    "oqx": "docs { select _path, c0: _updated_at.format(\"EEEE, MMMM d\") where _path.startsWith(\"/a/\") or _path == \"/a.md\" }",
     "render": {
       "type": "table",
       "withoutId": false,
@@ -586,7 +586,7 @@
   {
     "name": "updated-today-idiom",
     "dql": "LIST WHERE striptime(file.mtime) = date(today)",
-    "oqx": "select _path from docs where _updated_at.date() == date(\"today\")",
+    "oqx": "docs { select _path where _updated_at.date() == date(\"today\") }",
     "render": {
       "type": "list",
       "withoutId": false,

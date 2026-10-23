@@ -247,7 +247,7 @@ a bare name is the user's and an underscore-prefixed name the engine's) —
 `src_field` column, `_dst_id` for `dst_node`, `_dst_path`, `_predicate`,
 `_provenance`, `_dst_kind`, `_anchor`, `_path` for the source document's
 path — so a reader of a tool result and a reader of a query (`follow
-_out_links collect { from _dst }`) see one vocabulary; the role keys of
+_out_links { from _dst }`) see one vocabulary; the role keys of
 those results (`target`, `authored`, `reason`, `count`) stay bare. Through
 4.x the same names were rendered bare (`doc_id`, `dst_id`, `path`, …). The
 columns themselves (`spec/store`'s `edges` table, which these fixtures pin),

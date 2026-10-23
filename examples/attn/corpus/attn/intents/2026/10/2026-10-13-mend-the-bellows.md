@@ -9,8 +9,9 @@ cues:
   - id: when-the-opus-rests
     on: query-exit
     query: |
-      from docs
-      where type == "/terms/types/intent.md" and status == "active" and project == "/projects/magnum-opus.md"
+      docs {
+        where type == "/terms/types/intent.md" and status == "active" and project == "/projects/magnum-opus.md"
+      }
 ---
 
 # Mend the bellows

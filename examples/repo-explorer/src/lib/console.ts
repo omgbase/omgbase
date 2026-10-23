@@ -11,7 +11,7 @@ import { runQuery, type QueryOptions, type QueryResult } from "./query.ts";
 export const DEFAULT_LIMIT = 50;
 
 /** `_title` is the computed title (an engine attribute); `layer` and `tags` the authored keys (spec/surface §1.2, 5.0). */
-export const STARTER_QUERY = "select _title, layer, tags from docs order by _path";
+export const STARTER_QUERY = "docs { select _title, layer, tags order by _path }";
 
 /** The table's columns: `_id` and `_path` first (the envelope, spec/surface §1.4), then every other key in first-seen order. */
 export function columnsOf(hits: readonly Record<string, unknown>[]): string[] {
@@ -127,10 +127,10 @@ export async function fetchSyntax(caller: Caller): Promise<string> {
  * id needs no query (docs_read takes it); a link's source `_path`. */
 export function locatorQuery(id: string): string | null {
   switch (idKind(id)) {
-    case "block": return `select _path from blocks where _id == ${JSON.stringify(id)}`;
-    case "node": return `select _path from nodes where _id == ${JSON.stringify(id)}`;
-    case "link": return `select _path from links where _id == ${JSON.stringify(id)}`;
-    case "revision": return `select _path, _doc_id from revisions where _rev == ${JSON.stringify(id)}`;
+    case "block": return `blocks { select _path where _id == ${JSON.stringify(id)} }`;
+    case "node": return `nodes { select _path where _id == ${JSON.stringify(id)} }`;
+    case "link": return `links { select _path where _id == ${JSON.stringify(id)} }`;
+    case "revision": return `revisions { select _path, _doc_id where _rev == ${JSON.stringify(id)} }`;
     default: return null;
   }
 }

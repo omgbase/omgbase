@@ -10,9 +10,9 @@ const ROWS = [
 
 describe("the revisions queries", () => {
   it("a document's chronology by _doc_id (a move re-paths only the current revision), newest first", () => {
-    expect(revisionsQuery("d_7")).toBe('select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc_id == "d_7" order by _seq desc');
-    expect(revisionsByPathQuery("processes/calcination.md")).toBe('select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc._path == "/processes/calcination.md" order by _seq desc');
-    expect(deletedRevisionsQuery()).toBe("select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc == null order by _ts desc, _seq desc");
+    expect(revisionsQuery("d_7")).toBe('revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc_id == "d_7" order by _seq desc }');
+    expect(revisionsByPathQuery("processes/calcination.md")).toBe('revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc._path == "/processes/calcination.md" order by _seq desc }');
+    expect(deletedRevisionsQuery()).toBe("revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc == null order by _ts desc, _seq desc }");
   });
   it("reads rows as the server spells them (5.0: _rev, _seq, … off the hit)", () => {
     const rows = revisionsOf(ROWS);
@@ -48,7 +48,7 @@ describe("history over a scripted minimal server", () => {
     expect(s.names()).toEqual(["query", "query"]);
     expect(String(s.argsOf("query", 0)!.query)).not.toContain("order by");
   });
-  it("fetchDeleted lists the revisions of deleted documents (from revisions where _doc == null)", async () => {
+  it("fetchDeleted lists the revisions of deleted documents (revisions { _doc == null })", async () => {
     const s = new ScriptedCaller({ query: () => page(ROWS) });
     const groups = await fetchDeleted(s, null);
     expect(groups).toHaveLength(1);

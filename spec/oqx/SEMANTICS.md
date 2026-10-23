@@ -149,9 +149,9 @@ decides the **cardinality** of what the rows become (since 0.20):
 A `from` re-projection fans a single receiver out — `doc { from tags }` is a
 list — and so do a `follow` and a `flatten` (§25, whose own coercion softens
 the scalar rule: a scalar in `flatten` position is one row, not an error — it
-sources no rows). The two spellings of a body are one tree (AST.md
-§2), so `title from doc` is the record `doc collect { title }` is; `from $it` at
-the root is the root object as one record.
+sources no rows). The two spellings of a query are one tree (AST.md §2,
+GRAMMAR §2), so `title from doc` is the record `doc { title }` is; `$it { }` at
+the root (or `from $it`) is the root object as one record.
 
 **Host relations are statically single or plural; data decides at run time.**
 A host may say which of the objects it hands out are collections rather than
@@ -779,9 +779,14 @@ terminate. A node reached by N distinct paths yields N occurrences; `follow
 distinct` keeps the minimal `(depth, path)` occurrence per identity. Intrinsics
 belong to the occurrence's scope: inside a nested block `$depth` is the nested
 row's own `$depth` property (absent unless the host provides one, §2) and
-`^$depth` is the occurrence's. `follow` is legal at the top level and inside a
-select-position `collect`; inside a where-position directive it is an eval
-error. A walk is always plural (§3). [`follow`, `identity`, `tuples`]
+`^$depth` is the occurrence's. **`follow` is legal in every body** (since
+0.26; through 0.25 a where-position directive refused it): the top level, a
+select-position block, a destination block, a `flatten` block, and a
+where-position directive, whose block yields its walk's occurrences for the
+consumer to reduce — `children count { follow children } > 2` counts the
+descendants, `children { ^desc: id follow children }` lifts every descendant's
+id; `exists`/`none` over a walk are the seeds' existence, since the seeds are
+occurrences too. A walk is always plural (§3). [`follow`, `identity`, `tuples`]
 
 ## 21. `entries()` and `$key`
 
@@ -801,14 +806,14 @@ the property's **value** (`$it`, bare names, navigation) and `$key` is the
 property's key — the entry's **identity** (§16; since 0.20 `$key` is the
 identity on every row, so an ordinary row's `$key` is the host's or structural
 identity rather than absent). Entries flow through every place a row does:
-sources, `from` re-projections, nested receivers, `follow` seeds (which keep
+sources (the collection before a body), `from` re-projections, nested receivers, `follow` seeds (which keep
 their `$key`). As a plain value, `entries(x)` is an array of `{ key, value }`
 records. [`entries`, `identity`]
 
 ## 22. Bindings
 
-A bound value is exactly the value it was given: a collection in `from` or
-receiver position is the rows; a scalar in a predicate is compared with the §5/§6
+A bound value is exactly the value it was given: a collection heading a body
+(`${rows} { … }`), in receiver or in `from` position is the rows; a scalar in a predicate is compared with the §5/§6
 rules; an array is a valid right side of `in`; a number is a valid `limit`; a
 `null` binding is absent. A bound string is never source text (GRAMMAR §1).
 Running a query with **fewer values than it references** is an **eval error**

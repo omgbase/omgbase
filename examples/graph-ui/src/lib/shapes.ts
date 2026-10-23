@@ -7,7 +7,7 @@
 // `properties`, `committed`, `commit`, `revisions`, `degree`, `frontier`) or the user's authored
 // data. A 3.x/4.x server spells the engine keys bare (`id`, `path`, `raw`,
 // `doc_id`, `dst_path`, …). The link rows are the `links` collection (§1.1:
-// `from links`, `^links`, `_out_links`/`_in_links`) and the `graph` tool's
+// `links { … }`, `^links`, `_out_links`/`_in_links`) and the `graph` tool's
 // array of them is `links[]`. Every reader here takes EITHER spelling and
 // normalises to ONE internal shape with rooted paths; nothing else in the demo
 // spells a wire key.

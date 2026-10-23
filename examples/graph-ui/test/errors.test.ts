@@ -5,7 +5,7 @@ import { codePointToUtf16, describeOqxError, describeQueryError } from "../src/l
 describe("describeOqxError", () => {
   it("reads the parser's `(at offset N)` suffix", () => {
     let err: unknown;
-    try { parse("select path from docs where"); } catch (e) { err = e; }
+    try { parse("docs { select path where }"); } catch (e) { err = e; }
     const info = describeOqxError(err);
     expect(info.stage).toBe("parse");
     expect(info.offset).toBeTypeOf("number");
@@ -15,10 +15,10 @@ describe("describeOqxError", () => {
   it("reads the lexer's `at N` position", () => {
     let err: unknown;
     // An unterminated string is a lex error (since 0.17 `[` is a token, not a lex error).
-    try { parse('select path from docs where path == "a'); } catch (e) { err = e; }
+    try { parse('docs { select path where path == "a }'); } catch (e) { err = e; }
     const info = describeOqxError(err);
     expect(info.stage).toBe("lex");
-    expect(info.offset).toBe(36);
+    expect(info.offset).toBe(33);
   });
 
   it("tolerates plain errors and strings", () => {
@@ -41,17 +41,17 @@ describe("describeQueryError", () => {
   const HIT = 'a hit must be a document, block, node or link row — the query reached a string ("/timeline/beta.md"); to follow document references held in a property use refs(<field>)';
 
   it("makes the hit rule's remedy concrete from the query's bare follow field", () => {
-    const info = describeQueryError(new Error(HIT), parse(`select path, before from docs where path == "/timeline/alpha.md" follow before`));
+    const info = describeQueryError(new Error(HIT), parse(`docs { select path, before where path == "/timeline/alpha.md" follow before }`));
     expect(info).toEqual({
       message: 'a hit must be a document, block, node or link row — the query reached a string ("/timeline/beta.md")',
       reached: 'a string ("/timeline/beta.md")',
       suggestion: "follow refs(before)",
     });
-    expect(describeQueryError(HIT, parse(`path from docs follow before, after`)).suggestion).toBe("follow refs(before), refs(after)");
+    expect(describeQueryError(HIT, parse(`docs { path follow before, after }`)).suggestion).toBe("follow refs(before), refs(after)");
   });
 
   it("keeps the engine's generic remedy when the AST names no bare field", () => {
-    expect(describeQueryError(new Error(HIT), parse(`path from docs follow ^docs collect { select $it from tags }`)).suggestion).toBe("refs(<field>)");
+    expect(describeQueryError(new Error(HIT), parse(`docs { path follow ^docs { select $it from tags } }`)).suggestion).toBe("refs(<field>)");
     expect(describeQueryError(new Error(HIT), null).suggestion).toBe("refs(<field>)");
   });
 

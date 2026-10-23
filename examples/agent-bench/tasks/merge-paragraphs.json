@@ -11,7 +11,7 @@
     },
     {
       "kind": "query",
-      "query": "blocks count { where _path == \"/processes/coagulation.md\" and _type == \"paragraph\" }",
+      "query": "blocks count { _path == \"/processes/coagulation.md\" and _type == \"paragraph\" }",
       "count": 5
     }
   ],

@@ -1442,7 +1442,7 @@ in every slot (the absent primary target as the hit's kind), so an unknown
 key, a bad `field` or a target kind the op does not take is the ordinary
 `filter_invalid { hint: "arguments" }` naming `effects[i]` — `insert into`
 over `nodes`, a block-form `remove` over `docs`, fail here. Each expression
-is parsed through the wrapper `select __omg_x: <e> from docs` (OQX has no
+is parsed through the wrapper `docs { select __omg_x: <e> }` (OQX has no
 expression entry point) and must be exactly one select item over an
 otherwise empty query — a top-level item is scope depth 1, the hit's, so `^`
 and `N^` validate as they will evaluate; a parse error's offset is shifted
@@ -1457,13 +1457,13 @@ alias a template reads (`select hub: project …` with `{ oqx: "hub" }` reads
 `project`). The worked example — template 0 `insert into { document, _path:
 { oqx: "project" } } at end, markdown: { oqx: "\"- completed: [\" + _title +
 \"](\" + _path + \")\"" }`, template 1 `set _frontmatter.rolled_up = true` on
-the hit (all literal, no slot) — over `from docs where type == "workstream"
-and status == "completed"` (`project`, `type`, `status` are the authored
+the hit (all literal, no slot) — over `docs { type == "workstream"
+and status == "completed" }` (`project`, `type`, `status` are the authored
 keys, bare; `_title` the computed title and `_path` the path, the engine's)
 prints as
 
 ```text
-select __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + _title + "](" + _path + ")" from docs where type == "workstream" and status == "completed"
+docs { __omg_sel_0_into: project, __omg_sel_0_markdown: "- completed: [" + _title + "](" + _path + ")" where type == "workstream" and status == "completed" }
 ```
 
 The runner injects `_id` / `_path` as for any query; every hit carries both

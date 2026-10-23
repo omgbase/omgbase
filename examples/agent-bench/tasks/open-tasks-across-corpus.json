@@ -45,7 +45,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, _value from nodes where _kind == \"md:task\" and not checked order by _path"
+          "query": "nodes { select _path, _value where _kind == \"md:task\" and not checked order by _path }"
         }
       }
     ],

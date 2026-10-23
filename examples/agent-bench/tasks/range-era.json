@@ -20,7 +20,7 @@
       {
         "tool": "query",
         "args": {
-          "query": "select _path, _title, era from docs where type == \"practitioner\" and era in 700..1600 order by era"
+          "query": "docs { select _path, _title, era where type == \"practitioner\" and era in 700..1600 order by era }"
         }
       }
     ],

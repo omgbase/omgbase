@@ -4,7 +4,7 @@
   "checks": [
     {
       "kind": "query",
-      "query": "from docs where _path == \"/practitioners/isaac-newton.md\"",
+      "query": "docs { _path == \"/practitioners/isaac-newton.md\" }",
       "hits": [
         {
           "_path": "/practitioners/isaac-newton.md"
@@ -13,7 +13,7 @@
     },
     {
       "kind": "query",
-      "query": "from docs where _path == \"/practitioners/newton.md\"",
+      "query": "docs { _path == \"/practitioners/newton.md\" }",
       "hits": []
     },
     {

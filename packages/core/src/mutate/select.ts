@@ -111,8 +111,8 @@ function describeValue(v: unknown): string {
 // OQX has no expression entry point: each `{ oqx: e }` is parsed through this
 // wrapper and the one select item taken. A top-level item is scope depth 1 —
 // exactly the hit's scope — so `^` and `N^` validate as they will evaluate.
-const WRAPPER_PREFIX = "select __omg_x: ";
-const WRAPPER_SUFFIX = " from docs";
+const WRAPPER_PREFIX = "docs { select __omg_x: ";
+const WRAPPER_SUFFIX = " }";
 const OFFSET_RE = /\(at offset (\d+)\)/;
 
 /** Parse one expression; a parse error's offset is shifted back by the wrapper and forward by `shift` (the `-> ` leader's 3). */
@@ -127,7 +127,8 @@ function parseExpression(src: string, here: string, shift = 0): SelectItem {
     throw selectionInvalid(`${here}: ${message}`);
   }
   // The whole source must have been one expression: a query smuggled into the
-  // slot (`x from blocks where …`) parses, but not as one item over `docs`.
+  // slot (`x where … }` closing the wrapper early does not; `x }` + `{ … }`
+  // cannot) parses, but not as one item over `docs`.
   const one = q.select.length === 1 && q.source.kind === "ident" && q.source.name === "docs" && q.from.length === 0 && q.where === null
     && q.orderBy === null && q.follow === null && q.frontier === null && q.limit === null && q.offset === null && !q.distinct && !q.values && q.consumer === "collect";
   if (!one) throw selectionInvalid(`${here}: \`oqx\` must be one expression over the hit, not a query`);
@@ -590,7 +591,7 @@ function admitSelector(select: string, request?: FixRequest): { raw: Query; root
   if (root === null && raw.source.kind === "ident" && raw.source.name === "revisions") {
     throw selectionInvalid("select: `revisions` rows have no effect target — select docs, blocks or nodes", rootFix(select, raw.source, request));
   }
-  if (root === null) throw selectionInvalid("select: a selector scans a root collection — `from docs`, `from blocks` or `from nodes`", rootFix(select, raw.source, request));
+  if (root === null) throw selectionInvalid("select: a selector scans a root collection — `docs { … }`, `blocks { … }` or `nodes { … }`", rootFix(select, raw.source, request));
   if (root === "links") throw selectionInvalid("select: `links` rows have no effect target — select docs, blocks or nodes", rootFix(select, raw.source, request));
   if (raw.follow !== null) throw selectionInvalid("select: `follow` is not allowed in a selector — a hit must be a row of the root");
   if (raw.from.length > 0) throw selectionInvalid("select: a body `from` re-projects the rows — a hit must be a row of the root");

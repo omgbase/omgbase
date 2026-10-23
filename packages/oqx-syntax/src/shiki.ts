@@ -5,7 +5,7 @@
 //   import { createHighlighter } from "shiki";
 //   import { oqxShikiLanguage } from "@omgbase/oqx-syntax/shiki";
 //   const hl = await createHighlighter({ themes: ["github-dark"], langs: [oqxShikiLanguage] });
-//   hl.codeToHtml("name from people where age > 30", { lang: "oqx", theme: "github-dark" });
+//   hl.codeToHtml("people { select name where age > 30 }", { lang: "oqx", theme: "github-dark" });
 //
 // Markdown fences tagged ```oqx select the grammar once it is registered.
 

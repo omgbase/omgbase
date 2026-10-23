@@ -124,15 +124,24 @@ as their source words (`"=="`, `"&&"`, `"collect"`).
 
 Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` pin):
 
-- The two spellings of one construct are one tree: `name from x` ≡ `select name
-  from x`; `x collect { … }` ≡ `select … from x …`; `jobs collect distinct { e }`
+- The two spellings of one construct are one tree: `x { name }` ≡ `x { select
+  name }` ≡ `select name from x` (the clause form, GRAMMAR §2 — the source is
+  `query.source` either way and nothing records which was written; since 0.26
+  the collection-scoped form is canonical); `x collect { … }` ≡ `x { … }` ≡
+  `select … from x …`; `jobs collect distinct { e }`
   ≡ `jobs collect { select distinct e }`; parentheses leave no node. **Sugar
   desugars in the parser** (since 0.17): `x { … }` is the `collect` op;
   `people exists { age > 50 }` is `where age > 50`; `x[p]` is the op
   `first { where p }`, `x[n]` the op `first { offset n }`, `x[p]!` a `required`
   over `single { where p }`, `x[n]!` a `required` over `first { offset n }`;
   `is x` is `!!x` (two `unary` nodes), `not x` is `!x`; `x distinct { … }` is
-  the `collect` op with `distinct: true` (0.20); `follow children { depth 2 }` is
+  the `collect` op with `distinct: true` (0.20); a consumer word with no block
+  is the op over an **empty `subquery`** whose span is empty at the end of the
+  word (`jobs count` ≡ `jobs count { }`, 0.26 — `[e, e]`, never `[0, 0]`, which
+  marks a built node); a projection-only block over a `collect`/`first`/`single`
+  op whose block projects nothing is **one op** (`jobs[0] { name }` ≡ `jobs
+  first { name offset 0 }`, GRAMMAR §4 "Brackets", 0.26 — the merged `subquery`
+  spans from the inner block's brace to the outer block's); `follow children { depth 2 }` is
   a `follow` whose one destination is the `collect` op over `children` with
   `sub.depth = 2` (0.20). A `select` item whose
   value is exactly a directive is the `collect` item kind whatever spelling
@@ -384,19 +393,30 @@ returning `Vec<Reference>` over borrowed nodes, the same fields. In a fixture a
 
 ## 6. Printing
 
-`print(node)` renders a tree as canonical source: single spaces; `select`
-written at the top level (the keyword-less projection is sugar); every item
+`print(node)` renders a tree as canonical source: single spaces; a query in
+the **collection-scoped form** `S { … }` (since 0.26, GRAMMAR §2), its
+projection leading the body without `select` as every block's does (the
+keyword adds nothing in first position; before 0.26 a `collect` query printed
+in the clause form `select … from S …`); every item
 aliased (`name: name` — the alias is what the record key is, and a name
 that differs from the navigation's last segment must be written anyway);
 double-quoted strings with the GRAMMAR §1 escapes; the minimal parentheses
 the precedence table (GRAMMAR §4) requires, and the predicate/scalar group
-rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
-`<op> distinct { … }` (so `x distinct { … }` prints as `x collect distinct { …
-}`); a body's clauses in the fixed order — `where`, `frontier`, `depth` (a
+rule of GRAMMAR §3 for `where`; **`collect` as the bare brace** (since 0.26):
+`x collect { … }` prints as `x { … }`, `x collect distinct { … }` as `x
+distinct { … }`, every other consumer with its word (`x count { … }`, `x first
+distinct { … }`) — and so does a `collect` whose receiver is itself a directive
+(`jobs first { offset 0 } collect { name: name where pay > 2 }`, a block the
+parser did not merge — a projection-only one is one op, GRAMMAR §4), since a
+bare brace right after a written directive is not read as a block; **a written
+consumer word with an empty block prints without the block** (since 0.26):
+`jobs count { }` as `jobs count`, `jobs first { }.pay` as `jobs first.pay`, `jobs
+exists { }` as `jobs exists`, `x count distinct { }` as `x count distinct` (the
+bare `collect` keeps its braces: `x { }`); a body's clauses in the fixed
+order — `where`, `frontier`, `depth` (a
 destination block's), then `follow`, `order by`, the bounds — so a body's seed
-frontier prints between `where` and `follow` (`select id: id from t frontier
-!active follow kids collect { depth 2 }`), and `follow x { depth 2 }` as
-`follow x collect { depth 2 }`; each `flatten` after `follow` with its name
+frontier prints between `where` and `follow` (`t { id: id frontier !active
+follow kids { depth 2 } }`); each `flatten` after `follow` with its name
 **always written** (`flatten tags as tags`, `flatten tags collect { where $it
 != "b" } as t` — as every select item is aliased: the tree does not record
 whether `as` was, and the name is what the later clauses read; since 0.25);
@@ -413,7 +433,7 @@ escaped so it re-lexes to itself — `\\` for a backslash, `` \` `` for a backti
 every other character verbatim — and each interpolation as `${…}` around the
 expression's canonical text (`` `a ${ `b ${n}` } c` `` prints as `` `a ${`b
 ${n}`} c` ``). **Sugar prints as the
-explicit form** it parsed to (since 0.17): `x { p }` as `x collect { where p }`,
+explicit form** it parsed to (since 0.17): `x { p }` as `x { where p }`,
 `jobs[0].pay` as `jobs first { offset 0 }.pay`, `x[p]!` as `x single { where
 p }!`, `is x` as `!!x`, `not x` as `!x`, an absolute `N^name` as the caret
 form `^…name` (since 0.18); `x!` prints as written, with its operand
@@ -423,11 +443,15 @@ as written, and so do the regex operators `x ~ y` / `x ~* y` / `x !~ y` /
 in the tree, and sit at comparison level (a nested comparison on either side is
 parenthesized: `(a ~ b) == true`).
 
-Form: a `collect` query prints in body form (`select … from S …`) — unless it
-carries body-level `from` re-projections, which only a block can hold, in
-which case it prints as the directive `S collect { … from E … }`; every other
-consumer prints as the directive form. Inside a block the projection leads
-without its keyword (the block's first clause is always the projection).
+Form: every query whose source can head a block — a bare name, an outer
+reference, a binding, a tuple, or a postfix chain headed by a name, an outer
+reference, a binding or a free call (navigation, calls, `!`, a directive: the
+receivers of GRAMMAR §5 and §4) — prints collection-scoped, `S [<consumer>]
+[distinct] { … }` (since 0.26). A source that cannot head a block — a literal,
+a template, a range, an arithmetic, logical or `in` expression, a unary, an
+aggregate (each an eval error or a degenerate query) — prints in the clause
+form `select … from S …`. Inside every body the projection leads without its
+keyword (a body's first clause is always the projection).
 
 The law both spec runners enforce over **every** fixture query that parses:
 
@@ -439,10 +463,10 @@ strip(parse(print(parse(q)))) ≡ strip(parse(q))
 binding is a value, never source text, so `print` fails on one (`OqxError`,
 stage `print`); `printTemplate(node)` returns `{ strings, count, indices }` —
 the fragments around each binding, how many there are, and the binding index
-each gap stands for (the canonical clause order can move a binding past
-another: `${0} collect { x: ${1} }` prints as `select x: ${1} from ${0}`,
-`indices = [1, 0]`). Re-run it as `parseTemplate(strings, count)` with the
-values permuted by `indices`.
+each gap stands for (the canonical form can move a binding past another: the
+clause form `select x: ${1} from ${0}` prints as `${0} { x: ${1} }`, `indices =
+[1, 0]`). Re-run it as `parseTemplate(strings, count)` with the values permuted
+by `indices`.
 
 ## 7. Building
 
@@ -476,4 +500,5 @@ document says which `major.minor` produced it.
 | 0.22 | Added (minor): `"~"`, `"~*"`, `"!~"`, `"!~*"` as `binary` operators (the infix regex operators, sugar over `matches`). No node or field added, renamed or removed; a reader of an older minor may meet an unknown `binary.op`. The canonical print writes the operator as written (`a ~ b`), at comparison precedence. |
 | 0.23 | Added (minor): the `references` static pass (§5b) and the fixture kind `expect.references` (README). No node or field added, renamed or removed; the grammar and the semantics are unchanged. |
 | 0.25 | Added (minor): the `flatten` node (`expr`, `name`); `query.flatten` and `subquery.flatten` (materialized as `[]` on every body); the traversal clause `flatten`. No node for the block: a written block is the existing `collect` `op` in `expr`, as `x { … }` is wherever a value stands. Nothing renamed or removed. A reader of an older minor meets the new list on every body and the new kind. |
+| 0.26 | No node or field added, renamed or removed. The canonical print changed form: a query prints **collection-scoped** (`S [<consumer>] [distinct] { … }`, GRAMMAR §2) and `collect` as the bare brace (`x { … }`, `x distinct { … }`); `query.source` is the collection either way and the JSON is unchanged. A `references` step for a `collect` destination block therefore prints `follow kids { … }`. Two sugars desugar in the parser: a consumer word with no block is the op over an empty `subquery` (empty span at the end of the word; printed without the block, `jobs count`), and a projection-only block over a `collect`/`first`/`single` op whose block projects nothing merges into that op (`jobs[0] { name }` is one `first` op — the one tree shape of 0.25 that no longer parses as two ops). |
 | 0.24 | Added (minor): the `groupBy` and `key` nodes; `query.groupBy`, `query.having`, `subquery.groupBy`, `subquery.having` (materialized as `null`); the `aggregate` expression node (a free call by an aggregate name parses to it, never to a `call`); the traversal clauses `groupBy` and `having`; a `groupBy` node as a `references` step; `count` as a value-position directive (an `op` with `op: "count"` in a `collect` item or an operand). Nothing renamed or removed. A reader of an older minor meets the two new fields on every body and the new kinds. |

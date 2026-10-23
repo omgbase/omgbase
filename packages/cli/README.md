@@ -46,11 +46,11 @@ decisions.md  5 blocks  0s ago
 $ omg find sqlite
 b_v32ar6f  decisions.md#heading[3]  ADR-002 Embedded SQLite
 
-$ omg q 'from blocks where _type == "task" && !checked'
+$ omg q 'blocks { _type == "task" && !checked }'
 b_24nr0y0  README.md
 b_36p2zw1  README.md
 
-$ omg q 'blocks count { where _type == "task" && !checked }'
+$ omg q 'blocks count { _type == "task" && !checked }'
 2
 
 $ omg outline README.md
@@ -72,7 +72,7 @@ ADR-002 Embedded SQLite
 `omg cat <path>` prints a document's exact bytes (frontmatter and all); given a block id it prints that block. Edits are structural mutations that update the file and the database together. The pipe is the changeset boundary — `--ids` emits block ids, `done -` reads them from stdin and completes them in one commit:
 
 ```console
-$ omg q 'from blocks where _type == "task" && !checked' --ids | omg done -
+$ omg q 'blocks { _type == "task" && !checked }' --ids | omg done -
   ok committed · 1 document touched
 b_24nr0y0
 b_36p2zw1

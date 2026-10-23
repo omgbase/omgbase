@@ -22,7 +22,7 @@ the row to those that *have* a match, and captures the matched values into
 expression:
 
 ```console
-$ omg query 'select p: _path, open from docs where type == "lab-note" and _nodes collect { ^open: _value where _kind == "md:task" and not checked }' --jsonl
+$ omg query 'docs { select p: _path, open where type == "lab-note" and _nodes { ^open: _value where _kind == "md:task" and not checked } }' --jsonl
 {"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","p":"/lab/2026-01-notes.md","open":["Repeat the series with copper","Plot mass gain against heating time","Tabulate the metal sulphides by colour"]}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","p":"/lab/2026-02-notes.md","open":["Assay cycle 1 and cycle 4 crops for iron","Write the plateau result up for the coagulation note"]}
 ```
@@ -31,7 +31,7 @@ Don't select the lifted name and the lift is just a filter — "processes with o
 work":
 
 ```console
-$ omg query 'from docs where type == "process" and _nodes collect { ^todo: _value where _kind == "md:task" and not checked }'
+$ omg query 'docs { type == "process" and _nodes { ^todo: _value where _kind == "md:task" and not checked } }'
 d_zdac7ww  /processes/calcination.md
 d_jtnqxt2  /processes/coagulation.md
 d_91vsvhk  /processes/dissolution.md
@@ -46,7 +46,7 @@ documents whose slug is one of them — link extraction *and* resolution, i.e. a
 citation graph. `index.md` links to the three tria-prima substances:
 
 ```console
-$ omg query 'select cites: ^docs collect { select t: _path where slug in ^refs } from docs where _path == "/index.md" and _nodes collect { ^refs: _value where _kind == "md:wikilink" }' --jsonl
+$ omg query 'docs { select cites: ^docs { select t: _path where slug in ^refs } where _path == "/index.md" and _nodes { ^refs: _value where _kind == "md:wikilink" } }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","cites":[{"t":"/substances/mercury.md"},{"t":"/substances/salt.md"},{"t":"/substances/sulphur.md"}]}
 ```
 
@@ -59,7 +59,7 @@ the query projects, the human tier shows the projected `slug` as a column
 beside the id and path:
 
 ```console
-$ omg query 'select slug from docs where type == "substance" and ^nodes exists { where _kind == "md:wikilink" and _value == ^slug }'
+$ omg query 'docs { select slug where type == "substance" and ^nodes exists { _kind == "md:wikilink" and _value == ^slug } }'
 _id        _path                   slug
 d_0vsapzt  /substances/mercury.md  mercury
 d_h73rhv8  /substances/salt.md     salt
@@ -70,7 +70,7 @@ Negate the `exists` for the anti-join — substances no wikilink points to (the 
 abstractions are named only in prose):
 
 ```console
-$ omg query 'select slug from docs where type == "substance" and not ^nodes exists { where _kind == "md:wikilink" and _value == ^slug }'
+$ omg query 'docs { select slug where type == "substance" and not ^nodes exists { _kind == "md:wikilink" and _value == ^slug } }'
 _id        _path                              slug
 d_1rren8z  /substances/philosophers-stone.md  philosophers-stone
 d_prj3j7a  /substances/prima-materia.md       prima-materia
@@ -84,7 +84,7 @@ practitioner with their tradition-mates. Only the two Western practitioners have
 any:
 
 ```console
-$ omg query 'select me: _path, tradition, peers: ^docs collect { select p: _path where type == "practitioner" and tradition == ^tradition and _path != ^_path } from docs where type == "practitioner"' --jsonl
+$ omg query 'docs { select me: _path, tradition, peers: ^docs { select p: _path where type == "practitioner" and tradition == ^tradition and _path != ^_path } where type == "practitioner" }' --jsonl
 {"_id":"d_nzb61j9","_path":"/practitioners/jabir-ibn-hayyan.md","me":"/practitioners/jabir-ibn-hayyan.md","tradition":"islamic","peers":[]}
 {"_id":"d_9px29y1","_path":"/practitioners/maria-prophetissa.md","me":"/practitioners/maria-prophetissa.md","tradition":"alexandrian","peers":[]}
 {"_id":"d_rw4ygr0","_path":"/practitioners/newton.md","me":"/practitioners/newton.md","tradition":"western","peers":[{"p":"/practitioners/paracelsus.md"}]}
@@ -98,7 +98,7 @@ and checks the cardinality. Each lab note names a `subject:` process slug; slugs
 are unique, so the lookup is 1:1:
 
 ```console
-$ omg query 'select subject, process: ^docs single { select p: _path, layer where slug == ^subject } from docs where type == "lab-note"' --jsonl
+$ omg query 'docs { select subject, process: ^docs single { select p: _path, layer where slug == ^subject } where type == "lab-note" }' --jsonl
 {"_id":"d_b089t54","_path":"/lab/2026-01-notes.md","subject":"calcination","process":{"p":"/processes/calcination.md","layer":"canon"}}
 {"_id":"d_w18c2st","_path":"/lab/2026-02-notes.md","subject":"coagulation","process":{"p":"/processes/coagulation.md","layer":"working"}}
 ```
@@ -113,9 +113,9 @@ top-level row sits one scope inside it, so `^docs` from a row is the root's
 documents, `^_id` the repository id, and `^$it` the root object:
 
 ```console
-$ omg query 'select n: size(^docs), repo: ^_id from docs limit 1' --jsonl
+$ omg query 'docs { select n: size(^docs), repo: ^_id limit 1 }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","n":20,"repo":"rp_7k2m9xq"}
-$ omg query 'select collections: entries(^$it) collect { $key values } from docs limit 1' --jsonl
+$ omg query 'docs { select collections: entries(^$it) { $key values } limit 1 }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","collections":["docs","blocks","nodes","links","revisions"]}
 ```
 
@@ -124,16 +124,16 @@ Carets count scopes — from a block's rows the root is two out (`^^docs`). The
 counting:
 
 ```console
-$ omg query 'select _path, n: _nodes first { select c: size(0^docs) values where _kind == "md:section" } from docs where _path == "/index.md"' --jsonl
+$ omg query 'docs { select _path, n: _nodes first { select c: size(0^docs) values where _kind == "md:section" } where _path == "/index.md" }' --jsonl
 {"_id":"d_sz1e8z0","_path":"/index.md","n":20}
 ```
 
-At the top level the bare name *is* the scan (`from docs`, `docs count { … }`),
+At the top level the bare name *is* the scan (`docs { … }`, `docs count { … }`),
 and a bare target name **inside** a block is an error rather than a silent empty
 read — the current row has no property called `docs`:
 
 ```console
-$ omg query 'from docs where docs exists { }'
+$ omg query 'docs { where docs exists }'
 error[filter_invalid]: `docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?
   {
     "reason": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?",

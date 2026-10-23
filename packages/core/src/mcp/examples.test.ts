@@ -62,7 +62,10 @@ const DESCRIPTION_BUDGET = 900;
 export const PINNED_4_3: Record<string, string> = {
   "apply:0": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
   "apply:1": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
-  "apply:2": "28cc192bc8a37815a9120233f339bfad0e73b38747b40f06fa62ebdeda98336c",
+  // `apply:2` is the selector rung: its digest covers the selector as written,
+  // so the 0.26 collection-scoped spelling (`blocks { … }` for `from blocks
+  // where …`, the same tree) moved it from 28cc1928… to this value.
+  "apply:2": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
   "plan:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
   "plan:1": "b6e46ff42fc70efe8204b91562ade768ec12c96d5b5de45b58d0ce52db9e95c5",
   "execute:0": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",

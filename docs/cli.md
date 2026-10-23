@@ -152,7 +152,7 @@ omg query <source> [-n N] [--cursor c] [--ids|--json|--jsonl]
 omg query -f <file|-> [-n N] [--cursor c]
 ```
 
-Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|nodes|links [where …] [follow …] [order by …] [limit N] [offset N]` — a fixed clause order, ADR-020 — or a top-level `<target> count|exists|none|first|single { … }` — a bare target at the root scope), passed positionally or read from a file / stdin with `-f` — exactly the body of a ```` ```omg ```` fence, so a query authored in a document runs unchanged (`omg run` evaluates it in place). There are **no** query-shaping flags (`--from`, `--text`, `--semantic`, `--select`, `--order` are gone with the CEL layer, ADR-013): full-text is the `text("…")` predicate, semantic ranking is `order by semantic("…") desc` / `where semantic("…") > 0.6` (needs `embedding.provider`, else `provider_unavailable`), projection is `select`, ordering is `order by`. The connectives are the words `and` / `or` / `not` (`&&` / `||` / `!` are accepted synonyms). Sugar (oqx 0.17): a receiver block without a consumer is `collect` (`docs { type == "substance" }`), a block may lead with a predicate (bare names still project; filter a bare field with `is x`), brackets `x[p]` (first match or absent) / `x[p]!` (exactly one, required) / `x[n]` (positional), postfix `x!` (required), `x is y` / `x is not y` (identity; `x is null` is absence). Inside a row the repository's collections are `^docs` / `^nodes` / `^blocks` / `^links` — the repository is the root row (surface 2.0): one caret per enclosing block, or `0^docs` from any depth, `^_id` the repository id; `refs(field)` resolves the document references a property holds to live rows (`follow refs(before), refs(after)`); every path the CLI prints is `/`-rooted (`_path == "/x.md"`; inputs accept both forms). Human output: one hit per line (`_id  _path`) when nothing is projected, an aligned table (`_id`, `_path`, then the `select` columns in order — `_path` is dropped when `_path` is itself selected; nested lists/records as compact JSON clipped at 60 chars) when it is, the scalar for `count`/`exists`/`none`, bare values for a `values` projection; `--json` is the whole result envelope (`hits`, `truncated`, `cursor`, …). `omg q --help` carries a worked example per feature; `docs/query-language.md` is the reference.
+Alias `omg q`. The source is one OQX expression (`docs|blocks|nodes|links [count|exists|none|first|single] { [select …] [where …] [follow …] [order by …] [limit N] [offset N] }` — the collection heads the body, oqx 0.26, with a fixed clause order inside it, ADR-020; the clause form `select … from docs where …` is still accepted but no longer written), passed positionally or read from a file / stdin with `-f` — exactly the body of a ```` ```omg ```` fence, so a query authored in a document runs unchanged (`omg run` evaluates it in place). There are **no** query-shaping flags (`--from`, `--text`, `--semantic`, `--select`, `--order` are gone with the CEL layer, ADR-013): full-text is the `text("…")` predicate, semantic ranking is `order by semantic("…") desc` / `where semantic("…") > 0.6` (needs `embedding.provider`, else `provider_unavailable`), projection is `select`, ordering is `order by`. The connectives are the words `and` / `or` / `not` (`&&` / `||` / `!` are accepted synonyms). Sugar (oqx 0.17): a receiver block without a consumer is `collect` (`docs { type == "substance" }`), a block may lead with a predicate (bare names still project; filter a bare field with `is x`), brackets `x[p]` (first match or absent) / `x[p]!` (exactly one, required) / `x[n]` (positional), postfix `x!` (required), `x is y` / `x is not y` (identity; `x is null` is absence). Inside a row the repository's collections are `^docs` / `^nodes` / `^blocks` / `^links` — the repository is the root row (surface 2.0): one caret per enclosing block, or `0^docs` from any depth, `^_id` the repository id; `refs(field)` resolves the document references a property holds to live rows (`follow refs(before), refs(after)`); every path the CLI prints is `/`-rooted (`_path == "/x.md"`; inputs accept both forms). Human output: one hit per line (`_id  _path`) when nothing is projected, an aligned table (`_id`, `_path`, then the `select` columns in order — `_path` is dropped when `_path` is itself selected; nested lists/records as compact JSON clipped at 60 chars) when it is, the scalar for `count`/`exists`/`none`, bare values for a `values` projection; `--json` is the whole result envelope (`hits`, `truncated`, `cursor`, …). `omg q --help` carries a worked example per feature; `docs/query-language.md` is the reference.
 
 `omg run <locator|path>` — evaluate the ```` ```omg ```` fence at a locator (or the first fence in a doc) and print its results with the same renderer. Strictly read-and-print: fences stay **inert** in the corpus (ADR-011 §8 reservations hold; nothing is projected, nothing is written). This is the fence-authoring loop: edit fence, `omg run`, repeat.
 
@@ -162,9 +162,9 @@ Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|
 |---|---|
 | `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open links touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain — one row per open edge with its source block (`references > d_13 (b_307)`; `_block_id` in `--json`). `--json` is `{ out: [{ _predicate, _doc_id, kind, count, samples? }], in: [...] }` — `_doc_id` the far node (cli 5.0; bare `predicate`/`doc_id` through 4.6, `node`/`block` before 3.0). Backlinks = `omg links <node> --in`. `--jsonl` prints the `{ out, in }` object (it is not a list). |
 
-Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where _path == "/x.md" follow _out_links collect { from _dst }'` walks the outgoing citation graph (the link rows to their destination documents), `follow _in_links collect { from _doc }` walks backlinks, `follow refs(before), refs(after)` walks the document references a frontmatter key holds, and `follow _children` (a block's children; a section node's child sections) / `follow _subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
+Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'docs { _path == "/x.md" follow _out_links { from _dst } }'` walks the outgoing citation graph (the link rows to their destination documents), `follow _in_links { from _doc }` walks backlinks, `follow refs(before), refs(after)` walks the document references a frontmatter key holds, and `follow _children` (a block's children; a section node's child sections) / `follow _subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
 
-There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where _path == "/x.md" follow _out_links collect { from _dst }' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
+There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'docs { _path == "/x.md" follow _out_links { from _dst } }' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
 
 ### 5.5 History
 
@@ -232,14 +232,14 @@ Bindings are **snapshots**, not live queries: `@open = query '…'` captures the
 A reference token is substituted into an ordinary command's argv, coerced to the value the command expects where a node is named (an object's `_id`/`_doc_id`/`_block_id`/`node`/`block`/`locator`/`_path`, in that precedence — the row ref reads `_id`, its label `_path`; cli 5.0 dropped the `$id`/`id`/`$path`/`path` tolerance of `REF_KEYS`, while the pre-3.0 envelopes `node`/`block` stay so a remote 2.x server's results still address; a `query`/`run` hit's and an `ls` row's ref is its `_id`, a `find` hit's its `_id`, a `links` row's the far node's `_doc_id`); a bare collection reference is refused with a hint to pick a row with `[i]` — the shell never flattens a collection into one argument.
 
 ```
-omg> query 'from docs where layer == "canon"'
+omg> query 'docs { layer == "canon" }'
 d_a83f  projects/foo.md
 d_194c  projects/bar.md
   2 rows — address with @1..@2
 omg> show @1
-omg> @canon = query 'from docs where layer == "canon"'
+omg> @canon = query 'docs { layer == "canon" }'
 omg> show @canon[1]
-omg> query 'from nodes where _kind == "md:task" and not checked'
+omg> query 'nodes { _kind == "md:task" and not checked }'
 omg> done @1
 ```
 
@@ -278,7 +278,7 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | `blocks_read` / `blocks_read_many` / `nodes_block_read` | `show` / `cat` (many: stdin IDs; an `n_` ref → `nodes_block_read`) |
 | `blocks_resolve` (+ `blocks_search`) | `find` |
 | `query` | `query` |
-| `pipeline` | shell pipes (`q '… follow _out_links collect { from _dst }' --ids \| show -`) |
+| `pipeline` | shell pipes (`q '… follow _out_links { from _dst } }' --ids \| show -`) |
 | traversal (`follow`) | `query`/`q` — OQX `follow` (no dedicated `graph` command) |
 | `changes_since` / `blocks_history` / `docs_diff` | `log` / `hist` / `diff --blocks` |
 | `apply` | `apply` |
@@ -295,13 +295,13 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 
 **C2 — "complete the unchecked deploy tasks under Launch."**
 ```
-omg q 'from blocks where _type == "task" and not checked and under_heading("Launch") and text("deploy")' --ids | omg done -
+omg q 'blocks { _type == "task" and not checked and under_heading("Launch") and text("deploy") }' --ids | omg done -
 ```
 1 line. The pipe is the changeset boundary: `done` receives IDs, builds one atomic changeset.
 
 **C3 — "what changed since yesterday?"** `omg log --since 24h` — 1 command; one digest per line.
 
-**C4 — "which paragraphs depend on this doc?"** `omg q 'from blocks where has_edge("depends_on", "d_92aaaaa") or has_edge("references", "d_92aaaaa")'` — 1 command.
+**C4 — "which paragraphs depend on this doc?"** `omg q 'blocks { has_edge("depends_on", "d_92aaaaa") or has_edge("references", "d_92aaaaa") }'` — 1 command.
 
 **C5 — "fix that one paragraph."** `omg find "stable identity rationale" -1` → `omg edit b_k7z2p9q` — 2 commands; editor round-trip; CAS pinned automatically.
 

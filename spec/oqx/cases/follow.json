@@ -957,44 +957,6 @@
       }
     },
     {
-      "name": "follow is not valid in a where op",
-      "roots": {
-        "tree": [
-          {
-            "id": "root",
-            "label": "Root",
-            "children": [
-              {
-                "id": "a",
-                "label": "A",
-                "children": [
-                  {
-                    "id": "a1",
-                    "label": "A1",
-                    "children": []
-                  }
-                ]
-              },
-              {
-                "id": "b",
-                "label": "B",
-                "children": []
-              }
-            ]
-          }
-        ]
-      },
-      "query": "id from tree where children exists { follow children }",
-      "expect": {
-        "error": {
-          "stage": "eval",
-          "includes": [
-            "follow"
-          ]
-        }
-      }
-    },
-    {
       "name": "depth must be at least 1",
       "query": "id from tree follow children { depth 0 }",
       "expect": {
@@ -3102,6 +3064,208 @@
         ]
       },
       "notes": "In a select-position block that carries a `follow`, the body's `frontier` is read in each seed's scope with `^` the enclosing row (`root`, tag `k`) — exactly as the block's `where` is: the seed `r1` (tag `k`) is a frontier and `r1a` is never reached, while `r2a` (tag `k`) is a successor, not a seed, and is a plain leaf."
+    },
+    {
+      "name": "follow in a where-position count counts the walk's occurrences",
+      "tags": [
+        "where",
+        "follow",
+        "count"
+      ],
+      "notes": "`follow` is legal in every body since 0.26: a where-position directive's block yields its walk's occurrences (the seeds and everything reached) and the consumer reduces them — here the number of descendants. root has a, b and a1 (3); lone has none.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "lone",
+            "label": "Lone",
+            "children": []
+          }
+        ]
+      },
+      "query": "tree { select id where children count { follow children } > 2 }",
+      "expect": {
+        "result": [
+          {
+            "id": "root"
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow in a where-position collect lifts every occurrence",
+      "tags": [
+        "where",
+        "follow",
+        "lift"
+      ],
+      "notes": "The lift binds the value of every occurrence of the walk — every descendant's id, in walk order. A row with no descendants fails the collect test (no matches) and is dropped.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "lone",
+            "label": "Lone",
+            "children": []
+          }
+        ]
+      },
+      "query": "tree { select id, desc where children { ^desc: id follow children } order by id }",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "desc": [
+              "b",
+              "a",
+              "a1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "exists and none over a walk are the seeds' existence",
+      "tags": [
+        "where",
+        "follow",
+        "exists",
+        "none"
+      ],
+      "notes": "The seeds are occurrences too, so a walk is non-empty exactly when its seeds are: `exists { follow … }` ≡ `exists { }`. Pinned so the shape is legal, not useful.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "lone",
+            "label": "Lone",
+            "children": []
+          }
+        ]
+      },
+      "query": "tree { select id, has: children count { follow children } where children exists { follow children } and not children none { follow children } order by id }",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "has": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "a where-position walk with a destination block and a bound",
+      "tags": [
+        "where",
+        "follow",
+        "count",
+        "destination",
+        "limit"
+      ],
+      "notes": "The destination block's `where` filters successors (a1 is never reached), the bound applies to the walk's occurrences before the consumer counts them — as in select position.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "lone",
+            "label": "Lone",
+            "children": []
+          }
+        ]
+      },
+      "query": "tree { select id, n: children count { follow children { where id != \"a1\" } limit 2 } where children count { follow children { where id != \"a1\" } } == 2 order by id }",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "n": 2
+          }
+        ]
+      }
     }
   ]
 }

@@ -17,7 +17,7 @@ derives a **graph** of the relationships your text asserts. On top of the blocks
 it projects **nodes** — the meaningful things inside them (a link, a task, a
 heading-as-section) — which is what you *read and query*. The relationships
 between things are **edges** — at the query surface the row kind is `links`
-(`from links`, the `_out_links`/`_in_links` relations, `^links`; surface 3.0), while the storage
+(`links { … }`, the `_out_links`/`_in_links` relations, `^links`; surface 3.0), while the storage
 table and the graph layer keep the name `edges`. Four words carry the whole model:
 
 ```
@@ -130,7 +130,7 @@ the underlying block's span — i.e. it resolves node → block and emits one
 `update` op. You never mutate the projection directly; you mutate the block the
 projection is a view of.
 
-> **Surface:** `query "from nodes …"` (the projection query surface),
+> **Surface:** `query "nodes { … }"` (the projection query surface),
 > `blocks_read` / `blocks_read_many` (hydrate a block's node view), `node set`
 > (`nodes_set` — the editable-property escape hatch), `node props` (list what's
 > editable, local-only).
@@ -166,16 +166,16 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
   sibling order, section containment — live in the block tree, not the edge
   tables; you navigate them with the query `follow` operator (a block's
   `_children`, a section node's `_children`) — and the citation graph through the link rows' reach-
-  throughs (`follow _out_links collect { from _dst }`, `_dst` being a link's
+  throughs (`follow _out_links { from _dst }`, `_dst` being a link's
   destination document) rather than a dedicated edge walk. (2) **Inferred** relations
   (similarity, co-occurrence) are quarantined in a separate `inferred_edges`
   table, never mixed into the authored graph (as-built: a reserved stub).
 
-> **Surface:** `query "… follow _out_links collect { from _dst }"` (traverse the authored graph),
+> **Surface:** `query "… follow _out_links { from _dst }"` (traverse the authored graph),
 > `query "… follow refs(before)"` (walk the document references a frontmatter
 > relation holds — `refs(field)` resolves them to live documents; the reverse is
 > `^docs { ^_path in list(before) }`, `^docs` being the repository's documents
-> from inside a row), `from links where …` (the edges as `links` rows — one per
+> from inside a row), `links { … }` (the edges as `links` rows — one per
 > relation; the `md:link` node is the occurrence in the text, `_via_id` points at it),
 > `links` (`links_stale`), `retarget` (`links_retarget`), `links_repair`. Edges
 > aren't created by an "add edge" call — you write a link/field in a block and the
@@ -189,7 +189,7 @@ omgbase uses "node" in two nearby senses; keep them apart:
 
 1. **Graph node / vertex** — the things edges connect: documents, blocks,
    external URIs, collections. This is the sense in "the knowledge graph."
-2. **Projected node** — a row in the projections layer (`from nodes`,
+2. **Projected node** — a row in the projections layer (`nodes { … }`,
    `blocks_read`): a semantic view over a block (`md:link`, `md:task`). This is the
    sense in the four-word model above.
 
@@ -207,7 +207,7 @@ computed title and body hashtags, read as the `_title`/`_tags` attributes; an
 authored key is read by its bare name — surface 5.0).
 Properties are scoped to a document (frontmatter/computed) or a block
 (inline), and are the backing for property filters in queries
-(`from docs where layer == "working"`). See `properties-table.md`. They are
+(`docs { layer == "working" }`). See `properties-table.md`. They are
 mentioned here only so the boundary is clear: properties are *values on*
 documents/blocks; edges are *relationships between* them.
 
@@ -237,8 +237,8 @@ walled off from the things that must stay correct (graph, search, bytes).
 |---|---|---|---|
 | **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `docs_read`, `docs_tree`, `docs_list`, `docs_outline`, `docs_update` |
 | **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `blocks_check`, `blocks_append`, `apply` |
-| **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `blocks_read(_many)`, `nodes_set` |
-| **Edge** (`links` rows) | assert (by writing links/fields); traverse; retarget | `query "… follow"` `query "from links"` `links` `retarget` | `query`, `graph`, `links_stale`, `links_retarget`, `links_repair` |
+| **Node** | read/query projections; edit one property | `query "nodes { … }"` `node set` | `query`, `blocks_read(_many)`, `nodes_set` |
+| **Edge** (`links` rows) | assert (by writing links/fields); traverse; retarget | `query "… follow"` `query "links { … }"` `links` `retarget` | `query`, `graph`, `links_stale`, `links_retarget`, `links_repair` |
 
 The full, authoritative correspondence — every operation across library, CLI, and
 MCP, plus what runs over `--server` — is `surface-map.md`.

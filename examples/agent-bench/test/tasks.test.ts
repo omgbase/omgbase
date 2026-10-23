@@ -120,7 +120,7 @@ describe("validateTask", () => {
     expect(validateTask({ ...VALID, checks: [{ kind: "grep" }] }, "x")[0]).toMatch(/kind must be one of/);
     expect(validateTask({ ...VALID, checks: [{ kind: "read", path: "/a.md", matches: ["("] }] }, "x")[0]).toMatch(/does not compile/);
     expect(validateTask({ ...VALID, extra: 1 }, "x")).toEqual(["x: unknown member `extra`"]);
-    expect(validateTask({ ...VALID, checks: [{ kind: "query", query: "from docs" }] }, "x")[0]).toMatch(/needs `hits` and\/or `count`/);
+    expect(validateTask({ ...VALID, checks: [{ kind: "query", query: "docs { }" }] }, "x")[0]).toMatch(/needs `hits` and\/or `count`/);
   });
 
   it("rejects a $result that points forward and a malformed hook", () => {

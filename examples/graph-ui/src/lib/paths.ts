@@ -32,7 +32,7 @@ export interface EngineNames {
   /** The computed title attribute. */
   title: "_title" | "title";
   updated_at: "_updated_at" | "updated_at";
-  /** A link row's attributes (`from links`). */
+  /** A link row's attributes (the `links` collection). */
   dst_path: "_dst_path" | "dst_path";
   field: "_field" | "field";
   provenance: "_provenance" | "provenance";

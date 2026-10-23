@@ -676,7 +676,6 @@ export class InMemoryEngine implements Engine {
   }
 
   private evalWhereOp(op: OpNode, scope: Scope): boolean {
-    if (op.sub.follow) throw new OqxError("`follow` is only valid on a select-position collect { … }, not a where op", "eval");
     const plan = this.planOf(op, scope);
     if (!plan.invariant) return this.evalWhereOpPlanned(op, plan, scope);
     return this.memoized(op, scope, () => this.evalWhereOpPlanned(op, plan, scope));
@@ -687,7 +686,12 @@ export class InMemoryEngine implements Engine {
     if (op.op === "exists" || op.op === "none" || op.op === "count") {
       const acc = this.access(op, plan, scope);
       let n: number;
-      if (plan.fromCardinality && acc.where === null) {
+      // A block with a `follow` (legal in every body since 0.26) yields its
+      // walk's occurrences: no cardinality answer, no first-match stop — the
+      // walk is run and counted like any other rows.
+      if (op.sub.follow) {
+        n = this.opRows(op, scope, bound, acc).length;
+      } else if (plan.fromCardinality && acc.where === null) {
         // Nothing left to evaluate per row: the accessed rows ARE the matched
         // rows, and the consumer only needs their count after the bound.
         n = boundedCount(acc.rows.length, bound);
@@ -721,14 +725,28 @@ export class InMemoryEngine implements Engine {
     return this.opRows(op, scope, bound).length > 0;
   }
 
-  // The rows a consumer op reduces: matched → flattened → grouped → ordered → distinct → bounded.
-  private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access): Scope[] {
-    let scopes = this.matchRows(op, scope, acc);
-    if (op.sub.flatten.length > 0) scopes = this.flattenScopes(scopes, op.sub);
-    if (op.sub.groupBy) scopes = this.groupScopes(scopes, op.sub, scope);
-    this.applyKey(scopes, op.sub);
-    this.sortScopes(scopes, op.sub.orderBy);
-    if (op.distinct) scopes = this.dedupByProjection(scopes, op.sub);
+  // The rows a consumer op reduces — in every position (a where-position test,
+  // a select-position directive, a destination block): matched (or, with a
+  // `follow`, the walk's occurrences over the matched seeds) → flattened →
+  // grouped → ordered → distinct → bounded. `destination` marks a follow
+  // destination block: its `frontier` is the destination's (read by the outer
+  // walk), never a seed frontier for a `follow` of its own.
+  private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access, destination = false): Scope[] {
+    const sub = op.sub;
+    let scopes: Scope[];
+    if (sub.follow) {
+      // The seeds are the matched rows themselves (`followWalk` enters them); a
+      // follow block is never correlated, so `where` here is the whole predicate.
+      const { rows, where } = acc ?? this.access(op, this.planOf(op, scope), scope);
+      const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
+      scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, destination ? null : sub.frontier, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
+    } else scopes = this.matchRows(op, scope, acc);
+    if (sub.flatten.length > 0) scopes = this.flattenScopes(scopes, sub);
+    if (sub.groupBy) scopes = this.groupScopes(scopes, sub, scope);
+    // An occurrence's `$key` is the walk's identity (`keyed` gave the seeds theirs).
+    if (!sub.follow) this.applyKey(scopes, sub);
+    this.sortScopes(scopes, sub.orderBy);
+    if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
     return sliceBound(scopes, bound);
   }
 
@@ -928,24 +946,10 @@ export class InMemoryEngine implements Engine {
   private evalCollectScopes(op: OpNode, scope: Scope, plan: BlockPlan = this.planOf(op, scope), destination = false): { scopes: Scope[]; single: boolean } {
     const sub = op.sub;
     const bound = this.boundOf(sub, scope);
-    let scopes: Scope[];
-    let single = false;
-    if (sub.follow) {
-      // The seeds are the matched rows themselves (`followWalk` enters them); a
-      // follow block is never correlated, so `where` here is the whole predicate.
-      const { rows, where } = this.access(op, plan, scope);
-      const seeds = where ? rows.filter((r) => this.evalWhere(where, this.enter(r, scope, { lifts: {} }))) : rows;
-      scopes = this.followWalk(this.keyed(seeds, sub, scope), sub.follow, destination ? null : sub.frontier, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
-      if (sub.flatten.length > 0) scopes = this.flattenScopes(scopes, sub);
-      if (sub.groupBy) scopes = this.groupScopes(scopes, sub, scope);
-      this.sortScopes(scopes, sub.orderBy);
-      if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
-      scopes = sliceBound(scopes, bound);
-    } else {
-      const acc = this.access(op, plan, scope);
-      single = acc.single;
-      scopes = this.opRows(op, scope, bound, acc);
-    }
+    const acc = this.access(op, plan, scope);
+    // A walk is always plural (SEMANTICS §20).
+    const single = sub.follow ? false : acc.single;
+    const scopes = this.opRows(op, scope, bound, acc, destination);
     switch (op.op) {
       case "collect": case "count": return { scopes, single };
       case "first": return { scopes: scopes.slice(0, 1), single };

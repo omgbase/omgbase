@@ -46,7 +46,7 @@ suite("the semantic plants rank first under the configured embedder", () => {
       expect(blocks[0]!._path).toBe(plant.target.path);
       for (const d of plant.decoys) expect(blocks.findIndex((h) => h._path === d.path)).toBeGreaterThan(0);
       // the solution's exact query: the top hit is the target
-      const sol = await server.call("query", { query: `select _path, _text from blocks order by semantic(${JSON.stringify(plant.question)}) desc limit 5` });
+      const sol = await server.call("query", { query: `blocks { select _path, _text order by semantic(${JSON.stringify(plant.question)}) desc limit 5 }` });
       expect(sol.ok).toBe(true);
       expect((sol.result as { hits: { _path: string }[] }).hits[0]!._path).toBe(plant.target.path);
       console.log(`${plant.task} blocks: target ${rank(blocks, plant.target.path)}; ${plant.decoys.map((d) => `${d.path} ${rank(blocks, d.path)}`).join("; ")}`);

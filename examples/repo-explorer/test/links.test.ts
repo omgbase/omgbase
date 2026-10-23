@@ -6,13 +6,13 @@ const P = "/processes/calcination.md";
 
 describe("the two link queries", () => {
   it("inbound: links whose _dst_path is the document; outbound: links whose _path (the source) is (5.0: every link attribute is engine-provided, so `_`-prefixed)", () => {
-    expect(inboundQuery(P)).toBe('select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == "/processes/calcination.md"');
-    expect(outboundQuery("processes/calcination.md")).toBe('select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == "/processes/calcination.md"');
+    expect(inboundQuery(P)).toBe('links { select _path, _block_id, _provenance, _field, _anchor where _dst_path == "/processes/calcination.md" }');
+    expect(outboundQuery("processes/calcination.md")).toBe('links { select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor where _path == "/processes/calcination.md" }');
   });
   it("by name: the unresolved [[wikilinks]] naming the document (_dst_id is phantom:<stem>)", () => {
     expect(wikiStem("/substances/salt.md")).toBe("salt");
     expect(wikiStem("/x/no-extension")).toBe("no-extension");
-    expect(byNameQuery("/substances/salt.md")).toBe('select _path, _block_id, _provenance, _field, _anchor from links where _dst_id == "phantom:salt"');
+    expect(byNameQuery("/substances/salt.md")).toBe('links { select _path, _block_id, _provenance, _field, _anchor where _dst_id == "phantom:salt" }');
   });
   it("reads link rows as the server spells them (a wikilink naming no document has _dst_path null)", () => {
     const rows = linkRowsOf([
@@ -51,8 +51,8 @@ describe("fetchLinks over a scripted minimal server", () => {
     expect(s.argsOf("query", 2)).toEqual({ query: byNameQuery(P), limit: 500, repo: "alchemy" });
   });
   it("resolves a wikilink by the path's tail", async () => {
-    expect(wikilinkQuery("salt")).toBe('select _path from docs where _path.endsWith("/salt.md")');
-    expect(wikilinkQuery("notes/one.md")).toBe('select _path from docs where _path.endsWith("/notes/one.md")');
+    expect(wikilinkQuery("salt")).toBe('docs { select _path where _path.endsWith("/salt.md") }');
+    expect(wikilinkQuery("notes/one.md")).toBe('docs { select _path where _path.endsWith("/notes/one.md") }');
     const s = new ScriptedCaller({ query: () => page([{ _id: "d_14", _path: "/substances/salt.md" }]) });
     expect(await resolveWikilink(s, "salt", null)).toEqual(["/substances/salt.md"]);
     expect(s.argsOf("query")).toEqual({ query: wikilinkQuery("salt"), limit: 10 });

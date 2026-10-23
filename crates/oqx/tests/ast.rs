@@ -151,7 +151,7 @@ fn transform_maps_every_expression_bottom_up() {
     });
     assert_eq!(
         print_query(&out).unwrap(),
-        "select n: jobs collect { employer: employer where $it.text(\"a\") } from people where $it.text(\"b\") and size(x) > 1 order by $it.text(\"c\")"
+        "people { n: jobs { employer: employer where $it.text(\"a\") } where $it.text(\"b\") and size(x) > 1 order by $it.text(\"c\") }"
     );
     // spans survive: the untouched source and the rebuilt root keep theirs
     assert_eq!(out.source.span(), q.source.span());
@@ -163,74 +163,71 @@ fn transform_maps_every_expression_bottom_up() {
 fn print_is_canonical() {
     assert_eq!(
         canon("name,id   from people where (age>=18)&&!(x==1)"),
-        "select name: name, id: id from people where age >= 18 and !(x == 1)"
+        "people { name: name, id: id where age >= 18 and !(x == 1) }"
     );
     assert_eq!(
         canon("from p where (a && b) || c"),
-        "from p where a and b or c"
+        "p { where a and b or c }"
     );
     assert_eq!(
         canon("from p where (a || b) && c"),
-        "from p where (a or b) and c"
+        "p { where (a or b) and c }"
     );
     assert_eq!(
         canon("select v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: (a.b).c() from p"),
-        "select v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: a.b.c() from p"
+        "p { v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: a.b.c() }"
     );
     assert_eq!(
         canon("select s: 'it\\'s', t: \"a\\nb\\\"c\" from p"),
-        "select s: \"it's\", t: \"a\\nb\\\"c\" from p"
+        "p { s: \"it's\", t: \"a\\nb\\\"c\" }"
     );
     assert_eq!(
         canon("select a: 'q', b: 1e3, c: 2.50, d: true, e: null, f: 1e21 from p"),
-        "select a: \"q\", b: 1000, c: 2.5, d: true, e: null, f: 1e+21 from p"
+        "p { a: \"q\", b: 1000, c: 2.5, d: true, e: null, f: 1e+21 }"
     );
     assert_eq!(
         canon("from p where n in 1+1..2*3 && (m in ..5) && k in 5.."),
-        "from p where n in 1 + 1..2 * 3 and m in ..5 and k in 5.."
+        "p { where n in 1 + 1..2 * 3 and m in ..5 and k in 5.. }"
     );
     assert_eq!(
         canon("people count distinct { select employer }"),
         "people count distinct { employer: employer }"
     );
-    assert_eq!(
-        canon("people collect { name }"),
-        "select name: name from people"
-    );
+    assert_eq!(canon("people collect { name }"), "people { name: name }");
     assert_eq!(
         canon("r collect { $it values from jobs }"),
-        "r collect { $it: $it values from jobs }"
+        "r { $it: $it values from jobs }"
     );
-    assert_eq!(canon("x: (1).size() from r"), "select x: (1).size() from r");
+    assert_eq!(canon("x: (1).size() from r"), "r { x: (1).size() }");
     assert_eq!(
         canon("id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }"),
-        "select id: id from t follow distinct a, ^t collect { where p == ^id frontier x depth 3 }"
+        "t { id: id follow distinct a, ^t { where p == ^id frontier x depth 3 } }"
     );
     assert_eq!(
         canon("id from t follow kids { depth 2 }, (a, b) { $key: id }"),
-        "select id: id from t follow kids collect { depth 2 }, (a, b) collect { $key: id }"
+        "t { id: id follow kids { depth 2 }, (a, b) { $key: id } }"
     );
     assert_eq!(
         canon("select v: (a, (b), c + 1) from r"),
-        "select v: (a, b, c + 1) from r"
+        "r { v: (a, b, c + 1) }"
     );
-    assert_eq!(canon("r distinct { n }"), "select distinct n: n from r");
+    assert_eq!(canon("r distinct { n }"), "r distinct { n: n }");
     assert_eq!(
         canon("n: r distinct { x } from q"),
-        "select n: r collect distinct { x: x } from q"
+        "q { n: r distinct { x: x } }"
     );
     assert_eq!(
         canon("n: size(kids { is ok }) from r"),
-        "select n: size(kids collect { where !!ok }) from r"
+        "r { n: size(kids { where !!ok }) }"
     );
     assert_eq!(
         canon("select name, adult: age >= 18 from people where adult"),
-        "select name: name, adult: age >= 18 from people where adult"
+        "people { name: name, adult: age >= 18 where adult }"
     );
-    assert_eq!(canon("distinct from r"), "distinct: distinct from r");
+    assert_eq!(canon("distinct from r"), "r { distinct: distinct }");
     assert_eq!(
         canon("from p where !jobs count { } > 1 && jobs none { }"),
-        "from p where !jobs count { } > 1 and jobs none { }"
+        "p { where !jobs count > 1 and jobs none }"
     );
     // any node prints
     let q = parse("select n: jobs collect { employer } from people where a > 1 order by name desc");
@@ -240,7 +237,7 @@ fn print_is_canonical() {
     );
     assert_eq!(
         print(Node::Select(&q.select[0])).unwrap(),
-        "n: jobs collect { employer: employer }"
+        "n: jobs { employer: employer }"
     );
     assert_eq!(
         print(Node::Order(&q.order_by.as_ref().unwrap()[0])).unwrap(),
@@ -256,12 +253,13 @@ fn print_fails_on_a_binding_and_print_template_emits_fragments() {
     assert_eq!(e.stage, Stage::Print);
     assert!(e.message.contains("print_template"), "{}", e.message);
     let t = print_template(Node::Query(&q));
-    assert_eq!(t.strings, ["select name: name from ", " where id == ", ""]);
+    assert_eq!(t.strings, ["", " { name: name where id == ", " }"]);
     assert_eq!((t.count, t.indices), (2, vec![0, 1]));
-    // the canonical clause order can move a binding past another; `indices` says so
-    let r = parse_template(&["", " collect { x: ", " }"], 2).unwrap();
+    // the canonical form can move a binding past another (the clause form's
+    // source is written after its projection); `indices` says so
+    let r = parse_template(&["select x: ", " from ", ""], 2).unwrap();
     let t = print_template(Node::Query(&r));
-    assert_eq!(t.strings, ["select x: ", " from ", ""]);
+    assert_eq!(t.strings, ["", " { x: ", " }"]);
     assert_eq!(t.indices, [1, 0]);
 }
 
@@ -273,7 +271,7 @@ fn resolve_aliases_substitutes_once() {
     let r = resolve_aliases(&q).unwrap();
     assert_eq!(
         print_query(&r).unwrap(),
-        "select name: name.upper(), cur: jobs collect { employer: employer where !end } from people where name.upper() == \"BOB\" and jobs collect { employer: employer where !end }"
+        "people { name: name.upper(), cur: jobs { employer: employer where !end } where name.upper() == \"BOB\" and jobs { employer: employer where !end } }"
     );
     assert_eq!(r.select, q.select);
     let plain = parse("from p where a");
@@ -349,7 +347,7 @@ fn builders_make_empty_span_nodes_that_print() {
     let printed = print_query(&q).unwrap();
     assert_eq!(
         printed,
-        "select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == \"d_0\" or $id == \"d_1\" follow distinct doc.out collect { depth 2 }"
+        "docs { _depth: $depth, _edges: doc.out_edges { id: $id } where $id == \"d_0\" or $id == \"d_1\" follow distinct doc.out { depth 2 } }"
     );
     assert_eq!(strip_spans(&parse(&printed)), q);
     assert_eq!(
@@ -398,27 +396,27 @@ fn a_body_frontier_is_read_at_the_row_depth_a_destination_block_s_one_level_out(
 fn print_writes_template_literals_back_with_escapes() {
     assert_eq!(
         canon("select s: `${title} (${era})` from p"),
-        "select s: `${title} (${era})` from p"
+        "p { s: `${title} (${era})` }"
     );
     // Escapes: the backtick, the backslash, a `${` opener and the control
     // characters; a lone `$` and braces stay verbatim.
     assert_eq!(
         canon("select s: `a\\`b \\${c} \\\\ $d {e}\n\tf` from p"),
-        "select s: `a\\`b \\${c} \\\\ $d {e}\\n\\tf` from p"
+        "p { s: `a\\`b \\${c} \\\\ $d {e}\\n\\tf` }"
     );
     // Interpolations print as full expressions, blocks and nested templates too.
     assert_eq!(
         canon("select s: `${a+1}: ${xs first {where n>2}} ${`<${b.lower()}>`}` from p"),
-        "select s: `${a + 1}: ${xs first { where n > 2 }} ${`<${b.lower()}>`}` from p"
+        "p { s: `${a + 1}: ${xs first { where n > 2 }} ${`<${b.lower()}>`}` }"
     );
     assert_eq!(
         canon("select s: ``, t: `${a}${b}` from p"),
-        "select s: ``, t: `${a}${b}` from p"
+        "p { s: ``, t: `${a}${b}` }"
     );
     // A template is primary: no parentheses as an operand or a receiver.
     assert_eq!(
         canon("select s: (`${a}`).upper(), t: -(`${a}`) from p where (`${a}`) == b"),
-        "select s: `${a}`.upper(), t: -`${a}` from p where `${a}` == b"
+        "p { s: `${a}`.upper(), t: -`${a}` where `${a}` == b }"
     );
     // The round-trip law over every form above.
     for src in [
@@ -443,7 +441,7 @@ fn print_writes_template_literals_back_with_escapes() {
         })
     ));
     let t = print_template(Node::Query(&q));
-    assert_eq!(t.strings, vec!["select s: `${a}`, b: ", " from p"]);
+    assert_eq!(t.strings, vec!["p { s: `${a}`, b: ", " }"]);
     assert_eq!(t.indices, vec![0]);
     let e = parse_template(&["select s: `${", "}` from p"], 1).unwrap_err();
     assert_eq!(e.stage, Stage::Lex);
@@ -526,15 +524,12 @@ fn traversal_sees_a_template_literal_and_its_interpolations() {
         },
         other => other,
     });
-    assert_eq!(
-        print_query(&mapped).unwrap(),
-        "select s: `${A} and ${B.c}` from P"
-    );
+    assert_eq!(print_query(&mapped).unwrap(), "P { s: `${A} and ${B.c}` }");
     // Alias resolution substitutes inside an interpolation.
     let q = parse("select full: `${first} ${last}`, greeting: `hi ${full}` from p");
     let r = resolve_aliases(&q).unwrap();
     assert_eq!(
         print_query(&r).unwrap(),
-        "select full: `${first} ${last}`, greeting: `hi ${`${first} ${last}`}` from p"
+        "p { full: `${first} ${last}`, greeting: `hi ${`${first} ${last}`}` }"
     );
 }

@@ -87,15 +87,15 @@ server's default repository is browsed.
 | connect: the surface gate, the profile label | `version`, `tools/list` | `version {}` → `specs.surface` (≥ 5.0), `profile`; the listing decides whether a picker is offered |
 | repository tree (left pane) | `docs_tree` | `{ depth: 1, files: true }` for the root, `{ path: "/processes/", depth: 1, files: true }` per folder as it opens (`path` is a prefix — a role, bare; `files: true` because the pane lists documents — since surface 5.1 the default page is the directory rollup alone), `{ …, cursor }` while a level is truncated; entries are directory rows `{ _path (ending /), docs, blocks }` — `docs` for the badge — or document rows `{ _id, _path, blocks }`; `total` the header's counts, `files_here` the documents at the prefix itself |
 | document view | `docs_read` | `{ _path \| _id, include_ids: true }` → `_raw` (rendered as Markdown by markdown-it, or shown raw), `properties.frontmatter / inline / computed` (the property table; the computed title is `computed._title`), `ids` + `parents` + `hashes` (the block anchors, below) |
-| backlinks | `query` | `select _path, _block_id, _provenance, _field, _anchor from links where _dst_path == "<path>"` |
-| outlinks | `query` | `select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor from links where _path == "<path>"` |
-| wikilinks naming the document | `query` | `select _path, _block_id, _provenance, _field, _anchor from links where _dst_id == "phantom:<stem>"` (`<stem>` = the file name without its extension; see feedback 10) |
-| a `[[wikilink]]` clicked | `query` | `select _path from docs where _path.endsWith("/<name>.md")` |
-| query console | `query`, `query_syntax` | the textarea's text with `limit: 50`, then `{ …, cursor }` for "more"; `query_syntax {}` once, for the drawer; the starter is `select _title, layer, tags from docs order by _path` |
-| an `_id` cell clicked | `query` | `select _path from blocks where _id == "b_…"` (nodes/links likewise), `select _path, _doc_id from revisions where _rev == "r_…"` — then the document opens (a `d_…` id needs no query) |
-| history (per document) | `query` | `select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc_id == "<id>" order by _seq desc` |
+| backlinks | `query` | `links { select _path, _block_id, _provenance, _field, _anchor where _dst_path == "<path>" }` |
+| outlinks | `query` | `links { select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor where _path == "<path>" }` |
+| wikilinks naming the document | `query` | `links { select _path, _block_id, _provenance, _field, _anchor where _dst_id == "phantom:<stem>" }` (`<stem>` = the file name without its extension; see feedback 10) |
+| a `[[wikilink]]` clicked | `query` | `docs { select _path where _path.endsWith("/<name>.md") }` |
+| query console | `query`, `query_syntax` | the textarea's text with `limit: 50`, then `{ …, cursor }` for "more"; `query_syntax {}` once, for the drawer; the starter is `docs { select _title, layer, tags order by _path }` |
+| an `_id` cell clicked | `query` | `blocks { select _path where _id == "b_…" }` (nodes/links likewise), `revisions { select _path, _doc_id where _rev == "r_…" }` — then the document opens (a `d_…` id needs no query) |
+| history (per document) | `query` | `revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc_id == "<id>" order by _seq desc }` |
 | time travel + diff | `docs_read` | `{ _id: "<id>", at: "<rev>" }` → `_raw`; the unified diff against the current body is computed in the browser (`src/lib/diff.ts`) |
-| deleted documents | `query` | `select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id from revisions where _doc == null order by _ts desc, _seq desc` |
+| deleted documents | `query` | `revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc == null order by _ts desc, _seq desc }` |
 | live feed (the strip) | `changes_since` | `{ limit: 1 }` once for `head`, then `{ cursor, limit: 50 }` every N seconds (default 3); a digest's `revisions` are `[{ _id, _path, _hash }]` |
 | frontmatter edit | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<path>", field: "_frontmatter.<k>", value }], diffs: true }` → `preview.summary` + `preview.diffs` (+ `preview.revisions[{ _id, _path, _hash }]`); on confirm `execute { plan_id, effects, reason }` (the digest form, the same effects) → the Receipt's `revisions[{ _id, _path, _hash }]` |
 
@@ -135,15 +135,15 @@ this page against `omg mcp --tools minimal`:
    can only offer a picker when a full catalog lists `repos`. A `version` that
    named the default repository's slug (it already reports the profile) would
    let a minimal client at least say which repository it is looking at.
-2. **A deleted document is listable but not readable.** `from revisions where
-   _doc == null` lists a deleted document's revisions (history is history), but
+2. **A deleted document is listable but not readable.** `revisions { _doc ==
+   null }` lists a deleted document's revisions (history is history), but
    `docs_read { _id | _path, at }` is `doc_missing` for a document that is not
    live — on every profile (`docs_read_at` has the same locator rule). The
    "deleted documents" pane therefore shows the revision rows and says why the
    body cannot be fetched. Letting `at` reach a tombstoned document's revision
    (the bytes exist in the Merkle tree) would close this.
-3. **`order by` disables the cursor.** `from revisions where _doc_id == …
-   order by _seq desc` — the natural history query — returns the top `limit`
+3. **`order by` disables the cursor.** `revisions { _doc_id == … order by
+   _seq desc }` — the natural history query — returns the top `limit`
    with `truncated: true, cursor: null`; the console's "more" button cannot page
    it, and the history pane caps at 200 revisions (`fetchAllRevisions` pages the
    default order and sorts client-side when more are needed). A keyset cursor
@@ -179,8 +179,8 @@ this page against `omg mcp --tools minimal`:
 10. **A bare `[[wikilink]]` is not a backlink.** `[[salt]]` in `index.md`,
     `calcination.md`, `mercury.md` and `sulphur.md` does not resolve to
     `/substances/salt.md`: the link row has `_dst_path: null`, `_dst_kind:
-    "document"`, `_dst_id: "phantom:salt"`, so `from links where _dst_path ==
-    "/substances/salt.md"` returns nothing and salt's backlinks read 0 in the
+    "document"`, `_dst_id: "phantom:salt"`, so `links { _dst_path ==
+    "/substances/salt.md" }` returns nothing and salt's backlinks read 0 in the
     links tab. The page lists them anyway under "wikilinks naming [[salt]]"
     with `where _dst_id == "phantom:salt"` — but that is a client guessing the
     engine's phantom naming. Resolving a bare wikilink to the unique document

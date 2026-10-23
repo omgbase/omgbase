@@ -7,10 +7,18 @@ records, nested relations, recursive trees — with a readable, declarative
 syntax:
 
 ```text
-select name, id, title
-from people
-where jobs exists { where employer == "Globocorp" and not end_date }
+people {
+  select name, id, title
+  where jobs exists { employer == "Globocorp" and not end_date }
+}
 ```
+
+The collection heads the body (since 0.26 the canonical form, GRAMMAR §2): a
+consumer word may stand before the brace (`people count { … }`), nothing follows
+the closing brace, and `from E` *inside* a body is the re-projection (a flatMap),
+never the source. The clause form `select name, id, title from people where …`
+is the pre-0.26 spelling — still parsed to the identical tree, no longer written
+by the printer.
 
 The connectives are the words `and` / `or` / `not` (`&&` / `||` / `!` are
 accepted synonyms; the canonical printer writes the words). Since 0.17 the
@@ -19,13 +27,11 @@ consumer is `collect` (`jobs { pay > 2 }`), a block may lead with a predicate
 (bare names still project), brackets `x[p]` / `x[p]!` / `x[n]` (first match /
 exactly one, required / positional), postfix `x!` (required), `is x` / `not x`,
 `x is y` / `x is not y` (identity; `x is null` is absence), and a `select` item
-may use the items to its left; after a `follow` destination that is a relation
-of the current row a brace is still the options block. Since 0.18 the root scope
+may use the items to its left. Since 0.18 the root scope
 is a row (`^$it` from a top-level row is the host's root object) and `N^name` is
-an absolute outer reference (`0^people`). Since 0.19 an outer-reference follow
-destination followed by a brace is a destination block with the implicit
-`collect` (`follow ^docs { where … }`), since `^docs` can never be a relation of
-the current row. The TypeScript README's tutorial (§10 "Sugar") and `spec/oqx`
+an absolute outer reference (`0^people`). Since 0.20 a brace after any follow
+destination is that destination's block with the implicit `collect` (`follow
+children { depth 2 }`, `follow ^docs { where … }`). The TypeScript README's tutorial (§10 "Sugar") and `spec/oqx`
 (`GRAMMAR.md` §4, `SEMANTICS.md`) are the full account; both implementations
 run the same fixtures.
 
@@ -73,9 +79,9 @@ Mirrors the reference so the two can be read side by side:
   contract (`spec/oqx/AST.md`, below): every node carries a `Span`, every
   optional field is materialized, and `where` keeps its surface form. `follow` takes a comma-separated list
   of destinations (`Follow.destinations`, since 0.14): a relation of the
-  current row, or a destination block — `^people collect { where manager ==
-  ^id }`, or `^people { … }` with the `collect` implicit over an outer-reference
-  receiver (0.19) — a select-position directive re-read per frontier row with
+  current row, or a destination block — `^people { manager == ^id }`,
+  the `collect` implicit (`^people collect { … }` spells it out) — a
+  select-position directive re-read per frontier row with
   `^` bound to that row; the walk is their union, successors unioned by
   identity within a step, and the follow `where` reads the frontier row through
   `^`.
@@ -109,9 +115,9 @@ Mirrors the reference so the two can be read side by side:
 
 ## Performance: relational patterns
 
-A nested block runs once per enclosing row, so `^customers first { where id ==
-^customer_id }`, `^orders collect { … where customer_id == ^id }` and
-`^customers exists { where id == ^customer_id }` would be quadratic if the block
+A nested block runs once per enclosing row, so `^customers first { id ==
+^customer_id }`, `^orders { … where customer_id == ^id }` and
+`^customers exists { id == ^customer_id }` would be quadratic if the block
 scanned its receiver each time. `optimize` gives every block a `BlockPlan` and
 applies `Rule`s (`fn(&BlockPlan, &RuleContext) -> Option<BlockPlan>`, a fixpoint
 over `DEFAULT_RULES`), each proven unobservable — same rows, lifts and errors as
@@ -168,7 +174,7 @@ over every spec fixture, and `tests/optimize.rs` covers the rules.
 use oqx::walk::{Node, VisitContext, Visitor};
 use oqx::{parse_string, print, print_query, visit};
 
-let q = parse_string("select name, n: jobs collect { employer } from people where jobs exists { where !end }")?;
+let q = parse_string("people { select name, n: jobs { employer } where jobs exists { !end } }")?;
 
 // every consumer directive, with the clause it sits in and the scope depth it is evaluated at
 struct Relations(Vec<(String, String, usize)>);
@@ -185,7 +191,8 @@ let mut rels = Relations(Vec::new());
 visit(Node::Query(&q), &mut rels);
 // [("jobs", "select", 1), ("jobs", "where", 1)]
 
-print_query(&q)?; // the canonical source; `print` fails (stage `Print`) on a binding — use `print_template`
+print_query(&q)?; // the canonical source — collection-scoped, `collect` as the bare brace (0.26);
+                  // `print` fails (stage `Print`) on a binding — use `print_template`
 ```
 
 Spans are `[start, end)` in Unicode code points over the raw source (a

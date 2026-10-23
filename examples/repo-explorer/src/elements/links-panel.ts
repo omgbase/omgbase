@@ -1,5 +1,5 @@
-// <links-panel>: the open document's backlinks (`from links where _dst_path ==
-// …`) and outlinks (`from links where _path == …`), each row a link to its
+// <links-panel>: the open document's backlinks (`links { _dst_path == … }`)
+// and outlinks (`links { _path == … }`), each row a link to its
 // document (lib/links.ts). Event: `open-doc { path }`.
 
 import { LitElement, css, html, nothing } from "lit";
@@ -63,14 +63,14 @@ export class LinksPanel extends LitElement {
     const p = this.path ?? "";
     return html`
       <h3>backlinks (${l.inbound.length})</h3>
-      <div class="query">from links where _dst_path == ${JSON.stringify(p)}</div>
+      <div class="query">links { _dst_path == ${JSON.stringify(p)} }</div>
       ${this.renderInbound(l.inbound)}
       <h3>outlinks (${l.outbound.length})</h3>
-      <div class="query">from links where _path == ${JSON.stringify(p)}</div>
+      <div class="query">links { _path == ${JSON.stringify(p)} }</div>
       ${this.renderOutbound(l.outbound)}
       ${l.byName.length > 0 ? html`
         <h3>wikilinks naming [[${wikiStem(p)}]] (${l.byName.length})</h3>
-        <div class="query">from links where _dst_id == ${JSON.stringify(`phantom:${wikiStem(p)}`)}</div>
+        <div class="query">links { _dst_id == ${JSON.stringify(`phantom:${wikiStem(p)}`)} }</div>
         <div class="empty">a bare <code>[[${wikiStem(p)}]]</code> is not resolved to this document by the engine (its row has <code>_dst_path: null</code>), so these are listed by the phantom's name</div>
         ${this.renderInbound(l.byName)}` : nothing}
     `;

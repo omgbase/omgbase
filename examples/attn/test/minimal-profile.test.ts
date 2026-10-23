@@ -30,9 +30,9 @@ function minimalServer(): ScriptedCaller {
     },
     query: (a) => {
       const q = String(a.query);
-      if (q.startsWith("select _rev, _seq, _ts from revisions")) return page([{ _id: "r_1", _path: "/attn/focus.md", _rev: "r_1", _seq: 1, _ts: "2026-10-13T15:02:01.000Z" }, { _id: "r_7", _path: "/attn/focus.md", _rev: "r_7", _seq: 2, _ts: "2026-10-13T15:30:01.000Z" }]);
+      if (q.startsWith("revisions { select _rev, _seq, _ts")) return page([{ _id: "r_1", _path: "/attn/focus.md", _rev: "r_1", _seq: 1, _ts: "2026-10-13T15:02:01.000Z" }, { _id: "r_7", _path: "/attn/focus.md", _rev: "r_7", _seq: 2, _ts: "2026-10-13T15:30:01.000Z" }]);
       if (q.includes('"/terms/types/intent.md"')) return page([
-        { _id: "d_a", _path: A, title: "A", status: "active", tags: ["fire"], _updated_at: "2026-10-13T08:00:00.000Z", cues: [[{ id: "f", on: "focus", query: 'from docs where "fire" in tags' }, { id: "n", on: "query-enter", query: 'from docs where type == "/terms/types/intent.md"' }, { id: "x", on: "query-exit", query: 'from docs where status == "active"' }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
+        { _id: "d_a", _path: A, title: "A", status: "active", tags: ["fire"], _updated_at: "2026-10-13T08:00:00.000Z", cues: [[{ id: "f", on: "focus", query: 'docs { "fire" in tags }' }, { id: "n", on: "query-enter", query: 'docs { type == "/terms/types/intent.md" }' }, { id: "x", on: "query-exit", query: 'docs { status == "active" }' }]], focus: { since: "2026-10-13T15:02:00.000Z" } },
         { _id: "d_b", _path: B, title: "B", status: "active", tags: [], _updated_at: "2026-10-12T08:00:00.000Z", focus: null },
       ]);
       return page([{ _id: "d_a", _path: A }]); // a cue's own query

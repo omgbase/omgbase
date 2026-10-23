@@ -12,7 +12,7 @@ so no grammar can drift from another.
 - Zero runtime dependencies. Nothing here imports the parser: highlighting is
   lexical and deliberately separate from `@omgbase/oqx`, which stays the semantic
   source of truth.
-- Describes OQX language **0.21** (`LANGUAGE_VERSION`, pinned by tests to
+- Describes OQX language **0.26** (`LANGUAGE_VERSION`, pinned by tests to
   `spec/oqx/VERSION` and to `@omgbase/oqx`).
 
 ## Install
@@ -41,7 +41,7 @@ import { createHighlighter } from "shiki";
 import { oqxShikiLanguage } from "@omgbase/oqx-syntax/shiki";
 
 const highlighter = await createHighlighter({ themes: ["github-dark"], langs: [oqxShikiLanguage] });
-highlighter.codeToHtml('name from people where age > 30', { lang: "oqx", theme: "github-dark" });
+highlighter.codeToHtml('people { select name where age > 30 }', { lang: "oqx", theme: "github-dark" });
 ```
 
 With Astro, pass the language through `markdown.shikiConfig.langs`; fenced
@@ -54,7 +54,7 @@ import * as monaco from "monaco-editor";
 import { registerOqx } from "@omgbase/oqx-syntax/monaco";
 
 registerOqx(monaco); // language + Monarch tokens + configuration
-monaco.editor.create(el, { language: "oqx", value: "name from people" });
+monaco.editor.create(el, { language: "oqx", value: "people { select name }" });
 ```
 
 `registerOqx` takes anything with a `languages` object exposing `register`,
@@ -91,7 +91,7 @@ import Prism from "prismjs";
 import { registerOqxPrism } from "@omgbase/oqx-syntax/prism";
 
 registerOqxPrism(Prism); // Prism.languages.oqx (and the aliases)
-Prism.highlight("name from people where age > 30", Prism.languages.oqx, "oqx");
+Prism.highlight("people { select name where age > 30 }", Prism.languages.oqx, "oqx");
 ```
 
 Prism is what Obsidian's reading view and many static-site tools use for code
@@ -142,7 +142,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 **Contextual words are colored only in position.** `count` is a consumer before
 `{`, `limit` a clause before a number, `in` an operator before a value, `asc` a
 direction before `,` or the end of the clause; anywhere else they are fields,
-exactly as the specification reads them (`select count from r`, `follow in`,
+exactly as the specification reads them (`r { select count }`, `follow in`,
 `in exists { … }` on omgbase's `docs`).
 
 The full table — with the CodeMirror 6 highlight tag, the CodeMirror 5 class

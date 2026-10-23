@@ -1524,7 +1524,7 @@ fn range_function_is_just_a_call() {
 fn a_missing_source_is_a_parse_error() {
     assert_parse_error(
         "name where active",
-        &["a query must name its source with `from <collection>`"],
+        &["a query must name its source before its body: `<collection> { … }`"],
     );
     assert_parse_error("name", &["a query must name its source"]);
     let e = parse_string("").unwrap_err();
@@ -2993,9 +2993,12 @@ fn follow_destination_errors() {
         "id from tree follow ^tree collect { where parent == ^id } { depth 2 }",
         &["unexpected '{' after the query"],
     );
-    // a consumer word not followed by `{` is not a block, so the destination is
-    // plain and the word is leftover
-    assert_parse_error("id from tree follow children collect", &["unexpected"]);
+    // a consumer word with no block is the destination block over the empty
+    // block (0.26): `follow children collect` ≡ `follow children { }`
+    assert_eq!(
+        parse("id from tree follow children collect"),
+        parse("id from tree follow children { }")
+    );
 }
 
 // ---- template literals (0.21) ---------------------------------------------------

@@ -176,44 +176,6 @@
       }
     },
     {
-      "name": "follow in a where op",
-      "roots": {
-        "tree": [
-          {
-            "id": "root",
-            "label": "Root",
-            "children": [
-              {
-                "id": "a",
-                "label": "A",
-                "children": [
-                  {
-                    "id": "a1",
-                    "label": "A1",
-                    "children": []
-                  }
-                ]
-              },
-              {
-                "id": "b",
-                "label": "B",
-                "children": []
-              }
-            ]
-          }
-        ]
-      },
-      "query": "from tree where children exists { follow children }",
-      "expect": {
-        "error": {
-          "stage": "eval",
-          "includes": [
-            "`follow` is only valid on a select-position collect"
-          ]
-        }
-      }
-    },
-    {
       "name": "errors are raised even when the bound is never reached",
       "notes": "A block's bound is evaluated before its rows are read.",
       "roots": {

@@ -19,25 +19,32 @@ host object model (`_doc.layer`, `_section._blocks`, `_dst._title`); WHITESPACE
 query directives belong to OQX — a nested query is `<receiver> collect|exists|
 count|first|single { <block> }` (a postfix directive + a `{ … }` block), never a
 method. Its distinctive power is the receiver-constrained nested query that
-correlates to the current row: `from docs where _nodes exists { where _kind ==
-"md:task" }` returns only the docs that themselves contain a matching node.
+correlates to the current row: `docs { _nodes exists { _kind == "md:task" } }`
+returns only the docs that themselves contain a matching node.
 
-  [select <items>] from <target> [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
-                   [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]
-                   [order by <expr> [asc|desc], …] [limit N] [offset N]
-  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
+  <target> { [select <items>] [where <pred>] [frontier <pred>] [follow <dest> [{ … }], …]
+             [flatten <expr> [{ … }] [as <name>]]… [group by <key>, …] [having <pred>]
+             [order by <expr> [asc|desc], …] [limit N] [offset N] }
+  <target> count|exists|none|first|single { <block> }     (a scalar or one row; <target> is docs, blocks, nodes, links or revisions)
 
+THE COLLECTION HEADS THE BODY (OQX 0.26): `docs { … }` reads the documents and
+shapes them with the clauses inside the braces; a consumer word between the
+target and the brace (`docs count { … }`) shapes the whole result; nothing may
+follow the closing brace. The pre-0.26 clause form `select … from docs where …`
+is still read as the same query — write the braces.
 CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset —
-each at most once (`flatten` may repeat); an out-of-order clause is a parse error naming the order.
+each at most once (`flatten` may repeat; `from` inside a body RE-PROJECTS the
+rows through a relation, see Nested — it never names the source); an
+out-of-order clause is a parse error naming the order.
 Only `select` may drop its keyword, and only as the first clause
-(`_path, era from docs where …`). A top-level predicate needs `where`, because
-`where` follows `from` (`era > 1600 from docs` is the clause-order error); a
-block may LEAD with a predicate (see Sugar), but a predicate after a projection
-still needs the keyword (`{ _name where _kind == "md:task" }`, not
-`{ _name, _kind == "md:task" }`); `from docs count` is an error (write
-`docs count { … }`). `where` and later `select` items may use the same body's
-`select` aliases (`select _path, old: era < 1000 from docs where old`; an alias
-shadows a same-named field there). `and` / `or` / `not` are the connectives;
+(`docs { _path, era where … }`). A body may LEAD with a predicate — `docs { era
+> 1600 }` filters (see Sugar) — but a predicate after a projection still needs
+the keyword (`{ _name where _kind == "md:task" }`, not `{ _name, _kind ==
+"md:task" }`); in the clause form a top-level predicate needs `where` (`era >
+1600 from docs` is the clause-order error), and `from docs count` is an error
+(write `docs count { … }`). `where` and later `select` items may use the same
+body's `select` aliases (`docs { select _path, old: era < 1000 where old }`; an
+alias shadows a same-named field there). `and` / `or` / `not` are the connectives;
 the symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and
 what `print` writes).
 
@@ -68,13 +75,13 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
   boss: ^docs[_path == ^manager], bossName: boss._title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
   Contextual words (limit order offset follow collect count first distinct desc by in frontier depth group having
-  flatten as) parse as fields in expression position (select o: order from docs).
+  flatten as) parse as fields in expression position (docs { select o: order }).
 
 Results are LEAN hits — { _id, _path } + whatever `select` projects (or `values`,
 `count`, `exists`, `none`). The envelope keys ARE the attributes: copy a hit's
 `_id` straight into `where _id == "…"` (no translation); `select _id, _path` is
 simply the envelope (no duplicate columns); an alias `_id:`/`_path:` on any OTHER
-expression is refused — `select _path: _doc._path from blocks` fails ("projection
+expression is refused — `blocks { select _path: _doc._path }` fails ("projection
 `_path` collides with the hit envelope — alias it (`p: _doc._path`)"); a row
 surfacing as a value (an empty `collect { }`) is the same `{ _id, _path }`. Every
 other tool spells a row the same way (`docs_read` → `{ _id, _path, rev, properties,
@@ -105,8 +112,8 @@ UNDERSCORE-prefixed name is the ENGINE's (however derived: `_id`, `_path`,
 $stop, $leaf, $frontier, $ordinal are values the LANGUAGE injects into a scope;
 omgbase adds NO $ names (a `$id` in a query is an unknown name, absent). Nothing
 bare is reserved: `title`, `tags`, `path`, `id`, `format`, `doc` are your keys
-when you wrote them. Collections stay bare (`from docs`, `^docs`, `docs count { … }`,
-`entries(^$it)`) — `from` names a collection, not a row property — and so do the
+when you wrote them. Collections stay bare (`docs { … }`, `^docs`, `docs count { … }`,
+`entries(^$it)`) — the collection before a body is a root, not a row property — and so do the
 row functions in call position (`text("x")`, `under(…)`, `refs(x)`): a call is
 never an entry read. There is NO self alias (the 4.x `doc`/`block`/`section`):
 `$it` is the self, and `_doc`/`_block`/`_dst` reach ANOTHER row. So `_path` is the
@@ -156,8 +163,8 @@ docs:
                        is the filter).
   - relations        = _nodes, _blocks, _out_links / _in_links (a doc's links as
                        rows; the documents at their other end are
-                       _out_links collect distinct { from _dst } and
-                       _in_links collect distinct { from _doc } — there is no
+                       _out_links distinct { from _dst } and
+                       _in_links distinct { from _doc } — there is no
                        out / in relation), _revisions (the document's stored
                        revisions, oldest first — see revisions below).
 
@@ -228,7 +235,7 @@ revisions:  (history as rows — one per stored revision of every document of th
                        a deleted document, so where _doc == null is the revisions
                        of deleted documents. Closed: a bare name is filter_invalid.
   - on docs          = _revisions is a relation (oldest first): a document with
-                       more than one version is docs { _revisions count { } > 1 }.
+                       more than one version is docs { _revisions count > 1 }.
   - text()/semantic() are N/A on revisions. The body as of a revision is
     docs_read { _path, at: "<rev>" } (docs_read_at is the same call).
 
@@ -246,7 +253,7 @@ revisions:  (history as rows — one per stored revision of every document of th
                 absolute 0^docs from ANY depth. ^_id / 0^_id = the repository id.
                 ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the
                 five collections. At the root scope itself a bare target is the scan
-                (docs count { … }, from docs, entries(docs)).
+                (docs { … }, docs count { … }, entries(docs)).
                 ERRORS: a bare `docs` INSIDE a block reads a property of the current
                 row, which has none — refused ("did you mean ^docs"); so is a bare
                 `blocks`/`nodes`/`revisions` there (a doc's own relations are
@@ -337,7 +344,7 @@ revisions:  (history as rows — one per stored revision of every document of th
                        follow refs(before), refs(after) walks a timeline both ways.
                        The reverse direction needs no function: a document's
                        _path is already the reference form, so
-                       ^docs { where ^_path in list(after) } is
+                       ^docs { ^_path in list(after) } is
                        "the documents whose `after` names me".
   A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
                        (filter_invalid). `follow before` over a list of paths
@@ -346,22 +353,28 @@ revisions:  (history as rows — one per stored revision of every document of th
 ## Nested queries & consumers
 
   <receiver> collect|exists|none|count|first|single { <block> }
+    The block may be omitted after a consumer word (OQX 0.26): the omitted block is
+    the empty block — `_nodes exists`, `_revisions count > 1`, `_blocks first`,
+    `docs count` as a whole query; `x { }` keeps its braces (the brace is what
+    makes a collect). A projection block over a lookup is the lookup's projection:
+    `_blocks[0] { _text }` ≡ `_blocks first { _text offset 0 }`.
     receiver = a relation (_nodes, _blocks, _doc._out_links, _section._blocks, …), a
                reach-through row (_dst, _doc: one row — _dst { _title }), a
     list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
     block    = [select …] [from E] [where …] [frontier …] [follow …] [flatten …] [group by …] [having …] [order by …] [limit N] [offset N]
-               — the same fixed order as the top level (`from` optional; the
-               receiver supplies the rows). A leading name/alias list is the
-               projection (`select` dropped); a predicate always needs `where`.
-               A `from E` inside a block RE-PROJECTS the rows through a relation
-               (a typed flatMap): `docs collect { from _nodes where _kind == "md:task" }`
-               starts at docs, projects each through `_nodes`, and queries the
-               resulting nodes; a scalar relation (`from _doc`) contributes one
-               row; a missing or non-navigable relation is a loud error, never a
-               global scan.
-  exists    ≥1 row      _nodes exists { where _kind == "md:task" and not checked }
-  none      0 rows      _nodes none { where _kind == "md:task" and not checked }  ("every task done")
-  count     a number    _nodes count { where _kind == "md:task" } >= 2
+               — the same fixed order as the whole query, whose body is a block
+               too (the target is its receiver). A leading name/alias list is the
+               projection (`select` dropped); a predicate needs `where` unless
+               it LEADS the block (Sugar). A `from E` inside a block RE-PROJECTS
+               the rows through a relation (a typed flatMap):
+               `docs { from _nodes where _kind == "md:task" }` starts at docs,
+               projects each through `_nodes`, and queries the resulting nodes;
+               a scalar relation (`from _doc`) contributes one row; a missing or
+               non-navigable relation is a loud error, never a global scan. `from`
+               never names the source — the collection before the body does.
+  exists    ≥1 row      _nodes exists { _kind == "md:task" and not checked }
+  none      0 rows      _nodes none { _kind == "md:task" and not checked }  ("every task done")
+  count     a number    _nodes count { _kind == "md:task" } >= 2
   collect   rows (default) — in select for nested results; in where with a lift
   first / single   zero-or-one (single errors on >1) — lookups in select
   distinct  on any consumer: dedup by projected value — _nodes count distinct { select _kind }
@@ -369,9 +382,9 @@ revisions:  (history as rows — one per stored revision of every document of th
             consumer reduces: _nodes exists { offset 1 } = at least two;
             first { … offset 1 } = the second.
   lift      `^name:` in a where-collect binds values outward:
-            select _path, open from docs where _nodes collect { ^open: _value where _kind == "md:task" and not checked }
-  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;
-            ^nodes single { where _kind == "person" and _attrs.id == ^owner_id }  lookup;
+            docs { select _path, open where _nodes { ^open: _value where _kind == "md:task" and not checked } }
+  joins     ^<t> exists { slug == ^ref }  semi-join; not … exists  anti-join;
+            ^nodes single { _kind == "person" and _attrs.id == ^owner_id }  lookup;
             x in ^keys  membership over a lifted set.
 
 ## select — projection
@@ -384,13 +397,13 @@ revisions:  (history as rows — one per stored revision of every document of th
   _raw        whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct _type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
-                select distinct type values from docs          → values: ["hub","lab-note",…]
-                select _path values from docs                  → values: ["/index.md", …]
-                tags: tags collect { $it values }             → a plain array
+                docs { select distinct type values }          → values: ["hub","lab-note",…]
+                docs { select _path values }                   → values: ["/index.md", …]
+                tags: tags { $it values }                     → a plain array
                 h: _nodes first { _name values where _kind == "md:section" order by first_ordinal }
   entries(x)  a record as a collection ($key / $it per entry), key order:
-                select fm: entries(_data) collect { k: $key, v: $it }
-                where entries(_frontmatter) exists { where $key == "era" and $it > 1600 }
+                select fm: entries(_data) { k: $key, v: $it }
+                where entries(_frontmatter) exists { $key == "era" and $it > 1600 }
                 entries(_inline), entries(_attrs), a nested map, or a list (index keys)
   $semantic_score is not a field — project semantic("…") under an alias instead.
 
@@ -408,9 +421,9 @@ revisions:  (history as rows — one per stored revision of every document of th
   name — a later flatten (flatten jobs as j flatten j.tags as t), group by,
   having, select, order by; where runs before it. A flattened query pages by
   position (cursor null); as _id / as _path is refused (the envelope reads them).
-    select _path, tags from docs where type == "process" flatten tags order by _path, tags
-    select _path, t: b._text from docs flatten _blocks { where _type == "task" and not checked } as b
-    select tags, n: count() from docs flatten tags group by tags order by count() desc
+    docs { select _path, tags where type == "process" flatten tags order by _path, tags }
+    docs { select _path, t: b._text flatten _blocks { _type == "task" and not checked } as b }
+    docs { select tags, n: count() flatten tags group by tags order by count() desc }
 
 ## order by, limit/offset, pagination
 
@@ -425,26 +438,26 @@ revisions:  (history as rows — one per stored revision of every document of th
   The citation graph is the LINK ROWS walked through a destination block:
   _dst is a link's destination document (absent for an external or dangling
   link — it then contributes no successor), _doc its source.
-  from docs where <seed> follow _out_links collect { from _dst }     docs the seed links TO
-  from docs where <seed> follow _in_links collect { from _doc }      backlinks
-    follow _out_links collect { from _dst depth 3 }                  bound (1..8, default 8) — a clause of the block
-    follow _out_links collect { from _dst where layer == "canon" }   keep only matching successors
-    follow _in_links collect { from _doc where ^_path in list(before) }   ^ = the row being expanded
+  docs { where <seed> follow _out_links { from _dst } }     docs the seed links TO
+  docs { where <seed> follow _in_links { from _doc } }      backlinks
+    follow _out_links { from _dst depth 3 }                  bound (1..8, default 8) — a clause of the block
+    follow _out_links { from _dst where layer == "canon" }   keep only matching successors
+    follow _in_links { from _doc where ^_path in list(before) }   ^ = the row being expanded
                                                    (^^ = the walk's enclosing scope)
-    follow _out_links collect { from _dst where _predicate == "depends_on" }   one predicate only
-    follow _out_links collect { from _dst }, _in_links collect { from _doc }
+    follow _out_links { from _dst where _predicate == "depends_on" }   one predicate only
+    follow _out_links { from _dst }, _in_links { from _doc }
                                                    several destinations: their union
                                                    (one step dedups by identity)
-    follow ^docs { where _out_links exists { where _dst_path == ^^_path } }
+    follow ^docs { _out_links exists { _dst_path == ^^_path } }
                                                    a destination block over the root's
                                                    documents, re-read per frontier row
                                                    (^ = that row) = the backlinks walk
-    follow _out_links collect { from _dst frontier type == "practitioner" }   cut, keeping the frontier row
-    from docs where type == "process" frontier !verified follow _out_links collect { from _dst }
+    follow _out_links { from _dst frontier type == "practitioner" }   cut, keeping the frontier row
+    docs { type == "process" frontier !verified follow _out_links { from _dst } }
                                                    the BODY's frontier applies to the seeds:
                                                    an unverified seed is kept, not expanded
-    follow distinct _out_links collect { from _dst } / … { $key: group from _dst }   identity control ($key)
-    follow refs(before), ^docs { where ^_path in list(after) }    forward over `before`, backward
+    follow distinct _out_links { from _dst } / … { $key: group from _dst }   identity control ($key)
+    follow refs(before), ^docs { ^_path in list(after) }    forward over `before`, backward
                                                    over every doc whose `after` names me
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
   depth|cycle), $leaf/$frontier, $ordinal (a deterministic 1..N rank over the
@@ -452,14 +465,15 @@ revisions:  (history as rows — one per stored revision of every document of th
   `where $ordinal <= N` for a deterministic budget cut), $key — usable in
   select/order by and the top-level post-walk where (a where conjunct that
   reads one filters the walk's RESULT; the other conjuncts remain the seed
-  predicate), NOT metadata of the candidates a destination block's where reads,
-  nor valid inside a consumer directive. Cyclic graphs are safe: a revisited
+  predicate), NOT metadata of the candidates a destination block's where reads;
+  a consumer directive may carry a follow of its own (its block yields the
+  walk: `_children count { follow _children } > 5`). Cyclic graphs are safe: a revisited
   node is admitted once as a `$stop == "cycle"` occurrence and never
   re-expanded. The default keeps one occurrence per distinct walk path;
   `follow distinct` dedups reached rows by identity.
   Destination blocks (OQX 0.20): a brace after ANY destination opens that
   destination's block — _children { depth 2 }, refs(x) { depth 2 }, _out_links
-  collect { from _dst depth 2 }, ^docs { where ^_path in list(after) } — with the
+  { from _dst depth 2 }, ^docs { ^_path in list(after) } — with the
   0.17 body rules (where-first, projections) and two clauses of its own after
   `where`: frontier <pred> (occurrences reached through this destination that
   match are frontiers; ^ there is the walk's enclosing scope) and depth <n>
@@ -471,51 +485,51 @@ revisions:  (history as rows — one per stored revision of every document of th
   the old `by` is $key. A bare follow ^docs (no brace, no consumer) is an
   error naming both block spellings.
   Type-preserving relations: a block's _children; a section node's _children and
-  _subsections; the citation graph is _out_links collect { from _dst } / _in_links collect { from _doc }.
-  from links where _dst_path == "/notes/x.md"       inbound links to a doc, as rows
-  select d: _dst._title, k: _dst_kind from links       the destination document's title
-  from docs where _out_links exists { where _dst.layer == "draft" }   links into drafts
-  select b: _in_links collect distinct { from _doc } from docs     backlinks as { _id, _path }
-  select _doc_id, _dst_path from links where _predicate == "depends_on"
-  from docs where not _in_links exists { }      orphans (nothing links in)
+  _subsections; the citation graph is _out_links { from _dst } / _in_links { from _doc }.
+  links { _dst_path == "/notes/x.md" }       inbound links to a doc, as rows
+  links { select d: _dst._title, k: _dst_kind }       the destination document's title
+  docs { _out_links exists { _dst.layer == "draft" } }   links into drafts
+  docs { select b: _in_links distinct { from _doc } }     backlinks as { _id, _path }
+  links { select _doc_id, _dst_path where _predicate == "depends_on" }
+  docs { not _in_links exists }      orphans (nothing links in)
   (The `graph` tool is a convenience wrapper that compiles to a follow query.)
 
 ## semantic grain
 
-from docs ranks whole DOCUMENTS (one hit per file); from blocks ranks PASSAGES.
+docs { … } ranks whole DOCUMENTS (one hit per file); blocks { … } ranks PASSAGES.
 text()/where prune the candidate set; only order by reweights.
 
 ## Examples
 
-  from docs where layer == "working"
-  from docs where _path.startsWith("/guides/") and _updated_at >= "2026-08-01"
-  select layer, tags from docs where "pricing" in list(tags)
-  from docs where _inline.owner == "alice"
-  from docs where _title.lower().contains("q3 plan")
-  from docs where _format == "yaml"
-  from docs where type == "practitioner" order by era desc limit 2
-  from docs where _nodes none { where _kind == "md:task" and not checked }
-  from docs where tags exists { where $it == "tria-prima" }
-  select fm: entries(_data) collect { k: $key, v: $it } from docs where _path == "/x.md"
-  select owner_id, owner: ^nodes single { where _kind == "person" and _attrs.id == ^owner_id } from docs
-  from blocks where _type == "task" and not checked and under_heading("Launch") and _doc.layer == "working"
-  from blocks where _type == "paragraph" and has_edge("references", "d_92aaaaa")
-  select _path, $depth from docs where _path == "/timeline/review.md" follow refs(before), refs(after)
-  select _path, next: ^docs collect { _path where ^_path in list(before) } from docs where type == "milestone"
-  select _path, n: size(^docs), repo: ^_id from docs limit 1
-  select path, title from docs where has(path)
+  docs { layer == "working" }
+  docs { _path.startsWith("/guides/") and _updated_at >= "2026-08-01" }
+  docs { select layer, tags where "pricing" in list(tags) }
+  docs { _inline.owner == "alice" }
+  docs { _title.lower().contains("q3 plan") }
+  docs { _format == "yaml" }
+  docs { type == "practitioner" order by era desc limit 2 }
+  docs { _nodes none { _kind == "md:task" and not checked } }
+  docs { tags exists { $it == "tria-prima" } }
+  docs { select fm: entries(_data) { k: $key, v: $it } where _path == "/x.md" }
+  docs { select owner_id, owner: ^nodes single { _kind == "person" and _attrs.id == ^owner_id } }
+  blocks { _type == "task" and not checked and under_heading("Launch") and _doc.layer == "working" }
+  blocks { _type == "paragraph" and has_edge("references", "d_92aaaaa") }
+  docs { select _path, $depth where _path == "/timeline/review.md" follow refs(before), refs(after) }
+  docs { select _path, next: ^docs { _path where ^_path in list(before) } where type == "milestone" }
+  docs { select _path, n: size(^docs), repo: ^_id limit 1 }
+  docs { select path, title where has(path) }
   docs { type == "substance" and not verified }
-  select subject, process: ^docs[slug == ^subject]!._path from docs where type == "lab-note"
-  select _path, back: _nodes first { select p: 0^docs collect { _path where ^^_path in list(after) } values } from docs where type == "milestone"
-  select _path, prior: refs(before) collect { _path, when } from docs where type == "milestone"
-  from blocks order by semantic("identity preservation across edits") desc limit 10
-  select _uri from links where _dst_kind == "external"
-  docs count { where layer == "canon" }
-  select _seq, _origin, _ts, _hash from revisions where _path == "/processes/calcination.md" order by _seq desc
-  from docs where _revisions count { where _origin == "api" } > 0
-  select p: _path, d: _doc._path from revisions where _doc == null
-  select layer, n: count(), titles: collect(_title), open: rows count { where _nodes exists { where _kind == "md:task" and not checked } } from docs group by layer having count() > 1 order by count() desc
-  select _path, tag: tags from docs where "process" in tags flatten tags order by _path, tags
+  docs { select subject, process: ^docs[slug == ^subject]!._path where type == "lab-note" }
+  docs { select _path, back: _nodes first { select p: 0^docs { _path where ^^_path in list(after) } values } where type == "milestone" }
+  docs { select _path, prior: refs(before) { _path, when } where type == "milestone" }
+  blocks { order by semantic("identity preservation across edits") desc limit 10 }
+  links { select _uri where _dst_kind == "external" }
+  docs count { layer == "canon" }
+  revisions { select _seq, _origin, _ts, _hash where _path == "/processes/calcination.md" order by _seq desc }
+  docs { _revisions count { _origin == "api" } > 0 }
+  revisions { select p: _path, d: _doc._path where _doc == null }
+  docs { select layer, n: count(), titles: collect(_title), open: rows count { _nodes exists { _kind == "md:task" and not checked } } group by layer having count() > 1 order by count() desc }
+  docs { select _path, tag: tags where "process" in tags flatten tags order by _path, tags }
 
 Common mistake: `$path`/`$id` — omgbase has no $ names; the engine's location and
 identity are `_path`/`_id`. Another: the 4.x bare `path`/`id`/`title`/`tags` — a
@@ -601,8 +615,9 @@ pub fn query_syntax_section(slug: &str) -> Option<String> {
 pub const QUERY_SYNTAX_CARD: &str = r#"# query — OQX card. Chapters: query_syntax { section: "<name>" }; the manual: { section: "all" }
 
 One OQX string; limit/cursor page the hits; bare: true drops the { _id, _path } envelope.
-  [select <items>] from <target> [where <pred>] [follow <dest> { … }] [order by <expr> [desc]] [limit N] [offset N]
-  <target> count|exists|none|first|single { <block> }     a scalar or one row
+  <target> { [select <items>] [where <pred>] [follow <dest> { … }] [order by <expr> [desc]] [limit N] [offset N] }
+  <target> count|exists|none|first|single [{ <block> }]   a scalar or one row; no block = the empty block (docs count)
+The collection (docs blocks nodes links revisions) heads the body; nothing follows its closing brace.
 CLAUSE ORDER IS FIXED: select, from, where, frontier, follow, flatten, group by, having, order by, limit, offset.
 and / or / not. Comparisons strict and typed; null == a missing field. A list key: "x" in tags, never tags == "x".
 Strings .contains("s") .startsWith("p") .lower(); x ~* "re" (ci regex), x !~ "re". Dates date("today"),
@@ -621,20 +636,20 @@ out; ^docs ^blocks ^nodes ^links the repository from a row. An unknown bare name
 
 NESTED: <receiver> collect|exists|none|count|first|single { [select …] [where …] [order by …] [limit N] } over a
 relation, a list key, entries(x) or ^docs; no consumer = collect, a leading predicate = where: docs { type == "x" }.
-FOLLOW: from docs where <seed> follow _out_links collect { from _dst depth 3 }   links out; _in_links { from _doc }
+FOLLOW: docs { where <seed> follow _out_links { from _dst depth 3 } }   links out; _in_links { from _doc }
 backlinks; refs(before) a property's documents; $depth per row. SEARCH: text("words") prunes; order by semantic("…") desc.
 
-  from docs where layer == "working"
-  select _title, stage from docs where "process" in tags order by _path limit 5
-  select _type, _text from blocks where _path == "/processes/calcination.md"
-  select _path, _value from nodes where _kind == "md:task" and not checked
-  select _path, _block_id from links where _dst_path == "/processes/calcination.md"
-  from docs where _title.lower().contains("salt") and _updated_at >= "2026-01-01"
-  from docs where _nodes exists { where _kind == "md:task" and not checked }
-  select _path, $depth from docs where _path == "/timeline/review.md" follow refs(before), refs(after)
-  docs count { where layer == "canon" }
-  select _seq, _ts, _hash from revisions where _path == "/processes/calcination.md" order by _seq desc
-  select tags, n: count() from docs flatten tags group by tags order by count() desc
+  docs { layer == "working" }
+  docs { select _title, stage where "process" in tags order by _path limit 5 }
+  blocks { select _type, _text where _path == "/processes/calcination.md" }
+  nodes { select _path, _value where _kind == "md:task" and not checked }
+  links { select _path, _block_id where _dst_path == "/processes/calcination.md" }
+  docs { _title.lower().contains("salt") and _updated_at >= "2026-01-01" }
+  docs { _nodes exists { _kind == "md:task" and not checked } }
+  docs { select _path, $depth where _path == "/timeline/review.md" follow refs(before), refs(after) }
+  docs count { layer == "canon" }
+  revisions { select _seq, _ts, _hash where _path == "/processes/calcination.md" order by _seq desc }
+  docs { select tags, n: count() flatten tags group by tags order by count() desc }
 
 Every error is filter_invalid naming what to change; when the engine can correct the call, data.fix IS the call.
 Chapters: sugar paths targets scoping scalars predicates nested select flatten order follow semantic examples; all.
@@ -660,7 +675,7 @@ mod tests {
         query_syntax_section,
     };
 
-    const TARGETS: [&str; 4] = ["docs", "blocks", "nodes", "links"];
+    const TARGETS: [&str; 5] = ["docs", "blocks", "nodes", "links", "revisions"];
     const CONSUMERS: [&str; 7] = [
         "collect", "exists", "none", "count", "first", "single", "distinct",
     ];

@@ -92,8 +92,8 @@ dev proxy); nothing imports `@omgbase/core`. On load:
    when it is older than 3.0 (or missing) and says so (`lib/paths.ts`
    `surfaceProblem`); `repos` → the repository picker (the choice is
    persisted).
-3. **Recently updated** — `select _path, _title, _updated_at from docs order by
-   _updated_at desc limit 25` (bare on a 3.x/4.x server — `recentQuery(filter,
+3. **Recently updated** — `docs { select _path, _title, _updated_at order by
+   _updated_at desc limit 25 }` (bare on a 3.x/4.x server — `recentQuery(filter,
    names)`); for each hit `docs_history { _id | _path }` gives the version list
    and the last two versions are diffed with `docs_diff_unified { _id | _path,
    from_rev, to_rev }`; a document with one version is **created** and
@@ -243,26 +243,31 @@ same information.
 ### The filter
 
 The field is the recent query as one CodeMirror 6 editor with OQX highlighting
-(`@omgbase/oqx-syntax`). Idle with no filter it is the plain two-line query,
-dimmed:
+(`@omgbase/oqx-syntax`). Idle with no filter it is the plain four-line query,
+dimmed — the collection heads the body, the clauses indented, the brace closes
+it:
 
 ```
-select _path, _title, _updated_at from docs
-order by _updated_at desc limit 25
+docs {
+  select _path, _title, _updated_at
+  order by _updated_at desc limit 25
+}
 ```
 
-(against a 3.x/4.x server the same frame reads `select path, title, updated_at
-from docs` / `order by updated_at desc limit 25` — the element's `names`
-property). Click into it (anywhere) and a `where ` line opens between the two with the
-caret right after the keyword, in the hole:
+(against a 3.x/4.x server the same frame reads `select path, title, updated_at`
+/ `order by updated_at desc limit 25` — the element's `names` property). Click
+into it (anywhere) and a `where ` line opens between the `select` and the `order
+by` with the caret right after the keyword, in the hole:
 
 ```
-select _path, _title, _updated_at from docs
-where ⟨hole⟩
-order by _updated_at desc limit 25
+docs {
+  select _path, _title, _updated_at
+  where ⟨hole⟩
+  order by _updated_at desc limit 25
+}
 ```
 
-Lines 1 and 3 and the `where ` are the frame — read-only and dimmed; the hole
+The other four lines and the `where ` are the frame — read-only and dimmed; the hole
 is the only text that takes typing (it has a faint background; empty, it shows
 `status == "active"` as a placeholder). The `where` line stays while there is
 a filter, and while the field is focused with an empty hole (the caret needs
@@ -281,12 +286,13 @@ and blur handlers and when a new value arrives from outside; `frameFor(filter,
 { editing })` is the pure text + hole + mode for all four states.
 
 What is sent is `recentQuery(filter)` (`lib/feed.ts`): the same tokens on one
-line, `select … from docs where <filter> order by …`; with an empty hole the
+line, `docs { select … where <filter> order by … }`; with an empty hole the
 `where` clause is omitted (an empty `where` would not parse), which is also
 why the idle frame has no `where` line — in every state the text on screen is
-the query sent, modulo line breaks. The brace form `from docs { … }` is not
-OQX (the parser rejects `{` after the target), which is why the frame uses
-`where`.
+the query sent, modulo line breaks and indentation. The hole is the `where`
+clause and nothing else: a where-first body (`docs { <predicate> }`) would
+make the keyword part of the user's text, so the frame keeps `where` and the
+user types only the predicate.
 
 - **The recent list** is that query: it re-runs whenever the filter changes.
   This is also how the filter is validated — a `filter_invalid` answer puts
@@ -295,8 +301,8 @@ OQX (the parser rejects `{` after the target), which is why the frame uses
   the filter is fixed nothing is hidden. Fixing it re-runs the list and
   resumes filtering.
 - **The feed**: every poll that brings digests runs ONE lookup query over the
-  documents they touch — `select _path, _title from docs where (_path ==
-  "/a.md" or _path == "/b.md" …)` (`matchQuery`, in the server's spelling; OQX
+  documents they touch — `docs { select _path, _title where (_path ==
+  "/a.md" or _path == "/b.md" …) }` (`matchQuery`, in the server's spelling; OQX
   has no array literal, so the path equalities are or-ed, each JSON-quoted;
   hits read through `hitPath`). Its titles are the cards' titles
   (`titlesByPath`: each change shows the title prominent and the `/`-rooted

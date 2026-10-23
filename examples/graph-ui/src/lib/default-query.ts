@@ -5,7 +5,7 @@
 // The query walks the timeline from `kickoff.md` both ways: back through each
 // document's own `before` (`refs(before)` resolves the references to the
 // documents), and forward through the documents whose `after` names it — the
-// frontier's backlinks (`_in_links collect { from _doc }`; a `/`-rooted
+// frontier's backlinks (`_in_links { from _doc }`; a `/`-rooted
 // frontmatter reference is extracted as an edge, so every such document is
 // among them) narrowed to the ones whose `after` really says so (`^_path in
 // list(after)`: the row's path is `/`-rooted like the authored reference).
@@ -22,11 +22,12 @@ export const DEFAULT_START = "/timeline/kickoff.md";
 
 /** The sample default in a server's spelling. */
 export function defaultQuery(names: EngineNames = NAMES_5): string {
-  return `select ${names.path}, ${names.title}, phase, before, after
-from docs
-where ${names.path} == ${JSON.stringify(DEFAULT_START)}
-follow distinct refs(before), ${names.in_links} collect { from ${names.doc} where ^${names.path} in list(after) }
-order by $ordinal`;
+  return `docs {
+  select ${names.path}, ${names.title}, phase, before, after
+  where ${names.path} == ${JSON.stringify(DEFAULT_START)}
+  follow distinct refs(before), ${names.in_links} { from ${names.doc} where ^${names.path} in list(after) }
+  order by $ordinal
+}`;
 }
 
 /** The default in the native (5.0) spelling — what a fresh editor holds before a server is known. */

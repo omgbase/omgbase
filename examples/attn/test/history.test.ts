@@ -38,7 +38,7 @@ const REVS = [
 /** A `revisions` row and a `docs_read { at }` result as surface 5.0 spells them: every attribute of a revision is the engine's (`_id` = the rev, `_path`, `_rev`, `_seq`, `_ts`), the bytes `_raw`. */
 function server(revs = REVS): ScriptedCaller {
   return new ScriptedCaller({
-    query: (a) => (String(a.query).startsWith("select _rev, _seq, _ts from revisions") ? page(revs.map((r) => ({ _id: r.rev, _path: "/attn/focus.md", _rev: r.rev, _seq: r.seq, _ts: r.ts }))) : page([])),
+    query: (a) => (String(a.query).startsWith("revisions { select _rev, _seq, _ts") ? page(revs.map((r) => ({ _id: r.rev, _path: "/attn/focus.md", _rev: r.rev, _seq: r.seq, _ts: r.ts }))) : page([])),
     docs_read: (a) => {
       const r = revs.find((x) => x.rev === a.at);
       return r ? { _id: "d_focus", _path: "/attn/focus.md", rev: r.rev, _raw: r.raw, renderedHashMatch: true } : { error: "target_missing" };
@@ -48,7 +48,7 @@ function server(revs = REVS): ScriptedCaller {
 
 describe("the calls", () => {
   it("one revisions query (pinned), then docs_read { _path, at } per revision; the states read focused_intent / since / return_stack off _raw", async () => {
-    expect(REVISIONS_QUERY).toBe('select _rev, _seq, _ts from revisions where _path == "/attn/focus.md" order by _seq');
+    expect(REVISIONS_QUERY).toBe('revisions { select _rev, _seq, _ts where _path == "/attn/focus.md" order by _seq }');
     const s = server();
     const states = await fetchPointerHistory(s, "attn");
     expect(s.names()).toEqual(["query", ...Array<string>(8).fill("docs_read")]);

@@ -8,14 +8,14 @@ describe("firstWhereText", () => {
   it("quotes the top-level where clause as written", () => {
     expect(firstWhereText(DEFAULT_QUERY, parse(DEFAULT_QUERY))).toBe(`_path == "/timeline/kickoff.md"`);
     expect(firstWhereText(defaultQuery(NAMES_4), parse(defaultQuery(NAMES_4)))).toBe(`path == "/timeline/kickoff.md"`);
-    const multi = `select _path from docs where phase == "plan" && (owner == "/people/ada.md" || tags.contains("x"))`;
+    const multi = `docs { select _path where phase == "plan" && (owner == "/people/ada.md" || tags.contains("x")) }`;
     expect(firstWhereText(multi, parse(multi))).toBe(`phase == "plan" && (owner == "/people/ada.md" || tags.contains("x"))`);
   });
 
   it("is null without a where clause or a parse, and survives non-BMP characters before it", () => {
-    expect(firstWhereText("select _path from docs", parse("select _path from docs"))).toBeNull();
+    expect(firstWhereText("docs { select _path }", parse("docs { select _path }"))).toBeNull();
     expect(firstWhereText("nonsense", null)).toBeNull();
-    const src = `select _path, t: "😀" from docs where _path == "/a.md"`;
+    const src = `docs { select _path, t: "😀" where _path == "/a.md" }`;
     expect(firstWhereText(src, parse(src))).toBe(`_path == "/a.md"`);
   });
 });
@@ -24,14 +24,14 @@ describe("pathLiterals", () => {
   it("collects every `_path == \"…\"` literal (a 4.x query's `_path ==`), either side, nested blocks included, deduped in source order", () => {
     expect(pathLiterals(parse(DEFAULT_QUERY))).toEqual(["/timeline/kickoff.md"]);
     expect(pathLiterals(parse(defaultQuery(NAMES_4)))).toEqual(["/timeline/kickoff.md"]);
-    const q = parse(`select _path from docs where _path == "/a.md" || "b.md" == _path || _path == "/a.md" follow ^docs collect { where _path == "/c.md" }`);
+    const q = parse(`docs { select _path where _path == "/a.md" || "b.md" == _path || _path == "/a.md" follow ^docs { _path == "/c.md" } }`);
     expect(pathLiterals(q)).toEqual(["/a.md", "b.md", "/c.md"]);
-    const old = parse(`select path from docs where path == "/a.md" || "b.md" == path || path == "/a.md" follow ^docs collect { where path == "/c.md" }`);
+    const old = parse(`docs { select path where path == "/a.md" || "b.md" == path || path == "/a.md" follow ^docs { path == "/c.md" } }`);
     expect(pathLiterals(old)).toEqual(["/a.md", "b.md", "/c.md"]);
   });
   it("ignores other comparisons and other attributes", () => {
-    expect(pathLiterals(parse(`select _path from docs where _path != "/a.md" && _path.startsWith("/t/") && _dst_path == "/x.md" && owner == "/p.md"`))).toEqual([]);
-    expect(pathLiterals(parse(`select path from docs where path != "/a.md" && path.startsWith("/t/") && dst_path == "/x.md" && owner == "/p.md"`))).toEqual([]);
+    expect(pathLiterals(parse(`docs { select _path where _path != "/a.md" && _path.startsWith("/t/") && _dst_path == "/x.md" && owner == "/p.md" }`))).toEqual([]);
+    expect(pathLiterals(parse(`docs { select path where path != "/a.md" && path.startsWith("/t/") && dst_path == "/x.md" && owner == "/p.md" }`))).toEqual([]);
     expect(pathLiterals(null)).toEqual([]);
   });
 });
