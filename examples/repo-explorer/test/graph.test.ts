@@ -159,6 +159,10 @@ describe("rows", () => {
     expect(fieldsQuery([])).toBeNull();
     expect(fieldsQuery(["/a.md"])).toBe('docs { select _path, _title where _path == "/a.md" }');
     expect(fieldsQuery(["/a.md", "b/c.md", "/a.md"], ["_display", "_title", "status"])).toBe('docs { select _path, _title, status where _path in ("/a.md", "/b/c.md") }');
+    // The card convention: a bare `card` is read as authored; a computed alias replaces it in place; a computed name no template reads is appended.
+    expect(fieldsQuery(["/a.md"], ["card", "_title"])).toBe('docs { select _path, _title, card where _path == "/a.md" }');
+    expect(fieldsQuery(["/a.md"], ["card", "status"], { card: ' _title + " · " + status ' })).toBe('docs { select _path, _title, card: _title + " · " + status, status where _path == "/a.md" }');
+    expect(fieldsQuery(["/a.md"], [], { card: "status" })).toBe('docs { select _path, _title, card: status where _path == "/a.md" }');
     expect(fieldsQuery(['/q"uote.md', "/x.md"], ["status", "type"])).toBe('docs { select _path, _title, status, type where _path in ("/q\\"uote.md", "/x.md") }');
   });
 

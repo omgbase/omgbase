@@ -37,8 +37,8 @@ import "./elements/feed-strip.ts";
 import "./elements/command-palette.ts";
 import "@omgbase/elements";
 import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphIdDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "@omgbase/elements";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
-import { CARDS_KEY, allCardFields, parseCardSettings, serializeCardSettings, templateFor, valuesPresent, type CardSettings } from "./lib/cards.ts";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, invalidateFields, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { CARDS_KEY, CARD_KEY, DEFAULT_CARD, allCardFields, computedFields, parseCardSettings, serializeCardSettings, templateFor, valuesPresent, type CardSettings } from "./lib/cards.ts";
 import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
 import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
@@ -726,7 +726,7 @@ let graphGeneration = 0;
 /** The neighbourhood of `path` added to `model`: its links (two `links` queries), then the rows the model lacks (one `docs` query over the cards' fields). */
 async function expanded(model: GraphModel, path: string): Promise<GraphModel> {
   const links = await fetchDocLinks(client, path, { repo: repoArgValue.get() });
-  return fetchFields(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), graphFields.get(), { repo: repoArgValue.get() });
+  return fetchFields(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), graphFields.get(), { repo: repoArgValue.get(), computed: computedFields(graphCards.get()) });
 }
 
 /** The card templates changed: persist them and fetch whatever fields the rows now lack (not a log entry — the model's rows, not the user's graph). */
@@ -736,7 +736,7 @@ async function refetchGraphFields(): Promise<void> {
   if (!before) return;
   const gen = ++fieldsGeneration;
   try {
-    const after = await fetchFields(client, before, graphFields.get(), { repo: repoArgValue.get() });
+    const after = await fetchFields(client, before, graphFields.get(), { repo: repoArgValue.get(), computed: computedFields(graphCards.get()) });
     if (gen === fieldsGeneration && graph.get() === before && after !== before) graph.set(after);
   } catch (e) {
     graphError.set(describe(e));
@@ -744,6 +744,8 @@ async function refetchGraphFields(): Promise<void> {
 }
 
 function setGraphCards(next: CardSettings): void {
+  // A changed expression recomputes `card` on every row: forget it, then refetch.
+  if (next.expression.trim() !== graphCards.get().expression.trim()) { const m = graph.get(); if (m) graph.set(invalidateFields(m, [CARD_KEY])); }
   graphCards.set(next);
   localStorage.setItem(CARDS_KEY, serializeCardSettings(next));
   void refetchGraphFields();
@@ -1138,8 +1140,10 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     const present = by ? valuesPresent(rows, by.field) : [];
     const all = by ? [...present, ...Object.keys(by.templates).filter((v) => !present.includes(v)).sort()] : [];
     return html`<div class="graph-tools">
-      <label>card <input type="text" .value=${cards.default} placeholder="{_display|_title}" title="the card template: {field}, {a|b} first present, one line per row line; e.g. {_title}&#10;{status}" spellcheck="false"
-        @change=${(e: Event) => setGraphCards({ ...cards, default: (e.target as HTMLInputElement).value.trim() || "{_display|_title}" })}></label>
+      <label>card <input type="text" .value=${cards.default} placeholder=${DEFAULT_CARD} title="the card template: {field}, {a|b} first present, one line per row line; e.g. {_title}&#10;{status}" spellcheck="false"
+        @change=${(e: Event) => setGraphCards({ ...cards, default: (e.target as HTMLInputElement).value.trim() || DEFAULT_CARD })}></label>
+      <label>card: <input type="text" class="expr" .value=${cards.expression} placeholder='_title + " · " + status' spellcheck="false" title="an OQX expression computing the row key card for every document (a projection alias: docs { select …, card: <expression> }); empty = an authored card key is read as is"
+        @change=${(e: Event) => setGraphCards({ ...cards, expression: (e.target as HTMLInputElement).value.trim() })}></label>
       <label>vary by <input type="text" class="field" .value=${by?.field ?? ""} placeholder="field, e.g. type" title="a row field whose value picks a template (empty: every card uses the default)" spellcheck="false"
         @change=${(e: Event) => { const field = (e.target as HTMLInputElement).value.trim(); setGraphCards({ ...cards, by: field ? { field, templates: by?.field === field ? by.templates : {} } : null }); }}></label>
       ${by ? html`<details ?open=${graphCardsOpen.get()} @toggle=${(e: Event) => graphCardsOpen.set((e.target as HTMLDetailsElement).open)}>

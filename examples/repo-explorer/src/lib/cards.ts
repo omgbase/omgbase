@@ -1,18 +1,32 @@
-// The graph's card settings: one default card template, and optionally a
-// VARIATION by a field of the user's choosing — `by.field` names the row field
-// whose value picks a template from `by.templates` (Brendan's repos use `type`;
-// another repository may use `kind`, `layer`, nothing). Nothing here assumes a
-// vocabulary: the field is the user's, the element sees only rows and a hook.
-// Persisted as JSON in localStorage (`omgbase-repo-explorer.cards`);
-// `templateFor` is what the page hands `<omg-graph>`'s `renderCard` hook (the
-// string-return case: a template per node), `allCardFields` the union of
-// placeholders every template needs plus the discriminator — the fields
-// `fetchFields` projects. The template language is @omgbase/elements's
+// The graph's card settings: one default card template, an optional card
+// EXPRESSION, and optionally a VARIATION by a field of the user's choosing —
+// `by.field` names the row field whose value picks a template from
+// `by.templates` (Brendan's repos use `type`; another repository may use
+// `kind`, `layer`, nothing). Nothing here assumes a vocabulary: the field is
+// the user's, the element sees only rows and a hook.
+//
+// The convention the page follows: the row key `card` — a BARE name, the
+// user's namespace (a `_`-name the engine does not know is a hard error, a
+// `$`-name is the language's) — authored in a document's frontmatter or
+// computed by the projection alias the expression setting adds
+// (`card: _title + " · " + status`, OQX); the default template `{card|_title}`
+// reads it with the title as the fallback, so a query that yields `card` shapes
+// the cards with no template at all. Persisted as JSON in localStorage
+// (`omgbase-repo-explorer.cards`); `templateFor` is what the page hands
+// `<omg-graph>`'s `renderCard` hook (the string-return case: a template per
+// node), `allCardFields` the union of placeholders every template needs plus
+// the discriminator — the fields `fetchFields` projects, `computedFields` the
+// alias the expression computes. The template language is @omgbase/elements's
 // (`renderCard`): `{field}`, `{a|b}` first present, dotted paths, literal text.
 
-import { DEFAULT_CARD, cardFields, readField } from "@omgbase/elements/graph";
+import { cardFields, readField } from "@omgbase/elements/graph";
 
 export const CARDS_KEY = "omgbase-repo-explorer.cards";
+
+/** The row key a card reads first, by convention; the expression setting computes it. */
+export const CARD_KEY = "card";
+/** This page's default template: the `card` key, else the title. */
+export const DEFAULT_CARD = `{${CARD_KEY}|_title}`;
 
 export interface CardVariation {
   /** The row field whose value picks the template. */
@@ -23,11 +37,13 @@ export interface CardVariation {
 
 export interface CardSettings {
   default: string;
+  /** An OQX expression computing the `card` key for every row (`_title + " · " + status`); "" = none (an authored `card` is read as is). */
+  expression: string;
   /** null: every card uses the default. */
   by: CardVariation | null;
 }
 
-export const DEFAULT_CARD_SETTINGS: CardSettings = { default: DEFAULT_CARD, by: null };
+export const DEFAULT_CARD_SETTINGS: CardSettings = { default: DEFAULT_CARD, expression: "", by: null };
 
 function templatesOf(v: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -43,10 +59,12 @@ export function parseCardSettings(json: string | null | undefined): CardSettings
   if (!json) return { ...DEFAULT_CARD_SETTINGS };
   try {
     const v: unknown = JSON.parse(json);
-    if (typeof v === "string") return { default: v.trim() || DEFAULT_CARD, by: null };
+    if (typeof v === "string") return { default: v.trim() || DEFAULT_CARD, expression: "", by: null };
     if (v === null || typeof v !== "object" || Array.isArray(v)) return { ...DEFAULT_CARD_SETTINGS };
     const o = v as Record<string, unknown>;
-    const def = typeof o.default === "string" && o.default.trim() !== "" ? o.default : DEFAULT_CARD;
+    // A default saved before the `card` convention (the `_display` days) is the current default.
+    const def = typeof o.default === "string" && o.default.trim() !== "" && o.default.trim() !== "{_display|_title}" ? o.default : DEFAULT_CARD;
+    const expression = typeof o.expression === "string" ? o.expression.trim() : "";
     let by: CardVariation | null = null;
     if (o.by !== null && typeof o.by === "object" && !Array.isArray(o.by)) {
       const b = o.by as Record<string, unknown>;
@@ -56,7 +74,7 @@ export function parseCardSettings(json: string | null | undefined): CardSettings
       const templates = templatesOf(o.byType);
       by = Object.keys(templates).length > 0 ? { field: "type", templates } : null;
     }
-    return { default: def, by };
+    return { default: def, expression, by };
   } catch {
     return { ...DEFAULT_CARD_SETTINGS };
   }
@@ -64,7 +82,12 @@ export function parseCardSettings(json: string | null | undefined): CardSettings
 
 export function serializeCardSettings(s: CardSettings): string {
   const by = s.by && s.by.field.trim() !== "" ? { field: s.by.field.trim(), templates: templatesOf(s.by.templates) } : null;
-  return JSON.stringify({ default: s.default.trim() || DEFAULT_CARD, by });
+  return JSON.stringify({ default: s.default.trim() || DEFAULT_CARD, expression: s.expression.trim(), by });
+}
+
+/** The projection aliases the settings compute: `{ card: <expression> }`, or nothing. */
+export function computedFields(s: CardSettings): Record<string, string> {
+  return s.expression.trim() ? { [CARD_KEY]: s.expression.trim() } : {};
 }
 
 /** A row value as a template key: a string as is, a list's first entry, another scalar stringified, else null. */

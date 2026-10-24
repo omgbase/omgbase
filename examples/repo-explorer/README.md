@@ -377,13 +377,19 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    hover (the frontmatter field, the block of a body link, the URL of an
    external one); rendered edges are not writable by dragging. **Cards** are a
    template over each node's projected row: the toolbar's `card` input
-   (default `{_display|_title}`; `{a|b}` is a fallback chain, a line whose
-   fields are all absent is dropped, a second line is a detail line), and
-   "vary by" a field of your choosing with one template per value (persisted
-   as JSON in `omgbase-repo-explorer.cards`); the fields the templates name
-   are projected by the neighbourhood's `docs { select _path, _title, … where
-   _path in (…) }` query. A row carrying `_display` wins with no configuration
-   — the contract with a future engine-computed `_display`.
+   (default `{card|_title}`; `{a|b}` is a fallback chain, a line whose fields
+   are all absent is dropped, a second line is a detail line), a `card:`
+   **expression** — OQX computing the row key `card` for every document as a
+   projection alias (`_title + " · " + status`), empty = an authored `card:`
+   frontmatter key is read as is — and "vary by" a field of your choosing with
+   one template per value (all persisted as JSON in
+   `omgbase-repo-explorer.cards`). The fields the templates name are projected
+   by the neighbourhood's `docs { select _path, _title, card: <expr>, … where
+   _path in (…) }` query. The convention is a BARE key on purpose: a `_`-name
+   the engine does not know is the hard error `filter_invalid` (not an absent
+   value), a `$`-name is the language's; `card` is the user's namespace, so a
+   query, a setting or a document can all fill it, and the element knows none
+   of this (its own default is `{_title}`; the apps pass `{card|_title}`).
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds or
 when it restarts and answers the next POST with `404 -32000 unknown session`;

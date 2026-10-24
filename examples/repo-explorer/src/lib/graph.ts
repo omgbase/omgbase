@@ -296,9 +296,11 @@ export const BASE_FIELDS: readonly string[] = ["_title"];
 /** The `_`-names a `docs` projection may name (spec/surface §1.2, the names
  * rule): an authored key is bare and reads absent when a document lacks it,
  * but an engine name the surface does not know is the hard error
- * `filter_invalid` ("`_display` is not an engine name of docs"). So a card
- * template's `_display` — the default's first choice, for the day an engine
- * computes it — is dropped from the projection until it is in this list. */
+ * `filter_invalid` ("`_display` is not an engine name of docs"). A template
+ * naming an unknown `_`-name is therefore not asked of the engine at all. The
+ * row key the cards look for by convention is the BARE alias `card` — the
+ * user's namespace: authored in frontmatter, or computed by a projection
+ * alias (`card: _title + " · " + status`, the card EXPRESSION setting). */
 export const PROJECTABLE_ENGINE_FIELDS: ReadonlySet<string> = new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_title", "_tags", "_format", "_data", "_frontmatter", "_inline"]);
 
 /** The projection a card's fields need: `_title` first, then the card's fields
@@ -317,11 +319,16 @@ export function projectedFields(fields: readonly string[]): string[] {
   return out;
 }
 
-/** The batched row query for `paths` (deduplicated, order kept); null for none. */
-export function fieldsQuery(paths: readonly string[], fields: readonly string[] = []): string | null {
+/** The batched row query for `paths` (deduplicated, order kept); null for none.
+ * `computed` maps a projected name to an OQX expression that computes it
+ * (`{ card: '_title + " · " + status' }` → `card: _title + " · " + status`
+ * in place of the bare `card`; a computed name no template reads is appended). */
+export function fieldsQuery(paths: readonly string[], fields: readonly string[] = [], computed: Readonly<Record<string, string>> = {}): string | null {
   const unique = [...new Set(paths.map(rooted))];
   if (unique.length === 0) return null;
-  const select = ["_path", ...projectedFields(fields)].join(", ");
+  const names = projectedFields(fields);
+  for (const k of Object.keys(computed)) if (!names.includes(k) && computed[k]!.trim() !== "") names.push(k);
+  const select = ["_path", ...names.map((n) => (computed[n]?.trim() ? `${n}: ${computed[n]!.trim()}` : n))].join(", ");
   if (unique.length === 1) return `docs { select ${select} where _path == ${JSON.stringify(unique[0])} }`;
   return `docs { select ${select} where _path in (${unique.map((p) => JSON.stringify(p)).join(", ")}) }`;
 }
@@ -364,11 +371,24 @@ export async function fetchDocLinks(client: Pick<GraphReader, "queryAll">, path:
 }
 
 /** The rows of every document node missing some of `fields`, folded in; the model unchanged when none are. */
-export async function fetchFields(client: Pick<GraphReader, "queryAll">, model: GraphModel, fields: readonly string[] = [], opts: { repo?: string | null } = {}): Promise<GraphModel> {
-  const q = fieldsQuery(unfetched(model, fields), fields);
+export async function fetchFields(client: Pick<GraphReader, "queryAll">, model: GraphModel, fields: readonly string[] = [], opts: { repo?: string | null; computed?: Readonly<Record<string, string>> } = {}): Promise<GraphModel> {
+  const q = fieldsQuery(unfetched(model, fields), fields, opts.computed ?? {});
   if (q === null) return model;
   const hits: Hit[] = await client.queryAll(q, { repo: opts.repo });
   return applyRows(model, hits, fields);
+}
+
+/** The model with `names` forgotten on every document node (so `unfetched` asks for them again — a changed card expression). */
+export function invalidateFields(model: GraphModel, names: readonly string[]): GraphModel {
+  if (names.length === 0) return model;
+  const next = copy(model);
+  for (const [p, n] of next.nodes) {
+    if (n.kind !== "document" || !n.fetched.some((f) => names.includes(f))) continue;
+    const row = { ...n.row };
+    for (const k of names) delete row[k];
+    next.nodes.set(p, { ...n, row, fetched: n.fetched.filter((f) => !names.includes(f)) });
+  }
+  return next;
 }
 
 // ---- the view model for <omg-graph> ----------------------------------------------------
