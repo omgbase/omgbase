@@ -350,8 +350,11 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 11. The graph tab: the open document's neighbourhood (`src/lib/graph.ts`, a
    renderer-neutral model: nodes by path, edges keyed by source, destination
    and field/block, provenance `frontmatter` / `body` / `external`), laid out
-   by d3-force in `<graph-pane>`. Drag repositions and pins on drop (one log
-   entry per drag); `u`, Backspace or the ✕ unpins and the node eases back
+   by d3-force in `<graph-pane>` (graph space centred on the origin —
+   `forceX(0)`/`forceY(0)` gravity, an explicit link strength so a hub's edges
+   do not go slack, a bounded charge; no `forceCenter`, which would drag the
+   free nodes away from pinned ones). The opened document starts pinned at the
+   centre. Drag repositions and pins on drop (one log entry per drag); `u`, Backspace or the ✕ unpins and the node eases back
    (synchronous under `prefers-reduced-motion`); ⊕ or `e` expands a node (12
    per direction, "+k more" otherwise), ⊖ or `e` again collapses it — the
    nodes nothing else explains leave with their pins (both undoable query
@@ -359,7 +362,8 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    open canvas pans, `+`/`-`/`0` zoom and reset, `f` fits; arrows move the
    selection, ⏎ opens. ⌘-drag from a node, or a drag from the selected card's
    ⟶ handle (no modifier; a click arms the keyboard connector, `c`), is a
-   connector: on a document it opens the chooser — where the relation is
+   connector: a dashed ghost line follows the pointer, the prospective target
+   card lights up; on a document it opens the chooser — where the relation is
    written is always the user's call — on open canvas the palette picks or
    creates the destination first. Edges show their provenance on
    hover (the frontmatter field, the block of a body link, the URL of an
@@ -436,7 +440,7 @@ call once, noting *session expired at the server — reconnected* in the header.
   model (bounds, dedup, pins, the titles query), the pin/unpin/expand commands
   through a real `CommandLog` (coalescing), the relations (the choices over
   frontmatter shapes, each write's exact effect and guard, every refusal), the
-  geometry, the route, the dev arguments and the stand-in — 187 tests, no live
+  geometry, the route, the dev arguments and the stand-in — 189 tests, no live
   server. The client's session recovery and `unknown tool` mapping are tested
   in `packages/client`.
 

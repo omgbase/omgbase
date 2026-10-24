@@ -29,8 +29,8 @@
 
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type ForceLink, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
-import { CARD_H, CARD_W, arrowEnd, connectorDrop, dragMode, edgeLabel, emptyModel, fitTransform, graphDescription, nearestInDirection, neighborsOf, panBy, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
+import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type ForceLink, type ForceX, type ForceY, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
+import { CARD_H, CARD_W, arrowEnd, connectorDrop, connectorLine, dragMode, edgeLabel, emptyModel, fitTransform, forceConfig, initialView, graphDescription, nearestInDirection, neighborsOf, panBy, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
 
 export interface GraphPathDetail { path: string }
 export interface GraphCollapseDetail { path: string }
@@ -85,7 +85,7 @@ export class GraphPane extends LitElement {
     .node.selected rect.card { stroke: #1565c0; stroke-width: 2; }
     .node.external rect.card { stroke-dasharray: 4 3; fill: #fff8ee; stroke: #b26a00; }
     .node.pinned rect.card { fill: #f6f3ff; }
-    .node.target rect.card { stroke: #2e7d32; stroke-width: 2.5; }
+    .node.target rect.card { stroke: #1565c0; stroke-width: 3; fill: #e3edfb; }
     .node text.title { font-size: 12.5px; fill: #1e2430; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
     .node.external text.title { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
     .glyph { font-size: 11px; fill: #5a6270; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
@@ -98,7 +98,10 @@ export class GraphPane extends LitElement {
     .affordance text { font-size: 12px; fill: #1e2430; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
     .badge rect { fill: #fff3e0; stroke: #ffb74d; }
     .badge text { font-size: 10px; fill: #8a5a00; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
-    .connector { stroke: #2e7d32; stroke-width: 1.6; stroke-dasharray: 6 4; fill: none; pointer-events: none; }
+    .ghost { pointer-events: none; }
+    .ghost line { stroke: #1565c0; stroke-width: 2; stroke-dasharray: 6 4; fill: none; }
+    .ghost text { font-size: 11px; fill: #1565c0; paint-order: stroke; stroke: #fbfbfd; stroke-width: 4px; }
+    .node.source rect.card { stroke: #1565c0; stroke-width: 2.5; stroke-dasharray: 5 3; }
     .toolbar { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
     .toolbar button { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; }
     .toolbar button:hover { background: #f1f3f7; }
@@ -113,8 +116,10 @@ export class GraphPane extends LitElement {
   /** New neighbours per direction the page loads on expand (shown in the hint). */
   @property({ type: Number }) limit = 12;
 
-  @state() private view: ViewTransform = { k: 1, tx: 0, ty: 0 };
+  @state() private view: ViewTransform = initialView(600, 400);
   @state() private size = { w: 600, h: 400 };
+  /** The user has zoomed/panned/fit: a resize no longer re-centres the view. */
+  private viewTouched = false;
   @state() private hoverEdge: string | null = null;
   @state() private hoverNode: string | null = null;
   @state() private drag: Drag | null = null;
@@ -128,19 +133,29 @@ export class GraphPane extends LitElement {
   private readonly reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   private readonly sim: Simulation<SimNode, SimLink>;
   private readonly linkForce: ForceLink<SimNode, SimLink>;
+  private readonly gravityX: ForceX<SimNode>;
+  private readonly gravityY: ForceY<SimNode>;
+  private readonly config = forceConfig();
   private resize: ResizeObserver | null = null;
   private lastShape = "";
 
   constructor() {
     super();
-    this.linkForce = forceLink<SimNode, SimLink>([]).id((d) => d.path).distance(150).strength(0.5);
+    // The numbers are lib/graph.ts's `forceConfig`. No `forceCenter`: it translates every
+    // node so the centroid sits at the centre, and with a hub pinned at the periphery that
+    // drags the hub's free neighbours away from it each tick (the pin pathology).
+    const c = this.config;
+    this.linkForce = forceLink<SimNode, SimLink>([]).id((d) => d.path).distance(c.link.distance).strength(c.link.strength);
+    this.gravityX = forceX<SimNode>(c.gravity.x).strength(c.gravity.strength);
+    this.gravityY = forceY<SimNode>(c.gravity.y).strength(c.gravity.strength);
     this.sim = forceSimulation<SimNode, SimLink>([])
       .force("link", this.linkForce)
-      .force("charge", forceManyBody().strength(-420).distanceMax(600))
-      .force("center", forceCenter(this.size.w / 2, this.size.h / 2).strength(0.04))
-      .force("collide", forceCollide<SimNode>().radius(Math.hypot(CARD_W, CARD_H) / 2 + 6).strength(0.8))
-      .alphaDecay(0.015)
-      .velocityDecay(0.3)
+      .force("charge", forceManyBody<SimNode>().strength(c.charge.strength).distanceMax(c.charge.distanceMax).theta(c.charge.theta))
+      .force("x", this.gravityX)
+      .force("y", this.gravityY)
+      .force("collide", forceCollide<SimNode>().radius(c.collide.radius).strength(c.collide.strength))
+      .alphaDecay(c.alphaDecay)
+      .velocityDecay(c.velocityDecay)
       .on("tick", () => this.requestUpdate());
     this.sim.stop();
   }
@@ -154,7 +169,8 @@ export class GraphPane extends LitElement {
         const r = entries[0]?.contentRect;
         if (!r || r.width === 0 || r.height === 0) return;
         this.size = { w: r.width, h: r.height };
-        (this.sim.force("center") as ReturnType<typeof forceCenter> | undefined)?.x(r.width / 2).y(r.height / 2);
+        // A pane that mounted at 0×0 (or any untouched view) takes the home view of its real size.
+        if (!this.viewTouched) this.view = initialView(r.width, r.height);
       });
       this.resize.observe(this);
     }
@@ -182,7 +198,8 @@ export class GraphPane extends LitElement {
   private syncSimulation(): void {
     const current = new Map(this.sim.nodes().map((n) => [n.path, n]));
     const nodes: SimNode[] = [];
-    const cx = this.size.w / 2, cy = this.size.h / 2;
+    // Graph space is centred on the origin (the page pins the root at (0, 0)); a new node seeds near a placed neighbour, else around the origin.
+    const cx = 0, cy = 0;
     for (const node of this.model.nodes.values()) {
       let n = current.get(node.path);
       if (!n) {
@@ -204,7 +221,7 @@ export class GraphPane extends LitElement {
     this.linkForce.links(links);
     if (shape === this.lastShape) return;
     this.lastShape = shape;
-    this.reheat(0.6);
+    this.reheat(this.config.reheatAlpha);
   }
 
   private reheat(alpha: number): void {
@@ -264,6 +281,7 @@ export class GraphPane extends LitElement {
       pan.lastX = e.clientX;
       pan.lastY = e.clientY;
       this.view = panBy(this.view, dx, dy);
+      this.viewTouched = true;
       return;
     }
     const d = this.drag;
@@ -271,7 +289,12 @@ export class GraphPane extends LitElement {
     const g = this.graphPoint(e);
     if (!d.moved && Math.hypot(g.x - d.startX, g.y - d.startY) < 3) return;
     d.moved = true;
-    if (d.connector) { this.pointer = g; return; }
+    if (d.connector) {
+      this.pointer = g;
+      const drop = connectorDrop(this.placed(), d.path, g.x, g.y, (p) => this.model.nodes.get(p)?.kind === "document");
+      this.connectTarget = drop.kind === "connect" ? drop.to : null;
+      return;
+    }
     const node = this.sim.nodes().find((n) => n.path === d.path);
     if (!node) return;
     node.fx = g.x + d.offX;
@@ -300,6 +323,7 @@ export class GraphPane extends LitElement {
         return;
       }
       this.armed = null;
+      this.connectTarget = null;
       const drop = connectorDrop(this.placed(), d.path, g.x, g.y, (p) => this.model.nodes.get(p)?.kind === "document");
       if (drop.kind === "connect") this.emit<GraphConnectDetail>("graph-connect", { from: drop.from, to: drop.to });
       else this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: drop.from, x: drop.x, y: drop.y });
@@ -316,11 +340,19 @@ export class GraphPane extends LitElement {
     e.preventDefault();
     const r = this.getBoundingClientRect();
     this.view = zoomAbout(this.view, wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey), e.clientX - r.left, e.clientY - r.top);
+    this.viewTouched = true;
   }
 
   /** Zoom by `factor` about the viewport's centre (the keyboard). */
   private zoom(factor: number): void {
     this.view = zoomAbout(this.view, factor, this.size.w / 2, this.size.h / 2);
+    this.viewTouched = true;
+  }
+
+  /** The home view: the origin (the pinned root) at the centre, 1:1; a resize keeps it centred again. */
+  private home(): void {
+    this.view = initialView(this.size.w, this.size.h);
+    this.viewTouched = false;
   }
 
   private cancelDrag(): void {
@@ -330,12 +362,13 @@ export class GraphPane extends LitElement {
     this.drag = null;
     this.pointer = null;
     this.armed = null;
+    this.connectTarget = null;
     if (!d.connector) {
       const node = this.sim.nodes().find((n) => n.path === d.path);
       if (node) {
         node.fx = d.previous?.x;
         node.fy = d.previous?.y;
-        this.reheat(0.5);
+        this.reheat(this.config.reheatAlpha);
       }
     }
     this.requestUpdate();
@@ -348,7 +381,7 @@ export class GraphPane extends LitElement {
     // The page clears the pin in the model; the node eases back from here.
     const node = this.sim.nodes().find((n) => n.path === path);
     if (node) { node.fx = undefined; node.fy = undefined; }
-    this.reheat(0.5);
+    this.reheat(this.config.reheatAlpha);
   }
 
   /** Expand an unexpanded document, collapse an expanded one. */
@@ -361,6 +394,7 @@ export class GraphPane extends LitElement {
 
   private fit(): void {
     this.view = fitTransform(this.placed(), this.size.w, this.size.h);
+    this.viewTouched = true;
   }
 
   // ---- keyboard ----------------------------------------------------------------------
@@ -408,7 +442,7 @@ export class GraphPane extends LitElement {
       case "+":
       case "=": e.preventDefault(); this.zoom(1.25); break;
       case "-": e.preventDefault(); this.zoom(1 / 1.25); break;
-      case "0": e.preventDefault(); this.view = { k: 1, tx: 0, ty: 0 }; break;
+      case "0": e.preventDefault(); this.home(); break;
       case "u":
       case "Backspace": if (sel) { e.preventDefault(); this.unpin(sel); } break;
       case "c": if (sel && this.canWrite && this.model.nodes.get(sel)?.kind === "document") { e.preventDefault(); this.armed = sel; this.connectTarget = null; } break;
@@ -436,9 +470,9 @@ export class GraphPane extends LitElement {
     const isSel = this.selected === node.path;
     const hover = this.hoverNode === node.path;
     const dragging = this.drag?.path === node.path;
-    const source = this.connectSource ?? this.armed;
+    const source = (this.drag?.connector ? this.drag.path : null) ?? this.connectSource ?? this.armed;
     const more = this.model.truncated.get(node.path) ?? 0;
-    const cls = ["node", node.kind, isRoot ? "root" : "", isSel ? "selected" : "", node.pinned ? "pinned" : "", dragging ? "dragging" : "", this.connectTarget === node.path ? "target" : ""].join(" ");
+    const cls = ["node", node.kind, isRoot ? "root" : "", isSel ? "selected" : "", node.pinned ? "pinned" : "", dragging ? "dragging" : "", source === node.path ? "source" : "", this.connectTarget === node.path ? "target" : ""].join(" ");
     const stop = (ev: Event) => ev.stopPropagation();
     const hw = CARD_W / 2, hh = CARD_H / 2;
     return svg`<g class=${cls} transform=${`translate(${n.x},${n.y})`} data-path=${node.path} aria-selected=${isSel ? "true" : "false"}
@@ -459,9 +493,11 @@ export class GraphPane extends LitElement {
   override render() {
     const nodes = this.sim.nodes();
     const pos = new Map(nodes.map((n) => [n.path, n]));
-    const source = this.connectSource ?? this.armed;
+    // The ghost's source: the connector being dragged (⌘-drag, the ⟶ handle), else the armed keyboard source.
+    const source = (this.drag?.connector ? this.drag.path : null) ?? this.connectSource ?? this.armed;
     const src = source ? pos.get(source) : undefined;
     const connectorEnd = this.pointer ?? (this.connectTarget ? pos.get(this.connectTarget) : undefined);
+    const ghost = src && connectorEnd ? connectorLine(src, connectorEnd) : null;
     const { k, tx, ty } = this.view;
     return html`
       <svg role="application" aria-label=${graphDescription(this.model)} class=${this.pan?.moved ? "panning" : ""}
@@ -471,17 +507,23 @@ export class GraphPane extends LitElement {
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a94a6"></path>
           </marker>
+          <marker id="arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#1565c0"></path>
+          </marker>
         </defs>
         <g transform=${`translate(${tx},${ty}) scale(${k})`}>
           ${[...this.model.edges.values()].map((e) => this.renderEdge(e, pos))}
-          ${src && connectorEnd ? svg`<line class="connector" x1=${src.x} y1=${src.y} x2=${connectorEnd.x} y2=${connectorEnd.y} marker-end="url(#arrow)"></line>` : nothing}
           ${nodes.map((n) => { const node = this.model.nodes.get(n.path); return node ? this.renderNode(node, n) : nothing; })}
+          ${ghost ? svg`<g class="ghost">
+            <line x1=${ghost.x1} y1=${ghost.y1} x2=${ghost.x2} y2=${ghost.y2} marker-end="url(#arrow-ghost)"></line>
+            ${this.connectTarget ? nothing : svg`<text x=${ghost.hint.x} y=${ghost.hint.y}>${this.drag?.connector ? "drop here: find or create…" : "Enter: find or create…"}</text>`}
+          </g>` : nothing}
         </g>
       </svg>
       ${this.model.nodes.size === 0 ? html`<div class="empty">no graph yet</div>` : nothing}
       <div class="toolbar">
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
-        <button @click=${() => { this.view = { k: 1, tx: 0, ty: 0 }; }} title="reset the zoom">1:1</button>
+        <button @click=${() => this.home()} title="1:1 with the origin (the pinned root) centred (0)">1:1</button>
       </div>
       <div class="hint">drag: move (pins) · ${this.canWrite ? "⌘/Ctrl-drag or c: connect · " : ""}e / ⊕⊖: expand ${this.limit} per side / collapse · u: unpin · Enter: open · arrows: select · wheel: zoom · drag canvas: pan · f: fit · +/-/0${source ? ` · connector from ${source} — drop on a document or Esc` : ""}</div>
     `;

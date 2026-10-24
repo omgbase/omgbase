@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
   CARD_H, CARD_W, ZOOM_MAX, ZOOM_MIN, applyTitles, arrowEnd, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchTitles, fitTransform, graphDescription,
-  connectorDrop, dragMode, hitTest, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
+  connectorDrop, connectorLine, dragMode, forceConfig, hitTest, initialView, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
 } from "../src/lib/graph.ts";
 
 const A = "/processes/calcination.md";
@@ -309,6 +309,30 @@ describe("geometry", () => {
     expect(connectorDrop(placed, "/c.md", 0, 0, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 0, y: 0 });
     expect(connectorDrop(placed, "/c.md", 900, 40, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 900, y: 40 });
     expect(connectorDrop(placed, "/c.md", 500, 500, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 500, y: 500 });
+  });
+  it("draws the ghost connector from the card's border to the pointer, with the hint beside the pointer", () => {
+    const g = connectorLine({ path: "/a", x: 0, y: 0 }, { x: 300, y: 0 });
+    expect(g).toEqual({ x1: CARD_W / 2, y1: 0, x2: 300, y2: 0, hint: { x: 314, y: 18 } });
+    const up = connectorLine({ path: "/a", x: 100, y: 100 }, { x: 100, y: -100 });
+    expect(up).toMatchObject({ x1: 100, y1: 100 - CARD_H / 2, x2: 100, y2: -100 });
+    // The pointer still over the source: a zero-length line (nothing to see yet).
+    expect(connectorLine({ path: "/a", x: 0, y: 0 }, { x: 10, y: 5 })).toMatchObject({ x1: 10, y1: 5, x2: 10, y2: 5 });
+  });
+  it("the force layout's numbers: weak per-node gravity at the origin (no forceCenter), a non-vanishing link strength, short-range repulsion, a collide radius covering the card; the home view centres the origin", () => {
+    const c = forceConfig();
+    expect(c.gravity).toEqual({ x: 0, y: 0, strength: 0.04 });
+    expect(initialView(1200, 600)).toEqual({ k: 1, tx: 600, ty: 300 });
+    expect(toGraph(initialView(1200, 600), 600, 300)).toEqual({ x: 0, y: 0 });
+    expect(c.gravity.strength).toBeLessThanOrEqual(0.05);
+    expect(c.link.strength).toBeGreaterThanOrEqual(0.6);
+    expect(c.link.distance).toBeGreaterThanOrEqual(90);
+    expect(c.link.distance).toBeLessThanOrEqual(110);
+    expect(c.charge.distanceMax).toBeLessThanOrEqual(400);
+    expect(c.charge.strength).toBeGreaterThanOrEqual(-260);
+    expect(c.charge.strength).toBeLessThanOrEqual(-180);
+    expect(c.collide.radius).toBeGreaterThanOrEqual(Math.hypot(CARD_W, CARD_H) / 2);
+    expect(c.reheatAlpha).toBeGreaterThanOrEqual(0.3);
+    expect(c.reheatAlpha).toBeLessThanOrEqual(0.5);
   });
   it("ends an arrow at the target card's border", () => {
     const horizontal = arrowEnd({ x: 0, y: 0 }, { x: 300, y: 0 }, CARD_W, CARD_H, 0);

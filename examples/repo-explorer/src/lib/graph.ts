@@ -391,6 +391,11 @@ export function nearestInDirection(placed: readonly Placed[], from: string, dir:
 
 export interface ViewTransform { k: number; tx: number; ty: number }
 
+/** The home view: graph (0, 0) — where the root is pinned — at the viewport's centre, 1:1. */
+export function initialView(width: number, height: number): ViewTransform {
+  return { k: 1, tx: width / 2, ty: height / 2 };
+}
+
 /** The scale/translate that fits every card into `width`×`height` with `pad` around (scale capped at 1). */
 export function fitTransform(placed: readonly Placed[], width: number, height: number, pad = 24, w = CARD_W, h = CARD_H): ViewTransform {
   if (placed.length === 0 || width <= 0 || height <= 0) return { k: 1, tx: 0, ty: 0 };
@@ -456,6 +461,52 @@ export type ConnectorDrop = { kind: "connect"; from: string; to: string } | { ki
 export function connectorDrop(placed: readonly Placed[], from: string, x: number, y: number, isDocument: (path: string) => boolean): ConnectorDrop {
   const hit = hitTest(placed.filter((p) => p.path !== from), x, y);
   return hit !== null && isDocument(hit) ? { kind: "connect", from, to: hit } : { kind: "empty", from, x, y };
+}
+
+export interface ConnectorLine { x1: number; y1: number; x2: number; y2: number; /** Where the "find or create…" hint sits, beside the pointer. */ hint: { x: number; y: number } }
+
+/** The ghost connector from a source card to the pointer, in GRAPH coordinates:
+ * it leaves the card at its border toward the pointer (not from under the title)
+ * and ends at the pointer; a pointer still inside the card gives a zero-length line. */
+export function connectorLine(source: Placed, pointer: { x: number; y: number }, w = CARD_W, h = CARD_H): ConnectorLine {
+  const start = arrowEnd(pointer, source, w, h, 0);
+  const inside = Math.abs(pointer.x - source.x) <= w / 2 && Math.abs(pointer.y - source.y) <= h / 2;
+  const from = inside ? pointer : start;
+  return { x1: from.x, y1: from.y, x2: pointer.x, y2: pointer.y, hint: { x: pointer.x + 14, y: pointer.y + 18 } };
+}
+
+// ---- the force layout's numbers ---------------------------------------------------------
+
+export interface ForceConfig {
+  /** Per-node positional pull toward the graph origin (`forceX(0)`/`forceY(0)`): weak, so pinned hubs at the edge do not drag the free nodes away — never `forceCenter`, which translates every node each tick. */
+  gravity: { x: number; y: number; strength: number };
+  /** `forceLink`: an explicit strength (d3's default `1/min(degree)` vanishes on a hub) and rest length. */
+  link: { distance: number; strength: number };
+  /** `forceManyBody`: moderate, short-range repulsion. */
+  charge: { strength: number; distanceMax: number; theta: number };
+  /** `forceCollide`: half the card's diagonal plus a margin, so cards never overlap. */
+  collide: { radius: number; strength: number };
+  alphaDecay: number;
+  velocityDecay: number;
+  /** The reheat after a pin / unpin / structural change. */
+  reheatAlpha: number;
+}
+
+/** The layout's constants. Graph space is centred on the origin — the page pins
+ * the root at (0, 0) and `initialView` puts the origin at the viewport's centre.
+ * A star of one pinned hub and 15 leaves settles in a ring (radius ≈ 165–330
+ * with the collide radius) around the hub wherever it is pinned, not in a
+ * column by the centre (checked against d3-force). */
+export function forceConfig(): ForceConfig {
+  return {
+    gravity: { x: 0, y: 0, strength: 0.04 },
+    link: { distance: 100, strength: 0.8 },
+    charge: { strength: -220, distanceMax: 350, theta: 0.9 },
+    collide: { radius: Math.hypot(CARD_W, CARD_H) / 2 + 6, strength: 0.8 },
+    alphaDecay: 0.02,
+    velocityDecay: 0.35,
+    reheatAlpha: 0.5,
+  };
 }
 
 /** A one-line description of the graph for assistive technology. */

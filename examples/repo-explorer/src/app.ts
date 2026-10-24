@@ -37,7 +37,7 @@ import "./elements/feed-strip.ts";
 import "./elements/command-palette.ts";
 import "./elements/graph-pane.ts";
 import type { GraphCollapseDetail, GraphConnectDetail, GraphConnectEmptyDetail, GraphPathDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "./elements/graph-pane.ts";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchTitles, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchTitles, setPin, withNeighborhood, type GraphModel } from "./lib/graph.ts";
 import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
 import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
@@ -722,7 +722,9 @@ async function expanded(model: GraphModel, path: string): Promise<GraphModel> {
   return fetchTitles(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), { repo: repoArgValue.get() });
 }
 
-/** The graph tab opened (or the document changed): a fresh model around the open document. */
+/** The graph tab opened (or the document changed): a fresh model around the open
+ * document, which starts PINNED at the layout's centre (graph origin; the pane
+ * centres it) — the initial state, not a log entry; unpin it like any other. */
 async function loadGraph(path: string): Promise<void> {
   const gen = ++graphGeneration;
   graphBusy.set(true);
@@ -731,7 +733,7 @@ async function loadGraph(path: string): Promise<void> {
   try {
     const m = await expanded(emptyModel(path), path);
     if (gen !== graphGeneration) return;
-    graph.set(m);
+    graph.set(setPin(m, path, { x: 0, y: 0 }));
     graphSelected.set(path);
   } catch (e) {
     if (gen === graphGeneration) graphError.set(describe(e));
