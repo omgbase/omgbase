@@ -322,9 +322,15 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@omgbase/client':
+        specifier: workspace:^
+        version: link:../../packages/client
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.12)(@types/react@19.3.0)
+      d3-force:
+        specifier: ^3.0.0
+        version: 3.0.0
       lit:
         specifier: ^3.3.0
         version: 3.3.3
@@ -332,6 +338,9 @@ importers:
         specifier: ^15.0.2
         version: 15.0.2
     devDependencies:
+      '@types/d3-force':
+        specifier: ^3.0.10
+        version: 3.0.10
       vite:
         specifier: ^7.1.0
         version: 7.3.7(@types/node@22.20.4)(yaml@2.9.1)
