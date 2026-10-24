@@ -181,9 +181,10 @@ test("`where` may reference `select` aliases (kept in surface form; resolved bef
     oqx`name, current: jobs collect { employer where !end_date } from ${people} where current` as Array<{ name: string }>,
     [{ name: "Bob", current: [{ employer: "Globocorp" }] }, { name: "Carol", current: [{ employer: "Globocorp" }] }],
   );
-  assert.throws(
-    () => parse("select n: jobs collect { employer } from people where n.size() > 1"),
-    (e: unknown) => e instanceof OqxError && /alias 'n' is a collect/.test(e.message),
+  // a collect alias inside an expression inlines the block (0.27; an error through 0.26)
+  assert.deepEqual(
+    (oqx`select name, n: jobs collect { employer } from ${people} where n.size() > 1` as Array<{ name: string }>).map((r) => r.name),
+    ["Bob", "Alice"],
   );
 });
 
@@ -213,14 +214,32 @@ test("a cycle among aliases referenced from `where` is a parse error", () => {
   assert.throws(() => parse("select a: b, b: a from people"), (e: unknown) => e instanceof OqxError && /select aliases form a cycle: a → b → a/.test(e.message));
 });
 
-test("`order by` resolves against the row, not the select aliases (unchanged)", () => {
-  // `decade` is not a field: every key is absent, so the order is the input order
+test("`order by` and the other row-reading clauses see the select aliases (0.27)", () => {
+  // `decade` is the alias: the rows sort by `age / 10`
   const out = oqx`select name, decade: age / 10 from ${people} order by decade` as Array<{ name: string }>;
-  assert.deepEqual(out.map((r) => r.name), ["Bob", "Alice", "Carol"]);
-  // …and a field named like an alias sorts by the FIELD
+  assert.deepEqual(out.map((r) => r.name), ["Carol", "Bob", "Alice"]);
+  // …an alias shadows a same-named field (every key ties: source order) …
   assert.deepEqual(
     (oqx`select name, age: 0 from ${people} order by age desc` as Array<{ name: string }>).map((r) => r.name),
+    ["Bob", "Alice", "Carol"],
+  );
+  // … and `$it.age` reads the field regardless
+  assert.deepEqual(
+    (oqx`select name, age: 0 from ${people} order by $it.age desc` as Array<{ name: string }>).map((r) => r.name),
     ["Alice", "Bob", "Carol"],
+  );
+  // a block alias is a destination, a flatten source and a nested block's `^alias`
+  assert.deepEqual(
+    oqx`select employer, d: $depth, cur: jobs collect { employer where !end_date } from ${people} where name == "Bob" follow cur`,
+    [{ employer: undefined, d: 1, cur: [{ employer: "Globocorp" }] }, { employer: "Globocorp", d: 2, cur: [] }],
+  );
+  assert.deepEqual(
+    oqx`select name, j: j.employer, cur: jobs collect { employer where !end_date } from ${people} where name == "Bob" flatten cur as j`,
+    [{ name: "Bob", j: "Globocorp", cur: [{ employer: "Globocorp" }] }],
+  );
+  assert.deepEqual(
+    oqx`select name, a: age, older: ${people} count { where age > ^a } from ${people} order by older`,
+    [{ name: "Alice", a: 52, older: 0 }, { name: "Bob", a: 41, older: 1 }, { name: "Carol", a: 29, older: 2 }],
   );
 });
 

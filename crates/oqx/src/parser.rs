@@ -119,7 +119,7 @@ use crate::ast::{
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
 use crate::print::print_template;
-use crate::resolve::{resolve_select, resolve_where};
+use crate::resolve::{read_keys, resolve_row_clauses, resolve_select, resolve_where};
 use crate::value::Value;
 use crate::walk::{Node, VisitContext, Visitor, template_exprs, visit};
 
@@ -780,18 +780,34 @@ impl Parser {
             },
             None => None,
         };
+        // The resolved items: an aggregate reached through an alias (`n: count(),
+        // xs: collect(n)`) is judged where it will be evaluated.
+        let resolved_select0 = match resolve_select(&body.select, &[]) {
+            Ok(items) => items,
+            Err(msg) => return self.fail(msg),
+        };
+        // The row-reading clauses see the aliases too (0.27): `frontier`, `flatten`,
+        // the keys and `order by` are judged (aggregates, group reads) as they will
+        // be evaluated — with a key that names an alias taking its expression and
+        // that alias's item reading the key.
+        let rc = match resolve_row_clauses(
+            &resolved_select0,
+            body.frontier.as_ref(),
+            &body.flatten,
+            body.group_by.as_ref(),
+            body.order_by.as_deref(),
+        ) {
+            Ok(rc) => rc,
+            Err(msg) => return self.fail(msg),
+        };
+        let resolved_select = rc.select;
+        // `having` reads the group: an aliased key's name there is the key.
         let resolved_having = match &body.having {
-            Some(h) => match resolve_where(&body.select, h.clone()) {
+            Some(h) => match resolve_where(&read_keys(&body.select, &rc.aliased_keys), h.clone()) {
                 Ok(h) => Some(h),
                 Err(msg) => return self.fail(msg),
             },
             None => None,
-        };
-        // The resolved items: an aggregate reached through an alias (`n: count(),
-        // xs: collect(n)`) is judged where it will be evaluated.
-        let resolved_select = match resolve_select(&body.select) {
-            Ok(items) => items,
-            Err(msg) => return self.fail(msg),
         };
         // Outside a destination block `frontier` marks the seeds of this body's
         // walk, so it needs one.
@@ -813,18 +829,17 @@ impl Parser {
             );
         }
         let check = GroupCheck {
-            select: &body.select,
             resolved_select: &resolved_select,
             having: body.having.as_ref(),
             resolved_having: resolved_having.as_ref(),
-            order_by: body.order_by.as_deref(),
+            order_by: rc.order_by.as_deref(),
             froms: &body.froms,
             r#where: resolved_where.as_ref(),
-            frontier: body.frontier.as_ref(),
-            flatten: &body.flatten,
+            frontier: rc.frontier.as_ref(),
+            flatten: &rc.flatten,
             limit: body.limit.as_ref(),
             offset: body.offset.as_ref(),
-            group_by: body.group_by.as_ref(),
+            group_by: rc.group_by.as_ref(),
         };
         match &body.group_by {
             Some(g) => {
@@ -1181,7 +1196,8 @@ impl Parser {
                 .collect()
         }
         let mut aliases: Vec<&str> = Vec::new();
-        for it in b.select {
+        // The resolved items: an alias to the left is inlined, a key-defining alias reads its key (0.27).
+        for it in b.resolved_select {
             let names = valid(group_by, &aliases);
             match it {
                 SelectItem::Field { expr, .. } => {
@@ -3138,10 +3154,12 @@ fn scalar_leaf(e: Expr) -> Where {
 const DISTINCT_WITH_GROUP: &str = "`distinct` is redundant with `group by` — a grouped body already yields one row per distinct key tuple; drop `distinct`";
 
 /// The clauses `check_grouped_body` / `reject_aggregates` look at: the body's
-/// own expressions, with `where` (and `resolved_having`) already alias-resolved.
+/// own expressions, with `where` (and `resolved_having`) alias-resolved and —
+/// since 0.27 — `order_by`, `frontier`, `flatten` and `group_by` the resolved
+/// row clauses (`resolve_row_clauses`).
 struct GroupCheck<'a> {
-    select: &'a [SelectItem],
-    /// The items with their aliases substituted (`resolve_select`), for the aggregate checks.
+    /// The items with their aliases substituted (`resolve_select`; an item naming
+    /// an aliased key reads the key), for the aggregate and group-read checks.
     resolved_select: &'a [SelectItem],
     having: Option<&'a Where>,
     resolved_having: Option<&'a Where>,

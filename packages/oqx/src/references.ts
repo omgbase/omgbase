@@ -31,12 +31,15 @@
 //     its own expression and before the clause (`where`, `frontier`, `follow`)
 //     the name is still the row's property;
 //   • a `select` alias is not a reference where the language resolves it
-//     (SEMANTICS §14): in the same body's `where`, and in the items to its
-//     right — a bare identifier naming such an alias, or a chain headed by it,
-//     is skipped; an alias's own name inside its own item is the row field and
-//     IS a reference; `order by`, `frontier`, `limit`/`offset`, `from` and
-//     `follow` are not rewritten against aliases, so a name there is a
-//     reference whatever the `select` says;
+//     (SEMANTICS §14, 0.27): in every clause of the same body that reads its
+//     rows (`where`, `having`, `frontier`, a `follow` destination, `flatten`,
+//     a `group by` key, `order by`), in the items to its right, and through
+//     `^name` from a nested block — a bare identifier naming such an alias, or
+//     a chain headed by it, is skipped; an alias's own name inside its own item
+//     (its blocks included) is the row field and IS a reference, as is a key
+//     naming an unaliased item; `limit`/`offset`, `from` and the source are not
+//     rewritten against aliases, so a name there is a reference whatever the
+//     `select` says;
 //   • a name read at the ROOT scope — the head of the top-level `source`
 //     (`from people`: clause `source`), an outer reference with as many carets
 //     as there are enclosing scopes (`^docs` from a top-level row) — is
@@ -122,8 +125,8 @@ export function references(root: Query | Subquery): Reference[] {
         path = path.slice(1);
       } else if (name.startsWith("$")) return false; // a language value
       if (ctx.clause === null) return false; // unreachable: the root node is never a name
-      if (head.kind === "ident" && isResolvedAlias(name, ctx.path, ctx.clause)) return false;
       const levels = head.kind === "outer" ? head.levels : 0;
+      if (isResolvedAlias(name, levels, ctx.path, ctx.clause)) return false;
       const depth = ctx.depth - levels;
       if (isLiftBound(name, depth, ctx.path, lifts)) return false;
       // A name a `flatten` bound (0.25) is an alias of the expression already
@@ -143,25 +146,51 @@ export function references(root: Query | Subquery): Reference[] {
   return out;
 }
 
-/** Whether a bare `name` in this position is a `select` alias the language
- * substitutes (so the name is the alias, not a row property): in the body's
- * `where` or `having`, any alias; in a `select` item, an alias defined to its LEFT. */
-function isResolvedAlias(name: string, path: readonly AstNode[], clause: Clause): boolean {
-  if (clause !== "where" && clause !== "select" && clause !== "having") return false;
-  // The nearest body, and the item under it when we are inside its select.
+/** Whether `name`, read `levels` scopes out from this position, is a `select`
+ * alias the language substitutes (SEMANTICS §14, 0.27) — so the name is the
+ * alias, not a row property. A body's aliases are visible to every clause that
+ * reads its rows (`where`, `having`, `frontier`, a `follow` destination and a
+ * destination block's receiver, `flatten`, a `group by` key, `order by`) and to
+ * the items after the one that defines them; a nested block reads them through
+ * `^name` (`levels` carets reach `levels` bodies out). Not visible in `from`,
+ * the bounds or the source. Inside a select item, only the items to its LEFT. */
+function isResolvedAlias(name: string, levels: number, path: readonly AstNode[], clause: Clause): boolean {
+  if (name.startsWith("$")) return false;
+  if (clause === "from" || clause === "source" || clause === "limit" || clause === "offset") return false;
+  // The bodies on the path, innermost first, with the index of the child of
+  // each that the position sits under (an item of its select, or a clause).
+  const bodies: { body: Query | Subquery; child: AstNode | undefined }[] = [];
   for (let i = path.length - 1; i >= 0; i--) {
     const a = path[i]!;
-    if (a.kind !== "query" && a.kind !== "subquery") continue;
-    const index = new Map<string, number>();
-    a.select.forEach((it, j) => { const n = aliasName(it); if (n !== null) index.set(n, j); });
-    const j = index.get(name);
-    if (j === undefined) return false;
-    if (clause === "where" || clause === "having") return true;
-    const item = path[i + 1];
-    const at = item === undefined ? -1 : a.select.indexOf(item as SelectItem);
-    return at >= 0 && j < at;
+    if (a.kind === "query" || a.kind === "subquery") bodies.push({ body: a, child: path[i + 1] });
   }
-  return false;
+  const target = bodies[levels];
+  if (target === undefined) return false;
+  const { body, child } = target;
+  const index = new Map<string, number>();
+  body.select.forEach((it, j) => { const n = aliasName(it); if (n !== null) index.set(n, j); });
+  const j = index.get(name);
+  if (j === undefined) return false;
+  // A `group by` key that is a bare alias name takes the alias's expression —
+  // unless the alias is the row field itself (`city: city`, the unaliased
+  // item), where the key stays the row read it was written as.
+  if (clause === "groupBy" && levels === 0 && child !== undefined && child.kind === "groupBy") {
+    const it = body.select[j]!;
+    if (it.kind === "field" && it.expr.kind === "ident" && it.expr.name === name) return false;
+  }
+  // Under one of the body's own select items (directly, or through nested
+  // blocks): only the items to its left — and an item's own name is the row field.
+  const at = child === undefined ? -1 : body.select.indexOf(child as SelectItem);
+  if (at >= 0) return j < at;
+  // A nested block hanging off `from`, a bound or the source is not read on the rows.
+  if (levels > 0 && child !== undefined) {
+    const under = (key: "from" | "limit" | "offset" | "source"): boolean => {
+      const v = (body as unknown as Record<string, unknown>)[key];
+      return v === child || (Array.isArray(v) && v.includes(child));
+    };
+    if (under("from") || under("limit") || under("offset") || under("source")) return false;
+  }
+  return true;
 }
 
 /**

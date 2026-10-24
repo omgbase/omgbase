@@ -891,8 +891,10 @@ every destination yields rows of that kind, else no kind), through the handles
 and relations of §1.2 (`_doc.x` on a block, link or revision judges `x` against
 docs; `_dst.x` on a link likewise; `_children.x` on a block against blocks;
 `_revisions.x` on a document against revisions). **Not judged:** `select`
-aliases where the language resolves them (the same body's `where` and later
-items — `resolve` already validates them), names a nested block lifts onto the
+aliases where the language resolves them (every clause of the same body that
+reads its rows — `where`, `order by`, `follow`, … — the later items, and
+`^alias` from a nested block, OQX 0.27; `resolve` already validates them),
+names a nested block lifts onto the
 scope (`^open: value`), `$`-names (`$it`, `$key`, `$depth`, …), `${}` bindings,
 function and method names (a call is never an entry read), root names (`docs`
 heading a body, `^docs`; an unknown one is §1.1's error), the member tail under

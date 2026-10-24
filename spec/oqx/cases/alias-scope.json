@@ -1,0 +1,1414 @@
+{
+  "suite": "alias-scope",
+  "cases": [
+    {
+      "name": "order by reads a select alias",
+      "tags": [
+        "alias",
+        "order"
+      ],
+      "notes": "Since 0.27 every clause that reads a body's rows sees that body's `select` aliases: `order by n` sorts by `name`. Through 0.26 only `where`, `having` and the items to an item's right did.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select n: name order by n }",
+      "expect": {
+        "result": [
+          {
+            "n": "Al"
+          },
+          {
+            "n": "Bob"
+          },
+          {
+            "n": "Cy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an alias shadows the row field it is named after; $it.<name> reads the field",
+      "tags": [
+        "alias",
+        "order",
+        "intrinsic"
+      ],
+      "notes": "`n: name` hides the row's own `n` from every row-reading clause; `$it.n` is the row's property regardless. (`order by n` here would sort by `name`.)",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select n: name, raw: $it.n order by $it.n }",
+      "expect": {
+        "result": [
+          {
+            "n": "Al",
+            "raw": "aaa"
+          },
+          {
+            "n": "Cy",
+            "raw": "mmm"
+          },
+          {
+            "n": "Bob",
+            "raw": "zzz"
+          }
+        ]
+      }
+    },
+    {
+      "name": "where reads a block alias inside an expression",
+      "tags": [
+        "alias",
+        "where",
+        "nested"
+      ],
+      "notes": "A block alias inlines as a value-position directive wherever it is read — `kids.size()` is `children { where ok }.size()`; alone as a `where` leaf it still means non-empty. An error through 0.26.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select name, kids: children { where ok } where kids.size() == 1 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "kids": [
+              {
+                "id": 2,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "name": "Cy",
+            "kids": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow reads a block alias as a destination",
+      "tags": [
+        "alias",
+        "follow",
+        "nested"
+      ],
+      "notes": "`follow kids` walks `children { where ok }` from each frontier row — the alias's block, re-read on the row being expanded (the seed's `kids` are its ok children; Al has none).",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, kids: children { where ok } where id == 1 follow kids { $key: id } order by $ordinal }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "kids": [
+              {
+                "id": 2,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "kids": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow reads a plain alias as a destination",
+      "tags": [
+        "alias",
+        "follow"
+      ],
+      "notes": "`c: children` is the row's `children`: the walk reaches Bob's two child records (which have no `children` of their own).",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, c: children where id == 1 follow c }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "c": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "a follow alias shadows the same-named row field",
+      "tags": [
+        "alias",
+        "follow",
+        "shadow"
+      ],
+      "notes": "The alias `children` is the ok children; `follow children` walks it, so the not-ok child is never reached.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, children: children { where ok } where id == 1 follow children { $key: id } }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested block reads an enclosing alias through ^",
+      "tags": [
+        "alias",
+        "nested",
+        "outer"
+      ],
+      "notes": "`^k` one scope out is the enclosing body's alias `k: kind`, inlined shifted — `^kind`, read on the enclosing row.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select k: kind, c: ^people count { where kind == ^k } }",
+      "expect": {
+        "result": [
+          {
+            "k": "eng",
+            "c": 2
+          },
+          {
+            "k": "eng",
+            "c": 2
+          },
+          {
+            "k": "ops",
+            "c": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "^^alias reaches an alias two scopes out",
+      "tags": [
+        "alias",
+        "nested",
+        "outer"
+      ],
+      "notes": "Two carets, two bodies out: `^^k` from the innermost block is the root body's `k`, inlined as `^^kind`.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select k: kind, cs: children { select n: ^^people count { where kind == ^^k } } where id == 1 }",
+      "expect": {
+        "result": [
+          {
+            "k": "eng",
+            "cs": [
+              {
+                "n": 2
+              },
+              {
+                "n": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block alias read through ^ inlines its block shifted",
+      "tags": [
+        "alias",
+        "nested",
+        "outer"
+      ],
+      "notes": "`^kids` in the count block is the root body's alias, inlined shifted — `^children { where ok }`, the enclosing row's ok children — so `n` counts the people those children name (`^id` inside the exists block is the counted person).",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, kids: children { where ok }, n: ^people count { where ^kids exists { where id == ^id } } }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "kids": [
+              {
+                "id": 2,
+                "ok": true
+              }
+            ],
+            "n": 1
+          },
+          {
+            "id": 2,
+            "kids": [],
+            "n": 0
+          },
+          {
+            "id": 3,
+            "kids": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ],
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontier reads a select alias",
+      "tags": [
+        "alias",
+        "frontier",
+        "follow"
+      ],
+      "notes": "`frontier big` is `frontier children count > 1`: Bob (two children) is a frontier seed and is not expanded.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, big: children count > 1 where id == 1 frontier big follow ^people { where ^children exists { where id == ^id } } }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "big": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontier reads a select alias: a seed the predicate rejects is expanded",
+      "tags": [
+        "alias",
+        "frontier",
+        "follow"
+      ],
+      "notes": "The same walk under `frontier !big`: Bob is expanded to the people his children name (`depth 2` stops there).",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, big: children count > 1 where id == 1 frontier !big follow ^people { where ^children exists { where id == ^id } depth 2 } }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "big": true
+          },
+          {
+            "id": 2,
+            "big": false
+          },
+          {
+            "id": 3,
+            "big": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "flatten reads a select alias",
+      "tags": [
+        "alias",
+        "flatten"
+      ],
+      "notes": "`flatten ks` fans the row out over `children`.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, ks: children where id == 1 flatten ks as kid }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "ks": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 1,
+            "ks": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a group by key that is a bare alias name takes the alias's expression",
+      "tags": [
+        "alias",
+        "group"
+      ],
+      "notes": "`group by kk` with `kk: kind` groups by `kind`; the item `kk`, `having kk` and `order by kk` then read the key. (A key naming an unaliased item — `city` with `select city` — is the row field it always was.)",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select kk: kind, n: count() group by kk having kk != \"hr\" order by kk }",
+      "expect": {
+        "result": [
+          {
+            "kk": "eng",
+            "n": 2
+          },
+          {
+            "kk": "ops",
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "order by reads a select alias at the group scope",
+      "tags": [
+        "alias",
+        "group",
+        "order"
+      ],
+      "notes": "`order by n` is `order by count()`: an aggregate, legal at the group scope.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select kind, n: count() group by kind order by n desc }",
+      "expect": {
+        "result": [
+          {
+            "kind": "eng",
+            "n": 2
+          },
+          {
+            "kind": "ops",
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block's where reads the frontier row's alias through ^",
+      "tags": [
+        "alias",
+        "follow",
+        "nested",
+        "outer"
+      ],
+      "notes": "Inside a destination block `^` is the frontier row: `^k` is its alias (`^kind`), `^id` its field — Bob reaches Al, the other engineer (`depth 2` stops the walk there).",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, k: kind where id == 1 follow ^people { where kind == ^k and id != ^id depth 2 } }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "k": "eng"
+          },
+          {
+            "id": 2,
+            "k": "eng"
+          }
+        ]
+      }
+    },
+    {
+      "name": "where reads an alias that shadows a field; the alias's own expression reads the field",
+      "tags": [
+        "alias",
+        "where",
+        "shadow"
+      ],
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select n: name, raw: $it.n where n == \"Bob\" }",
+      "expect": {
+        "result": [
+          {
+            "n": "Bob",
+            "raw": "zzz"
+          }
+        ]
+      }
+    },
+    {
+      "name": "from is never rewritten: a bare alias name there is the row field",
+      "tags": [
+        "alias",
+        "from"
+      ],
+      "notes": "`from` produces the rows the `select` reads, so the select cannot name it: `from c` reads the row's `c` (absent), and the row yields nothing.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, c: children from c where id == 1 }",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "an inlined block alias is resolved once: its own where is not re-resolved",
+      "tags": [
+        "alias",
+        "follow",
+        "nested"
+      ],
+      "notes": "`kids`'s own `where big` resolves to `id > 2` once; `follow kids` inlines the resolved block as is (resolution is not idempotent — re-resolving would read `big` again). Bob's child 3 is the only one reached.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "name": "Bob",
+            "kind": "eng",
+            "age": 41,
+            "n": "zzz",
+            "children": [
+              {
+                "id": 2,
+                "ok": true
+              },
+              {
+                "id": 3,
+                "ok": false
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "name": "Al",
+            "kind": "eng",
+            "age": 30,
+            "n": "aaa",
+            "children": []
+          },
+          {
+            "id": 3,
+            "name": "Cy",
+            "kind": "ops",
+            "age": 52,
+            "n": "mmm",
+            "children": [
+              {
+                "id": 1,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people { select id, kids: children { select nm: id + 10, big: id > 2 where big } where id == 1 follow kids }",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "kids": [
+              {
+                "nm": 13,
+                "big": true
+              }
+            ]
+          },
+          {
+            "kids": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a nested block may not read an alias to its right",
+      "tags": [
+        "alias",
+        "nested",
+        "error"
+      ],
+      "notes": "The order of `select` items still governs what an item (its nested blocks included) may name: only the items to its left.",
+      "query": "people { select c: ^people count { where kind == ^k }, k: kind }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select alias 'k' is used before it is defined"
+          ]
+        }
+      }
+    },
+    {
+      "name": "order by may not form a cycle through an alias",
+      "tags": [
+        "alias",
+        "order",
+        "error"
+      ],
+      "query": "people { select a: b, b: a order by a }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "select aliases form a cycle: a → b → a"
+          ]
+        }
+      }
+    },
+    {
+      "name": "references: an alias in order by, a follow destination and a nested ^alias are not references",
+      "tags": [
+        "alias",
+        "references"
+      ],
+      "notes": "The pass skips every name the language resolves as an alias — `order by k`, `follow kids`, `^k` from the block — and reports what their expressions read where they were written (`kind` and `children` in `select`). `^people` from the block is the named root.",
+      "query": "people { select k: kind, kids: children { where ok }, c: ^people count { where kind == ^k } where id == 1 follow kids { $key: id } order by k }",
+      "expect": {
+        "references": [
+          {
+            "name": "kind",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "children",
+            "clause": "select",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "ok",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "children",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "select",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "kind",
+            "clause": "where",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "^people",
+                  "depth": 2
+                }
+              ]
+            }
+          },
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "id",
+            "clause": "where",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "clause": "select",
+            "scope": {
+              "depth": 2,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                },
+                {
+                  "expr": "follow kids { $key: id }",
+                  "depth": 1
+                },
+                {
+                  "expr": "kids",
+                  "depth": 2
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "references: an unaliased key stays a row read",
+      "tags": [
+        "alias",
+        "references",
+        "group"
+      ],
+      "notes": "`kind: kind` is the row field, so the key `kind` is a row read in clause `groupBy`; `order by n` is the alias `count()`.",
+      "query": "people { select kind, n: count() group by kind order by n }",
+      "expect": {
+        "references": [
+          {
+            "name": "people",
+            "clause": "source",
+            "scope": {
+              "depth": 0,
+              "steps": []
+            }
+          },
+          {
+            "name": "kind",
+            "clause": "groupBy",
+            "scope": {
+              "depth": 1,
+              "steps": [
+                {
+                  "expr": "people",
+                  "depth": 1
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

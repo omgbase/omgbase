@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.26"`); the patch digit is this implementation's own.
+> `"0.27"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -292,25 +292,43 @@ non-range string yields an absent range, so `x in range(bad)` is just false.
 **Interpolations are always values, never syntax.** `where name == ${x}` compares
 against the value of `x`; a string in `x` can't inject operators or identifiers.
 
-**`where` sees the `select` aliases.** A name defined in the same body's
-projection may be used in its `where`; an alias shadows a same-named field
-there. The alias's expression is substituted inline before evaluation
-(`resolveAliases`, applied once by the run entry points — the parsed tree keeps
-what you wrote), so it costs nothing at run time and a storage planner still
-sees an ordinary predicate:
+**The `select` names are the names of the rows.** A name defined in a body's
+projection may be used in every clause of that body that reads its rows —
+`where`, `having`, `frontier`, a `follow` destination, `flatten`, a `group by`
+key, `order by` — and in the items to its right (0.27; through 0.26 only
+`where` and the later items saw it). An alias shadows a same-named field
+wherever it is visible; `$it.name` reads the field regardless. The alias's
+expression is substituted inline before evaluation (`resolveAliases`, applied
+once by the run entry points — the parsed tree keeps what you wrote), so it
+costs nothing at run time and a storage planner still sees ordinary clauses:
 
 ```js
 oqx`${people} { select name, adult: age >= 18 where adult }`;        // ≡ where age >= 18
 oqx`${people} { select name, active: age > 50 where active }`;       // the ALIAS, not the field → Alice
+oqx`${people} { select name, decade: age / 10 order by decade }`;    // ≡ order by age / 10
 oqx`${people} { select name, current: jobs { employer where !end } where current }`;
 // a collect alias in predicate position means "non-empty" → Bob, Carol
+oqx`${people} { select name, current: jobs { employer where !end } where current.size() > 1 }`;
+// … and inside an expression it is the block itself
+oqx`${people} { select id, kids: children { where ok } where id == 1 follow kids }`;  // walk the alias
 ```
 
-Inside an alias's own expression its name is still the field
-(`name: name.upper()` is not recursive); a chain of aliases that comes back to
-itself (`a: b, b: a … where a`) is a parse error. Each block rewrites only
-against its *own* `select`; `^name` always reads an enclosing row's field, never
-an alias. `order by` is not rewritten — it reads row fields (§8).
+A nested block reads the enclosing body's aliases through `^`, the way it reads
+the enclosing row: `^k` is the alias `k` of the body one scope out, its
+expression re-read on that row (`k: kind` → `^kind`; `kids: children { where
+ok }` → `^children { where ok }`):
+
+```js
+oqx`${people} { select k: kind, peers: ^people count { where kind == ^k } }`;
+```
+
+Inside an alias's own expression (its nested blocks included) its name is still
+the field (`name: name.upper()` is not recursive); a chain of aliases that comes
+back to itself (`a: b, b: a … where a`) is a parse error, and so is naming an
+item to the right (bare, or `^name` from a block). In a grouped body a key that
+is a bare alias name takes the alias's expression (`select kk: kind, n: count()
+… group by kk order by kk`: grouped by `kind`, projected as `kk`). `from`,
+`limit`/`offset` and the source are never rewritten.
 
 **Scoping: bare names are local, `^` reaches out.** A bare identifier resolves
 against the **current row only**. If the row lacks that property the value is
@@ -587,8 +605,8 @@ fully), not a short-circuiting `exists`.
 
 `order by <expr> [asc|desc]`, comma-separated for tie-breaks. Absent values sort
 last. The sort expression reads the row (fields, `$it`, recursion
-intrinsics) — it is not rewritten against the `select` aliases, so
-`order by decade` sorts by a field called `decade`, not by `decade: age / 10`.
+intrinsics) through the body's `select` aliases (0.27): `order by decade` with
+`decade: age / 10` sorts by `age / 10`; `order by $it.decade` sorts by the field.
 
 ```js
 oqx`${people} { select name where city == "NYC" order by age desc }`;
@@ -645,8 +663,8 @@ aggregate sees the **present** values of its argument — `count(e)`, `sum(e)`
 `first(e)`, `last(e)` — with `distinct` as a modifier (`count(distinct e)`,
 `collect(distinct e)`); `any(p)` / `all(p)` test truthiness over the rows.
 Aggregates do not nest. `having` is the post-group `where` (it may name a select
-alias: `having n > 1`); `order by` reads the group scope and is not rewritten
-against aliases (`order by count()`, not `order by n`); `limit`/`offset` bound
+alias: `having n > 1`); `order by` reads the group scope, aliases included
+(`order by n` with `n: count()` is `order by count()`; 0.27); `limit`/`offset` bound
 the groups; `distinct` with `group by` is an error (redundant). `count { … }` is
 now a value wherever a value stands (`n: jobs count { pay > 1 }`), in or
 out of a group. A nested block may group too (`jobs { employer, total:
@@ -927,7 +945,7 @@ rel { pay > 2 }  /  rel { employer }            a block without a consumer is co
 rel[p]  /  rel[p]!  /  rel[0]  /  rel[0]!       first match / exactly one (required) / positional / required positional
 x!                                               required: the value, or an error when absent (tightest; `a!.b` vs `a.b!`)
 is x / not x  /  x is y / x is not y             truthiness (≡ !!x / !x) / identity ($key: the host's, else structural; absent ≡ null)
-where alias  /  a: expr, b: a                    `where` and later items may use this body's select aliases (resolved before evaluation; an alias shadows a field)
+where alias  /  order by alias  /  a: expr, b: a    every row-reading clause and the later items may use this body's select aliases (resolved before evaluation; an alias shadows a field; `^alias` from a nested block)
 where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
@@ -995,7 +1013,7 @@ const rewritten = transform(q, (e) => (e.kind === "ident" && e.name === "name" ?
 print(rewritten);
 // 'people { name: person.name, n: jobs { employer: employer } where jobs exists { where !end } }'
 
-toJSON(q);        // { oqx: "0.26", kind: "query", span: [0, 71], … } — the shared JSON document
+toJSON(q);        // { oqx: "0.27", kind: "query", span: [0, 71], … } — the shared JSON document
 stripSpans(q);    // the same tree without spans, for shape comparisons
 ```
 
@@ -1436,7 +1454,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   the display source of a template.
 - `build` — the node builders (`build.query`, `build.op`, `build.subquery`,
   `build.field`, `build.ident`, …).
-- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.26"`).
+- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.27"`).
 
 **Types**
 

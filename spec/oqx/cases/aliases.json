@@ -379,16 +379,87 @@
       }
     },
     {
-      "name": "collect alias inside an expression is an error",
+      "name": "a collect alias inside a where expression inlines the block (0.27)",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
       "query": "select n: jobs collect { employer } from people where n.size() > 1",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "alias 'n' is a collect"
-          ]
-        }
-      }
+        "result": [
+          {
+            "n": [
+              {
+                "employer": "Globocorp"
+              },
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "n": [
+              {
+                "employer": "Initech"
+              },
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          }
+        ]
+      },
+      "notes": "Through 0.26 this was an error; since 0.27 the alias's block is a value-position directive wherever it is read — `n.size()` is `jobs collect { employer }.size()`."
     },
     {
       "name": "alias shadows a same-named field in where",
@@ -693,7 +764,7 @@
       "notes": "Since 0.17 a select item may reference the items to its left, so `a: b` names the alias `b` (defined later) rather than the row field; the pair is a cycle whether or not `where` uses it."
     },
     {
-      "name": "order by is not rewritten: unknown alias is absent",
+      "name": "order by reads a select alias (0.27)",
       "roots": {
         "people": [
           {
@@ -752,22 +823,22 @@
       "expect": {
         "result": [
           {
+            "name": "Carol",
+            "decade": 2.9
+          },
+          {
             "name": "Bob",
             "decade": 4.1
           },
           {
             "name": "Alice",
             "decade": 5.2
-          },
-          {
-            "name": "Carol",
-            "decade": 2.9
           }
         ]
       }
     },
     {
-      "name": "order by sorts by the field not the alias",
+      "name": "order by reads the alias, not the row field it shadows (0.27)",
       "roots": {
         "people": [
           {
@@ -823,6 +894,81 @@
         ]
       },
       "query": "select name, age: 0 from people order by age desc",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "age": 0
+          },
+          {
+            "name": "Alice",
+            "age": 0
+          },
+          {
+            "name": "Carol",
+            "age": 0
+          }
+        ]
+      },
+      "notes": "`age: 0` shadows the row's `age` for every clause that reads the rows; all keys tie, so the rows keep source order. `$it.age` reads the field."
+    },
+    {
+      "name": "$it.<name> reads the row field under a same-named alias in order by (0.27)",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, age: 0 from people order by $it.age desc",
       "expect": {
         "result": [
           {

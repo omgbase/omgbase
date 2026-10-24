@@ -96,7 +96,7 @@ import type {
   BinaryOp, Span, TemplatePart, Flatten, GroupBy, GroupKey, AggregateName,
 } from "./ast.ts";
 import { AGGREGATE_NAMES, isAggregateName } from "./ast.ts";
-import { resolveSelect, resolveWhere } from "./resolve.ts";
+import { readKeys, resolveRowClauses, resolveSelect, resolveWhere } from "./resolve.ts";
 import { visit } from "./walk.ts";
 import { printTemplate } from "./print.ts";
 
@@ -496,10 +496,17 @@ class Parser {
     // the items are synthesized before the alias validation sees the select.
     if (groupBy && select.length === 0) select = defaultGroupProjection(groupBy, (msg) => this.failAt(groupBy!.span[0], msg));
     const resolvedWhere = where ? resolveWhere(select, where, (msg) => this.fail(msg)) : null;
-    const resolvedHaving = having ? resolveWhere(select, having, (msg) => this.fail(msg)) : null;
     // The resolved items: an aggregate reached through an alias (`n: count(),
     // xs: collect(n)`) is judged where it will be evaluated.
-    const resolvedSelect = resolveSelect(select, (msg) => this.fail(msg));
+    const resolvedSelect0 = resolveSelect(select, (msg) => this.fail(msg));
+    // The row-reading clauses see the aliases too (0.27): `frontier`, `flatten`,
+    // the keys and `order by` are judged (aggregates, group reads) as they will
+    // be evaluated — with a key that names an alias taking its expression and
+    // that alias's item reading the key.
+    const rc = resolveRowClauses(resolvedSelect0, { frontier, flatten, groupBy, orderBy }, (msg) => this.fail(msg));
+    const resolvedSelect = rc.select;
+    // `having` reads the group: an aliased key's name there is the key.
+    const resolvedHaving = having ? resolveWhere(readKeys(select, rc.aliasedKeys), having, (msg) => this.fail(msg)) : null;
     // Outside a destination block `frontier` marks the seeds of this body's walk,
     // so it needs one.
     if (frontier && !follow && !ctx.destination) {
@@ -513,9 +520,9 @@ class Parser {
     }
     if (groupBy) {
       if (distinct) this.failAt(groupBy.span[0], DISTINCT_WITH_GROUP);
-      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy, froms, where: resolvedWhere, frontier, flatten, limit, offset, groupBy });
+      this.checkGroupedBody({ select, resolvedSelect, having, resolvedHaving, orderBy: rc.orderBy, froms, where: resolvedWhere, frontier: rc.frontier, flatten: rc.flatten, limit, offset, groupBy: rc.groupBy });
     } else {
-      this.rejectAggregates({ select, resolvedSelect, having: null, resolvedHaving: null, orderBy, froms, where: resolvedWhere, frontier, flatten, limit, offset, groupBy: null });
+      this.rejectAggregates({ select, resolvedSelect, having: null, resolvedHaving: null, orderBy: rc.orderBy, froms, where: resolvedWhere, frontier: rc.frontier, flatten: rc.flatten, limit, offset, groupBy: null });
     }
     return { froms, where, select, orderBy, follow, frontier, depth, flatten, groupBy, having, distinct, values, limit, offset };
   }
@@ -690,7 +697,8 @@ class Parser {
     const keys = new Set(b.groupBy!.keys.map((k) => k.name));
     const valid = (aliases: Iterable<string>): ReadonlySet<string> => new Set([...keys, ...GROUP_SCOPE_NAMES, ...aliases]);
     const aliases: string[] = [];
-    for (const it of b.select) {
+    // The resolved items: an alias to the left is inlined, a key-defining alias reads its key (0.27).
+    for (const it of b.resolvedSelect) {
       const names = valid(aliases);
       if (it.kind === "field") this.checkGroupExpr(it.expr, names, "a select item");
       else this.checkGroupExpr(it.op.receiver, names, "a select item");

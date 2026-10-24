@@ -85,14 +85,17 @@ rather than a projection of a field called `count` (write `docs count { … }`, 
 docs where …` — the collection named by a top-level `from` after the projection
 — parses to the same tree as `docs { select … where … }`, but it is no longer
 written; in that form a top-level predicate always needs `where`, and `era >
-1600 from docs` is the clause-order error it was. **`where` (and, since 0.17, a
-later `select` item) may reference the same body's `select` aliases** (`docs {
-select _path, old: era < 1000 where old }`): the alias's
-expression is substituted before evaluation (`resolveAliases`, once, ahead of
-the runner's own rewrites — the parsed tree keeps the alias), so the pushdown
-planner sees an ordinary predicate; an alias shadows a same-named field inside `where`; a cycle among
-aliases is a parse error; each block rewrites only against its own `select`.
-`order by` is not rewritten — it reads row fields.
+1600 from docs` is the clause-order error it was. **Every clause that reads a
+body's rows — `where`, `having`, `frontier`, a `follow` destination, `flatten`,
+a `group by` key, `order by` — and a later `select` item may reference the
+body's `select` aliases** (OQX 0.27; `docs { select _path, old: era < 1000
+where old order by old }`), and a nested block reads them through `^alias`
+(`^old`): the alias's expression is substituted before evaluation
+(`resolveAliases`, once, ahead of the runner's own rewrites — the parsed tree
+keeps the alias; a block alias inlines as the block), so the pushdown planner
+sees ordinary clauses; an alias shadows a same-named field (`$it.name` reads
+the field); a cycle among aliases or a forward reference is a parse error;
+`from`, `limit`/`offset` and the source are never rewritten.
 
 Consumers (oqx ≥ 0.9): `collect` (rows, the default), `exists` (≥ 1 row),
 `none` (0 rows — exactly `not … exists { … }`, and the way to say "every":

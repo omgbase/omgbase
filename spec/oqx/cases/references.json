@@ -336,7 +336,7 @@
       }
     },
     {
-      "name": "order by is not rewritten against aliases, so an alias there is a row property",
+      "name": "order by is rewritten against aliases, so an alias there is not a reference (0.27)",
       "tags": [
         "alias",
         "orderBy"
@@ -364,19 +364,6 @@
             "scope": {
               "depth": 0,
               "steps": []
-            }
-          },
-          {
-            "name": "n",
-            "clause": "orderBy",
-            "scope": {
-              "depth": 1,
-              "steps": [
-                {
-                  "expr": "people",
-                  "depth": 1
-                }
-              ]
             }
           }
         ]

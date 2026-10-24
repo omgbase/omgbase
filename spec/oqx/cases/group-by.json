@@ -718,11 +718,12 @@
       "expect": { "result": ["NYC", "SF", null] }
     },
     {
-      "name": "order by is not rewritten against select aliases: an alias there is an unknown name",
-      "tags": ["group", "order", "error"],
-      "roots": { "people": [{ "name": "Bob", "city": "NYC" }] },
-      "query": "select city, n: count() from people group by city order by n",
-      "expect": { "error": { "stage": "parse", "includes": ["`n` is not a group key or aggregate", "`order by`"] } }
+      "name": "order by reads a select alias at the group scope (0.27)",
+      "tags": ["group", "order", "alias"],
+      "notes": "Through 0.26 `order by` was not rewritten against the select, so `n` was an unknown name there; since 0.27 every row-reading clause sees the body's aliases — `order by n` is `order by count()`.",
+      "roots": { "people": [{ "name": "Bob", "city": "NYC" }, { "name": "Alice", "city": "SF" }, { "name": "Carol", "city": "NYC" }] },
+      "query": "select city, n: count() from people group by city order by n desc, city",
+      "expect": { "result": [{ "city": "NYC", "n": 2 }, { "city": "SF", "n": 1 }] }
     },
     {
       "name": "limit and offset bound the groups",

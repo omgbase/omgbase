@@ -261,10 +261,14 @@ scoperef   = "^" { "^" }                                  ; relative: one scope 
   by `resolveAliases` exactly as a `where` alias is (SEMANTICS §14): an alias
   shadows a same-named row field in the items after it; inside its own
   expression an alias's name is the row field; a reference to an item **to its
-  right** is a parse error (`… is used before it is defined — a select item may
-  reference only the items to its left`), and a chain of references that returns
-  to an item is the alias-cycle error. The tree keeps the surface form.
-  [`sugar`, `aliases`]
+  right** — bare, or `^name` from one of the item's nested blocks (0.27) — is a
+  parse error (`… is used before it is defined — a select item may reference
+  only the items to its left`), and a chain of references that returns to an
+  item is the alias-cycle error. Since 0.27 the aliases are visible to every
+  clause that reads the body's rows (`where`, `having`, `frontier`, `follow`,
+  `flatten`, `group by`, `order by`) and, through `^name`, to the nested blocks
+  (SEMANTICS §14). The tree keeps the surface form.
+  [`sugar`, `aliases`, `alias-scope`]
 - `select distinct …` marks the body distinct (see SEMANTICS §distinct).
 - `values` after the list requires **exactly one** item and turns off record
   wrapping; an alias is accepted and ignored; a lift is rejected.
@@ -361,13 +365,14 @@ group    = "(" where ")"                       ; a predicate group …
   range) it is a scalar operand: `where jobs[0].pay > 2`,
   `where jobs first { }.pay > 2`, `where jobs[0]!`.
 - Aliases: a bare identifier in `where` may name an alias of the same body's
-  `select` (SEMANTICS §14); a `select` item may likewise name the items to its
-  left (§`select`). The parser validates the reference — an alias
-  cycle, or a block alias inside an expression, is a parse error — but keeps
-  the identifier in the tree (AST.md §2); `resolveAliases` substitutes it
-  before evaluation.
+  `select` (SEMANTICS §14), as may one in any other clause that reads the rows
+  (0.27); a `select` item may likewise name the items to its left (§`select`).
+  A block alias inlines as a value-position directive (`where kids.size() > 1`;
+  alone as a leaf, "non-empty"). The parser validates the reference — an alias
+  cycle or a forward reference is a parse error — but keeps the identifier in
+  the tree (AST.md §2); `resolveAliases` substitutes it before evaluation.
 
-[`where`, `consumers`, `aliases`]
+[`where`, `consumers`, `aliases`, `alias-scope`]
 
 ### `follow` — recursion
 
@@ -512,9 +517,11 @@ With `group by`, **`distinct`** on the body (`select distinct …`) or on its
 directive (`x collect distinct { group by k }`) is the parse error `` `distinct`
 is redundant with `group by` ``: a grouped body already yields one row per
 distinct key tuple. `order by`, `limit` and `offset` apply to the groups; `order
-by` reads the group scope (a key, an aggregate, `rows`) and is not rewritten
-against aliases, so `order by n` with `n: count()` is the unknown-name error
-above — write `order by count()`. [`group-by`, `clause-order`]
+by` reads the group scope (a key, an aggregate, `rows`) through the body's
+aliases (0.27): `order by n` with `n: count()` is `order by count()`, and a
+key that is a bare alias name (`group by kk` with `kk: kind`) is the alias's
+expression, which `having kk` and `order by kk` then read as the key
+(SEMANTICS §14). [`group-by`, `clause-order`, `alias-scope`]
 
 ### `order by`
 

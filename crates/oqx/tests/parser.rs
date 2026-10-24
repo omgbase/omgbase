@@ -475,10 +475,18 @@ fn where_may_reference_select_aliases_resolved_before_evaluation() {
     let expected = op(ident("jobs"), Consumer::Collect, block);
     assert_eq!(q.select[1], collect_item("current", expected.clone()));
     assert_eq!(q.r#where, Some(wop(expected)));
-    // …but not inside an expression
-    assert_parse_error(
-        "select n: jobs collect { employer } from people where n.size() > 1",
-        &["alias 'n' is a collect"],
+    // …and inside an expression it inlines as a value-position directive (0.27)
+    let q = resolved("select n: jobs collect { employer } from people where n.size() > 1");
+    let mut block = sub();
+    block.select = vec![bare("employer")];
+    let inlined = op(ident("jobs"), Consumer::Collect, block);
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Gt,
+            call(Some(Expr::Op(Box::new(inlined))), "size", vec![]),
+            num(1.0)
+        )))
     );
 }
 

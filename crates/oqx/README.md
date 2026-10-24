@@ -93,8 +93,9 @@ Mirrors the reference so the two can be read side by side:
   flags→`(?ims)`), so a pattern means the same here as in the reference;
   `DataContext::regex_dialect()` / `DefaultContext::with_regex_dialect` opt a
   host into the crate's native syntax instead (not portable).
-- `resolve` — `resolve_aliases`: the `select`-alias substitution in `where`
-  (SEMANTICS §14), applied exactly once by the entry points `run_query` /
+- `resolve` — `resolve_aliases`: the `select`-alias substitution in every
+  clause that reads a body's rows and, through `^alias`, in its nested blocks
+  (SEMANTICS §14, 0.27), applied exactly once by the entry points `run_query` /
   `execute` before the engine sees the query (an `Engine::run` evaluates the
   query it is given).
 - `walk` — `visit` with a `Visitor` (enter/leave; the context carries the path,

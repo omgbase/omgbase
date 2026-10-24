@@ -165,13 +165,14 @@ Shape rules the parser guarantees (and `cases/ast.json`, `cases/group-by.json` p
   what the body projects; the synthesized nodes carry the empty span. A
   `count { … }` directive in value position (0.24) is a `collect` select item
   (or an `op` operand) like the other directives.
-- `where` keeps its **surface form**: a `select` alias referenced in `where` is
-  an `ident` in the tree. The substitution (SEMANTICS §14) is the pure function
-  `resolveAliases` / `resolve_aliases`, applied by the run entry points exactly
-  once before evaluation; the parser only validates the references (a cycle or
-  a block alias inside an expression is still a parse error). A tool that wants
-  the evaluated predicate calls it; a tool that wants what the user wrote reads
-  the tree as parsed.
+- Every clause keeps its **surface form**: a `select` alias referenced in
+  `where`, `order by`, a `follow` destination, a `group by` key — or through
+  `^name` from a nested block (0.27) — is an `ident` (an `outer`) in the tree.
+  The substitution (SEMANTICS §14) is the pure function `resolveAliases` /
+  `resolve_aliases`, applied by the run entry points exactly once before
+  evaluation; the parser only validates the references (a cycle or a forward
+  reference is a parse error). A tool that wants the evaluated clauses calls
+  it; a tool that wants what the user wrote reads the tree as parsed.
 - Numbers are doubles (`1e3` is `1000`); string literals are decoded (`"a\nb"`
   holds a newline), and so are a template literal's text parts (`` `a\`b` `` is
   `["a`b"]`; `` `\${x}` `` is `["${x}"]`, one text part and no interpolation).
@@ -369,12 +370,15 @@ What is not:
   `follow`) and in its own expression the name is the row's and **is** a
   reference;
 - a `select` alias where the language substitutes it (§14 of SEMANTICS): a
-  bare identifier naming an alias — or a chain headed by it — in the same
-  body's `where` or `having`, or in a `select` item to the alias's right. An alias's own
-  name inside its own item is the row field and **is** a reference. `order
-  by`, `frontier`, `limit`/`offset`, `from` and `follow` are not rewritten
-  against aliases, so a name there is a reference whatever the `select` says
-  (`select n: name from people order by n` references `n` — the row's);
+  bare identifier naming an alias — or a chain headed by it — in any clause of
+  the same body that reads its rows (`where`, `having`, `frontier`, a `follow`
+  destination, `flatten`, a `group by` key, `order by`), in a `select` item to
+  the alias's right, or through an outer reference from a nested block (`^k`
+  one body out; since 0.27). An alias's own name inside its own item (its
+  nested blocks included) is the row field and **is** a reference, as is a
+  `group by` key naming an unaliased item (`city` with `select city`).
+  `limit`/`offset`, `from` and the source are not rewritten against aliases, so
+  a name there is a reference whatever the `select` says;
 - at a **group scope** (since 0.24; SEMANTICS §24): a bare **key name** — or a
   chain headed by it, or an outer reference to it from a nested block (`^lo`
   inside `rows collect { … }`) — is the key, an alias of the expression
@@ -500,5 +504,6 @@ document says which `major.minor` produced it.
 | 0.22 | Added (minor): `"~"`, `"~*"`, `"!~"`, `"!~*"` as `binary` operators (the infix regex operators, sugar over `matches`). No node or field added, renamed or removed; a reader of an older minor may meet an unknown `binary.op`. The canonical print writes the operator as written (`a ~ b`), at comparison precedence. |
 | 0.23 | Added (minor): the `references` static pass (§5b) and the fixture kind `expect.references` (README). No node or field added, renamed or removed; the grammar and the semantics are unchanged. |
 | 0.25 | Added (minor): the `flatten` node (`expr`, `name`); `query.flatten` and `subquery.flatten` (materialized as `[]` on every body); the traversal clause `flatten`. No node for the block: a written block is the existing `collect` `op` in `expr`, as `x { … }` is wherever a value stands. Nothing renamed or removed. A reader of an older minor meets the new list on every body and the new kind. |
+| 0.27 | No node or field added, renamed or removed. A `select` alias is now visible to every clause that reads the body's rows and, through `^name`, to the nested blocks (SEMANTICS §14); the tree still keeps the surface form (the alias stays an `ident` / `outer`), so a reader of an older minor sees the same shapes — only `resolveAliases` and the `references` pass changed what they substitute and skip. Through 0.26 a block alias inside an expression, and a forward reference through a nested block, parsed differently (an error, or a row read). |
 | 0.26 | No node or field added, renamed or removed. The canonical print changed form: a query prints **collection-scoped** (`S [<consumer>] [distinct] { … }`, GRAMMAR §2) and `collect` as the bare brace (`x { … }`, `x distinct { … }`); `query.source` is the collection either way and the JSON is unchanged. A `references` step for a `collect` destination block therefore prints `follow kids { … }`. Two sugars desugar in the parser: a consumer word with no block is the op over an empty `subquery` (empty span at the end of the word; printed without the block, `jobs count`), and a projection-only block over a `collect`/`first`/`single` op whose block projects nothing merges into that op (`jobs[0] { name }` is one `first` op — the one tree shape of 0.25 that no longer parses as two ops). |
 | 0.24 | Added (minor): the `groupBy` and `key` nodes; `query.groupBy`, `query.having`, `subquery.groupBy`, `subquery.having` (materialized as `null`); the `aggregate` expression node (a free call by an aggregate name parses to it, never to a `call`); the traversal clauses `groupBy` and `having`; a `groupBy` node as a `references` step; `count` as a value-position directive (an `op` with `op: "count"` in a `collect` item or an operand). Nothing renamed or removed. A reader of an older minor meets the two new fields on every body and the new kinds. |

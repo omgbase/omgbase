@@ -32,12 +32,17 @@
 //!     its own expression and before the clause (`where`, `frontier`, `follow`)
 //!     the name is still the row's property;
 //!   • a `select` alias is not a reference where the language resolves it
-//!     (SEMANTICS §14): in the same body's `where`, and in the items to its
-//!     right — a bare identifier naming such an alias, or a chain headed by it,
-//!     is skipped; an alias's own name inside its own item is the row field and
-//!     IS a reference; `order by`, `frontier`, `limit`/`offset`, `from` and
-//!     `follow` are not rewritten against aliases, so a name there is a
-//!     reference whatever the `select` says;
+//!     (SEMANTICS §14; since 0.27 every clause that reads the body's rows):
+//!     in the same body's `where`, `having`, `frontier`, a `follow` destination
+//!     (and a destination block's receiver), `flatten`, a `group by` key —
+//!     unless the key names the unaliased item (`city: city`), a row read —
+//!     `order by`, and in the items to its right; a nested block's `^name` that
+//!     reaches an enclosing body's alias likewise — a bare identifier naming
+//!     such an alias, a chain headed by it, or that outer reference is skipped;
+//!     an alias's own name inside its own item is the row field and IS a
+//!     reference; `from`, `limit`/`offset` and the source are not rewritten
+//!     against aliases, so a name there (or a `^name` from a block under them)
+//!     is a reference whatever the `select` says;
 //!   • a name read at the ROOT scope — the head of the top-level `source`
 //!     (`from people`: clause `source`), an outer reference with as many carets
 //!     as there are enclosing scopes (`^docs` from a top-level row) — is
@@ -212,9 +217,9 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
                 return true;
             };
             // The head of a navigation is handled here, once, with the chain's full name.
-            let (mut name, levels, is_ident) = match head {
-                Head::Ident(n) => (n, 0, true),
-                Head::Outer { levels, name } => (name, levels, false),
+            let (mut name, levels) = match head {
+                Head::Ident(n) => (n, 0),
+                Head::Outer { levels, name } => (name, levels),
             };
             let mut path = path.as_slice();
             if name == "$it" {
@@ -229,7 +234,7 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
             let Some(clause) = ctx.clause else {
                 return false; // unreachable: the root node is never a name
             };
-            if is_ident && is_resolved_alias(name, &ctx.path, clause) {
+            if is_resolved_alias(name, levels, &ctx.path, clause) {
                 return false;
             }
             // An outer reference past the root would be the language's own
@@ -304,39 +309,115 @@ fn references_in<'a>(root: Node<'a>) -> Vec<Reference<'a>> {
     pass.out
 }
 
-/// Whether a bare `name` in this position is a `select` alias the language
-/// substitutes (so the name is the alias, not a row property): in the body's
-/// `where` or `having`, any alias; in a `select` item, an alias defined to its LEFT.
-fn is_resolved_alias(name: &str, path: &[Node<'_>], clause: Clause) -> bool {
-    if clause != Clause::Where && clause != Clause::Select && clause != Clause::Having {
+/// Whether `name`, read `levels` scopes out from this position, is a `select`
+/// alias the language substitutes (SEMANTICS §14, 0.27) — so the name is the
+/// alias, not a row property. A body's aliases are visible to every clause that
+/// reads its rows (`where`, `having`, `frontier`, a `follow` destination and a
+/// destination block's receiver, `flatten`, a `group by` key, `order by`) and to
+/// the items after the one that defines them; a nested block reads them through
+/// `^name` (`levels` carets reach `levels` bodies out). Not visible in `from`,
+/// the bounds or the source. Inside a select item, only the items to its LEFT.
+fn is_resolved_alias(name: &str, levels: usize, path: &[Node<'_>], clause: Clause) -> bool {
+    if name.starts_with('$') {
         return false;
     }
-    // The nearest body, and the item under it when we are inside its select.
-    for i in (0..path.len()).rev() {
-        let select: &[SelectItem] = match path[i] {
-            Node::Query(q) => &q.select,
-            Node::Subquery(s) => &s.select,
-            _ => continue,
-        };
-        let mut index: HashMap<&str, usize> = HashMap::new();
-        for (j, it) in select.iter().enumerate() {
-            if let Some(n) = alias_name(it) {
-                index.insert(n, j);
-            }
-        }
-        let Some(&j) = index.get(name) else {
-            return false;
-        };
-        if clause == Clause::Where || clause == Clause::Having {
-            return true;
-        }
-        let at = match path.get(i + 1) {
-            Some(Node::Select(item)) => select.iter().position(|x| std::ptr::eq(x, *item)),
-            _ => None,
-        };
-        return at.is_some_and(|at| j < at);
+    if matches!(
+        clause,
+        Clause::From | Clause::Source | Clause::Limit | Clause::Offset
+    ) {
+        return false;
     }
-    false
+    // The bodies on the path, innermost first, with the child of each that the
+    // position sits under (an item of its select, or a clause).
+    let mut bodies: Vec<(Node<'_>, Option<Node<'_>>)> = Vec::new();
+    for i in (0..path.len()).rev() {
+        if body_addr(path[i]).is_some() {
+            bodies.push((path[i], path.get(i + 1).copied()));
+        }
+    }
+    let Some(&(body, child)) = bodies.get(levels) else {
+        return false;
+    };
+    let Some(body) = AliasBody::of(body) else {
+        return false;
+    };
+    let select = body.select;
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    for (j, it) in select.iter().enumerate() {
+        if let Some(n) = alias_name(it) {
+            index.insert(n, j);
+        }
+    }
+    let Some(&j) = index.get(name) else {
+        return false;
+    };
+    // A `group by` key that is a bare alias name takes the alias's expression —
+    // unless the alias is the row field itself (`city: city`, the unaliased
+    // item), where the key stays the row read it was written as.
+    if clause == Clause::GroupBy
+        && levels == 0
+        && matches!(child, Some(Node::GroupBy(_)))
+        && let SelectItem::Field {
+            expr: Expr::Ident { name: n, .. },
+            ..
+        } = &select[j]
+        && n == name
+    {
+        return false;
+    }
+    // Under one of the body's own select items (directly, or through nested
+    // blocks): only the items to its left — and an item's own name is the row field.
+    if let Some(Node::Select(item)) = child
+        && let Some(at) = select.iter().position(|x| std::ptr::eq(x, item))
+    {
+        return j < at;
+    }
+    // A nested block hanging off `from`, a bound or the source is not read on the rows.
+    if levels > 0
+        && let Some(child) = child
+    {
+        let under = |e: Option<&Expr>| e.is_some_and(|e| same_expr(child, e));
+        if body.from.iter().any(|f| same_expr(child, f))
+            || under(body.limit)
+            || under(body.offset)
+            || under(body.source)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// The clauses of a body `is_resolved_alias` reads: its select, and the clauses
+/// never rewritten against it (`from`, the bounds, a query's source).
+struct AliasBody<'a> {
+    select: &'a [SelectItem],
+    from: &'a [Expr],
+    limit: Option<&'a Expr>,
+    offset: Option<&'a Expr>,
+    source: Option<&'a Expr>,
+}
+
+impl<'a> AliasBody<'a> {
+    fn of(body: Node<'a>) -> Option<Self> {
+        match body {
+            Node::Query(q) => Some(AliasBody {
+                select: &q.select,
+                from: &q.from,
+                limit: q.limit.as_ref(),
+                offset: q.offset.as_ref(),
+                source: Some(&q.source),
+            }),
+            Node::Subquery(s) => Some(AliasBody {
+                select: &s.select,
+                from: &s.from,
+                limit: s.limit.as_ref(),
+                offset: s.offset.as_ref(),
+                source: None,
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// The names the nested blocks of `body` lift onto it: a `field` item with

@@ -42,9 +42,11 @@ Only `select` may drop its keyword, and only as the first clause
 the keyword (`{ _name where _kind == "md:task" }`, not `{ _name, _kind ==
 "md:task" }`); in the clause form a top-level predicate needs `where` (`era >
 1600 from docs` is the clause-order error), and `from docs count` is an error
-(write `docs count { … }`). `where` and later `select` items may use the same
-body's `select` aliases (`docs { select _path, old: era < 1000 where old }`; an
-alias shadows a same-named field there). `and` / `or` / `not` are the connectives;
+(write `docs count { … }`). Every clause that reads a body's rows — `where`,
+`order by`, `follow`, `group by` … — and the later `select` items may use the
+body's `select` aliases (`docs { select _path, old: era < 1000 where old order by
+old }`; an alias shadows a same-named field; a nested block reads it as `^old`).
+`and` / `or` / `not` are the connectives;
 the symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and
 what `print` writes).
 
@@ -394,6 +396,9 @@ revisions:  (history as rows — one per stored revision of every document of th
   the engine's field (_id, _path, _title, …); _data.<k> is the bare key's read;
   a call/arithmetic needs an alias (n: size(tags)) unless in values mode;
   an output key of _id/_path other than the attribute itself needs an alias.
+  an alias names the row for every later clause (where, order by, follow,
+  flatten, group by) and the items to its right; a nested block reads it as
+  ^alias; an alias shadows a same-named field ($it.name reads the field).
   _raw        whole file bytes (docs) — docs_read is cheaper for one doc.
   distinct    select distinct _type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:

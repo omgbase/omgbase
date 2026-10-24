@@ -494,23 +494,20 @@
       }
     },
     {
-      "name": "order-by-an-alias-reads-the-row-and-is-a-hint",
-      "notes": "§1.5 / spec/oqx SEMANTICS §17: `order by n` is never rewritten against the select — it reads the node row's `n`, which no node carries.",
+      "name": "order-by-an-alias-reads-the-alias",
+      "notes": "§1.5 / spec/oqx SEMANTICS §14 (OQX 0.27): `order by n` reads the select alias `n: _name` — the hits sort by name, and no hint is raised (through OQX 0.26 it read the node row's `n`, which no node carries, and was a hint).",
       "query": "select n: _name from nodes order by n, _path limit 1",
       "expect": {
         "hits": [
           {
-            "_id": "n_02a726d87530",
-            "_path": "/index.md",
-            "n": "Alchemy"
+            "_id": "n_25a8611928ef",
+            "_path": "/timeline/kickoff.md",
+            "n": "Agenda"
           }
         ],
         "truncated": false,
         "cursor": null,
-        "consumer": "collect",
-        "hints": [
-          "no node in this repository carries a property `n`"
-        ]
+        "consumer": "collect"
       }
     },
     {

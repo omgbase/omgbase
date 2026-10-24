@@ -545,31 +545,51 @@ is false when `xs` has rows, and `true && foo(1)` raises `unknown function`. A
 query may therefore guard an operand by position (`has(s) && s.matches(re)`).
 [`where`, `logical`, `consumers`, `limit-offset`]
 
-## 14. Select aliases in `where` and in later `select` items
+## 14. Select aliases: the names of a body's rows
 
-A bare identifier in a body's `where` that names an alias of the **same body's**
-`select` is replaced by that alias's expression before evaluation. Since 0.17
-the same holds for a bare identifier in a `select` item that names an item **to
-its left** (`boss: ^people[id == ^manager], bossName: boss.name`; a nested
-directive alias inlines as a value-position directive): items resolve left to
-right, each against the already-resolved items before it; a reference to an
-item to its right is a parse error, as is a chain that returns to an item. The parser
-keeps the identifier in the tree and only validates the reference (AST.md §2);
-the substitution is the pure function `resolveAliases` / `resolve_aliases`,
-which the run entry points apply exactly once (it is not idempotent:
-`name: name.upper() … where name` resolves to `name.upper()`, whose `name` is
-the row field). An engine evaluates the query it is given. Rules:
+A body's `select` names are names of that body's rows for **every clause that
+reads the rows** and for the nested blocks under it (since 0.27; through 0.26
+only `where`, `having` and the items to an item's right saw them). A bare
+identifier that names an alias of the same body's `select` — in `where`,
+`having`, `frontier`, a `follow` destination (the receiver, or the head of a
+navigation; a destination block's receiver likewise), `flatten`, a `group by`
+key, `order by`, or a `select` item **to the alias's right** — is replaced by
+that alias's expression before evaluation. A nested block reads an enclosing
+body's alias through an outer reference (`^name` one scope out, `^^name` two,
+`N^name` by depth): the alias's expression is inlined **shifted** by that many
+scopes, so what it read on the enclosing row it still reads there (`^k` with
+`k: kind` is `^kind`; with `k: kids { where ok }` it is `^kids { where ok }`,
+the block re-read on the enclosing row). Items resolve left to right, each
+against the already-resolved items before it; a reference to an item to its
+right — bare, or `^name` from one of the item's own blocks — is a parse error
+(`… is used before it is defined …`), as is a chain that returns to an item.
+The parser keeps the identifier in the tree and only validates the reference
+(AST.md §2); the substitution is the pure function `resolveAliases` /
+`resolve_aliases`, which the run entry points apply exactly once (it is not
+idempotent: `name: name.upper() … where name` resolves to `name.upper()`, whose
+`name` is the row field). An engine evaluates the query it is given. Rules:
 
-- an alias shadows a same-named row field inside `where` and in the items after it;
+- an alias **shadows** a same-named row field wherever it is visible; `$it.name`
+  reads the row's property regardless (`select age: 0 … order by $it.age`);
 - an unaliased dotted item is an alias for its key (`meta.slug` → `slug`);
-- inside an alias's own expression its name is the row field (not recursion);
-  a chain of aliases that returns to one being resolved is a parse error, and
-  so is a `select` item naming an item to its right;
-- an alias whose value is a nested `collect`/`first`/`single` block may stand
-  alone as a leaf (meaning "non-empty") but not appear inside an expression;
-- nested blocks rewrite only against their own `select`; `^name` is never an
-  alias; `order by` is **not** rewritten and reads row fields.
-[`aliases`]
+- inside an alias's own expression — and inside its own nested blocks — its
+  name is the row field (not recursion); a chain of aliases that returns to one
+  being resolved is a parse error, and so is a reference to an item to its right;
+- an alias whose value is a `collect`/`first`/`single`/`count` block inlines as
+  a **value-position directive** wherever it is read (`kids.size()`, `follow
+  kids`, `where ^kids exists { … }` from a nested block); alone as a `where` /
+  `having` leaf it means "non-empty" (through 0.26 a block alias inside an
+  expression was a parse error);
+- in a **grouped body** a `group by` key that is a bare alias name takes the
+  alias's expression as its key, named by the alias, and that alias's item —
+  and `having` and `order by` — then read the **key**: `select kk: kind, n:
+  count() … group by kk order by kk` groups by `kind` and projects it as `kk`
+  (a key naming an unaliased item, `city` with `select city`, is the row field
+  it always was); `order by n` with `n: count()` is `order by count()`;
+- `from` (it produces the rows the `select` reads), `limit`/`offset` (bounds of
+  the scope, not of a row) and the source are **never** rewritten: a bare alias
+  name there is the row field, or the enclosing scope's name.
+[`aliases`, `alias-scope`]
 
 ## 15. Consumers and result shapes
 
