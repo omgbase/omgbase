@@ -2,19 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   CARD, DEFAULT_CARD, DEFAULT_LABEL_FIT, EASE_MAX_DT, EASE_SNAP, EASE_TAU, EDGE_PALETTE, ELLIPSIS, EdgeEaser, LABEL_FIT, LABEL_FITS, PARALLEL_GAP, ROUTE_MARGIN, ZOOM_MAX, ZOOM_MIN,
   arrowEnd, arrowheadPath, cardContent, cardFields, cardRadius, cardWidth, connectorDrop, connectorLine, curveHitsRect, dragMode, easeToward, edgeKindColor, edgePath, fitTransform, fixedMeasure, forceConfig, formatValue,
-  graphDescription, hitTest, initialView, isLabelFit, isTemplateResult, keySide, nodeSize, labelRoom, nearestInDirection, panBy, parallelOffsets, pathFromOffset, readField, renderCard, routeMinLength, routeViolations, segmentHitsRect, sizeCard, toGraph,
-  wheelZoomFactor, wrapLabel, zoomAbout, type GraphViewEdge, type GraphViewNode, type Placed,
+  graphDescription, hitTest, initialView, isLabelFit, isSeparator, isTemplateResult, keySide, lineText, nodeSize, labelRoom, nearestInDirection, panBy, parallelOffsets, pathFromOffset, polylineMidpoint, polylineRoute, readField, renderCard, routeMinLength, routeViolations, segmentHitsRect, sizeCard, tidySeparators, toGraph,
+  truncateLine, wheelZoomFactor, wrapLabel, zoomAbout, type GraphViewEdge, type GraphViewNode, type Placed,
 } from "./graph.js";
 
 const W = 150, H = 34;
 const card = (id: string, x: number, y: number, w = W, h = H): Placed => ({ id, x, y, w, h });
 
 describe("card templates", () => {
-  it("DEFAULT_CARD prefers _display over _title; the fallback stands in when both are absent", () => {
-    expect(DEFAULT_CARD).toBe("{_display|_title}");
-    expect(renderCard(DEFAULT_CARD, { _display: "Shown", _title: "Title" }, "fb")).toEqual({ label: "Shown", lines: [], full: ["Shown"] });
-    expect(renderCard(DEFAULT_CARD, { _title: "Title" }, "fb")).toEqual({ label: "Title", lines: [], full: ["Title"] });
-    expect(renderCard(DEFAULT_CARD, { _display: "", _title: null }, "fb")).toEqual({ label: "fb", lines: [], full: ["fb"] });
+  it("DEFAULT_CARD is the title alone (no display-property concept in the element); the fallback stands in when it is absent", () => {
+    expect(DEFAULT_CARD).toBe("{_title}");
+    expect(renderCard(DEFAULT_CARD, { _title: "Title", card: "Ignored here" }, "fb")).toEqual({ label: "Title", lines: [], full: ["Title"] });
+    expect(renderCard(DEFAULT_CARD, { _title: null }, "fb")).toEqual({ label: "fb", lines: [], full: ["fb"] });
+    // An app's own template: a bare `card` alias the query may compute wins over the title.
+    expect(renderCard("{card|_title}", { _title: "Title", card: "Shown" }, "fb").label).toBe("Shown");
+    expect(renderCard("{card|_title}", { _title: "Title" }, "fb").label).toBe("Title");
     expect(renderCard(DEFAULT_CARD, {}, "calcination")).toEqual({ label: "calcination", lines: [], full: ["calcination"] });
   });
 
@@ -27,8 +29,36 @@ describe("card templates", () => {
     });
     // The label is the first KEPT line: a dropped first line hands the label to the next.
     expect(renderCard("{nope}\n{title}", { title: "T" }, "fb").label).toBe("T");
-    // A partially absent line keeps its present values.
-    expect(renderCard("{a} / {b}", { a: "x" }, "fb")).toEqual({ label: "x /", lines: [], full: ["x /"] });
+    // A partially absent line keeps its present values — and loses the separator left dangling.
+    expect(renderCard("{a} / {b}", { a: "x" }, "fb")).toEqual({ label: "x", lines: [], full: ["x"] });
+  });
+
+  it("an absent neighbour's separator goes: dangling at either end, doubled in the middle; a word stays; literal separators between present values stay", () => {
+    expect(renderCard("{_title}\n{layer} · {stage}", { _title: "T", layer: "canon" }, "fb").lines).toEqual(["canon"]);
+    expect(renderCard("{_title}\n{layer} · {stage}", { _title: "T", stage: "draft" }, "fb").lines).toEqual(["draft"]);
+    expect(renderCard("{_title}\n{layer} · {stage}", { _title: "T" }, "fb").lines).toEqual([]);
+    expect(renderCard("{a}, {b}, {c}", { a: "x", c: "z" }, "fb").label).toBe("x, z");
+    expect(renderCard("{a} — {b} | {c}", { b: "y" }, "fb").label).toBe("y");
+    // A literal WORD next to an absent field is kept as it was: `T by` (only separator-only text is tidied) —
+    // and a line whose every placeholder is absent is still dropped, words or not (`by {owner}` alone → fallback).
+    expect(renderCard("{_title} by {owner}", { _title: "T" }, "fb").label).toBe("T by");
+    expect(renderCard("by {owner}", {}, "fb").label).toBe("fb");
+    expect(renderCard("{_title}\nby {owner}", { _title: "T" }, "fb").lines).toEqual([]);
+    // Values are never touched: a rooted path keeps its slash, a negative number its sign.
+    expect(renderCard("{owner} · {stage}", { owner: "/people/zoe.md" }, "fb").label).toBe("/people/zoe.md");
+    expect(renderCard("{n} / {m}", { n: -5 }, "fb").label).toBe("-5");
+    // Separators the author wrote between PRESENT values stay, even doubled.
+    expect(renderCard("{a} · · {b}", { a: "x", b: "y" }, "fb").label).toBe("x · · y");
+    expect(renderCard("{a} / {b}", { a: "x", b: "y" }, "fb").label).toBe("x / y");
+    // The tooltip's full text is tidied the same way.
+    expect(renderCard("{layer} · {stage}", { layer: "canon" }, "fb").full).toEqual(["canon"]);
+    expect(isSeparator(" · ")).toBe(true);
+    expect(isSeparator(", ")).toBe(true);
+    expect(isSeparator(" / ")).toBe(true);
+    expect(isSeparator("by ")).toBe(false);
+    expect(isSeparator("")).toBe(false);
+    const sep = { text: " · ", full: " · ", sep: true }, a = { text: "a", full: "a", sep: false };
+    expect(tidySeparators([sep, a, sep, sep, a, sep]).map((p) => p.text)).toEqual(["a", " · ", "a"]);
   });
 
   it("dotted paths descend records; empty braces are literal", () => {
@@ -61,7 +91,8 @@ describe("card templates", () => {
   });
 
   it("cardFields lists the placeholders in order, deduplicated, across lines and alternatives", () => {
-    expect(cardFields(DEFAULT_CARD)).toEqual(["_display", "_title"]);
+    expect(cardFields(DEFAULT_CARD)).toEqual(["_title"]);
+    expect(cardFields("{card|_title}")).toEqual(["card", "_title"]);
     expect(cardFields("{_title}\n{phase} · {owner|lead}\n{_title} again {meta.owner}")).toEqual(["_title", "phase", "owner", "lead", "meta.owner"]);
     expect(cardFields("no placeholders")).toEqual([]);
     expect(cardFields("{ spaced | names }")).toEqual(["spaced", "names"]);
@@ -146,10 +177,27 @@ describe("label fit", () => {
     // Detail lines: one each, truncated to the width, counted in the height.
     const d = sizeCard({ label: "T", lines: ["phase: plan", "note: " + "n".repeat(80)], full: [] }, "truncate", m);
     expect(d.detail[0]).toBe("phase: plan");
-    expect(d.detail[1]!.endsWith("…")).toBe(true);
+    expect(lineText(d.detail[1]!).endsWith("…")).toBe(true);
     expect(d.width).toBe(CARD.maxWidth);
     expect(d.height).toBe(CARD.baseHeight + 2 * CARD.lineHeight);
     expect(cardRadius(150, 34)).toBeCloseTo(Math.hypot(150, 34) / 2 + 8);
+  });
+
+  it("keyed detail lines: measured as `key: value`, truncated on the value with the key kept whole", () => {
+    expect(lineText("plain")).toBe("plain");
+    expect(lineText({ key: "phase", text: "plan" })).toBe("phase: plan");
+    expect(truncateLine("abcdef", 4)).toBe("abc…");
+    expect(truncateLine({ key: "phase", text: "abcdefgh" }, 12)).toEqual({ key: "phase", text: "abcd…" });
+    expect(truncateLine({ key: "a-very-long-key", text: "v" }, 4)).toEqual({ key: "a-very-long-key", text: "v" });
+    const k = sizeCard({ label: "T", lines: [{ key: "phase", text: "plan" }, { key: "note", text: "n".repeat(80) }], full: [] }, "truncate", m);
+    expect(k.detail[0]).toEqual({ key: "phase", text: "plan" });
+    const second = k.detail[1]!;
+    expect(typeof second === "object" && second.key).toBe("note");
+    expect(typeof second === "object" && second.text.endsWith("…")).toBe(true);
+    expect(k.width).toBe(CARD.maxWidth);
+    expect(k.height).toBe(CARD.baseHeight + 2 * CARD.lineHeight);
+    // A keyed line widens the card like its `key: value` text would.
+    expect(sizeCard({ label: "T", lines: [{ key: "phase", text: "plan" }], full: [] }, "truncate", m).width).toBe(cardWidth(1, "phase: plan".length));
   });
 
   it("the modes are the three names, truncate the default", () => {
@@ -370,5 +418,32 @@ describe("edge routing", () => {
     expect(e.settled(t3)).toBe(false);
     expect(e.snap(t3)).toEqual(t3);
     expect(e.settled(t3)).toBe(true);
+  });
+});
+
+describe("polyline routes (fixed layouts)", () => {
+  it("polylineMidpoint is halfway by length; degenerate inputs", () => {
+    expect(polylineMidpoint([])).toBeNull();
+    expect(polylineMidpoint([{ x: 3, y: 4 }])).toEqual({ x: 3, y: 4 });
+    expect(polylineMidpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toEqual({ x: 5, y: 0 });
+    expect(polylineMidpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }])).toEqual({ x: 10, y: 0 });
+    expect(polylineMidpoint([{ x: 0, y: 0 }, { x: 0, y: 0 }])).toEqual({ x: 0, y: 0 });
+  });
+
+  it("polylineRoute draws M/L through every point, aims the arrowhead along the last segment and labels the midpoint", () => {
+    expect(polylineRoute([])).toBeNull();
+    expect(polylineRoute([{ x: 1, y: 1 }])).toBeNull();
+    const r = polylineRoute([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }])!;
+    expect(r.d).toBe("M 0 0 L 10 0 L 10 20");
+    expect(r.start).toEqual({ x: 0, y: 0 });
+    expect(r.end).toEqual({ x: 10, y: 20 });
+    expect(r.tangent).toEqual({ x: 0, y: 1 });
+    expect(r.control).toBeNull();
+    expect(r.mid).toEqual({ x: 10, y: 5 });
+    expect(r.bends).toBe(1);
+    expect(r.offset).toBe(0);
+    // A repeated end point does not zero the tangent.
+    expect(polylineRoute([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }])!.tangent).toEqual({ x: 1, y: 0 });
+    expect(arrowheadPath(r.end, r.tangent).startsWith("M 10 20")).toBe(true);
   });
 });

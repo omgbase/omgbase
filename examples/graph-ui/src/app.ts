@@ -1,5 +1,5 @@
 // The page: composes the four elements with signals —
-//   source → ast → rows → candidates ─┬→ view → (edges → layout inside <oqx-graph>)
+//   source → ast → rows → candidates ─┬→ view → (edges → layout inside <oqx-graph-pane>, drawn by <omg-graph>)
 //                      └→ projection ─┘   (which fields the node cards show)
 // — plus the MCP settings (three ways to reach omgbase: the local bridge over
 // the sample, the local bridge proxying a remote it signed in to, or the remote
@@ -22,11 +22,12 @@ import type SlSplitPanel from "@shoelace-style/shoelace/dist/components/split-pa
 import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
 import "./elements/oqx-projection-picker.ts";
-import "./elements/oqx-graph.ts";
+import "./elements/oqx-graph-pane.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
 import type { ArmedChangeDetail, OqxRelationshipPicker, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
 import type { FieldHoverDetail, ProjectionChangeDetail } from "./elements/oqx-projection-picker.ts";
-import type { AlgorithmRequestDetail, AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
+import type { AlgorithmRequestDetail, AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, LabelFitChangeDetail, PendingEdge } from "./elements/oqx-graph-pane.ts";
+import { graphNodes } from "./lib/graph-view.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
 import { projectionOf, type Projection } from "./lib/projection.ts";
@@ -37,9 +38,9 @@ import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSetti
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
-import { DEFAULT_LABEL_FIT, LABEL_FITS, isLabelFit, type LabelFit } from "./lib/card-size.ts";
+import { DEFAULT_LABEL_FIT, LABEL_FITS, isLabelFit, type LabelFit } from "@omgbase/elements/graph";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { docLocator, hitId, hitPath, namesFor, rooted, surfaceOf, surfaceProblem, unrooted } from "./lib/paths.ts";
+import { docLocator, hitPath, namesFor, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { DEFAULT_QUERY } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
 import { SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
@@ -86,7 +87,7 @@ export interface UiSettings {
    * so an empty result is never mistaken for a stale graph). */
   keepLastGraph: boolean;
   /** How a node card fits its label: one line with an ellipsis (the default), wrapped
-   * within the card's width, or the card widened to the label (lib/card-size.ts). */
+   * within the card's width, or the card widened to the label (`<omg-graph>`'s label fit). */
   labelFit: LabelFit;
   /** Which side-panel sections are open. */
   sections: Record<SectionId, boolean>;
@@ -197,13 +198,9 @@ const view = computed<View>(() => {
 // Nodes are keyed by the `/`-rooted path (what the server returns; rooted again
 // defensively). The node's `label` is the FALLBACK title line (the de-rooted
 // path); the card's actual title comes from the projection's label field
-// (lib/cards.ts). The hit's identity is read through `hitId`/`hitPath`
-// (lib/paths.ts): the envelope's `_id`/`_path` (a 4.x server's `id`/`path`).
-const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
-  const rawPath = hitPath(row);
-  const path = rawPath !== null ? rooted(rawPath) : hitId(row) ?? "";
-  return { id: hitId(row) ?? path, path, label: unrooted(path).replace(/\.md$/, ""), row };
-}));
+// (lib/graph-view.ts `cardTextFor`). The hit's identity is read through
+// `hitId`/`hitPath` (lib/paths.ts): the envelope's `_id`/`_path` (a 4.x server's `id`/`path`).
+const nodes = computed<GraphNode[]>(() => graphNodes(rows.get()));
 const graphState = signal<GraphStateDetail | null>(null);
 /** The query is in flight (the spinner and the empty state key off it). */
 const querying = signal(false);
@@ -660,7 +657,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     .fit { display: flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 12px; color: #5a6270; }
     .fit select { font: inherit; padding: 2px 4px; }
     .graph-area { position: relative; height: 100%; min-height: 0; display: grid; padding-left: 10px; box-sizing: border-box; }
-    oqx-graph { height: 100%; min-height: 0; }
+    oqx-graph-pane { height: 100%; min-height: 0; }
     .try { font-size: 12px; color: #5a6270; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
     .try pre { margin: 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 4px; padding: 6px 8px; }
     .try button { font: inherit; align-self: flex-start; }
@@ -948,13 +945,14 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
           </sl-details>
         </div>
         <div class="graph-area" slot="end">
-          <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
+          <oqx-graph-pane .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
             .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()} .labelFit=${ui.labelFit}
             @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
             @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
             @axis-request=${this.onAxisRequest}
             @algorithm-request=${this.onAlgorithmRequest}
-            @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
+            @label-fit-change=${(e: CustomEvent<LabelFitChangeDetail>) => { if (e.detail.labelFit !== uiSettings.get().labelFit) uiSettings.set({ ...uiSettings.get(), labelFit: e.detail.labelFit }); }}
+            @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph-pane>
           ${this.renderEmptyState()}
           ${showSpinner.get() ? html`<div class="loading" role="status" data-loading><span class="spinner"></span>${querying.get() ? "running the query…" : "fetching edges and laying out…"}</div>` : nothing}
         </div>

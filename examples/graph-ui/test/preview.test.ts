@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GraphEdge } from "../src/lib/edges.ts";
-import { isDrawn, isModifierKey, midpoint, modified, modifierName, previewFor, type PreviewState } from "../src/lib/preview.ts";
+import { isDrawn, isModifierKey, modified, modifierName, previewFor, type PreviewState } from "../src/lib/preview.ts";
 
 interface N { path: string; label: string }
 const alpha: N = { path: "timeline/alpha.md", label: "Alpha" };
@@ -90,19 +90,5 @@ describe("the modifier", () => {
     expect(modifierName("Win32")).toBe("Ctrl");
     expect(modifierName("Linux x86_64")).toBe("Ctrl");
     expect(modifierName("")).toBe("Ctrl");
-  });
-});
-
-describe("midpoint", () => {
-  it("halves a segment and walks a polyline by length", () => {
-    expect(midpoint([])).toBeNull();
-    expect(midpoint([{ x: 3, y: 4 }])).toEqual({ x: 3, y: 4 });
-    expect(midpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toEqual({ x: 5, y: 0 });
-    // 10 right then 10 up: halfway is the corner.
-    expect(midpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }])).toEqual({ x: 10, y: 0 });
-    // 10 right then 30 up: halfway (20) is 10 up the second leg.
-    expect(midpoint([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 30 }])).toEqual({ x: 10, y: 10 });
-    // Degenerate repeated points do not divide by zero.
-    expect(midpoint([{ x: 1, y: 1 }, { x: 1, y: 1 }])).toEqual({ x: 1, y: 1 });
   });
 });

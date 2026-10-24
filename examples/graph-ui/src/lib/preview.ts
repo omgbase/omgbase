@@ -1,5 +1,5 @@
 // Edge-edit preview — the pure half of "what would a ⌘-click do right now".
-// <oqx-graph> tracks whether the modifier is held and what the pointer is over;
+// <oqx-graph-pane> tracks whether the modifier is held and what the pointer is over;
 // this module turns that state into the one edge to preview (or none), so the
 // decision is unit-testable without a DOM.
 //
@@ -91,31 +91,4 @@ export function isModifierKey(key: string): boolean {
 /** How the UI names the modifier: ⌘ on Apple platforms, Ctrl elsewhere. */
 export function modifierName(platform: string = typeof navigator === "undefined" ? "" : navigator.platform): string {
   return /mac|iphone|ipad|ipod/i.test(platform) ? "⌘" : "Ctrl";
-}
-
-// ---- geometry for the label ------------------------------------------------------
-
-export interface Pt { x: number; y: number }
-
-/** The point halfway along a polyline (by length), for the preview's label. */
-export function midpoint(pts: readonly Pt[]): Pt | null {
-  if (pts.length === 0) return null;
-  if (pts.length === 1) return pts[0]!;
-  let total = 0;
-  const lens: number[] = [];
-  for (let i = 1; i < pts.length; i++) {
-    const l = Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
-    lens.push(l);
-    total += l;
-  }
-  let remaining = total / 2;
-  for (let i = 1; i < pts.length; i++) {
-    const l = lens[i - 1]!;
-    if (remaining <= l) {
-      const t = l === 0 ? 0 : remaining / l;
-      return { x: pts[i - 1]!.x + (pts[i]!.x - pts[i - 1]!.x) * t, y: pts[i - 1]!.y + (pts[i]!.y - pts[i - 1]!.y) * t };
-    }
-    remaining -= l;
-  }
-  return pts[pts.length - 1]!;
 }

@@ -8,7 +8,7 @@
 //
 // Properties
 //   nodes: GraphViewNode[]           edges: GraphViewEdge[]
-//   card: string                     the card template (DEFAULT_CARD `{_display|_title}`)
+//   card: string                     the card template (DEFAULT_CARD `{_title}`)
 //   renderCard: CardRenderer | null  a function deciding a node's card (wins over `card`): a template
 //                                    string for that node, a CardText, or a Lit html`…` drawn in a
 //                                    <foreignObject> (measured; `.card-html` wrapper, inherits the
@@ -20,6 +20,11 @@
 //   edgeStyle (edge-style)           "curved" | "straight"
 //   layout                           "force" | "fixed" (positions from `positions`; no simulation)
 //   positions: Map<id, {x, y}>       for `fixed`; a node without one takes the force seed
+//   routes: Map<key, Point[]>        for `fixed`: an edge with a polyline here (elk's orthogonal
+//                                    bend points) is drawn along it instead of a routed Bézier
+//   autoFit (auto-fit)               keep the graph fitted to the view (after each layout change and
+//                                    while the simulation settles) until the user pans or zooms;
+//                                    `fit` hands the camera back
 //   edgeToggle: boolean              ⌘/Ctrl-click toggles edges (graph-ui's gesture)
 //   toolbar: boolean                 fit / 1:1 / edge style / label fit controls
 // Events (every detail type exported; all bubble and compose)
@@ -27,7 +32,8 @@
 //   graph-pin { id, x, y, previous }  graph-unpin { id, previous }
 //   graph-connect { from, to }  graph-connect-empty { from, x, y }
 //   graph-edge-toggle { key?, from, to, present }  graph-edge-select { key | null }
-//   graph-view { k, tx, ty }
+//   graph-hover { id | null }  graph-edge-hover { key | null }   (the pointer over a card / an edge)
+//   graph-view { k, tx, ty }  graph-label-fit { labelFit }  (the toolbar's select)
 // Keys: arrows select (or move the connector target), Enter opens (or confirms a
 // connector), e expands/collapses, u / Backspace unpins, c arms a connector,
 // +/-/0 zoom, f fits, Esc cancels. Theming: CSS custom properties
@@ -40,7 +46,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type ForceLink, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
 import {
   DEFAULT_CARD, DEFAULT_LABEL_FIT, EdgeEaser, LABEL_FIT, LABEL_FITS, arrowheadPath, canvasMeasure, cardContent, cardRadius, connectorDrop, connectorLine, dragMode, edgeKindColor, edgePath, fitTransform, forceConfig,
-  graphDescription, initialView, nearestInDirection, nodeSize, panBy, parallelOffsets, pathFromOffset, sizeCard, toGraph, wheelZoomFactor, zoomAbout,
+  graphDescription, initialView, nearestInDirection, nodeSize, panBy, parallelOffsets, pathFromOffset, polylineRoute, sizeCard, toGraph, wheelZoomFactor, zoomAbout,
   type CardRenderer, type CardSize, type CardText, type Direction, type EdgeRoute, type EdgeStyle, type GraphViewEdge, type GraphViewNode, type LabelFit, type LayoutMode, type Measure, type Pin, type Placed, type ViewTransform,
 } from "./graph.js";
 
@@ -54,7 +60,11 @@ export interface GraphConnectEmptyDetail { from: string; x: number; y: number }
 /** `present: true` — an existing edge (`key`) was ⌘-clicked; `present: false` — a node was ⌘-clicked with another selected (`from` the selection, `to` the click). */
 export interface GraphEdgeToggleDetail { key?: string; from: string; to: string; present: boolean }
 export interface GraphEdgeSelectDetail { key: string | null }
+/** `null`: the pointer left the card / edge. */
+export interface GraphHoverDetail { id: string | null }
+export interface GraphEdgeHoverDetail { key: string | null }
 export type GraphViewDetail = ViewTransform;
+export interface GraphLabelFitDetail { labelFit: LabelFit }
 
 /** A frame whose routing takes longer than this degrades to every-other-tick routing while hot. */
 export const ROUTE_BUDGET_MS = 4;
@@ -116,6 +126,7 @@ export class OmgGraph extends LitElement {
     .node text { fill: var(--_text); pointer-events: none; }
     .node text.label { font: 600 12px var(--omg-graph-font, system-ui, sans-serif); text-anchor: middle; }
     .node text.line { font: 11px var(--omg-graph-font, system-ui, sans-serif); fill: color-mix(in srgb, var(--_text) 75%, var(--_muted)); text-anchor: middle; }
+    .node text.line .key { fill: var(--_muted); }
     .node.external text.label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 500; }
     .glyph { font-size: 11px; fill: var(--_muted); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
     .affordance { cursor: pointer; }
@@ -148,6 +159,10 @@ export class OmgGraph extends LitElement {
   @property({ attribute: "edge-style" }) edgeStyle: EdgeStyle = "curved";
   @property({ type: String }) layout: LayoutMode = "force";
   @property({ attribute: false }) positions: ReadonlyMap<string, { x: number; y: number }> | null = null;
+  /** Polylines for `fixed` layouts, by edge key: drawn as given (no routing, no easing). */
+  @property({ attribute: false }) routes: ReadonlyMap<string, readonly { x: number; y: number }[]> | null = null;
+  /** Keep the graph fitted until the user pans or zooms. */
+  @property({ type: Boolean, attribute: "auto-fit" }) autoFit = false;
   @property({ type: Boolean }) edgeToggle = false;
   @property({ type: Boolean }) toolbar = true;
   /** Shown in the hint after "expand". */
@@ -207,7 +222,9 @@ export class OmgGraph extends LitElement {
         const r = entries[0]?.contentRect;
         if (!r || r.width === 0 || r.height === 0) return;
         this.size = { w: r.width, h: r.height };
-        if (!this.viewTouched) this.view = initialView(r.width, r.height);
+        if (this.viewTouched) return;
+        if (this.autoFit && this.nodes.length > 0) this.view = fitTransform(this.placed(), r.width, r.height);
+        else this.view = initialView(r.width, r.height);
       });
       this.resize.observe(this);
     }
@@ -231,6 +248,17 @@ export class OmgGraph extends LitElement {
       this.armed = this.connectSource;
       this.connectTarget = null;
     }
+    this.autoFitNow();
+  }
+
+  /** Under `autoFit`, while the user has not taken the camera: fit the cards as placed right now
+   * (a changed layout, a settling simulation, a re-measured HTML card). Called before a render,
+   * so the fit costs no extra frame. */
+  private autoFitNow(): void {
+    if (!this.autoFit || this.viewTouched || this.nodes.length === 0) return;
+    const next = fitTransform(this.placed(), this.size.w, this.size.h);
+    const v = this.view;
+    if (Math.abs(next.k - v.k) > 1e-6 || Math.abs(next.tx - v.tx) > 0.01 || Math.abs(next.ty - v.ty) > 0.01) this.setView(next, false);
   }
 
   // ---- cards -------------------------------------------------------------------------------
@@ -336,6 +364,18 @@ export class OmgGraph extends LitElement {
     this.view = view;
     this.viewTouched = touched;
     this.emit<GraphViewDetail>("graph-view", { ...view });
+  }
+
+  private setHoverNode(id: string | null): void {
+    if (this.hoverNode === id) return;
+    this.hoverNode = id;
+    this.emit<GraphHoverDetail>("graph-hover", { id });
+  }
+
+  private setHoverEdge(key: string | null): void {
+    if (this.hoverEdge === key) return;
+    this.hoverEdge = key;
+    this.emit<GraphEdgeHoverDetail>("graph-edge-hover", { key });
   }
 
   private isTarget(id: string): boolean {
@@ -464,13 +504,14 @@ export class OmgGraph extends LitElement {
     this.setView(zoomAbout(this.view, factor, this.size.w / 2, this.size.h / 2));
   }
 
+  /** 1:1 with the origin centred — the user's choice, so `autoFit` stands down. */
   private home(): void {
-    this.setView(initialView(this.size.w, this.size.h), false);
+    this.setView(initialView(this.size.w, this.size.h), this.autoFit);
   }
 
-  /** Fit every card into the view. */
+  /** Fit every card into the view; under `autoFit` this also hands the camera back to the element. */
   fit(): void {
-    this.setView(fitTransform(this.placed(), this.size.w, this.size.h));
+    this.setView(fitTransform(this.placed(), this.size.w, this.size.h), !this.autoFit);
   }
 
   private cancelDrag(): void {
@@ -588,7 +629,12 @@ export class OmgGraph extends LitElement {
     }
     const eased = this.reduced ? this.easer.snap(targets) : this.easer.step(targets, dt);
     const routes = new Map<string, EdgeRoute>();
-    for (const e of edges) routes.set(e.key, pathFromOffset(place(e.from), place(e.to), eased.get(e.key) ?? 0));
+    const given = this.layout === "fixed" ? this.routes : null;
+    for (const e of edges) {
+      const poly = given?.get(e.key);
+      const r = poly ? polylineRoute(poly) : null;
+      routes.set(e.key, r ?? pathFromOffset(place(e.from), place(e.to), eased.get(e.key) ?? 0));
+    }
     if (!this.reduced && !this.easer.settled(targets) && !this.tailFrame && typeof requestAnimationFrame === "function") {
       this.tailFrame = requestAnimationFrame(() => { this.tailFrame = 0; this.requestUpdate(); });
     }
@@ -597,13 +643,13 @@ export class OmgGraph extends LitElement {
 
   private renderEdge(e: GraphViewEdge, route: EdgeRoute): TemplateResult {
     const hover = this.hoverEdge === e.key;
-    const color = edgeKindColor(e.kind);
+    const color = e.color ?? edgeKindColor(e.kind);
     const cls = [e.kind ?? "", e.style ?? "", e.pending ? "pending" : ""].join(" ");
     const strokeStyle = color ? `stroke: ${color}` : "";
     const fillStyle = color ? `fill: ${color}` : "";
     const title = `${e.detail ?? `${e.from} → ${e.to}`}${e.label ? ` · ${e.label}` : ""}${e.pending ? ` (${e.pending === "add" ? "adding…" : "removing…"})` : e.writable && this.edgeToggle ? " — ⌘-click to remove" : ""}`;
     return svg`<g class="${hover ? "hover" : ""} ${this.selectedEdge === e.key ? "selected-edge" : ""} ${e.writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
-        @pointerenter=${() => { this.hoverEdge = e.key; }} @pointerleave=${() => { if (this.hoverEdge === e.key) this.hoverEdge = null; }}>
+        @pointerenter=${() => this.setHoverEdge(e.key)} @pointerleave=${() => { if (this.hoverEdge === e.key) this.setHoverEdge(null); }}>
       <path class="edge ${cls}" d=${route.d} style=${strokeStyle}></path>
       <path class="head ${cls}" d=${arrowheadPath(route.end, route.tangent)} style=${fillStyle}></path>
       <path class="hit" d=${route.d}><title>${title}</title></path>
@@ -631,13 +677,13 @@ export class OmgGraph extends LitElement {
     return svg`<g class=${cls} part="card" transform=${`translate(${n.x},${n.y})`} data-id=${node.id} aria-selected=${isSel ? "true" : "false"}
         @pointerdown=${(ev: PointerEvent) => this.onNodeDown(ev, node.id)}
         @dblclick=${() => this.emit<GraphIdDetail>("graph-open", { id: node.id })}
-        @pointerenter=${() => { this.hoverNode = node.id; }} @pointerleave=${() => { if (this.hoverNode === node.id) this.hoverNode = null; }}>
+        @pointerenter=${() => this.setHoverNode(node.id)} @pointerleave=${() => { if (this.hoverNode === node.id) this.setHoverNode(null); }}>
       <title>${tooltip}${node.pinned ? "\n(pinned)" : ""}${source === node.id ? "\nconnector armed" : ""}</title>
       <rect class="card" x=${-hw} y=${-hh} width=${w} height=${h} rx="8"></rect>
       ${sized.html
         ? svg`<foreignObject x=${-hw} y=${-hh} width=${Math.max(w, LABEL_FIT.expandMaxWidth)} height=${Math.max(h, 400)}><div xmlns="http://www.w3.org/1999/xhtml" class="card-html" data-id=${node.id}>${sized.html}</div></foreignObject>`
         : svg`<text class="label" x=${node.pinned ? -6 : 0} y=${labelTop}>${lines.map((l, i) => svg`<tspan x=${node.pinned ? -6 : 0} dy=${i === 0 ? 0 : LABEL_FIT.lineHeight}>${l}</tspan>`)}</text>
-      ${sized.size.detail.map((l, i) => svg`<text class="line" x="0" y=${detailTop + i * 15}>${l}</text>`)}`}
+      ${sized.size.detail.map((l, i) => svg`<text class="line" x="0" y=${detailTop + i * 15}>${typeof l === "string" ? l : svg`<tspan class="key">${l.key}:</tspan> ${l.text}`}</text>`)}`}
       ${node.pinned ? svg`<text class="glyph" x=${hw - 12} y=${-hh + 10}>📌</text>` : nothing}
       ${node.pinned && (hover || isSel) ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.unpin(node.id); }}><title>unpin (u)</title><circle cx=${hw} cy=${-hh} r="8"></circle><text x=${hw} y=${-hh}>✕</text></g>` : nothing}
       ${node.expandable ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.toggleExpand(node.id); }}><title>${node.expanded ? "collapse (e)" : "expand (e)"}</title><circle cx=${hw} cy="0" r="8"></circle><text x=${hw} y="0">${node.expanded ? "⊖" : "⊕"}</text></g>` : nothing}
@@ -672,7 +718,7 @@ export class OmgGraph extends LitElement {
       ${this.nodes.length === 0 ? html`<div class="empty">no graph yet</div>` : nothing}
       ${this.toolbar ? html`<div class="toolbar">
         <button @click=${() => { this.edgeStyle = this.edgeStyle === "curved" ? "straight" : "curved"; }} title=${this.edgeStyle === "curved" ? "edges: curved around cards — switch to straight" : "edges: straight — switch to curved"}>${this.edgeStyle === "curved" ? "⤳" : "→"} edges</button>
-        <select title="how a card fits its label" .value=${this.labelFit} @change=${(e: Event) => { this.labelFit = (e.target as HTMLSelectElement).value as LabelFit; }}>${LABEL_FITS.map((f) => html`<option value=${f} ?selected=${f === this.labelFit}>${f}</option>`)}</select>
+        <select title="how a card fits its label" .value=${this.labelFit} @change=${(e: Event) => { this.labelFit = (e.target as HTMLSelectElement).value as LabelFit; this.emit<GraphLabelFitDetail>("graph-label-fit", { labelFit: this.labelFit }); }}>${LABEL_FITS.map((f) => html`<option value=${f} ?selected=${f === this.labelFit}>${f}</option>`)}</select>
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
         <button @click=${() => this.home()} title="1:1 with the origin centred (0)">1:1</button>
       </div>` : nothing}

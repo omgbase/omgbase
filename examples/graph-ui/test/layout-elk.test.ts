@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { SYNTHETIC_CENTER, buildElkGraph, elkOptions, findCycles, readElkLayout, shortName, spanningForest, summarizeCycles, type ElkAlgorithm } from "../src/lib/layout-elk.ts";
 import type { GraphEdge } from "../src/lib/edges.ts";
-import { cardSize, fixedMeasure } from "../src/lib/card-size.ts";
-import { cardFor } from "../src/lib/cards.ts";
+import { fixedMeasure, sizeCard } from "@omgbase/elements/graph";
+import { cardTextFor } from "../src/lib/graph-view.ts";
 
 const N = ["a", "b", "c", "d"].map((id) => ({ id, width: 100, height: 30 }));
 const E: GraphEdge[] = [
@@ -36,13 +36,13 @@ describe("buildElkGraph", () => {
       { id: "long", title: "A rather long document title that will not fit on a single card line" },
     ];
     for (const fit of ["truncate", "wrap", "expand"] as const) {
-      const sized = rows.map((r) => ({ id: r.id, ...cardSize(cardFor({ label: r.id, row: r }, choice), fit, m) }));
+      const sized = rows.map((r) => ({ id: r.id, ...sizeCard(cardTextFor({ label: r.id, row: r }, choice), fit, m) }));
       const { graph } = buildElkGraph(sized.map(({ id, width, height }) => ({ id, width, height })), [], "forward");
       expect(graph.children?.map((c) => [c.id, c.width, c.height])).toEqual(sized.map((n) => [n.id, n.width, n.height]));
     }
     // And the fits differ where it matters: wrap is taller, expand wider, than truncate.
-    const long = cardFor({ label: "long", row: rows[1]! }, choice);
-    const t = cardSize(long, "truncate", m), w = cardSize(long, "wrap", m), x = cardSize(long, "expand", m);
+    const long = cardTextFor({ label: "long", row: rows[1]! }, choice);
+    const t = sizeCard(long, "truncate", m), w = sizeCard(long, "wrap", m), x = sizeCard(long, "expand", m);
     expect(w.height).toBeGreaterThan(t.height);
     expect(w.width).toBe(t.width);
     expect(x.width).toBeGreaterThan(t.width);

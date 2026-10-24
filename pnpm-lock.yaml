@@ -242,6 +242,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@omgbase/elements':
+        specifier: workspace:^
+        version: link:../../packages/elements
       '@omgbase/oqx':
         specifier: workspace:^
         version: link:../../packages/oqx
@@ -251,9 +254,6 @@ importers:
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.12)(@types/react@19.3.0)
-      d3-force:
-        specifier: ^3.0.0
-        version: 3.0.0
       elkjs:
         specifier: ^0.12.0
         version: 0.12.0
@@ -261,9 +261,6 @@ importers:
         specifier: ^3.3.0
         version: 3.3.3
     devDependencies:
-      '@types/d3-force':
-        specifier: ^3.0.10
-        version: 3.0.10
       vite:
         specifier: ^7.1.0
         version: 7.3.7(@types/node@22.20.1)(yaml@2.9.1)

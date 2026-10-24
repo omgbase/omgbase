@@ -27,17 +27,20 @@ import { renderCard, cardFields, edgePath } from "@omgbase/elements/graph";  // 
   `id` is opaque to the element (a path, a row id); `row` is the projected record
   the card reads; `external` draws dashed and is never expandable; `truncated`
   shows "+k more"; `pinned` is presentation state the host owns.
-- `GraphViewEdge { key; from; to; label?; detail?; kind?; style?: "solid" | "dotted" | "dashed"; pending?: "add" | "remove"; writable? }` —
+- `GraphViewEdge { key; from; to; label?; detail?; kind?; color?; style?: "solid" | "dotted" | "dashed"; pending?: "add" | "remove"; writable? }` —
   `detail` is the hover/provenance text; `kind` `frontmatter` / `body` /
   `external` have fixed styles, any other kind takes a deterministic palette
-  colour (`edgeKindColor`); `pending` edges draw dashed and faded; `writable`
-  edges may be ⌘-clicked away in `edgeToggle` mode.
+  colour (`edgeKindColor`) unless `color` names one outright (a host with its
+  own palette per relationship); `pending` edges draw dashed and faded;
+  `writable` edges may be ⌘-clicked away in `edgeToggle` mode.
 
 ### Card templates
 
 `renderCard(template, row, fallback) → { label, lines, full }`; the default is
-`DEFAULT_CARD = "{_display|_title}"` (so an engine-computed `_display` wins with
-no configuration). One template line per card line:
+`DEFAULT_CARD = "{_title}"` — the element bakes in no display-property concept;
+apps pass their own template (graph-ui's is `{card|_title}`: `card` is a bare
+alias in the user's namespace, absent when a query does not project or compute
+it). One template line per card line:
 
 | syntax | meaning |
 | --- | --- |
@@ -45,11 +48,16 @@ no configuration). One template line per card line:
 | `{a\|b\|c}` | the first PRESENT alternative (not null / undefined / `""` / `[]`) |
 | literal text | stays; a line with no placeholders always stays |
 | a line whose placeholders are all absent | dropped (blank lines too) |
+| a separator an absent placeholder leaves dangling | removed: `{layer} · {stage}` with `stage` absent is `canon`, not `canon ·`; `{a}, {b}, {c}` with `b` absent is `x, z`. Only the template's own separator-only text (`·-—–\|,:;/` with spaces) next to the gap is touched — a value keeps its glyphs (`/people/zoe.md`, `-5`), a word stays (`{_title} by {owner}` → `T by`) |
 | values | strings as is (newlines collapsed), numbers/booleans/bigints as text, arrays `a, b, c`, a list of records `n items`, a record `{…}` |
 
 The first kept line is the label (bold), the rest are detail lines; when every
 line is dropped the label is `fallback`. `cardFields(template)` lists the
-placeholders in order (what the host should project). Label fit (`sizeCard`,
+placeholders in order (what the host should project). A `CardText` a host builds
+itself may give a detail line as `{ key, text }` (`CardLine`): it is drawn
+`key: value` with the key dimmer and, when it must be cut to the card's width,
+the key stays whole and the value takes the ellipsis (`lineText`,
+`truncateLine`). Label fit (`sizeCard`,
 `wrapLabel`, `canvasMeasure`): `truncate` one line with an ellipsis, `wrap`
 several lines within the card's width (up to 4), `expand` widens the card to the
 label (up to 480 px) then wraps; the measured size feeds collision, hit-testing,
@@ -68,7 +76,7 @@ exposes `part="card"`.
 | property | attribute | meaning |
 | --- | --- | --- |
 | `nodes`, `edges` | — | the view model |
-| `card` | `card` | the template (default `{_display|_title}`) |
+| `card` | `card` | the template (default `{_title}`) |
 | `renderCard` | — | `CardRenderer \| null`; wins over `card` |
 | `labelFit` | `label-fit` | `truncate` \| `wrap` \| `expand` |
 | `selected` | `selected` | the selected node id |
@@ -77,6 +85,8 @@ exposes `part="card"`.
 | `edgeStyle` | `edge-style` | `curved` (obstacle-routed Béziers, eased) \| `straight` |
 | `layout` | `layout` | `force` \| `fixed` (positions from `positions`, no simulation) |
 | `positions` | — | `Map<id, { x, y }>` for `fixed`; a node without one takes the force seed |
+| `routes` | — | `Map<edge key, Point[]>` for `fixed`: an edge with a polyline here (elk's orthogonal bend points) is drawn along it — `polylineRoute` — instead of a routed Bézier; absent keys route as usual |
+| `autoFit` | `auto-fit` | keep the graph fitted to the view — after each layout change, while the simulation settles, on resize — until the user pans or zooms; the fit button / `f` hands the camera back |
 | `edgeToggle` | `edgeToggle` | ⌘/Ctrl-click toggles edges (graph-ui's gesture) |
 | `toolbar` | `toolbar` | fit / 1:1 / edge style / label fit controls (default true) |
 
@@ -87,7 +97,11 @@ exposes `part="card"`.
 `graph-unpin { id, previous }`, `graph-connect { from, to }`,
 `graph-connect-empty { from, x, y }`, `graph-edge-toggle { key?, from, to, present }`
 (`present: true` an existing edge was ⌘-clicked; `false` a node was ⌘-clicked
-with another selected), `graph-edge-select { key | null }`, `graph-view { k, tx, ty }`.
+with another selected), `graph-edge-select { key | null }`, `graph-hover { id | null }`
+and `graph-edge-hover { key | null }` (the pointer entered / left a card or an
+edge — for a host's own hover previews), `graph-view { k, tx, ty }`,
+`graph-label-fit { labelFit }` (the toolbar's select changed it, so a host
+sizing cards for an external layout can follow).
 
 Keys: arrows select (or move the connector target), Enter opens (or confirms a
 connector), `e` expands/collapses, `u`/Backspace unpins, `c` arms a connector,

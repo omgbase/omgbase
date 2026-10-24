@@ -1,7 +1,11 @@
 # graph-ui — an OQX query as a graph
 
 A Lit demo that runs an OQX query against an omgbase repository (over MCP) and
-draws the result as a graph. The relationships the query *talks about* are read
+draws the result as a graph — the drawing is the shared `<omg-graph>` element of
+[`@omgbase/elements`](../../packages/elements/README.md) (cards, obstacle-aware
+curved edges, pins, zoom and pan), this demo supplying the query, the
+relationships, the layout and the edge editing around it (see [The
+renderer](#the-renderer-omg-graph)). The relationships the query *talks about* are read
 off the parsed query by reflection and offered as **candidates**, each with two
 roles the user can override:
 
@@ -464,7 +468,59 @@ consecutive result rows.
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout` = `{ axis, direction, algorithm }`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }`, `algorithm-request` `{ algorithm }` |
+| `<oqx-graph-pane>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout` = `{ axis, direction, algorithm }`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }`, `algorithm-request` `{ algorithm }`, `label-fit-change` `{ labelFit }` |
+
+### The renderer: `<omg-graph>`
+
+`<oqx-graph-pane>` (`src/elements/oqx-graph-pane.ts`) owns this demo's graph
+MODEL and wraps the shared renderer. The model is `src/lib/graph-view.ts`
+(`computeGraph`): fetch the wanted relationships' edges through the page's
+`fetchEdges` (cached per relationship and node set), count them per
+relationship, find the axis's loops, and lay out — with elkjs for `layered`,
+`stress`, `radial`, `tree` and `grid` (`src/lib/layout-elk.ts`), or not at all
+for `force`, which is now the element's own live d3-force simulation (nodes
+repel, drawn edges pull, cards keep apart by their measured size). The same
+module turns the model into the element's view model: `viewNodes` (one
+`GraphViewNode { id: path, row, pinned, tooltip }` per hit), `viewEdges` (one
+`GraphViewEdge` per drawn edge, keyed by the STORED edge `rel src→dst`, drawn
+the relationship's way round, `color` from the picker's palette so each
+relationship keeps its swatch, `writable` from the editability, `pending` for
+in-flight toggles and the hover preview), `positionsOf` (elk's corners as card
+centres for the element's `layout="fixed"`) and `routesOf` (elk's orthogonal
+routes for the axis edges, re-keyed by edge, handed to the element's `routes`
+so the timeline keeps its bent edges while every other edge is one of the
+element's obstacle-aware curves). The pane adds the chrome around the canvas —
+the relationship legend, the loop note, the empty-axis note, the edit banner,
+the edge-style legend — and maps the element's events back: `graph-select` →
+`node-select`, `graph-edge-toggle` → `edge-toggle` (the candidate's direction
+says which document owns the edge; `present` is read off the model),
+`graph-hover` / `graph-edge-hover` → the ⌘-click preview, `graph-pin` /
+`graph-unpin` → session pins (a card you drag stays put until unpinned, under
+every layout), `graph-label-fit` → `label-fit-change`. The element runs with
+`auto-fit` (the picture stays fitted — on resize, after a new layout, while the
+simulation settles — until you pan or zoom; the toolbar's **fit** / `f` hands
+the camera back) and `edgeToggle` (⌘-click), without `canWrite` (no connector
+gesture: the only write gesture here is the toggle).
+
+**Cards.** The element's `renderCard` hook is fed `cardTextFor(node,
+view.projection)`: the label field's value (else the de-rooted path) as the
+title line and one keyed line `{ key, text }` per shown field, which the
+element draws as `key: value` with the key dimmer and, when the line must be
+cut to the card's width, keeps the key whole. elk needs the sizes before it
+places anything, so the pane sizes each card with the element's own `sizeCard`
+and `canvasMeasure` under the same label fit — the numbers the element draws
+with, so edges attach to the card border. The view-model adapters and the
+model are unit-tested without a DOM (`test/graph-view.test.ts`, the elk ones
+through the real elkjs); the element's own geometry (routing, label fit,
+templates) is tested in `packages/elements`.
+
+What moved out of this demo and into the element: the SVG renderer
+(`oqx-graph.ts`), the card formatting and sizing (`cards.ts`, `card-size.ts` —
+now the element's `formatValue` / `sizeCard` / `wrapLabel` / `canvasMeasure`),
+the pan/zoom math (`viewport.ts`) and the synchronous force layout
+(`layout-force.ts`). What the element gained for it: `routes`, `auto-fit`,
+`GraphViewEdge.color`, keyed `CardLine`s, the hover events and
+`graph-label-fit`.
 
 ### The page chrome (Shoelace)
 
@@ -482,17 +538,17 @@ pending sign-in. Shoelace is imported per component
 bundle, so no `setBasePath` and no icon assets are needed. Shoelace is Lit-built
 and registers its own `sl-*` tags, so it sits inside our shadow roots without
 collisions; the `--sl-*` tokens are set on `:root` by the theme and inherited
-through every shadow root. `<oqx-graph>` watches its own size with a
-`ResizeObserver`: its `viewBox` is its client size and the picture is fitted by
-the pan/zoom transform (`fitTransform`, `src/lib/viewport.ts`), refitted on
-every pane resize until you pan or zoom (double-click fits again). The persisted
+through every shadow root. `<omg-graph>` watches its own size with a
+`ResizeObserver` and, under `auto-fit`, keeps the picture fitted on every pane
+resize until you pan or zoom (**fit** in its toolbar, or `f`, fits again). The persisted
 UI record is `omgbase-graph-ui.ui`: `{ keepLastGraph, labelFit, sections: {
 query, relationships, projection, settings }, splitPosition }`.
 
 The graph's bottom-left legend lists the drawn relationships by colour (the
 axis marked); while the modifier is held in edit mode a second legend,
 bottom-right, names the three edge styles — *will add* (blue dashed), *will
-remove* (red dashed), *writing…* (the in-flight dashed edge).
+remove* (red dashed), *writing…* (the in-flight dashed edge). The element's own
+toolbar sits top-right: curved / straight edges, the label fit, **fit**, **1:1**.
 
 **Arrows follow the direction.** An edge is *stored* owner → target (`src` →
 `dst`: `alpha.after ∋ prototype` is `alpha → prototype`) and *drawn* the way its
@@ -516,24 +572,23 @@ graph (`graph-state.edgeCounts`: edges among the shown nodes per relationship it
 fetched — the drawn ones, the axis, and a pair's members); the graph's banner
 raises `axis-request` and the page hands it to the picker's `setAxis`.
 
-**Force layout** (*no axis — force-directed (nodes repel, edges pull)*,
-`src/lib/layout-force.ts`): d3-force run to quiescence synchronously —
-`forceManyBody` repels, `forceLink` pulls along the drawn edges, `forceCollide`
-keeps cards apart by their covering radius (`cardRadius`, `src/lib/cards.ts`),
-`forceCenter` holds the cloud at the origin and every node is kept inside a box
-sized to the node count, so an edgeless result settles as a compact cloud
-instead of flying apart; the settled box is then fitted to the view. With
-nothing drawn the graph says *no edges drawn — nodes only repel; pick a
-relationship to connect them*.
+**Force layout** (*no axis — force-directed (nodes repel, edges pull)*): the
+element's live d3-force simulation (`forceConfig` in `@omgbase/elements/graph`
+— `forceManyBody` repels, `forceLink` pulls along the drawn edges,
+`forceCollide` keeps cards apart by their covering radius, a weak pull toward
+the origin), settling in view with the camera following under `auto-fit`; a
+dragged card is pinned where you drop it (`u` or the ✕ unpins). With nothing
+drawn the graph says *no edges drawn — nodes only repel; pick a relationship to
+connect them*.
 
 The editor's status area also carries the hints from `src/lib/hints.ts` (see
 [Inference rules](#inference-rules-srclibcandidatests)).
 
 `src/app.ts` composes them with `@lit-labs/signals`:
 `source → ast → rows → candidates → view` and, beside it,
-`ast + rows → projection → view.projection`; the graph element does
+`ast + rows → projection → view.projection`; the graph pane does
 `view → edges → layout` with the fetcher the page hands it, over cards sized
-from `view.projection` (`src/lib/cards.ts`). The page owns what
+from `view.projection` (`src/lib/graph-view.ts`), and `<omg-graph>` draws. The page owns what
 sits around the graph: the empty-state panel (`src/lib/empty-state.ts` — the
 first `where` as text, the `_path == "…"` literals, which of them the
 repository lacks, the words) and the delayed loading pill; the preset query
@@ -551,12 +606,14 @@ there is no axis. The others are chosen outright (`src/lib/view.ts`
 
 | layout | what it is | needs an axis | edges |
 | --- | --- | --- | --- |
-| `layered` | elk layered: a left-to-right order along the axis; loops are broken and reported | yes | routed by elk (orthogonal) |
-| `force` | d3-force: nodes repel, drawn edges pull | no | straight |
-| `stress` | elk stress: distance follows graph distance — a good general picture, and the one for graphs with loops | no | straight |
-| `radial` | elk radial: rings around a root — suits a walk from one document | no | straight |
-| `tree` | elk mrtree: a tidy tree | no | straight |
-| `grid` | elk rectpacking: a compact grid of cards | no | straight |
+| `layered` | elk layered: a left-to-right order along the axis; loops are broken and reported | yes | the axis's edges routed by elk (orthogonal, via the element's `routes`); every other drawn edge an obstacle-aware curve |
+| `force` | d3-force (the element's live simulation): nodes repel, drawn edges pull | no | obstacle-aware curves |
+| `stress` | elk stress: distance follows graph distance — a good general picture, and the one for graphs with loops | no | obstacle-aware curves |
+| `radial` | elk radial: rings around a root — suits a walk from one document | no | obstacle-aware curves |
+| `tree` | elk mrtree: a tidy tree | no | obstacle-aware curves |
+| `grid` | elk rectpacking: a compact grid of cards | no | obstacle-aware curves |
+
+(The element's toolbar can switch every curve to a straight segment.)
 
 Only `layered` reads the axis and the **direction** control; the rest place the
 nodes from *every* drawn relationship. `layered` with no axis to layer along is
@@ -607,6 +664,24 @@ carries (the alias, or a navigation's last segment):
   read, so the fields are the keys the returned rows actually carry, in
   first-seen order (badge *from rows*), kinded by their values.
 
+**Shaping cards from the query: `card:`.** The title line's template (the
+element's template language, `cardTemplateFor` in `src/lib/graph-view.ts`) is
+`{card|<label field>}`: a row that carries a bare **`card`** key — projected
+(`select card`) or, since OQX 0.27 lets an alias shadow a field, computed —
+drives the title with no settings, and the chosen label field stands in when it
+is absent:
+
+```oqx
+docs { select _path, _title, card: _title + " · " + phase, before, after … }
+```
+
+`card` is a bare alias on purpose: a `_`-name is the engine's (an unknown one
+is the hard error `filter_invalid`) and a `$`-name is the language's (it cannot
+be authored or aliased), so a row key the apps look for lives in the user's
+namespace — absent when the query does not name it, never a property of the
+engine. `<omg-graph>` itself has no such concept (its default template is
+`{_title}`); the convention is this demo's.
+
 **Defaults.** The label is the first of `_title` (the computed title
 attribute; a 4.x server's `title`), `name` that is projected; otherwise the card
 is labelled with the de-rooted document path, which is always offered as the
@@ -624,9 +699,10 @@ overridden row's name is dotted-underlined and says in its tooltip what the
 inferred default was; *reset to inferred* clears every override. Hovering a
 row highlights its `select` item in the editor.
 
-**Values on cards** (`src/lib/cards.ts`): strings as they are, numbers and
-booleans as text, arrays as `a, b, c`, a list of records as `n items`, a
-record as `{…}`, an absent value as `—` — never a JSON wall. Long values are
+**Values on cards** (`cardTextFor`, `src/lib/graph-view.ts`, over the
+element's `formatValue`): strings as they are, numbers and booleans as text,
+arrays as `a, b, c`, a list of records as `n items`, a record as `{…}`, an
+absent value as `—`, an empty list as `[]` — never a JSON wall. Long values are
 truncated with `…` to the card's width (the key is kept whole); the card's
 tooltip carries the path and every shown value in full. The card's width and
 height follow the shown lines, and the layout (elk or force) runs over those
@@ -634,8 +710,10 @@ sizes, so changing the projection re-lays the graph out and edges keep
 attaching to the card border.
 
 **Label fit.** Long labels are cut by default; the **label fit** select under
-the field list (persisted with the other UI settings as `labelFit`) says how a
-card fits its title line, in three modes (`src/lib/card-size.ts`):
+the field list (persisted with the other UI settings as `labelFit`; the
+element's toolbar has the same select and the two stay in sync) says how a
+card fits its title line, in the element's three modes (`sizeCard`,
+`@omgbase/elements/graph`):
 **truncate** — one line ending in `…` at the card's width, the original cards,
 so a saved view does not jump; **wrap** — the label wraps onto several lines
 within the card's width (greedy on spaces, an over-long word broken by
@@ -643,15 +721,15 @@ characters), the card growing by a line each up to four, the last line then
 ending in a measured-in `…`; **expand** — the card widens to fit the whole
 label on one line, up to 480 px, and wraps as above past that. The shown
 `key: value` lines keep their one-line treatment and the card's height still
-counts them. Labels are *measured*, not estimated: the element measures each
-label with a 2D canvas in the card's font (`12px system-ui`, the same string as
-the SVG's `.node text` rule, cached per string), the layout (elk's per-node
+counts them. Labels are *measured*, not estimated: each label is measured with
+a 2D canvas in the card's font (`600 12px system-ui`, the same string as the
+element's label rule, cached per string), the layout (elk's per-node
 `width`/`height`, force's covering radius) runs over the measured sizes, and
 the SVG draws the wrapped lines as one `<text>` with a `<tspan>` per line — so
 edges attach to the card's actual bounds. The measure is injected
-(`cardSize(card, mode, measure)`), so the wrapping is unit-tested with a fixed
-width per character (`test/card-size.test.ts`); without a canvas it falls
-back to the per-character estimate.
+(`sizeCard(text, fit, measure)`), so the wrapping is unit-tested with a fixed
+width per character (in `packages/elements`); without a canvas it falls back
+to the per-character estimate.
 
 **The view record.** The projection's overrides live beside the relationship
 overrides (`src/lib/view.ts`): the resolved view is
@@ -660,12 +738,11 @@ saved view is `{ query, edges, layout, projection }`. A choice naming a field
 the query no longer projects is dropped on resolve, as a vanished candidate's
 is; a pinned label that vanished falls back to the inferred one.
 
-**Pan and zoom.** The wheel zooms about the pointer (the content under the
-cursor stays put) and a drag moves the picture exactly as far as the pointer,
-whatever the zoom or the fit — the pointer is read in the SVG's own rectangle
-and mapped through the viewBox (`src/lib/viewport.ts`, unit-tested). The drag
-is pointer-captured, so it keeps going when the pointer leaves the graph;
-double-click the canvas to reset the view.
+**Pan and zoom.** The element's: the wheel zooms about the pointer (the content
+under the cursor stays put; a trackpad pinch zooms faster), a drag on the canvas
+pans, a drag on a card moves and pins it, `+`/`-`/`0` zoom and `f` fits; the
+toolbar has **fit** and **1:1**. Under `auto-fit` the view follows the graph
+until you take it.
 
 ## Editing edges
 
@@ -688,20 +765,20 @@ turns blue and says what a click does ("⌘-click a node to add or remove
 `after` between it and `timeline/alpha.md`"). Hovering another node then draws
 a **preview** of the toggle — the owner's edge to the referenced document, the
 right way round for the relationship's direction — in one of two styles:
-*will add* (the edge is absent: a blue dashed line, marching and pulsing,
-labelled `+ after`) or *will remove* (the edge is drawn: it is overlaid in red
-with the same pulse and a `remove after` label), and the banner names the
-concrete action and the file whose field changes. Hovering a drawn edge of a
-writable relationship with the modifier held previews its removal the same way.
-Hovering the selected node, empty canvas, or a read-only edge shows nothing,
-and ⌘-clicking empty canvas does nothing. With the modifier held but no
-selection or no armed relationship the banner shows a quiet hint instead.
-Pending (in-flight) edges keep their own static dashed style in the
-relationship's colour so they are never mistaken for a preview; while in edit
-mode a small legend in the bottom-right corner names the three (*will add*,
-*will remove*, *writing…*). Under `prefers-reduced-motion` the previews are
-static dashed lines. The decision — which edge, add or remove, who owns it — is
-`previewFor` in `src/lib/preview.ts`, unit-tested without a DOM.
+*will add* (the edge is absent: a blue dashed curve, `+ after` on hover) or
+*will remove* (the edge is drawn: it turns red and dashed), and the banner
+names the concrete action and the file whose field changes. Hovering a drawn
+edge of a writable relationship with the modifier held previews its removal
+the same way. Hovering the selected node, empty canvas, or a read-only edge
+shows nothing, and ⌘-clicking empty canvas does nothing. With the modifier held
+but no selection or no armed relationship the banner shows a quiet hint
+instead. Pending (in-flight) edges keep the relationship's colour (dashed and
+faded) so they are never mistaken for a preview; while in edit mode a small
+legend in the bottom-right corner names the three (*will add*, *will remove*,
+*writing…*). The decision — which edge, add or remove, who owns it — is
+`previewFor` in `src/lib/preview.ts`, unit-tested without a DOM; the preview
+reaches the element as a `pending` edge (`viewEdges`, `src/lib/graph-view.ts`),
+driven by the element's `graph-hover` / `graph-edge-hover` events.
 
 **Which file changes.** The edge is written where the relationship is stored —
 the document whose frontmatter field names the other one — and the inverse

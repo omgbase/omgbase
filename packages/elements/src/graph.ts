@@ -13,8 +13,9 @@
 // literal text stays, a line whose placeholders are ALL absent is dropped, a
 // line with no placeholders stays, values render compactly (`formatValue`).
 // The first kept line is the label, the rest are detail lines; when every line
-// is dropped the label is the fallback. `DEFAULT_CARD` is `{_display|_title}`,
-// so a row carrying an engine-computed `_display` wins with no configuration.
+// is dropped the label is the fallback. `DEFAULT_CARD` is `{_title}` — the
+// element bakes in no display-property concept; an app passes its own template
+// (graph-ui's is `{card|_title}`, `card` being a bare alias a query may compute).
 //
 // Sizes. Every geometry helper takes `Placed { id, x, y, w, h }` — cards have
 // their own width and height (`sizeCard` from the label fit and a measured
@@ -57,6 +58,8 @@ export interface GraphViewEdge {
   detail?: string;
   /** A colour class: `frontmatter`, `body` and `external` have fixed styles; any other kind takes a palette colour (`edgeKindColor`). */
   kind?: string;
+  /** An explicit stroke colour (CSS), winning over the kind's: for a host that keeps its own palette per relationship. */
+  color?: string;
   style?: EdgeLineStyle;
   /** An optimistic edge whose write is in flight: drawn dashed and faded. */
   pending?: "add" | "remove";
@@ -91,15 +94,29 @@ export function graphDescription(nodes: readonly GraphViewNode[], edges: readonl
 // ---- card templates -------------------------------------------------------------------------
 
 export type CardTemplate = string;
-export const DEFAULT_CARD: CardTemplate = "{_display|_title}";
+export const DEFAULT_CARD: CardTemplate = "{_title}";
+
+/** A detail line: plain text, or a `key: value` pair drawn with the key dimmer (the key is kept whole when the value is truncated). */
+export type CardLine = string | { key: string; text: string };
 
 export interface CardText {
   /** The first kept line (bold). */
   label: string;
   /** The remaining kept lines (smaller). */
-  lines: string[];
+  lines: CardLine[];
   /** Every kept line with its values in full (the tooltip). */
   full: string[];
+}
+
+/** A detail line as one string (`key: value` for a keyed line). */
+export function lineText(line: CardLine): string {
+  return typeof line === "string" ? line : `${line.key}: ${line.text}`;
+}
+
+/** A detail line cut to `chars` glyphs: a keyed line keeps its key whole and truncates the value. */
+export function truncateLine(line: CardLine, chars: number): CardLine {
+  if (typeof line === "string") return truncate(line, chars);
+  return { key: line.key, text: truncate(line.text, Math.max(1, chars - line.key.length - 2)) };
 }
 
 type Segment = { text: string } | { fields: string[] };
@@ -172,25 +189,56 @@ export function truncate(s: string, max: number): string {
   return s.length > n ? `${s.slice(0, Math.max(0, n - 1))}…` : s;
 }
 
+/** Separator punctuation a template puts between placeholders — `·`, `-`, `—`, `–`, `|`, `,`, `:`, `;`, `/` — with its spaces. */
+const SEPARATOR_ONLY = /^(?:\s*[·\-—–|,:;/])+\s*$/;
+
+/** Is this literal template text nothing but separator glyphs (and spaces)? */
+export function isSeparator(text: string): boolean {
+  return SEPARATOR_ONLY.test(text);
+}
+
+/** One piece of a rendered template line: literal text (`sep` when it is only separator glyphs) or a value. */
+export interface Piece { text: string; full: string; sep: boolean }
+
+/** The kept pieces of one rendered line with the separators an absent placeholder
+ * left dangling removed: a separator-only literal at either end of the line goes,
+ * and of two separator-only literals made adjacent by a vanished value (`a · · b`)
+ * the second goes. Only the TEMPLATE's own text is touched, never a value — a
+ * `/`-rooted path or a negative number keeps its glyphs — and a literal with a
+ * word in it (`by ` in `by {owner}`) stays. */
+export function tidySeparators(pieces: readonly Piece[]): Piece[] {
+  const out: Piece[] = [];
+  for (const p of pieces) {
+    const prev = out[out.length - 1];
+    if (p.sep && prev?.sep) continue;
+    out.push(p);
+  }
+  while (out.length > 0 && out[0]!.sep) out.shift();
+  while (out.length > 0 && out[out.length - 1]!.sep) out.pop();
+  return out;
+}
+
 /** The card's text for a row: see the module header for the template language. */
 export function renderCard(template: CardTemplate, row: Record<string, unknown>, fallback: string): CardText {
   const kept: { text: string; full: string }[] = [];
   for (const line of template.split("\n")) {
     const segs = parseCardLine(line);
     const placeholders = segs.filter((s): s is { fields: string[] } => "fields" in s);
-    let text = "", full = "", any = false;
+    let pieces: Piece[] = [];
+    let any = false, absent = false;
     for (const seg of segs) {
-      if ("text" in seg) { text += seg.text; full += seg.text; continue; }
+      if ("text" in seg) { pieces.push({ text: seg.text, full: seg.text, sep: isSeparator(seg.text) }); continue; }
       const v = seg.fields.map((f) => readField(row, f)).find(isPresent);
-      if (v === undefined) continue;
+      if (v === undefined) { absent = true; continue; }
       any = true;
-      text += formatValue(v);
-      full += formatFull(v);
+      pieces.push({ text: formatValue(v), full: formatFull(v), sep: false });
     }
     if (placeholders.length > 0 && !any) continue;
-    text = text.trim();
+    // Only a line that lost a placeholder is tidied: separators the author wrote between present values stay.
+    if (absent) pieces = tidySeparators(pieces);
+    const text = pieces.map((p) => p.text).join("").trim();
     if (text === "") continue;
-    kept.push({ text, full: full.trim() });
+    kept.push({ text, full: pieces.map((p) => p.full).join("").trim() });
   }
   if (kept.length === 0) return { label: fallback, lines: [], full: [fallback] };
   return { label: kept[0]!.text, lines: kept.slice(1).map((k) => k.text), full: kept.map((k) => k.full) };
@@ -373,8 +421,8 @@ export interface CardSize {
   height: number;
   /** The label as drawn, one `<tspan>` per entry. */
   labelLines: string[];
-  /** The detail lines as drawn (truncated to the width). */
-  detail: string[];
+  /** The detail lines as drawn (truncated to the width; a keyed line keeps its key). */
+  detail: CardLine[];
 }
 
 /** The card's size for a card text under a label fit. `truncate`: one label
@@ -383,7 +431,7 @@ export interface CardSize {
  * to `LABEL_FIT.maxLines`; `expand`: the card widens to the whole label up to
  * `LABEL_FIT.expandMaxWidth`, then wraps. Detail lines are one line each. */
 export function sizeCard(text: CardText, fit: LabelFit, measure: Measure): CardSize {
-  const estimate = cardWidth(text.label.length, Math.max(0, ...text.lines.map((l) => l.length)));
+  const estimate = cardWidth(text.label.length, Math.max(0, ...text.lines.map((l) => lineText(l).length)));
   let width = estimate;
   let labelLines: string[];
   if (fit === "truncate") {
@@ -395,7 +443,7 @@ export function sizeCard(text: CardText, fit: LabelFit, measure: Measure): CardS
     labelLines = wrapLabel(text.label, labelRoom(width), measure);
   }
   const lineChars = fitChars(width, CARD.lineCharWidth);
-  const detail = text.lines.map((l) => truncate(l, lineChars));
+  const detail = text.lines.map((l) => truncateLine(l, lineChars));
   return { width, height: CARD.baseHeight + (labelLines.length - 1) * LABEL_FIT.lineHeight + detail.length * CARD.lineHeight, labelLines, detail };
 }
 
@@ -690,6 +738,45 @@ export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[],
   }
   const tl = Math.hypot(p2.x - c.x, p2.y - c.y) || 1;
   return { d: `M ${p0.x} ${p0.y} Q ${c.x} ${c.y} ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - c.x) / tl, y: (p2.y - c.y) / tl }, control: c, mid: quad(p0, c, p2, 0.5), bends, offset };
+}
+
+/** The point halfway along a polyline (by length); null for no points. */
+export function polylineMidpoint(pts: readonly Pt[]): Pt | null {
+  if (pts.length === 0) return null;
+  if (pts.length === 1) return pts[0]!;
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y); lens.push(l); total += l; }
+  let remaining = total / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const l = lens[i - 1]!;
+    if (remaining <= l) {
+      const t = l === 0 ? 0 : remaining / l;
+      return { x: pts[i - 1]!.x + (pts[i]!.x - pts[i - 1]!.x) * t, y: pts[i - 1]!.y + (pts[i]!.y - pts[i - 1]!.y) * t };
+    }
+    remaining -= l;
+  }
+  return pts[pts.length - 1]!;
+}
+
+/** An externally routed edge (a `fixed` layout's bend points — elk's orthogonal
+ * routes) as an `EdgeRoute`: `M … L …` through every point, the arrowhead along
+ * the last segment, the label at the polyline's midpoint. Null for fewer than two points. */
+export function polylineRoute(pts: readonly Pt[]): EdgeRoute | null {
+  if (pts.length < 2) return null;
+  const start = pts[0]!, end = pts[pts.length - 1]!;
+  let prev = pts[pts.length - 2]!;
+  for (let i = pts.length - 2; i >= 0 && prev.x === end.x && prev.y === end.y; i--) prev = pts[i]!;
+  const len = Math.hypot(end.x - prev.x, end.y - prev.y) || 1;
+  return {
+    d: `M ${start.x} ${start.y}${pts.slice(1).map((p) => ` L ${p.x} ${p.y}`).join("")}`,
+    start, end,
+    tangent: { x: (end.x - prev.x) / len, y: (end.y - prev.y) / len },
+    control: null,
+    mid: polylineMidpoint(pts) ?? start,
+    bends: Math.max(0, pts.length - 2),
+    offset: 0,
+  };
 }
 
 /** The route drawn with a given (eased) control offset — no obstacle pass. */
