@@ -6,7 +6,13 @@
 // pointer and only the drop emits `graph-pin`.
 //
 // Properties: `model`, `selected` (a path), `canWrite` (connectors offered),
-// `connectSource` (the page arms a connector from the keyboard/palette flow).
+// `connectSource` (the page arms a connector from the keyboard/palette flow),
+// `edges` ("curved": obstacle-aware quadratic Béziers routed by `edgePath` every
+// frame — parallel edges fanned by `parallelOffsets`, arrowheads on the end
+// tangent; "straight": plain segments). Routing is O(E·N) after a box prune;
+// when a frame's routing exceeds `ROUTE_BUDGET_MS` the pane routes every other
+// tick while the simulation is hot (straight lines in between) and fully once
+// alpha settles.
 // Events (all `{ bubbles, composed }`):
 //   graph-select { path | null }          click (null: open canvas), or an arrow key moved the selection
 //   graph-open { path }                   double-click / Enter on the selected node
@@ -30,7 +36,12 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type ForceLink, type ForceX, type ForceY, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
-import { CARD_H, CARD_W, arrowEnd, connectorDrop, connectorLine, dragMode, edgeLabel, emptyModel, fitTransform, forceConfig, initialView, graphDescription, nearestInDirection, neighborsOf, panBy, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
+import { CARD_H, CARD_W, arrowheadPath, connectorDrop, connectorLine, dragMode, edgeLabel, edgePath, emptyModel, fitTransform, forceConfig, initialView, graphDescription, nearestInDirection, neighborsOf, panBy, parallelOffsets, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type EdgeRoute, type EdgeStyle, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
+
+export type { EdgeStyle } from "../lib/graph.ts";
+
+/** A frame whose routing takes longer than this degrades to every-other-tick routing while hot. */
+export const ROUTE_BUDGET_MS = 4;
 
 export interface GraphPathDetail { path: string }
 export interface GraphCollapseDetail { path: string }
@@ -71,11 +82,14 @@ export class GraphPane extends LitElement {
     :host(:focus-visible) { box-shadow: inset 0 0 0 2px #90b4e8; }
     svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: default; }
     svg.panning { cursor: grabbing; }
-    .edge { stroke: #9aa3b2; stroke-width: 1.4; fill: none; }
-    .edge.frontmatter { stroke: #1565c0; }
-    .edge.body { stroke: #6f7a8c; }
-    .edge.external { stroke: #b26a00; stroke-dasharray: 4 3; }
-    .edge.hover { stroke-width: 2.6; }
+    .edge { stroke: rgba(21, 101, 192, 0.55); stroke-width: 1.5; fill: none; stroke-linecap: round; }
+    .edge.body { stroke: rgba(21, 101, 192, 0.4); stroke-dasharray: 1.5 4; }
+    .edge.external { stroke: rgba(178, 106, 0, 0.6); stroke-dasharray: 5 3; }
+    .head { fill: rgba(21, 101, 192, 0.7); stroke: none; }
+    .head.body { fill: rgba(21, 101, 192, 0.55); }
+    .head.external { fill: rgba(178, 106, 0, 0.7); }
+    g.hover .edge { stroke-width: 2.8; stroke: rgba(21, 101, 192, 0.9); stroke-dasharray: none; }
+    g.hover .head { fill: #1565c0; }
     .hit { stroke: transparent; stroke-width: 12; fill: none; cursor: default; }
     .edge-label { font-size: 11px; fill: #1e2430; paint-order: stroke; stroke: #fbfbfd; stroke-width: 4px; pointer-events: none; }
     .node { cursor: grab; }
@@ -115,6 +129,8 @@ export class GraphPane extends LitElement {
   @property({ type: String }) connectSource: string | null = null;
   /** New neighbours per direction the page loads on expand (shown in the hint). */
   @property({ type: Number }) limit = 12;
+  /** Curved (obstacle-aware) or straight edges. */
+  @property({ type: String }) edges: EdgeStyle = "curved";
 
   @state() private view: ViewTransform = initialView(600, 400);
   @state() private size = { w: 600, h: 400 };
@@ -138,6 +154,10 @@ export class GraphPane extends LitElement {
   private readonly config = forceConfig();
   private resize: ResizeObserver | null = null;
   private lastShape = "";
+  /** Routing went over budget on some frame: route every other tick while hot. */
+  private routingSlow = false;
+  private frame = 0;
+  private lastRoutes = new Map<string, EdgeRoute>();
 
   constructor() {
     super();
@@ -452,16 +472,37 @@ export class GraphPane extends LitElement {
 
   // ---- rendering ---------------------------------------------------------------------
 
-  private renderEdge(e: GraphEdge, pos: Map<string, SimNode>): TemplateResult | typeof nothing {
-    const a = pos.get(e.from), b = pos.get(e.to);
-    if (!a || !b || e.from === e.to) return nothing;
-    const end = arrowEnd(a, b);
+  /** Every edge's route for this frame: curved and obstacle-aware within the time budget, else straight (parallel fan kept). */
+  private routeEdges(pos: Map<string, SimNode>): Map<string, EdgeRoute> {
+    const edges = [...this.model.edges.values()].filter((e) => e.from !== e.to && pos.has(e.from) && pos.has(e.to));
+    const offsets = parallelOffsets(edges);
+    const curved = this.edges === "curved";
+    const hot = this.sim.alpha() > 0.1;
+    this.frame++;
+    const avoid = curved && (!this.routingSlow || !hot || this.frame % 2 === 0);
+    const placed = avoid ? this.placed() : [];
+    const t0 = typeof performance === "undefined" ? 0 : performance.now();
+    const routes = new Map<string, EdgeRoute>();
+    for (const e of edges) {
+      const a = pos.get(e.from)!, b = pos.get(e.to)!;
+      routes.set(e.key, edgePath(a, b, placed, { key: e.key, offset: curved ? offsets.get(e.key) ?? 0 : 0, avoid }));
+    }
+    if (avoid && typeof performance !== "undefined") {
+      const dt = performance.now() - t0;
+      if (dt > ROUTE_BUDGET_MS) this.routingSlow = true;
+      else if (!hot) this.routingSlow = false;
+    }
+    this.lastRoutes = routes;
+    return routes;
+  }
+
+  private renderEdge(e: GraphEdge, route: EdgeRoute): TemplateResult {
     const hover = this.hoverEdge === e.key;
-    const mx = (a.x + end.x) / 2, my = (a.y + end.y) / 2;
-    return svg`<g @pointerenter=${() => { this.hoverEdge = e.key; }} @pointerleave=${() => { if (this.hoverEdge === e.key) this.hoverEdge = null; }}>
-      <line class="edge ${e.provenance} ${hover ? "hover" : ""}" x1=${a.x} y1=${a.y} x2=${end.x} y2=${end.y} marker-end="url(#arrow)"></line>
-      <line class="hit" x1=${a.x} y1=${a.y} x2=${end.x} y2=${end.y}><title>${e.from} → ${e.to}: ${edgeLabel(e)}</title></line>
-      ${hover ? svg`<text class="edge-label" x=${mx} y=${my - 6} text-anchor="middle">${edgeLabel(e)}</text>` : nothing}
+    return svg`<g class=${hover ? "hover" : ""} @pointerenter=${() => { this.hoverEdge = e.key; }} @pointerleave=${() => { if (this.hoverEdge === e.key) this.hoverEdge = null; }}>
+      <path class="edge ${e.provenance}" d=${route.d}></path>
+      <path class="head ${e.provenance}" d=${arrowheadPath(route.end, route.tangent)}></path>
+      <path class="hit" d=${route.d}><title>${e.from} → ${e.to}: ${edgeLabel(e)}</title></path>
+      ${hover ? svg`<text class="edge-label" x=${route.mid.x} y=${route.mid.y - 7} text-anchor="middle">${edgeLabel(e)}</text>` : nothing}
     </g>`;
   }
 
@@ -498,21 +539,19 @@ export class GraphPane extends LitElement {
     const src = source ? pos.get(source) : undefined;
     const connectorEnd = this.pointer ?? (this.connectTarget ? pos.get(this.connectTarget) : undefined);
     const ghost = src && connectorEnd ? connectorLine(src, connectorEnd) : null;
+    const routes = this.routeEdges(pos);
     const { k, tx, ty } = this.view;
     return html`
       <svg role="application" aria-label=${graphDescription(this.model)} class=${this.pan?.moved ? "panning" : ""}
           @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${() => this.cancelDrag()}
           @pointerdown=${this.onCanvasDown} @wheel=${this.onWheel}>
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a94a6"></path>
-          </marker>
           <marker id="arrow-ghost" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#1565c0"></path>
           </marker>
         </defs>
         <g transform=${`translate(${tx},${ty}) scale(${k})`}>
-          ${[...this.model.edges.values()].map((e) => this.renderEdge(e, pos))}
+          ${[...this.model.edges.values()].map((e) => { const r = routes.get(e.key); return r ? this.renderEdge(e, r) : nothing; })}
           ${nodes.map((n) => { const node = this.model.nodes.get(n.path); return node ? this.renderNode(node, n) : nothing; })}
           ${ghost ? svg`<g class="ghost">
             <line x1=${ghost.x1} y1=${ghost.y1} x2=${ghost.x2} y2=${ghost.y2} marker-end="url(#arrow-ghost)"></line>
@@ -522,6 +561,7 @@ export class GraphPane extends LitElement {
       </svg>
       ${this.model.nodes.size === 0 ? html`<div class="empty">no graph yet</div>` : nothing}
       <div class="toolbar">
+        <button @click=${() => { this.edges = this.edges === "curved" ? "straight" : "curved"; }} title=${this.edges === "curved" ? "edges: curved around cards — switch to straight" : "edges: straight — switch to curved"}>${this.edges === "curved" ? "⤳" : "→"} edges</button>
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
         <button @click=${() => this.home()} title="1:1 with the origin (the pinned root) centred (0)">1:1</button>
       </div>

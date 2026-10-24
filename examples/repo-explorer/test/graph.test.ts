@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
   CARD_H, CARD_W, ZOOM_MAX, ZOOM_MIN, applyTitles, arrowEnd, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchTitles, fitTransform, graphDescription,
-  connectorDrop, connectorLine, dragMode, forceConfig, hitTest, initialView, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
+  PARALLEL_GAP, ROUTE_MARGIN, ROUTE_MIN_LEN, arrowheadPath, connectorDrop, connectorLine, curveHitsRect, dragMode, edgePath, forceConfig, hitTest, initialView, keySide, parallelOffsets, routeViolations, segmentHitsRect, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
 } from "../src/lib/graph.ts";
 
 const A = "/processes/calcination.md";
@@ -227,6 +227,109 @@ describe("titles", () => {
     expect(await fetchTitles(client, done)).toBe(done);
     expect(calls).toHaveLength(3);
     expect(graphDescription(t)).toBe(`graph around ${A}: 3 documents, 2 relationships`);
+  });
+});
+
+describe("edge routing", () => {
+  const A = { path: "/a", x: 0, y: 0 };
+  const B = { path: "/b", x: 600, y: 0 };
+  const dot = (p: { x: number; y: number }, q: { x: number; y: number }) => p.x * q.x + p.y * q.y;
+
+  it("segment / rectangle (Liang–Barsky) and sampled-curve hits", () => {
+    const r = { x: 300, y: 0, hw: 85, hh: 27 };
+    expect(segmentHitsRect({ x: 0, y: 0 }, { x: 600, y: 0 }, r)).toBe(true);
+    expect(segmentHitsRect({ x: 0, y: 100 }, { x: 600, y: 100 }, r)).toBe(false);
+    expect(segmentHitsRect({ x: 300, y: -200 }, { x: 300, y: 200 }, r)).toBe(true);
+    expect(segmentHitsRect({ x: 0, y: 0 }, { x: 200, y: 0 }, r)).toBe(false);
+    expect(segmentHitsRect({ x: 290, y: 10 }, { x: 310, y: -10 }, r)).toBe(true);
+    expect(curveHitsRect({ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 600, y: 0 }, r)).toBe(true);
+    expect(curveHitsRect({ x: 0, y: 0 }, { x: 300, y: 200 }, { x: 600, y: 0 }, r)).toBe(false);
+  });
+
+  it("an unobstructed edge is a straight segment between the card borders, control null, bends 0", () => {
+    const r = edgePath(A, B, [A, B, { path: "/far", x: 300, y: 400 }], { key: "k" });
+    expect(r.control).toBeNull();
+    expect(r.bends).toBe(0);
+    expect(r.d).toBe(`M ${CARD_W / 2 + 2} 0 L ${600 - CARD_W / 2 - 2} 0`);
+    expect(r.tangent).toEqual({ x: 1, y: 0 });
+    expect(r.mid).toEqual({ x: 300, y: 0 });
+  });
+
+  it("a card on the segment pushes the control point to the far side and the sampled curve clears the inflated rect", () => {
+    const above = { path: "/o", x: 300, y: -5 };
+    const r = edgePath(A, B, [A, B, above], { key: "k" });
+    expect(r.control).not.toBeNull();
+    expect(r.control!.y).toBeGreaterThan(0);
+    expect(r.bends).toBe(1);
+    expect(r.d.startsWith("M ")).toBe(true);
+    expect(r.d).toContain(" Q ");
+    expect(routeViolations(r, A, B, [A, B, above])).toBe(0);
+    // The curve clears the rect inflated by the margin, not just the card.
+    expect(curveHitsRect(r.start, r.control!, r.end, { x: 300, y: -5, hw: CARD_W / 2 + ROUTE_MARGIN, hh: CARD_H / 2 + ROUTE_MARGIN })).toBe(false);
+    const below = { path: "/o", x: 300, y: 5 };
+    expect(edgePath(A, B, [A, B, below], { key: "k" }).control!.y).toBeLessThan(0);
+    // The end tangent points into the target card; the start leaves the source.
+    expect(dot(r.tangent, { x: B.x - r.end.x, y: B.y - r.end.y })).toBeGreaterThan(0);
+    expect(Math.hypot(r.tangent.x, r.tangent.y)).toBeCloseTo(1);
+    expect(r.end.x).toBeLessThan(B.x - CARD_W / 2 + 1);
+  });
+
+  it("obstacles on both sides: the offset with the fewest crossings wins, a bend is still reported, and nothing is NaN", () => {
+    const S = { path: "/s", x: 0, y: 0 }, T = { path: "/t", x: 240, y: 0 };
+    const wall = [-80, 0, 80].map((y, i) => ({ path: `/w${i}`, x: 120, y }));
+    const r = edgePath(S, T, [S, T, ...wall], { key: "k" });
+    expect(Number.isFinite(r.end.x) && Number.isFinite(r.end.y)).toBe(true);
+    expect(r.d).not.toMatch(/NaN/);
+    expect(routeViolations(r, S, T, wall)).toBeLessThanOrEqual(routeViolations(edgePath(S, T, [], { avoid: false }), S, T, wall));
+    // A clearable two-sided case: one card above, one below, both crossing the line — greedy pushes oscillate, the sweep finds the bulge that clears both.
+    const two = [{ path: "/p", x: 200, y: -20 }, { path: "/q", x: 400, y: 20 }];
+    const r2 = edgePath(A, B, [A, B, ...two], { key: "k" });
+    expect(r2.bends).toBeGreaterThanOrEqual(1);
+    expect(r2.control).not.toBeNull();
+    expect(routeViolations(r2, A, B, two)).toBe(0);
+    expect(routeViolations(edgePath(A, B, [], { avoid: false }), A, B, two)).toBe(2);
+  });
+
+  it("short edges stay straight even through a card; `avoid: false` is the straight style", () => {
+    const near = { path: "/n", x: 100, y: 0 };
+    const r = edgePath(A, near, [A, near, { path: "/o", x: 50, y: -3 }], { key: "k" });
+    expect(ROUTE_MIN_LEN).toBe(225);
+    expect(r.control).toBeNull();
+    const s = edgePath(A, B, [A, B, { path: "/o", x: 300, y: -5 }], { key: "k", avoid: false });
+    expect(s.control).toBeNull();
+  });
+
+  it("is deterministic, and an obstacle exactly on the line takes its side from the edge key", () => {
+    const on = { path: "/o", x: 300, y: 0 };
+    const r1 = edgePath(A, B, [A, B, on], { key: "a" });
+    const r2 = edgePath(A, B, [A, B, on], { key: "a" });
+    expect(r1.d).toBe(r2.d);
+    expect(keySide("a")).toBe(1);
+    expect(keySide("b")).toBe(-1);
+    const other = edgePath(A, B, [A, B, on], { key: "b" });
+    expect(Math.sign(r1.control!.y)).toBe(-Math.sign(other.control!.y));
+  });
+
+  it("parallel edges of one pair fan apart with centred offsets, A→B and B→A included; a self-loop gets none", () => {
+    const edges = [{ key: "e2", from: "/a", to: "/b" }, { key: "e1", from: "/a", to: "/b" }, { key: "e3", from: "/b", to: "/a" }, { key: "self", from: "/a", to: "/a" }, { key: "x", from: "/a", to: "/c" }];
+    const o = parallelOffsets(edges);
+    expect(o.get("e1")).toBe(-PARALLEL_GAP);
+    expect(o.get("e2")).toBe(0);
+    expect(o.get("e3")).toBe(-PARALLEL_GAP);
+    expect(o.get("x")).toBe(0);
+    expect(o.has("self")).toBe(false);
+    expect(parallelOffsets([{ key: "p", from: "/a", to: "/b" }, { key: "q", from: "/a", to: "/b" }]).get("p")).toBe(-18);
+    // In world space the two frames' offsets land on opposite sides: distinct control points.
+    const ab = edgePath(A, B, [], { key: "e1", offset: o.get("e1")! });
+    const ba = edgePath(B, A, [], { key: "e3", offset: o.get("e3")! });
+    expect(ab.control!.y).toBeCloseTo(-PARALLEL_GAP);
+    expect(ba.control!.y).toBeCloseTo(PARALLEL_GAP);
+    expect(ab.bends).toBe(0);
+  });
+
+  it("draws the arrowhead along the end tangent", () => {
+    expect(arrowheadPath({ x: 100, y: 0 }, { x: 1, y: 0 })).toBe("M 100 0 L 91 4 L 91 -4 Z");
+    expect(arrowheadPath({ x: 0, y: 50 }, { x: 0, y: 1 }, 10, 5)).toBe("M 0 50 L -5 40 L 5 40 Z");
   });
 });
 

@@ -26,8 +26,9 @@
 // and `applyTitles(model, hits)` folds the `_title` of each hit back in.
 //
 // The pure geometry helpers at the end (hit-testing, direction stepping, the
-// fit transform, the arrow endpoint) are what <graph-pane> uses for its pointer
-// and keyboard math, kept here so they are testable without a DOM.
+// fit transform, the arrow endpoint, the obstacle-aware edge routing) are what
+// <graph-pane> uses for its pointer, keyboard and drawing math, kept here so
+// they are testable without a DOM.
 
 import type { Hit, OmgClient } from "@omgbase/client";
 import { inboundQuery, linkRowsOf, outboundQuery, wikiStem, type DocLinks, type LinkRow } from "./links.ts";
@@ -473,6 +474,230 @@ export function connectorLine(source: Placed, pointer: { x: number; y: number },
   const inside = Math.abs(pointer.x - source.x) <= w / 2 && Math.abs(pointer.y - source.y) <= h / 2;
   const from = inside ? pointer : start;
   return { x1: from.x, y1: from.y, x2: pointer.x, y2: pointer.y, hint: { x: pointer.x + 14, y: pointer.y + 18 } };
+}
+
+// ---- edge routing: obstacle-aware quadratic Béziers ---------------------------------------
+
+export type EdgeStyle = "curved" | "straight";
+
+export const ROUTE_MARGIN = 10;
+export const ROUTE_STEP = 12;
+export const ROUTE_SAMPLES = 16;
+export const ROUTE_PASSES = 3;
+/** At most this many pushes per edge (oscillation between two-sided obstacles is bounded). */
+export const ROUTE_MAX_PUSHES = 8;
+/** Edges shorter than this (1.5 card widths) are never deflected around obstacles. */
+export const ROUTE_MIN_LEN = CARD_W * 1.5;
+/** The control offset is capped at this fraction of the edge's length. */
+export const ROUTE_MAX_RATIO = 1.2;
+/** Perpendicular spacing between parallel edges of one node pair. */
+export const PARALLEL_GAP = 36;
+
+export interface EdgeRoute {
+  /** The SVG path: `M … L …` when straight, `M … Q … …` when curved. */
+  d: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  /** Unit direction of travel at the end (the arrowhead's). */
+  tangent: { x: number; y: number };
+  control: { x: number; y: number } | null;
+  /** The curve at t = 0.5 (where the label sits). */
+  mid: { x: number; y: number };
+  /** How many obstacles deflected the control point. */
+  bends: number;
+}
+
+interface Rect { x: number; y: number; hw: number; hh: number }
+type Pt = { x: number; y: number };
+
+function inflated(p: Placed, w: number, h: number, m: number): Rect {
+  return { x: p.x, y: p.y, hw: w / 2 + m, hh: h / 2 + m };
+}
+
+/** Liang–Barsky: does the segment p→q cross the rectangle? */
+export function segmentHitsRect(p: Pt, q: Pt, r: Rect): boolean {
+  const dx = q.x - p.x, dy = q.y - p.y;
+  let t0 = 0, t1 = 1;
+  const clip = (pk: number, qk: number): boolean => {
+    if (pk === 0) return qk >= 0;
+    const t = qk / pk;
+    if (pk < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  };
+  return clip(-dx, p.x - (r.x - r.hw)) && clip(dx, r.x + r.hw - p.x) && clip(-dy, p.y - (r.y - r.hh)) && clip(dy, r.y + r.hh - p.y);
+}
+
+function quad(p0: Pt, c: Pt, p2: Pt, t: number): Pt {
+  const a = (1 - t) * (1 - t), b = 2 * t * (1 - t), d = t * t;
+  return { x: a * p0.x + b * c.x + d * p2.x, y: a * p0.y + b * c.y + d * p2.y };
+}
+
+/** Does the quadratic p0–c–p2, sampled as `ROUTE_SAMPLES` segments, cross the rectangle?
+ * The curve lies in the hull of its three points, so a hull box that misses the rect is a cheap no. */
+export function curveHitsRect(p0: Pt, c: Pt, p2: Pt, r: Rect): boolean {
+  if (Math.min(p0.x, c.x, p2.x) > r.x + r.hw || Math.max(p0.x, c.x, p2.x) < r.x - r.hw || Math.min(p0.y, c.y, p2.y) > r.y + r.hh || Math.max(p0.y, c.y, p2.y) < r.y - r.hh) return false;
+  let prev = p0;
+  for (let i = 1; i <= ROUTE_SAMPLES; i++) {
+    const next = quad(p0, c, p2, i / ROUTE_SAMPLES);
+    if (segmentHitsRect(prev, next, r)) return true;
+    prev = next;
+  }
+  return false;
+}
+
+/** A deterministic side (+1 / −1) for an obstacle sitting exactly on the segment, from the edge key. */
+export function keySide(key: string): 1 | -1 {
+  let sum = 0;
+  for (let i = 0; i < key.length; i++) sum += key.charCodeAt(i);
+  return sum % 2 === 1 ? 1 : -1;
+}
+
+export interface EdgePathOptions {
+  /** The edge key (the side tie-break). */
+  key?: string;
+  /** A perpendicular offset applied before avoidance (`parallelOffsets`). */
+  offset?: number;
+  /** Skip obstacle avoidance (the "straight" style). */
+  avoid?: boolean;
+  w?: number;
+  h?: number;
+  margin?: number;
+}
+
+/** The route of one edge: a quadratic Bézier from `from`'s border to `to`'s border
+ * whose control point starts at the midpoint (a straight line, shifted by
+ * `offset` for parallel edges) and is pushed perpendicular to the segment, away
+ * from every card it would cross (inflated by `margin`), nearest obstacle first,
+ * in `ROUTE_STEP` steps up to `ROUTE_MAX_RATIO` × the length, over up to
+ * `ROUTE_PASSES` passes (geometric steps then a bisection per obstacle). When
+ * the pushes do not clear everything a coarse sweep of both sides keeps the
+ * offset with the fewest crossings. Deterministic for equal inputs. */
+export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[], opts: EdgePathOptions = {}): EdgeRoute {
+  const w = opts.w ?? CARD_W, h = opts.h ?? CARD_H, m = opts.margin ?? ROUTE_MARGIN;
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const L = Math.hypot(dx, dy);
+  if (L === 0) return { d: `M ${from.x} ${from.y} L ${to.x} ${to.y}`, start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, tangent: { x: 1, y: 0 }, control: null, mid: { x: from.x, y: from.y }, bends: 0 };
+  const u = { x: dx / L, y: dy / L }, n = { x: -u.y, y: u.x };
+  const M = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  const curveOf = (off: number) => {
+    const c = { x: M.x + n.x * off, y: M.y + n.y * off };
+    return { c, p0: arrowEnd(c, from, w, h, 2), p2: arrowEnd(c, to, w, h, 2) };
+  };
+  let offset = opts.offset ?? 0;
+  let bends = 0;
+  if (opts.avoid !== false && L >= ROUTE_MIN_LEN) {
+    // Prune to the cards whose inflated box meets the segment's box widened by the curve's largest possible bulge.
+    const reach = (ROUTE_MAX_RATIO * L) / 2 + Math.abs(offset) / 2 + m + Math.max(w, h);
+    const minX = Math.min(from.x, to.x) - reach, maxX = Math.max(from.x, to.x) + reach;
+    const minY = Math.min(from.y, to.y) - reach, maxY = Math.max(from.y, to.y) + reach;
+    const rects = obstacles
+      .filter((o) => o.path !== from.path && o.path !== to.path && o.x >= minX && o.x <= maxX && o.y >= minY && o.y <= maxY)
+      .map((o) => inflated(o, w, h, m))
+      .map((r) => ({ r, d: Math.abs((r.x - from.x) * n.x + (r.y - from.y) * n.y) + Math.max(0, Math.abs((r.x - M.x) * u.x + (r.y - M.y) * u.y) - L / 2) }))
+      .sort((a, b) => a.d - b.d)
+      .map((x) => x.r);
+    /** Crossings at `off`, counting no further than `limit` (we only ask "is it better?"). */
+    const violations = (off: number, limit = Infinity): number => {
+      const { c, p0, p2 } = curveOf(off);
+      let v = 0;
+      for (const r of rects) if (curveHitsRect(p0, c, p2, r) && ++v >= limit) break;
+      return v;
+    };
+    let best = { off: offset, v: violations(offset) };
+    const cap = ROUTE_MAX_RATIO * L;
+    outer: for (let pass = 0; pass < ROUTE_PASSES && best.v > 0 && bends < ROUTE_MAX_PUSHES; pass++) {
+      let changed = false;
+      for (const r of rects) {
+        if (bends >= ROUTE_MAX_PUSHES) break;
+        const cur = curveOf(offset);
+        if (!curveHitsRect(cur.p0, cur.c, cur.p2, r)) continue;
+        const sideOf = (r.x - M.x) * n.x + (r.y - M.y) * n.y;
+        const side = Math.abs(sideOf) < 1e-6 ? keySide(opts.key ?? "") : sideOf > 0 ? 1 : -1;
+        // Geometric steps (12, 24, 48, …) away from the obstacle until the curve clears it, then a short bisection back toward the last hit — ≈ 12 curve tests, not one per `ROUTE_STEP`.
+        const hits = (off: number): boolean => { const k = curveOf(off); return curveHitsRect(k.p0, k.c, k.p2, r); };
+        let lo = offset, hi = offset, step = ROUTE_STEP, cleared = false;
+        while (Math.abs(hi - side * step) <= cap) {
+          lo = hi;
+          hi -= side * step;
+          if (!hits(hi)) { cleared = true; break; }
+          step *= 2;
+        }
+        if (!cleared) continue;
+        for (let i = 0; i < 4; i++) {
+          const midOff = (lo + hi) / 2;
+          if (hits(midOff)) lo = midOff; else hi = midOff;
+        }
+        offset = Math.round(hi);
+        bends++;
+        changed = true;
+        const v = violations(offset, best.v);
+        if (v < best.v) best = { off: offset, v };
+        if (v === 0) break outer;
+      }
+      if (!changed) break;
+    }
+    if (best.v > 0) {
+      // Greedy pushes oscillated between obstacles on both sides: sweep both sides at doubling bulges (24, 48, 96, … ≤ cap) and keep the fewest crossings (ties: the smaller bulge, then the key's side).
+      for (let off = ROUTE_STEP * 2; off <= cap && best.v > 0; off *= 2) {
+        for (const signed of keySide(opts.key ?? "") > 0 ? [off, -off] : [-off, off]) {
+          const v = violations(signed, best.v);
+          if (v < best.v) best = { off: signed, v };
+          if (v === 0) break;
+        }
+      }
+    }
+    offset = best.off;
+  }
+  const { c, p0, p2 } = curveOf(offset);
+  if (offset === 0) {
+    const len = Math.hypot(p2.x - p0.x, p2.y - p0.y) || 1;
+    return { d: `M ${p0.x} ${p0.y} L ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - p0.x) / len, y: (p2.y - p0.y) / len }, control: null, mid: { x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2 }, bends };
+  }
+  const tl = Math.hypot(p2.x - c.x, p2.y - c.y) || 1;
+  return { d: `M ${p0.x} ${p0.y} Q ${c.x} ${c.y} ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - c.x) / tl, y: (p2.y - c.y) / tl }, control: c, mid: quad(p0, c, p2, 0.5), bends };
+}
+
+/** How many cards (inflated by `margin`, the endpoints excluded) a route still crosses. */
+export function routeViolations(route: EdgeRoute, from: Placed, to: Placed, obstacles: readonly Placed[], w = CARD_W, h = CARD_H, m = ROUTE_MARGIN): number {
+  const c = route.control ?? { x: (route.start.x + route.end.x) / 2, y: (route.start.y + route.end.y) / 2 };
+  let v = 0;
+  for (const o of obstacles) {
+    if (o.path === from.path || o.path === to.path) continue;
+    if (curveHitsRect(route.start, c, route.end, inflated(o, w, h, m))) v++;
+  }
+  return v;
+}
+
+/** Perpendicular offsets that fan the edges of one node pair apart (either
+ * direction counts as the same pair): centred multiples of `PARALLEL_GAP`
+ * (±18 for two, −36/0/36 for three, …), assigned in key order and expressed in
+ * each edge's own frame so A→B and B→A spread rather than overlap. */
+export function parallelOffsets(edges: readonly { key: string; from: string; to: string }[]): Map<string, number> {
+  const groups = new Map<string, { key: string; from: string; to: string }[]>();
+  for (const e of edges) {
+    if (e.from === e.to) continue;
+    const pair = e.from < e.to ? `${e.from}\u0000${e.to}` : `${e.to}\u0000${e.from}`;
+    const g = groups.get(pair) ?? [];
+    g.push(e);
+    groups.set(pair, g);
+  }
+  const out = new Map<string, number>();
+  for (const g of groups.values()) {
+    g.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    g.forEach((e, i) => {
+      const canonical = (i - (g.length - 1) / 2) * PARALLEL_GAP;
+      out.set(e.key, e.from < e.to ? canonical : -canonical);
+    });
+  }
+  return out;
+}
+
+/** The arrowhead at a route's end as a closed path, aligned with the end tangent. */
+export function arrowheadPath(end: Pt, tangent: Pt, length = 9, half = 4): string {
+  const bx = end.x - tangent.x * length, by = end.y - tangent.y * length;
+  const nx = -tangent.y * half, ny = tangent.x * half;
+  return `M ${end.x} ${end.y} L ${bx + nx} ${by + ny} L ${bx - nx} ${by - ny} Z`;
 }
 
 // ---- the force layout's numbers ---------------------------------------------------------

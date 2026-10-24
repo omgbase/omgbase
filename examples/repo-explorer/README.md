@@ -363,7 +363,12 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    selection, ⏎ opens. ⌘-drag from a node, or a drag from the selected card's
    ⟶ handle (no modifier; a click arms the keyboard connector, `c`), is a
    connector: a dashed ghost line follows the pointer, the prospective target
-   card lights up; on a document it opens the chooser — where the relation is
+   card lights up. Edges are quadratic Béziers routed around the cards
+   (`edgePath`: the control point is pushed off every card the straight line
+   would cross, parallel edges between a pair fan apart, arrowheads follow the
+   curve's tangent; a frame over 4 ms of routing falls back to every other tick
+   while the layout is hot; the toolbar's `⤳ edges / → edges` toggles to
+   straight); on a document it opens the chooser — where the relation is
    written is always the user's call — on open canvas the palette picks or
    creates the destination first. Edges show their provenance on
    hover (the frontmatter field, the block of a body link, the URL of an
@@ -440,7 +445,7 @@ call once, noting *session expired at the server — reconnected* in the header.
   model (bounds, dedup, pins, the titles query), the pin/unpin/expand commands
   through a real `CommandLog` (coalescing), the relations (the choices over
   frontmatter shapes, each write's exact effect and guard, every refusal), the
-  geometry, the route, the dev arguments and the stand-in — 189 tests, no live
+  geometry, the route, the dev arguments and the stand-in — 197 tests, no live
   server. The client's session recovery and `unknown tool` mapping are tested
   in `packages/client`.
 
