@@ -569,7 +569,10 @@ export const ROUTE_SAMPLES = 16;
 export const ROUTE_PASSES = 3;
 export const ROUTE_MAX_PUSHES = 8;
 /** An edge shorter than this many times the wider endpoint card is never deflected. */
-export const ROUTE_MIN_FACTOR = 1.5;
+/** Edges shorter than this many card HEIGHTS skip the obstacle pass (two touching
+ * cards): the width-based rule of the first cut made every edge under 390 px
+ * straight once cards were sized from their text — the usual neighbourhood. */
+export const ROUTE_MIN_FACTOR = 2;
 /** The control offset is capped at this fraction of the edge's length. */
 export const ROUTE_MAX_RATIO = 1.2;
 /** Perpendicular spacing between parallel edges of one node pair. */
@@ -637,7 +640,7 @@ export function keySide(key: string): 1 | -1 {
 
 /** Below this length (1.5 × the wider endpoint) an edge is drawn straight whatever it crosses. */
 export function routeMinLength(from: Placed, to: Placed): number {
-  return ROUTE_MIN_FACTOR * Math.max(from.w, to.w);
+  return ROUTE_MIN_FACTOR * Math.max(from.h, to.h);
 }
 
 export interface EdgePathOptions {

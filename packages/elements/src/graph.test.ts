@@ -364,11 +364,14 @@ describe("edge routing", () => {
     expect(routeViolations(r2, A, B, two)).toBe(0);
   });
 
-  it("short edges stay straight (1.5 × the wider endpoint); `avoid: false` is the straight style", () => {
-    expect(routeMinLength(A, B)).toBe(225);
-    expect(routeMinLength(A, card("/w", 0, 0, 300, 40))).toBe(450);
-    const near = card("/n", 100, 0);
-    expect(edgePath(A, near, [A, near, card("/o", 50, -3)], { key: "k" }).control).toBeNull();
+  it("only tiny edges stay straight (2 × the taller endpoint — two touching cards); `avoid: false` is the straight style", () => {
+    expect(routeMinLength(A, B)).toBe(68);
+    expect(routeMinLength(A, card("/w", 0, 0, 300, 40))).toBe(80);
+    // Width no longer matters: a 200 px edge (under the old 225 px rule) still routes around a card on its line.
+    const near = card("/n", 200, 0);
+    expect(edgePath(A, near, [A, near, card("/o", 100, -3, 40, 34)], { key: "k" }).bends).toBeGreaterThanOrEqual(1);
+    const tiny = card("/t", 60, 0);
+    expect(edgePath(A, tiny, [A, tiny, card("/o", 30, -3)], { key: "k" }).control).toBeNull();
     expect(edgePath(A, B, [A, B, card("/o", 300, -5)], { key: "k", avoid: false }).control).toBeNull();
   });
 
