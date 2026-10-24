@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { OmgError, type CommandClient, type CommandContext, type DocsReadResult, type Receipt } from "@omgbase/client";
-import { CREATE_REASON, REMOVE_CREATED_REASON, createDocumentCommand, creationError, defaultMarkdown, titleFromPath } from "../src/lib/create.ts";
+import { OmgError, type DocsReadResult, type Receipt } from "./client.js";
+import type { CommandClient, CommandContext } from "./commands.js";
+import { CREATE_REASON, REMOVE_CREATED_REASON, createDocumentCommand, creationError, defaultMarkdown, pathStem, rootedPath, titleFromPath } from "./commands-documents.js";
 
-describe("defaultMarkdown", () => {
+describe("paths and titles", () => {
+  it("rootedPath: one leading slash, runs collapsed, idempotent", () => {
+    expect(rootedPath("a/b.md")).toBe("/a/b.md");
+    expect(rootedPath("/a/b.md")).toBe("/a/b.md");
+    expect(rootedPath("//a//b.md")).toBe("/a/b.md");
+    expect(rootedPath(rootedPath("///x.md"))).toBe("/x.md");
+  });
+  it("pathStem drops the directory and a letter-led extension only", () => {
+    expect(pathStem("/a/b.md")).toBe("b");
+    expect(pathStem("notes/v1.2")).toBe("v1.2");
+    expect(pathStem("/a/salt.markdown")).toBe("salt");
+  });
   it("titles from the file name: hyphens and underscores become spaces, the first letter capitalised", () => {
     expect(titleFromPath("/notes/dry-run_notes.md")).toBe("Dry run notes");
     expect(titleFromPath("/a/salt.md")).toBe("Salt");
@@ -19,7 +31,7 @@ describe("defaultMarkdown", () => {
 
 type Call = { tool: string; args: unknown };
 
-/** The two methods the command touches, over a one-document world: `docs` holds the live document (null = gone). */
+/** The two methods the command touches, over a one-document world: `doc` holds the live document (null = gone). */
 class FakeClient {
   calls: Call[] = [];
   doc: DocsReadResult | null = null;

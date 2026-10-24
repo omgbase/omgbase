@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createSuggestion, docItemOf, docTier, escapeRegex, filterActions, findQuery, itemsFor, matchTier, newDocumentPath, parseInput, rankDocs, stepIndex, termsOf,
   type DocItem, type PaletteAction,
-} from "../src/lib/palette.ts";
+} from "./palette.js";
 
 const doc = (path: string, title?: string): DocItem => ({ kind: "doc", id: `d_${path.length}`, path, title: title ?? path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "") });
 

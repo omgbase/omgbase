@@ -2,7 +2,7 @@
   "name": "@omgbase/client",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base — typed, browser-safe client, session and command layer over the minimal MCP surface (query, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version)",
+  "description": "Open Markdown Graph Base — typed, browser-safe client, session and command layer over the minimal MCP surface (query, docs_read, docs_tree, blocks_resolve, changes_since, plan, execute, apply, version), with the shared Explorer commands: create a document, attach / detach a relation (additive frontmatter lists or body links), each one guarded apply with a compensating undo",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -48,6 +48,14 @@
     "./effects": {
       "import": "./dist/src/effects.js",
       "types": "./dist/src/effects.d.ts"
+    },
+    "./commands-documents": {
+      "import": "./dist/src/commands-documents.js",
+      "types": "./dist/src/commands-documents.d.ts"
+    },
+    "./commands-relations": {
+      "import": "./dist/src/commands-relations.js",
+      "types": "./dist/src/commands-relations.d.ts"
     }
   },
   "scripts": {

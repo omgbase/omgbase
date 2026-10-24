@@ -30,12 +30,16 @@
 // Events (every detail type exported; all bubble and compose)
 //   graph-select { id | null }  graph-open { id }  graph-expand { id }  graph-collapse { id }
 //   graph-pin { id, x, y, previous }  graph-unpin { id, previous }
-//   graph-connect { from, to }  graph-connect-empty { from, x, y }
+//   graph-connect { from, to, clientX, clientY }  graph-connect-empty { from, x, y, clientX, clientY }
+//                               (clientX/Y: the drop point in viewport px — where a host anchors its picker)
 //   graph-edge-toggle { key?, from, to, present }  graph-edge-select { key | null }
+//   graph-edge-delete { key }   (the ✕ at a selected edge's midpoint, or Delete / Backspace while an edge
+//                               is selected; only with canWrite — the host runs the detach)
 //   graph-hover { id | null }  graph-edge-hover { key | null }   (the pointer over a card / an edge)
 //   graph-view { k, tx, ty }  graph-label-fit { labelFit }  (the toolbar's select)
 // Keys: arrows select (or move the connector target), Enter opens (or confirms a
-// connector), e expands/collapses, u / Backspace unpins, c arms a connector,
+// connector), e expands/collapses, u / Backspace unpins (Delete / Backspace on a
+// selected edge asks to delete it), c arms a connector,
 // +/-/0 zoom, f fits, Esc cancels. Theming: CSS custom properties
 // `--omg-graph-accent`, `--omg-graph-bg`, `--omg-graph-card-bg`,
 // `--omg-graph-card-border`, `--omg-graph-text`, `--omg-graph-muted`,
@@ -55,8 +59,12 @@ export interface GraphIdDetail { id: string }
 export interface GraphSelectDetail { id: string | null }
 export interface GraphPinDetail { id: string; x: number; y: number; previous: Pin | null }
 export interface GraphUnpinDetail { id: string; previous: Pin | null }
-export interface GraphConnectDetail { from: string; to: string }
-export interface GraphConnectEmptyDetail { from: string; x: number; y: number }
+/** `clientX`/`clientY`: where the connector was dropped (or confirmed), in viewport px — an anchor for the host's picker. */
+export interface GraphConnectDetail { from: string; to: string; clientX: number; clientY: number }
+/** `x`/`y` in graph space (a seed position for a node created there); `clientX`/`clientY` in viewport px. */
+export interface GraphConnectEmptyDetail { from: string; x: number; y: number; clientX: number; clientY: number }
+/** The user asked to delete the selected edge (its ✕, or Delete / Backspace). */
+export interface GraphEdgeDeleteDetail { key: string }
 /** `present: true` — an existing edge (`key`) was ⌘-clicked; `present: false` — a node was ⌘-clicked with another selected (`from` the selection, `to` the click). */
 export interface GraphEdgeToggleDetail { key?: string; from: string; to: string; present: boolean }
 export interface GraphEdgeSelectDetail { key: string | null }
@@ -133,6 +141,9 @@ export class OmgGraph extends LitElement {
     .affordance circle { fill: var(--_card); stroke: var(--_border); }
     .affordance:hover circle { fill: color-mix(in srgb, var(--_accent) 12%, var(--_card)); stroke: var(--_accent); }
     .affordance text { font-size: 12px; fill: var(--_text); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+    .edge-delete circle { fill: #fff5f5; stroke: #c62828; }
+    .edge-delete:hover circle { fill: #ffcdd2; stroke: #b71c1c; }
+    .edge-delete text { fill: #b71c1c; font-size: 11px; }
     .handle { cursor: crosshair; }
     .handle circle { fill: #e8f5e9; stroke: #2e7d32; }
     .handle:hover circle, .handle.armed circle { fill: #c8e6c9; stroke: #1b5e20; }
@@ -248,6 +259,8 @@ export class OmgGraph extends LitElement {
       this.armed = this.connectSource;
       this.connectTarget = null;
     }
+    // A selected edge that left the model (deleted, collapsed away) is no longer selected.
+    if (changed.has("edges") && this.selectedEdge !== null && !this.edges.some((e) => e.key === this.selectedEdge)) this.selectedEdge = null;
     this.autoFitNow();
   }
 
@@ -390,6 +403,17 @@ export class OmgGraph extends LitElement {
     return toGraph(this.view, e.clientX - r.left, e.clientY - r.top);
   }
 
+  /** A graph point in viewport px (the inverse of `graphPoint`), for a keyboard-confirmed connector's anchor. */
+  private clientPoint(gx: number, gy: number): { clientX: number; clientY: number } {
+    const r = this.getBoundingClientRect();
+    return { clientX: r.left + gx * this.view.k + this.view.tx, clientY: r.top + gy * this.view.k + this.view.ty };
+  }
+
+  private deleteEdge(key: string): void {
+    if (!this.canWrite) return;
+    this.emit<GraphEdgeDeleteDetail>("graph-edge-delete", { key });
+  }
+
   private onNodeDown(e: PointerEvent, id: string, handle = false): void {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -463,8 +487,9 @@ export class OmgGraph extends LitElement {
       this.armed = null;
       this.connectTarget = null;
       const drop = connectorDrop(this.placed(), d.id, g.x, g.y, (p) => this.isTarget(p));
-      if (drop.kind === "connect") this.emit<GraphConnectDetail>("graph-connect", { from: drop.from, to: drop.to });
-      else this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: drop.from, x: drop.x, y: drop.y });
+      const at = { clientX: e.clientX, clientY: e.clientY };
+      if (drop.kind === "connect") this.emit<GraphConnectDetail>("graph-connect", { from: drop.from, to: drop.to, ...at });
+      else this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: drop.from, x: drop.x, y: drop.y, ...at });
       return;
     }
     if (!this.reduced && this.layout !== "fixed") this.sim.alphaTarget(0);
@@ -581,15 +606,23 @@ export class OmgGraph extends LitElement {
         const to = this.connectTarget;
         this.armed = null;
         this.connectTarget = null;
-        if (to && to !== source && this.isTarget(to)) this.emit<GraphConnectDetail>("graph-connect", { from: source, to });
-        else {
+        if (to && to !== source && this.isTarget(to)) {
+          const n = this.sim.nodes().find((x) => x.id === to);
+          this.emit<GraphConnectDetail>("graph-connect", { from: source, to, ...this.clientPoint(n?.x ?? 0, n?.y ?? 0) });
+        } else {
           const n = this.sim.nodes().find((x) => x.id === source);
-          this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: source, x: (n?.x ?? 0) + this.sizeOf(source).w, y: n?.y ?? 0 });
+          const x = (n?.x ?? 0) + this.sizeOf(source).w, y = n?.y ?? 0;
+          this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: source, x, y, ...this.clientPoint(x, y) });
         }
       } else if (sel) this.emit<GraphIdDetail>("graph-open", { id: sel });
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && this.selectedEdge !== null) {
+      e.preventDefault();
+      this.deleteEdge(this.selectedEdge);
+      return;
+    }
     switch (e.key) {
       case "e": if (sel) { e.preventDefault(); this.toggleExpand(sel); } break;
       case "u":
@@ -647,13 +680,16 @@ export class OmgGraph extends LitElement {
     const cls = [e.kind ?? "", e.style ?? "", e.pending ? "pending" : ""].join(" ");
     const strokeStyle = color ? `stroke: ${color}` : "";
     const fillStyle = color ? `fill: ${color}` : "";
+    const selected = this.selectedEdge === e.key;
     const title = `${e.detail ?? `${e.from} → ${e.to}`}${e.label ? ` · ${e.label}` : ""}${e.pending ? ` (${e.pending === "add" ? "adding…" : "removing…"})` : e.writable && this.edgeToggle ? " — ⌘-click to remove" : ""}`;
-    return svg`<g class="${hover ? "hover" : ""} ${this.selectedEdge === e.key ? "selected-edge" : ""} ${e.writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
+    const stop = (ev: Event) => ev.stopPropagation();
+    return svg`<g class="${hover ? "hover" : ""} ${selected ? "selected-edge" : ""} ${e.writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
         @pointerenter=${() => this.setHoverEdge(e.key)} @pointerleave=${() => { if (this.hoverEdge === e.key) this.setHoverEdge(null); }}>
       <path class="edge ${cls}" d=${route.d} style=${strokeStyle}></path>
       <path class="head ${cls}" d=${arrowheadPath(route.end, route.tangent)} style=${fillStyle}></path>
       <path class="hit" d=${route.d}><title>${title}</title></path>
-      ${hover && e.label ? svg`<text class="edge-label" x=${route.mid.x} y=${route.mid.y - 7} text-anchor="middle">${e.label}</text>` : nothing}
+      ${(hover || selected) && e.label ? svg`<text class="edge-label" x=${route.mid.x} y=${route.mid.y - (selected && this.canWrite ? 14 : 7)} text-anchor="middle">${e.label}</text>` : nothing}
+      ${selected && this.canWrite && !e.pending ? svg`<g class="affordance edge-delete" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.deleteEdge(e.key); }}><title>delete this edge (Delete / Backspace)</title><circle cx=${route.mid.x} cy=${route.mid.y} r="8"></circle><text x=${route.mid.x} y=${route.mid.y}>✕</text></g>` : nothing}
     </g>`;
   }
 
@@ -722,7 +758,7 @@ export class OmgGraph extends LitElement {
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
         <button @click=${() => this.home()} title="1:1 with the origin centred (0)">1:1</button>
       </div>` : nothing}
-      <div class="hint">drag: move (pins) · ${this.canWrite ? "⌘/Ctrl-drag, the ⟶ handle or c: connect · " : ""}e / ⊕⊖: expand${this.limit ? ` ${this.limit} per side` : ""} / collapse · u: unpin · Enter: open · arrows: select · wheel: zoom · drag canvas: pan · f: fit · +/-/0${this.edgeToggle ? " · ⌘-click: toggle an edge" : ""}${source ? ` · connector from ${source} — drop on a node or Esc` : ""}</div>
+      <div class="hint">drag: move (pins) · ${this.canWrite ? "⌘/Ctrl-drag, the ⟶ handle or c: connect · " : ""}e / ⊕⊖: expand${this.limit ? ` ${this.limit} per side` : ""} / collapse · u: unpin · Enter: open · arrows: select · wheel: zoom · drag canvas: pan · f: fit · +/-/0${this.edgeToggle ? " · ⌘-click: toggle an edge" : ""}${this.canWrite ? " · click an edge, then ✕ or Delete: remove it" : ""}${source ? ` · connector from ${source} — drop on a node or Esc` : ""}</div>
     `;
   }
 }

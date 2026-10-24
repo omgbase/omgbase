@@ -1,6 +1,8 @@
-// Creating a document from the palette: the starter body (`defaultMarkdown`),
-// the undoable `createDocumentCommand` over `@omgbase/client`'s command log,
-// and the one-line reading of the errors a create can hit (`creationError`).
+// Creating a document as a command on the log: the starter body
+// (`defaultMarkdown`), the undoable `createDocumentCommand`, and the one-line
+// reading of the errors a create can hit (`creationError`). Shared by every
+// Explorer that offers "create <path>" (repo-explorer's palette, graph-ui's
+// graph view).
 //
 // The command is one `apply` with a single `create` effect (spec/mutate §11.3:
 // a live document or a file at the path is `path_taken`), then a `docs_read`
@@ -10,13 +12,27 @@
 // `_raw` is no longer the bytes creation produced — someone edited it since —
 // and otherwise removes it.
 
-import { createDocument, OmgError, removeDocument, type DocsReadResult, type RepositoryCommand } from "@omgbase/client";
-import { fileStem } from "./palette.ts";
-import { rooted } from "./paths.ts";
+import { OmgError, type DocsReadResult } from "./client.js";
+import type { RepositoryCommand } from "./commands.js";
+import { createDocument, removeDocument } from "./effects.js";
+
+/** The `/`-rooted form of a path: exactly one leading slash, runs of `/` collapsed. Idempotent. */
+export function rootedPath(path: string): string {
+  return `/${path.replace(/\/{2,}/g, "/").replace(/^\/+/, "")}`;
+}
+
+/** A file extension: a dot then a letter-led run (`.md`, `.markdown`; not `.2` — `v1.2` is a name). */
+const EXTENSION = /\.[a-z][a-z0-9]*$/i;
+
+/** The file name without its extension (`/a/b.md` → `b`). */
+export function pathStem(path: string): string {
+  const base = path.slice(path.lastIndexOf("/") + 1);
+  return base.replace(EXTENSION, "");
+}
 
 /** The title a file name suggests: the stem with `-`/`_` as spaces, the first letter capitalised (`/a/dry-run_notes.md` → `Dry run notes`). */
 export function titleFromPath(path: string): string {
-  const words = fileStem(path).replace(/[-_]+/g, " ").trim();
+  const words = pathStem(path).replace(/[-_]+/g, " ").trim();
   return words.length === 0 ? "Untitled" : words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -49,7 +65,7 @@ export const REMOVE_CREATED_REASON = "remove the created document";
 
 /** Create a document at `path`. Undo removes it, unless it is gone or its bytes changed since. */
 export function createDocumentCommand(input: CreateDocumentInput): RepositoryCommand<CreatedState> {
-  const path = rooted(input.path);
+  const path = rootedPath(input.path);
   const markdown = input.markdown ?? defaultMarkdown(path);
   const repo = input.repo;
   return {

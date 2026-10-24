@@ -2,7 +2,7 @@
   "name": "@omgbase/elements",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base — reusable Lit elements for OMGbase explorers: <omg-graph> (a renderer-neutral graph model drawn as cards and obstacle-routed edges, with pins, springs, progressive expansion, a connector gesture and configurable card templates), shared by examples/repo-explorer and examples/graph-ui",
+  "description": "Open Markdown Graph Base — reusable Lit elements for OMGbase explorers: <omg-graph> (a renderer-neutral graph model drawn as cards and obstacle-routed edges, with pins, springs, progressive expansion, a connector gesture, edge selection and deletion, and configurable card templates), <omg-palette> (the keyboard-first find / action / create palette and its pure model) and <omg-relation-picker> (the connector's relation-kind popover), shared by examples/repo-explorer and examples/graph-ui",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   },
   "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.map", "!dist/**/*.tsbuildinfo"],
   "type": "module",
-  "sideEffects": ["./dist/src/omg-graph.js", "./dist/src/index.js"],
+  "sideEffects": ["./dist/src/omg-graph.js", "./dist/src/omg-palette.js", "./dist/src/omg-relation-picker.js", "./dist/src/index.js"],
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -30,6 +30,10 @@
     "./graph": {
       "import": "./dist/src/graph.js",
       "types": "./dist/src/graph.d.ts"
+    },
+    "./palette": {
+      "import": "./dist/src/palette.js",
+      "types": "./dist/src/palette.d.ts"
     }
   },
   "scripts": {

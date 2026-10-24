@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
-  applyRows, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchFields, fieldsQuery, neighborsOf, projectedFields, provenanceText, removeNode, setPin, titleOf, toView,
+  applyRows, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchFields, fieldsQuery, listFieldsOf, neighborsOf, projectedFields, provenanceText, removeNode, setPin, titleOf, toView,
   unfetched, withNeighborhood,
 } from "../src/lib/graph.ts";
 
@@ -235,5 +235,12 @@ describe("toView — the <omg-graph> adapter", () => {
     const v = toView(m);
     expect(v.nodes[1]).toMatchObject({ id: "https://example.com/docs/", kind: "external", expandable: false, row: { _url: "https://example.com/docs/", _title: "example.com/docs" }, tooltip: "https://example.com/docs/" });
     expect(v.edges[0]).toMatchObject({ kind: "external", style: "dashed", label: "→ https://example.com/docs/" });
+  });
+});
+
+describe("listFieldsOf", () => {
+  it("names the frontmatter fields holding a list of paths or a single path — the connector picker's extras", () => {
+    expect(listFieldsOf({ title: "A", tags: ["x", "y"], depends_on: ["/c.md", "/d.md"], parent: "/p.md", wiki: ["[[salt]]"], empty: [], mixed: ["/c.md", 3], count: 2, url: "https://example.com/x.md" })).toEqual(["depends_on", "parent", "wiki"]);
+    expect(listFieldsOf({})).toEqual([]);
   });
 });

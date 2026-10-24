@@ -13,7 +13,9 @@
 // or an inline `key:: /x.md` field — or `external` for a URL destination) and
 // keeps the field / block id / URL so the inspector can say exactly what the
 // line stands for (`provenanceText`). Rendered edges are not writable by
-// themselves — the connector's write side is lib/relations.ts.
+// themselves — the connector's write side is `@omgbase/client`'s
+// `attachRelationCommand` / `detachRelationCommand`; `listFieldsOf` names the
+// source document's own path-valued fields for the connector's picker.
 //
 // Expansion is bounded: `withNeighborhood` adds at most `limit` NEW neighbours
 // per direction (edges to nodes already in the model are free) and records the
@@ -29,7 +31,7 @@
 // the nodes still missing some of them. `_title` is always fetched (the
 // connector's link text and the card fallback); every other field is the card's.
 
-import type { Hit, OmgClient } from "@omgbase/client";
+import { isPathValue, type Hit, type OmgClient } from "@omgbase/client";
 import type { GraphViewEdge, GraphViewNode } from "@omgbase/elements/graph";
 import { inboundQuery, linkRowsOf, outboundQuery, wikiStem, type DocLinks, type LinkRow } from "./links.ts";
 import { rooted } from "./paths.ts";
@@ -281,6 +283,18 @@ export interface EdgeDetail {
   cardinality: number | null;
   /** Whether the link's storage is known precisely enough to write back (a URL destination is not). */
   addressable: boolean;
+}
+
+/** The frontmatter fields of a document that hold relations — a non-empty list of
+ * path strings (rooted `.md` paths or `[[wikilinks]]`), or a single such path — in
+ * frontmatter order. The connector's picker offers them beside the fields the
+ * rendered graph's edges already use (`relationKinds` in `@omgbase/client`). */
+export function listFieldsOf(frontmatter: Record<string, unknown> | null | undefined): string[] {
+  const out: string[] = [];
+  for (const [field, value] of Object.entries(frontmatter ?? {})) {
+    if (Array.isArray(value) ? value.length > 0 && value.every(isPathValue) : isPathValue(value)) out.push(field);
+  }
+  return out;
 }
 
 export function edgeDetail(model: GraphModel, edge: GraphEdge): EdgeDetail {

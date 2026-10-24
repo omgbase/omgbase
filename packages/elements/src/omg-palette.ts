@@ -1,8 +1,8 @@
-// <command-palette>: the keyboard-first palette as an overlay — a text input,
+// <omg-palette>: the keyboard-first palette as an overlay — a text input,
 // a results listbox and a key-hint footer over its own backdrop (no Shoelace
 // dialog). The element owns nothing but the cursor, the 120 ms debounce and
-// focus; the page owns the text's meaning (lib/palette.ts), runs the query and
-// feeds `items` back. Two modes: `navigate` (Enter opens a document, runs an
+// focus; the host app owns the text's meaning (./palette.ts), runs the query
+// and feeds `items` back — the element never talks to a server. Two modes: `navigate` (Enter opens a document, runs an
 // action or creates) and `pick` (Enter emits the chosen item for the page to
 // use as a destination — the graph's find-or-create, without losing its
 // source node or viewport). The global shortcut (⌘K) is the page's.
@@ -19,7 +19,7 @@
 
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
-import { isStepKey, stepIndex, type PaletteItem } from "../lib/palette.ts";
+import { isStepKey, stepIndex, type PaletteItem } from "./palette.js";
 
 export interface PaletteSearchDetail { text: string }
 export interface PaletteOpenDocDetail { path: string }
@@ -31,8 +31,8 @@ export type PaletteMode = "navigate" | "pick";
 
 export const SEARCH_DEBOUNCE_MS = 120;
 
-@customElement("command-palette")
-export class CommandPalette extends LitElement {
+@customElement("omg-palette")
+export class OmgPalette extends LitElement {
   static override styles = css`
     :host { display: contents; font: 13px/1.5 system-ui, sans-serif; color: #1e2430; }
     .backdrop { position: fixed; inset: 0; background: rgba(20, 24, 32, 0.35); z-index: 1000; }
@@ -252,5 +252,5 @@ export class CommandPalette extends LitElement {
 }
 
 declare global {
-  interface HTMLElementTagNameMap { "command-palette": CommandPalette }
+  interface HTMLElementTagNameMap { "omg-palette": OmgPalette }
 }

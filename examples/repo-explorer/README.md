@@ -11,8 +11,10 @@ committed with `execute`, task checkboxes that write back (a click is one
 `apply` pinned to the block's hash), and a **graph** tab: the document's
 neighbourhood over the `links` collection, expanded node by node, with drag to
 pin, spring settling on unpin, and a ⌘-drag connector that writes a relation —
-into a frontmatter field or as a body link, the user's choice, never the
-page's. Every write is a command on the shared `@omgbase/client` `CommandLog`:
+a picker over the relation kinds the rendered graph already uses (its edges'
+frontmatter fields, the source's own list fields, a body link), always
+additive; a selected edge's ✕ (or Delete) severs one. Every write is a command
+on the shared `@omgbase/client` `CommandLog`:
 undo / redo (⌘Z / ⇧⌘Z) is a compensating `apply` computed against the
 repository's CURRENT state and refused when what the command wrote moved on.
 
@@ -109,8 +111,9 @@ is browsed.
 | palette: find (⌘K) | `query` | `docs { select _id, _path, _title where (_path ~* "<term>" or _title ~* "<term>") and (…) order by _path limit 20 }` — one group per whitespace-separated term, regex-escaped (the OQX baseline treats `/` and `-` as metacharacters too) and JSON-quoted; empty text lists the first 20 by path; the hits are ranked in the browser (title prefix > title contains > path segment prefix > path contains) |
 | palette: create (`+path`, or the suggestion when nothing matches) | `apply`, then `docs_read` | `apply { effects: [{ op: "create", path: "<path>", markdown: "# <Title>\n" }], reason: "create document" }` → the Receipt; `docs_read { _path }` for the created bytes and `rev` (the undo's guard); a bare name lands in the open document's folder, `.md` is appended; `path_taken` → *a document (or a file) already exists at …* |
 | graph tab: the neighbourhood | `query` | the two `links` queries above for the expanded document, then one `docs { select _path, _title where _path in ("/a.md", "/b.md") }` for the titles the model lacks; 12 neighbours per direction, the rest a "+k more" badge; ⊕ expands a node (the same two queries) |
-| graph tab: a connector dropped on a document | `docs_read`, then `apply` | `docs_read { _path: <from> }` → the source's frontmatter → the chooser: every list field of paths (*append*), every scalar path field (*turn into a list* or *replace*, said plainly), *a new list field* (named by the user), *a body link*; then ONE `apply` — `{ op: "set", target: "<from>", field: "_frontmatter.<field>", value: [...], expect: { revision: "<rev>" } }` or `{ op: "insert", into: "<from>", at: "end", markdown: "[<title>](<to>)" }` — then the source re-read and its neighbourhood rebuilt |
-| graph tab: a connector dropped on open canvas | (the palette) | the palette in pick mode (*connect /a.md to…*): a document picked, or created as above, then the chooser |
+| graph tab: a connector dropped on a document | `docs_read`, then `apply` | `docs_read { _path: <from> }` → the source's frontmatter → the picker (`<omg-relation-picker>` at the drop point): the frontmatter fields the RENDERED edges use (by frequency, with their counts), the source's own list-of-paths fields, *a link in the body*, *new field…*; the pick is the gesture — `attachRelationCommand` re-reads the source and sends ONE additive `apply`: `{ op: "set", target: "<from>", field: "_frontmatter.<field>", value: [...existing, "<to>"], expect: { revision: "<rev>" } }` (an absent field becomes `["<to>"]`, a scalar path `[<scalar>, "<to>"]`; already present → *already related*, nothing written; a non-path scalar is refused) or `{ op: "insert", into: "<from>", at: "end", markdown: "[<title>](<to>)" }` — then the source re-read and its neighbourhood rebuilt |
+| graph tab: a connector dropped on open canvas | (the palette) | the palette in pick mode (*connect /a.md to…*): a document picked, or created as above, then the picker |
+| graph tab: a selected edge's ✕ (or Delete / Backspace) | `docs_read` or `query`, then `apply` | `detachRelationCommand`: a frontmatter edge → `docs_read { _path: <from> }` then `{ op: "set", …, value: <the list without "<to>">, expect: { revision } }` (`unset` when that empties it); a body edge → `blocks { select _raw, _hash where _id == "<block id>" }` then `{ op: "remove", targets: [{ kind: "block", _id }], expect: { "<id>": { content_hash } } }` (undo re-inserts the block's source at the end of the document); an external edge is not deletable here |
 | an `_id` cell clicked | `query` | `blocks { select _path where _id == "b_…" }` (nodes/links likewise), `revisions { select _path, _doc_id where _rev == "r_…" }` — then the document opens (a `d_…` id needs no query) |
 | history (per document) | `query` | `revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc_id == "<id>" order by _seq desc }` |
 | time travel + diff | `docs_read` | `{ _id: "<id>", at: "<rev>" }` → `_raw`; the unified diff against the current body is computed in the browser (`src/lib/diff.ts`) |
@@ -124,7 +127,7 @@ Not used, on either profile: `docs_history`, `docs_diff_unified`,
 `docs_read_at`, `docs_list`, `docs_set_meta`, `blocks_check`, `blocks_update`,
 `blocks_resolve` — the same code path runs under `--tools minimal` and
 `--tools full`. `apply` is used where a click is its own confirmation — a task
-toggle, a create from the palette, a relation the chooser confirmed, every
+toggle, a create from the palette, a relation the picker chose or an edge's ✕ severed, every
 undo — one guarded effect each; a frontmatter edit goes through `plan` →
 `execute` for its preview, and its commit is a log entry too.
 `test/minimal-profile.test.ts` runs every data path above against a scripted
@@ -204,9 +207,11 @@ frontmatter edits (`frontmatterPlanCommand`, `src/lib/writes.ts`: the confirmed
 plan commits in the digest form; the undo restores the key's previous value —
 or unsets a key the edit created — pinned to the document's current revision,
 refused when the key no longer holds what the edit wrote), the created
-documents (`createDocumentCommand`, `src/lib/create.ts`: removed on undo unless
-edited since), the relations (`attachRelationCommand`, `src/lib/relations.ts`)
-and the graph's pins and expansions (local commands: restore the model).
+documents (`createDocumentCommand`, `@omgbase/client`: removed on undo unless
+edited since), the relations (`attachRelationCommand` / `detachRelationCommand`,
+`@omgbase/client`: the field restored pinned to the current revision, refused
+when it moved on; a removed body link's block re-inserted at the end) and the
+graph's pins and expansions (local commands: restore the model).
 
 ### What the minimal profile made awkward (product feedback)
 
@@ -371,11 +376,19 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    curve's tangent; a route change eases over ~150 ms instead of flipping —
    a side change glides through a straight line; a frame over 4 ms of routing
    falls back to every other tick while the layout is hot; the toolbar's `⤳ edges / → edges` toggles to
-   straight); on a document it opens the chooser — where the relation is
-   written is always the user's call — on open canvas the palette picks or
-   creates the destination first. Edges show their provenance on
-   hover (the frontmatter field, the block of a body link, the URL of an
-   external one); rendered edges are not writable by dragging. **Cards** are a
+   straight); on a document it opens the picker at the drop point — the
+   relation kinds the RENDERED graph already uses (the frontmatter fields of
+   its edges by frequency, the source's own list-of-paths fields, a body
+   link, or a new field named inline) — and the pick is the write, always
+   additive (a list gains the destination, a scalar path becomes a list,
+   nothing is replaced; *already related* fails before writing); on open
+   canvas the palette picks or creates the destination first. Edges show
+   their provenance on hover (the frontmatter field, the block of a body
+   link, the URL of an external one); a click selects an edge, and its ✕ (or
+   Delete / Backspace) severs the relation — the field entry removed (the
+   field unset when that empties it) or the body link's block removed by its
+   hash — as an undoable command; an external edge is not deletable here.
+   **Cards** are a
    template over each node's projected row: the toolbar's `card` input
    (default `{card|_title}`; `{a|b}` is a fallback chain, a line whose fields
    are all absent is dropped, a second line is a detail line), a `card:`
@@ -406,10 +419,12 @@ call once, noting *session expired at the server — reconnected* in the header.
   strip, the task checkboxes' `change` → `task-toggle`, the undo/redo buttons
   and ⌘Z → `log-undo` / `log-redo`), `links-panel`, `query-console` (textarea,
   table, hints, errors, the syntax drawer), `history-panel` (the revision list,
-  unified diff or side by side), `feed-strip`, `command-palette` (the overlay:
-  combobox + listbox, the keys, pick mode). The graph is `<omg-graph>` from
-  `@omgbase/elements` (SVG + d3-force: cards from templates or a `renderCard`
-  hook, obstacle-routed edges, pins, the connector, zoom/pan, the keyboard).
+  unified diff or side by side), `feed-strip`. The palette is `<omg-palette>`
+  (the overlay: combobox + listbox, the keys, pick mode), the connector's
+  picker `<omg-relation-picker>`, and the graph `<omg-graph>` (SVG + d3-force:
+  cards from templates or a `renderCard` hook, obstacle-routed edges, pins,
+  the connector, edge selection and its ✕, zoom/pan, the keyboard) — all three
+  from `@omgbase/elements`, shared with graph-ui.
 - `src/lib/mcp-client.ts` — the shared `@omgbase/client` re-exported
   (`OmgClient`: one tool call, the JSON-text envelope, session recovery,
   `unknown tool` → `OmgError("unknown_tool")`), plus this page's own: the
@@ -418,17 +433,19 @@ call once, noting *session expired at the server — reconnected* in the header.
 - `src/lib/tasks.ts` — the task marker, `setCheckedEffect` (the CAS-pinned
   `set _attrs.checked`), `taskDisabledReason`, the moved-on codes; pure. The
   toggle's command is `@omgbase/client`'s `taskCheckCommand`.
-- `src/lib/palette.ts` — the palette's input modes, the find query, ranking,
-  action matching, `newDocumentPath`, the cursor; `src/lib/create.ts` —
-  `createDocumentCommand`, `defaultMarkdown`, `creationError`.
+- The palette's pure side (input modes, the find query, ranking, action
+  matching, `newDocumentPath`, the cursor) is `@omgbase/elements/palette`; the
+  create command (`createDocumentCommand`, `defaultMarkdown`, `creationError`)
+  and the relation commands (`relationKinds`, `attachRelationCommand`,
+  `detachRelationCommand`, `describeRelation` / `describeDetach`) are
+  `@omgbase/client` — shared with graph-ui.
 - `src/lib/graph.ts` — the neighbourhood model (`withNeighborhood`,
   `collapseNode`, pins, `fieldsQuery` / `fetchFields` for the rows the cards
-  read, provenance text) and `toView` (the model as the element's nodes and
-  edges); `src/lib/cards.ts` — the card settings (the default template, the
+  read, provenance text), `listFieldsOf` (the source's own path-valued fields,
+  for the connector's picker) and `toView` (the model as the element's nodes
+  and edges); `src/lib/cards.ts` — the card settings (the default template, the
   "vary by" field and its per-value templates); `src/lib/graph-commands.ts` — pin /
-  unpin / expand as local commands; `src/lib/relations.ts` — `relationChoices`,
-  `describeRelation`, `attachRelationCommand` (frontmatter kinds guarded by the
-  revision, the body link by the inserted block's hash).
+  unpin / expand as local commands.
 - `src/lib/tools.ts` — `MINIMAL_TOOLS`, `capabilities`, the missing-tools banner.
 - `src/lib/tree.ts` — `docs_tree` shapes, `fetchLevel` (follows the cursor), labels.
 - `src/lib/document.ts` — `docs_read` / `docs_read { at }` shapes, `fetchDocument`,
@@ -461,16 +478,15 @@ call once, noting *session expired at the server — reconnected* in the header.
   tasks (the marker, the CAS-pinned effect, the gate reasons, the moved-on
   codes; task items rendered enabled / disabled / nested / not-a-task), the
   frontmatter plan command (the digest-form execute, the restore, the refusal),
-  the palette (modes, the find query's escaping, ranking tiers, action
-  matching, `newDocumentPath`, the cursor) and the create command, the graph
-  model (bounds, dedup, pins, the fields query, the view adapter), the card
-  settings, the pin/unpin/expand commands
-  through a real `CommandLog` (coalescing), the relations (the choices over
-  frontmatter shapes, each write's exact effect and guard, every refusal), the
-  the route, the dev arguments and the stand-in — 187 tests, no live server.
-  The client's session recovery and `unknown tool` mapping are tested in
-  `packages/client`; the graph geometry, routing, easing, label fit and card
-  templates in `packages/elements`.
+  the graph model (bounds, dedup, pins, the fields query, `listFieldsOf`, the
+  view adapter), the card settings, the pin/unpin/expand commands through a
+  real `CommandLog` (coalescing), the route, the dev arguments and the
+  stand-in — 134 tests, no live server. The client's session recovery and
+  `unknown tool` mapping, the create command and the relation commands (every
+  additive write's exact effect and guard, every refusal, both detaches, every
+  compensation) are tested in `packages/client`; the palette's model, the
+  graph geometry, routing, easing, label fit and card templates in
+  `packages/elements`.
 
 ## Verified against the real stack
 

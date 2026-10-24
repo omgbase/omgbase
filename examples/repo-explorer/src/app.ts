@@ -34,20 +34,23 @@ import "./elements/links-panel.ts";
 import "./elements/query-console.ts";
 import "./elements/history-panel.ts";
 import "./elements/feed-strip.ts";
-import "./elements/command-palette.ts";
 import "@omgbase/elements";
-import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphIdDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "@omgbase/elements";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, invalidateFields, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import type {
+  GraphConnectDetail, GraphConnectEmptyDetail, GraphEdgeDeleteDetail, GraphEdgeSelectDetail, GraphIdDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail,
+  PaletteAction, PaletteItem, RelationKindItem, RelationPickDetail,
+} from "@omgbase/elements";
+import { findQuery, itemsFor, parseInput } from "@omgbase/elements/palette";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, invalidateFields, listFieldsOf, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
 import { CARDS_KEY, CARD_KEY, DEFAULT_CARD, allCardFields, computedFields, parseCardSettings, serializeCardSettings, templateFor, valuesPresent, type CardSettings } from "./lib/cards.ts";
 import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
-import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
 import type { DocViewMode, OpenDocDetail, OpenWikiDetail, TaskPending, TaskToggleDetail, ViewChangeDetail, WritePlanDetail } from "./elements/doc-view.ts";
 import type { ConsoleOpenDetail, ConsoleRunDetail } from "./elements/query-console.ts";
 import type { HistorySelectDetail } from "./elements/history-panel.ts";
-import { findQuery, itemsFor, parseInput, type PaletteAction, type PaletteItem } from "./lib/palette.ts";
-import { createDocumentCommand, creationError, defaultMarkdown } from "./lib/create.ts";
-import { CommandLog, taskCheckCommand, type HistoryEntry } from "@omgbase/client";
+import {
+  CommandLog, attachRelationCommand, createDocumentCommand, creationError, defaultMarkdown, describeDetach, describeRelation, detachRelationCommand, fieldCounts, relationKinds, taskCheckCommand,
+  type HistoryEntry, type RelationKind,
+} from "@omgbase/client";
 import { OmgClient, OmgError, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
 import { MOVED_ON_MESSAGE, isMovedOn } from "./lib/tasks.ts";
 import { docLocator, profileOf, surfaceOf, surfaceProblem } from "./lib/paths.ts";
@@ -168,8 +171,10 @@ const graph = signal<GraphModel | null>(null);
 const graphSelected = signal<string | null>(null);
 const graphBusy = signal(false);
 const graphError = signal<string | null>(null);
-/** A connector in progress: its source and destination, and the ways the relation could be written. */
-const connectPending = signal<{ from: string; to: string; toTitle: string | null; choices: RelationChoice[]; chosen: number; newField: string } | null>(null);
+/** A connector in progress: its source and destination, the relation kinds the rendered graph offers (the picker's rows) and where to show the picker (the drop point). */
+const relationPick = signal<{ from: string; to: string; toTitle: string | null; kinds: RelationKindItem[]; anchor: { x: number; y: number } | null } | null>(null);
+/** The edge selected in the graph (`graph-edge-select`), by its model key; its ✕ or Delete severs it. */
+const graphSelectedEdge = signal<string | null>(null);
 const graphModel: ModelAccessor = { get: () => graph.get() ?? emptyModel("/"), set: (m) => graph.set(m) };
 /** The card templates (`<omg-graph>`'s template language): a default, optionally varied by a row field of the user's choosing, persisted as JSON (lib/cards.ts). */
 const graphCards = signal<CardSettings>(parseCardSettings(localStorage.getItem(CARDS_KEY)));
@@ -268,7 +273,7 @@ async function loadDocument(path: string): Promise<void> {
   at.set(null);
   pendingPlan.set(null);
   writeMessage.set(null);
-  if (graph.get()?.root !== path) { graph.set(null); connectPending.set(null); }
+  if (graph.get()?.root !== path) { graph.set(null); relationPick.set(null); graphSelectedEdge.set(null); }
   try {
     const d = await fetchDocument(client, docLocator(path), repoArgValue.get());
     if (gen !== docGeneration) return;
@@ -758,7 +763,8 @@ async function loadGraph(path: string): Promise<void> {
   const gen = ++graphGeneration;
   graphBusy.set(true);
   graphError.set(null);
-  connectPending.set(null);
+  relationPick.set(null);
+  graphSelectedEdge.set(null);
   try {
     const m = await expanded(emptyModel(path), path);
     if (gen !== graphGeneration) return;
@@ -803,56 +809,106 @@ async function pinGraphNode(d: GraphPinDetail): Promise<void> {
   log.seal();
 }
 
-/** A connector landed on a document: read the source's frontmatter and ask where the relation should be written. */
-async function startConnect(from: string, to: string): Promise<void> {
+/** A connector landed on a document (or the palette picked one): the relation
+ * kinds the RENDERED graph already uses — the frontmatter fields of its edges by
+ * frequency, then the source's own list-of-paths fields (one `docs_read`), then
+ * the body link — offered in a picker at the drop point. Nothing is written yet. */
+async function startConnect(from: string, to: string, anchor: { x: number; y: number } | null = null): Promise<void> {
   if (!canApply.get() || from === to) return;
   graphError.set(null);
   try {
     const d = await client.docsRead({ _path: from }, { repo: repoArgValue.get() });
-    const choices = relationChoices({ frontmatter: d.properties.frontmatter ?? {} }, to);
-    const toNode = graph.get()?.nodes.get(to);
+    const m = graph.get();
+    const edges = m ? [...m.edges.values()] : [];
+    const counts = fieldCounts(edges);
+    const kinds = relationKinds(edges, listFieldsOf(d.properties.frontmatter)).map((k): RelationKindItem =>
+      k.kind === "frontmatter"
+        ? { kind: "frontmatter", field: k.field, label: `add to \`${k.field}\``, ...(counts.has(k.field) ? { count: counts.get(k.field)! } : {}) }
+        : { kind: "body-link", label: "a link in the body" });
+    const toNode = m?.nodes.get(to);
     const toTitle = toNode && typeof toNode.row._title === "string" ? toNode.row._title : null;
-    connectPending.set({ from, to, toTitle, choices, chosen: 0, newField: "" });
+    relationPick.set({ from, to, toTitle, kinds, anchor });
   } catch (e) {
     graphError.set(describe(e));
   }
 }
 
-/** A connector dropped on open canvas: the palette picks (or creates) the destination, then the chooser. */
-async function connectToPicked(from: string): Promise<void> {
+/** A connector dropped on open canvas: the palette picks (or creates) the destination, then the picker. */
+async function connectToPicked(from: string, anchor: { x: number; y: number } | null = null): Promise<void> {
   const item = await pickDestination(`connect ${from} to…`);
   if (!item) return;
-  if (item.kind === "doc") { void startConnect(from, item.path); return; }
+  if (item.kind === "doc") { void startConnect(from, item.path, anchor); return; }
   if (item.kind === "create") {
     const entry = await log.run(createDocumentCommand({ path: item.path, markdown: defaultMarkdown(item.path), repo: repoArgValue.get() }));
     if (entry.state !== "applied") { graphError.set(creationError(entry.error, item.path)); return; }
     refreshLevels([item.path]);
-    void startConnect(from, item.path);
+    void startConnect(from, item.path, anchor);
   }
 }
 
-/** The chosen way, confirmed: ONE write as a command on the log, then the source's neighbourhood re-read. */
-async function confirmConnect(): Promise<void> {
-  const c = connectPending.get();
+/** A relation command's error in one line: the engine's code and message (a stale guard says what to do), else the command's own refusal. */
+function relationError(e: unknown): string {
+  if (e instanceof OmgError) { const info = describeToolError(e); return `${info.code}: ${info.message}${isMovedOn(e) ? ` — ${MOVED_ON_MESSAGE}` : ""}`; }
+  return describe(e);
+}
+
+/** After a relation write: the open document re-read, then the source's neighbourhood re-read into the model (the edge is authored — or gone — now). */
+async function rebuildAround(path: string): Promise<void> {
+  await rereadAfterWrite(path);
+  const before = graph.get();
+  if (before) graph.set(await expanded(before, path));
+}
+
+/** A relation kind picked: ONE additive write as a command on the log (the list
+ * gains the destination; a scalar path becomes a list; nothing is replaced —
+ * "already related" and a non-path scalar fail before writing), then the source's
+ * neighbourhood re-read. */
+async function attachPicked(item: RelationKindItem): Promise<void> {
+  const c = relationPick.get();
   if (!c) return;
-  let how = c.choices[c.chosen];
-  if (!how) return;
-  if (how.kind === "frontmatter-new") how = { kind: "frontmatter-new", field: c.newField.trim() };
+  const how: RelationKind = item.kind === "frontmatter" ? { kind: "frontmatter", field: (item.field ?? "").trim() } : { kind: "body-link" };
+  if (how.kind === "frontmatter" && how.field === "") { graphError.set("the new frontmatter field needs a name"); return; }
+  relationPick.set(null);
   graphBusy.set(true);
   graphError.set(null);
   try {
     const entry = await log.run(attachRelationCommand({ from: c.from, to: c.to, toTitle: c.toTitle, how, repo: repoArgValue.get() }));
     if (entry.state !== "applied") throw entry.error;
-    connectPending.set(null);
     const receipt = entry.steps[0]?.applied?.receipts[0];
     writeMessage.set({ kind: "info", text: `${entry.label}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with the button or ⌘Z` });
-    await rereadAfterWrite(c.from);
-    // The edge is authored now: re-read the source's neighbourhood into the model.
-    const before = graph.get();
-    if (before) graph.set(await expanded(before, c.from));
+    await rebuildAround(c.from);
   } catch (e) {
-    const info = describeToolError(e);
-    graphError.set(`${info.code}: ${info.message}`);
+    graphError.set(`${describeRelation(how, c.from, c.to)} failed — ${relationError(e)}`);
+  } finally {
+    graphBusy.set(false);
+  }
+}
+
+/** ✕ on the selected edge, or Delete / Backspace: the sever — the frontmatter
+ * field without the destination (unset when that empties it) or the body link's
+ * block removed by its hash — as a command on the log, then the source re-read.
+ * An external edge (a URL destination) is not deletable from the graph. */
+async function deleteGraphEdge(key: string): Promise<void> {
+  const m = graph.get();
+  const edge = m?.edges.get(key);
+  if (!m || !edge || !canApply.get() || graphBusy.get()) return;
+  graphError.set(null);
+  if (edge.provenance === "external") { graphError.set(`${edge.from} → ${edge.uri ?? edge.to} is an external link; it is not deletable from the graph — edit the document`); return; }
+  const how: RelationKind = edge.provenance === "frontmatter" && edge.field ? { kind: "frontmatter", field: edge.field } : { kind: "body-link" };
+  if (how.kind === "body-link" && !edge.blockId) { graphError.set(`${edge.from} → ${edge.to}: the body link's block is unknown; it is not deletable from the graph`); return; }
+  graphBusy.set(true);
+  try {
+    const entry = await log.run(detachRelationCommand({ from: edge.from, to: edge.to, how, blockId: edge.blockId, repo: repoArgValue.get() }));
+    if (entry.state !== "applied") throw entry.error;
+    graphSelectedEdge.set(null);
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    writeMessage.set({ kind: "info", text: `${entry.label}${how.kind === "body-link" ? " (its block)" : ""}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with the button or ⌘Z` });
+    // The edge is gone from the repository: drop it from the model before the neighbourhood is re-read (a re-read only adds).
+    const before = graph.get();
+    if (before) graph.set({ ...before, edges: new Map([...before.edges].filter(([k]) => k !== key)) });
+    await rebuildAround(edge.from);
+  } catch (e) {
+    graphError.set(`${describeDetach(how, edge.from, edge.to)} failed — ${relationError(e)}`);
   } finally {
     graphBusy.set(false);
   }
@@ -1053,15 +1109,6 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     .graph-tools .per-type code { font-size: 11.5px; color: #5a6270; }
     .graph-tools .per-type input { width: 100%; box-sizing: border-box; }
     .graph-hint { font-size: 12px; color: #8a94a6; }
-    .connect { padding: 8px 10px; border: 1px solid #ffe082; background: #fff8e1; border-radius: 6px; font-size: 12.5px; color: #6d4c00; display: flex; flex-direction: column; gap: 4px; }
-    .connect .title code, .connect .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .connect .choice { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .connect .note { color: #b26a00; font-size: 11.5px; }
-    .connect input.field { font: inherit; font-size: 12.5px; padding: 1px 6px; border: 1px solid #c9cdd6; border-radius: 4px; width: 12em; }
-    .connect .row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
-    .connect button { font: inherit; font-size: 12.5px; padding: 2px 10px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; }
-    .connect button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
-    .connect .hint { color: #8a94a6; font-size: 11.5px; }
     .deleted h2 { font-size: 16px; margin: 0 0 8px; }
     .deleted .query { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8a94a6; margin-bottom: 8px; }
     .deleted table { border-collapse: collapse; font-size: 12.5px; }
@@ -1112,24 +1159,12 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     </div>`;
   }
 
-  /** The chooser a connector opens: where the relation is written is the user's call, never the page's. */
-  private renderConnect() {
-    const c = connectPending.get();
-    if (!c) return nothing;
-    return html`<div class="connect" data-connect>
-      <div class="title">connect <code>${c.from}</code> → <code>${c.to}</code> — where should it be written?</div>
-      ${c.choices.map((how, i) => html`<label class="choice">
-        <input type="radio" name="how" .checked=${i === c.chosen} @change=${() => connectPending.set({ ...c, chosen: i })}>
-        <span>${describeRelation(how.kind === "frontmatter-new" ? { kind: "frontmatter-new", field: c.newField.trim() || "<field>" } : how, c.from, c.to)}</span>
-        ${how.kind === "frontmatter" && how.note ? html`<span class="note">${how.note}</span>` : nothing}
-        ${how.kind === "frontmatter-new" ? html`<input class="field" placeholder="field name" .value=${c.newField} @input=${(e: Event) => connectPending.set({ ...c, newField: (e.target as HTMLInputElement).value })} @focus=${() => connectPending.set({ ...c, chosen: i })}>` : nothing}
-      </label>`)}
-      <div class="row">
-        <button type="button" class="primary" ?disabled=${graphBusy.get() || (c.choices[c.chosen]?.kind === "frontmatter-new" && !c.newField.trim())} @click=${() => { void confirmConnect(); }}>apply</button>
-        <button type="button" ?disabled=${graphBusy.get()} @click=${() => connectPending.set(null)}>cancel</button>
-        <span class="hint">one <code>apply</code>, pinned to the document's revision; undo restores the field (refused when it moved on)</span>
-      </div>
-    </div>`;
+  /** The connector's picker (`<omg-relation-picker>`, anchored at the drop point): WHICH relation is from → to, from the kinds the rendered graph uses; picking is the whole gesture. */
+  private renderRelationPicker() {
+    const c = relationPick.get();
+    return html`<omg-relation-picker ?open=${c !== null} .kinds=${c?.kinds ?? []} .from=${c?.from ?? ""} .to=${c?.to ?? ""} allowNew .anchor=${c?.anchor ?? null}
+      @relation-pick=${(e: CustomEvent<RelationPickDetail>) => { void attachPicked(e.detail.item); }}
+      @relation-cancel=${() => relationPick.set(null)}></omg-relation-picker>`;
   }
 
   /** The card control: the default template, the field the cards vary by (the user's — empty is off), and one template per value present. */
@@ -1161,10 +1196,9 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     const cards = graphCards.get();
     const view = m ? toView(m) : null;
     return html`<div class="graph">
-      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} · card: ${cards.default}${cards.by ? ` · vary by ${cards.by.field} (+${Object.keys(cards.by.templates).length})` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
+      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} · card: ${cards.default}${cards.by ? ` · vary by ${cards.by.field} (+${Object.keys(cards.by.templates).length})` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? ", a selected edge's ✕ or Delete removes it" : " (read-only: no apply)"}, double-click opens</div>
       ${this.renderGraphTools(m)}
       ${graphError.get() ? html`<div class="err">${graphError.get()}</div>` : nothing}
-      ${this.renderConnect()}
       ${view ? html`<omg-graph .nodes=${view.nodes} .edges=${view.edges} .card=${cards.default} .renderCard=${(node: { row: Record<string, unknown> }) => templateFor(cards, node.row)} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
         @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.id)}
         @graph-open=${(e: CustomEvent<GraphIdDetail>) => openDoc(e.detail.id)}
@@ -1172,8 +1206,11 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         @graph-collapse=${(e: CustomEvent<GraphIdDetail>) => { void collapseGraph(e.detail.id); }}
         @graph-pin=${(e: CustomEvent<GraphPinDetail>) => { void pinGraphNode(e.detail); }}
         @graph-unpin=${(e: CustomEvent<GraphUnpinDetail>) => { void log.run(unpinCommand(graphModel, e.detail.id, e.detail.previous)); }}
-        @graph-connect=${(e: CustomEvent<GraphConnectDetail>) => { void startConnect(e.detail.from, e.detail.to); }}
-        @graph-connect-empty=${(e: CustomEvent<GraphConnectEmptyDetail>) => { void connectToPicked(e.detail.from); }}></omg-graph>` : nothing}
+        @graph-connect=${(e: CustomEvent<GraphConnectDetail>) => { void startConnect(e.detail.from, e.detail.to, { x: e.detail.clientX, y: e.detail.clientY }); }}
+        @graph-connect-empty=${(e: CustomEvent<GraphConnectEmptyDetail>) => { void connectToPicked(e.detail.from, { x: e.detail.clientX, y: e.detail.clientY }); }}
+        @graph-edge-select=${(e: CustomEvent<GraphEdgeSelectDetail>) => graphSelectedEdge.set(e.detail.key)}
+        @graph-edge-delete=${(e: CustomEvent<GraphEdgeDeleteDetail>) => { void deleteGraphEdge(e.detail.key); }}></omg-graph>` : nothing}
+      ${this.renderRelationPicker()}
     </div>`;
   }
 
@@ -1245,13 +1282,13 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         <button type="button" title="find a document, run an action, create one (⌘K / Ctrl+K)" ?disabled=${state !== "ok"} @click=${() => openPalette()}>⌘K</button>
         <button type="button" ?disabled=${state === "connecting"} @click=${() => { void connect(); }}>reconnect</button>
       </header>
-      <command-palette ?open=${paletteOpen.get()} .text=${paletteText.get()} .items=${paletteItems.get()} ?loading=${paletteLoading.get()} .error=${paletteError.get()} .mode=${paletteMode.get()} .heading=${paletteHeading.get()}
+      <omg-palette ?open=${paletteOpen.get()} .text=${paletteText.get()} .items=${paletteItems.get()} ?loading=${paletteLoading.get()} .error=${paletteError.get()} .mode=${paletteMode.get()} .heading=${paletteHeading.get()}
         @palette-search=${(e: CustomEvent<{ text: string }>) => { void paletteSearch(e.detail.text); }}
         @palette-open-doc=${(e: CustomEvent<{ path: string }>) => onPaletteSelect({ kind: "doc", id: "", path: e.detail.path, title: "" })}
         @palette-action=${(e: CustomEvent<{ id: string }>) => runPaletteAction(e.detail.id)}
         @palette-create=${(e: CustomEvent<{ path: string }>) => { void createDocument(e.detail.path); }}
         @palette-pick=${(e: CustomEvent<{ item: PaletteItem }>) => onPaletteSelect(e.detail.item)}
-        @palette-close=${() => closePalette()}></command-palette>
+        @palette-close=${() => closePalette()}></omg-palette>
       ${missing ? html`<div class="banner">${missing}</div>` : nothing}
       <div class="strip">
         <feed-strip .entries=${feed.get()} ?live=${feedLive.get()} ?polling=${feedPolling.get()} .pollSeconds=${pollSeconds.get()} .error=${feedError.get()} .cursor=${feedCursor.get()}

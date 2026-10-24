@@ -3,3 +3,5 @@
 export * from "./client.js";
 export * from "./effects.js";
 export * from "./commands.js";
+export * from "./commands-documents.js";
+export * from "./commands-relations.js";

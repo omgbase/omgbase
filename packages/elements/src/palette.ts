@@ -4,8 +4,9 @@
 // match over the page's actions (`filterActions`), the "create <path>"
 // suggestion and the path it would create (`newDocumentPath`), the ordered
 // item list per mode (`itemsFor`) and the wrap-around cursor (`stepIndex`).
-// Nothing here touches the DOM or the client; the element renders what this
-// module decides and the page runs the query.
+// Nothing here touches the DOM or the client; `<omg-palette>` renders what this
+// module decides and the host app runs the query. Shared by repo-explorer and
+// graph-ui (`@omgbase/elements/palette`).
 //
 // Three modes, by the input's first characters:
 //   find     `calc`, `proc calc`   documents whose path or title matches every term
@@ -20,7 +21,19 @@
 // set — which, unlike JavaScript's, includes `/` and `-` (both are
 // metacharacters there and must be escaped when literal).
 
-import { dirOf, rooted } from "./paths.ts";
+// ---- paths ----------------------------------------------------------------------
+
+/** The `/`-rooted form: exactly one leading slash. Idempotent. */
+export function rooted(path: string): string {
+  return `/${path.replace(/^\/+/, "")}`;
+}
+
+/** The directory prefix of a rooted document path, rooted and `/`-terminated (`/a/b.md` → `/a/`; `/x.md` → `/`). */
+export function dirOf(path: string): string {
+  const p = rooted(path);
+  const i = p.lastIndexOf("/");
+  return p.slice(0, i + 1);
+}
 
 // ---- the input ----------------------------------------------------------------
 
