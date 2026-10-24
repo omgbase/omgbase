@@ -815,7 +815,8 @@ into the picker and this module becomes the fallback.
    resolution, so rule 1 still reads `refs(calls)` as the candidate `calls`; a
    frontmatter candidate whose name is a top-level select alias — not a bare
    read of the stored field of the same name (`select before`) — is marked
-   `projected`. There are no link rows behind it, so its edges are not fetched
+   `projected` (whether the walk is `follow refs(calls)` over a list of paths or
+   the bare `follow calls` over the projected rows themselves). There are no link rows behind it, so its edges are not fetched
    with `links { … }`: they are read off the shown rows' own values
    (`edgesFromValues` in `src/lib/edges.ts` — a path, a list of paths, or rows
    that surfaced as values; only edges between shown nodes, never a self-edge),

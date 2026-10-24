@@ -573,6 +573,17 @@ describe("projected relationships (rule 7)", () => {
     expect(calls[0]!.sources).toEqual(expect.arrayContaining(["follow", "inferred"]));
   });
 
+  it("reads the bare destination `follow calls` (oqx 0.27 follows the alias itself) the same way, whether it projects paths or rows", () => {
+    const paths = `docs { select _path, calls: ^docs { select target values where origin == ^_path } where _path == "/a.md" follow calls }`;
+    const rows = `docs { select _path, calls: ^docs { origin == ^_path follow refs(target) } where _path == "/a.md" follow calls }`;
+    for (const q of [paths, rows]) {
+      const c = inferCandidates(parse(q), []).find((x) => x.name === "calls")!;
+      expect(c.kind).toBe("frontmatter");
+      expect(c.projected).toBe(true);
+      expect(c.defaults.edge).toBe(true);
+    }
+  });
+
   it("does not mark a bare read of a stored field, or a field the query never aliases", () => {
     const stored = inferCandidates(parse(`docs { select _path, before where _path == "/a.md" follow refs(before) }`), []);
     expect(stored.find((x) => x.name === "before")!.projected).toBeUndefined();
