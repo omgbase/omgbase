@@ -132,6 +132,11 @@ export interface Candidate {
   defaults: { edge: boolean; layout: boolean; direction: Direction };
   /** Set on a combined inverse-pair candidate (rule 5): its two member fields. */
   pair?: InversePair;
+  /** Set when the relationship is named by a top-level `select` alias
+   * (`calls: ^docs { … }`, rule 7): no stored link rows back it, so its edges
+   * are read off the shown rows' own values (lib/edges.ts `edgesFromValues`)
+   * and it is never written back (lib/edit.ts `editability`). */
+  projected?: boolean;
   /** Set when a mention sits in a nested body (rule 6): where — the select
    * item's alias (`reach`), `where`, `flatten`, `order by`; several places
    * joined by `, `. The picker shows it as "inside `reach`". */
@@ -245,7 +250,25 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = [], 
     mentions.push({ name: names.builtinLinks, kind: "links", source: "builtin", span: [0, 0], direction: "forward" });
     mentions.push({ name: names.builtinBacklinks, kind: "backlinks", source: "builtin", span: [0, 0], direction: "backward" });
   }
-  return roleDefaults(withPairs(merge(mentions), rows));
+  return markProjected(roleDefaults(withPairs(merge(mentions), rows)), query);
+}
+
+/** Rule 7 — PROJECTED relationships. Since oqx 0.27 a `select` alias is visible
+ * to `follow` (`calls: …  follow refs(calls)`), so the relationship the walk
+ * follows may exist only in the query: no document stores a `calls` field and
+ * the link rows have none to fetch. A frontmatter candidate whose name is such an
+ * alias (an item that is not just a bare read of the field of the same name) is
+ * marked `projected`; its edges come from the rows (lib/edges.ts). */
+function markProjected(candidates: Candidate[], query: Query | null): Candidate[] {
+  if (!query) return candidates;
+  const aliased = new Set<string>();
+  for (const item of query.select) {
+    if (item.name === "") continue;
+    if (item.kind === "field" && identName(item.expr) === item.name) continue; // `select before` reads the stored field
+    aliased.add(item.name);
+  }
+  if (aliased.size === 0) return candidates;
+  return candidates.map((c) => (c.kind === "frontmatter" && !c.pair && aliased.has(c.name) ? { ...c, projected: true } : c));
 }
 
 // ---- inverse pairs (rule 5) ---------------------------------------------------
@@ -309,7 +332,7 @@ export function reciprocal(rows: readonly Row[], a: string, b: string): boolean 
 
 /** The rooted paths a field value references: path strings, and rows that
  * surfaced as values (`{ id, path }`). */
-function refsOf(v: unknown): string[] {
+export function refsOf(v: unknown): string[] {
   const one = (x: unknown): string | null => (looksLikeDocPath(x) ? rootedPath(x as string) : rowRef(x)?.path ?? null);
   if (Array.isArray(v)) return v.map(one).filter((p): p is string => p !== null);
   const p = one(v);

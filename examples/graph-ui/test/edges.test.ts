@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { edgeQueries, edgesFromRows, oqxString, orientEdge, orientEdges, pairEdges, sequenceEdges, type GraphEdge } from "../src/lib/edges.ts";
+import { edgeQueries, edgesFromRows, edgesFromValues, oqxString, orientEdge, orientEdges, pairEdges, sequenceEdges, type GraphEdge } from "../src/lib/edges.ts";
 import { NAMES_4 } from "../src/lib/paths.ts";
 
 describe("edgeQueries", () => {
@@ -116,5 +116,35 @@ describe("sequenceEdges", () => {
     expect(sequenceEdges("date", ["a", "b", "b", "c"])).toEqual([
       { src: "a", dst: "b", rel: "date" }, { src: "b", dst: "c", rel: "date" },
     ]);
+  });
+});
+
+describe("edgesFromValues (a projected relationship)", () => {
+  const node = (path: string, row: Record<string, unknown>) => ({ path, row });
+  const shown = new Set(["/a.md", "/b.md", "/c.md"]);
+
+  it("reads each shown row's own value: paths, lists of paths and rows that surfaced as values", () => {
+    const nodes = [
+      node("/a.md", { calls: ["/b.md", "/c.md"] }),
+      node("/b.md", { calls: [{ _id: "d_c000000", _path: "/c.md" }] }),
+      node("/c.md", { calls: [] }),
+    ];
+    expect(edgesFromValues("calls", nodes, shown)).toEqual([
+      { src: "/a.md", dst: "/b.md", rel: "calls" },
+      { src: "/a.md", dst: "/c.md", rel: "calls" },
+      { src: "/b.md", dst: "/c.md", rel: "calls" },
+    ]);
+  });
+
+  it("keeps only edges between shown nodes, never a self-edge, deduped, rooted", () => {
+    const nodes = [node("a.md", { calls: ["/a.md", "/x.md", "b.md", "/b.md"] }), node("/b.md", { calls: "/a.md" })];
+    expect(edgesFromValues("calls", nodes, shown)).toEqual([
+      { src: "/a.md", dst: "/b.md", rel: "calls" },
+      { src: "/b.md", dst: "/a.md", rel: "calls" },
+    ]);
+  });
+
+  it("a row without the field names no one", () => {
+    expect(edgesFromValues("calls", [node("/a.md", { title: "x" })], shown)).toEqual([]);
   });
 });

@@ -218,8 +218,10 @@ export type Editability =
 
 /** Rule 1 + rule 3 for one candidate. `serverCanWrite` is false when the server
  * (or the gateway in front of it) does not offer `apply`. */
-export function editability(c: Pick<Candidate, "name" | "kind"> & { pair?: Pick<InversePair, "forward" | "backward"> }, rows: readonly Row[], serverCanWrite = true): Editability {
+export function editability(c: Pick<Candidate, "name" | "kind"> & { pair?: Pick<InversePair, "forward" | "backward">; projected?: boolean }, rows: readonly Row[], serverCanWrite = true): Editability {
   if (c.kind === "links" || c.kind === "backlinks") return { writable: false, reason: "links live in the body" };
+  // A projected relationship exists only in the query; there is no stored field to rewrite.
+  if (c.projected) return { writable: false, reason: `\`${c.name}\` is projected by the query — nothing is stored to edit` };
   // The combined pair is both fields read one way; the edit belongs to a field.
   if (c.pair) return { writable: false, reason: `edit \`${c.pair.forward}\` or \`${c.pair.backward}\` directly` };
   if (c.kind === "sequence") return { writable: false, reason: `derived from order by ${c.name}` };

@@ -21,7 +21,7 @@
 // rows' paths are rooted before they are compared with the node keys. The
 // projection aliases (`src`/`dst`) are the demo's own.
 
-import type { Candidate, Direction, InversePair } from "./candidates.ts";
+import { refsOf, type Candidate, type Direction, type InversePair } from "./candidates.ts";
 import { NAMES_5, rooted, type EngineNames } from "./paths.ts";
 
 export interface GraphEdge {
@@ -83,6 +83,31 @@ export function edgesFromRows(
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ ...edge, rel: candidate.name });
+  }
+  return out;
+}
+
+/** A PROJECTED relationship's edges (candidates.ts rule 7): nothing is stored,
+ * so there are no link rows to fetch — each shown row's own value of `name`
+ * (a path, a list of paths, or rows that surfaced as values) names its
+ * successors. Only edges between SHOWN nodes remain, deduped, never a self-edge;
+ * the orientation is the stored one (owner → named), as for a field. */
+export function edgesFromValues(
+  name: string,
+  nodes: readonly { path: string; row: Record<string, unknown> }[],
+  shown: ReadonlySet<string>,
+): GraphEdge[] {
+  const seen = new Set<string>();
+  const out: GraphEdge[] = [];
+  for (const node of nodes) {
+    const src = rooted(node.path);
+    for (const dst of refsOf(node.row[name])) {
+      if (dst === src || !shown.has(dst)) continue;
+      const key = `${src}→${dst}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ src, dst, rel: name });
+    }
   }
   return out;
 }

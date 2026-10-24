@@ -547,3 +547,36 @@ describe("nested bodies (rule 6) — OQX 0.26 allows `follow` in every body", ()
     expect(brief(links)[0]).toEqual(["owner", "frontmatter", ["nested"], "forward", "r"]);
   });
 });
+
+describe("projected relationships (rule 7)", () => {
+  // oqx 0.27: a select alias is visible to `follow`, so the relationship may exist only in the query.
+  const PROJECTED = `docs {
+    select _path, calls: ^docs { select target values where origin == ^_path }
+    where _path == "/a.md"
+    follow refs(calls)
+  }`;
+
+  it("marks a relationship named by a select alias as projected, still drawn and still the axis", () => {
+    const c = inferCandidates(parse(PROJECTED), []).find((x) => x.name === "calls")!;
+    expect(c.kind).toBe("frontmatter");
+    expect(c.sources).toEqual(["follow"]);
+    expect(c.projected).toBe(true);
+    expect(c.defaults.edge).toBe(true);
+    expect(c.defaults.layout).toBe(true);
+  });
+
+  it("also marks it when the rows surface it as paths (the inferred mention merges into the same candidate)", () => {
+    const rows = [{ _path: "/a.md", calls: ["/b.md"] }, { _path: "/b.md", calls: [] }];
+    const calls = inferCandidates(parse(PROJECTED), rows).filter((x) => x.name === "calls");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.projected).toBe(true);
+    expect(calls[0]!.sources).toEqual(expect.arrayContaining(["follow", "inferred"]));
+  });
+
+  it("does not mark a bare read of a stored field, or a field the query never aliases", () => {
+    const stored = inferCandidates(parse(`docs { select _path, before where _path == "/a.md" follow refs(before) }`), []);
+    expect(stored.find((x) => x.name === "before")!.projected).toBeUndefined();
+    const rows = [{ _path: "/a.md", before: ["/b.md"] }];
+    expect(inferCandidates(parse(`docs { select _path, before }`), rows).every((x) => !x.projected)).toBe(true);
+  });
+});

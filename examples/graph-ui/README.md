@@ -807,6 +807,22 @@ into the picker and this module becomes the fallback.
    relation. Each mention keeps its span (hovering the row highlights it) and
    the candidate says where it sits — the select item's alias (`inside reach`),
    `where`, `flatten`, `order by`.
+7. **Projected relationships** (a flag on rules 1/3, `projected`). Since oqx 0.27
+   a `select` alias is visible to `follow`, so the relationship a walk follows
+   may exist only in the query: `docs { select _path, calls: ^docs { select
+   target values where origin == ^_path } where … follow refs(calls) }` follows
+   a `calls` that no document stores. `parse` returns the AST *before* alias
+   resolution, so rule 1 still reads `refs(calls)` as the candidate `calls`; a
+   frontmatter candidate whose name is a top-level select alias — not a bare
+   read of the stored field of the same name (`select before`) — is marked
+   `projected`. There are no link rows behind it, so its edges are not fetched
+   with `links { … }`: they are read off the shown rows' own values
+   (`edgesFromValues` in `src/lib/edges.ts` — a path, a list of paths, or rows
+   that surfaced as values; only edges between shown nodes, never a self-edge),
+   oriented as a field is (owner → named). It is drawn and laid out like any
+   `follow` candidate and is **read-only** in [Editing
+   edges](#editing-edges): nothing is stored to rewrite. Only the top-level
+   `select` is read; an alias inside a nested body stays a nested mention.
 
 Defaults: a pair is drawn and its members are not; otherwise every `follow`
 candidate is drawn; inferred fields are drawn only when the query has no

@@ -259,3 +259,11 @@ describe("editability of refs() candidates", () => {
     expect(editability(c, rows, false).writable).toBe(false);
   });
 });
+
+describe("editability of a projected relationship", () => {
+  it("is read-only: there is no stored field to rewrite", () => {
+    const e = editability({ name: "calls", kind: "frontmatter", projected: true }, [{ _path: "/a.md", calls: ["/b.md"] }]);
+    expect(e.writable).toBe(false);
+    expect(e.writable === false && e.reason).toMatch(/projected by the query/);
+  });
+});

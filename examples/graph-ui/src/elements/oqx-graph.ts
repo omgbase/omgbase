@@ -64,7 +64,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { Candidate, Direction } from "../lib/candidates.ts";
 import type { GraphEdge } from "../lib/edges.ts";
-import { orientEdge, pairEdges, sequenceEdges } from "../lib/edges.ts";
+import { edgesFromValues, orientEdge, pairEdges, sequenceEdges } from "../lib/edges.ts";
 import { ownerFor } from "../lib/edit.ts";
 import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, type Point, type Positioned } from "../lib/layout-elk.ts";
 import { forceLayout } from "../lib/layout-force.ts";
@@ -361,6 +361,8 @@ export class OqxGraph extends LitElement {
       const candidate = this.candidates.find((c) => c.name === name);
       if (!candidate || paths.length === 0 || candidate.pair) return [];
       if (candidate.kind === "sequence") return sequenceEdges(name, paths);
+      // A projected relationship has no stored link rows: its edges are the rows' own values.
+      if (candidate.projected) return edgesFromValues(name, nodes, shown).filter((e) => shown.has(e.src) && shown.has(e.dst));
       if (!this.fetchEdges) return [];
       const key = `${name} ${paths.join("")}`;
       let p = this.edgeCache.get(key);
