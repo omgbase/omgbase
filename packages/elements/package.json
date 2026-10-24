@@ -1,0 +1,49 @@
+{
+  "name": "@omgbase/elements",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open Markdown Graph Base — reusable Lit elements for OMGbase explorers: <omg-graph> (a renderer-neutral graph model drawn as cards and obstacle-routed edges, with pins, springs, progressive expansion, a connector gesture and configurable card templates), shared by examples/repo-explorer and examples/graph-ui",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/elements"
+  },
+  "homepage": "https://github.com/omgbase/omgbase#readme",
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "keywords": ["markdown", "knowledge-graph", "omgbase", "lit", "web-components", "graph"],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": ["dist", "!dist/**/*.test.*", "!dist/**/*.map", "!dist/**/*.tsbuildinfo"],
+  "type": "module",
+  "sideEffects": ["./dist/src/omg-graph.js", "./dist/src/index.js"],
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    },
+    "./graph": {
+      "import": "./dist/src/graph.js",
+      "types": "./dist/src/graph.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "lit": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10"
+  }
+}

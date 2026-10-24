@@ -35,9 +35,10 @@ import "./elements/query-console.ts";
 import "./elements/history-panel.ts";
 import "./elements/feed-strip.ts";
 import "./elements/command-palette.ts";
-import "./elements/graph-pane.ts";
-import type { GraphCollapseDetail, GraphConnectDetail, GraphConnectEmptyDetail, GraphPathDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "./elements/graph-pane.ts";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchTitles, setPin, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import "@omgbase/elements";
+import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphIdDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "@omgbase/elements";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { CARDS_KEY, allCardFields, parseCardSettings, serializeCardSettings, templateFor, valuesPresent, type CardSettings } from "./lib/cards.ts";
 import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
 import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
@@ -170,6 +171,12 @@ const graphError = signal<string | null>(null);
 /** A connector in progress: its source and destination, and the ways the relation could be written. */
 const connectPending = signal<{ from: string; to: string; toTitle: string | null; choices: RelationChoice[]; chosen: number; newField: string } | null>(null);
 const graphModel: ModelAccessor = { get: () => graph.get() ?? emptyModel("/"), set: (m) => graph.set(m) };
+/** The card templates (`<omg-graph>`'s template language): a default, optionally varied by a row field of the user's choosing, persisted as JSON (lib/cards.ts). */
+const graphCards = signal<CardSettings>(parseCardSettings(localStorage.getItem(CARDS_KEY)));
+/** The fields every template reads — what the rows are fetched with. */
+const graphFields = computed(() => allCardFields(graphCards.get()));
+/** The per-type editor open. */
+const graphCardsOpen = signal(false);
 
 const headerLabel = computed(() => {
   const w = whoami.get();
@@ -716,10 +723,30 @@ function onPaletteSelect(item: PaletteItem): void {
 
 let graphGeneration = 0;
 
-/** The neighbourhood of `path` added to `model`: its links (two `links` queries), then the titles the model lacks (one `docs` query). */
+/** The neighbourhood of `path` added to `model`: its links (two `links` queries), then the rows the model lacks (one `docs` query over the cards' fields). */
 async function expanded(model: GraphModel, path: string): Promise<GraphModel> {
   const links = await fetchDocLinks(client, path, { repo: repoArgValue.get() });
-  return fetchTitles(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), { repo: repoArgValue.get() });
+  return fetchFields(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), graphFields.get(), { repo: repoArgValue.get() });
+}
+
+/** The card templates changed: persist them and fetch whatever fields the rows now lack (not a log entry — the model's rows, not the user's graph). */
+let fieldsGeneration = 0;
+async function refetchGraphFields(): Promise<void> {
+  const before = graph.get();
+  if (!before) return;
+  const gen = ++fieldsGeneration;
+  try {
+    const after = await fetchFields(client, before, graphFields.get(), { repo: repoArgValue.get() });
+    if (gen === fieldsGeneration && graph.get() === before && after !== before) graph.set(after);
+  } catch (e) {
+    graphError.set(describe(e));
+  }
+}
+
+function setGraphCards(next: CardSettings): void {
+  graphCards.set(next);
+  localStorage.setItem(CARDS_KEY, serializeCardSettings(next));
+  void refetchGraphFields();
 }
 
 /** The graph tab opened (or the document changed): a fresh model around the open
@@ -770,7 +797,7 @@ async function collapseGraph(path: string): Promise<void> {
 
 /** A drop: one pin command per drag (sealed, so two drags are two undo steps). */
 async function pinGraphNode(d: GraphPinDetail): Promise<void> {
-  await log.run(pinCommand(graphModel, d.path, { x: d.x, y: d.y }, d.previous));
+  await log.run(pinCommand(graphModel, d.id, { x: d.x, y: d.y }, d.previous));
   log.seal();
 }
 
@@ -781,7 +808,8 @@ async function startConnect(from: string, to: string): Promise<void> {
   try {
     const d = await client.docsRead({ _path: from }, { repo: repoArgValue.get() });
     const choices = relationChoices({ frontmatter: d.properties.frontmatter ?? {} }, to);
-    const toTitle = graph.get()?.nodes.get(to)?.title ?? null;
+    const toNode = graph.get()?.nodes.get(to);
+    const toTitle = toNode && typeof toNode.row._title === "string" ? toNode.row._title : null;
     connectPending.set({ from, to, toTitle, choices, chosen: 0, newField: "" });
   } catch (e) {
     graphError.set(describe(e));
@@ -1012,7 +1040,16 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     .err { color: #b3261e; }
     sl-tab-group::part(body) { padding-top: 10px; }
     .graph { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-    .graph graph-pane { height: 62vh; min-height: 320px; border: 1px solid #e3e6ec; border-radius: 6px; background: #fff; }
+    .graph omg-graph { height: 62vh; min-height: 320px; border: 1px solid #e3e6ec; border-radius: 6px; background: #fff; }
+    .graph-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: #5a6270; }
+    .graph-tools label { display: inline-flex; gap: 6px; align-items: center; }
+    .graph-tools input { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 6px; border: 1px solid #c9cdd6; border-radius: 4px; width: 22em; }
+    .graph-tools input.field { width: 10em; }
+    .graph-tools details { font-size: 12px; }
+    .graph-tools details summary { cursor: pointer; color: #1565c0; }
+    .graph-tools .per-type { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin-top: 4px; align-items: center; }
+    .graph-tools .per-type code { font-size: 11.5px; color: #5a6270; }
+    .graph-tools .per-type input { width: 100%; box-sizing: border-box; }
     .graph-hint { font-size: 12px; color: #8a94a6; }
     .connect { padding: 8px 10px; border: 1px solid #ffe082; background: #fff8e1; border-radius: 6px; font-size: 12.5px; color: #6d4c00; display: flex; flex-direction: column; gap: 4px; }
     .connect .title code, .connect .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -1093,21 +1130,46 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     </div>`;
   }
 
+  /** The card control: the default template, the field the cards vary by (the user's — empty is off), and one template per value present. */
+  private renderGraphTools(m: GraphModel | null) {
+    const cards = graphCards.get();
+    const by = cards.by;
+    const rows = m ? [...m.nodes.values()].filter((n) => n.kind === "document").map((n) => n.row) : [];
+    const present = by ? valuesPresent(rows, by.field) : [];
+    const all = by ? [...present, ...Object.keys(by.templates).filter((v) => !present.includes(v)).sort()] : [];
+    return html`<div class="graph-tools">
+      <label>card <input type="text" .value=${cards.default} placeholder="{_display|_title}" title="the card template: {field}, {a|b} first present, one line per row line; e.g. {_title}&#10;{status}" spellcheck="false"
+        @change=${(e: Event) => setGraphCards({ ...cards, default: (e.target as HTMLInputElement).value.trim() || "{_display|_title}" })}></label>
+      <label>vary by <input type="text" class="field" .value=${by?.field ?? ""} placeholder="field, e.g. type" title="a row field whose value picks a template (empty: every card uses the default)" spellcheck="false"
+        @change=${(e: Event) => { const field = (e.target as HTMLInputElement).value.trim(); setGraphCards({ ...cards, by: field ? { field, templates: by?.field === field ? by.templates : {} } : null }); }}></label>
+      ${by ? html`<details ?open=${graphCardsOpen.get()} @toggle=${(e: Event) => graphCardsOpen.set((e.target as HTMLDetailsElement).open)}>
+        <summary>by <code>${by.field}</code>… (${Object.keys(by.templates).length})</summary>
+        ${all.length === 0 ? html`<div class="graph-hint">no document in this graph carries <code>${by.field}</code></div>` : html`<div class="per-type">
+          ${all.map((v) => html`<code title=${v}>${v}</code><input type="text" .value=${by.templates[v] ?? ""} placeholder=${`inherit: ${cards.default}`} spellcheck="false"
+            @change=${(e: Event) => { const t = (e.target as HTMLInputElement).value.trim(); const templates = { ...by.templates }; if (t) templates[v] = t; else delete templates[v]; setGraphCards({ ...cards, by: { field: by.field, templates } }); }}>`)}
+        </div>`}
+      </details>` : nothing}
+    </div>`;
+  }
+
   private renderGraph(path: string) {
     const m = graph.get();
+    const cards = graphCards.get();
+    const view = m ? toView(m) : null;
     return html`<div class="graph">
-      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
+      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} · card: ${cards.default}${cards.by ? ` · vary by ${cards.by.field} (+${Object.keys(cards.by.templates).length})` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
+      ${this.renderGraphTools(m)}
       ${graphError.get() ? html`<div class="err">${graphError.get()}</div>` : nothing}
       ${this.renderConnect()}
-      ${m ? html`<graph-pane .model=${m} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
-        @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.path)}
-        @graph-open=${(e: CustomEvent<GraphPathDetail>) => openDoc(e.detail.path)}
-        @graph-expand=${(e: CustomEvent<GraphPathDetail>) => { void expandGraph(e.detail.path); }}
-        @graph-collapse=${(e: CustomEvent<GraphCollapseDetail>) => { void collapseGraph(e.detail.path); }}
+      ${view ? html`<omg-graph .nodes=${view.nodes} .edges=${view.edges} .card=${cards.default} .renderCard=${(node: { row: Record<string, unknown> }) => templateFor(cards, node.row)} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
+        @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.id)}
+        @graph-open=${(e: CustomEvent<GraphIdDetail>) => openDoc(e.detail.id)}
+        @graph-expand=${(e: CustomEvent<GraphIdDetail>) => { void expandGraph(e.detail.id); }}
+        @graph-collapse=${(e: CustomEvent<GraphIdDetail>) => { void collapseGraph(e.detail.id); }}
         @graph-pin=${(e: CustomEvent<GraphPinDetail>) => { void pinGraphNode(e.detail); }}
-        @graph-unpin=${(e: CustomEvent<GraphUnpinDetail>) => { void log.run(unpinCommand(graphModel, e.detail.path, e.detail.previous)); }}
+        @graph-unpin=${(e: CustomEvent<GraphUnpinDetail>) => { void log.run(unpinCommand(graphModel, e.detail.id, e.detail.previous)); }}
         @graph-connect=${(e: CustomEvent<GraphConnectDetail>) => { void startConnect(e.detail.from, e.detail.to); }}
-        @graph-connect-empty=${(e: CustomEvent<GraphConnectEmptyDetail>) => { void connectToPicked(e.detail.from); }}></graph-pane>` : nothing}
+        @graph-connect-empty=${(e: CustomEvent<GraphConnectEmptyDetail>) => { void connectToPicked(e.detail.from); }}></omg-graph>` : nothing}
     </div>`;
   }
 

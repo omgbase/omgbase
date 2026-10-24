@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/elements" },
     { "path": "packages/cli" },
     { "path": "packages/client" },
     { "path": "packages/embedder" },

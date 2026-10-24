@@ -325,6 +325,9 @@ importers:
       '@omgbase/client':
         specifier: workspace:^
         version: link:../../packages/client
+      '@omgbase/elements':
+        specifier: workspace:^
+        version: link:../../packages/elements
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.12)(@types/react@19.3.0)
@@ -440,6 +443,19 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+
+  packages/elements:
+    dependencies:
+      d3-force:
+        specifier: ^3.0.0
+        version: 3.0.0
+      lit:
+        specifier: ^3.3.0
+        version: 3.3.3
+    devDependencies:
+      '@types/d3-force':
+        specifier: ^3.0.10
+        version: 3.0.10
 
   packages/embedder:
     dependencies:

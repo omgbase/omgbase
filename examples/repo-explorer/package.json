@@ -25,6 +25,7 @@
     "@lit-labs/signals": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@omgbase/client": "workspace:^",
+    "@omgbase/elements": "workspace:^",
     "@shoelace-style/shoelace": "^2.20.1",
     "d3-force": "^3.0.0",
     "lit": "^3.3.0",

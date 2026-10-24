@@ -350,7 +350,9 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 11. The graph tab: the open document's neighbourhood (`src/lib/graph.ts`, a
    renderer-neutral model: nodes by path, edges keyed by source, destination
    and field/block, provenance `frontmatter` / `body` / `external`), laid out
-   by d3-force in `<graph-pane>` (graph space centred on the origin —
+   by d3-force in `<omg-graph>` — the shared element of `@omgbase/elements`
+   (`packages/elements`), which also renders graph-ui — (graph space centred
+   on the origin —
    `forceX(0)`/`forceY(0)` gravity, an explicit link strength so a hub's edges
    do not go slack, a bounded charge; no `forceCenter`, which would drag the
    free nodes away from pinned ones). The opened document starts pinned at the
@@ -373,7 +375,15 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    written is always the user's call — on open canvas the palette picks or
    creates the destination first. Edges show their provenance on
    hover (the frontmatter field, the block of a body link, the URL of an
-   external one); rendered edges are not writable by dragging.
+   external one); rendered edges are not writable by dragging. **Cards** are a
+   template over each node's projected row: the toolbar's `card` input
+   (default `{_display|_title}`; `{a|b}` is a fallback chain, a line whose
+   fields are all absent is dropped, a second line is a detail line), and
+   "vary by" a field of your choosing with one template per value (persisted
+   as JSON in `omgbase-repo-explorer.cards`); the fields the templates name
+   are projected by the neighbourhood's `docs { select _path, _title, … where
+   _path in (…) }` query. A row carrying `_display` wins with no configuration
+   — the contract with a future engine-computed `_display`.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds or
 when it restarts and answers the next POST with `404 -32000 unknown session`;
@@ -391,8 +401,9 @@ call once, noting *session expired at the server — reconnected* in the header.
   and ⌘Z → `log-undo` / `log-redo`), `links-panel`, `query-console` (textarea,
   table, hints, errors, the syntax drawer), `history-panel` (the revision list,
   unified diff or side by side), `feed-strip`, `command-palette` (the overlay:
-  combobox + listbox, the keys, pick mode), `graph-pane` (SVG + d3-force: cards,
-  arrows, pins, the connector, the keyboard).
+  combobox + listbox, the keys, pick mode). The graph is `<omg-graph>` from
+  `@omgbase/elements` (SVG + d3-force: cards from templates or a `renderCard`
+  hook, obstacle-routed edges, pins, the connector, zoom/pan, the keyboard).
 - `src/lib/mcp-client.ts` — the shared `@omgbase/client` re-exported
   (`OmgClient`: one tool call, the JSON-text envelope, session recovery,
   `unknown tool` → `OmgError("unknown_tool")`), plus this page's own: the
@@ -404,8 +415,11 @@ call once, noting *session expired at the server — reconnected* in the header.
 - `src/lib/palette.ts` — the palette's input modes, the find query, ranking,
   action matching, `newDocumentPath`, the cursor; `src/lib/create.ts` —
   `createDocumentCommand`, `defaultMarkdown`, `creationError`.
-- `src/lib/graph.ts` — the graph model (`withNeighborhood`, pins, titles,
-  provenance text, the geometry helpers); `src/lib/graph-commands.ts` — pin /
+- `src/lib/graph.ts` — the neighbourhood model (`withNeighborhood`,
+  `collapseNode`, pins, `fieldsQuery` / `fetchFields` for the rows the cards
+  read, provenance text) and `toView` (the model as the element's nodes and
+  edges); `src/lib/cards.ts` — the card settings (the default template, the
+  "vary by" field and its per-value templates); `src/lib/graph-commands.ts` — pin /
   unpin / expand as local commands; `src/lib/relations.ts` — `relationChoices`,
   `describeRelation`, `attachRelationCommand` (frontmatter kinds guarded by the
   revision, the body link by the inserted block's hash).
@@ -443,12 +457,14 @@ call once, noting *session expired at the server — reconnected* in the header.
   frontmatter plan command (the digest-form execute, the restore, the refusal),
   the palette (modes, the find query's escaping, ranking tiers, action
   matching, `newDocumentPath`, the cursor) and the create command, the graph
-  model (bounds, dedup, pins, the titles query), the pin/unpin/expand commands
+  model (bounds, dedup, pins, the fields query, the view adapter), the card
+  settings, the pin/unpin/expand commands
   through a real `CommandLog` (coalescing), the relations (the choices over
   frontmatter shapes, each write's exact effect and guard, every refusal), the
-  geometry, the route, the dev arguments and the stand-in — 200 tests, no live
-  server. The client's session recovery and `unknown tool` mapping are tested
-  in `packages/client`.
+  the route, the dev arguments and the stand-in — 187 tests, no live server.
+  The client's session recovery and `unknown tool` mapping are tested in
+  `packages/client`; the graph geometry, routing, easing, label fit and card
+  templates in `packages/elements`.
 
 ## Verified against the real stack
 
