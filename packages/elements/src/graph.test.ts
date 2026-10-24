@@ -364,6 +364,28 @@ describe("edge routing", () => {
     expect(routeViolations(r2, A, B, two)).toBe(0);
   });
 
+  it("a hub ringed by its own neighbours (the pinned-hub star): a chord through the hub bends around it even when every bulge grazes a leaf's margin", () => {
+    // Twelve 150-wide leaves on a ring of radius 300 around a wide hub card (157 px apart: bodies clear, margins touching) — how
+    // the force layout settles a pinned hub's star. (A tighter ring where the leaf bodies overlap has no body-free route at all.)
+    const hub = card("hub", 0, 0, 260, 30);
+    const leaves = Array.from({ length: 12 }, (_, i) => card(`l${i}`, Math.cos((i / 12) * 2 * Math.PI) * 300, Math.sin((i / 12) * 2 * Math.PI) * 300));
+    const P = card("p", -420, 7), Q = card("q", 420, -7);
+    const all = [hub, ...leaves, P, Q];
+    const r = edgePath(P, Q, all, { key: "pq" });
+    expect(r.bends).toBeGreaterThan(0);
+    expect(r.control).not.toBeNull();
+    expect(routeViolations(r, P, Q, [hub], 0)).toBe(0);
+    // Every leaf-to-leaf chord whose straight line crosses the hub's card leaves the hub's BODY alone (a margin graze is allowed).
+    let crossing = 0;
+    for (let i = 0; i < leaves.length; i++) for (let j = i + 1; j < leaves.length; j++) {
+      const a = leaves[i]!, b = leaves[j]!;
+      if (routeViolations(edgePath(a, b, [], { avoid: false }), a, b, [hub], 0) === 0) continue;
+      crossing++;
+      expect(routeViolations(edgePath(a, b, all, { key: `${i}-${j}` }), a, b, [hub], 0)).toBe(0);
+    }
+    expect(crossing).toBeGreaterThan(5);
+  });
+
   it("only tiny edges stay straight (2 × the taller endpoint — two touching cards); `avoid: false` is the straight style", () => {
     expect(routeMinLength(A, B)).toBe(68);
     expect(routeMinLength(A, card("/w", 0, 0, 300, 40))).toBe(80);

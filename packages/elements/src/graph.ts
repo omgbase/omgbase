@@ -573,10 +573,16 @@ export const ROUTE_MAX_PUSHES = 8;
  * cards): the width-based rule of the first cut made every edge under 390 px
  * straight once cards were sized from their text — the usual neighbourhood. */
 export const ROUTE_MIN_FACTOR = 2;
-/** The control offset is capped at this fraction of the edge's length. */
-export const ROUTE_MAX_RATIO = 1.2;
+/** The control offset is capped at this fraction of the edge's length (a quadratic's bulge is half the
+ * offset, so a chord through a hub ringed by its neighbours can still arc outside the ring). */
+export const ROUTE_MAX_RATIO = 2;
 /** Perpendicular spacing between parallel edges of one node pair. */
 export const PARALLEL_GAP = 36;
+/** A crossing through a card's body costs this many times a graze of its margin (a hub inside its ring of
+ * neighbours: every bulge clips a neighbour's margin, and a plain count would tie with the straight line through the hub). */
+export const ROUTE_BODY_COST = 8;
+/** The best-effort sweep's bulge grows by this factor per step (24, 30, 37, 47, …). */
+export const ROUTE_SWEEP_GROWTH = 1.25;
 
 export interface EdgeRoute {
   /** `M … L …` when straight, `M … Q … …` when curved. */
@@ -660,7 +666,9 @@ export interface EdgePathOptions {
  * parallel edges) and is pushed along the segment normal, away from every card
  * it would cross (inflated by `margin`), nearest first, in doubling steps then a
  * bisection, over up to `ROUTE_PASSES` passes and `ROUTE_MAX_PUSHES` pushes; when
- * that leaves crossings a doubling sweep of both sides keeps the fewest.
+ * that leaves crossings a sweep of both sides keeps the cheapest — a crossing
+ * through a card's body costs `ROUTE_BODY_COST`, a graze of its margin 1, so a
+ * hub ringed by its neighbours is bent around at the price of grazing a margin.
  * Deterministic for equal inputs. */
 export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[], opts: EdgePathOptions = {}): EdgeRoute {
   const m = opts.margin ?? ROUTE_MARGIN;
@@ -679,16 +687,20 @@ export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[],
     const reach = (ROUTE_MAX_RATIO * L) / 2 + Math.abs(offset) / 2 + m;
     const minX = Math.min(from.x, to.x) - reach, maxX = Math.max(from.x, to.x) + reach;
     const minY = Math.min(from.y, to.y) - reach, maxY = Math.max(from.y, to.y) + reach;
-    const rects = obstacles
+    const near = obstacles
       .filter((o) => o.id !== from.id && o.id !== to.id && o.x + o.w / 2 >= minX && o.x - o.w / 2 <= maxX && o.y + o.h / 2 >= minY && o.y - o.h / 2 <= maxY)
-      .map((o) => inflated(o, m))
-      .map((r) => ({ r, d: Math.abs((r.x - from.x) * n.x + (r.y - from.y) * n.y) + Math.max(0, Math.abs((r.x - M.x) * u.x + (r.y - M.y) * u.y) - L / 2) }))
-      .sort((a, b) => a.d - b.d)
-      .map((x) => x.r);
+      .map((o) => ({ r: inflated(o, m), body: inflated(o, 0), d: Math.abs((o.x - from.x) * n.x + (o.y - from.y) * n.y) + Math.max(0, Math.abs((o.x - M.x) * u.x + (o.y - M.y) * u.y) - L / 2) }))
+      .sort((a, b) => a.d - b.d);
+    const rects = near.map((x) => x.r);
+    /** The cost of a route at `off`: `ROUTE_BODY_COST` per card body it crosses, 1 per margin it only grazes; counting stops at `limit`. */
     const violations = (off: number, limit = Infinity): number => {
       const { c, p0, p2 } = curveOf(off);
       let v = 0;
-      for (const r of rects) if (curveHitsRect(p0, c, p2, r) && ++v >= limit) break;
+      for (const o of near) {
+        if (!curveHitsRect(p0, c, p2, o.r)) continue;
+        v += curveHitsRect(p0, c, p2, o.body) ? ROUTE_BODY_COST : 1;
+        if (v >= limit) break;
+      }
       return v;
     };
     let best = { off: offset, v: violations(offset) };
@@ -724,7 +736,7 @@ export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[],
       if (!changed) break;
     }
     if (best.v > 0) {
-      for (let off = ROUTE_STEP * 2; off <= cap && best.v > 0; off *= 2) {
+      for (let off = ROUTE_STEP * 2; off <= cap && best.v > 0; off *= ROUTE_SWEEP_GROWTH) {
         for (const signed of keySide(opts.key ?? "") > 0 ? [off, -off] : [-off, off]) {
           const v = violations(signed, best.v);
           if (v < best.v) best = { off: signed, v };
