@@ -52,9 +52,9 @@ describe("the result table", () => {
 
 describe("errors", () => {
   it("describeToolError: the engine's code, message, data.hint and data.fix", () => {
-    const e = new OmgError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { expected: "x", actual: "y", fix: '{"effects":[{"op":"set"}]}' });
+    const e = new OmgError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { data: { expected: "x", actual: "y", fix: '{"effects":[{"op":"set"}]}' } });
     expect(describeToolError(e)).toEqual({ code: "plan_mismatch", message: e.message, fix: '{"effects":[{"op":"set"}]}', hint: null, retriable: false });
-    const q = new OmgError("filter_invalid", "unexpected end of query — expected a value (at offset 15)", { reason: "…", hint: "OQX" });
+    const q = new OmgError("filter_invalid", "unexpected end of query — expected a value (at offset 15)", { data: { reason: "…", hint: "OQX" } });
     expect(describeToolError(q)).toMatchObject({ code: "filter_invalid", hint: "OQX", fix: null });
     expect(describeToolError(new Error("network down"))).toEqual({ code: "error", message: "network down", fix: null, hint: null, retriable: false });
   });
@@ -92,7 +92,7 @@ describe("the console over a scripted minimal server", () => {
     ]);
   });
   it("surfaces the engine's error envelope", async () => {
-    const s = new ScriptedCaller({ query: () => new OmgError("filter_invalid", "`target` is not a field of links (fields: _id, _path, …)", { hint: "OQX" }) });
+    const s = new ScriptedCaller({ query: () => new OmgError("filter_invalid", "`target` is not a field of links (fields: _id, _path, …)", { data: { hint: "OQX" } }) });
     await expect(runConsole(s, "links { select target }")).rejects.toMatchObject({ code: "filter_invalid" });
   });
 });

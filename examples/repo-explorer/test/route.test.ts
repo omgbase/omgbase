@@ -8,6 +8,7 @@ describe("the hash route", () => {
     expect(parseRoute("#doc=processes/calcination.md&rev=r_7&tab=history&block=b_1")).toEqual({ doc: "/processes/calcination.md", rev: "r_7", tab: "history", deleted: false, block: "b_1" });
     expect(parseRoute("#deleted")).toEqual({ ...DEFAULT_ROUTE, deleted: true });
     expect(parseRoute("#doc=/a.md&tab=bogus").tab).toBe("document");
+    expect(parseRoute("#doc=/a.md&tab=graph").tab).toBe("graph");
     expect(routeHash({ doc: "/processes/calcination.md" })).toBe("#doc=/processes/calcination.md");
     expect(routeHash({ doc: "/a b.md", rev: "r_7", tab: "history" })).toBe("#doc=/a+b.md&rev=r_7&tab=history");
     expect(routeHash({ deleted: true })).toBe("#deleted");

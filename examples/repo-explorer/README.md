@@ -4,11 +4,17 @@ A Lit demo that lets a person walk a repository the way an agent does: the
 tree on the left, a document rendered as Markdown (every block an anchor that
 shows its id on hover) with its properties as a table, its backlinks and
 outlinks, its history with a client-side diff against any revision, a live
-strip of commits as they land, a query console for OQX, a frontmatter edit
-previewed with `plan` and committed with `execute`, and — last — task
-checkboxes that write back: a click is one `apply` pinned to the block's hash,
-with a session-local undo that compensates only when the block is still as the
-toggle left it.
+strip of commits as they land, a query console for OQX in a collapsible drawer
+(⌘J), a keyboard-first palette (⌘K: find a document by path or title, run an
+action, `+path` creates one), a frontmatter edit previewed with `plan` and
+committed with `execute`, task checkboxes that write back (a click is one
+`apply` pinned to the block's hash), and a **graph** tab: the document's
+neighbourhood over the `links` collection, expanded node by node, with drag to
+pin, spring settling on unpin, and a ⌘-drag connector that writes a relation —
+into a frontmatter field or as a body link, the user's choice, never the
+page's. Every write is a command on the shared `@omgbase/client` `CommandLog`:
+undo / redo (⌘Z / ⇧⌘Z) is a compensating `apply` computed against the
+repository's CURRENT state and refused when what the command wrote moved on.
 
 It is built against the **minimal tools profile** — `omg mcp --tools minimal`,
 exactly `query`, `query_syntax`, `docs_read`, `docs_tree`, `blocks_resolve`,
@@ -17,7 +23,11 @@ that profile by default, so the page proves itself against it. Everything it
 shows comes from those ten (the table under [Works on the minimal
 profile](#works-on-the-minimal-profile) names the tool behind each feature);
 `tools/list` is read on connect and the one tool beyond the ten the page ever
-uses is `repos`, for a repository picker when a full server lists it.
+uses is `repos`, for a repository picker when a full server lists it. The
+repository is otherwise a **designation**, as in graph-ui: the header field
+(persisted; `?repo=<slug>` in the page URL seeds it), else the one the proxy was
+started for (`pnpm dev --repo <slug>`, reported on `/whoami`), else the server's
+default — sent as the `repo` argument of every repo-scoped call.
 
 **Requires omgbase surface ≥ 5.0** (the current `omg`): surface 5.0's
 "underscore = engine" rule — on every record a bare name is the user's and an
@@ -81,9 +91,10 @@ its bare name (`docs_tree`'s `path` prefix, `rev`, `at`, `include_ids`, `ids`,
 `cursor`, `limit`; a digest's `commit`/`seq`); an authored key is bare (`layer`,
 `tags`, `verified`). `<path>` is the open document's `/`-rooted path, `<id>` its
 `d_…` id (both from `docs_read`'s `_path`/`_id`), `<rev>` a revision id from
-the history list. A `repo` argument is added only when a repository was picked
-(which needs `repos`); on the minimal profile nothing names one and the
-server's default repository is browsed.
+the history list. A `repo` argument is added when a repository is designated
+(the header field, `?repo=`, the proxy's `--repo`, or the `repos` picker on a
+full server); with none, nothing names one and the server's default repository
+is browsed.
 
 | feature | tool(s) | call |
 | --- | --- | --- |
@@ -95,6 +106,11 @@ server's default repository is browsed.
 | wikilinks naming the document | `query` | `links { select _path, _block_id, _provenance, _field, _anchor where _dst_id == "phantom:<stem>" }` (`<stem>` = the file name without its extension; see feedback 10) |
 | a `[[wikilink]]` clicked | `query` | `docs { select _path where _path.endsWith("/<name>.md") }` |
 | query console | `query`, `query_syntax` | the textarea's text with `limit: 50`, then `{ …, cursor }` for "more"; `query_syntax {}` once, for the drawer; the starter is `docs { select _title, layer, tags order by _path }` |
+| palette: find (⌘K) | `query` | `docs { select _id, _path, _title where (_path ~* "<term>" or _title ~* "<term>") and (…) order by _path limit 20 }` — one group per whitespace-separated term, regex-escaped (the OQX baseline treats `/` and `-` as metacharacters too) and JSON-quoted; empty text lists the first 20 by path; the hits are ranked in the browser (title prefix > title contains > path segment prefix > path contains) |
+| palette: create (`+path`, or the suggestion when nothing matches) | `apply`, then `docs_read` | `apply { effects: [{ op: "create", path: "<path>", markdown: "# <Title>\n" }], reason: "create document" }` → the Receipt; `docs_read { _path }` for the created bytes and `rev` (the undo's guard); a bare name lands in the open document's folder, `.md` is appended; `path_taken` → *a document (or a file) already exists at …* |
+| graph tab: the neighbourhood | `query` | the two `links` queries above for the expanded document, then one `docs { select _path, _title where _path in ("/a.md", "/b.md") }` for the titles the model lacks; 12 neighbours per direction, the rest a "+k more" badge; ⊕ expands a node (the same two queries) |
+| graph tab: a connector dropped on a document | `docs_read`, then `apply` | `docs_read { _path: <from> }` → the source's frontmatter → the chooser: every list field of paths (*append*), every scalar path field (*turn into a list* or *replace*, said plainly), *a new list field* (named by the user), *a body link*; then ONE `apply` — `{ op: "set", target: "<from>", field: "_frontmatter.<field>", value: [...], expect: { revision: "<rev>" } }` or `{ op: "insert", into: "<from>", at: "end", markdown: "[<title>](<to>)" }` — then the source re-read and its neighbourhood rebuilt |
+| graph tab: a connector dropped on open canvas | (the palette) | the palette in pick mode (*connect /a.md to…*): a document picked, or created as above, then the chooser |
 | an `_id` cell clicked | `query` | `blocks { select _path where _id == "b_…" }` (nodes/links likewise), `revisions { select _path, _doc_id where _rev == "r_…" }` — then the document opens (a `d_…` id needs no query) |
 | history (per document) | `query` | `revisions { select _rev, _seq, _ts, _origin, _actor, _reason, _hash, _is_current, _doc_id where _doc_id == "<id>" order by _seq desc }` |
 | time travel + diff | `docs_read` | `{ _id: "<id>", at: "<rev>" }` → `_raw`; the unified diff against the current body is computed in the browser (`src/lib/diff.ts`) |
@@ -102,14 +118,15 @@ server's default repository is browsed.
 | live feed (the strip) | `changes_since` | `{ limit: 1 }` once for `head`, then `{ cursor, limit: 50 }` every N seconds (default 3); a digest's `revisions` are `[{ _id, _path, _hash }]` |
 | frontmatter edit | `plan`, `execute` | `plan { effects: [{ op: "set", target: "<path>", field: "_frontmatter.<k>", value }], diffs: true }` → `preview.summary` + `preview.diffs` (+ `preview.revisions[{ _id, _path, _hash }]`); on confirm `execute { plan_id, effects, reason }` (the digest form, the same effects) → the Receipt's `revisions[{ _id, _path, _hash }]` |
 | task checkbox (toggle) | `apply`, then `docs_read` | `apply { effects: [{ op: "set", target: { kind: "block", _id: "<block id>" }, field: "_attrs.checked", value: true \| false, expect: { content_hash: "<hashes[id] from the read>" } }], reason }` — ONE call, the CAS from `include_ids` — → the Receipt; then `docs_read { _path, include_ids: true }` again so the rendering and the hashes are the truth. A wrong hash is `stale_expectation` (`data.current._hash`), a document that moved between plan and commit `stale_plan`: the page re-reads and says *the document changed since it was read — refreshed; try again* |
-| task undo / redo (session-local) | `docs_read`, `apply` | `docs_read { _path, include_ids: true }` for the block's CURRENT hash; refused unless it equals the hash the toggle left (`hashAfter` for undo, `hashBefore` for redo); else `apply { effects: [{ op: "set", …, field: "_attrs.checked", value: <the previous state>, expect: { content_hash: <that hash> } }], reason: "repo-explorer task undo" }` → re-read |
+| undo / redo (session-local, every write) | `query` / `docs_read`, `apply` | the shared `CommandLog`'s compensation, re-checked against the CURRENT state: a task toggle re-reads the block's `_hash` (`blocks { select _hash where _id == "b_…" }`) and is refused unless it is the one the toggle left, else `apply { set _attrs.checked back, expect: { content_hash } }`; a frontmatter edit, a relation or a created document re-reads the document (`docs_read`) and is refused unless the key / field / bytes still hold what the command wrote, else `set`/`unset` the previous value pinned to the current `revision`, `remove` the block by its `content_hash`, or `remove` the document; a pin or an expansion restores the model |
 
 Not used, on either profile: `docs_history`, `docs_diff_unified`,
 `docs_read_at`, `docs_list`, `docs_set_meta`, `blocks_check`, `blocks_update`,
 `blocks_resolve` — the same code path runs under `--tools minimal` and
-`--tools full`. `apply` is used for exactly one thing: the task toggle and its
-undo (one CAS-pinned effect, no preview — a checkbox click is its own
-confirmation); everything else that writes goes through `plan` → `execute`.
+`--tools full`. `apply` is used where a click is its own confirmation — a task
+toggle, a create from the palette, a relation the chooser confirmed, every
+undo — one guarded effect each; a frontmatter edit goes through `plan` →
+`execute` for its preview, and its commit is a log entry too.
 `test/minimal-profile.test.ts` runs every data path above against a scripted
 server that lists exactly the ten and refuses every other name, and asserts the
 tools asked for; the real stack was also driven end to end (below).
@@ -173,20 +190,23 @@ was read — refreshed; try again*.
 
 **Undo** (the `undo` / `redo` buttons by the title; ⌘Z / ⇧⌘Z, Ctrl on other
 platforms, while the document view has focus and the key did not land in a
-text field) is compensation, not history rewriting. Every completed toggle is
-remembered in memory as `{ blockId, path, from, to, hashBefore, hashAfter,
-receipt }` — `hashAfter` from the re-read after the write (`src/lib/tasks.ts`,
-two stacks, 50 deep, cleared on a repo switch). Undoing it re-reads the block's
-CURRENT hash and **refuses** unless it is exactly `hashAfter` — someone else
-wrote the block since, and an undo would overwrite their change — else sends a
-new `apply` setting the attr back to `from` with `expect: { content_hash:
-hashAfter }`, re-reads, and moves the record to the redo stack with the hash
-the undo left (redo expects that one, not the original: `[X]` normalises to
-`[x]`). Redo is the mirror. The refusal reads *cannot undo: block b_… in
-/… changed since the toggle (expected hash 1eb8129bae27…, now c9174f8ae369…) —
-not overwriting someone else's edit*. The planning is pure
-(`setCheckedEffect`, `compensation`, `pushToggle` / `afterCompensation`) so it
-can move onto a shared command log later without a rewrite.
+text field; also `>undo` in the palette) is compensation, not history
+rewriting. A toggle runs as `@omgbase/client`'s `taskCheckCommand` on the
+page's `CommandLog` (in memory, cleared on a repo switch), which remembers the
+block's hash before and after the write. Undoing it re-reads the block's
+CURRENT hash and **refuses** unless it is exactly the one the toggle left —
+someone else wrote the block since, and an undo would overwrite their change —
+else sends a new `apply` setting the attr back with `expect: { content_hash }`
+of that hash. Redo re-reads the same way. A refused entry stays applied, off
+the undo path, with its reason shown (*undo refused — block b_… changed since
+(hash …, expected …); nothing was overwritten*). The same log holds the
+frontmatter edits (`frontmatterPlanCommand`, `src/lib/writes.ts`: the confirmed
+plan commits in the digest form; the undo restores the key's previous value —
+or unsets a key the edit created — pinned to the document's current revision,
+refused when the key no longer holds what the edit wrote), the created
+documents (`createDocumentCommand`, `src/lib/create.ts`: removed on undo unless
+edited since), the relations (`attachRelationCommand`, `src/lib/relations.ts`)
+and the graph's pins and expansions (local commands: restore the model).
 
 ### What the minimal profile made awkward (product feedback)
 
@@ -288,8 +308,9 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 3. `docs_tree {}` → the root level; folders load on first open and remember
    their state; opening a document reveals its folders.
 4. The URL hash is the state — `#doc=/processes/calcination.md`,
-   `&rev=r_7&tab=history`, `&block=b_12`, `#deleted` — so a document, a
-   revision of it, or the deleted list is a link one can reload or share.
+   `&rev=r_7&tab=history`, `&tab=graph`, `&block=b_12`, `#deleted` — so a
+   document, a revision of it, its graph, or the deleted list is a link one can
+   reload or share.
 5. A document: `docs_read { include_ids: true }`; the body rendered (or raw,
    persisted), the properties as a table, the two `links` queries, the
    `revisions` query; a `[[wikilink]]` resolved by one query, a `/`-rooted or
@@ -297,7 +318,10 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 6. The strip: `changes_since` from the repo's `head`, polled; new digests are
    prepended (newest first, deduped by commit, capped at 50) and the folders
    they touched are refreshed; a change to the open document reloads it.
-7. The console: ⌘/Ctrl+Enter runs; the result's keys are the columns (`_id`,
+7. The console, a drawer under the main pane (⌘J, or its bar; closed it is one
+   line — the last result's count and the query; open it is a resizable
+   vertical split, both persisted; running a query opens it): ⌘/Ctrl+Enter
+   runs; the result's keys are the columns (`_id`,
    `_path` first — the envelope; a bare `id`/`path` is an authored key and an
    ordinary column), an `_id`/`_path` cell opens the thing it names, `hints` is the
    yellow bar, an error shows the engine's code, message, `data.hint` and
@@ -312,9 +336,30 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 9. A task checkbox (when `apply` is listed and the item's anchor verified):
    one `apply { set _attrs.checked, expect: { content_hash } }` → the Receipt's
    commit and summary → the document re-read and re-rendered; `undo` / `redo`
-   (buttons, ⌘Z / ⇧⌘Z) compensate the last toggles after re-checking the
-   block's hash, refusing when it changed (see [Task
+   (buttons, ⌘Z / ⇧⌘Z) compensate the last command after re-checking the
+   repository's state, refusing when it changed (see [Task
    checkboxes](#task-checkboxes)).
+10. The palette (⌘K, or the header's `⌘K`): typing finds documents (one
+   `query` per keystroke, debounced; ↑↓ move, ⏎ opens, ⇥ completes the path,
+   esc closes), `>` lists the page's actions (console, run the query, new
+   document, deleted documents, the strip, reconnect, undo/redo with their
+   labels, raw/rendered, the open document's tabs), `+path` (or the *create
+   /…* suggestion when nothing matches) creates a document — a bare name lands
+   in the open document's folder — and opens it. The graph's connector uses
+   the same palette in *pick* mode to find or create a destination.
+11. The graph tab: the open document's neighbourhood (`src/lib/graph.ts`, a
+   renderer-neutral model: nodes by path, edges keyed by source, destination
+   and field/block, provenance `frontmatter` / `body` / `external`), laid out
+   by d3-force in `<graph-pane>`. Drag repositions and pins on drop (one log
+   entry per drag); `u`, Backspace or the ✕ unpins and the node eases back
+   (synchronous under `prefers-reduced-motion`); ⊕ or `e` expands a node (12
+   per direction, "+k more" otherwise; an undoable query command); arrows move
+   the selection, ⏎ opens, `f` fits. ⌘-drag (or `c`, or the connect button)
+   from a node is a connector: on a document it opens the chooser — where the
+   relation is written is always the user's call — on open canvas the palette
+   picks or creates the destination first. Edges show their provenance on
+   hover (the frontmatter field, the block of a body link, the URL of an
+   external one); rendered edges are not writable by dragging.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds or
 when it restarts and answers the next POST with `404 -32000 unknown session`;
@@ -329,17 +374,27 @@ call once, noting *session expired at the server — reconnected* in the header.
 - `src/elements/` — `repo-tree` (folders, badges), `doc-view` (properties,
   rendered/raw body, the anchors line, the frontmatter editor and confirm
   strip, the task checkboxes' `change` → `task-toggle`, the undo/redo buttons
-  and ⌘Z), `links-panel`, `query-console` (textarea, table, hints, errors, the
-  syntax drawer), `history-panel` (the revision list, unified diff or side by
-  side), `feed-strip`.
-- `src/lib/mcp-client.ts` — `OmgClient` (one tool call, the JSON-text envelope,
-  session recovery, `unknown tool` → `OmgError("unknown_tool")`, `apply`), the
+  and ⌘Z → `log-undo` / `log-redo`), `links-panel`, `query-console` (textarea,
+  table, hints, errors, the syntax drawer), `history-panel` (the revision list,
+  unified diff or side by side), `feed-strip`, `command-palette` (the overlay:
+  combobox + listbox, the keys, pick mode), `graph-pane` (SVG + d3-force: cards,
+  arrows, pins, the connector, the keyboard).
+- `src/lib/mcp-client.ts` — the shared `@omgbase/client` re-exported
+  (`OmgClient`: one tool call, the JSON-text envelope, session recovery,
+  `unknown tool` → `OmgError("unknown_tool")`), plus this page's own: the
   `Caller` interface every feature module takes, `applyArgs` / `applyEffects`,
   `fetchWhoAmI`, `repoArg`.
 - `src/lib/tasks.ts` — the task marker, `setCheckedEffect` (the CAS-pinned
-  `set _attrs.checked`), `taskDisabledReason`, the moved-on codes, and the
-  undo log (`pushToggle`, `nextToggle`, `compensation` — the refusal —,
-  `afterCompensation`, `toggleLabel`); pure.
+  `set _attrs.checked`), `taskDisabledReason`, the moved-on codes; pure. The
+  toggle's command is `@omgbase/client`'s `taskCheckCommand`.
+- `src/lib/palette.ts` — the palette's input modes, the find query, ranking,
+  action matching, `newDocumentPath`, the cursor; `src/lib/create.ts` —
+  `createDocumentCommand`, `defaultMarkdown`, `creationError`.
+- `src/lib/graph.ts` — the graph model (`withNeighborhood`, pins, titles,
+  provenance text, the geometry helpers); `src/lib/graph-commands.ts` — pin /
+  unpin / expand as local commands; `src/lib/relations.ts` — `relationChoices`,
+  `describeRelation`, `attachRelationCommand` (frontmatter kinds guarded by the
+  revision, the body link by the inserted block's hash).
 - `src/lib/tools.ts` — `MINIMAL_TOOLS`, `capabilities`, the missing-tools banner.
 - `src/lib/tree.ts` — `docs_tree` shapes, `fetchLevel` (follows the cursor), labels.
 - `src/lib/document.ts` — `docs_read` / `docs_read { at }` shapes, `fetchDocument`,
@@ -351,7 +406,8 @@ call once, noting *session expired at the server — reconnected* in the header.
   `canApply`), `anchorsSummary`.
 - `src/lib/links.ts`, `src/lib/history.ts`, `src/lib/feed.ts`, `src/lib/writes.ts`,
   `src/lib/console.ts`, `src/lib/query.ts` — the queries, shapes and calls per
-  feature (the table above), each pure where it can be.
+  feature (the table above), each pure where it can be; `writes.ts` also holds
+  `frontmatterPlanCommand` (the confirmed plan as a log entry).
 - `src/lib/diff.ts` — Myers' O(ND) line diff with `docs_diff_unified`'s tie rule
   and hunk format, `unifiedDiff`, `diffStats`.
 - `src/lib/route.ts` — the hash route; `src/lib/paths.ts` — paths, the hit
@@ -369,11 +425,16 @@ call once, noting *session expired at the server — reconnected* in the header.
   (edit scripts, hunks, the alchemy frontmatter edit), the feed (cursor,
   entries, cap), writes (effects, value parsing, plan → execute, `plan_mismatch`),
   tasks (the marker, the CAS-pinned effect, the gate reasons, the moved-on
-  codes, the undo log and its refusals; task items rendered enabled / disabled
-  / nested / not-a-task; `apply`'s argument shape and a `stale_expectation`
-  envelope through the client), the route, the client's session recovery and
-  `unknown tool` mapping, the dev arguments and the stand-in — 108 tests, no
-  live server.
+  codes; task items rendered enabled / disabled / nested / not-a-task), the
+  frontmatter plan command (the digest-form execute, the restore, the refusal),
+  the palette (modes, the find query's escaping, ranking tiers, action
+  matching, `newDocumentPath`, the cursor) and the create command, the graph
+  model (bounds, dedup, pins, the titles query), the pin/unpin/expand commands
+  through a real `CommandLog` (coalescing), the relations (the choices over
+  frontmatter shapes, each write's exact effect and guard, every refusal), the
+  geometry, the route, the dev arguments and the stand-in — 181 tests, no live
+  server. The client's session recovery and `unknown tool` mapping are tested
+  in `packages/client`.
 
 ## Verified against the real stack
 

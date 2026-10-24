@@ -12,17 +12,15 @@
 // `stale_plan` (the document changed between plan and commit inside `apply`) or
 // `plan_mismatch`; the page re-reads and asks for another click.
 //
-// Undo is compensation, not history rewriting: each completed toggle is
-// remembered with the block's hash before and after the write, and undoing it
-// is a NEW `apply` that sets the attr back, pinned to `hashAfter` — refused
-// outright (`compensation`) when the block's current hash is not the one the
-// toggle left, because then someone else wrote the block and an undo would
-// overwrite their change. Redo is the same with the roles swapped. The log is
-// plain data (`ToggleLog`, two stacks) so it can later ride on the shared
-// `@omgbase/client` command log without a rewrite.
+// Undo is compensation, not history rewriting: the page runs each toggle as
+// `@omgbase/client`'s `taskCheckCommand` on the shared `CommandLog`, which
+// remembers the block's hash before and after the write and undoes by a NEW
+// `apply` that sets the attr back, pinned to the hash the toggle left —
+// refused when the block's current hash is not that one (someone else wrote
+// the block; an undo would overwrite their change). Redo re-reads the same way.
 
 import type { OmgError } from "./mcp-client.ts";
-import type { Effect, Receipt } from "./writes.ts";
+import type { Effect } from "./writes.ts";
 
 // ---- the marker ----------------------------------------------------------------------------
 
@@ -74,84 +72,4 @@ export function taskDisabledReason(gate: TaskGate): string | null {
   if (gate.anchor === "none") return "this item has no block anchor (its level did not pair with the store's ids) — not editable here";
   if (gate.anchor === "unverified") return "this item's block could not be verified against the store (its raw did not hash to the stored hash) — not editable here";
   return null;
-}
-
-// ---- the log ---------------------------------------------------------------------------------
-
-export interface ToggleRecord {
-  blockId: string;
-  /** The document's rooted path. */
-  path: string;
-  from: boolean;
-  to: boolean;
-  /** The block's hash when the toggle was sent (the CAS it carried) — the hash redo expects. */
-  hashBefore: string;
-  /** The block's hash after the write (from the re-read) — the hash undo expects. */
-  hashAfter: string;
-  receipt: Receipt;
-}
-
-export interface ToggleLog {
-  /** Toggles in effect, oldest first; the last is the next to undo. */
-  done: ToggleRecord[];
-  /** Toggles undone, the last is the next to redo. */
-  undone: ToggleRecord[];
-}
-
-/** How many completed toggles are remembered (the oldest fall off). */
-export const LOG_CAP = 50;
-
-export const EMPTY_LOG: ToggleLog = { done: [], undone: [] };
-
-/** A fresh toggle: pushed, the redo stack cleared (a new write makes the undone toggles unreachable). */
-export function pushToggle(log: ToggleLog, rec: ToggleRecord): ToggleLog {
-  return { done: [...log.done, rec].slice(-LOG_CAP), undone: [] };
-}
-
-export type Direction = "undo" | "redo";
-
-/** The toggle an undo (or redo) would compensate, or null. */
-export function nextToggle(log: ToggleLog, dir: Direction): ToggleRecord | null {
-  const stack = dir === "undo" ? log.done : log.undone;
-  return stack[stack.length - 1] ?? null;
-}
-
-export type Compensation =
-  | { ok: true; effect: Effect; value: boolean; expectedHash: string }
-  | { ok: false; reason: string };
-
-/** The compensating effect for `rec` in `dir`, given the block's CURRENT hash
- * (undefined when the block is no longer in the document's ids) — or the
- * refusal. Undo expects `hashAfter` and sets `from`; redo expects
- * `hashBefore` and sets `to`. Never overwrite: a hash that is not the one
- * the toggle left means another write happened since. */
-export function compensation(rec: ToggleRecord, currentHash: string | undefined, dir: Direction): Compensation {
-  const expectedHash = dir === "undo" ? rec.hashAfter : rec.hashBefore;
-  const value = dir === "undo" ? rec.from : rec.to;
-  if (currentHash === undefined) {
-    return { ok: false, reason: `cannot ${dir}: block ${rec.blockId} is no longer in ${rec.path} (removed or re-identified since the toggle)` };
-  }
-  if (currentHash !== expectedHash) {
-    return { ok: false, reason: `cannot ${dir}: block ${rec.blockId} in ${rec.path} changed since the toggle (expected hash ${expectedHash.slice(0, 12)}…, now ${currentHash.slice(0, 12)}…) — not overwriting someone else's edit` };
-  }
-  return { ok: true, effect: setCheckedEffect(rec.blockId, value, expectedHash), value, expectedHash };
-}
-
-/** The log after a compensation in `dir` landed: the record moves to the other
- * stack with the hash the compensation left (`hashNow`, from the re-read) in the
- * slot the opposite direction will expect — after an undo the block is at
- * `hashBefore` again (possibly a new value: `[X]` normalises to `[x]`), so redo
- * expects THAT; after a redo, `hashAfter`. */
-export function afterCompensation(log: ToggleLog, rec: ToggleRecord, dir: Direction, hashNow: string): ToggleLog {
-  if (dir === "undo") {
-    return { done: log.done.filter((r) => r !== rec), undone: [...log.undone, { ...rec, hashBefore: hashNow }] };
-  }
-  return { done: [...log.done, { ...rec, hashAfter: hashNow }].slice(-LOG_CAP), undone: log.undone.filter((r) => r !== rec) };
-}
-
-/** The affordance's label: `undo: uncheck "b_12" in /a.md` (what the compensation would do). */
-export function toggleLabel(rec: ToggleRecord | null, dir: Direction): string | null {
-  if (!rec) return null;
-  const value = dir === "undo" ? rec.from : rec.to;
-  return `${dir}: ${value ? "check" : "uncheck"} ${rec.blockId} in ${rec.path}`;
 }

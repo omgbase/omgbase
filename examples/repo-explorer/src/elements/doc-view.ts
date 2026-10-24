@@ -12,9 +12,10 @@
 // hash from the read (the CAS), and the page applies it. While the toggle is in
 // flight (`taskPending`) the box keeps the state the user gave it, disabled;
 // when the page clears `taskPending` without a new rendering (the write failed)
-// the box falls back to the rendering's state. Undo / redo of the last toggles
-// are buttons by the title and ⌘Z / ⇧⌘Z (Ctrl on other platforms) while this
-// element has focus and the key did not land in a text field.
+// the box falls back to the rendering's state. Undo / redo of the page's last
+// commands (the shared command log: toggles, frontmatter edits, …) are buttons
+// by the title and ⌘Z / ⇧⌘Z (Ctrl on other platforms) while this element has
+// focus and the key did not land in a text field.
 //
 // Properties: `doc` (lib/document.ts DocRead), `rendered` (the body's HTML and
 // anchor verdicts), `view` ("rendered" | "raw"), `canWrite`, `pending` (the
@@ -23,8 +24,8 @@
 // `redoLabel` (what the compensation would do; null = nothing to undo/redo).
 // Events: `open-doc { path }` (a link to another document), `open-wiki { name }`,
 // `view-change { view }`, `write-plan { key, value, unset }`, `write-execute`,
-// `write-cancel`, `task-toggle { blockId, checked, contentHash }`, `task-undo`,
-// `task-redo`.
+// `write-cancel`, `task-toggle { blockId, checked, contentHash }`, `log-undo`,
+// `log-redo`.
 
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -174,14 +175,14 @@ export class DocView extends LitElement {
     this.dispatchEvent(new CustomEvent<T>(name, { detail, bubbles: true, composed: true }));
   }
 
-  /** ⌘Z / ⇧⌘Z (Ctrl elsewhere) while focus is here and not in a text field: undo / redo the last task toggle. */
+  /** ⌘Z / ⇧⌘Z (Ctrl elsewhere) while focus is here and not in a text field: undo / redo the page's last command. */
   private onKeydown = (e: KeyboardEvent): void => {
     const dir = undoKey(e);
     if (!dir || isTextEntry(e.composedPath()[0] ?? e.target)) return;
     if (dir === "undo" && !this.undoLabel) return;
     if (dir === "redo" && !this.redoLabel) return;
     e.preventDefault();
-    this.emit(dir === "undo" ? "task-undo" : "task-redo", {});
+    this.emit(dir === "undo" ? "log-undo" : "log-redo", {});
   };
 
   /** A `change` inside the rendered body: a task checkbox → the toggle, with the block's hash from the read (the CAS). */
@@ -327,9 +328,9 @@ export class DocView extends LitElement {
         <span class="path">${doc.path}</span>
         <span class="meta">${doc.id} · ${doc.rev}</span>
         <span class="spacer"></span>
-        <span class="undo" role="group" aria-label="task toggles" data-undo>
-          <button type="button" title=${this.undoLabel ?? "nothing to undo (undoes the last task toggle; ⌘Z / Ctrl+Z)"} ?disabled=${!this.undoLabel || this.taskPending !== null} @click=${() => this.emit("task-undo", {})}>undo</button>
-          <button type="button" title=${this.redoLabel ?? "nothing to redo (⇧⌘Z / Ctrl+Shift+Z)"} ?disabled=${!this.redoLabel || this.taskPending !== null} @click=${() => this.emit("task-redo", {})}>redo</button>
+        <span class="undo" role="group" aria-label="undo and redo" data-undo>
+          <button type="button" title=${this.undoLabel ?? "nothing to undo (undoes the last command: a task toggle, a frontmatter edit, …; ⌘Z / Ctrl+Z)"} ?disabled=${!this.undoLabel || this.taskPending !== null} @click=${() => this.emit("log-undo", {})}>undo</button>
+          <button type="button" title=${this.redoLabel ?? "nothing to redo (⇧⌘Z / Ctrl+Shift+Z)"} ?disabled=${!this.redoLabel || this.taskPending !== null} @click=${() => this.emit("log-redo", {})}>redo</button>
         </span>
         <span class="toggle" role="group" aria-label="view">
           <button type="button" class=${this.view === "rendered" ? "on" : ""} @click=${() => this.emit<ViewChangeDetail>("view-change", { view: "rendered" })}>rendered</button>

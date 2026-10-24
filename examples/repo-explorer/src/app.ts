@@ -7,13 +7,17 @@
 //   live feed (changes_since polled) and the query console (query, query_syntax).
 //   Writes: plan { effects, diffs: true } → confirm → execute { plan_id, effects };
 //   a task checkbox: ONE apply { set _attrs.checked, expect: { content_hash } } →
-//   re-read; undo/redo = a compensating apply, refused unless the block's hash
-//   is still the one the toggle left (lib/tasks.ts).
+//   re-read. Every write runs as a command on the shared `CommandLog`
+//   (@omgbase/client): undo/redo is a compensating apply computed against the
+//   repository's CURRENT state and refused when the block or key moved on.
 //
-// Everything runs on the MINIMAL tools profile (lib/tools.ts): `repos` is the
-// one optional tool (a picker when it is listed; otherwise the server's default
-// repository is the one browsed, and nothing names a `repo`). The data path is
-// MCP only (lib/mcp-client.ts) through the dev proxy at the same-origin /mcp.
+// Everything runs on the MINIMAL tools profile (lib/tools.ts). The repository
+// is a DESIGNATION, as in graph-ui: the header field (persisted; `?repo=` in the
+// page URL seeds it), else the one the proxy was started for (`/whoami` `repo`,
+// from `--repo`), else the server's default (no `repo` argument at all); `repos`
+// is the one optional tool — a picker when it is listed. The data path is MCP
+// only (lib/mcp-client.ts, the shared `OmgClient`) through the dev proxy at the
+// same-origin /mcp.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
@@ -30,23 +34,32 @@ import "./elements/links-panel.ts";
 import "./elements/query-console.ts";
 import "./elements/history-panel.ts";
 import "./elements/feed-strip.ts";
+import "./elements/command-palette.ts";
+import "./elements/graph-pane.ts";
+import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphPathDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "./elements/graph-pane.ts";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, emptyModel, fetchDocLinks, fetchTitles, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
+import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
 import type { DocViewMode, OpenDocDetail, OpenWikiDetail, TaskPending, TaskToggleDetail, ViewChangeDetail, WritePlanDetail } from "./elements/doc-view.ts";
 import type { ConsoleOpenDetail, ConsoleRunDetail } from "./elements/query-console.ts";
 import type { HistorySelectDetail } from "./elements/history-panel.ts";
-import { OmgClient, OmgError, applyEffects, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
-import { EMPTY_LOG, MOVED_ON_MESSAGE, afterCompensation, compensation, isMovedOn, nextToggle, pushToggle, setCheckedEffect, toggleLabel, type Direction, type ToggleLog } from "./lib/tasks.ts";
+import { findQuery, itemsFor, parseInput, type PaletteAction, type PaletteItem } from "./lib/palette.ts";
+import { createDocumentCommand, creationError, defaultMarkdown } from "./lib/create.ts";
+import { CommandLog, taskCheckCommand, type HistoryEntry } from "@omgbase/client";
+import { OmgClient, OmgError, fetchWhoAmI, type Wire } from "./lib/mcp-client.ts";
+import { MOVED_ON_MESSAGE, isMovedOn } from "./lib/tasks.ts";
 import { docLocator, profileOf, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { capabilities, missingToolsText, profileLabel, type Capabilities } from "./lib/tools.ts";
 import { fetchLevel, prefixesToOpen, type LevelState } from "./lib/tree.ts";
 import { fetchDocument, fetchDocumentAt, splitFrontmatter, type DocAt, type DocRead } from "./lib/document.ts";
 import { renderBody, type Rendered } from "./lib/markdown.ts";
 import { fetchLinks, resolveWikilink, type DocLinks } from "./lib/links.ts";
-import { STARTER_QUERY, describeToolError, fetchSyntax, locatorQuery, nextPage, runConsole, type CellLink, type ToolErrorInfo } from "./lib/console.ts";
+import { STARTER_QUERY, describeToolError, fetchSyntax, footerText, locatorQuery, nextPage, runConsole, type CellLink, type ToolErrorInfo } from "./lib/console.ts";
 import { runQuery, type QueryOptions, type QueryResult } from "./lib/query.ts";
 import { deletedRevisionsQuery, fetchDeleted, fetchRevisions, revisionsQuery, type DeletedDoc, type RevisionRow } from "./lib/history.ts";
 import { advanceCursor, fetchChanges, pollMs, prependDigests, startCursor, touchedPaths, type FeedEntry } from "./lib/feed.ts";
-import { executePlan, parseValue, planEffects, receiptOf, setFrontmatterEffect, unsetFrontmatterEffect, type Plan } from "./lib/writes.ts";
+import { frontmatterPlanCommand, parseValue, planEffects, setFrontmatterEffect, unsetFrontmatterEffect, type Plan } from "./lib/writes.ts";
 import { DEFAULT_ROUTE, openDocRoute, parseRoute, routeHash, type Route, type Tab } from "./lib/route.ts";
 import { effect } from "./lib/effect.ts";
 import { hitPath, rooted } from "./lib/paths.ts";
@@ -57,6 +70,8 @@ const QUERY_KEY = "omgbase-repo-explorer.query";
 const VIEW_KEY = "omgbase-repo-explorer.view";
 const POLL_KEY = "omgbase-repo-explorer.poll";
 const SPLIT_KEY = "omgbase-repo-explorer.split";
+const CONSOLE_KEY = "omgbase-repo-explorer.console";
+const CONSOLE_SPLIT_KEY = "omgbase-repo-explorer.console-split";
 
 // ---- state --------------------------------------------------------------------------
 
@@ -68,9 +83,15 @@ const profile = signal<string | null>(null);
 const tools = signal<string[] | null>(null);
 const caps = computed<Capabilities>(() => capabilities(tools.get()));
 const repos = signal<string[]>([]);
-/** The repo slug passed to every tool; "" = the server's default (the only choice without `repos`). */
-const repo = signal<string>(localStorage.getItem(REPO_KEY) ?? "");
-const repoArgValue = computed<string | null>(() => repo.get() || null);
+/** The user's repository designation (the header field; `?repo=` in the page URL seeds it), "" = none. */
+const repoOverride = signal<string>(repoFromUrl() ?? localStorage.getItem(REPO_KEY) ?? "");
+/** The repo slug passed to every repo-scoped tool: the override, else the proxy's `--repo`, else "" (the server's default). */
+const repoInUse = computed<string>(() => repoOverride.get() || whoami.get()?.repo || "");
+const repoArgValue = computed<string | null>(() => repoInUse.get() || null);
+
+function repoFromUrl(): string | null {
+  try { return new URL(location.href).searchParams.get("repo")?.trim() || null; } catch { return null; }
+}
 /** Writes are possible when plan + execute are listed. */
 const canWrite = computed<boolean>(() => { const t = tools.get(); return t === null || (t.includes("plan") && t.includes("execute")); });
 /** Task checkboxes toggle when `apply` is listed (read-only servers render them disabled, saying why). */
@@ -103,6 +124,9 @@ const consoleError = signal<ToolErrorInfo | null>(null);
 const consoleRunning = signal(false);
 const consoleOpts = signal<QueryOptions>({});
 const syntax = signal<string | null>(null);
+/** The console is a collapsible drawer under the main pane: closed, it is one bar. */
+const consoleOpen = signal<boolean>(localStorage.getItem(CONSOLE_KEY) === "open");
+const consoleSplit = signal<number>(Number(localStorage.getItem(CONSOLE_SPLIT_KEY) ?? 62) || 62);
 
 const feed = signal<FeedEntry[]>([]);
 const feedLive = signal(true);
@@ -115,14 +139,37 @@ const pendingPlan = signal<Plan | null>(null);
 const writing = signal(false);
 const writeMessage = signal<{ kind: "error" | "info"; text: string; fix?: string | null } | null>(null);
 
-/** The session's completed task toggles (lib/tasks.ts): undo/redo stacks, in memory only. */
-const taskLog = signal<ToggleLog>(EMPTY_LOG);
 /** The task write in flight (a toggle or a compensation), or null. */
 const taskPending = signal<TaskPending | null>(null);
-const undoLabel = computed(() => toggleLabel(nextToggle(taskLog.get(), "undo"), "undo"));
-const redoLabel = computed(() => toggleLabel(nextToggle(taskLog.get(), "redo"), "redo"));
+/** Bumped on every command-log event so the computed labels below re-read the log. */
+const logVersion = signal(0);
+const undoLabel = computed(() => { logVersion.get(); const e = log.nextUndo; return e ? `undo: ${e.label}` : null; });
+const redoLabel = computed(() => { logVersion.get(); const e = log.nextRedo; return e ? `redo: ${e.label}` : null; });
 
 const splitPosition = signal<number>(Number(localStorage.getItem(SPLIT_KEY) ?? 24) || 24);
+
+/** The command palette (⌘K): find a document by path or title (one `query` per
+ * keystroke, debounced in the element), `>` for the page's actions, `+` to create. */
+const paletteOpen = signal(false);
+const paletteText = signal("");
+const paletteItems = signal<PaletteItem[]>([]);
+const paletteLoading = signal(false);
+const paletteError = signal<string | null>(null);
+const paletteMode = signal<"navigate" | "pick">("navigate");
+const paletteHeading = signal<string | null>(null);
+/** Pick mode's caller (the graph's find-or-create destination): resolved with the picked item, or null when the palette closes. */
+let palettePick: ((item: PaletteItem | null) => void) | null = null;
+
+/** The graph tab: the open document's neighbourhood (lib/graph.ts), expanded node
+ * by node; pins are presentation state on the model, every change a command on
+ * the log (so ⌘Z undoes a drop or an expansion like a write). */
+const graph = signal<GraphModel | null>(null);
+const graphSelected = signal<string | null>(null);
+const graphBusy = signal(false);
+const graphError = signal<string | null>(null);
+/** A connector in progress: its source and destination, and the ways the relation could be written. */
+const connectPending = signal<{ from: string; to: string; toTitle: string | null; choices: RelationChoice[]; chosen: number; newField: string } | null>(null);
+const graphModel: ModelAccessor = { get: () => graph.get() ?? emptyModel("/"), set: (m) => graph.set(m) };
 
 const headerLabel = computed(() => {
   const w = whoami.get();
@@ -140,8 +187,13 @@ const headerLabel = computed(() => {
 
 const client = new OmgClient({
   url: MCP_URL,
+  clientInfo: { name: "omgbase-repo-explorer", version: "0.0.0" },
   onSessionLost: () => { if (connection.get() === "ok") connectionMessage.set("session expired at the server — reconnected"); },
 });
+
+/** The session's commands (@omgbase/client): every write the page makes, with its compensating undo. In memory only. */
+const log = new CommandLog({ client });
+log.subscribe(() => logVersion.set(logVersion.get() + 1));
 
 function describe(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -209,10 +261,12 @@ async function loadDocument(path: string): Promise<void> {
   at.set(null);
   pendingPlan.set(null);
   writeMessage.set(null);
+  if (graph.get()?.root !== path) { graph.set(null); connectPending.set(null); }
   try {
     const d = await fetchDocument(client, docLocator(path), repoArgValue.get());
     if (gen !== docGeneration) return;
     doc.set(d);
+    if (route.get().tab === "graph" && graph.get()?.root !== path) void loadGraph(path);
     rendered.set(null);
     const r = await renderBody(splitFrontmatter(d.raw).body, d.blockIds, { canApply: canApply.get() });
     if (gen !== docGeneration) return;
@@ -307,7 +361,12 @@ async function runConsoleQuery(query: string, opts: QueryOptions, append: boolea
 
 function onConsoleRun(query: string): void {
   consoleQuery.set(query);
+  consoleOpen.set(true);
   void runConsoleQuery(query, { repo: repoArgValue.get() }, false);
+}
+
+function toggleConsole(open = !consoleOpen.get()): void {
+  consoleOpen.set(open);
 }
 
 function onConsoleMore(): void {
@@ -418,15 +477,26 @@ async function planFrontmatter(detail: WritePlanDetail): Promise<void> {
   }
 }
 
+/** The confirmed plan commits as a command on the log, so it can be undone (a
+ * compensating `set`/`unset` of the key, refused when the key moved on since). */
 async function executePending(): Promise<void> {
   const plan = pendingPlan.get();
   const d = doc.get();
   if (!plan || !d) return;
+  const first = plan.effects[0] ?? {};
+  const key = typeof first.field === "string" ? first.field.replace(/^_frontmatter\./, "") : "";
+  const fm = d.properties.frontmatter;
+  const existed = Object.prototype.hasOwnProperty.call(fm, key);
   writing.set(true);
   try {
-    const receipt = await executePlan(client, plan, repoArgValue.get(), "repo-explorer frontmatter edit");
+    const entry = await log.run(frontmatterPlanCommand({
+      plan, path: d.path, key, value: first.op === "unset" ? undefined : first.value, previous: fm[key], existed,
+      repo: repoArgValue.get(), reason: "repo-explorer frontmatter edit",
+    }));
+    if (entry.state !== "applied") throw entry.error;
+    const receipt = entry.steps[0]?.applied?.receipts[0];
     pendingPlan.set(null);
-    writeMessage.set({ kind: "info", text: receipt.commit ? `committed ${receipt.commit}: ${receipt.summary.join("; ")}` : "nothing to commit" });
+    writeMessage.set({ kind: "info", text: receipt?.commit ? `committed ${receipt.commit}: ${receipt.summary.join("; ")} — undo with the button or ⌘Z` : "nothing to commit" });
     await loadDocument(d.path);
     refreshLevels([d.path]);
   } catch (e) {
@@ -438,44 +508,38 @@ async function executePending(): Promise<void> {
   }
 }
 
-// ---- task checkboxes --------------------------------------------------------------------------
+// ---- task checkboxes and the command log ------------------------------------------------------
 
-/** The document re-read after a task write: the open document reloaded (so the
- * rendering, property table, history and links are the truth again, as after a
- * frontmatter edit) when it is the one written, else a plain read — either way
- * the fresh `blockIds` for the block's new hash. */
-async function rereadAfterTaskWrite(path: string): Promise<DocRead | null> {
-  if (doc.get()?.path === path) {
-    await loadDocument(path);
-    const d = doc.get();
-    if (d?.path === path) return d;
-  }
-  try { return await fetchDocument(client, docLocator(path), repoArgValue.get()); } catch { return null; }
+/** The document re-read after a write: the open document reloaded (so the
+ * rendering, property table, history and links are the truth again) when it is
+ * the one written, else nothing (its folder's counts are refreshed either way). */
+async function rereadAfterWrite(path: string): Promise<void> {
+  if (doc.get()?.path === path) await loadDocument(path);
+  refreshLevels([path]);
 }
 
-/** A checkbox changed: ONE `apply` with `set _attrs.checked` pinned to the block's hash from the read; then re-read. */
+/** A checkbox changed: ONE `apply` with `set _attrs.checked` pinned to the
+ * block's hash from the read, as the shared `taskCheckCommand` on the log (its
+ * undo re-reads the block's hash and refuses when it is not the one the toggle
+ * left); then re-read. */
 async function toggleTask(detail: TaskToggleDetail): Promise<void> {
   const d = doc.get();
   if (!d || taskPending.get() || !canApply.get()) return;
-  const from = !detail.checked;
   taskPending.set({ blockId: detail.blockId, checked: detail.checked });
   writeMessage.set(null);
+  const verb = detail.checked ? "check" : "uncheck";
   try {
-    const receipt = receiptOf(await applyEffects(client, [setCheckedEffect(detail.blockId, detail.checked, detail.contentHash)], { repo: repoArgValue.get(), reason: "repo-explorer task toggle" }));
-    const after = await rereadAfterTaskWrite(d.path);
-    const hashAfter = after?.blockIds?.hashes[detail.blockId];
-    refreshLevels([d.path]);
-    if (hashAfter === undefined) {
-      writeMessage.set({ kind: "info", text: `${detail.checked ? "checked" : "unchecked"} ${detail.blockId}: committed ${receipt.commit ?? "nothing"} — but the re-read no longer has the block, so this toggle cannot be undone` });
-      return;
-    }
-    taskLog.set(pushToggle(taskLog.get(), { blockId: detail.blockId, path: d.path, from, to: detail.checked, hashBefore: detail.contentHash, hashAfter, receipt }));
-    writeMessage.set({ kind: "info", text: receipt.commit ? `${detail.checked ? "checked" : "unchecked"} ${detail.blockId}: committed ${receipt.commit} (${receipt.summary.join("; ")}) — undo with the button or ⌘Z` : `nothing to commit (${detail.blockId} already ${detail.checked ? "checked" : "unchecked"})` });
+    const entry = await log.run(taskCheckCommand({
+      blockId: detail.blockId, checked: detail.checked, contentHash: detail.contentHash, repo: repoArgValue.get(),
+      label: `${verb} ${detail.blockId} in ${d.path}`,
+    }));
+    await rereadAfterWrite(d.path);
+    if (entry.state !== "applied") throw entry.error;
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    writeMessage.set({ kind: "info", text: receipt?.commit ? `${verb}ed ${detail.blockId}: committed ${receipt.commit} (${receipt.summary.join("; ")}) — undo with the button or ⌘Z` : `nothing to commit (${detail.blockId} already ${detail.checked ? "checked" : "unchecked"})` });
   } catch (e) {
-    if (isMovedOn(e)) {
-      await rereadAfterTaskWrite(d.path);
-      writeMessage.set({ kind: "error", text: `${e.code}: ${MOVED_ON_MESSAGE}` });
-    } else {
+    if (isMovedOn(e)) writeMessage.set({ kind: "error", text: `${e.code}: ${MOVED_ON_MESSAGE}` });
+    else {
       const info = describeToolError(e);
       writeMessage.set({ kind: "error", text: `apply: ${info.code} — ${info.message}`, fix: info.fix });
     }
@@ -484,44 +548,272 @@ async function toggleTask(detail: TaskToggleDetail): Promise<void> {
   }
 }
 
-/** Undo (or redo) the last task toggle: re-read the block's CURRENT hash, refuse
- * unless it is the one the toggle left, else apply the compensating `set`
- * pinned to that hash, re-read, and move the record to the other stack. */
-async function compensateTask(dir: Direction): Promise<void> {
-  const rec = nextToggle(taskLog.get(), dir);
-  if (!rec || taskPending.get() || !canApply.get()) return;
-  taskPending.set({ blockId: rec.blockId, checked: dir === "undo" ? rec.from : rec.to });
+/** The documents a log entry touched (its receipts' revisions), rooted. */
+function touchedByEntry(entry: HistoryEntry): string[] {
+  const paths = new Set<string>();
+  for (const step of entry.steps) for (const r of step.applied?.revisions ?? []) paths.add(rooted(r._path));
+  for (const r of entry.compensation?.revisions ?? []) paths.add(rooted(r._path));
+  return [...paths];
+}
+
+/** Undo (or redo) the last command on the log: a compensating `apply` computed
+ * against the repository's CURRENT state — refused, with the reason shown, when
+ * what the command wrote has moved on since. Local commands (pins, views) just
+ * restore state. */
+async function compensate(dir: "undo" | "redo"): Promise<void> {
+  const next = dir === "undo" ? log.nextUndo : log.nextRedo;
+  if (!next || taskPending.get()) return;
+  if (next.kind === "repository" && !canApply.get()) return;
+  if (next.kind === "repository") taskPending.set({ blockId: "", checked: false });
   writeMessage.set(null);
   try {
-    const current = await fetchDocument(client, docLocator(rec.path), repoArgValue.get()).then((d) => d.blockIds?.hashes[rec.blockId], () => undefined);
-    const c = compensation(rec, current, dir);
-    if (!c.ok) {
-      // Refused: the record stays where it is (a later undo re-checks), the page says why.
-      writeMessage.set({ kind: "error", text: c.reason });
-      if (doc.get()?.path === rec.path) await loadDocument(rec.path);
-      return;
-    }
-    const receipt = receiptOf(await applyEffects(client, [c.effect], { repo: repoArgValue.get(), reason: `repo-explorer task ${dir}` }));
-    const after = await rereadAfterTaskWrite(rec.path);
-    const hashNow = after?.blockIds?.hashes[rec.blockId];
-    refreshLevels([rec.path]);
-    if (hashNow === undefined) {
-      // The block vanished under the compensation (unlikely): drop the record rather than keep a hash we cannot vouch for.
-      taskLog.set({ done: taskLog.get().done.filter((r) => r !== rec), undone: taskLog.get().undone.filter((r) => r !== rec) });
-    } else {
-      taskLog.set(afterCompensation(taskLog.get(), rec, dir, hashNow));
-    }
-    writeMessage.set({ kind: "info", text: `${dir}: ${c.value ? "checked" : "unchecked"} ${rec.blockId} in ${rec.path} — committed ${receipt.commit ?? "nothing"}` });
+    const entry = dir === "undo" ? await log.undo() : await log.redo();
+    if (!entry) return;
+    const touched = touchedByEntry(entry);
+    for (const p of touched) await rereadAfterWrite(p);
+    if (entry.state === "refused") { writeMessage.set({ kind: "error", text: `${dir} refused — ${entry.refusal ?? "the repository moved on"}; nothing was overwritten` }); return; }
+    if (entry.error) throw entry.error;
+    if (entry.kind !== "repository") return;
+    const commit = dir === "undo" ? entry.compensation?.commit : entry.steps[entry.steps.length - 1]?.applied?.receipts[0]?.commit;
+    writeMessage.set({ kind: "info", text: `${dir}: ${entry.label} — committed ${commit ?? "nothing"}` });
   } catch (e) {
-    if (isMovedOn(e)) {
-      await rereadAfterTaskWrite(rec.path);
-      writeMessage.set({ kind: "error", text: `${dir} refused — ${e.code}: the block changed between the check and the write; nothing was overwritten` });
-    } else {
+    if (isMovedOn(e)) writeMessage.set({ kind: "error", text: `${dir} refused — ${e.code}: the document changed between the check and the write; nothing was overwritten` });
+    else {
       const info = describeToolError(e);
       writeMessage.set({ kind: "error", text: `${dir}: ${info.code} — ${info.message}`, fix: info.fix });
     }
   } finally {
     taskPending.set(null);
+  }
+}
+
+// ---- the palette -------------------------------------------------------------------------------
+
+const PALETTE_LIMIT = 20;
+let paletteGeneration = 0;
+
+/** The actions `>` offers, for the page as it is now. */
+function paletteActions(): PaletteAction[] {
+  const r = route.get();
+  const d = doc.get();
+  const out: PaletteAction[] = [
+    { id: "console", label: consoleOpen.get() ? "collapse the query console" : "expand the query console", shortcut: "⌘J", keywords: ["oqx", "query", "drawer"] },
+    { id: "console-run", label: "run the console query", hint: consoleQuery.get().replace(/\s+/g, " ").trim().slice(0, 60), shortcut: "⌘⏎", keywords: ["oqx", "query"] },
+    { id: "create", label: "new document…", hint: d ? `in ${d.path.slice(0, d.path.lastIndexOf("/") + 1)}` : "at /", shortcut: "+", keywords: ["create", "add"] },
+    { id: "deleted", label: "deleted documents", hint: "revisions { _doc == null }", keywords: ["history", "removed"] },
+    { id: "feed", label: feedLive.get() ? "pause the live strip" : "resume the live strip", keywords: ["changes_since", "poll"] },
+    { id: "reconnect", label: "reconnect", keywords: ["version", "tools"] },
+  ];
+  if (undoLabel.get()) out.push({ id: "undo", label: undoLabel.get()!, shortcut: "⌘Z" });
+  if (redoLabel.get()) out.push({ id: "redo", label: redoLabel.get()!, shortcut: "⇧⌘Z" });
+  if (d) {
+    out.push({ id: "view", label: view.get() === "raw" ? "show the rendered document" : "show the raw source", keywords: ["markdown", "raw", "rendered"] });
+    for (const tab of ["document", "history", "links", "graph"] as const) if (tab !== r.tab) out.push({ id: `tab:${tab}`, label: `${tab} of ${d.path}`, keywords: ["tab", tab] });
+  }
+  return out;
+}
+
+function openPalette(mode: "navigate" | "pick" = "navigate", heading: string | null = null, text = ""): void {
+  paletteMode.set(mode);
+  paletteHeading.set(heading);
+  paletteText.set(text);
+  paletteError.set(null);
+  paletteOpen.set(true);
+}
+
+function closePalette(): void {
+  paletteOpen.set(false);
+  paletteLoading.set(false);
+  const resolve = palettePick;
+  palettePick = null;
+  resolve?.(null);
+}
+
+/** The graph's find-or-create destination: the palette in pick mode; the picked item, or null when dismissed. */
+export function pickDestination(heading: string): Promise<PaletteItem | null> {
+  const previous = palettePick;
+  previous?.(null);
+  return new Promise((resolve) => {
+    palettePick = resolve;
+    openPalette("pick", heading);
+  });
+}
+
+async function paletteSearch(text: string): Promise<void> {
+  paletteText.set(text);
+  const input = parseInput(text);
+  const gen = ++paletteGeneration;
+  const ctx = { actions: paletteActions(), currentDoc: doc.get()?.path ?? null };
+  if (input.kind !== "find") { paletteItems.set(itemsFor(input, { ...ctx, docs: [] })); paletteLoading.set(false); return; }
+  paletteLoading.set(true);
+  paletteError.set(null);
+  try {
+    const r = await client.query(findQuery(input.text, PALETTE_LIMIT), { repo: repoArgValue.get(), limit: PALETTE_LIMIT });
+    if (gen !== paletteGeneration) return;
+    paletteItems.set(itemsFor(input, { ...ctx, docs: r.hits }));
+  } catch (e) {
+    if (gen !== paletteGeneration) return;
+    paletteError.set(describeToolError(e).message);
+    paletteItems.set(itemsFor(input, { ...ctx, docs: [] }));
+  } finally {
+    if (gen === paletteGeneration) paletteLoading.set(false);
+  }
+}
+
+/** `+path` or the create suggestion: ONE `apply { create }` as a command on the log
+ * (its undo removes the document, refused when it was edited since), then open it. */
+async function createDocument(path: string): Promise<void> {
+  if (!canApply.get()) { paletteError.set("read-only: this server does not list `apply`"); return; }
+  paletteLoading.set(true);
+  paletteError.set(null);
+  try {
+    const entry = await log.run(createDocumentCommand({ path, markdown: defaultMarkdown(path), repo: repoArgValue.get() }));
+    if (entry.state !== "applied") { paletteError.set(creationError(entry.error, path)); return; }
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    closePalette();
+    refreshLevels([path]);
+    openDoc(path);
+    writeMessage.set({ kind: "info", text: `created ${path}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with the button or ⌘Z` });
+  } finally {
+    paletteLoading.set(false);
+  }
+}
+
+function runPaletteAction(id: string): void {
+  closePalette();
+  const r = route.get();
+  switch (id) {
+    case "console": toggleConsole(); return;
+    case "console-run": onConsoleRun(consoleQuery.get()); return;
+    case "create": { const d = doc.get(); openPalette("navigate", null, `+${d ? d.path.slice(0, d.path.lastIndexOf("/") + 1) : "/"}`); return; }
+    case "deleted": setRoute({ ...DEFAULT_ROUTE, deleted: true }); return;
+    case "feed": setLive(!feedLive.get()); return;
+    case "reconnect": void connect(); return;
+    case "undo": void compensate("undo"); return;
+    case "redo": void compensate("redo"); return;
+    case "view": view.set(view.get() === "raw" ? "rendered" : "raw"); return;
+    default:
+      if (id.startsWith("tab:") && r.doc) setRoute({ ...r, tab: id.slice(4) as Tab });
+  }
+}
+
+function onPaletteSelect(item: PaletteItem): void {
+  if (paletteMode.get() === "pick") {
+    const resolve = palettePick;
+    palettePick = null;
+    paletteOpen.set(false);
+    resolve?.(item);
+    return;
+  }
+  switch (item.kind) {
+    case "doc": closePalette(); openDoc(item.path); return;
+    case "action": runPaletteAction(item.id); return;
+    case "create": void createDocument(item.path); return;
+  }
+}
+
+// ---- the graph ----------------------------------------------------------------------------------
+
+let graphGeneration = 0;
+
+/** The neighbourhood of `path` added to `model`: its links (two `links` queries), then the titles the model lacks (one `docs` query). */
+async function expanded(model: GraphModel, path: string): Promise<GraphModel> {
+  const links = await fetchDocLinks(client, path, { repo: repoArgValue.get() });
+  return fetchTitles(client, withNeighborhood(model, path, links, { limit: GRAPH_LIMIT }), { repo: repoArgValue.get() });
+}
+
+/** The graph tab opened (or the document changed): a fresh model around the open document. */
+async function loadGraph(path: string): Promise<void> {
+  const gen = ++graphGeneration;
+  graphBusy.set(true);
+  graphError.set(null);
+  connectPending.set(null);
+  try {
+    const m = await expanded(emptyModel(path), path);
+    if (gen !== graphGeneration) return;
+    graph.set(m);
+    graphSelected.set(path);
+  } catch (e) {
+    if (gen === graphGeneration) graphError.set(describe(e));
+  } finally {
+    if (gen === graphGeneration) graphBusy.set(false);
+  }
+}
+
+/** ⊕ / `e`: one more neighbourhood, as an undoable query command. */
+async function expandGraph(path: string): Promise<void> {
+  const before = graph.get();
+  if (!before || graphBusy.get()) return;
+  graphBusy.set(true);
+  graphError.set(null);
+  try {
+    const after = await expanded(before, path);
+    if (graph.get() !== before) return; // the model moved on meanwhile (an undo, a reload)
+    await log.run(expandCommand(graphModel, path, before, after));
+  } catch (e) {
+    graphError.set(describe(e));
+  } finally {
+    graphBusy.set(false);
+  }
+}
+
+/** A drop: one pin command per drag (sealed, so two drags are two undo steps). */
+async function pinGraphNode(d: GraphPinDetail): Promise<void> {
+  await log.run(pinCommand(graphModel, d.path, { x: d.x, y: d.y }, d.previous));
+  log.seal();
+}
+
+/** A connector landed on a document: read the source's frontmatter and ask where the relation should be written. */
+async function startConnect(from: string, to: string): Promise<void> {
+  if (!canApply.get() || from === to) return;
+  graphError.set(null);
+  try {
+    const d = await client.docsRead({ _path: from }, { repo: repoArgValue.get() });
+    const choices = relationChoices({ frontmatter: d.properties.frontmatter ?? {} }, to);
+    const toTitle = graph.get()?.nodes.get(to)?.title ?? null;
+    connectPending.set({ from, to, toTitle, choices, chosen: 0, newField: "" });
+  } catch (e) {
+    graphError.set(describe(e));
+  }
+}
+
+/** A connector dropped on open canvas: the palette picks (or creates) the destination, then the chooser. */
+async function connectToPicked(from: string): Promise<void> {
+  const item = await pickDestination(`connect ${from} to…`);
+  if (!item) return;
+  if (item.kind === "doc") { void startConnect(from, item.path); return; }
+  if (item.kind === "create") {
+    const entry = await log.run(createDocumentCommand({ path: item.path, markdown: defaultMarkdown(item.path), repo: repoArgValue.get() }));
+    if (entry.state !== "applied") { graphError.set(creationError(entry.error, item.path)); return; }
+    refreshLevels([item.path]);
+    void startConnect(from, item.path);
+  }
+}
+
+/** The chosen way, confirmed: ONE write as a command on the log, then the source's neighbourhood re-read. */
+async function confirmConnect(): Promise<void> {
+  const c = connectPending.get();
+  if (!c) return;
+  let how = c.choices[c.chosen];
+  if (!how) return;
+  if (how.kind === "frontmatter-new") how = { kind: "frontmatter-new", field: c.newField.trim() };
+  graphBusy.set(true);
+  graphError.set(null);
+  try {
+    const entry = await log.run(attachRelationCommand({ from: c.from, to: c.to, toTitle: c.toTitle, how, repo: repoArgValue.get() }));
+    if (entry.state !== "applied") throw entry.error;
+    connectPending.set(null);
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    writeMessage.set({ kind: "info", text: `${entry.label}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with the button or ⌘Z` });
+    await rereadAfterWrite(c.from);
+    // The edge is authored now: re-read the source's neighbourhood into the model.
+    const before = graph.get();
+    if (before) graph.set(await expanded(before, c.from));
+  } catch (e) {
+    const info = describeToolError(e);
+    graphError.set(`${info.code}: ${info.message}`);
+  } finally {
+    graphBusy.set(false);
   }
 }
 
@@ -581,20 +873,19 @@ async function connect(): Promise<void> {
     tools.set(names);
     const c = capabilities(names);
     if (c.repos) {
+      // Listed: the picker; a designation the server does not know is replaced by its first repo.
       try {
         const r = await client.call<{ repos: { slug: string }[] }>("repos", {});
         const slugs = r.repos.map((x) => x.slug);
         repos.set(slugs);
-        if (!slugs.includes(repo.get())) repo.set(slugs[0] ?? "");
+        if (slugs.length > 0 && !slugs.includes(repoInUse.get())) setRepoOverride(slugs[0]!);
       } catch { repos.set([]); }
     } else {
-      // Without `repos` the only addressable repository is the server's default: never name one.
+      // The minimal profile: the designation is whatever the header says (or the proxy's --repo), unchecked until a call answers `repo_not_found`.
       repos.set([]);
-      repo.set("");
     }
-    localStorage.setItem(REPO_KEY, repo.get());
     connection.set("ok");
-    connectionMessage.set(`surface ${v} · ${profileLabel(profile.get(), c)}${w.auth.recovered ? " · signed in again" : ""}`);
+    connectionMessage.set(`surface ${v} · ${profileLabel(profile.get(), c)}${repoInUse.get() ? ` · repo ${repoInUse.get()}` : ""}${w.auth.recovered ? " · signed in again" : ""}`);
     await refreshWhoAmI();
     levels.set(new Map());
     await Promise.all([loadLevel("/"), startFeed()]);
@@ -607,10 +898,16 @@ async function connect(): Promise<void> {
   }
 }
 
-function switchRepo(slug: string): void {
-  repo.set(slug);
+function setRepoOverride(slug: string): void {
+  repoOverride.set(slug);
   localStorage.setItem(REPO_KEY, slug);
-  taskLog.set(EMPTY_LOG); // the toggles were in another repository
+}
+
+/** A new designation: everything read so far was another repository's. */
+function switchRepo(slug: string): void {
+  if (slug === repoOverride.get()) return;
+  setRepoOverride(slug);
+  log.clear(); // the commands were in another repository
   doc.set(null);
   rendered.set(null);
   levels.set(new Map());
@@ -645,11 +942,22 @@ function applyRoute(r: Route): void {
 }
 
 window.addEventListener("hashchange", () => { route.set(parseRoute(location.hash)); });
+// Page-wide keys: ⌘K / Ctrl+K opens the palette, ⌘J / Ctrl+J toggles the console drawer.
+window.addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "k") { e.preventDefault(); if (paletteOpen.get()) closePalette(); else openPalette(); }
+  else if (k === "j") { e.preventDefault(); toggleConsole(); }
+});
 
 effect(() => { localStorage.setItem(QUERY_KEY, consoleQuery.get()); });
 effect(() => { localStorage.setItem(VIEW_KEY, view.get()); });
 effect(() => { localStorage.setItem(SPLIT_KEY, String(splitPosition.get())); });
+effect(() => { localStorage.setItem(CONSOLE_KEY, consoleOpen.get() ? "open" : "closed"); });
+effect(() => { localStorage.setItem(CONSOLE_SPLIT_KEY, String(consoleSplit.get())); });
 effect(() => { applyRoute(route.get()); });
+// The graph tab shown for a loaded document whose neighbourhood is not built yet.
+effect(() => { const r = route.get(); const d = doc.get(); if (r.tab === "graph" && d && r.doc === d.path && graph.get()?.root !== d.path && !graphBusy.get()) void loadGraph(d.path); });
 
 // ---- the element ----------------------------------------------------------------------------
 
@@ -663,7 +971,8 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     header .msg { color: #5a6270; font-size: 12.5px; }
     header .msg.err { color: #b3261e; }
     header .spacer { flex: 1; }
-    header select, header button { font: inherit; font-size: 12.5px; padding: 2px 6px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; }
+    header select, header button, header input { font: inherit; font-size: 12.5px; padding: 2px 6px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; }
+    header input.repo { width: 11em; }
     header a { color: #1565c0; font-size: 12.5px; }
     .banner { padding: 6px 14px; font-size: 12.5px; background: #fff8e1; color: #6d4c00; border-bottom: 1px solid #ffe082; }
     .banner code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -675,13 +984,34 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     .left { height: 100%; overflow: auto; padding: 8px 8px 8px 10px; box-sizing: border-box; }
     .left .deleted-link { display: block; margin-top: 12px; font-size: 12px; color: #1565c0; cursor: pointer; }
     .right { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 100%; min-height: 0; min-width: 0; }
-    .main { overflow: auto; padding: 10px 16px; min-height: 0; }
-    .console { border-top: 1px solid #e3e6ec; padding: 8px 16px 10px; max-height: 45vh; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: #fafbfc; }
-    .console query-console { flex: 1; min-height: 0; }
+    .right.open { grid-template-rows: minmax(0, 1fr); }
+    .right sl-split-panel.vertical { --min: 120px; --max: 85%; }
+    .main { overflow: auto; padding: 10px 16px; min-height: 0; height: 100%; box-sizing: border-box; }
+    /* The console drawer: one bar when closed; the bar plus the console, in a resizable split, when open. */
+    .console { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; background: #fafbfc; border-top: 1px solid #e3e6ec; height: 100%; box-sizing: border-box; }
+    .console-bar { display: flex; align-items: center; gap: 10px; padding: 4px 16px; font-size: 12px; color: #5a6270; cursor: pointer; user-select: none; flex: none; }
+    .console-bar:hover { background: #f0f2f5; }
+    .console-bar .title { text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .console-bar .caret { font-size: 11px; color: #8a94a6; width: 1em; }
+    .console-bar .summary { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: #8a94a6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+    .console-bar kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid #c9cdd6; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: #fff; color: #5a6270; }
+    .console query-console { flex: 1; min-height: 0; padding: 0 16px 10px; }
     .welcome { color: #5a6270; max-width: 64ch; }
     .welcome code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f0f1f4; padding: 0 3px; border-radius: 3px; }
     .err { color: #b3261e; }
     sl-tab-group::part(body) { padding-top: 10px; }
+    .graph { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+    .graph graph-pane { height: 62vh; min-height: 320px; border: 1px solid #e3e6ec; border-radius: 6px; background: #fff; }
+    .graph-hint { font-size: 12px; color: #8a94a6; }
+    .connect { padding: 8px 10px; border: 1px solid #ffe082; background: #fff8e1; border-radius: 6px; font-size: 12.5px; color: #6d4c00; display: flex; flex-direction: column; gap: 4px; }
+    .connect .title code, .connect .hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .connect .choice { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .connect .note { color: #b26a00; font-size: 11.5px; }
+    .connect input.field { font: inherit; font-size: 12.5px; padding: 1px 6px; border: 1px solid #c9cdd6; border-radius: 4px; width: 12em; }
+    .connect .row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+    .connect button { font: inherit; font-size: 12.5px; padding: 2px 10px; border: 1px solid #c9cdd6; border-radius: 4px; background: #fff; cursor: pointer; }
+    .connect button.primary { background: #1565c0; color: #fff; border-color: #1565c0; }
+    .connect .hint { color: #8a94a6; font-size: 11.5px; }
     .deleted h2 { font-size: 16px; margin: 0 0 8px; }
     .deleted .query { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8a94a6; margin-bottom: 8px; }
     .deleted table { border-collapse: collapse; font-size: 12.5px; }
@@ -717,6 +1047,58 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     </div>`;
   }
 
+  /** The drawer's handle: open/close, the last result in a line, the shortcut. */
+  private renderConsoleBar() {
+    const open = consoleOpen.get();
+    const r = consoleResult.get();
+    const err = consoleError.get();
+    const summary = err ? `${err.code}: ${err.message}` : r ? `${consoleRunning.get() ? "running… " : ""}${footerText(r, consoleRows.get().length)} · ${consoleQuery.get().replace(/\s+/g, " ").trim()}` : consoleQuery.get().replace(/\s+/g, " ").trim();
+    return html`<div class="console-bar" role="button" tabindex="0" aria-expanded=${open} data-console-bar title=${open ? "collapse the query console (⌘J / Ctrl+J)" : "expand the query console (⌘J / Ctrl+J)"}
+      @click=${() => toggleConsole()} @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleConsole(); } }}>
+      <span class="caret">${open ? "▾" : "▸"}</span>
+      <span class="title">query console</span>
+      <span class="summary">${summary}</span>
+      <kbd>⌘J</kbd>
+    </div>`;
+  }
+
+  /** The chooser a connector opens: where the relation is written is the user's call, never the page's. */
+  private renderConnect() {
+    const c = connectPending.get();
+    if (!c) return nothing;
+    return html`<div class="connect" data-connect>
+      <div class="title">connect <code>${c.from}</code> → <code>${c.to}</code> — where should it be written?</div>
+      ${c.choices.map((how, i) => html`<label class="choice">
+        <input type="radio" name="how" .checked=${i === c.chosen} @change=${() => connectPending.set({ ...c, chosen: i })}>
+        <span>${describeRelation(how.kind === "frontmatter-new" ? { kind: "frontmatter-new", field: c.newField.trim() || "<field>" } : how, c.from, c.to)}</span>
+        ${how.kind === "frontmatter" && how.note ? html`<span class="note">${how.note}</span>` : nothing}
+        ${how.kind === "frontmatter-new" ? html`<input class="field" placeholder="field name" .value=${c.newField} @input=${(e: Event) => connectPending.set({ ...c, newField: (e.target as HTMLInputElement).value })} @focus=${() => connectPending.set({ ...c, chosen: i })}>` : nothing}
+      </label>`)}
+      <div class="row">
+        <button type="button" class="primary" ?disabled=${graphBusy.get() || (c.choices[c.chosen]?.kind === "frontmatter-new" && !c.newField.trim())} @click=${() => { void confirmConnect(); }}>apply</button>
+        <button type="button" ?disabled=${graphBusy.get()} @click=${() => connectPending.set(null)}>cancel</button>
+        <span class="hint">one <code>apply</code>, pinned to the document's revision; undo restores the field (refused when it moved on)</span>
+      </div>
+    </div>`;
+  }
+
+  private renderGraph(path: string) {
+    const m = graph.get();
+    return html`<div class="graph">
+      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} — drag to pin, ✕/u unpins, ⌘-drag (or c) connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
+      ${graphError.get() ? html`<div class="err">${graphError.get()}</div>` : nothing}
+      ${this.renderConnect()}
+      ${m ? html`<graph-pane .model=${m} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
+        @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.path)}
+        @graph-open=${(e: CustomEvent<GraphPathDetail>) => openDoc(e.detail.path)}
+        @graph-expand=${(e: CustomEvent<GraphPathDetail>) => { void expandGraph(e.detail.path); }}
+        @graph-pin=${(e: CustomEvent<GraphPinDetail>) => { void pinGraphNode(e.detail); }}
+        @graph-unpin=${(e: CustomEvent<GraphUnpinDetail>) => { void log.run(unpinCommand(graphModel, e.detail.path, e.detail.previous)); }}
+        @graph-connect=${(e: CustomEvent<GraphConnectDetail>) => { void startConnect(e.detail.from, e.detail.to); }}
+        @graph-connect-empty=${(e: CustomEvent<GraphConnectEmptyDetail>) => { void connectToPicked(e.detail.from); }}></graph-pane>` : nothing}
+    </div>`;
+  }
+
   private renderMain() {
     const r = route.get();
     if (connection.get() !== "ok") return html`<div class="welcome">${connectionMessage.get() || "connecting…"}</div>`;
@@ -725,7 +1107,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     if (!r.doc) {
       const c = caps.get();
       return html`<div class="welcome">
-        <p>Pick a document in the tree, run a query below, or follow the live strip above.</p>
+        <p>Pick a document in the tree, press <code>⌘K</code> to find or create one, run a query in the console below (<code>⌘J</code>), or follow the live strip above.</p>
         <p>This page is built against <code>omg mcp --tools minimal</code>: the tree is <code>docs_tree</code>, a document <code>docs_read { include_ids }</code>, its links and history <code>query</code> over <code>links</code> and <code>revisions</code>, time travel <code>docs_read { at }</code>, the strip <code>changes_since</code>, edits <code>plan</code> → <code>execute</code>.</p>
         ${c.tools ? html`<p>This server lists ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}${c.beyondMinimal.length ? ` (${c.beyondMinimal.length} beyond the minimal ten; only \`repos\` is used, for the picker)` : " — the minimal profile"}.</p>` : nothing}
       </div>`;
@@ -738,12 +1120,13 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         <sl-tab slot="nav" panel="document" ?active=${r.tab === "document"}>document</sl-tab>
         <sl-tab slot="nav" panel="history" ?active=${r.tab === "history"}>history${revisions.get() ? ` (${revisions.get()!.length})` : ""}</sl-tab>
         <sl-tab slot="nav" panel="links" ?active=${r.tab === "links"}>links${links.get() ? ` (${links.get()!.inbound.length} in · ${links.get()!.outbound.length} out)` : ""}</sl-tab>
+        <sl-tab slot="nav" panel="graph" ?active=${r.tab === "graph"}>graph${graph.get() ? ` (${graph.get()!.nodes.size})` : ""}</sl-tab>
         <sl-tab-panel name="document" ?active=${r.tab === "document"}>
           <doc-view .doc=${d} .rendered=${rendered.get()} .view=${view.get()} ?canWrite=${canWrite.get()} .pending=${pendingPlan.get()} .writeMessage=${writeMessage.get()} ?writing=${writing.get()} .highlight=${r.block}
             .taskPending=${taskPending.get()} .undoLabel=${undoLabel.get()} .redoLabel=${redoLabel.get()}
             @task-toggle=${(e: CustomEvent<TaskToggleDetail>) => { void toggleTask(e.detail); }}
-            @task-undo=${() => { void compensateTask("undo"); }}
-            @task-redo=${() => { void compensateTask("redo"); }}
+            @log-undo=${() => { void compensate("undo"); }}
+            @log-redo=${() => { void compensate("redo"); }}
             @open-doc=${(e: CustomEvent<OpenDocDetail>) => openDoc(e.detail.path)}
             @open-wiki=${(e: CustomEvent<OpenWikiDetail>) => { void openWiki(e.detail.name); }}
             @view-change=${(e: CustomEvent<ViewChangeDetail>) => view.set(e.detail.view)}
@@ -758,6 +1141,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         <sl-tab-panel name="links" ?active=${r.tab === "links"}>
           <links-panel .links=${links.get()} .path=${d.path} .error=${linksError.get()} @open-doc=${(e: CustomEvent<OpenDocDetail>) => openDoc(e.detail.path)}></links-panel>
         </sl-tab-panel>
+        <sl-tab-panel name="graph" ?active=${r.tab === "graph"}>${r.tab === "graph" ? this.renderGraph(d.path) : nothing}</sl-tab-panel>
       </sl-tab-group>
     `;
   }
@@ -775,11 +1159,21 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
           ? html` (<a href=${whoami.get()!.auth.authorizationUrl!} target="_blank" rel="noopener">open the sign-in page</a>)` : nothing}</span>
         <span class="spacer"></span>
         ${repos.get().length > 0 ? html`<label>repo
-          <select .value=${repo.get()} @change=${(e: Event) => switchRepo((e.target as HTMLSelectElement).value)}>
-            ${repos.get().map((slug) => html`<option value=${slug} ?selected=${slug === repo.get()}>${slug}</option>`)}
-          </select></label>` : html`<span class="label" title="the minimal profile has no repos tool: the server's default repository is browsed">default repo</span>`}
+          <select .value=${repoInUse.get()} @change=${(e: Event) => switchRepo((e.target as HTMLSelectElement).value)}>
+            ${repos.get().map((slug) => html`<option value=${slug} ?selected=${slug === repoInUse.get()}>${slug}</option>`)}
+          </select></label>` : html`<label title="the repository sent as the repo argument of every call; empty = what the proxy was started for (--repo), else the server's default">repo
+          <input class="repo" type="text" .value=${repoOverride.get()} placeholder=${whoami.get()?.repo ?? "server default"} spellcheck="false" data-repo
+            @change=${(e: Event) => switchRepo((e.target as HTMLInputElement).value.trim())}></label>`}
+        <button type="button" title="find a document, run an action, create one (⌘K / Ctrl+K)" ?disabled=${state !== "ok"} @click=${() => openPalette()}>⌘K</button>
         <button type="button" ?disabled=${state === "connecting"} @click=${() => { void connect(); }}>reconnect</button>
       </header>
+      <command-palette ?open=${paletteOpen.get()} .text=${paletteText.get()} .items=${paletteItems.get()} ?loading=${paletteLoading.get()} .error=${paletteError.get()} .mode=${paletteMode.get()} .heading=${paletteHeading.get()}
+        @palette-search=${(e: CustomEvent<{ text: string }>) => { void paletteSearch(e.detail.text); }}
+        @palette-open-doc=${(e: CustomEvent<{ path: string }>) => onPaletteSelect({ kind: "doc", id: "", path: e.detail.path, title: "" })}
+        @palette-action=${(e: CustomEvent<{ id: string }>) => runPaletteAction(e.detail.id)}
+        @palette-create=${(e: CustomEvent<{ path: string }>) => { void createDocument(e.detail.path); }}
+        @palette-pick=${(e: CustomEvent<{ item: PaletteItem }>) => onPaletteSelect(e.detail.item)}
+        @palette-close=${() => closePalette()}></command-palette>
       ${missing ? html`<div class="banner">${missing}</div>` : nothing}
       <div class="strip">
         <feed-strip .entries=${feed.get()} ?live=${feedLive.get()} ?polling=${feedPolling.get()} .pollSeconds=${pollSeconds.get()} .error=${feedError.get()} .cursor=${feedCursor.get()}
@@ -795,16 +1189,21 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
               @tree-open=${(e: CustomEvent<TreeOpenDetail>) => openDoc(e.detail.path)}></repo-tree>
             <a class="deleted-link" href="#deleted" @click=${(e: Event) => { e.preventDefault(); setRoute({ ...DEFAULT_ROUTE, deleted: true }); }}>deleted documents (revisions { _doc == null })</a>
           </div>
-          <div class="right" slot="end">
-            <div class="main">${this.renderMain()}</div>
-            <div class="console">
-              <query-console .query=${consoleQuery.get()} .result=${consoleResult.get()} .rows=${consoleRows.get()} .error=${consoleError.get()} ?running=${consoleRunning.get()} .syntax=${syntax.get()}
-                @console-input=${(e: CustomEvent<{ query: string }>) => consoleQuery.set(e.detail.query)}
-                @console-run=${(e: CustomEvent<ConsoleRunDetail>) => onConsoleRun(e.detail.query)}
-                @console-more=${onConsoleMore}
-                @console-open=${(e: CustomEvent<ConsoleOpenDetail>) => { void openLink(e.detail.link); }}
-                @console-syntax=${() => { void loadSyntax(); }}></query-console>
-            </div>
+          <div class="right ${consoleOpen.get() ? "open" : ""}" slot="end">
+            ${consoleOpen.get()
+              ? html`<sl-split-panel class="vertical" vertical position=${consoleSplit.get()} @sl-reposition=${(e: Event) => { const p = (e.currentTarget as unknown as { position: number }).position; if (Number.isFinite(p)) consoleSplit.set(Math.round(p * 10) / 10); }}>
+                  <div class="main" slot="start">${this.renderMain()}</div>
+                  <div class="console" slot="end" data-console>
+                    ${this.renderConsoleBar()}
+                    <query-console .query=${consoleQuery.get()} .result=${consoleResult.get()} .rows=${consoleRows.get()} .error=${consoleError.get()} ?running=${consoleRunning.get()} .syntax=${syntax.get()}
+                      @console-input=${(e: CustomEvent<{ query: string }>) => consoleQuery.set(e.detail.query)}
+                      @console-run=${(e: CustomEvent<ConsoleRunDetail>) => onConsoleRun(e.detail.query)}
+                      @console-more=${onConsoleMore}
+                      @console-open=${(e: CustomEvent<ConsoleOpenDetail>) => { void openLink(e.detail.link); }}
+                      @console-syntax=${() => { void loadSyntax(); }}></query-console>
+                  </div>
+                </sl-split-panel>`
+              : html`<div class="main">${this.renderMain()}</div><div class="console" data-console>${this.renderConsoleBar()}</div>`}
           </div>
         </sl-split-panel>
       </main>

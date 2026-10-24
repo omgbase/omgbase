@@ -17,7 +17,7 @@ export class ScriptedCaller implements Caller {
 
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
     this.calls.push({ name, args });
-    if (!this.tools.includes(name)) throw new OmgError("unknown_tool", `the server does not list the tool \`${name}\` (its tools profile hides it)`, { tool: name });
+    if (!this.tools.includes(name)) throw new OmgError("unknown_tool", `the server does not list the tool \`${name}\` (its tools profile hides it)`, { data: { tool: name }, tool: name });
     const h = this.handlers[name];
     if (!h) throw new Error(`scripted server: no handler for ${name}`);
     const r = h(args, this.calls.filter((c) => c.name === name).length - 1);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OmgError } from "../src/lib/mcp-client.ts";
-import { executePlan, parseValue, planEffects, planIsNoop, planOf, receiptOf, setFrontmatterEffect, unsetFrontmatterEffect } from "../src/lib/writes.ts";
+import { executePlan, frontmatterPlanCommand, parseValue, planEffects, planIsNoop, planOf, receiptOf, setFrontmatterEffect, unsetFrontmatterEffect } from "../src/lib/writes.ts";
 import { ScriptedCaller } from "./scripted.ts";
 
 // The Plan the server returned for the probe's `set _frontmatter.verified = false` (preview with diffs), in the 5.0 spelling:
@@ -75,7 +75,7 @@ describe("the write flow over a scripted minimal server", () => {
   it("a document that moved on: plan_mismatch with the engine's fix, retriable by planning again", async () => {
     const s = new ScriptedCaller({
       plan: () => PLAN_WIRE,
-      execute: () => new OmgError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { expected: "x", actual: "y", fix: '{"effects":[…]}' }),
+      execute: () => new OmgError("plan_mismatch", "the effects or the documents they target changed since the plan was made; re-plan", { data: { expected: "x", actual: "y", fix: '{"effects":[…]}' } }),
     });
     const plan = await planEffects(s, [setFrontmatterEffect("/a.md", "k", 1)], null);
     await expect(executePlan(s, plan, null)).rejects.toMatchObject({ code: "plan_mismatch", data: { fix: '{"effects":[…]}' } });
@@ -83,5 +83,46 @@ describe("the write flow over a scripted minimal server", () => {
   it("a sugar tool is refused by the scripted minimal server, as the real one refuses it", async () => {
     const s = new ScriptedCaller({});
     await expect(s.call("docs_set_meta", { _path: "/a.md", set: { k: 1 } })).rejects.toMatchObject({ code: "unknown_tool" });
+  });
+});
+
+describe("frontmatterPlanCommand (the confirmed plan on the command log)", () => {
+  const plan = planOf(PLAN_WIRE, [{ op: "set", target: "/processes/calcination.md", field: "_frontmatter.verified", value: false }]);
+  const receipt = { plan_id: plan.planId, commit: "c_9", revisions: [{ _id: "d_7", _path: "/processes/calcination.md", _hash: "h2" }], new_ids: {}, committed: true, summary: ["set verified"] };
+  const docAt = (verified: unknown, rev = "r_8") => ({ _id: "d_7", _path: "/processes/calcination.md", rev, properties: { frontmatter: verified === undefined ? {} : { verified }, inline: {}, computed: {} }, _raw: "" });
+  const fake = (fm: unknown) => {
+    const calls: { name: string; args: unknown }[] = [];
+    const client = {
+      call: async (name: string, args: Record<string, unknown>) => { calls.push({ name, args }); return receipt; },
+      docsRead: async () => { calls.push({ name: "docs_read", args: {} }); return docAt(fm); },
+      apply: async () => receipt, query: async () => ({ hits: [], truncated: false, cursor: null, consumer: "collect" as const }),
+    };
+    return { calls, ctx: { client: client as never } };
+  };
+  const cmd = frontmatterPlanCommand({ plan, path: "/processes/calcination.md", key: "verified", value: false, previous: true, existed: true, repo: "alchemy", reason: "edit" });
+
+  it("apply commits the plan in the digest form (plan_id + the effects as given) with reason and repo, and remembers the key's previous value", async () => {
+    const f = fake(false);
+    const applied = await cmd.apply(f.ctx, { redo: false, previous: null });
+    expect(f.calls).toEqual([{ name: "execute", args: { plan_id: plan.planId, effects: plan.effects, reason: "edit", repo: "alchemy" } }]);
+    expect(applied.receipts[0]!.commit).toBe("c_9");
+    expect(applied.state).toEqual({ key: "verified", value: false, previous: true, existed: true });
+    expect(cmd.label).toBe("set verified in /processes/calcination.md");
+  });
+
+  it("compensate restores the previous value pinned to the current revision when the key still holds what the plan wrote", async () => {
+    const f = fake(false);
+    const c = await cmd.compensate(f.ctx, { receipts: [], revisions: [], state: { key: "verified", value: false, previous: true, existed: true } });
+    expect(c).toEqual({ effects: [{ op: "set", target: { kind: "document", _path: "/processes/calcination.md" }, field: "_frontmatter.verified", value: true, expect: { revision: "r_8" } }], reason: "restore verified" });
+  });
+
+  it("compensate unsets a key the plan created, and REFUSES when the key moved on since", async () => {
+    const created = await frontmatterPlanCommand({ plan, path: "/processes/calcination.md", key: "verified", value: false, previous: undefined, existed: false, repo: null })
+      .compensate(fake(false).ctx, { receipts: [], revisions: [], state: { key: "verified", value: false, previous: undefined, existed: false } });
+    expect(created).toEqual({ effects: [{ op: "unset", target: { kind: "document", _path: "/processes/calcination.md" }, field: "_frontmatter.verified", expect: { revision: "r_8" } }], reason: "restore verified" });
+    const moved = await cmd.compensate(fake("later").ctx, { receipts: [], revisions: [], state: { key: "verified", value: false, previous: true, existed: true } });
+    expect(moved).toEqual({ refused: expect.stringMatching(/verified in \/processes\/calcination\.md no longer holds what this edit wrote \(now "later"\)/) });
+    const gone = await cmd.compensate(fake(undefined).ctx, { receipts: [], revisions: [], state: { key: "verified", value: false, previous: true, existed: true } });
+    expect(gone).toEqual({ refused: expect.stringMatching(/now absent/) });
   });
 });

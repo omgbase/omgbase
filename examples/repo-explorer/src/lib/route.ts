@@ -2,10 +2,11 @@
 // revision of it) is a URL one can reload or share —
 //   #doc=/processes/calcination.md
 //   #doc=/processes/calcination.md&rev=r_7&tab=history
+//   #doc=/processes/calcination.md&tab=graph     (the document's neighbourhood as a graph)
 //   #deleted
 // `parseRoute` / `routeHash` are inverse; unknown keys are dropped.
 
-export type Tab = "document" | "history" | "links";
+export type Tab = "document" | "history" | "links" | "graph";
 
 export interface Route {
   /** The open document's rooted path, or null for the welcome pane. */
@@ -21,7 +22,7 @@ export interface Route {
 
 export const DEFAULT_ROUTE: Route = { doc: null, rev: null, tab: "document", deleted: false, block: null };
 
-const TABS: readonly Tab[] = ["document", "history", "links"];
+const TABS: readonly Tab[] = ["document", "history", "links", "graph"];
 
 export function parseRoute(hash: string): Route {
   const q = new URLSearchParams(hash.replace(/^#/, ""));

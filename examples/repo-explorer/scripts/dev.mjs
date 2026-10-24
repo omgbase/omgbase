@@ -5,10 +5,12 @@
 //   pnpm --filter repo-explorer dev                                   # the alchemy workspace, served with --tools minimal
 //   pnpm --filter repo-explorer dev --full                            # the same workspace, the full catalog
 //   pnpm --filter repo-explorer dev --remote https://mcp.example.com/omg   # a remote omg MCP; the proxy signs in for you
+//   pnpm --filter repo-explorer dev --remote <url> --repo notes        # …and designate the repository (reported on /whoami;
+//                                                                     #  the page sends it as `repo` on every call; the header field overrides)
 //   pnpm --filter repo-explorer dev:mcp [--remote <url>]              # the proxy alone (= `dev --proxy-only`)
-//   env: WEBDEVPROXY_REMOTE=<url> is the same as --remote
+//   env: WEBDEVPROXY_REMOTE=<url> is the same as --remote; WEBDEVPROXY_REPO=<slug> as --repo
 //
-// The proxy's flags (--remote, --no-browser, --token-file, --port, --path,
+// The proxy's flags (--remote, --repo, --no-browser, --token-file, --port, --path,
 // --idle, --origin, --omg, --local) and this demo's (--full, --proxy-only) are
 // consumed here; everything else (e.g. --open, --host) goes to Vite, which
 // learns the proxy's port and path from WEBDEVPROXY_PORT / WEBDEVPROXY_PATH.

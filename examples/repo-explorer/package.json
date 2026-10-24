@@ -2,7 +2,7 @@
   "name": "repo-explorer",
   "version": "0.0.0",
   "private": true,
-  "description": "omgbase repo-explorer demo: browse a repository end to end over the MINIMAL tools profile — tree, rendered documents with block anchors, backlinks, an OQX console, history with client-side diffs, a live change feed, frontmatter edits through plan/execute, task checkboxes written back with one CAS-pinned apply and a session-local compensating undo (Lit 3 + signals, Shoelace, MCP over Streamable HTTP through webdevproxy)",
+  "description": "omgbase repo-explorer demo: browse a repository end to end over the MINIMAL tools profile \u2014 tree, rendered documents with block anchors, backlinks, an OQX console, history with client-side diffs, a live change feed, frontmatter edits through plan/execute, task checkboxes written back with one CAS-pinned apply and a session-local compensating undo (Lit 3 + signals, Shoelace, MCP over Streamable HTTP through webdevproxy)",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -24,11 +24,14 @@
   "dependencies": {
     "@lit-labs/signals": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@omgbase/client": "workspace:^",
     "@shoelace-style/shoelace": "^2.20.1",
+    "d3-force": "^3.0.0",
     "lit": "^3.3.0",
     "markdown-it": "^15.0.2"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "vite": "^7.1.0",
     "webdevproxy": "workspace:^"
   }
