@@ -30,7 +30,7 @@
 //! its `${n}` marker), as the reference does since language 0.16
 //! (`spec/oqx/AST.md` §3), so the two implementations agree on every offset.
 
-use crate::errors::{OqxError, Result};
+use crate::errors::{OqxError, Result, Stage};
 
 /// Token kinds. `Str` is the TS `"string"`; the rest keep the TS names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -275,6 +275,31 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
 
         if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
             i += 1;
+            continue;
+        }
+
+        // Comments (since 0.28) are whitespace: `//` to the end of the line,
+        // `/* … */` across lines, no nesting (as in the TS). Not inside a
+        // string or a template's text; inside an interpolation, yes.
+        if c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == '/' && chars.get(i + 1) == Some(&'*') {
+            let start = i;
+            i += 2;
+            while i < n && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            if i >= n {
+                return Err(OqxError::new(
+                    Stage::Lex,
+                    format!("unterminated comment at {}", base + start),
+                ));
+            }
+            i += 2;
             continue;
         }
 
@@ -547,7 +572,6 @@ pub fn raw_source<S: AsRef<str>>(fragments: &[S]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::Stage;
 
     fn kinds(src: &str) -> Vec<(TokType, String)> {
         lex_string(src)

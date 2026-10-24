@@ -208,7 +208,7 @@ test("toJSON stamps the language version on the plain-data tree", () => {
   const j = toJSON(q);
   assert.equal(j.oqx, LANGUAGE_VERSION);
   assert.equal(j.kind, "query");
-  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.27", ...q });
+  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.28", ...q });
 });
 
 test("builders make nodes with the empty span and materialized fields, and print them", () => {

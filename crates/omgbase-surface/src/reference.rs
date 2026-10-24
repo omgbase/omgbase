@@ -48,7 +48,9 @@ body's `select` aliases (`docs { select _path, old: era < 1000 where old order b
 old }`; an alias shadows a same-named field; a nested block reads it as `^old`).
 `and` / `or` / `not` are the connectives;
 the symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and
-what `print` writes).
+what `print` writes). Comments (OQX 0.28): `// to the end of the line` and
+`/* across lines */` are whitespace anywhere between tokens (not inside a string
+or a template's text); `#` is not a comment.
 
 ## Sugar (OQX 0.17)
 

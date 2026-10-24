@@ -180,6 +180,22 @@ function lexFragment(src: string, base: number, out: Token[]): void {
 
     if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
 
+    // Comments (since 0.28) are whitespace: `//` to the end of the line, `/* … */`
+    // across lines, no nesting. Not inside a string or a template's text (those
+    // are handled above and in the string rule); inside an interpolation, yes.
+    if (c === "/" && at(i + 1) === "/") {
+      while (i < n && cps[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && at(i + 1) === "*") {
+      const start = i;
+      i += 2;
+      while (i < n && !(cps[i] === "*" && at(i + 1) === "/")) i++;
+      if (i >= n) throw new OqxError(`unterminated comment at ${base + start}`, "lex");
+      i += 2;
+      continue;
+    }
+
     if (c === "`") { push("tmpl_start", c, i, i + 1); modes.push({ kind: "template", start: i }); i++; continue; }
     if (c === "(") { push("lparen", c, i, i + 1); i++; continue; }
     if (c === ")") { push("rparen", c, i, i + 1); i++; continue; }

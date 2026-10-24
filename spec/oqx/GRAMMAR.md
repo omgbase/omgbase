@@ -8,8 +8,15 @@ in brackets.
 ## 1. Lexical structure
 
 Whitespace is space, tab, newline, and carriage return; it separates tokens and
-is otherwise insignificant [`clause-order`]. There are **no comments**: `#`,
-`//`, and `/* */` are lex errors [`errors-lex`].
+is otherwise insignificant [`clause-order`]. **Comments** (since 0.28) are
+whitespace too: `//` runs to the end of the line (the newline ends it), `/* … */`
+runs to the first `*/` across lines and does not nest; either may stand wherever
+whitespace may — between any two tokens, inside a block, inside a template's
+`${ … }` interpolation — and neither is recognised inside a string literal or a
+template's text. An unterminated `/*` is the lex error `unterminated comment at
+<offset>`. A single `/` is the division operator. `#` is not a comment: it is a
+lex error, as are `=`, `&`, `|`, `@`, `;`, `?`, `\` [`comments`, `errors-lex`].
+The tree records no trivia (AST.md §2), so the canonical printer drops comments.
 
 Tokens:
 

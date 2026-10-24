@@ -419,6 +419,10 @@ arithmetic and general `in` are supported.]**
   as methods; `matches` is a real **regexp**. **All string ops are
   CASE-SENSITIVE** — use `.lower()`/`.upper()` to fold. **[was CEL: `LIKE`-based
   ops were case-insensitive and `matches` was unimplemented.]**
+- **Comments** (OQX 0.28; `spec/oqx` GRAMMAR §1): `// to the end of the line`
+  and `/* across lines */` are whitespace between tokens (not inside a string or
+  a template's text; no nesting; `#` is still a lex error). The canonical print
+  drops them, so a stored query's comments survive only in its source text.
 - **Infix regex operators** (OQX 0.22; `spec/oqx` SEMANTICS §11): pure sugar
   over `matches`, at comparison precedence, non-associative —
   `x ~ "re"` is `x.matches("re")`, `x ~* "re"` is `x.matches("re", "i")`

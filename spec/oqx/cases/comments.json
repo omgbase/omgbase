@@ -1,0 +1,492 @@
+{
+  "suite": "comments",
+  "cases": [
+    {
+      "name": "a line comment runs to the end of the line",
+      "tags": [
+        "comments"
+      ],
+      "notes": "`//` to the end of the line is whitespace (since 0.28); the newline ends it, so the clause after it is read.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name // the names\n order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Bob"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a line comment at the end of the query",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people count // how many",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "a block comment is whitespace between any two tokens",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select /* the projection */ name where /* adults */ age > 18 order by name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Bob"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block comment spans lines",
+      "tags": [
+        "comments"
+      ],
+      "notes": "Disabling a clause in place: the commented-out `where` is not read.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people {\n  select name\n  /* where age > 50\n     — disabled while refining */\n  order by name\n}",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Bob"
+          }
+        ]
+      }
+    },
+    {
+      "name": "comments inside a nested block and an interpolation-free template",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, n: jobs count { /* every job */ } where `x` == `x` /* templates are literals */ }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "n": 1
+          },
+          {
+            "name": "Alice",
+            "n": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a comment may touch tokens",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people{select/**/name/**/where/**/age>50}",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "`//` inside a string literal is text, not a comment",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name where name != \"//\" }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "`/*` inside a template literal's text is text",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select t: `a /* not a comment */ b` values limit 1 }",
+      "expect": {
+        "result": [
+          "a /* not a comment */ b"
+        ]
+      }
+    },
+    {
+      "name": "a comment inside a template interpolation is a comment",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select t: `${ name /* the name */ }` values order by name }",
+      "expect": {
+        "result": [
+          "Alice",
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "a line comment containing `*/` and a block comment containing `//`",
+      "tags": [
+        "comments"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name // a */ b\n where /* c // d */ age > 50 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a block comment does not nest",
+      "tags": [
+        "comments"
+      ],
+      "notes": "The first `*/` closes the comment, as in JavaScript: `/* outer /* inner */` is one comment and `where …` is read.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name /* outer /* inner */ where age > 50 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "division is still division",
+      "tags": [
+        "comments"
+      ],
+      "notes": "A single `/` is the operator; only `//` and `/*` open a comment.",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "age": 52,
+            "jobs": []
+          }
+        ]
+      },
+      "query": "people { select name, h: age / 2 where age/2 > 24 }",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "h": 26
+          }
+        ]
+      }
+    },
+    {
+      "name": "the canonical print drops comments",
+      "tags": [
+        "comments",
+        "ast"
+      ],
+      "notes": "A comment is whitespace to the lexer; the tree records no trivia, so `print(parse(q))` has none.",
+      "query": "people { select name /* projected */ where age > 50 // adults\n }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 50
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "frontier": null,
+          "flatten": [],
+          "groupBy": null,
+          "having": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "an unterminated block comment is a lex error",
+      "tags": [
+        "comments",
+        "error"
+      ],
+      "query": "people { select name /* never closed",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated comment"
+          ]
+        }
+      }
+    },
+    {
+      "name": "`#` is still not a comment",
+      "tags": [
+        "comments",
+        "error"
+      ],
+      "query": "people { select name # nope }",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    }
+  ]
+}

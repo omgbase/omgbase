@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.27"`); the patch digit is this implementation's own.
+> `"0.28"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -53,7 +53,10 @@ template's identity and re-runs with fresh bindings each call.
 
 A query names its **source collection** and then, in braces, its **body** — a
 list of clauses in a **fixed order**. Each clause appears at most once, and
-every one is optional:
+every one is optional. Comments are JavaScript's (0.28): `// to the end of the
+line` and `/* across lines */`, whitespace anywhere between tokens — handy for
+disabling a clause while refining a query — and never inside a string or a
+template's text; the canonical printer drops them.
 
 ```
 <collection> { … }           ${people} { … }        (a binding, a named root, a navigation or a call may head the body)
@@ -1013,7 +1016,7 @@ const rewritten = transform(q, (e) => (e.kind === "ident" && e.name === "name" ?
 print(rewritten);
 // 'people { name: person.name, n: jobs { employer: employer } where jobs exists { where !end } }'
 
-toJSON(q);        // { oqx: "0.27", kind: "query", span: [0, 71], … } — the shared JSON document
+toJSON(q);        // { oqx: "0.28", kind: "query", span: [0, 71], … } — the shared JSON document
 stripSpans(q);    // the same tree without spans, for shape comparisons
 ```
 
@@ -1454,7 +1457,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   the display source of a template.
 - `build` — the node builders (`build.query`, `build.op`, `build.subquery`,
   `build.field`, `build.ident`, …).
-- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.27"`).
+- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.28"`).
 
 **Types**
 
