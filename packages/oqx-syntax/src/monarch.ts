@@ -4,7 +4,7 @@
 // attributes, and `tokenPostfix` appends `.oqx` to every token as Monaco's own
 // languages do. `syntax/oqx.monarch.json` is this object serialized.
 
-import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { COMMENTS, RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, LANGUAGE_VERSION, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export type MonarchAction =
@@ -87,7 +87,19 @@ export function buildMonarchGrammar(): MonarchGrammar {
     { include: "@root" },
   ];
   for (const rule of RULES) root.push(convert(rule, lists));
-  tokenizer["whitespace"] = [[WHITESPACE, "white"]];
+  // Comments (0.28) live in the whitespace state, as Monaco's own languages keep
+  // them: `root` includes it first, so `//` and `/*` never reach the operator
+  // rule, and every state that includes `@root` (an interpolation, a block inside
+  // one) sees them too. A block comment is its own state until `*/`.
+  tokenizer["whitespace"] = [
+    [WHITESPACE, "white"],
+    [COMMENTS.blockOpen, { token: token("commentBlock"), next: "@comment" }],
+    [COMMENTS.line, token("commentLine")],
+  ];
+  tokenizer["comment"] = [
+    [COMMENTS.blockBody, token("commentBlock")],
+    [COMMENTS.blockClose, { token: token("commentBlock"), next: "@pop" }],
+  ];
   return {
     languageId: LANGUAGE.id,
     languageVersion: LANGUAGE_VERSION,

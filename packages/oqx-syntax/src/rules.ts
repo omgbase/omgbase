@@ -21,6 +21,7 @@ import {
   AGGREGATES,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
+  COMMENT,
   CONSUMERS,
   CONTEXTUAL_WORDS,
   FLATTEN_AS,
@@ -32,6 +33,7 @@ import {
   OPERATORS,
   WORD_OPERATORS,
   alternation,
+  escapeRegExp,
   type TokenClass,
 } from "./vocabulary.js";
 
@@ -212,6 +214,24 @@ export const TEMPLATE_LITERAL = {
 
 /** Whitespace as OQX defines it (GRAMMAR §1): space, tab, newline, carriage return. */
 export const WHITESPACE = "[ \\t\\r\\n]+";
+
+/** Comments (GRAMMAR §1, since 0.28), shared by every grammar and matched with
+ * the whitespace — before every rule of the table, so `//` is never two `/`
+ * operators and `/*` never a `/` and a `*`. `line` runs to the end of the line.
+ * A block comment is a state: `blockOpen` enters it, `blockBody` is any run that
+ * cannot hold the close (anything but a `*`, or a `*` no `/` follows), and
+ * `blockClose` leaves it; a comment that never closes runs to the end of the
+ * input, highlighted as a comment and never as an error (the lexer's
+ * `unterminated comment` is the parser's to report). A string's and a template
+ * text's rules own their spans, so `//` inside either is not a comment; inside a
+ * `${ … }` interpolation the rules of the table apply, comments included. */
+export const COMMENTS = {
+  lineOpen: escapeRegExp(COMMENT.line),
+  line: `${escapeRegExp(COMMENT.line)}.*`,
+  blockOpen: escapeRegExp(COMMENT.blockOpen),
+  blockBody: "(?:[^*]|\\*(?!/))+",
+  blockClose: escapeRegExp(COMMENT.blockClose),
+} as const;
 
 /** Substitute the identifier shape into a rule's regex source. */
 export function withIdent(regex: string): string {

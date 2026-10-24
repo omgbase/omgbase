@@ -1,13 +1,14 @@
 // The TextMate grammar (`source.oqx`), serialized from `rules.ts`. A `cases`
 // group becomes one rule per word list (most specific first) plus the default;
 // everything else maps one to one. The grammar is flat: no begin/end states
-// except strings and template literals, so a stray bracket never swallows the
-// rest of the document. A template literal (0.21) is a begin/end rule whose
-// `${ … }` interpolation re-enters `#expression`; a `{` inside an interpolation
-// opens a nested begin/end block so the interpolation's own `}` is the one that
-// balances it.
+// except block comments, strings and template literals, so a stray bracket never
+// swallows the rest of the document. A template literal (0.21) is a begin/end
+// rule whose `${ … }` interpolation re-enters `#expression`; a `{` inside an
+// interpolation opens a nested begin/end block so the interpolation's own `}` is
+// the one that balances it. A block comment (0.28) is a begin/end rule with no
+// inner patterns; a line comment a plain match.
 
-import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { COMMENTS, RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, LANGUAGE_VERSION, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export interface TextMateRule {
@@ -77,6 +78,23 @@ export function buildTextMateGrammar(): TextMateGrammar {
     repository[key] = r;
     order.push(key);
   };
+  // Comments (0.28) come first: whitespace to the lexer, and `//` / `/*` must
+  // never reach the operator rule. The delimiters carry the conventional
+  // `punctuation.definition.comment` scopes inside the comment's own.
+  add("comment-line", {
+    comment: "comment-line",
+    match: `(${COMMENTS.lineOpen}).*`,
+    name: scope("commentLine"),
+    captures: { "1": { name: "punctuation.definition.comment.oqx" } },
+  });
+  add("comment-block", {
+    comment: "comment-block",
+    name: scope("commentBlock"),
+    begin: COMMENTS.blockOpen,
+    end: COMMENTS.blockClose,
+    beginCaptures: { "0": { name: "punctuation.definition.comment.begin.oqx" } },
+    endCaptures: { "0": { name: "punctuation.definition.comment.end.oqx" } },
+  });
   for (const s of STRINGS) add(s.name, stringRule(s.name, s.quote));
   repository["string-escape"] = { comment: "string-escape", match: STRING_ESCAPE, name: scope("stringEscape") };
   // The template literal: the backticks and the text are `template`, an escape is

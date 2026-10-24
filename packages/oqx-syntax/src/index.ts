@@ -31,11 +31,12 @@ export {
   INTRINSICS,
   IDENTIFIER,
   ILLEGAL_CHARACTERS,
+  COMMENT,
   OMGBASE,
   TOKEN_CLASSES,
   type TokenClass,
 } from "./vocabulary.js";
-export { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, type Rule, type GroupAction } from "./rules.js";
+export { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, COMMENTS, type Rule, type GroupAction } from "./rules.js";
 export { oqxTextMateGrammar, buildTextMateGrammar, type TextMateGrammar, type TextMateRule } from "./textmate.js";
 export { oqxMonarchGrammar, buildMonarchGrammar, type MonarchGrammar, type MonarchRule, type MonarchAction } from "./monarch.js";
 export { oqxLanguageConfiguration, type LanguageConfiguration } from "./language-configuration.js";

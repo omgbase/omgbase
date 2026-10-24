@@ -2,7 +2,8 @@
 // `class(text) …` (whitespace dropped, touching same-class tokens merged). These
 // are the goldens: a grammar change that alters any of them fails the tests, and
 // `valid` says whether @omgbase/oqx parses the source (a lex-error sample must
-// show an `illegal` / `numberInvalid` token or an unterminated string).
+// show an `illegal` / `numberInvalid` token, an unterminated string or an
+// unterminated block comment).
 
 export interface Sample {
   name: string;
@@ -97,11 +98,80 @@ export const CORPUS: Sample[] = [
       "alias(label) colon(:) template(`) interpolation(${) identifier(title) interpolation(}) template( () interpolation(${) identifier(era) interpolation(}) template() ) interpolation(${) identifier(jobs) consumer(single) braceOpen({) identifier(employer) modifier(values) keyword(where) identifier(primary) braceClose(}) interpolation(}) template( ) stringEscape(\\`) template( ) stringEscape(\\$) template({x} $y ) interpolation(${) template(`<) interpolation(${) identifier(n) interpolation(}) template(>`) interpolation(}) template(`) keyword(from) identifier(docs)",
   },
   {
-    name: "a bracket lookup (0.17) and a lex error: a comment",
+    name: "a bracket lookup (0.17) and a lex error: `#` is not a comment (0.28 added `//` and `/* */`, not `#`)",
     valid: false,
     source: "from r where a[0] == 1 # comment",
     tokens:
       "keyword(from) identifier(r) keyword(where) identifier(a) bracketOpen([) number(0) bracketClose(]) operator(==) number(1) illegal(#) identifier(comment)",
+  },
+  // Comments (0.28): whitespace to the lexer, read before every rule of the table.
+  {
+    name: "comments (0.28): a line comment at the end of a line; the newline ends it",
+    valid: true,
+    source: "people { select name // the names\n order by name }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) identifier(name) commentLine(// the names) clause(order) clause(by) identifier(name) braceClose(})",
+  },
+  {
+    name: "comments (0.28): a line comment at the end of the query, after a braceless consumer",
+    valid: true,
+    source: "people count // how many",
+    tokens: "identifier(people) identifier(count) commentLine(// how many)",
+  },
+  {
+    name: "comments (0.28): block comments between tokens, touching tokens, and an empty one",
+    valid: true,
+    source: "people{select /* the projection */ name/**/where/* adults */age > 18 }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) commentBlock(/* the projection */) identifier(name) commentBlock(/**/) keyword(where) commentBlock(/* adults */) identifier(age) operator(>) number(18) braceClose(})",
+  },
+  {
+    name: "comments (0.28): a block comment spanning lines disables a clause in place",
+    valid: true,
+    source: "people {\n  select name\n  /* where age > 50\n     — disabled while refining */\n  order by name\n}",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) identifier(name) commentBlock(/* where age > 50) commentBlock(     — disabled while refining */) clause(order) clause(by) identifier(name) braceClose(})",
+  },
+  {
+    name: "comments (0.28): `*/` inside a line comment, `//` inside a block comment, and no nesting",
+    valid: true,
+    source: "people { select name // a */ b\n where /* c // d */ age > 50 && /* outer /* inner */ age < 90 }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) identifier(name) commentLine(// a */ b) keyword(where) commentBlock(/* c // d */) identifier(age) operator(>) number(50) operator(&&) commentBlock(/* outer /* inner */) identifier(age) operator(<) number(90) braceClose(})",
+  },
+  {
+    name: "comments (0.28): `//` inside a string is string text; a quote inside a comment opens no string",
+    valid: true,
+    source: "people { select name where name != \"//\" && name != '/*' // it's \"fine\"\n }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) identifier(name) keyword(where) identifier(name) operator(!=) string(\"//\") operator(&&) identifier(name) operator(!=) string('/*') commentLine(// it's \"fine\") braceClose(})",
+  },
+  {
+    name: "comments (0.28): `/*` inside a template literal's text is text",
+    valid: true,
+    source: "people { select t: `a /* not a comment */ b // nor this` values limit 1 }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) alias(t) colon(:) template(`a /* not a comment */ b // nor this`) modifier(values) clause(limit) number(1) braceClose(})",
+  },
+  {
+    name: "comments (0.28): inside a `${ … }` interpolation a comment is a comment, line or block",
+    valid: true,
+    source: "people { select t: `${ name /* the name */ } is ${ age // the age\n }` values order by name }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) alias(t) colon(:) template(`) interpolation(${) identifier(name) commentBlock(/* the name */) interpolation(}) template( is ) interpolation(${) identifier(age) commentLine(// the age) interpolation(}) template(`) modifier(values) clause(order) clause(by) identifier(name) braceClose(})",
+  },
+  {
+    name: "comments (0.28): a single `/` is still division",
+    valid: true,
+    source: "people { select name, h: age / 2 where age/2 > 24 }",
+    tokens:
+      "identifier(people) braceOpen({) keyword(select) identifier(name) comma(,) alias(h) colon(:) identifier(age) operator(/) number(2) keyword(where) identifier(age) operator(/) number(2) operator(>) number(24) braceClose(})",
+  },
+  {
+    name: "comments (0.28): an unterminated block comment runs to the end of the input (a lex error, no error token)",
+    valid: false,
+    source: "people { select name /* never\nclosed",
+    tokens: "identifier(people) braceOpen({) keyword(select) identifier(name) commentBlock(/* never) commentBlock(closed)",
   },
   {
     name: "lex errors: malformed numbers",

@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.27";
+export const LANGUAGE_VERSION = "0.28";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -107,10 +107,22 @@ export const INTRINSICS = ["$it", "$key", "$depth", "$stop", "$leaf", "$frontier
 /** Identifier shape (GRAMMAR §1): `[A-Za-z_$][A-Za-z0-9_$]*`. */
 export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";
 
-/** Characters that are lex errors anywhere (GRAMMAR §1): there are no comments
- * and no single `=`/`&`/`|`. (The backtick left this list in 0.21: it opens a
- * template literal; `~` left it in 0.22: it is the regex match operator.) */
+/** Characters that are lex errors anywhere (GRAMMAR §1): `#` is not a comment
+ * (the `//` line comment and the `COMMENT.blockOpen` … `COMMENT.blockClose` block
+ * comment are, since 0.28) and there is no single `=`/`&`/`|`. (The backtick
+ * left this list in 0.21: it opens a template literal; `~` left it in 0.22: it
+ * is the regex match operator.) */
 export const ILLEGAL_CHARACTERS = ["=", "&", "|", "@", ";", "#", "?", "\\"] as const;
+
+/** Comments (GRAMMAR §1, since 0.28): whitespace to the lexer. `//` runs to the
+ * end of the line; `blockOpen` … `blockClose` runs to the first close across
+ * lines and does not nest. Either may stand wherever whitespace may — between any
+ * two tokens, inside a block, inside a template literal's `${ … }` interpolation
+ * — and neither is recognised inside a string literal or a template's text. A
+ * single `/` stays the division operator; `#` stays a lex error. The grammars
+ * highlight them as `commentLine` / `commentBlock`; the editor configurations
+ * (VS Code / Monaco `comments`, CodeMirror `commentTokens`) take the delimiters. */
+export const COMMENT = { line: "//", blockOpen: "/*", blockClose: "*/" } as const;
 
 /** Language metadata shared by every editor integration. */
 export const LANGUAGE = {
@@ -233,6 +245,10 @@ export const TOKEN_CLASSES = {
   colon: { textmate: "punctuation.separator.key-value.oqx", monarch: "delimiter.colon", codemirror: "punctuation", legacy: "punctuation", prism: "punctuation" },
   accessor: { textmate: "punctuation.accessor.oqx", monarch: "delimiter.accessor", codemirror: "derefOperator", legacy: "punctuation", prism: "punctuation" },
   illegal: { textmate: "invalid.illegal.oqx", monarch: "invalid", codemirror: "invalid", legacy: "error", prism: "invalid" },
+  /** A `//` comment to the end of the line (0.28). */
+  commentLine: { textmate: "comment.line.double-slash.oqx", monarch: "comment.line", codemirror: "lineComment", legacy: "comment", prism: "comment" },
+  /** A `/* … *\/` comment (0.28); it may span lines, and an unterminated one runs to the end of the input. */
+  commentBlock: { textmate: "comment.block.oqx", monarch: "comment.block", codemirror: "blockComment", legacy: "comment", prism: "comment" },
 } as const;
 
 export type TokenClass = keyof typeof TOKEN_CLASSES;

@@ -31,6 +31,11 @@ describe("spec/oqx fixtures", () => {
       else if (why.includes("unterminated string")) {
         const last = tokens.at(-1);
         expect(last?.cls === "string" || last?.cls === "stringEscape", label).toBe(true);
+      } else if (why.includes("unterminated comment")) {
+        // The block comment is open (0.28): it runs to the end of the source as
+        // a comment, never as an error token.
+        expect(tokens.at(-1)?.cls, label).toBe("commentBlock");
+        expect(tokens.some((t) => t.cls === "illegal"), label).toBe(false);
       } else if (why.includes("unterminated template literal") && why.includes("binding")) {
         // A fragment boundary inside the literal: the display source (the `${n}`
         // marker standing in for the value) is lexically a complete literal.

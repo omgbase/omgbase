@@ -63,6 +63,9 @@ describe("Prism grammar", () => {
     expect(html).toContain('<span class="token membership keyword">in</span>');
     expect(html).toContain('<span class="token range operator">..</span>');
     expect(html).toContain('<span class="token identifier">name</span>');
+    const commented = Prism.highlight("name /* a\nb */ from r // c", Prism.languages.oqx!, "oqx");
+    expect(commented).toContain('<span class="token comment-block commentBlock comment">/* a\nb */</span>');
+    expect(commented).toContain('<span class="token comment-line commentLine comment">// c</span>');
   });
 
   it("every pattern has the m flag and the keys are unique rule names", () => {

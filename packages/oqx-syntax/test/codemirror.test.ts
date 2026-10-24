@@ -75,4 +75,20 @@ describe("CodeMirror stream parser", () => {
     while (stream.pos < stream.string.length) styles.push(mode.token(stream, state));
     expect(styles.filter((s) => s !== null)).toEqual(["keyword", "variable", "keyword", "variable-2", "operator", "string", "string", "string"]);
   });
+
+  it("comments (0.28): the lineComment / blockComment tags, the CodeMirror 5 `comment` class, and commentTokens for toggleComment", () => {
+    const parser = oqxStreamParser(tags);
+    expect(parser.tokenTable.commentLine).toBe(tags.lineComment);
+    expect(parser.tokenTable.commentBlock).toBe(tags.blockComment);
+    expect(parser.languageData.commentTokens).toEqual({ line: "//", block: { open: "/*", close: "*/" } });
+    const mode = oqxLegacyMode();
+    const state = mode.startState();
+    const styles: Array<string | null> = [];
+    for (const line of ["from r /* a", "b */ // c"]) {
+      const stream = new StringStream(line, 4, 2);
+      while (stream.pos < stream.string.length) styles.push(mode.token(stream, state));
+    }
+    expect(styles.filter((s) => s !== null)).toEqual(["keyword", "variable", "comment", "comment", "comment", "comment", "comment"]);
+    expect(state.comment).toBe(false);
+  });
 });

@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.27",
+  "languageVersion": "0.28",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,
@@ -397,6 +397,30 @@
       [
         "[ \\t\\r\\n]+",
         "white"
+      ],
+      [
+        "\\/\\*",
+        {
+          "token": "comment.block",
+          "next": "@comment"
+        }
+      ],
+      [
+        "\\/\\/.*",
+        "comment.line"
+      ]
+    ],
+    "comment": [
+      [
+        "(?:[^*]|\\*(?!/))+",
+        "comment.block"
+      ],
+      [
+        "\\*\\/",
+        {
+          "token": "comment.block",
+          "next": "@pop"
+        }
       ]
     ]
   }

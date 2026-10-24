@@ -12,7 +12,7 @@ so no grammar can drift from another.
 - Zero runtime dependencies. Nothing here imports the parser: highlighting is
   lexical and deliberately separate from `@omgbase/oqx`, which stays the semantic
   source of truth.
-- Describes OQX language **0.26** (`LANGUAGE_VERSION`, pinned by tests to
+- Describes OQX language **0.28** (`LANGUAGE_VERSION`, pinned by tests to
   `spec/oqx/VERSION` and to `@omgbase/oqx`).
 
 ## Install
@@ -27,7 +27,7 @@ npm i @omgbase/oqx-syntax
 | --- | --- |
 | `syntax/oqx.tmLanguage.json` | the TextMate grammar (`source.oqx`) — VS Code, Shiki, GitHub Linguist-style consumers |
 | `syntax/oqx.monarch.json` | the Monaco Monarch grammar, regexes as strings |
-| `syntax/language-configuration.json` | brackets, auto-closing and surrounding pairs, word pattern (no comments: OQX has none) |
+| `syntax/language-configuration.json` | comments (`//`, `/* */` — 0.28), brackets, auto-closing and surrounding pairs, word pattern |
 | `vscode/` | a VS Code language extension: the grammar, the configuration and an injection grammar for ```` ```oqx ```` fences in Markdown |
 
 They are also exported as subpaths (`@omgbase/oqx-syntax/oqx.tmLanguage.json`, …)
@@ -75,7 +75,8 @@ const oqx = StreamLanguage.define(oqxStreamParser(tags));
 
 `oqxStreamParser` returns a plain `StreamParser` object; you pass in `tags` from
 `@lezer/highlight` and it builds the `tokenTable`, so this package imports
-neither library. The same tokenizer is available as a CodeMirror 5 mode
+neither library. Its `languageData` carries `commentTokens` (`//`, `/* */`), so
+`toggleComment` from `@codemirror/commands` works. The same tokenizer is available as a CodeMirror 5 mode
 (`oqxLegacyMode()`, returning CodeMirror 5 style classes such as `keyword`,
 `variable-2`, `builtin`, `error`) for hosts that still register languages that
 way — Obsidian's editor registers code-block languages through
@@ -96,8 +97,8 @@ Prism.highlight("people { select name where age > 30 }", Prism.languages.oqx, "o
 
 Prism is what Obsidian's reading view and many static-site tools use for code
 blocks. Tokens carry Prism's standard classes (`keyword`, `number`, `string`,
-`builtin`, `function`, `property`, `punctuation`, `operator`, `boolean`,
-`symbol`, `variable`) so stock themes color them, plus the token-class name
+`comment`, `builtin`, `function`, `property`, `punctuation`, `operator`,
+`boolean`, `symbol`, `variable`) so stock themes color them, plus the token-class name
 (`consumer`, `intrinsic`, `invalid`, …) for finer CSS. The grammar uses regex
 lookbehind, so it needs a current JavaScript engine (every modern browser;
 Safari from 16.4).
@@ -137,7 +138,8 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | range, membership | `keyword.operator.range.oqx`, `keyword.operator.membership.oqx` | `operator.range`, `keyword.operator.membership` | `..` `...` `in` |
 | word operators | `keyword.operator.word.oqx` | `keyword.operator.word` | `is` `not` `and` `or` (0.17; reserved words) |
 | punctuation | `punctuation.*.oqx` | `delimiter.*` | `{ } ( ) [ ] , : .` — `[ ]` is the bracket lookup (0.17) |
-| lex errors | `invalid.illegal.oqx` | `invalid` | `=` `&` `\|` `@` `;` `#` — OQX has no comments (the backtick is no longer one: it opens a template literal) |
+| comments | `comment.line.double-slash.oqx`, `comment.block.oqx` (the delimiters also `punctuation.definition.comment.*.oqx`) | `comment.line`, `comment.block` | `// to the end of the line`, `/* across lines */` (0.28) |
+| lex errors | `invalid.illegal.oqx` | `invalid` | `=` `&` `\|` `@` `;` `#` — `#` is not a comment (the backtick is no longer an error: it opens a template literal) |
 
 **Contextual words are colored only in position.** `count` is a consumer before
 `{`, `limit` a clause before a number, `in` an operator before a value, `asc` a
@@ -157,6 +159,25 @@ that closes the interpolation is the one that balances it. TextMate, Monarch and
 CodeMirror nest without limit; the Prism grammar, being a set of regular
 expressions, balances braces to three levels inside one interpolation.
 
+**Comments (0.28)** are whitespace to the lexer and are read with it, before
+every rule of the table: `//` runs to the end of the line, `/* … */` to the first
+`*/` across lines (no nesting), so `//` is never two `/` operators and `/*` never
+a `/` and a `*`, while a lone `/` stays division. A comment is a comment wherever
+whitespace may stand — between tokens, touching them, inside a block, inside a
+template literal's `${ … }` interpolation — and is never one inside a string
+literal or a template's text, whose rules already own those spans. An
+unterminated `/*` highlights to the end of the input as a comment, never as an
+error token (the lexer's `unterminated comment` is the parser's to report), as
+an unterminated string does. `#` stays a lex error. Across the engines: TextMate
+a match rule and a begin/end rule, Monarch the `comment` state reached from the
+`whitespace` state (so every state that includes `@root` sees comments), the
+CodeMirror parser a `comment` flag carried across lines, Prism two greedy
+patterns placed after the strings and the template and before the rules — the
+CodeMirror tags are `lineComment` / `blockComment`, the CodeMirror 5 class and
+the Prism class `comment`. The language configuration carries
+`comments: { lineComment: "//", blockComment: ["/*", "*/"] }` and the quotes'
+auto-closing pairs are off inside a comment.
+
 One limit is shared by every grammar here: **position is decided within the
 line.** A consumer word at the end of a line with its `{` on the next line, or
 `in` followed by its value on the next line, is read as a field. The
@@ -168,8 +189,8 @@ the Prism grammar is written to agree with them rather than to be cleverer.
 `@omgbase/oqx-syntax/vocabulary` exports the word lists (`KEYWORDS`,
 `CONTEXTUAL_WORDS`, `CONSUMERS`, `DESTINATION_CLAUSES`, `MODIFIERS`, `LITERALS`,
 `OPERATORS`, `BUILTIN_FUNCTIONS`, `BUILTIN_METHODS`, `INTRINSICS`), the template
-literal's delimiters (`TEMPLATE`), the identifier
-shape, the language metadata (`LANGUAGE`, `LANGUAGE_VERSION`) and — kept apart,
+literal's delimiters (`TEMPLATE`), the comment delimiters (`COMMENT`, 0.28), the
+identifier shape, the language metadata (`LANGUAGE`, `LANGUAGE_VERSION`) and — kept apart,
 because it is not part of the language — the **omgbase host vocabulary**
 (`OMGBASE`: roots, row functions, attributes per target, source handles, relations). Completion
 providers and documentation tooling can build on the same lists the grammars do.

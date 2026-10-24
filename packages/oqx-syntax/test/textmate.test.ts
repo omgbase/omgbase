@@ -56,4 +56,15 @@ describe("TextMate grammar", () => {
     expect(await scopesOf("from r where foo(a)", "foo")).toBe("entity.name.function.oqx");
     expect(await scopesOf("from r where a # b", "#")).toBe("invalid.illegal.oqx");
   });
+
+  it("comments (0.28) carry the conventional scopes; their delimiters the punctuation scope inside them", async () => {
+    const line = await tokenizeScopes("from r // the rows");
+    expect(line.find((t) => t.text === "//")?.scopes.slice(1)).toEqual(["comment.line.double-slash.oqx", "punctuation.definition.comment.oqx"]);
+    expect(line.find((t) => t.text === " the rows")?.scopes.slice(1)).toEqual(["comment.line.double-slash.oqx"]);
+    const block = await tokenizeScopes("from r /* the\nrows */ where a");
+    expect(block.find((t) => t.text === "/*")?.scopes.slice(1)).toEqual(["comment.block.oqx", "punctuation.definition.comment.begin.oqx"]);
+    expect(block.find((t) => t.text === "rows ")?.scopes.slice(1)).toEqual(["comment.block.oqx"]);
+    expect(block.find((t) => t.text === "*/")?.scopes.slice(1)).toEqual(["comment.block.oqx", "punctuation.definition.comment.end.oqx"]);
+    expect(block.find((t) => t.text === "where")?.scopes.at(-1)).toBe("keyword.control.oqx");
+  });
 });

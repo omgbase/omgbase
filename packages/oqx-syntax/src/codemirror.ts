@@ -13,11 +13,12 @@
 // Execution model (identical to Monarch's, and to what the parity tests hold the
 // TextMate grammar to): at each position the rules are tried in order against
 // the rest of the line, the first match wins, a multi-group match is emitted as
-// consecutive tokens, and a string — or a template literal (0.21), with the
-// stack of its open interpolations and blocks — carries its state across lines.
+// consecutive tokens, and a string, a block comment (0.28) — or a template
+// literal (0.21), with the stack of its open interpolations and blocks — carries
+// its state across lines.
 
-import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
-import { LANGUAGE, TEMPLATE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
+import { COMMENTS, RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, WHITESPACE, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { COMMENT, LANGUAGE, TEMPLATE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 /** The part of a CodeMirror `StringStream` (5 or 6) the tokenizer touches. */
 export interface StreamLike {
@@ -32,6 +33,8 @@ export type TemplateMode = "template" | "interpolation" | "block";
 export interface OqxStreamState {
   /** The quote of the string being lexed, or null. */
   quote: string | null;
+  /** Inside a `/* … *\/` block comment (0.28); it may span lines. */
+  comment: boolean;
   /** Remaining tokens of a multi-group match on this line: `[length, class]`. */
   pending: Array<[number, TokenClass | null]>;
   /** The open template literals, interpolations and blocks, innermost last. */
@@ -48,6 +51,8 @@ const whitespace = new RegExp(`^${WHITESPACE}`);
 const escape = new RegExp(`^${STRING_ESCAPE}`);
 const stringBodies = new Map<string, RegExp>(STRINGS.map((s) => [s.quote, new RegExp(`^${s.body}`)]));
 const templateText = new RegExp(`^${TEMPLATE_LITERAL.text}`);
+const lineComment = new RegExp(`^${COMMENTS.line}`);
+const blockCommentBody = new RegExp(`^${COMMENTS.blockBody}`);
 
 function resolve(g: GroupAction, text: string): TokenClass | null {
   if (g === "whitespace") return null;
@@ -84,6 +89,18 @@ export function nextToken(stream: StreamLike, state: OqxStreamState): TokenClass
     stream.pos += 1; // unreachable in practice: every character is a body, an escape or the quote
     return "string";
   }
+  // A block comment (0.28): a run of its body, or the `*/` that closes it. It
+  // may be open inside an interpolation; the stack waits underneath it.
+  if (state.comment) {
+    const m = blockCommentBody.exec(rest);
+    if (m) {
+      stream.pos += m[0].length;
+      return "commentBlock";
+    }
+    stream.pos += COMMENT.blockClose.length; // the only run the body cannot take is the close
+    state.comment = false;
+    return "commentBlock";
+  }
   const mode = state.stack[state.stack.length - 1];
   // The text of a template literal: an escape, the `${` of an interpolation, the
   // closing backtick, or a run of text.
@@ -111,6 +128,19 @@ export function nextToken(stream: StreamLike, state: OqxStreamState): TokenClass
   if (m) {
     stream.pos += m[0].length;
     return null;
+  }
+  // Comments (0.28) are whitespace to the lexer and are read with it — before
+  // the strings, the template and every rule of the table, so `//` is never two
+  // `/` operators and `/*` never a `/` and a `*`.
+  m = lineComment.exec(rest);
+  if (m) {
+    stream.pos += m[0].length;
+    return "commentLine";
+  }
+  if (rest.startsWith(COMMENT.blockOpen)) {
+    stream.pos += COMMENT.blockOpen.length;
+    state.comment = true;
+    return "commentBlock";
   }
   if (rest.startsWith(TEMPLATE.quote)) {
     stream.pos += 1;
@@ -156,11 +186,11 @@ export function nextToken(stream: StreamLike, state: OqxStreamState): TokenClass
 }
 
 export function startState(): OqxStreamState {
-  return { quote: null, pending: [], stack: [] };
+  return { quote: null, comment: false, pending: [], stack: [] };
 }
 
 export function copyState(state: OqxStreamState): OqxStreamState {
-  return { quote: state.quote, pending: [...state.pending], stack: [...state.stack] };
+  return { quote: state.quote, comment: state.comment, pending: [...state.pending], stack: [...state.stack] };
 }
 
 /** The shape of `@lezer/highlight`'s `tags` export this adapter relies on:
@@ -208,6 +238,8 @@ export function oqxStreamParser<Tag>(tags: HighlightTagsLike<Tag>): {
     tokenTable: oqxTokenTable(tags),
     languageData: {
       closeBrackets: { brackets: ["(", "{", '"', "'", "`"] },
+      // `@codemirror/commands`' toggleComment reads these (0.28).
+      commentTokens: { line: COMMENT.line, block: { open: COMMENT.blockOpen, close: COMMENT.blockClose } },
       wordChars: "$",
     },
   };

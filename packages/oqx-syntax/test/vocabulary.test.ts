@@ -9,10 +9,12 @@ import {
   AGGREGATES,
   BUILTIN_FUNCTIONS,
   BUILTIN_METHODS,
+  COMMENT,
   CONSUMERS,
   CONTEXTUAL_WORDS,
   GROUP_ROWS,
   IDENTIFIER,
+  ILLEGAL_CHARACTERS,
   INTRINSICS,
   KEYWORDS,
   LANGUAGE_VERSION,
@@ -42,6 +44,22 @@ describe("vocabulary", () => {
     const list = para.match(/`([^`]+)`/)?.[1] ?? "";
     expect(sorted(list.split(/\s+/))).toEqual(sorted(CONTEXTUAL_WORDS));
     for (const c of CONSUMERS) expect(CONTEXTUAL_WORDS).toContain(c);
+  });
+
+  it("comments are GRAMMAR §1's `//` and `/* … */` (0.28); `#` stays a lex error", () => {
+    const grammar = read("GRAMMAR.md");
+    const para = grammar.slice(grammar.indexOf("**Comments**"), grammar.indexOf("Tokens:"));
+    expect(para).toContain("since 0.28");
+    expect(para).toContain(`\`${COMMENT.line}\` runs to the end of the line`);
+    expect(para).toContain(`\`${COMMENT.blockOpen} … ${COMMENT.blockClose}\``);
+    expect(para).toContain("does not nest");
+    expect(para).toContain("neither is recognised inside a string literal or a\ntemplate's text");
+    expect(para).toContain("`#` is not a comment: it is a\nlex error");
+    expect(ILLEGAL_CHARACTERS).toContain("#");
+    // The lex-error list after "as are": every character in it is one of ours.
+    const listed = para.slice(para.indexOf("as are")).match(/`(.)`/g)!.map((m) => m.slice(1, -1));
+    for (const c of listed) expect(ILLEGAL_CHARACTERS).toContain(c);
+    expect(sorted(ILLEGAL_CHARACTERS)).toEqual(sorted(["#", ...listed]));
   });
 
   it("literals are GRAMMAR §1's literal words", () => {

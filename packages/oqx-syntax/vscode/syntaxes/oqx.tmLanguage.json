@@ -5,13 +5,39 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.27",
+  "version": "0.28",
   "patterns": [
     {
       "include": "#expression"
     }
   ],
   "repository": {
+    "comment-line": {
+      "comment": "comment-line",
+      "match": "(\\/\\/).*",
+      "name": "comment.line.double-slash.oqx",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.comment.oqx"
+        }
+      }
+    },
+    "comment-block": {
+      "comment": "comment-block",
+      "name": "comment.block.oqx",
+      "begin": "\\/\\*",
+      "end": "\\*\\/",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.begin.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.end.oqx"
+        }
+      }
+    },
     "string-double": {
       "comment": "string-double",
       "name": "string.quoted.double.oqx",
@@ -422,6 +448,12 @@
     },
     "expression": {
       "patterns": [
+        {
+          "include": "#comment-line"
+        },
+        {
+          "include": "#comment-block"
+        },
         {
           "include": "#string-double"
         },

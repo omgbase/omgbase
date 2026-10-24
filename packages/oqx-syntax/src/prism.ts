@@ -22,7 +22,7 @@
 // `group`) whose `inside` grammar carries the per-group tokens. Lookbehind needs a modern JavaScript
 // engine (every current browser; Safari since 16.4).
 
-import { RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, splitGroups, withIdent, type GroupAction, type Rule } from "./rules.js";
+import { COMMENTS, RULES, STRINGS, STRING_ESCAPE, TEMPLATE_LITERAL, expandCases, splitGroups, withIdent, type GroupAction, type Rule } from "./rules.js";
 import { LANGUAGE, TOKEN_CLASSES, type TokenClass } from "./vocabulary.js";
 
 export interface PrismToken {
@@ -138,6 +138,18 @@ export function buildPrismGrammar(): PrismGrammar {
       inside: { "string-escape": { pattern: new RegExp(STRING_ESCAPE, "m"), alias: aliases("stringEscape", "string-escape") } },
     };
   }
+  // Comments (0.28) follow the template and the strings and precede every rule
+  // of the table: a `//` or `/*` inside a string or a template's text is already
+  // claimed, a string or template that begins inside a comment is swallowed by
+  // the greedy comment (Prism then re-tokenizes what followed it), and the words
+  // inside a comment are never reached by the rules. A block comment that never
+  // closes runs to the end of the text, as it does in the scanners.
+  grammar["comment-block"] = {
+    pattern: new RegExp(`${COMMENTS.blockOpen}(?:${COMMENTS.blockBody})?(?:${COMMENTS.blockClose})?`, "m"),
+    alias: aliases("commentBlock", "comment-block"),
+    greedy: true,
+  };
+  grammar["comment-line"] = { pattern: new RegExp(COMMENTS.line, "m"), alias: aliases("commentLine", "comment-line"), greedy: true };
   const range = RULES.find((r) => r.name === "range")!;
   const ordered = [range, ...RULES.filter((r) => r !== range)];
   for (const rule of ordered) {
