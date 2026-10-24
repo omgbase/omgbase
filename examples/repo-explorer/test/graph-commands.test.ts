@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CommandLog, type CommandClient } from "@omgbase/client";
-import { emptyModel, withNeighborhood, type GraphModel } from "../src/lib/graph.ts";
-import { expandCommand, modelSwapCommand, pinCommand, pinKey, removeNodeCommand, unpinCommand, type ModelAccessor } from "../src/lib/graph-commands.ts";
+import { collapseNode, emptyModel, withNeighborhood, type GraphModel } from "../src/lib/graph.ts";
+import { collapseCommand, expandCommand, modelSwapCommand, pinCommand, pinKey, removeNodeCommand, unpinCommand, type ModelAccessor } from "../src/lib/graph-commands.ts";
 import { linkRowsOf } from "../src/lib/links.ts";
 
 const A = "/a.md";
@@ -102,6 +102,29 @@ describe("expand / swap", () => {
     const swap = modelSwapCommand(b, "view", "custom", before, after);
     await swap.redo();
     expect(b.get()).toBe(after);
+  });
+
+  it("collapseCommand through the log: expand, pin a neighbour, collapse (the pinned neighbour leaves); undo restores it, pin and all", async () => {
+    const before = emptyModel(A);
+    const expanded = withNeighborhood(before, A, { inbound: [], byName: [], outbound: linkRowsOf([{ _id: "e_1", _path: A, _dst_path: "/b.md", _dst_kind: "document", _provenance: "link", _block_id: "b_1" }]) });
+    const b = box(before);
+    const log = new CommandLog({ client: noClient });
+    await log.run(expandCommand(b, A, before, expanded));
+    await log.run(pinCommand(b, "/b.md", { x: 3, y: 4 }, null));
+    const pinned = b.get();
+    const collapsed = collapseNode(pinned, A);
+    const cmd = collapseCommand(b, A, pinned, collapsed);
+    expect(cmd.kind).toBe("query");
+    expect(cmd.label).toBe(`collapse ${A}`);
+    await log.run(cmd);
+    expect([...b.get().nodes.keys()]).toEqual([A]);
+    expect(b.get().nodes.get(A)!.expanded).toBe(false);
+    expect(log.history.map((e) => e.label)).toEqual([`expand ${A}`, "pin /b.md", `collapse ${A}`]);
+    await log.undo();
+    expect(b.get()).toBe(pinned);
+    expect(b.get().nodes.get("/b.md")!.pinned).toEqual({ x: 3, y: 4 });
+    await log.redo();
+    expect(b.get()).toBe(collapsed);
   });
 
   it("through the log: expand then pin, undo twice returns to the empty model", async () => {

@@ -445,6 +445,19 @@ export function arrowEnd(from: { x: number; y: number }, to: { x: number; y: num
   return { x: to.x + dx * t, y: to.y + dy * t };
 }
 
+/** What a press on a node starts: a connector (the ⟶ handle, ⌘/Ctrl held, or the node armed by `connectSource`/`c`) when writes are allowed, else a reposition. */
+export function dragMode(input: { handle: boolean; modifier: boolean; canWrite: boolean; armed: string | null }, path: string): "connector" | "move" {
+  return input.canWrite && (input.handle || input.modifier || input.armed === path) ? "connector" : "move";
+}
+
+export type ConnectorDrop = { kind: "connect"; from: string; to: string } | { kind: "empty"; from: string; x: number; y: number };
+
+/** Where a connector from `from` dropped at graph point (x, y) lands: on another document node (never the source, never an external node), else open canvas. */
+export function connectorDrop(placed: readonly Placed[], from: string, x: number, y: number, isDocument: (path: string) => boolean): ConnectorDrop {
+  const hit = hitTest(placed.filter((p) => p.path !== from), x, y);
+  return hit !== null && isDocument(hit) ? { kind: "connect", from, to: hit } : { kind: "empty", from, x, y };
+}
+
 /** A one-line description of the graph for assistive technology. */
 export function graphDescription(model: GraphModel): string {
   const docs = [...model.nodes.values()].filter((n) => n.kind === "document").length;

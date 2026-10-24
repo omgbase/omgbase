@@ -36,9 +36,9 @@ import "./elements/history-panel.ts";
 import "./elements/feed-strip.ts";
 import "./elements/command-palette.ts";
 import "./elements/graph-pane.ts";
-import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphPathDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "./elements/graph-pane.ts";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, emptyModel, fetchDocLinks, fetchTitles, withNeighborhood, type GraphModel } from "./lib/graph.ts";
-import { expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
+import type { GraphCollapseDetail, GraphConnectDetail, GraphConnectEmptyDetail, GraphPathDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "./elements/graph-pane.ts";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchTitles, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
 import { attachRelationCommand, describeRelation, relationChoices, type RelationChoice } from "./lib/relations.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
 import type { DocViewMode, OpenDocDetail, OpenWikiDetail, TaskPending, TaskToggleDetail, ViewChangeDetail, WritePlanDetail } from "./elements/doc-view.ts";
@@ -757,6 +757,15 @@ async function expandGraph(path: string): Promise<void> {
   }
 }
 
+/** ⊖ / `e` on an expanded node: its neighbourhood leaves (what nothing else explains), as an undoable query command. */
+async function collapseGraph(path: string): Promise<void> {
+  const before = graph.get();
+  if (!before || graphBusy.get()) return;
+  const after = collapseNode(before, path);
+  if (after === before) return;
+  await log.run(collapseCommand(graphModel, path, before, after));
+}
+
 /** A drop: one pin command per drag (sealed, so two drags are two undo steps). */
 async function pinGraphNode(d: GraphPinDetail): Promise<void> {
   await log.run(pinCommand(graphModel, d.path, { x: d.x, y: d.y }, d.previous));
@@ -1085,13 +1094,14 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
   private renderGraph(path: string) {
     const m = graph.get();
     return html`<div class="graph">
-      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} — drag to pin, ✕/u unpins, ⌘-drag (or c) connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
+      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? "" : " (read-only: no apply)"}, double-click opens</div>
       ${graphError.get() ? html`<div class="err">${graphError.get()}</div>` : nothing}
       ${this.renderConnect()}
       ${m ? html`<graph-pane .model=${m} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
         @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.path)}
         @graph-open=${(e: CustomEvent<GraphPathDetail>) => openDoc(e.detail.path)}
         @graph-expand=${(e: CustomEvent<GraphPathDetail>) => { void expandGraph(e.detail.path); }}
+        @graph-collapse=${(e: CustomEvent<GraphCollapseDetail>) => { void collapseGraph(e.detail.path); }}
         @graph-pin=${(e: CustomEvent<GraphPinDetail>) => { void pinGraphNode(e.detail); }}
         @graph-unpin=${(e: CustomEvent<GraphUnpinDetail>) => { void log.run(unpinCommand(graphModel, e.detail.path, e.detail.previous)); }}
         @graph-connect=${(e: CustomEvent<GraphConnectDetail>) => { void startConnect(e.detail.from, e.detail.to); }}

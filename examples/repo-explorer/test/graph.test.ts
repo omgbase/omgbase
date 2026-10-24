@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
-  CARD_H, CARD_W, applyTitles, arrowEnd, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchTitles, fitTransform, graphDescription,
-  hitTest, nearestInDirection, neighborsOf, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, withNeighborhood, type Placed,
+  CARD_H, CARD_W, ZOOM_MAX, ZOOM_MIN, applyTitles, arrowEnd, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchTitles, fitTransform, graphDescription,
+  connectorDrop, dragMode, hitTest, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
 } from "../src/lib/graph.ts";
 
 const A = "/processes/calcination.md";
@@ -103,6 +103,48 @@ describe("the model", () => {
     expect(m.nodes.get("/x.md")!.pinned).toBeNull();
     expect(setPin(p, "/x.md", null).nodes.get("/x.md")!.pinned).toBeNull();
     expect(setPin(m, "/nope.md", { x: 1, y: 1 })).toBe(m);
+  });
+
+  describe("collapseNode over the chain root → a → b", () => {
+    const R = "/root.md";
+    const from = (src: string, n: number, dst: string) => ({ _id: `e_${src}${n}`, _path: src, _dst_path: dst, _dst_id: `d_${n}`, _dst_kind: "document", _provenance: "link", _block_id: `b_${src}${n}` });
+    // root links a and c; a links root (back), b, c and x (x beyond a's bound of 1 new neighbour → truncated); b links a (back) and y.
+    const expanded = () => {
+      let m = withNeighborhood(emptyModel(R), R, links([from(R, 1, "/a.md"), from(R, 2, "/c.md")]));
+      m = withNeighborhood(m, "/a.md", links([from("/a.md", 3, R), from("/a.md", 4, "/b.md"), from("/a.md", 5, "/c.md"), from("/a.md", 6, "/x.md")], [{ _id: "e_in", _path: R, _provenance: "link", _block_id: "b_in" }]), { limit: 1 });
+      m = withNeighborhood(m, "/b.md", links([from("/b.md", 7, "/a.md"), from("/b.md", 8, "/y.md")]));
+      return setPin(m, "/y.md", { x: 1, y: 2 });
+    };
+    it("collapsing a removes its exclusive neighbour b and b's subtree (y) and their edges; c stays — the root also links it", () => {
+      const m = expanded();
+      expect([...m.nodes.keys()].sort()).toEqual([R, "/a.md", "/b.md", "/c.md", "/y.md"].sort());
+      expect(m.truncated.get("/a.md")).toBe(1);
+      const c = collapseNode(m, "a.md");
+      expect([...c.nodes.keys()].sort()).toEqual([R, "/a.md", "/c.md"].sort());
+      expect(c.nodes.get("/a.md")).toMatchObject({ expanded: false, degree: { in: null, out: null } });
+      expect(c.truncated.has("/a.md")).toBe(false);
+      // Edges touching the still-expanded root stay (its expansion explains them, a→root included); a→c leaves with a's expansion though both ends remain.
+      expect([...c.edges.keys()].sort()).toEqual([`${R}→/a.md#|b_${R}1`, `${R}→/a.md#|b_in`, `/a.md→${R}#|b_/a.md3`, `${R}→/c.md#|b_${R}2`].sort());
+      expect(c.edges.has(`/a.md→/c.md#|b_/a.md5`)).toBe(false);
+      expect(c.nodes.get("/a.md")!.pinned).toBeNull();
+      // The input was not mutated.
+      expect(m.nodes.size).toBe(5);
+      expect(m.nodes.get("/a.md")!.expanded).toBe(true);
+    });
+    it("collapsing b alone keeps a's neighbourhood and drops only y", () => {
+      const c = collapseNode(expanded(), "/b.md");
+      expect([...c.nodes.keys()].sort()).toEqual([R, "/a.md", "/b.md", "/c.md"].sort());
+      expect(c.edges.has(`/a.md→/b.md#|b_/a.md4`)).toBe(true);
+      expect(c.edges.has(`/b.md→/y.md#|b_/b.md8`)).toBe(false);
+    });
+    it("collapsing the root leaves the root alone, unexpanded, with no edges", () => {
+      const c = collapseNode(expanded(), R);
+      expect([...c.nodes.keys()]).toEqual([R]);
+      expect(c.nodes.get(R)!.expanded).toBe(false);
+      expect(c.edges.size).toBe(0);
+      expect(c.truncated.size).toBe(0);
+      expect(collapseNode(c, "/gone.md")).toBe(c);
+    });
   });
 
   it("labels and describes edges by provenance", () => {
@@ -229,6 +271,44 @@ describe("geometry", () => {
     expect(fitTransform([], 400, 300)).toEqual({ k: 1, tx: 0, ty: 0 });
     const v = { k: 2, tx: 10, ty: 20 };
     expect(toGraph(v, 10 + 2 * 7, 20 + 2 * 9)).toEqual({ x: 7, y: 9 });
+  });
+  it("zooms about a screen point (the graph point under it stays put), clamped, and pans by a screen offset", () => {
+    const v = { k: 1, tx: 0, ty: 0 };
+    const z = zoomAbout(v, 2, 100, 50);
+    expect(z).toEqual({ k: 2, tx: -100, ty: -50 });
+    expect(toGraph(z, 100, 50)).toEqual(toGraph(v, 100, 50));
+    const back = zoomAbout(z, 0.5, 100, 50);
+    expect(back.k).toBe(1);
+    expect(back.tx).toBeCloseTo(0);
+    expect(back.ty).toBeCloseTo(0);
+    expect(zoomAbout(v, 100, 0, 0).k).toBe(ZOOM_MAX);
+    expect(zoomAbout(v, 0.0001, 0, 0).k).toBe(ZOOM_MIN);
+    // At the clamp already: the same view object comes back (no re-render).
+    const atMax = { k: ZOOM_MAX, tx: 3, ty: 4 };
+    expect(zoomAbout(atMax, 2, 10, 10)).toBe(atMax);
+    expect(zoomAbout(v, 2, 0, 0, 0.5, 1.5)).toEqual({ k: 1.5, tx: 0, ty: 0 });
+    expect(panBy({ k: 2, tx: 10, ty: 20 }, -5, 7)).toEqual({ k: 2, tx: 5, ty: 27 });
+    // Wheel: a downward scroll zooms out, upward in; a pinch (ctrlKey) is steeper; line deltas are scaled.
+    expect(wheelZoomFactor(100, 0, false)).toBeLessThan(1);
+    expect(wheelZoomFactor(-100, 0, false)).toBeGreaterThan(1);
+    expect(wheelZoomFactor(-100, 0, false)).toBeCloseTo(Math.exp(0.2));
+    expect(wheelZoomFactor(-10, 0, true)).toBeCloseTo(Math.exp(0.1));
+    expect(wheelZoomFactor(-3, 1, false)).toBeCloseTo(wheelZoomFactor(-48, 0, false));
+    expect(wheelZoomFactor(0, 0, false)).toBe(1);
+  });
+  it("decides what a press starts and where a connector lands", () => {
+    expect(dragMode({ handle: true, modifier: false, canWrite: true, armed: null }, "/a")).toBe("connector");
+    expect(dragMode({ handle: false, modifier: true, canWrite: true, armed: null }, "/a")).toBe("connector");
+    expect(dragMode({ handle: false, modifier: false, canWrite: true, armed: "/a" }, "/a")).toBe("connector");
+    expect(dragMode({ handle: false, modifier: false, canWrite: true, armed: "/b" }, "/a")).toBe("move");
+    expect(dragMode({ handle: false, modifier: false, canWrite: true, armed: null }, "/a")).toBe("move");
+    expect(dragMode({ handle: true, modifier: true, canWrite: false, armed: "/a" }, "/a")).toBe("move");
+    const isDoc = (p: string) => p !== "/far.md";
+    expect(connectorDrop(placed, "/c.md", 305, 12, isDoc)).toEqual({ kind: "connect", from: "/c.md", to: "/r.md" });
+    // Dropping back on the source, on an external node, or on open canvas is "empty".
+    expect(connectorDrop(placed, "/c.md", 0, 0, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 0, y: 0 });
+    expect(connectorDrop(placed, "/c.md", 900, 40, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 900, y: 40 });
+    expect(connectorDrop(placed, "/c.md", 500, 500, isDoc)).toEqual({ kind: "empty", from: "/c.md", x: 500, y: 500 });
   });
   it("ends an arrow at the target card's border", () => {
     const horizontal = arrowEnd({ x: 0, y: 0 }, { x: 300, y: 0 }, CARD_W, CARD_H, 0);

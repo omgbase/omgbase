@@ -10,25 +10,30 @@
 // Events (all `{ bubbles, composed }`):
 //   graph-select { path | null }          click (null: open canvas), or an arrow key moved the selection
 //   graph-open { path }                   double-click / Enter on the selected node
-//   graph-expand { path }                 the ⊕ affordance or `e`
+//   graph-expand { path }                 the ⊕ affordance or `e` on an unexpanded node
+//   graph-collapse { path }               the ⊖ affordance or `e` on an expanded node (`e` toggles)
 //   graph-pin { path, x, y, previous }    a drop after a drag (previous: the pin before it, or null)
 //   graph-unpin { path, previous }        the ✕ affordance, `u` or Backspace
 //   graph-connect { from, to }            a connector dropped on another node (or Enter on a keyboard target)
 //   graph-connect-empty { from, x, y }    a connector dropped on open canvas (the page opens the palette)
-// A connector starts with ⌘/Ctrl held on a node drag, with the selected node's
-// "⟶" button or `c`, or when `connectSource` is set; Esc cancels. Pinned nodes
+// A connector starts by dragging the selected node's "⟶" handle (no modifier),
+// with ⌘/Ctrl held on a node drag, after `c` / a click on the handle armed the
+// node, or when `connectSource` is set; Esc cancels. Pinned nodes
 // hold `fx/fy`; an unpin reheats the simulation so the node eases back (under
 // `prefers-reduced-motion: reduce` the layout is ticked to rest synchronously
 // and positions are set without animation). The pointer and keyboard math is
-// lib/graph.ts's pure helpers (`hitTest`, `nearestInDirection`, `fitTransform`,
-// `arrowEnd`, `toGraph`).
+// lib/graph.ts's pure helpers (`connectorDrop`, `dragMode`, `nearestInDirection`, `fitTransform`,
+// `arrowEnd`, `toGraph`, `zoomAbout`, `panBy`). The view: the wheel zooms about
+// the cursor (a pinch arrives as `wheel` + ctrlKey), a drag on open canvas pans,
+// `+`/`-`/`0` zoom in/out/reset, `f` fits; the transform is one `ViewTransform`.
 
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type ForceLink, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
-import { CARD_H, CARD_W, arrowEnd, edgeLabel, emptyModel, fitTransform, graphDescription, hitTest, nearestInDirection, neighborsOf, toGraph, truncateTitle, type Direction, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
+import { CARD_H, CARD_W, arrowEnd, connectorDrop, dragMode, edgeLabel, emptyModel, fitTransform, graphDescription, nearestInDirection, neighborsOf, panBy, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
 
 export interface GraphPathDetail { path: string }
+export interface GraphCollapseDetail { path: string }
 /** `null`: open canvas was clicked (clear the selection). */
 export interface GraphSelectDetail { path: string | null }
 export interface GraphPinDetail { path: string; x: number; y: number; previous: Pin | null }
@@ -43,6 +48,8 @@ interface Drag {
   path: string;
   pointerId: number;
   connector: boolean;
+  /** Started on the ⟶ handle (a click there arms the keyboard flow instead of selecting). */
+  handle: boolean;
   moved: boolean;
   /** Pointer offset from the node centre, in graph coordinates. */
   offX: number;
@@ -53,6 +60,8 @@ interface Drag {
   startY: number;
 }
 
+interface Pan { pointerId: number; lastX: number; lastY: number; moved: boolean }
+
 const ARROWS: Record<string, Direction> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
 
 @customElement("graph-pane")
@@ -60,7 +69,8 @@ export class GraphPane extends LitElement {
   static override styles = css`
     :host { display: block; position: relative; min-height: 240px; font: 13px/1.4 system-ui, sans-serif; color: #1e2430; outline: none; background: #fbfbfd; }
     :host(:focus-visible) { box-shadow: inset 0 0 0 2px #90b4e8; }
-    svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; }
+    svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; cursor: default; }
+    svg.panning { cursor: grabbing; }
     .edge { stroke: #9aa3b2; stroke-width: 1.4; fill: none; }
     .edge.frontmatter { stroke: #1565c0; }
     .edge.body { stroke: #6f7a8c; }
@@ -82,6 +92,9 @@ export class GraphPane extends LitElement {
     .affordance { cursor: pointer; }
     .affordance circle { fill: #fff; stroke: #c9cdd6; }
     .affordance:hover circle { fill: #e3edfb; stroke: #1565c0; }
+    .handle { cursor: crosshair; }
+    .handle circle { fill: #e8f5e9; stroke: #2e7d32; }
+    .handle:hover circle, .handle.armed circle { fill: #c8e6c9; stroke: #1b5e20; }
     .affordance text { font-size: 12px; fill: #1e2430; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
     .badge rect { fill: #fff3e0; stroke: #ffb74d; }
     .badge text { font-size: 10px; fill: #8a5a00; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
@@ -105,6 +118,7 @@ export class GraphPane extends LitElement {
   @state() private hoverEdge: string | null = null;
   @state() private hoverNode: string | null = null;
   @state() private drag: Drag | null = null;
+  @state() private pan: Pan | null = null;
   @state() private pointer: { x: number; y: number } | null = null;
   /** The source a keyboard/button connector is armed from. */
   @state() private armed: string | null = null;
@@ -218,7 +232,8 @@ export class GraphPane extends LitElement {
     return toGraph(this.view, e.clientX - r.left, e.clientY - r.top);
   }
 
-  private onNodeDown(e: PointerEvent, path: string): void {
+  /** A press on a card (or, `handle`, on its ⟶ handle): a reposition or a connector begins. Neither the card nor the canvas sees the press again. */
+  private onNodeDown(e: PointerEvent, path: string, handle = false): void {
     if (e.button !== 0) return;
     e.stopPropagation();
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -226,14 +241,31 @@ export class GraphPane extends LitElement {
     const node = this.sim.nodes().find((n) => n.path === path);
     if (!node) return;
     const g = this.graphPoint(e);
-    const source = this.connectSource ?? this.armed;
-    const connector = this.canWrite && (e.metaKey || e.ctrlKey || source === path);
+    const connector = dragMode({ handle, modifier: e.metaKey || e.ctrlKey, canWrite: this.canWrite, armed: this.connectSource ?? this.armed }, path) === "connector";
     const pin = this.model.nodes.get(path)?.pinned ?? null;
-    this.drag = { path, pointerId: e.pointerId, connector, moved: false, offX: node.x - g.x, offY: node.y - g.y, previous: pin ? { ...pin } : null, startX: g.x, startY: g.y };
+    this.drag = { path, pointerId: e.pointerId, connector, handle, moved: false, offX: node.x - g.x, offY: node.y - g.y, previous: pin ? { ...pin } : null, startX: g.x, startY: g.y };
     this.pointer = connector ? g : null;
   }
 
+  /** A press on open canvas: a pan begins (a press that never moves is a click → clear the selection). */
+  private onCanvasDown(e: PointerEvent): void {
+    this.focus();
+    if (e.button !== 0 || this.drag) return;
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    this.pan = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY, moved: false };
+  }
+
   private onMove(e: PointerEvent): void {
+    const pan = this.pan;
+    if (pan && e.pointerId === pan.pointerId) {
+      const dx = e.clientX - pan.lastX, dy = e.clientY - pan.lastY;
+      if (!pan.moved && Math.hypot(dx, dy) < 3) return;
+      pan.moved = true;
+      pan.lastX = e.clientX;
+      pan.lastY = e.clientY;
+      this.view = panBy(this.view, dx, dy);
+      return;
+    }
     const d = this.drag;
     if (!d || e.pointerId !== d.pointerId) return;
     const g = this.graphPoint(e);
@@ -249,17 +281,28 @@ export class GraphPane extends LitElement {
   }
 
   private onUp(e: PointerEvent): void {
+    const pan = this.pan;
+    if (pan && e.pointerId === pan.pointerId) {
+      this.pan = null;
+      if (!pan.moved) this.emit<GraphSelectDetail>("graph-select", { path: null });
+      return;
+    }
     const d = this.drag;
     if (!d || e.pointerId !== d.pointerId) return;
     this.drag = null;
     this.pointer = null;
     const g = this.graphPoint(e);
     if (d.connector) {
+      if (!d.moved) {
+        // A click: on the handle it toggles the armed (keyboard) connector; on the card it selects.
+        if (d.handle) { this.armed = this.armed === d.path ? null : d.path; this.connectTarget = null; }
+        else { this.armed = null; this.emit<GraphPathDetail>("graph-select", { path: d.path }); }
+        return;
+      }
       this.armed = null;
-      if (!d.moved) { this.emit<GraphPathDetail>("graph-select", { path: d.path }); return; }
-      const to = hitTest(this.placed().filter((p) => p.path !== d.path), g.x, g.y);
-      if (to && this.model.nodes.get(to)?.kind === "document") this.emit<GraphConnectDetail>("graph-connect", { from: d.path, to });
-      else this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: d.path, x: g.x, y: g.y });
+      const drop = connectorDrop(this.placed(), d.path, g.x, g.y, (p) => this.model.nodes.get(p)?.kind === "document");
+      if (drop.kind === "connect") this.emit<GraphConnectDetail>("graph-connect", { from: drop.from, to: drop.to });
+      else this.emit<GraphConnectEmptyDetail>("graph-connect-empty", { from: drop.from, x: drop.x, y: drop.y });
       return;
     }
     if (!this.reduced) this.sim.alphaTarget(0);
@@ -269,7 +312,19 @@ export class GraphPane extends LitElement {
     this.emit<GraphPinDetail>("graph-pin", { path: d.path, x: node.fx ?? node.x, y: node.fy ?? node.y, previous: d.previous });
   }
 
+  private onWheel(e: WheelEvent): void {
+    e.preventDefault();
+    const r = this.getBoundingClientRect();
+    this.view = zoomAbout(this.view, wheelZoomFactor(e.deltaY, e.deltaMode, e.ctrlKey), e.clientX - r.left, e.clientY - r.top);
+  }
+
+  /** Zoom by `factor` about the viewport's centre (the keyboard). */
+  private zoom(factor: number): void {
+    this.view = zoomAbout(this.view, factor, this.size.w / 2, this.size.h / 2);
+  }
+
   private cancelDrag(): void {
+    this.pan = null;
     const d = this.drag;
     if (!d) return;
     this.drag = null;
@@ -296,10 +351,12 @@ export class GraphPane extends LitElement {
     this.reheat(0.5);
   }
 
-  private expand(path: string): void {
+  /** Expand an unexpanded document, collapse an expanded one. */
+  private toggleExpand(path: string): void {
     const node = this.model.nodes.get(path);
-    if (!node || node.kind !== "document" || node.expanded) return;
-    this.emit<GraphPathDetail>("graph-expand", { path });
+    if (!node || node.kind !== "document") return;
+    if (node.expanded) this.emit<GraphCollapseDetail>("graph-collapse", { path });
+    else this.emit<GraphPathDetail>("graph-expand", { path });
   }
 
   private fit(): void {
@@ -347,7 +404,11 @@ export class GraphPane extends LitElement {
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     switch (e.key) {
-      case "e": if (sel) { e.preventDefault(); this.expand(sel); } break;
+      case "e": if (sel) { e.preventDefault(); this.toggleExpand(sel); } break;
+      case "+":
+      case "=": e.preventDefault(); this.zoom(1.25); break;
+      case "-": e.preventDefault(); this.zoom(1 / 1.25); break;
+      case "0": e.preventDefault(); this.view = { k: 1, tx: 0, ty: 0 }; break;
       case "u":
       case "Backspace": if (sel) { e.preventDefault(); this.unpin(sel); } break;
       case "c": if (sel && this.canWrite && this.model.nodes.get(sel)?.kind === "document") { e.preventDefault(); this.armed = sel; this.connectTarget = null; } break;
@@ -389,8 +450,8 @@ export class GraphPane extends LitElement {
       <text class="title" x=${node.pinned ? -6 : 0} y="0">${truncateTitle(node.title)}</text>
       ${node.pinned ? svg`<text class="glyph" x=${hw - 12} y=${-hh + 10}>📌</text>` : nothing}
       ${node.pinned && (hover || isSel) ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.unpin(node.path); }}><title>unpin</title><circle cx=${hw} cy=${-hh} r="8"></circle><text x=${hw} y=${-hh}>✕</text></g>` : nothing}
-      ${node.kind === "document" && !node.expanded ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.expand(node.path); }}><title>expand (e)</title><circle cx=${hw} cy="0" r="8"></circle><text x=${hw} y="0">⊕</text></g>` : nothing}
-      ${isSel && this.canWrite && node.kind === "document" ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.armed = this.armed === node.path ? null : node.path; this.connectTarget = null; }}><title>connect: drag from here to another document (c)</title><circle cx=${-hw} cy="0" r="8"></circle><text x=${-hw} y="0">⟶</text></g>` : nothing}
+      ${node.kind === "document" ? svg`<g class="affordance" @pointerdown=${stop} @click=${(ev: Event) => { ev.stopPropagation(); this.toggleExpand(node.path); }}><title>${node.expanded ? "collapse (e)" : "expand (e)"}</title><circle cx=${hw} cy="0" r="8"></circle><text x=${hw} y="0">${node.expanded ? "⊖" : "⊕"}</text></g>` : nothing}
+      ${isSel && this.canWrite && node.kind === "document" ? svg`<g class="affordance handle ${this.armed === node.path ? "armed" : ""}" @pointerdown=${(ev: PointerEvent) => this.onNodeDown(ev, node.path, true)} @dblclick=${stop}><title>drag to connect (click arms the keyboard connector; c)</title><circle cx=${-hw} cy="0" r="10"></circle><text x=${-hw} y="0">⟶</text></g>` : nothing}
       ${more > 0 ? svg`<g class="badge"><title>${more} more neighbour${more === 1 ? "" : "s"} not loaded</title><rect x=${hw - 34} y=${hh - 8} width="44" height="14" rx="7"></rect><text x=${hw - 12} y=${hh - 1}>+${more} more</text></g>` : nothing}
     </g>`;
   }
@@ -403,9 +464,9 @@ export class GraphPane extends LitElement {
     const connectorEnd = this.pointer ?? (this.connectTarget ? pos.get(this.connectTarget) : undefined);
     const { k, tx, ty } = this.view;
     return html`
-      <svg role="application" aria-label=${graphDescription(this.model)}
+      <svg role="application" aria-label=${graphDescription(this.model)} class=${this.pan?.moved ? "panning" : ""}
           @pointermove=${this.onMove} @pointerup=${this.onUp} @pointercancel=${() => this.cancelDrag()}
-          @pointerdown=${() => { this.focus(); if (!this.drag) this.emit<GraphSelectDetail>("graph-select", { path: null }); }}>
+          @pointerdown=${this.onCanvasDown} @wheel=${this.onWheel}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a94a6"></path>
@@ -422,7 +483,7 @@ export class GraphPane extends LitElement {
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
         <button @click=${() => { this.view = { k: 1, tx: 0, ty: 0 }; }} title="reset the zoom">1:1</button>
       </div>
-      <div class="hint">drag: move (pins) · ${this.canWrite ? "⌘/Ctrl-drag or c: connect · " : ""}e / ⊕: expand ${this.limit} per side · u: unpin · Enter: open · arrows: select · f: fit${source ? ` · connector from ${source} — drop on a document or Esc` : ""}</div>
+      <div class="hint">drag: move (pins) · ${this.canWrite ? "⌘/Ctrl-drag or c: connect · " : ""}e / ⊕⊖: expand ${this.limit} per side / collapse · u: unpin · Enter: open · arrows: select · wheel: zoom · drag canvas: pan · f: fit · +/-/0${source ? ` · connector from ${source} — drop on a document or Esc` : ""}</div>
     `;
   }
 }
