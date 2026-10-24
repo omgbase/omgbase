@@ -149,14 +149,16 @@ describe("the model", () => {
 describe("rows", () => {
   it("projects _title always and the card's fields after — nothing of a repository's vocabulary (no `type`) — dotted paths by their head, never _path twice", () => {
     expect(projectedFields([])).toEqual(["_title"]);
-    expect(projectedFields(["_display", "_title", "status", "_path", "owner.name", "status", " "])).toEqual(["_title", "_display", "status", "owner"]);
+    // `_display` is not an engine name the surface knows (yet): projecting it would be `filter_invalid`, so it is skipped.
+    expect(projectedFields(["_display", "_title", "status", "_path", "owner.name", "status", " "])).toEqual(["_title", "status", "owner"]);
+    expect(projectedFields(["_tags", "_bogus", "_data.x"])).toEqual(["_title", "_tags", "_data"]);
     expect(projectedFields(["type"])).toEqual(["_title", "type"]);
   });
 
   it("builds the batched row query exactly: `==` for one path, a tuple `in (…)` for several, deduplicated and rooted", () => {
     expect(fieldsQuery([])).toBeNull();
     expect(fieldsQuery(["/a.md"])).toBe('docs { select _path, _title where _path == "/a.md" }');
-    expect(fieldsQuery(["/a.md", "b/c.md", "/a.md"], ["_display", "_title"])).toBe('docs { select _path, _title, _display where _path in ("/a.md", "/b/c.md") }');
+    expect(fieldsQuery(["/a.md", "b/c.md", "/a.md"], ["_display", "_title", "status"])).toBe('docs { select _path, _title, status where _path in ("/a.md", "/b/c.md") }');
     expect(fieldsQuery(['/q"uote.md', "/x.md"], ["status", "type"])).toBe('docs { select _path, _title, status, type where _path in ("/q\\"uote.md", "/x.md") }');
   });
 
@@ -173,7 +175,7 @@ describe("rows", () => {
     expect(unfetched(t, ["_display", "status"])).toEqual([A, "/x.md"]);
     const u = applyRows(t, [{ _id: "d_a", _path: A, _title: "Calcination", _display: "Calc", status: "done" }], ["_display", "status"]);
     expect(u.nodes.get(A)!.row).toEqual({ _path: A, _title: "Calcination", _display: "Calc", status: "done" });
-    expect(u.nodes.get(A)!.fetched).toEqual(["_title", "_display", "status"]);
+    expect(u.nodes.get(A)!.fetched).toEqual(["_title", "status"]);
     expect(unfetched(u, ["status"])).toEqual(["/x.md"]);
     expect(m.nodes.get(A)!.fetched).toEqual([]);
   });
@@ -196,7 +198,7 @@ describe("rows", () => {
     expect(calls.map((c) => c.query)).toEqual([
       `links { select _path, _block_id, _provenance, _field, _anchor where _dst_path == "${A}" }`,
       `links { select _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor where _path == "${A}" }`,
-      `docs { select _path, _title, _display, status where _path in ("${A}", "/x.md", "/index.md") }`,
+      `docs { select _path, _title, status where _path in ("${A}", "/x.md", "/index.md") }`,
     ]);
     expect(calls.every((c) => c.repo === "alchemy")).toBe(true);
     expect(t.nodes.get(A)!.row.status).toBe("done");

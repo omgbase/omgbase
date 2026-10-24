@@ -293,7 +293,17 @@ export function edgeDetail(model: GraphModel, edge: GraphEdge): EdgeDetail {
 /** The field every row carries whatever the card asks for: the title (the connector's link text, the card fallback). Nothing else is assumed about a repository's vocabulary. */
 export const BASE_FIELDS: readonly string[] = ["_title"];
 
-/** The projection a card's fields need: `_title` first, then the card's fields in order, `_path` never repeated (the hit envelope carries it), deduplicated. */
+/** The `_`-names a `docs` projection may name (spec/surface §1.2, the names
+ * rule): an authored key is bare and reads absent when a document lacks it,
+ * but an engine name the surface does not know is the hard error
+ * `filter_invalid` ("`_display` is not an engine name of docs"). So a card
+ * template's `_display` — the default's first choice, for the day an engine
+ * computes it — is dropped from the projection until it is in this list. */
+export const PROJECTABLE_ENGINE_FIELDS: ReadonlySet<string> = new Set(["_id", "_path", "_raw", "_hash", "_updated_at", "_created_at", "_title", "_tags", "_format", "_data", "_frontmatter", "_inline"]);
+
+/** The projection a card's fields need: `_title` first, then the card's fields
+ * in order — `_path` never repeated (the hit envelope carries it), an unknown
+ * engine name skipped (above), a dotted path projected by its head — deduplicated. */
 export function projectedFields(fields: readonly string[]): string[] {
   const out: string[] = [...BASE_FIELDS];
   for (const f of fields) {
@@ -301,6 +311,7 @@ export function projectedFields(fields: readonly string[]): string[] {
     if (name === "" || name === "_path" || out.includes(name)) continue;
     // A dotted card path reads inside a projected record: project its head.
     const head = name.split(".")[0]!;
+    if (head.startsWith("_") && !PROJECTABLE_ENGINE_FIELDS.has(head)) continue;
     if (!out.includes(head)) out.push(head);
   }
   return out;
