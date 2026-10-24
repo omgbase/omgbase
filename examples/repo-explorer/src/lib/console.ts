@@ -67,6 +67,16 @@ export function scalarLine(r: QueryResult): string | null {
   return null;
 }
 
+/** Whether the footer offers "graph": a rows result (`collect`/`first`/`single`,
+ * not `count`/`exists`/`none`/`values`) with at least one hit that names a
+ * document by `_path` — a `docs`, `nodes` or `blocks` query (a `nodes`/`blocks`
+ * row maps to its document). The graph re-runs the query itself (lib/graph.ts
+ * `queryModel`), so the console's paged rows are not what is graphed. */
+export function canGraph(r: QueryResult | null | undefined): boolean {
+  if (!r || scalarLine(r) !== null) return false;
+  return r.hits.some((h) => typeof h._path === "string" && h._path !== "");
+}
+
 /** The footer: `12 rows` / `50 rows · more` / `50 rows · truncated (order by disables the cursor — page with limit/offset in the query)`. */
 export function footerText(r: QueryResult, shown: number): string {
   const rows = `${shown} row${shown === 1 ? "" : "s"}`;

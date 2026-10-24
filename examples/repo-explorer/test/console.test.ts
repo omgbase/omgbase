@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LIMIT, cellOf, columnsOf, describeToolError, fetchSyntax, footerText, isRunShortcut, locatorQuery, nextPage, runConsole, scalarLine } from "../src/lib/console.ts";
+import { DEFAULT_LIMIT, canGraph, cellOf, columnsOf, describeToolError, fetchSyntax, footerText, isRunShortcut, locatorQuery, nextPage, runConsole, scalarLine } from "../src/lib/console.ts";
 import { OmgError } from "../src/lib/mcp-client.ts";
 import { queryResultOf } from "../src/lib/query.ts";
 import { ScriptedCaller, page } from "./scripted.ts";
@@ -42,6 +42,18 @@ describe("the result table", () => {
     expect(footerText(ordered, 5)).toBe("5 rows · truncated (a custom order by disables the cursor — page with limit/offset in the query)");
     expect(nextPage(ordered, {})).toBeNull();
     expect(footerText(queryResultOf({ hits: [{}], truncated: false, cursor: null }), 1)).toBe("1 row");
+  });
+  it("canGraph: the footer offers \"graph\" for a rows result whose rows name documents — docs, nodes or blocks — not for count/exists/none/values, no rows, or rows without a _path", () => {
+    expect(canGraph(queryResultOf({ hits: [{ _id: "d_1", _path: "/a.md", _title: "A" }], consumer: "collect" }))).toBe(true);
+    expect(canGraph(queryResultOf({ hits: [{ _id: "b_1", _path: "/a.md", _raw: "x" }], consumer: "collect" }))).toBe(true);
+    expect(canGraph(queryResultOf({ hits: [{ _id: "n_1", _path: "/a.md" }], consumer: "first" }))).toBe(true);
+    expect(canGraph(queryResultOf({ hits: [], consumer: "count", count: 3 }))).toBe(false);
+    expect(canGraph(queryResultOf({ hits: [], consumer: "exists", exists: true }))).toBe(false);
+    expect(canGraph(queryResultOf({ hits: [], consumer: "none", none: false }))).toBe(false);
+    expect(canGraph(queryResultOf({ hits: [], consumer: "collect", values: ["/a.md"] }))).toBe(false);
+    expect(canGraph(queryResultOf({ hits: [], consumer: "collect" }))).toBe(false);
+    expect(canGraph(queryResultOf({ hits: [{ _title: "no path" }], consumer: "collect" }))).toBe(false);
+    expect(canGraph(null)).toBe(false);
   });
   it("keeps the hints as the server sent them (the §1.5 unknown-name advice), absent when none", () => {
     const r = queryResultOf({ hits: [{ _id: "d_0", _path: "/index.md" }], truncated: false, cursor: null, consumer: "collect", hints: ["no document in this repository carries a property `titel`; did you mean `_title`?"] });

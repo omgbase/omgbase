@@ -13,7 +13,10 @@ neighbourhood over the `links` collection, expanded node by node, with drag to
 pin, spring settling on unpin, and a ⌘-drag connector that writes a relation —
 a picker over the relation kinds the rendered graph already uses (its edges'
 frontmatter fields, the source's own list fields, a body link), always
-additive; a selected edge's ✕ (or Delete) severs one. Every write is a command
+additive; a selected edge's ✕ (or Delete) severs one — or the **graph of a
+query**: the console's "graph" button (or `#graph=<query>`) draws an arbitrary
+query's rows as the documents they name, joined by the links among them, the
+query's own projection shaping the cards. Every write is a command
 on the shared `@omgbase/client` `CommandLog`:
 undo / redo (⌘Z / ⇧⌘Z) is a compensating `apply` computed against the
 repository's CURRENT state and refused when what the command wrote moved on.
@@ -111,6 +114,7 @@ is browsed.
 | palette: find (⌘K) | `query` | `docs { select _id, _path, _title where (_path ~* "<term>" or _title ~* "<term>") and (…) order by _path limit 20 }` — one group per whitespace-separated term, regex-escaped (the OQX baseline treats `/` and `-` as metacharacters too) and JSON-quoted; empty text lists the first 20 by path; the hits are ranked in the browser (title prefix > title contains > path segment prefix > path contains) |
 | palette: create (`+path`, or the suggestion when nothing matches) | `apply`, then `docs_read` | `apply { effects: [{ op: "create", path: "<path>", markdown: "# <Title>\n" }], reason: "create document" }` → the Receipt; `docs_read { _path }` for the created bytes and `rev` (the undo's guard); a bare name lands in the open document's folder, `.md` is appended; `path_taken` → *a document (or a file) already exists at …* |
 | graph tab: the neighbourhood | `query` | the two `links` queries above for the expanded document, then one `docs { select _path, _title where _path in ("/a.md", "/b.md") }` for the titles the model lacks; 12 neighbours per direction, the rest a "+k more" badge; ⊕ expands a node (the same two queries) |
+| graph of a query (`#graph=…`, the console's "graph") | `query` | the query itself, re-run with `limit: 200` (its rows are the nodes — one per distinct `_path`; a `nodes`/`blocks` row maps to its document); then ONE `links { select _path, _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor, _block_id where _path in ("/a.md", "/b.md", …) and _dst_path in ("/a.md", "/b.md", …) }` for the edges among the set (an external link has no `_dst_path`, so none is among it); then the `docs { select _path, _title, card: <expr>, … where _path in (…) }` query above for whatever card fields the query did not project; ⊕ on a node is the neighbourhood's two queries |
 | graph tab: a connector dropped on a document | `docs_read`, then `apply` | `docs_read { _path: <from> }` → the source's frontmatter → the picker (`<omg-relation-picker>` at the drop point): the frontmatter fields the RENDERED edges use (by frequency, with their counts), the source's own list-of-paths fields, *a link in the body*, *new field…*; the pick is the gesture — `attachRelationCommand` re-reads the source and sends ONE additive `apply`: `{ op: "set", target: "<from>", field: "_frontmatter.<field>", value: [...existing, "<to>"], expect: { revision: "<rev>" } }` (an absent field becomes `["<to>"]`, a scalar path `[<scalar>, "<to>"]`; already present → *already related*, nothing written; a non-path scalar is refused) or `{ op: "insert", into: "<from>", at: "end", markdown: "[<title>](<to>)" }` — then the source re-read and its neighbourhood rebuilt |
 | graph tab: a connector dropped on open canvas | (the palette) | the palette in pick mode (*connect /a.md to…*): a document picked, or created as above, then the picker |
 | graph tab: a selected edge's ✕ (or Delete / Backspace) | `docs_read` or `query`, then `apply` | `detachRelationCommand`: a frontmatter edge → `docs_read { _path: <from> }` then `{ op: "set", …, value: <the list without "<to>">, expect: { revision } }` (`unset` when that empties it); a body edge → `blocks { select _raw, _hash where _id == "<block id>" }` then `{ op: "remove", targets: [{ kind: "block", _id }], expect: { "<id>": { content_hash } } }` (undo re-inserts the block's source at the end of the document); an external edge is not deletable here |
@@ -313,9 +317,10 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
 3. `docs_tree {}` → the root level; folders load on first open and remember
    their state; opening a document reveals its folders.
 4. The URL hash is the state — `#doc=/processes/calcination.md`,
-   `&rev=r_7&tab=history`, `&tab=graph`, `&block=b_12`, `#deleted` — so a
-   document, a revision of it, its graph, or the deleted list is a link one can
-   reload or share.
+   `&rev=r_7&tab=history`, `&tab=graph`, `&block=b_12`, `#deleted`,
+   `#graph=<query>` (URL-encoded; the graph pane alone, no document open) — so
+   a document, a revision of it, its graph, a query's graph, or the deleted
+   list is a link one can reload or share.
 5. A document: `docs_read { include_ids: true }`; the body rendered (or raw,
    persisted), the properties as a table, the two `links` queries, the
    `revisions` query; a `[[wikilink]]` resolved by one query, a `/`-rooted or
@@ -331,7 +336,10 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    ordinary column), an `_id`/`_path` cell opens the thing it names, `hints` is the
    yellow bar, an error shows the engine's code, message, `data.hint` and
    `data.fix`; "more" follows the keyset cursor; the footer says why an ordered
-   query cannot page; "syntax" opens `query_syntax` in a drawer.
+   query cannot page; "syntax" opens `query_syntax` in a drawer; "graph" (on
+   a rows result whose rows name documents — `docs`, `nodes`, `blocks`; also
+   `>graph these rows` in the palette) draws the LAST RUN query's rows as a
+   graph (below) through `#graph=<query>`.
 8. A frontmatter edit (when `plan` and `execute` are listed): a key and a value
    (read the YAML way: `true`, `3`, `"text"`, `[a, b]` as JSON, else text) →
    `plan { …, diffs: true }` → the summary and the before/after diff in a
@@ -403,6 +411,30 @@ Streamable HTTP transport at the same-origin `/mcp`; nothing imports
    value), a `$`-name is the language's; `card` is the user's namespace, so a
    query, a setting or a document can all fill it, and the element knows none
    of this (its own default is `{_title}`; the apps pass `{card|_title}`).
+   **Graph of a query.** The same pane, from a different source: `#graph=<query>`
+   (the console footer's "graph", the palette's `>graph these rows`, or a
+   typed URL) re-runs the query with `limit: 200` and makes one node per
+   distinct `_path` among its rows (`queryModel` in `src/lib/graph.ts`; a
+   `nodes` or `blocks` row maps to its document, a row without a `_path` is
+   skipped and counted in the hint), keeps each row AS the node's row — so the
+   query's own projection drives the cards with no settings at all: `docs {
+   select _path, _title, card: status + " · " + owner where … }` is a graph
+   whose cards read `status · owner`, and the fields it projected are never
+   refetched (a value a node already has is kept; only what the templates name
+   and the query did not project is fetched) — and draws the links AMONG the
+   set from ONE `links` query, `where _path in (…) and _dst_path in (…)`
+   (`linksAmongQuery` / `applyLinksAmong`; external links have no `_dst_path`,
+   so none appears). Nothing is expanded or pinned, no node is emphasised and
+   the element auto-fits the whole set; the hint reads *graph of 13 rows: docs
+   { … } · 13 nodes · 27 links among them* and says when the query had more
+   rows than the 200 graphed (the console's "more" pages beyond are not). The
+   toolbar shows the query on one monospace line — click it to copy it into
+   the console and open the drawer. The model is the same type as the
+   neighbourhood's, so everything else holds: ⊕ expands a node's full
+   neighbourhood, ⊖ collapses it, pins, the connector, edge deletion and undo
+   all work — with one rule added: a node the QUERY named (`origin: "query"`)
+   is never removed by a collapse (it is root-like for reachability, and the
+   links among the set survive), only nodes an expansion walked in leave.
 
 **Session recovery.** The proxy forgets a session after `--idle` seconds or
 when it restarts and answers the next POST with `404 -32000 unknown session`;
@@ -418,7 +450,8 @@ call once, noting *session expired at the server — reconnected* in the header.
   rendered/raw body, the anchors line, the frontmatter editor and confirm
   strip, the task checkboxes' `change` → `task-toggle`, the undo/redo buttons
   and ⌘Z → `log-undo` / `log-redo`), `links-panel`, `query-console` (textarea,
-  table, hints, errors, the syntax drawer), `history-panel` (the revision list,
+  table, hints, errors, the syntax drawer, the footer's "graph" →
+  `console-graph` when `canGraph`), `history-panel` (the revision list,
   unified diff or side by side), `feed-strip`. The palette is `<omg-palette>`
   (the overlay: combobox + listbox, the keys, pick mode), the connector's
   picker `<omg-relation-picker>`, and the graph `<omg-graph>` (SVG + d3-force:
@@ -439,11 +472,15 @@ call once, noting *session expired at the server — reconnected* in the header.
   and the relation commands (`relationKinds`, `attachRelationCommand`,
   `detachRelationCommand`, `describeRelation` / `describeDetach`) are
   `@omgbase/client` — shared with graph-ui.
-- `src/lib/graph.ts` — the neighbourhood model (`withNeighborhood`,
-  `collapseNode`, pins, `fieldsQuery` / `fetchFields` for the rows the cards
-  read, provenance text), `listFieldsOf` (the source's own path-valued fields,
-  for the connector's picker) and `toView` (the model as the element's nodes
-  and edges); `src/lib/cards.ts` — the card settings (the default template, the
+- `src/lib/graph.ts` — the graph model from either source: the neighbourhood
+  (`emptyModel`, `withNeighborhood`, `collapseNode`, pins, `fieldsQuery` /
+  `fetchFields` for the rows the cards read, provenance text) and the query
+  (`queryModel` — rows to query-origin nodes, `GRAPH_QUERY_LIMIT` 200,
+  `linksAmongQuery` / `applyLinksAmong` / `fetchLinksAmong` — the one `links`
+  query for the edges among the set), `listFieldsOf` (the source's own
+  path-valued fields, for the connector's picker) and `toView` (the model as
+  the element's nodes and edges; a doc model's root emphasised, a query model's
+  nothing); `src/lib/cards.ts` — the card settings (the default template, the
   "vary by" field and its per-value templates); `src/lib/graph-commands.ts` — pin /
   unpin / expand as local commands.
 - `src/lib/tools.ts` — `MINIMAL_TOOLS`, `capabilities`, the missing-tools banner.
@@ -461,7 +498,8 @@ call once, noting *session expired at the server — reconnected* in the header.
   `frontmatterPlanCommand` (the confirmed plan as a log entry).
 - `src/lib/diff.ts` — Myers' O(ND) line diff with `docs_diff_unified`'s tie rule
   and hunk format, `unifiedDiff`, `diffStats`.
-- `src/lib/route.ts` — the hash route; `src/lib/paths.ts` — paths, the hit
+- `src/lib/route.ts` — the hash route (`#doc=…`, `#deleted`, `#graph=<query>`
+  with `graphRoute`); `src/lib/paths.ts` — paths, the hit
   envelope (`_id`/`_path`), the `docs_*` locator (`{ _id } | { _path }`), the
   ≥ 5.0 gate; `src/lib/effect.ts` — the signals `effect` helper.
 - `scripts/dev.mjs`, `dev-args.mjs`, `dev-workspace.mjs`, `omg-minimal.mjs` —
@@ -479,9 +517,12 @@ call once, noting *session expired at the server — reconnected* in the header.
   codes; task items rendered enabled / disabled / nested / not-a-task), the
   frontmatter plan command (the digest-form execute, the restore, the refusal),
   the graph model (bounds, dedup, pins, the fields query, `listFieldsOf`, the
-  view adapter), the card settings, the pin/unpin/expand commands through a
-  real `CommandLog` (coalescing), the route, the dev arguments and the
-  stand-in — 134 tests, no live server. The client's session recovery and
+  view adapter; the query model — rows to nodes with their projections kept,
+  the exact `links … in (…) and _dst_path in (…)` query, edges only among the
+  set, a collapse that never drops a query node), the card settings, the
+  pin/unpin/expand commands through a real `CommandLog` (coalescing), the
+  route (the `#graph=` round trip), the console's `canGraph`, the dev
+  arguments and the stand-in — 143 tests, no live server. The client's session recovery and
   `unknown tool` mapping, the create command and the relation commands (every
   additive write's exact effect and guard, every refusal, both detaches, every
   compensation) are tested in `packages/client`; the palette's model, the
@@ -614,3 +655,19 @@ So: one `apply` per toggle, the file changes, the re-read carries the new hash,
 a toggle against a stale hash is refused by the engine, undo restores the
 exact bytes, and an undo after someone else's edit is refused by the page
 before anything is sent.
+
+**Graph of a query (2026-10-24, surface 5.1, minimal profile, the same
+proxy).** `queryModel` → `fetchLinksAmong` → `fetchFields` driven from Node
+through `OmgClient` over the alchemy workspace: `docs { select _path, _title,
+layer where layer == "canon" }` → 13 rows, 13 nodes, ONE `links … where _path
+in (13 paths) and _dst_path in (the same 13) }` → 27 edges among them (all
+body links, `/index.md → /processes/calcination.md` first), 0 rows skipped,
+no node emphasised; the cards under `{card|_title}` read *Alchemy*, *Jabir ibn
+Hayyan*, *Maria Prophetissa*. With `card: _title + " · " + layer` in the
+query itself the same three read *Alchemy · canon*, … and the refetch asked
+only for what the query had not projected (`fetched: ["_title", "card"]` from
+the query alone). With the toolbar's expression instead (`_title + " / " +
+layer`) on a query projecting only `layer`, the one `docs { select _path,
+_title, card: _title + " / " + layer where _path in (…) }` refetch filled
+them: *Alchemy / canon*. `blocks { select _path, _raw where _raw ~* "salt" }`
+→ 19 block rows → 7 document nodes, 8 links among them.

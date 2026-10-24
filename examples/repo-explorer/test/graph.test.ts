@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
-  applyRows, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchFields, fieldsQuery, listFieldsOf, neighborsOf, projectedFields, provenanceText, removeNode, setPin, titleOf, toView,
+  GRAPH_QUERY_LIMIT, applyLinksAmong, applyRows, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchFields, fetchLinksAmong, fieldsQuery, linksAmongQuery, listFieldsOf, neighborsOf, projectedFields, provenanceText, queryModel, queryPaths, removeNode, setPin, titleOf, toView,
   unfetched, withNeighborhood,
 } from "../src/lib/graph.ts";
 
@@ -18,6 +18,8 @@ describe("the model", () => {
   it("starts with the root alone, rooted, unexpanded, its row the path only", () => {
     const m = emptyModel("processes/calcination.md");
     expect(m.root).toBe(A);
+    expect(m.source).toEqual({ kind: "doc", path: A });
+    expect(m.nodes.get(A)!.origin).toBe("walk");
     expect([...m.nodes.keys()]).toEqual([A]);
     expect(m.nodes.get(A)).toMatchObject({ kind: "document", row: { _path: A }, fetched: [], pinned: null, expanded: false, degree: { in: null, out: null } });
     expect(titleOf(m.nodes.get(A)!)).toBe("calcination");
@@ -146,6 +148,137 @@ describe("the model", () => {
   });
 });
 
+describe("a query model", () => {
+  const Q = 'docs { select _path, _title, card: status + " · " + owner where layer == "canon" }';
+  const hits = [
+    { _id: "d_1", _path: "/a.md", _title: "A", card: "done · zoe" },
+    { _id: "d_2", _path: "/b/c.md", _title: "C", card: null },
+    { _id: "d_3", _title: "no path" },
+    { _id: "d_1", _path: "a.md", _title: "A again" },
+    { _id: "d_4", _path: "/d.md", _title: "D", card: "open · yusuf" },
+  ];
+
+  it("queryModel: one node per distinct _path (rooted), origin query, the row kept and its projected keys fetched, a doc _id kept, rows without a path skipped and counted, no edges, no root, nothing expanded or pinned", () => {
+    const m = queryModel(Q, hits);
+    expect(m.root).toBe("");
+    expect(m.source).toEqual({ kind: "query", query: Q, skipped: 1, truncated: false });
+    expect([...m.nodes.keys()]).toEqual(["/a.md", "/b/c.md", "/d.md"]);
+    expect(queryPaths(m)).toEqual(["/a.md", "/b/c.md", "/d.md"]);
+    expect(m.nodes.get("/a.md")).toEqual({ path: "/a.md", kind: "document", id: "d_1", row: { _path: "/a.md", _title: "A", card: "done · zoe" }, fetched: ["_title", "card"], origin: "query", pinned: null, expanded: false, degree: { in: null, out: null } });
+    expect(m.nodes.get("/b/c.md")!.row).toEqual({ _path: "/b/c.md", _title: "C", card: null });
+    expect(titleOf(m.nodes.get("/d.md")!)).toBe("D");
+    expect(m.edges.size).toBe(0);
+    expect(m.truncated.size).toBe(0);
+    // Everything the query projected is fetched: the default card asks for nothing more.
+    expect(unfetched(m, ["card", "_title"])).toEqual([]);
+    expect(unfetched(m, ["status"])).toEqual(["/a.md", "/b/c.md", "/d.md"]);
+  });
+
+  it("queryModel: a nodes/blocks row maps to its document — its _id is not the document's; the limit bounds the rows and marks the source truncated; an empty result is an empty model", () => {
+    const blocks = [{ _id: "b_1", _path: "/a.md", _raw: "one" }, { _id: "b_2", _path: "/a.md", _raw: "two" }, { _id: "b_3", _path: "/b.md", _raw: "three" }];
+    const m = queryModel("blocks { select _path, _raw }", blocks);
+    expect([...m.nodes.keys()]).toEqual(["/a.md", "/b.md"]);
+    expect(m.nodes.get("/a.md")).toMatchObject({ id: null, row: { _path: "/a.md", _raw: "one" }, fetched: ["_raw"] });
+    const bounded = queryModel("docs { }", [{ _path: "/a.md" }, { _path: "/b.md" }, { _path: "/c.md" }], { limit: 2 });
+    expect([...bounded.nodes.keys()]).toEqual(["/a.md", "/b.md"]);
+    expect(bounded.source).toMatchObject({ truncated: true, skipped: 0 });
+    expect(queryModel("docs { }", [{ _path: "/a.md" }], { truncated: true }).source).toMatchObject({ truncated: true });
+    expect(GRAPH_QUERY_LIMIT).toBe(200);
+    const empty = queryModel("docs { }", []);
+    expect(empty.nodes.size).toBe(0);
+    expect(empty.source).toEqual({ kind: "query", query: "docs { }", skipped: 0, truncated: false });
+  });
+
+  it("linksAmongQuery: ONE links query with both ends in the set, exactly; null under two distinct paths", () => {
+    expect(linksAmongQuery(["/a.md", "b/c.md", "/a.md"])).toBe('links { select _path, _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor, _block_id where _path in ("/a.md", "/b/c.md") and _dst_path in ("/a.md", "/b/c.md") }');
+    expect(linksAmongQuery(["/a.md", "/a.md"])).toBeNull();
+    expect(linksAmongQuery([])).toBeNull();
+  });
+
+  it("applyLinksAmong: edges only among the set, keyed and deduplicated; a self-loop, a row to a document outside the set, a dangling and an external row add nothing; no node is added or expanded", () => {
+    const m = queryModel("docs { }", [{ _id: "d_1", _path: "/a.md" }, { _path: "/b.md" }, { _path: "/c.md" }]);
+    const rows = linkRowsOf([
+      { _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "frontmatter", _field: "depends_on", _block_id: null },
+      { _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "frontmatter", _field: "depends_on", _block_id: null },
+      { _id: "e_2", _path: "/b.md", _dst_path: "/a.md", _dst_id: "d_1", _dst_kind: "document", _provenance: "link", _block_id: "b_7" },
+      { _id: "e_3", _path: "/a.md", _dst_path: "/a.md", _dst_id: "d_1", _dst_kind: "document", _provenance: "link", _block_id: "b_8" },
+      { _id: "e_4", _path: "/a.md", _dst_path: "/elsewhere.md", _dst_id: "d_9", _dst_kind: "document", _provenance: "link", _block_id: "b_9" },
+      { _id: "e_5", _path: "/outside.md", _dst_path: "/c.md", _dst_id: "d_3", _dst_kind: "document", _provenance: "link", _block_id: "b_10" },
+      { _id: "e_6", _path: "/a.md", _dst_path: null, _dst_id: "phantom:salt", _dst_kind: "document", _provenance: "link", _block_id: "b_11" },
+      { _id: "e_7", _path: "/a.md", _dst_path: null, _dst_id: "x_1", _dst_kind: "external", _provenance: "link", _block_id: "b_12", _uri: "https://example.com/" },
+    ]);
+    const l = applyLinksAmong(m, rows);
+    expect([...l.edges.keys()]).toEqual(["/a.md→/b.md#depends_on|", "/b.md→/a.md#|b_7"]);
+    expect(l.edges.get("/a.md→/b.md#depends_on|")).toMatchObject({ provenance: "frontmatter", field: "depends_on" });
+    expect([...l.nodes.keys()]).toEqual(["/a.md", "/b.md", "/c.md"]);
+    expect([...l.nodes.values()].every((n) => !n.expanded && n.degree.in === null)).toBe(true);
+    // The destination's doc id is learned from the row when the query did not carry one.
+    expect(l.nodes.get("/b.md")!.id).toBe("d_2");
+    expect(m.edges.size).toBe(0);
+    expect(neighborsOf(l, "/c.md")).toEqual([]);
+  });
+
+  it("fetchLinksAmong runs the one links query through queryAll and folds the edges in; nothing is asked for a single document; fetchFields then asks only for what the query did not project", async () => {
+    const calls: string[] = [];
+    const client = {
+      async queryAll(query: string) {
+        calls.push(query);
+        if (query.startsWith("links")) return [{ _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "link", _block_id: "b_1" }];
+        return [{ _id: "d_1", _path: "/a.md", _title: "A", card: "authored" }, { _id: "d_2", _path: "/b.md", _title: "B", card: null }];
+      },
+    };
+    const m = queryModel("docs { select _path, card: status where layer == \"canon\" }", [{ _id: "d_1", _path: "/a.md", card: "done" }, { _id: "d_2", _path: "/b.md", card: "open" }]);
+    const l = await fetchLinksAmong(client, m, { repo: "alchemy" });
+    expect([...l.edges.keys()]).toEqual(["/a.md→/b.md#|b_1"]);
+    expect(unfetched(l, ["card", "_title"])).toEqual(["/a.md", "/b.md"]);
+    const f = await fetchFields(client, l, ["card", "_title"]);
+    expect(calls).toEqual([
+      'links { select _path, _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor, _block_id where _path in ("/a.md", "/b.md") and _dst_path in ("/a.md", "/b.md") }',
+      'docs { select _path, _title, card where _path in ("/a.md", "/b.md") }',
+    ]);
+    // The query's computed `card` stands; the refetch filled only `_title`.
+    expect(f.nodes.get("/a.md")!.row).toEqual({ _path: "/a.md", card: "done", _title: "A" });
+    expect(f.nodes.get("/b.md")!.row).toEqual({ _path: "/b.md", card: "open", _title: "B" });
+    expect(f.nodes.get("/a.md")!.fetched).toEqual(["card", "_title"]);
+    expect(await fetchLinksAmong(client, queryModel("docs { }", [{ _path: "/a.md" }]))).toEqual(queryModel("docs { }", [{ _path: "/a.md" }]));
+    expect(calls).toHaveLength(2);
+  });
+
+  it("collapseNode never removes a query-origin node, keeps the links among the set, and still drops what only the collapsed expansion explained", () => {
+    const m0 = applyLinksAmong(queryModel("docs { }", [{ _path: "/a.md" }, { _path: "/b.md" }, { _path: "/c.md" }]), linkRowsOf([
+      { _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "link", _block_id: "b_1" },
+    ]));
+    // ⊕ on /a.md: its full neighbourhood — /b.md (already in), a new /x.md and a new /y.md that /x.md also links.
+    const m1 = withNeighborhood(m0, "/a.md", links(
+      [{ _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "link", _block_id: "b_1" }, { _id: "e_2", _path: "/a.md", _dst_path: "/x.md", _dst_id: "d_x", _dst_kind: "document", _provenance: "link", _block_id: "b_2" }],
+      [{ _id: "e_3", _path: "/y.md", _provenance: "link", _block_id: "b_3" }],
+    ));
+    expect([...m1.nodes.keys()]).toEqual(["/a.md", "/b.md", "/c.md", "/x.md", "/y.md"]);
+    expect(m1.nodes.get("/x.md")!.origin).toBe("walk");
+    expect(m1.nodes.get("/a.md")).toMatchObject({ origin: "query", expanded: true });
+    const c = collapseNode(m1, "/a.md");
+    expect([...c.nodes.keys()]).toEqual(["/a.md", "/b.md", "/c.md"]);
+    expect([...c.edges.keys()]).toEqual(["/a.md→/b.md#|b_1"]);
+    expect(c.nodes.get("/a.md")).toMatchObject({ expanded: false, origin: "query" });
+    // An isolated query node (no edge at all) survives a collapse elsewhere; collapsing an unexpanded one is a no-op in nodes.
+    expect(collapseNode(m0, "/c.md").nodes.size).toBe(3);
+    // Expanding a walk node, then collapsing the query node it hangs off: the walk node leaves, the query nodes stay.
+    const m2 = withNeighborhood(m1, "/x.md", links([{ _id: "e_4", _path: "/x.md", _dst_path: "/z.md", _dst_id: "d_z", _dst_kind: "document", _provenance: "link", _block_id: "b_4" }]));
+    expect(m2.nodes.has("/z.md")).toBe(true);
+    const c2 = collapseNode(m2, "/a.md");
+    expect([...c2.nodes.keys()].sort()).toEqual(["/a.md", "/b.md", "/c.md"]);
+  });
+
+  it("toView of a query model emphasises nothing; of a doc model, the root", () => {
+    const m = applyLinksAmong(queryModel("docs { }", [{ _id: "d_1", _path: "/a.md", _title: "A", card: "x" }, { _path: "/b.md" }]), linkRowsOf([{ _id: "e_1", _path: "/a.md", _dst_path: "/b.md", _dst_id: "d_2", _dst_kind: "document", _provenance: "link", _block_id: "b_1" }]));
+    const v = toView(m);
+    expect(v.nodes.map((n) => n.emphasis)).toEqual([null, null]);
+    expect(v.nodes[0]).toMatchObject({ id: "/a.md", row: { _path: "/a.md", _title: "A", card: "x" }, expandable: true, expanded: false, pinned: null, tooltip: "/a.md\n_title: A\ncard: x" });
+    expect(v.edges).toHaveLength(1);
+    expect(toView(emptyModel(A)).nodes[0]!.emphasis).toBe("root");
+  });
+});
+
 describe("rows", () => {
   it("projects _title always and the card's fields after — nothing of a repository's vocabulary (no `type`) — dotted paths by their head, never _path twice", () => {
     expect(projectedFields([])).toEqual(["_title"]);
@@ -182,6 +315,9 @@ describe("rows", () => {
     expect(u.nodes.get(A)!.fetched).toEqual(["_title", "status"]);
     expect(unfetched(u, ["status"])).toEqual(["/x.md"]);
     expect(m.nodes.get(A)!.fetched).toEqual([]);
+    // A value already fetched is kept: a later hit's `_title` does not overwrite it (a query model's computed `card` survives a refetch of `_title`).
+    const kept = applyRows(u, [{ _id: "d_a", _path: A, _title: "Renamed", status: "late", owner: "zoe" }], ["owner"]);
+    expect(kept.nodes.get(A)!.row).toEqual({ _path: A, _title: "Calcination", _display: "Calc", status: "done", owner: "zoe" });
   });
 
   it("fetchDocLinks runs the two link queries and fetchFields the one row query through the client's queryAll (none when nothing is missing)", async () => {

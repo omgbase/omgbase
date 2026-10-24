@@ -30,16 +30,37 @@
 // which fields each node has been fetched with, `unfetched(model, fields)` names
 // the nodes still missing some of them. `_title` is always fetched (the
 // connector's link text and the card fallback); every other field is the card's.
+// A value a node already has (fetched, or projected by the query that made the
+// node) is kept: a refetch only fills what was missing.
+//
+// Two SOURCES. A doc model (`emptyModel(path)`) is the neighbourhood of one
+// document, the root, grown by `withNeighborhood`. A QUERY model
+// (`queryModel(query, hits)`) is the set of documents an arbitrary query's rows
+// name — one node per distinct `_path` (a `nodes`/`blocks` row maps to its
+// document), each row kept as the node's `row` so the query's own projection
+// drives the cards (`docs { select _path, _title, card: status + " · " + owner
+// where … }` needs no settings) — joined by the links AMONG the set from ONE
+// `links` query (`linksAmongQuery`, `applyLinksAmong`); nothing is expanded, ⊕
+// still grows a node's neighbourhood, and a node the query named (`origin:
+// "query"`) is never removed by a collapse — it is root-like for reachability.
+// `GRAPH_QUERY_LIMIT` rows are graphed; the rest are counted, not drawn.
 
 import { isPathValue, type Hit, type OmgClient } from "@omgbase/client";
 import type { GraphViewEdge, GraphViewNode } from "@omgbase/elements/graph";
 import { inboundQuery, linkRowsOf, outboundQuery, wikiStem, type DocLinks, type LinkRow } from "./links.ts";
-import { rooted } from "./paths.ts";
+import { idKind, rooted } from "./paths.ts";
 
 // ---- the model -----------------------------------------------------------------------
 
 export type Provenance = "frontmatter" | "body" | "external";
 export type NodeKind = "document" | "external";
+/** How a node got into the model: named by the query that made a query model, or reached by walking links. */
+export type NodeOrigin = "query" | "walk";
+
+/** Where a model's nodes came from. */
+export type GraphSource =
+  | { kind: "doc"; path: string }
+  | { kind: "query"; query: string; /** Rows without a `_path` (not graphable), counted. */ skipped: number; /** The query had more rows than were graphed. */ truncated: boolean };
 
 export interface Pin { x: number; y: number }
 
@@ -53,6 +74,8 @@ export interface GraphNode {
   row: Record<string, unknown>;
   /** The fields `row` has been fetched with (a field absent from the document is still "fetched"). */
   fetched: string[];
+  /** Named by the query (a query model's own rows) or reached by walking links. */
+  origin: NodeOrigin;
   /** Session-local layout pin — presentation state, never written anywhere. */
   pinned: Pin | null;
   /** Its neighbourhood has been loaded into the model. */
@@ -75,7 +98,9 @@ export interface GraphEdge {
 }
 
 export interface GraphModel {
+  /** The emphasised document (a doc model); "" for a query model. */
   root: string;
+  source: GraphSource;
   nodes: Map<string, GraphNode>;
   edges: Map<string, GraphEdge>;
   /** Expanded path → how many neighbours were left out by the bound. */
@@ -83,18 +108,58 @@ export interface GraphModel {
 }
 
 export const DEFAULT_LIMIT = 12;
+/** The most rows a query graph draws (the console pages beyond; the graph does not). */
+export const GRAPH_QUERY_LIMIT = 200;
 
 export function emptyModel(root: string): GraphModel {
   const path = rooted(root);
-  return { root: path, nodes: new Map([[path, documentNode(path, null)]]), edges: new Map(), truncated: new Map() };
+  return { root: path, source: { kind: "doc", path }, nodes: new Map([[path, documentNode(path, null)]]), edges: new Map(), truncated: new Map() };
 }
 
 function copy(model: GraphModel): GraphModel {
-  return { root: model.root, nodes: new Map(model.nodes), edges: new Map(model.edges), truncated: new Map(model.truncated) };
+  return { root: model.root, source: model.source, nodes: new Map(model.nodes), edges: new Map(model.edges), truncated: new Map(model.truncated) };
 }
 
-function documentNode(path: string, id: string | null): GraphNode {
-  return { path, kind: "document", id, row: { _path: path }, fetched: [], pinned: null, expanded: false, degree: { in: null, out: null } };
+function documentNode(path: string, id: string | null, origin: NodeOrigin = "walk"): GraphNode {
+  return { path, kind: "document", id, row: { _path: path }, fetched: [], origin, pinned: null, expanded: false, degree: { in: null, out: null } };
+}
+
+/** The rows of an arbitrary query as a model: one document node per distinct
+ * `_path` among the first `limit` hits (a later row naming the same document is
+ * folded away — the first row's projection stands), the row kept as the node's
+ * `row` and its projected keys recorded as fetched (so the cards read the
+ * query's projection and `fetchFields` asks only for what it did not name), a
+ * `d_…` `_id` kept as the node's id (a block's or node's is not the document's).
+ * Rows without a string `_path` are skipped and counted in `source.skipped`;
+ * `source.truncated` says the query had more rows than were graphed (passed in
+ * from the page's result, else inferred from `hits.length > limit`). No edges:
+ * `applyLinksAmong` adds the links among the set. */
+export function queryModel(query: string, hits: readonly Record<string, unknown>[], opts: { limit?: number; truncated?: boolean } = {}): GraphModel {
+  const limit = Math.max(0, opts.limit ?? GRAPH_QUERY_LIMIT);
+  const taken = hits.slice(0, limit);
+  const nodes = new Map<string, GraphNode>();
+  let skipped = 0;
+  for (const h of taken) {
+    if (typeof h._path !== "string" || h._path.trim() === "") { skipped++; continue; }
+    const p = rooted(h._path);
+    if (nodes.has(p)) continue;
+    const id = typeof h._id === "string" && idKind(h._id) === "doc" ? h._id : null;
+    const row: Record<string, unknown> = {};
+    const fetched: string[] = [];
+    for (const [k, v] of Object.entries(h)) {
+      if (k === "_id") continue;
+      row[k] = v;
+      if (k !== "_path") fetched.push(k);
+    }
+    row._path = p;
+    nodes.set(p, { ...documentNode(p, id, "query"), row, fetched });
+  }
+  return { root: "", source: { kind: "query", query, skipped, truncated: opts.truncated ?? hits.length > limit }, nodes, edges: new Map(), truncated: new Map() };
+}
+
+/** The document paths of a model's query-origin nodes, in node order. */
+export function queryPaths(model: GraphModel): string[] {
+  return [...model.nodes.values()].filter((n) => n.kind === "document" && n.origin === "query").map((n) => n.path);
 }
 
 /** A URL's display title: host and path, no scheme, no trailing slash. */
@@ -109,7 +174,7 @@ export function externalTitle(uri: string): string {
 }
 
 function externalNode(uri: string, id: string | null): GraphNode {
-  return { path: uri, kind: "external", id, row: { _url: uri, _title: externalTitle(uri) }, fetched: [], pinned: null, expanded: true, degree: { in: null, out: 0 } };
+  return { path: uri, kind: "external", id, row: { _url: uri, _title: externalTitle(uri) }, fetched: [], origin: "walk", pinned: null, expanded: true, degree: { in: null, out: 0 } };
 }
 
 /** A node's title: the fetched `_title`, else the path's stem (an external node's host and path). */
@@ -194,6 +259,35 @@ export function withNeighborhood(model: GraphModel, path: string, links: DocLink
   return next;
 }
 
+/** The one `links` query for every authored link whose source AND destination
+ * are both among `paths` (deduplicated, rooted) — the edges of a query graph.
+ * An external link has no `_dst_path`, so none is among the set. Null for fewer
+ * than two distinct paths (no edge but a self-loop is possible; `(x)` alone is
+ * grouping in OQX, not a one-tuple). */
+export function linksAmongQuery(paths: readonly string[]): string | null {
+  const unique = [...new Set(paths.map(rooted))];
+  if (unique.length < 2) return null;
+  const tuple = `(${unique.map((p) => JSON.stringify(p)).join(", ")})`;
+  return `links { select _path, _dst_path, _dst_id, _dst_kind, _uri, _provenance, _field, _anchor, _block_id where _path in ${tuple} and _dst_path in ${tuple} }`;
+}
+
+/** The model with every row's edge whose two ends are nodes of the model added
+ * (keyed, deduplicated; a self-loop, a dangling or external row, or a row naming
+ * a document outside the model adds nothing). No node is added or marked
+ * expanded — these are the links AMONG the set, not a neighbourhood. */
+export function applyLinksAmong(model: GraphModel, rows: readonly LinkRow[]): GraphModel {
+  const next = copy(model);
+  for (const row of rows) {
+    const edge = edgeOf(row);
+    if (!edge || edge.from === edge.to || !next.nodes.has(edge.from) || !next.nodes.has(edge.to)) continue;
+    if (next.nodes.get(edge.to)!.kind !== "document") continue;
+    if (!next.edges.has(edge.key)) next.edges.set(edge.key, edge);
+    const dst = next.nodes.get(edge.to)!;
+    if (row.dstId && !dst.id && idKind(row.dstId) === "doc") next.nodes.set(edge.to, { ...dst, id: row.dstId });
+  }
+  return next;
+}
+
 /** The model without a node and its edges. */
 export function removeNode(model: GraphModel, path: string): GraphModel {
   const next = copy(model);
@@ -205,10 +299,12 @@ export function removeNode(model: GraphModel, path: string): GraphModel {
 
 /** The model with `path` collapsed: no longer expanded, its `truncated` entry
  * cleared, and every node that nothing now explains removed with its edges — a
- * node is explained when it is reached from the root by walking OUT of expanded
- * nodes only, so a neighbour that also hangs off another reachable expanded node
- * stays and a collapsed root shows alone. An edge stays only when one of its
- * ends is a retained expanded node. Pins leave with their nodes. */
+ * node is explained when it is reached from the root, or from a node the QUERY
+ * named (a query model's own rows are root-like and never leave), by walking OUT
+ * of expanded nodes only, so a neighbour that also hangs off another reachable
+ * expanded node stays and a collapsed root shows alone. An edge stays only when
+ * one of its ends is a retained expanded node, or both ends are query-origin
+ * nodes (the links among the set). Pins leave with their nodes. */
 export function collapseNode(model: GraphModel, path: string): GraphModel {
   const p = rooted(path);
   const node = model.nodes.get(p);
@@ -216,8 +312,9 @@ export function collapseNode(model: GraphModel, path: string): GraphModel {
   const next = copy(model);
   next.nodes.set(p, { ...node, expanded: false, degree: { in: null, out: null } });
   next.truncated.delete(p);
-  const keep = new Set<string>([next.root]);
-  const queue = [next.root];
+  const roots = [...(next.nodes.has(next.root) ? [next.root] : []), ...queryPaths(next)];
+  const keep = new Set<string>(roots);
+  const queue = [...roots];
   while (queue.length > 0) {
     const cur = queue.shift()!;
     if (!next.nodes.get(cur)?.expanded) continue;
@@ -229,8 +326,10 @@ export function collapseNode(model: GraphModel, path: string): GraphModel {
   }
   for (const k of next.nodes.keys()) if (!keep.has(k)) { next.nodes.delete(k); next.truncated.delete(k); }
   for (const [k, e] of next.edges) {
-    const explained = (next.nodes.get(e.from)?.expanded ?? false) || (next.nodes.get(e.to)?.expanded ?? false);
-    if (!explained || !next.nodes.has(e.from) || !next.nodes.has(e.to)) next.edges.delete(k);
+    const from = next.nodes.get(e.from);
+    const to = next.nodes.get(e.to);
+    const explained = (from?.expanded ?? false) || (to?.expanded ?? false) || (from?.origin === "query" && to?.origin === "query");
+    if (!explained || !from || !to) next.edges.delete(k);
   }
   return next;
 }
@@ -353,7 +452,10 @@ export function unfetched(model: GraphModel, fields: readonly string[] = []): st
   return [...model.nodes.values()].filter((n) => n.kind === "document" && need.some((f) => !n.fetched.includes(f))).map((n) => n.path);
 }
 
-/** The model with each hit's row folded into its node (merged over what was there), the fields recorded as fetched. */
+/** The model with each hit's row folded into its node (merged over what was
+ * there — a key the node was already fetched with, or that its query projected,
+ * keeps its value: a query's computed `card` is not overwritten by the authored
+ * one a refetch of `_title` brings along), the fields recorded as fetched. */
 export function applyRows(model: GraphModel, hits: readonly Record<string, unknown>[], fields: readonly string[] = []): GraphModel {
   const next = copy(model);
   const got = projectedFields(fields);
@@ -364,7 +466,7 @@ export function applyRows(model: GraphModel, hits: readonly Record<string, unkno
     if (!node) continue;
     const id = typeof h._id === "string" ? h._id : node.id;
     const row: Record<string, unknown> = { ...node.row };
-    for (const [k, v] of Object.entries(h)) if (k !== "_id") row[k] = v;
+    for (const [k, v] of Object.entries(h)) if (k !== "_id" && !node.fetched.includes(k)) row[k] = v;
     row._path = p;
     next.nodes.set(p, { ...node, id, row, fetched: [...new Set([...node.fetched, ...got])] });
   }
@@ -392,6 +494,14 @@ export async function fetchFields(client: Pick<GraphReader, "queryAll">, model: 
   return applyRows(model, hits, fields);
 }
 
+/** The links among a query model's documents through ONE `links` query (`linksAmongQuery`), folded in; the model unchanged when it has fewer than two documents. */
+export async function fetchLinksAmong(client: Pick<GraphReader, "queryAll">, model: GraphModel, opts: { repo?: string | null } = {}): Promise<GraphModel> {
+  const q = linksAmongQuery([...model.nodes.values()].filter((n) => n.kind === "document").map((n) => n.path));
+  if (q === null) return model;
+  const hits: Hit[] = await client.queryAll(q, { repo: opts.repo });
+  return applyLinksAmong(model, linkRowsOf(hits));
+}
+
 /** The model with `names` forgotten on every document node (so `unfetched` asks for them again — a changed card expression). */
 export function invalidateFields(model: GraphModel, names: readonly string[]): GraphModel {
   if (names.length === 0) return model;
@@ -409,12 +519,14 @@ export function invalidateFields(model: GraphModel, names: readonly string[]): G
 
 export interface GraphView { nodes: GraphViewNode[]; edges: GraphViewEdge[] }
 
-/** The model as `<omg-graph>` draws it: the root emphasised, external nodes
- * dashed and never expandable, every document node expandable, truncation
- * counts, and each edge labelled and described by its provenance (its `kind`
- * is the provenance, so the element's fixed styles apply; a body link is dotted,
- * an external one dashed). Rendered edges are not writable here. */
+/** The model as `<omg-graph>` draws it: a doc model's root emphasised (a query
+ * model emphasises nothing — no node is the centre), external nodes dashed and
+ * never expandable, every document node expandable, truncation counts, and each
+ * edge labelled and described by its provenance (its `kind` is the provenance,
+ * so the element's fixed styles apply; a body link is dotted, an external one
+ * dashed). Rendered edges are not writable here. */
 export function toView(model: GraphModel): GraphView {
+  const star = model.source.kind === "doc" ? model.root : null;
   const nodes: GraphViewNode[] = [...model.nodes.values()].map((n) => ({
     id: n.path,
     row: n.row,
@@ -423,7 +535,7 @@ export function toView(model: GraphModel): GraphView {
     expandable: n.kind === "document",
     expanded: n.expanded,
     ...(model.truncated.has(n.path) ? { truncated: model.truncated.get(n.path)! } : {}),
-    emphasis: n.path === model.root ? "root" : null,
+    emphasis: star !== null && n.path === star ? "root" : null,
     tooltip: n.kind === "document" ? [n.path, ...Object.entries(n.row).filter(([k, v]) => k !== "_path" && v !== null && v !== undefined && v !== "").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)].join("\n") : n.path,
   }));
   const edges: GraphViewEdge[] = [...model.edges.values()].map((e) => ({

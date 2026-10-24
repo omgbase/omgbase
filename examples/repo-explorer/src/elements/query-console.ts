@@ -1,16 +1,18 @@
 // <query-console>: a textarea for OQX (Cmd/Ctrl+Enter runs), the result as a
 // table whose `_id`/`_path` cells are links into the explorer, "more" for the
 // next page, the result's `hints` as a yellow bar, the engine's error with its
-// `data.fix`, and a "syntax" button that opens `query_syntax` in a drawer
-// (fetched once by the page). Properties: `query`, `result`, `error`,
+// `data.fix`, a "syntax" button that opens `query_syntax` in a drawer
+// (fetched once by the page), and — for a rows result whose rows name
+// documents (`canGraph`) — a "graph" button in the footer: the page re-runs the
+// query and shows its rows as a graph. Properties: `query`, `result`, `error`,
 // `running`, `syntax`, `shown` (rows so far). Events: `console-run { query }`,
-// `console-more`, `console-open { link }`, `console-syntax`, `console-input {
-// query }`.
+// `console-more`, `console-open { link }`, `console-syntax`, `console-graph`,
+// `console-input { query }`.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "@shoelace-style/shoelace/dist/components/drawer/drawer.js";
-import { cellOf, columnsOf, footerText, isRunShortcut, scalarLine, type CellLink, type ToolErrorInfo } from "../lib/console.ts";
+import { canGraph, cellOf, columnsOf, footerText, isRunShortcut, scalarLine, type CellLink, type ToolErrorInfo } from "../lib/console.ts";
 import type { QueryResult } from "../lib/query.ts";
 
 export interface ConsoleRunDetail { query: string }
@@ -118,6 +120,7 @@ export class QueryConsole extends LitElement {
       ${r && !scalarLine(r) ? html`<div class="foot" data-foot>
         <span>${footerText(r, this.rows.length)}</span>
         ${r.truncated && r.cursor ? html`<button type="button" ?disabled=${this.running} @click=${() => this.emit("console-more", {})}>more</button>` : nothing}
+        ${canGraph(r) ? html`<button type="button" data-graph ?disabled=${this.running} title="show the query's rows as a graph — the documents they name, joined by the links among them (the query is re-run, up to 200 rows)" @click=${() => this.emit("console-graph", {})}>graph</button>` : nothing}
       </div>` : nothing}
       <sl-drawer label="OQX syntax (query_syntax)" ?open=${this.drawerOpen} @sl-after-hide=${() => { this.drawerOpen = false; }}>
         <pre>${this.syntax ?? "fetching query_syntax…"}</pre>

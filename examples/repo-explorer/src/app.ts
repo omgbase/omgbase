@@ -5,6 +5,9 @@
 //   root level → the route (#doc=…) → the document (docs_read include_ids),
 //   its links (two queries over `links`), its history (`revisions { … }`), the
 //   live feed (changes_since polled) and the query console (query, query_syntax).
+//   The graph: a document's neighbourhood (#doc=…&tab=graph) or an arbitrary
+//   query's rows (#graph=<query>: the query re-run with limit 200, then ONE
+//   `links … where _path in (…) and _dst_path in (…)` for the edges among them).
 //   Writes: plan { effects, diffs: true } → confirm → execute { plan_id, effects };
 //   a task checkbox: ONE apply { set _attrs.checked, expect: { content_hash } } →
 //   re-read. Every write runs as a command on the shared `CommandLog`
@@ -40,7 +43,7 @@ import type {
   PaletteAction, PaletteItem, RelationKindItem, RelationPickDetail,
 } from "@omgbase/elements";
 import { findQuery, itemsFor, parseInput } from "@omgbase/elements/palette";
-import { DEFAULT_LIMIT as GRAPH_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, invalidateFields, listFieldsOf, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
+import { DEFAULT_LIMIT as GRAPH_LIMIT, GRAPH_QUERY_LIMIT, collapseNode, emptyModel, fetchDocLinks, fetchFields, fetchLinksAmong, invalidateFields, listFieldsOf, queryModel, setPin, toView, withNeighborhood, type GraphModel } from "./lib/graph.ts";
 import { CARDS_KEY, CARD_KEY, DEFAULT_CARD, allCardFields, computedFields, parseCardSettings, serializeCardSettings, templateFor, valuesPresent, type CardSettings } from "./lib/cards.ts";
 import { collapseCommand, expandCommand, pinCommand, unpinCommand, type ModelAccessor } from "./lib/graph-commands.ts";
 import type { TreeOpenDetail, TreeToggleDetail } from "./elements/repo-tree.ts";
@@ -59,12 +62,12 @@ import { fetchLevel, prefixesToOpen, type LevelState } from "./lib/tree.ts";
 import { fetchDocument, fetchDocumentAt, splitFrontmatter, type DocAt, type DocRead } from "./lib/document.ts";
 import { renderBody, type Rendered } from "./lib/markdown.ts";
 import { fetchLinks, resolveWikilink, type DocLinks } from "./lib/links.ts";
-import { STARTER_QUERY, describeToolError, fetchSyntax, footerText, locatorQuery, nextPage, runConsole, type CellLink, type ToolErrorInfo } from "./lib/console.ts";
+import { STARTER_QUERY, canGraph, describeToolError, fetchSyntax, footerText, locatorQuery, nextPage, runConsole, type CellLink, type ToolErrorInfo } from "./lib/console.ts";
 import { runQuery, type QueryOptions, type QueryResult } from "./lib/query.ts";
 import { deletedRevisionsQuery, fetchDeleted, fetchRevisions, revisionsQuery, type DeletedDoc, type RevisionRow } from "./lib/history.ts";
 import { advanceCursor, fetchChanges, pollMs, prependDigests, startCursor, touchedPaths, type FeedEntry } from "./lib/feed.ts";
 import { frontmatterPlanCommand, parseValue, planEffects, setFrontmatterEffect, unsetFrontmatterEffect, type Plan } from "./lib/writes.ts";
-import { DEFAULT_ROUTE, openDocRoute, parseRoute, routeHash, type Route, type Tab } from "./lib/route.ts";
+import { DEFAULT_ROUTE, graphRoute, openDocRoute, parseRoute, routeHash, type Route, type Tab } from "./lib/route.ts";
 import { effect } from "./lib/effect.ts";
 import { hitPath, rooted } from "./lib/paths.ts";
 
@@ -123,6 +126,8 @@ const deletedError = signal<string | null>(null);
 
 const consoleQuery = signal<string>(localStorage.getItem(QUERY_KEY) ?? STARTER_QUERY);
 const consoleResult = signal<QueryResult | null>(null);
+/** The query the last result came from (the textarea may have been edited since). */
+const consoleRan = signal<string | null>(null);
 const consoleRows = signal<Record<string, unknown>[]>([]);
 const consoleError = signal<ToolErrorInfo | null>(null);
 const consoleRunning = signal(false);
@@ -361,11 +366,12 @@ async function runConsoleQuery(query: string, opts: QueryOptions, append: boolea
   try {
     const r = await runConsole(client, query, opts);
     consoleResult.set(r);
+    consoleRan.set(query);
     consoleRows.set(append ? [...consoleRows.get(), ...r.hits] : r.hits);
     consoleOpts.set(opts);
   } catch (e) {
     consoleError.set(describeToolError(e));
-    if (!append) { consoleResult.set(null); consoleRows.set([]); }
+    if (!append) { consoleResult.set(null); consoleRan.set(null); consoleRows.set([]); }
   } finally {
     consoleRunning.set(false);
   }
@@ -379,6 +385,22 @@ function onConsoleRun(query: string): void {
 
 function toggleConsole(open = !consoleOpen.get()): void {
   consoleOpen.set(open);
+}
+
+/** The console's "graph" (or `>graph these rows`): the LAST RUN query's rows as a
+ * graph, through the route (`#graph=<query>`, so it is a link one can reload or
+ * share). The same query again re-runs it. */
+function graphConsoleRows(): void {
+  const q = consoleRan.get() ?? consoleQuery.get();
+  if (!q.trim()) return;
+  appliedGraphQuery = null;
+  setRoute(graphRoute(q));
+}
+
+/** The graph toolbar's query line clicked: the query into the console, the drawer open. */
+function queryToConsole(query: string): void {
+  consoleQuery.set(query);
+  consoleOpen.set(true);
 }
 
 function onConsoleMore(): void {
@@ -611,6 +633,7 @@ function paletteActions(): PaletteAction[] {
   const out: PaletteAction[] = [
     { id: "console", label: consoleOpen.get() ? "collapse the query console" : "expand the query console", shortcut: "⌘J", keywords: ["oqx", "query", "drawer"] },
     { id: "console-run", label: "run the console query", hint: consoleQuery.get().replace(/\s+/g, " ").trim().slice(0, 60), shortcut: "⌘⏎", keywords: ["oqx", "query"] },
+    ...(canGraph(consoleResult.get()) && consoleRan.get() ? [{ id: "console-graph", label: "graph these rows", hint: consoleRan.get()!.replace(/\s+/g, " ").trim().slice(0, 60), keywords: ["graph", "query", "rows", "links"] } satisfies PaletteAction] : []),
     { id: "create", label: "new document…", hint: d ? `in ${d.path.slice(0, d.path.lastIndexOf("/") + 1)}` : "at /", shortcut: "+", keywords: ["create", "add"] },
     { id: "deleted", label: "deleted documents", hint: "revisions { _doc == null }", keywords: ["history", "removed"] },
     { id: "feed", label: feedLive.get() ? "pause the live strip" : "resume the live strip", keywords: ["changes_since", "poll"] },
@@ -697,6 +720,7 @@ function runPaletteAction(id: string): void {
   switch (id) {
     case "console": toggleConsole(); return;
     case "console-run": onConsoleRun(consoleQuery.get()); return;
+    case "console-graph": graphConsoleRows(); return;
     case "create": { const d = doc.get(); openPalette("navigate", null, `+${d ? d.path.slice(0, d.path.lastIndexOf("/") + 1) : "/"}`); return; }
     case "deleted": setRoute({ ...DEFAULT_ROUTE, deleted: true }); return;
     case "feed": setLive(!feedLive.get()); return;
@@ -772,6 +796,40 @@ async function loadGraph(path: string): Promise<void> {
     graphSelected.set(path);
   } catch (e) {
     if (gen === graphGeneration) graphError.set(describe(e));
+  } finally {
+    if (gen === graphGeneration) graphBusy.set(false);
+  }
+}
+
+/** The route `#graph=<query>`: the query re-run with `limit: GRAPH_QUERY_LIMIT`
+ * (the console's pages beyond it are not graphed), its rows the nodes
+ * (`queryModel`: one per distinct `_path`, each row kept so the query's own
+ * projection drives the cards), then ONE `links` query for the edges among the
+ * set and one `docs` query for whatever card fields the query did not project.
+ * Nothing is pinned or expanded; the element auto-fits the whole set. */
+async function loadQueryGraph(query: string): Promise<void> {
+  const gen = ++graphGeneration;
+  graphBusy.set(true);
+  graphError.set(null);
+  relationPick.set(null);
+  graphSelectedEdge.set(null);
+  graph.set(null);
+  graphSelected.set(null);
+  try {
+    const r = await runQuery(client, query, { repo: repoArgValue.get(), limit: GRAPH_QUERY_LIMIT });
+    if (gen !== graphGeneration) return;
+    if (!canGraph(r)) {
+      graphError.set(r.hits.length === 0 && !r.values && r.consumer === "collect" ? "the query has no rows to graph" : "the query answers with a scalar or with values, not rows that name documents — graph a docs, nodes or blocks query");
+      graph.set(queryModel(query, [], { limit: GRAPH_QUERY_LIMIT, truncated: false }));
+      return;
+    }
+    const built = queryModel(query, r.hits, { limit: GRAPH_QUERY_LIMIT, truncated: r.truncated });
+    const linked = await fetchLinksAmong(client, built, { repo: repoArgValue.get() });
+    const m = await fetchFields(client, linked, graphFields.get(), { repo: repoArgValue.get(), computed: computedFields(graphCards.get()) });
+    if (gen !== graphGeneration) return;
+    graph.set(m);
+  } catch (e) {
+    if (gen === graphGeneration) graphError.set(describeToolError(e).message);
   } finally {
     if (gen === graphGeneration) graphBusy.set(false);
   }
@@ -1009,7 +1067,9 @@ function switchRepo(slug: string): void {
   rendered.set(null);
   levels.set(new Map());
   consoleResult.set(null);
+  consoleRan.set(null);
   consoleRows.set([]);
+  appliedGraphQuery = null;
   void Promise.all([loadLevel("/"), startFeed()]);
   applyRoute(route.get());
 }
@@ -1017,9 +1077,19 @@ function switchRepo(slug: string): void {
 /** The route decides what the main pane shows. */
 let appliedDoc: string | null = null;
 let appliedRev: string | null = null;
+let appliedGraphQuery: string | null = null;
 function applyRoute(r: Route): void {
   if (connection.get() !== "ok") return;
-  if (r.deleted) { void loadDeleted(); appliedDoc = null; return; }
+  if (r.deleted) { void loadDeleted(); appliedDoc = null; appliedGraphQuery = null; return; }
+  if (r.graphQuery) {
+    // A query graph: the main pane is the graph alone — no document is open.
+    appliedDoc = null;
+    doc.set(null);
+    rendered.set(null);
+    if (r.graphQuery !== appliedGraphQuery) { appliedGraphQuery = r.graphQuery; void loadQueryGraph(r.graphQuery); }
+    return;
+  }
+  appliedGraphQuery = null;
   if (r.doc) {
     if (r.doc !== appliedDoc) {
       appliedDoc = r.doc;
@@ -1109,6 +1179,8 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     .graph-tools .per-type code { font-size: 11.5px; color: #5a6270; }
     .graph-tools .per-type input { width: 100%; box-sizing: border-box; }
     .graph-hint { font-size: 12px; color: #8a94a6; }
+    .graph-query { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e2430; background: #f0f1f4; border: 1px solid #e3e6ec; border-radius: 4px; padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; max-width: 100%; box-sizing: border-box; }
+    .graph-query:hover { background: #e8eaef; }
     .deleted h2 { font-size: 16px; margin: 0 0 8px; }
     .deleted .query { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #8a94a6; margin-bottom: 8px; }
     .deleted table { border-collapse: collapse; font-size: 12.5px; }
@@ -1174,7 +1246,9 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     const rows = m ? [...m.nodes.values()].filter((n) => n.kind === "document").map((n) => n.row) : [];
     const present = by ? valuesPresent(rows, by.field) : [];
     const all = by ? [...present, ...Object.keys(by.templates).filter((v) => !present.includes(v)).sort()] : [];
-    return html`<div class="graph-tools">
+    const q = m?.source.kind === "query" ? m.source.query : null;
+    return html`${q !== null ? html`<code class="graph-query" data-graph-query role="button" tabindex="0" title="the query these rows come from — click to copy it into the console" @click=${() => queryToConsole(q)} @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); queryToConsole(q); } }}>${q.replace(/\s+/g, " ").trim()}</code>` : nothing}
+    <div class="graph-tools">
       <label>card <input type="text" .value=${cards.default} placeholder=${DEFAULT_CARD} title="the card template: {field}, {a|b} first present, one line per row line; e.g. {_title}&#10;{status}" spellcheck="false"
         @change=${(e: Event) => setGraphCards({ ...cards, default: (e.target as HTMLInputElement).value.trim() || DEFAULT_CARD })}></label>
       <label>card: <input type="text" class="expr" .value=${cards.expression} placeholder='_title + " · " + status' spellcheck="false" title="an OQX expression computing the row key card for every document (a projection alias: docs { select …, card: <expression> }); empty = an authored card key is read as is"
@@ -1191,15 +1265,26 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     </div>`;
   }
 
-  private renderGraph(path: string) {
+  /** The hint's first clause: what the graph is of. */
+  private graphOfText(m: GraphModel | null): string {
+    if (!m) return graphBusy.get() ? "reading…" : "";
+    if (m.source.kind === "doc") return `${m.nodes.size} nodes · ${m.edges.size} edges around ${m.source.path}`;
+    const rows = [...m.nodes.values()].filter((n) => n.origin === "query").length;
+    const more = m.source.truncated ? ` (the first ${GRAPH_QUERY_LIMIT} — the console's "more" pages beyond are not graphed)` : "";
+    const skipped = m.source.skipped ? ` · ${m.source.skipped} row${m.source.skipped === 1 ? "" : "s"} without a _path skipped` : "";
+    return `graph of ${rows} row${rows === 1 ? "" : "s"}${more}: ${m.source.query.replace(/\s+/g, " ").trim()} · ${m.nodes.size} nodes · ${m.edges.size} links among them${skipped}`;
+  }
+
+  /** Both kinds of graph — a document's neighbourhood or a query's rows — share the hint, the card controls and the element. */
+  private renderGraph() {
     const m = graph.get();
     const cards = graphCards.get();
     const view = m ? toView(m) : null;
     return html`<div class="graph">
-      <div class="graph-hint">${m ? `${m.nodes.size} nodes · ${m.edges.size} edges around ${path}` : graphBusy.get() ? "reading links…" : ""}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} · card: ${cards.default}${cards.by ? ` · vary by ${cards.by.field} (+${Object.keys(cards.by.templates).length})` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? ", a selected edge's ✕ or Delete removes it" : " (read-only: no apply)"}, double-click opens</div>
+      <div class="graph-hint">${this.graphOfText(m)}${m && m.truncated.size ? ` · ${[...m.truncated.values()].reduce((a, b) => a + b, 0)} more not shown (⊕ expands a node, ${GRAPH_LIMIT} per direction)` : ""} · card: ${cards.default}${cards.by ? ` · vary by ${cards.by.field} (+${Object.keys(cards.by.templates).length})` : ""} — drag to pin, ✕/u unpins, ⊕/⊖ (or e) expands/collapses, wheel zooms, drag the canvas to pan, ⌘-drag or the ⟶ handle connects${canApply.get() ? ", a selected edge's ✕ or Delete removes it" : " (read-only: no apply)"}, double-click opens</div>
       ${this.renderGraphTools(m)}
       ${graphError.get() ? html`<div class="err">${graphError.get()}</div>` : nothing}
-      ${view ? html`<omg-graph .nodes=${view.nodes} .edges=${view.edges} .card=${cards.default} .renderCard=${(node: { row: Record<string, unknown> }) => templateFor(cards, node.row)} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT}
+      ${view ? html`<omg-graph .nodes=${view.nodes} .edges=${view.edges} .card=${cards.default} .renderCard=${(node: { row: Record<string, unknown> }) => templateFor(cards, node.row)} .selected=${graphSelected.get()} ?canWrite=${canApply.get()} .connectSource=${null} .limit=${GRAPH_LIMIT} .autoFit=${m!.source.kind === "query"}
         @graph-select=${(e: CustomEvent<GraphSelectDetail>) => graphSelected.set(e.detail.id)}
         @graph-open=${(e: CustomEvent<GraphIdDetail>) => openDoc(e.detail.id)}
         @graph-expand=${(e: CustomEvent<GraphIdDetail>) => { void expandGraph(e.detail.id); }}
@@ -1218,11 +1303,12 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
     const r = route.get();
     if (connection.get() !== "ok") return html`<div class="welcome">${connectionMessage.get() || "connecting…"}</div>`;
     if (r.deleted) return this.renderDeleted();
+    if (r.graphQuery) return html`<div data-query-graph>${this.renderGraph()}</div>`;
     const d = doc.get();
     if (!r.doc) {
       const c = caps.get();
       return html`<div class="welcome">
-        <p>Pick a document in the tree, press <code>⌘K</code> to find or create one, run a query in the console below (<code>⌘J</code>), or follow the live strip above.</p>
+        <p>Pick a document in the tree, press <code>⌘K</code> to find or create one, run a query in the console below (<code>⌘J</code>) — its footer's <em>graph</em> draws the rows as a graph (<code>#graph=…</code>) — or follow the live strip above.</p>
         <p>This page is built against <code>omg mcp --tools minimal</code>: the tree is <code>docs_tree</code>, a document <code>docs_read { include_ids }</code>, its links and history <code>query</code> over <code>links</code> and <code>revisions</code>, time travel <code>docs_read { at }</code>, the strip <code>changes_since</code>, edits <code>plan</code> → <code>execute</code>.</p>
         ${c.tools ? html`<p>This server lists ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}${c.beyondMinimal.length ? ` (${c.beyondMinimal.length} beyond the minimal ten; only \`repos\` is used, for the picker)` : " — the minimal profile"}.</p>` : nothing}
       </div>`;
@@ -1256,7 +1342,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
         <sl-tab-panel name="links" ?active=${r.tab === "links"}>
           <links-panel .links=${links.get()} .path=${d.path} .error=${linksError.get()} @open-doc=${(e: CustomEvent<OpenDocDetail>) => openDoc(e.detail.path)}></links-panel>
         </sl-tab-panel>
-        <sl-tab-panel name="graph" ?active=${r.tab === "graph"}>${r.tab === "graph" ? this.renderGraph(d.path) : nothing}</sl-tab-panel>
+        <sl-tab-panel name="graph" ?active=${r.tab === "graph"}>${r.tab === "graph" ? this.renderGraph() : nothing}</sl-tab-panel>
       </sl-tab-group>
     `;
   }
@@ -1314,6 +1400,7 @@ export class RepoExplorerApp extends SignalWatcher(LitElement) {
                       @console-input=${(e: CustomEvent<{ query: string }>) => consoleQuery.set(e.detail.query)}
                       @console-run=${(e: CustomEvent<ConsoleRunDetail>) => onConsoleRun(e.detail.query)}
                       @console-more=${onConsoleMore}
+                      @console-graph=${() => graphConsoleRows()}
                       @console-open=${(e: CustomEvent<ConsoleOpenDetail>) => { void openLink(e.detail.link); }}
                       @console-syntax=${() => { void loadSyntax(); }}></query-console>
                   </div>
