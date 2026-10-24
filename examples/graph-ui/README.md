@@ -8,6 +8,7 @@ roles the user can override:
 - **edge** — draw this relationship between the shown documents;
 - **layout** — lay the graph out along this relationship (a layered DAG layout,
   so `before`/`after` frontmatter reads as a timeline). No axis → force layout.
+  The layout *algorithm* can also be chosen outright — see [Layouts](#layouts).
 
 Two fields that are one sequence read from both ends — `before` and `after` —
 are also offered as one combined **pair** candidate, `before/after`, whose edges
@@ -463,7 +464,7 @@ consecutive result rows.
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }` |
+| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout` = `{ axis, direction, algorithm }`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }`, `algorithm-request` `{ algorithm }` |
 
 ### The page chrome (Shoelace)
 
@@ -540,6 +541,47 @@ and the sample-or-not decision are `src/lib/starter-query.ts`; the mode and
 header label that follow the bridge are `src/lib/connection.ts`. Edge edits flow
 the other way: `edge-toggle` → `src/lib/edit.ts` (the plan) →
 `src/lib/mutations.ts` (`docs_set_meta`) → re-run the query.
+
+## Layouts
+
+The picker's footer has a **layout** select beside **direction**. `auto` is what
+the page always did: *layered* along the axis relationship, or *force* when
+there is no axis. The others are chosen outright (`src/lib/view.ts`
+`LAYOUT_ALGORITHMS`; `src/lib/layout-elk.ts` `elkOptions`):
+
+| layout | what it is | needs an axis | edges |
+| --- | --- | --- | --- |
+| `layered` | elk layered: a left-to-right order along the axis; loops are broken and reported | yes | routed by elk (orthogonal) |
+| `force` | d3-force: nodes repel, drawn edges pull | no | straight |
+| `stress` | elk stress: distance follows graph distance — a good general picture, and the one for graphs with loops | no | straight |
+| `radial` | elk radial: rings around a root — suits a walk from one document | no | straight |
+| `tree` | elk mrtree: a tidy tree | no | straight |
+| `grid` | elk rectpacking: a compact grid of cards | no | straight |
+
+Only `layered` reads the axis and the **direction** control; the rest place the
+nodes from *every* drawn relationship. `layered` with no axis to layer along is
+`force`. Choosing an axis (the **layout** radio in the table) means layering
+along it, so it clears a pinned algorithm. The overlay names the layout in
+effect.
+
+`radial` and `tree` are built for trees, so they are handed a **spanning forest**
+of the drawn edges (breadth-first from whatever nothing points at; `spanningForest`
+in `layout-elk.ts`) — the page still draws every edge. Radial arranges rings
+around *one* root, so when the forest has several trees (or isolated nodes) a
+hidden centre node joins them and is dropped from the result. An elk algorithm
+that throws falls back to `force`, with a quiet note. `test/layout-elk.test.ts`
+runs every algorithm through the real elkjs on loops, isolated nodes, no edges
+and a single node and requires that no two nodes end up in the same place.
+
+**The loop note.** The layered layout needs an order, so when the axis relationship
+has loops among the shown documents (`A → B → A`) elk breaks them, drawing a few
+edges against the flow, and the graph says so in a compact note: how many
+documents are in how many loops, buttons to switch to the **stress** or **force**
+layout (neither needs an order), **which ones?** to list the members (names,
+capped; the full path in the tooltip — a loop is a *set* of documents that reach
+each other, not an ordered path, so it is never joined with arrows), and **✕** to
+dismiss it for those loops (a different set of loops shows it again). It appears
+only under the layered layout.
 
 ## Choosing what a card shows
 

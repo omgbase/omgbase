@@ -37,7 +37,7 @@ describe("STARTER_QUERY", () => {
       ["_out_links", "links", ["builtin"], true],
       ["_in_links", "backlinks", ["builtin"], false],
     ]);
-    expect(defaultView(c)).toEqual({ edges: ["_out_links"], layout: { axis: null, direction: "forward" }, projection: { label: null, shown: [] } });
+    expect(defaultView(c)).toEqual({ edges: ["_out_links"], layout: { axis: null, direction: "forward", algorithm: "force" }, projection: { label: null, shown: [] } });
     // The 4.x branch names the builtins for the link rows under the document's self alias.
     const old = inferCandidates(parse(starterQuery(NAMES_4)), [{ id: "d_1", path: "/a.md", title: "A" }], NAMES_4);
     expect(old.map((x) => [x.name, x.kind, x.sources, x.defaults.edge])).toEqual([

@@ -8,13 +8,31 @@
 import type { Candidate, Direction } from "./candidates.ts";
 import type { ProjectedField, ProjectionChoice } from "./projection.ts";
 
+/** How the graph is laid out. `layered` is elk's layered (DAG) layout along the
+ * axis relationship; `force` is the demo's d3-force layout; `stress`, `radial`,
+ * `tree` and `grid` are elk's stress, radial, mrtree and rectpacking algorithms,
+ * which use every drawn relationship (`grid` ignores them) and draw edges as
+ * straight segments. Only `layered` needs an axis. */
+export type LayoutAlgorithm = "layered" | "force" | "stress" | "radial" | "tree" | "grid";
+
+export const LAYOUT_ALGORITHMS: readonly { value: LayoutAlgorithm; label: string; hint: string }[] = [
+  { value: "layered", label: "layered", hint: "elk layered: a left-to-right ordering along the axis relationship (needs an axis; loops are broken and reported)" },
+  { value: "force", label: "force", hint: "d3-force: nodes repel, each drawn edge pulls its two ends together" },
+  { value: "stress", label: "stress", hint: "elk stress: node distance follows graph distance — a good general-purpose picture for graphs with loops" },
+  { value: "radial", label: "radial", hint: "elk radial: rings of nodes around a root — suits a walk from one document" },
+  { value: "tree", label: "tree", hint: "elk mrtree: a tidy tree — best when the drawn relationships form a forest; falls back to force when they do not" },
+  { value: "grid", label: "grid", hint: "elk rectpacking: a compact grid of cards, edges drawn as straight lines over it" },
+];
+
 export interface View {
   /** Candidate names drawn as edges, in candidate order. */
   edges: string[];
   layout: {
-    /** The candidate laying the graph out, or null for a force layout. */
+    /** The candidate laying the graph out, or null when there is none. Only `layered` reads it. */
     axis: string | null;
     direction: Direction;
+    /** The layout in effect: the override, else `layered` when there is an axis and `force` when there is not. */
+    algorithm: LayoutAlgorithm;
   };
   /** What the node cards show: the label field (null = the document path) and the shown fields, in projection order. */
   projection: ProjectionChoice;
@@ -27,9 +45,11 @@ export interface Overrides {
   axis: string | null | "auto";
   /** `"auto"` = the axis candidate's inferred direction. */
   direction: Direction | "auto";
+  /** `"auto"` = `layered` along the axis, or `force` without one. */
+  algorithm: LayoutAlgorithm | "auto";
 }
 
-export const NO_OVERRIDES: Overrides = { edges: {}, axis: "auto", direction: "auto" };
+export const NO_OVERRIDES: Overrides = { edges: {}, axis: "auto", direction: "auto", algorithm: "auto" };
 
 /** The projection's overrides, kept apart from the inferred defaults the same way. */
 export interface ProjectionOverrides {
@@ -59,7 +79,14 @@ export function resolveView(candidates: readonly Candidate[], overrides: Overrid
   }
   const direction: Direction =
     overrides.direction === "auto" ? (axisCandidate?.defaults.direction ?? "forward") : overrides.direction;
-  return { edges, layout: { axis: axisCandidate?.name ?? null, direction }, projection };
+  return { edges, layout: { axis: axisCandidate?.name ?? null, direction, algorithm: resolveAlgorithm(overrides.algorithm, axisCandidate !== undefined) }, projection };
+}
+
+/** The layout in effect. `auto` is `layered` along an axis and `force` without
+ * one; `layered` with no axis to layer along is `force` too, not an error. */
+export function resolveAlgorithm(requested: LayoutAlgorithm | "auto", hasAxis: boolean): LayoutAlgorithm {
+  const algorithm = requested === "auto" ? (hasAxis ? "layered" : "force") : requested;
+  return algorithm === "layered" && !hasAxis ? "force" : algorithm;
 }
 
 /** The projection choice from the fields, their defaults and the overrides.
@@ -95,8 +122,13 @@ export function withEdge(o: Overrides, name: string, on: boolean): Overrides {
 }
 
 export function withAxis(o: Overrides, axis: string | null | "auto"): Overrides {
-  // Changing the axis resets a pinned direction: the new axis's own default applies.
-  return { ...o, axis, direction: "auto" };
+  // Changing the axis resets a pinned direction (the new axis's own default applies) and
+  // a pinned algorithm: asking to lay out along a relationship means layering along it.
+  return { ...o, axis, direction: "auto", algorithm: "auto" };
+}
+
+export function withAlgorithm(o: Overrides, algorithm: LayoutAlgorithm | "auto"): Overrides {
+  return { ...o, algorithm };
 }
 
 export function withDirection(o: Overrides, direction: Direction | "auto"): Overrides {
@@ -105,7 +137,7 @@ export function withDirection(o: Overrides, direction: Direction | "auto"): Over
 
 export function sameView(a: View, b: View): boolean {
   return a.edges.length === b.edges.length && a.edges.every((e, i) => e === b.edges[i])
-    && a.layout.axis === b.layout.axis && a.layout.direction === b.layout.direction
+    && a.layout.axis === b.layout.axis && a.layout.direction === b.layout.direction && a.layout.algorithm === b.layout.algorithm
     && sameProjection(a.projection, b.projection);
 }
 

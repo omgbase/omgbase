@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/lib/candidates.ts";
-import { NO_OVERRIDES, NO_PROJECTION_OVERRIDES, axisStatus, defaultView, resolveProjection, resolveView, sameProjection, sameView, withAxis, withDirection, withEdge, withLabel, withShown } from "../src/lib/view.ts";
+import { LAYOUT_ALGORITHMS, NO_OVERRIDES, NO_PROJECTION_OVERRIDES, axisStatus, defaultView, resolveAlgorithm, resolveProjection, resolveView, sameProjection, sameView, withAlgorithm, withAxis, withDirection, withEdge, withLabel, withShown } from "../src/lib/view.ts";
 import type { ProjectedField } from "../src/lib/projection.ts";
 
 const cand = (name: string, edge: boolean, layout: boolean, direction: "forward" | "backward" = "forward"): Candidate => ({
@@ -11,8 +11,8 @@ const C = [cand("after", true, true, "backward"), cand("before", false, false), 
 
 describe("view", () => {
   it("defaults follow the candidates", () => {
-    expect(defaultView(C)).toEqual({ edges: ["after"], layout: { axis: "after", direction: "backward" }, projection: { label: null, shown: [] } });
-    expect(defaultView([])).toEqual({ edges: [], layout: { axis: null, direction: "forward" }, projection: { label: null, shown: [] } });
+    expect(defaultView(C)).toEqual({ edges: ["after"], layout: { axis: "after", direction: "backward", algorithm: "layered" }, projection: { label: null, shown: [] } });
+    expect(defaultView([])).toEqual({ edges: [], layout: { axis: null, direction: "forward", algorithm: "force" }, projection: { label: null, shown: [] } });
   });
 
   it("edge overrides toggle per name and keep candidate order", () => {
@@ -22,16 +22,16 @@ describe("view", () => {
   });
 
   it("pinning an axis adopts its direction; null means force", () => {
-    expect(resolveView(C, withAxis(NO_OVERRIDES, "before")).layout).toEqual({ axis: "before", direction: "forward" });
-    expect(resolveView(C, withAxis(NO_OVERRIDES, null)).layout).toEqual({ axis: null, direction: "forward" });
-    expect(resolveView(C, withDirection(NO_OVERRIDES, "forward")).layout).toEqual({ axis: "after", direction: "forward" });
+    expect(resolveView(C, withAxis(NO_OVERRIDES, "before")).layout).toEqual({ axis: "before", direction: "forward", algorithm: "layered" });
+    expect(resolveView(C, withAxis(NO_OVERRIDES, null)).layout).toEqual({ axis: null, direction: "forward", algorithm: "force" });
+    expect(resolveView(C, withDirection(NO_OVERRIDES, "forward")).layout).toEqual({ axis: "after", direction: "forward", algorithm: "layered" });
     // Changing the axis resets a pinned direction.
     expect(resolveView(C, withAxis(withDirection(NO_OVERRIDES, "forward"), "after")).layout.direction).toBe("backward");
   });
 
   it("overrides naming a vanished candidate are ignored, a vanished pinned axis falls back to the inferred one", () => {
     const o = withAxis(withEdge(NO_OVERRIDES, "gone", true), "gone");
-    expect(resolveView(C, o)).toEqual({ edges: ["after"], layout: { axis: "after", direction: "backward" }, projection: { label: null, shown: [] } });
+    expect(resolveView(C, o)).toEqual({ edges: ["after"], layout: { axis: "after", direction: "backward", algorithm: "layered" }, projection: { label: null, shown: [] } });
   });
 
   it("sameView compares structurally", () => {
@@ -105,5 +105,37 @@ describe("projection in the view record", () => {
     expect(sameView(a, defaultView(C, { label: "title", shown: ["title", "phase"] }))).toBe(false);
     expect(sameProjection({ label: null, shown: [] }, { label: null, shown: [] })).toBe(true);
     expect(sameProjection({ label: "a", shown: ["a"] }, { label: "a", shown: ["a", "b"] })).toBe(false);
+  });
+});
+
+describe("layout algorithm", () => {
+  it("auto is layered along an axis and force without one", () => {
+    expect(resolveAlgorithm("auto", true)).toBe("layered");
+    expect(resolveAlgorithm("auto", false)).toBe("force");
+    expect(defaultView(C).layout.algorithm).toBe("layered");
+    expect(defaultView([]).layout.algorithm).toBe("force");
+  });
+
+  it("an explicit algorithm wins; layered with no axis to layer along is force, not an error", () => {
+    for (const a of ["force", "stress", "radial", "tree", "grid"] as const) expect(resolveAlgorithm(a, true)).toBe(a);
+    expect(resolveAlgorithm("stress", false)).toBe("stress");
+    expect(resolveAlgorithm("layered", false)).toBe("force");
+  });
+
+  it("is pinned by an override and kept when the axis candidate does not change", () => {
+    const v = resolveView(C, withAlgorithm(NO_OVERRIDES, "stress"));
+    expect(v.layout).toMatchObject({ axis: "after", algorithm: "stress" });
+    expect(sameView(v, defaultView(C))).toBe(false);
+    expect(sameView(v, resolveView(C, withAlgorithm(NO_OVERRIDES, "stress")))).toBe(true);
+  });
+
+  it("choosing an axis means layering along it: it clears a pinned algorithm", () => {
+    const pinned = withAlgorithm(NO_OVERRIDES, "radial");
+    expect(resolveView(C, withAxis(pinned, "before")).layout.algorithm).toBe("layered");
+    expect(withAxis(pinned, null).algorithm).toBe("auto");
+  });
+
+  it("every algorithm the picker offers is one the resolver accepts", () => {
+    expect(LAYOUT_ALGORITHMS.map((a) => a.value)).toEqual(["layered", "force", "stress", "radial", "tree", "grid"]);
   });
 });

@@ -48,6 +48,8 @@
 //                            the axis's edge count and the count per fetched relationship)
 //               axis-request detail: { axis: string | null } — the empty-axis banner's one-click
 //                            switch; the page hands it to the picker (the element owns no overrides).
+//               algorithm-request detail: { algorithm: LayoutAlgorithm } — the loop note's one-click
+//                            switch to a layout that does not need an order; handed to the picker too.
 //
 // Edit mode: while the modifier is held (tracked on window: keydown/keyup, and
 // mousemove's metaKey/ctrlKey so a key pressed before the pointer arrived counts;
@@ -66,10 +68,10 @@ import type { Candidate, Direction } from "../lib/candidates.ts";
 import type { GraphEdge } from "../lib/edges.ts";
 import { edgesFromValues, orientEdge, pairEdges, sequenceEdges } from "../lib/edges.ts";
 import { ownerFor } from "../lib/edit.ts";
-import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, type Point, type Positioned } from "../lib/layout-elk.ts";
+import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, summarizeCycles, type ElkAlgorithm, type Point, type Positioned } from "../lib/layout-elk.ts";
 import { forceLayout } from "../lib/layout-force.ts";
 import { isDrawn, midpoint, modified, modifierName, previewFor, type EdgePreview } from "../lib/preview.ts";
-import { NO_PROJECTION, axisStatus, type EdgeCounts, type View } from "../lib/view.ts";
+import { NO_PROJECTION, axisStatus, type EdgeCounts, type LayoutAlgorithm, type View } from "../lib/view.ts";
 import { cardFor, cardTooltip, type Card } from "../lib/cards.ts";
 import { DEFAULT_LABEL_FIT, LABEL_FIT, canvasMeasure, cardSize, type LabelFit, type Measure } from "../lib/card-size.ts";
 import { IDENTITY, fitTransform, panBy, toViewBox, viewBoxMapping, wheelDeltaPx, zoomAbout, zoomFactor, type Transform, type ViewBoxMapping } from "../lib/viewport.ts";
@@ -99,6 +101,7 @@ export interface GraphStateDetail {
 }
 
 export interface AxisRequestDetail { axis: string | null }
+export interface AlgorithmRequestDetail { algorithm: LayoutAlgorithm }
 
 export interface EdgeToggleDetail {
   candidate: Candidate;
@@ -125,7 +128,7 @@ export interface SizedCard {
   labelLines: string[];
 }
 
-const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward" }, projection: NO_PROJECTION };
+const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward", algorithm: "force" }, projection: NO_PROJECTION };
 const elk = new ELK();
 
 @customElement("oqx-graph")
@@ -175,6 +178,14 @@ export class OqxGraph extends LitElement {
     .banner.axis-empty { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .banner.axis-empty button { font: inherit; font-size: 12px; }
     .banner.quiet { top: auto; bottom: 40px; background: rgba(255,255,255,0.92); color: #5a6270; border-color: #e3e6ec; }
+    /* the loop note: compact, never taller than a third of the canvas, dismissable */
+    .banner.cycle { right: auto; max-width: min(640px, calc(100% - 16px)); font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.12); }
+    .cycle-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+    .cycle-actions { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .banner.cycle button { font: inherit; font-size: 12px; }
+    .banner.cycle button.dismiss { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 4px; }
+    .cycle-list { margin: 6px 0 0; padding-left: 18px; max-height: min(30vh, 220px); overflow: auto; }
+    .cycle-list li { margin: 2px 0; }
     .banner.edit { top: auto; bottom: 40px; background: #fff8e1; color: #6d4c00; border-color: #ffe082; }
     .banner.edit.active { background: #e3f2fd; color: #0d47a1; border-color: #64b5f6; font-weight: 500; }
     .banner.edit.active.remove { background: #ffebee; color: #b71c1c; border-color: #ef9a9a; }
@@ -210,6 +221,12 @@ export class OqxGraph extends LitElement {
   @state() private cards: Map<string, SizedCard> = new Map();
   @state() private cycles: string[][] = [];
   @state() private layoutKind: "elk" | "force" | null = null;
+  /** The layout algorithm that placed the nodes (the overlay names it); `fellBack` when the requested one could not run. */
+  @state() private algorithmUsed: LayoutAlgorithm | null = null;
+  @state() private fellBack: string | null = null;
+  /** The loop note: expanded list, and the loops it was dismissed for (a different set shows it again). */
+  @state() private cyclesOpen = false;
+  @state() private cyclesDismissed = "";
   @state() private busy = false;
   @state() private error: string | null = null;
   /** Edges among the shown nodes per fetched relationship (the last recompute). */
@@ -334,6 +351,10 @@ export class OqxGraph extends LitElement {
     this.dispatchEvent(new CustomEvent<AxisRequestDetail>("axis-request", { detail: { axis }, bubbles: true, composed: true }));
   }
 
+  private requestAlgorithm(algorithm: LayoutAlgorithm): void {
+    this.dispatchEvent(new CustomEvent<AlgorithmRequestDetail>("algorithm-request", { detail: { algorithm }, bubbles: true, composed: true }));
+  }
+
   /** Fetch the wanted relationships' edges, lay out, and publish — dropping the
    * result if a newer recompute started meanwhile. */
   private async recompute(): Promise<void> {
@@ -391,22 +412,43 @@ export class OqxGraph extends LitElement {
       const layoutNodes = nodes.map((n) => { const c = cards.get(n.path)!; return { id: n.path, width: c.width, height: c.height }; });
       // Laid out as drawn: the axis's edges under the chosen direction, the rest under their own.
       const drawnEdges = all.map((e) => orientEdge(e, e.rel === view.layout.axis ? view.layout.direction : (this.candidates.find((c) => c.name === e.rel)?.defaults.direction ?? "forward")));
-      let positioned: Positioned;
+      let positioned: Positioned | null = null;
       let cycles: string[][] = [];
       let axisEdges: number | null = null;
-      if (view.layout.axis) {
+      const drawnOnly = drawnEdges.filter((e) => view.edges.includes(e.rel));
+      let algorithm = view.layout.algorithm;
+      let fellBack: string | null = null;
+      if (algorithm === "layered") {
+        // Layered: only the axis's edges are layered (elk routes them); a loop is reported, not an error.
         const onAxis = drawnEdges.filter((e) => e.rel === view.layout.axis);
         axisEdges = onAxis.length;
         cycles = findCycles(paths, onAxis);
-        const { graph } = buildElkGraph(layoutNodes, onAxis, "forward");
+        const { graph } = buildElkGraph(layoutNodes, onAxis, "forward", "layered");
         const laid = await elk.layout(graph);
         if (gen !== this.generation) return;
         positioned = readElkLayout(laid);
         this.layoutKind = "elk";
-      } else {
-        positioned = forceLayout(layoutNodes, drawnEdges.filter((e) => view.edges.includes(e.rel)));
+      } else if (algorithm !== "force") {
+        // The other elk algorithms place the nodes from every drawn relationship; the page draws the edges.
+        try {
+          const { graph, synthetic } = buildElkGraph(layoutNodes, drawnOnly, "forward", algorithm as ElkAlgorithm);
+          const laid = await elk.layout(graph);
+          if (gen !== this.generation) return;
+          positioned = readElkLayout(laid, false);
+          for (const id of synthetic) positioned.nodes.delete(id);
+          this.layoutKind = "elk";
+        } catch (e) {
+          if (gen !== this.generation) return;
+          fellBack = `${algorithm} could not lay this graph out (${e instanceof Error ? e.message : String(e)}) — showing force`;
+          algorithm = "force";
+        }
+      }
+      if (positioned === null) {
+        positioned = forceLayout(layoutNodes, drawnOnly);
         this.layoutKind = "force";
       }
+      this.algorithmUsed = algorithm;
+      this.fellBack = fellBack;
       this.edges = all.filter((e) => view.edges.includes(e.rel));
       this.cycles = cycles;
       this.cards = cards;
@@ -641,16 +683,42 @@ export class OqxGraph extends LitElement {
       </svg>
       ${this.renderBanner(preview, editMode, mod)}
       ${this.renderAxisNote()}
-      ${this.cycles.length > 0 ? html`<div class="banner">
-        <b>${axis}</b> is not a strict order among the shown documents — ${this.cycles.length === 1 ? "a cycle" : `${this.cycles.length} cycles`} (elk broke it to lay the rest out):
-        ${this.cycles.map((c) => html` <code>${c.join(" -> ")}</code>`)}
-      </div>` : nothing}
+      ${this.renderCycleNote(axis)}
+      ${this.fellBack ? html`<div class="banner quiet" data-banner="fell-back">${this.fellBack}</div>` : nothing}
       ${this.error ? html`<div class="error">${this.error}</div>` : nothing}
       ${rels.length > 0 ? html`<div class="legend">${rels.map((r) => html`<span><i style="background:${relationColor(this.candidates, r)}"></i>${r}${r === axis ? " (axis)" : ""}</span>`)}</div>` : nothing}
       ${editMode || preview
         ? html`<div class="legend styles" title="edge styles while editing"><span class="add"><i></i>will add</span><span class="remove"><i></i>will remove</span><span class="pending"><i></i>writing…</span></div>`
-        : html`<div class="overlay">${this.busy ? "laying out…" : `${this.nodes.length} nodes · ${this.edges.length} edges · ${this.layoutKind ?? "—"}`}</div>`}
+        : html`<div class="overlay">${this.busy ? "laying out…" : `${this.nodes.length} nodes · ${this.edges.length} edges · ${this.algorithmUsed ?? this.layoutKind ?? "—"}`}</div>`}
     `;
+  }
+
+  /** The loop note. A strict order needs no loops; `axis` has some among the
+   * shown documents, so the layered layout broke them (drawing a few edges
+   * against the flow) to place the rest. Say that in one line, offer layouts that
+   * do not need an order, let the list be opened (names, not paths, capped), and
+   * let the note be dismissed — for THESE loops: a different set shows it again. */
+  private renderCycleNote(axis: string | null) {
+    if (this.cycles.length === 0 || axis === null || this.view.layout.algorithm !== "layered") return nothing;
+    const signature = `${axis}|${this.cycles.map((c) => c.join(",")).join(";")}`;
+    if (signature === this.cyclesDismissed) return nothing;
+    const s = summarizeCycles(this.cycles);
+    const loops = s.groups === 1 ? "one loop" : `${s.groups} loops`;
+    return html`<div class="banner cycle" data-banner="cycles" role="status">
+      <div class="cycle-head">
+        <span><b>${axis}</b> loops back on itself — ${s.nodes} documents in ${loops} that reach each other, so a left-to-right order has to draw a few edges backwards.</span>
+        <span class="cycle-actions">
+          <button type="button" data-layout="stress" title="elk stress: distance follows graph distance, no order needed" @click=${() => this.requestAlgorithm("stress")}>stress layout</button>
+          <button type="button" data-layout="force" title="force-directed: no order needed" @click=${() => this.requestAlgorithm("force")}>force layout</button>
+          <button type="button" data-action="details" aria-expanded=${this.cyclesOpen ? "true" : "false"} @click=${() => { this.cyclesOpen = !this.cyclesOpen; }}>${this.cyclesOpen ? "hide" : "which ones?"}</button>
+          <button type="button" class="dismiss" data-action="dismiss" aria-label="dismiss" title="dismiss until the loops change" @click=${() => { this.cyclesDismissed = signature; this.cyclesOpen = false; }}>✕</button>
+        </span>
+      </div>
+      ${this.cyclesOpen ? html`<ul class="cycle-list">
+        ${s.listed.map((g) => html`<li>${g.names.map((n, i) => html`${i > 0 ? ", " : ""}<code title=${n.path}>${n.name}</code>`)}${g.more > 0 ? html` … and ${g.more} more` : nothing}</li>`)}
+        ${s.moreGroups > 0 ? html`<li>… and ${s.moreGroups} more ${s.moreGroups === 1 ? "loop" : "loops"}</li>` : nothing}
+      </ul>` : nothing}
+    </div>`;
   }
 
   /** The axis has no edges among the shown documents (nothing to order by) —
@@ -658,9 +726,11 @@ export class OqxGraph extends LitElement {
    * drawn edges — the nodes only repel. */
   private renderAxisNote() {
     const axis = this.view.layout.axis;
+    const algorithm = this.view.layout.algorithm;
     if (this.busy || this.nodes.length < 2) return nothing;
-    if (axis === null) {
-      if (this.edges.length > 0 || this.layoutKind !== "force") return nothing;
+    // Only the layered layout reads the axis; every other one is told by its own name in the overlay.
+    if (algorithm !== "layered") {
+      if (this.edges.length > 0 || algorithm !== "force") return nothing;
       return html`<div class="banner quiet" data-banner="no-edges">no edges drawn — nodes only repel; pick a relationship (the picker's <b>edge</b> column) to connect them</div>`;
     }
     const status = axisStatus(axis, this.candidates, this.edgeCounts, this.nodes.length);

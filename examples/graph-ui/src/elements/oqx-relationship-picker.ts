@@ -10,7 +10,7 @@
 //   events:     view-change      detail: { view: View, overrides: Overrides }
 //               candidate-hover  detail: { candidate: Candidate | null }
 //               armed-change     detail: { candidate: Candidate | null }
-//   methods:    reset(), arm(name | null), setAxis(name | null)
+//   methods:    reset(), arm(name | null), setAxis(name | null), setAlgorithm(algorithm | "auto")
 //
 // Arming a candidate also draws it (its edge override is switched on), so the
 // edges being toggled are visible. An inverse pair (`before/after`, candidates.ts
@@ -25,7 +25,7 @@ import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { Candidate, Direction } from "../lib/candidates.ts";
 import { describeForm, type Editability } from "../lib/edit.ts";
-import { NO_OVERRIDES, axisStatus, resolveView, sameView, withAxis, withDirection, withEdge, type EdgeCounts, type Overrides, type View } from "../lib/view.ts";
+import { LAYOUT_ALGORITHMS, NO_OVERRIDES, axisStatus, resolveAlgorithm, resolveView, sameView, withAlgorithm, withAxis, withDirection, withEdge, type EdgeCounts, type LayoutAlgorithm, type Overrides, type View } from "../lib/view.ts";
 
 export interface ViewChangeDetail { view: View; overrides: Overrides }
 export interface ArmedChangeDetail { candidate: Candidate | null }
@@ -138,6 +138,12 @@ export class OqxRelationshipPicker extends LitElement {
     this.overrides = withAxis(this.overrides, name);
   }
 
+  /** Pin the layout algorithm (`"auto"` = layered along the axis, else force) — the
+   * graph's loop note asks for this through the page. */
+  setAlgorithm(algorithm: LayoutAlgorithm | "auto"): void {
+    this.overrides = withAlgorithm(this.overrides, algorithm);
+  }
+
   private hover(candidate: Candidate | null): void {
     this.hoveredPair = candidate?.pair ? candidate : null;
     this.dispatchEvent(new CustomEvent("candidate-hover", { detail: { candidate }, bubbles: true, composed: true }));
@@ -158,7 +164,8 @@ export class OqxRelationshipPicker extends LitElement {
       return html`<div class="empty">No relationships yet — add a <code>follow</code>, an <code>order by</code>, or project a field whose values are document paths.</div>`;
     }
     const axisName = view.layout.axis;
-    const overridden = this.overrides.axis !== "auto" || this.overrides.direction !== "auto" || Object.keys(this.overrides.edges).length > 0;
+    const overridden = this.overrides.axis !== "auto" || this.overrides.direction !== "auto" || this.overrides.algorithm !== "auto" || Object.keys(this.overrides.edges).length > 0;
+    const inferredAlgorithm = resolveAlgorithm("auto", axisName !== null);
     const lit = new Set(this.hoveredPair?.pair ? [this.hoveredPair.pair.forward, this.hoveredPair.pair.backward] : []);
     const axis = axisStatus(axisName, this.candidates, this.edgeCounts, this.nodeCount);
     const axisCandidate = this.candidates.find((c) => c.name === axisName);
@@ -215,8 +222,14 @@ export class OqxRelationshipPicker extends LitElement {
         <button type="button" data-switch="" @click=${() => this.setAxis(null)}>no axis (force)</button>
       </div>` : nothing}
       <div class="foot">
-        <label title="governs the axis's arrowheads and the layout flow alike: forward draws each edge from ${owner} to the document it names and lays the graph out that way (left → right); backward flips both">direction
-          <select ?disabled=${axisName === null} .value=${view.layout.direction}
+        <label title="how the nodes are placed. auto = layered along the axis, or force when there is none. Only layered needs the axis (and has a direction); stress, radial, tree and grid use every drawn relationship, with straight edges">layout
+          <select data-algorithm @change=${(e: Event) => { this.setAlgorithm((e.target as HTMLSelectElement).value as LayoutAlgorithm | "auto"); }}>
+            <option value="auto" ?selected=${this.overrides.algorithm === "auto"} title="the inferred layout">auto (${inferredAlgorithm})</option>
+            ${LAYOUT_ALGORITHMS.map((a) => html`<option value=${a.value} ?selected=${this.overrides.algorithm === a.value} ?disabled=${a.value === "layered" && axisName === null} title=${a.hint}>${a.label}</option>`)}
+          </select>
+        </label>
+        <label title="governs the axis's arrowheads and the layout flow alike: forward draws each edge from ${owner} to the document it names and lays the graph out that way (left → right); backward flips both. Layered layout only.">direction
+          <select ?disabled=${view.layout.algorithm !== "layered"} .value=${view.layout.direction}
             @change=${(e: Event) => { this.overrides = withDirection(this.overrides, (e.target as HTMLSelectElement).value as Direction); }}>
             <option value="forward">forward (owner → referenced)</option>
             <option value="backward">backward (referenced → owner)</option>

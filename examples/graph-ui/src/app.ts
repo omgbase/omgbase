@@ -26,7 +26,7 @@ import "./elements/oqx-graph.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
 import type { ArmedChangeDetail, OqxRelationshipPicker, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
 import type { FieldHoverDetail, ProjectionChangeDetail } from "./elements/oqx-projection-picker.ts";
-import type { AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
+import type { AlgorithmRequestDetail, AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
 import { projectionOf, type Projection } from "./lib/projection.ts";
@@ -738,6 +738,11 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     this.picker?.setAxis(e.detail.axis);
   }
 
+  /** The graph's loop note asked for a layout that needs no order: likewise the picker's to set. */
+  private onAlgorithmRequest(e: CustomEvent<AlgorithmRequestDetail>): void {
+    this.picker?.setAlgorithm(e.detail.algorithm);
+  }
+
   private onQueryChange(e: CustomEvent<QueryChangeDetail>): void {
     source.set(e.detail.source);
     parseError.set(e.detail.error);
@@ -893,7 +898,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             ${this.renderStarterHint()}
           </sl-details>
           <sl-details data-section="relationships" ?open=${ui.sections.relationships} @sl-show=${this.onSectionToggle("relationships", true)} @sl-hide=${this.onSectionToggle("relationships", false)}>
-            <span slot="summary">relationships<span class="sub">${v.edges.length ? v.edges.join(", ") : "none drawn"} · ${v.layout.axis ? `along ${v.layout.axis}` : "force"}</span></span>
+            <span slot="summary">relationships<span class="sub">${v.edges.length ? v.edges.join(", ") : "none drawn"} · ${v.layout.algorithm === "layered" ? `along ${v.layout.axis}` : v.layout.algorithm}</span></span>
             <oqx-relationship-picker .candidates=${cands} .editable=${editable.get()} .armed=${armed.get()?.name ?? null}
               .edgeCounts=${gs?.edgeCounts ?? {}} .nodeCount=${r.length}
               @view-change=${this.onViewChange}
@@ -948,6 +953,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
             @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
             @axis-request=${this.onAxisRequest}
+            @algorithm-request=${this.onAlgorithmRequest}
             @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
           ${this.renderEmptyState()}
           ${showSpinner.get() ? html`<div class="loading" role="status" data-loading><span class="spinner"></span>${querying.get() ? "running the query…" : "fetching edges and laying out…"}</div>` : nothing}
@@ -958,7 +964,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <span class=${es ? "empty" : ""}>${r.length} row${r.length === 1 ? "" : "s"}${truncated.get() ? " (truncated at 200)" : ""}${es && !querying.get() ? ` · ${emptyStateText(es, s.repo).footer}` : ""}</span>
         <span>${cands.length} candidate${cands.length === 1 ? "" : "s"}</span>
         <span>edges: ${v.edges.length ? v.edges.join(", ") : "none"}</span>
-        <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction}${gs?.axisEdges !== null && gs?.axisEdges !== undefined ? `, ${gs.axisEdges} edge${gs.axisEdges === 1 ? "" : "s"}` : ""})` : "force"}</span>
+        <span>layout: ${v.layout.algorithm === "layered" ? `${v.layout.axis} (${v.layout.direction}${gs?.axisEdges !== null && gs?.axisEdges !== undefined ? `, ${gs.axisEdges} edge${gs.axisEdges === 1 ? "" : "s"}` : ""})` : v.layout.algorithm}</span>
         <span>cards: ${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}</span>
         ${gs ? html`<span>${gs.busy ? "laying out…" : `${gs.edges} edges drawn${gs.cycles.length ? `, ${gs.cycles.length} cycle(s)` : ""}`}</span>` : nothing}
         ${pe ? html`<span class="err">parse: ${pe.message}</span>` : nothing}
