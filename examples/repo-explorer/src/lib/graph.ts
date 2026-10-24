@@ -505,6 +505,8 @@ export interface EdgeRoute {
   mid: { x: number; y: number };
   /** How many obstacles deflected the control point. */
   bends: number;
+  /** The signed control offset along the segment normal (parallel offset + pushes); 0 when straight. */
+  offset: number;
 }
 
 interface Rect { x: number; y: number; hw: number; hh: number }
@@ -560,6 +562,8 @@ export interface EdgePathOptions {
   offset?: number;
   /** Skip obstacle avoidance (the "straight" style). */
   avoid?: boolean;
+  /** Render with exactly this control offset (an eased value): replaces `offset` and the obstacle pass. */
+  controlOffset?: number;
   w?: number;
   h?: number;
   margin?: number;
@@ -577,16 +581,16 @@ export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[],
   const w = opts.w ?? CARD_W, h = opts.h ?? CARD_H, m = opts.margin ?? ROUTE_MARGIN;
   const dx = to.x - from.x, dy = to.y - from.y;
   const L = Math.hypot(dx, dy);
-  if (L === 0) return { d: `M ${from.x} ${from.y} L ${to.x} ${to.y}`, start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, tangent: { x: 1, y: 0 }, control: null, mid: { x: from.x, y: from.y }, bends: 0 };
+  if (L === 0) return { d: `M ${from.x} ${from.y} L ${to.x} ${to.y}`, start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, tangent: { x: 1, y: 0 }, control: null, mid: { x: from.x, y: from.y }, bends: 0, offset: 0 };
   const u = { x: dx / L, y: dy / L }, n = { x: -u.y, y: u.x };
   const M = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   const curveOf = (off: number) => {
     const c = { x: M.x + n.x * off, y: M.y + n.y * off };
     return { c, p0: arrowEnd(c, from, w, h, 2), p2: arrowEnd(c, to, w, h, 2) };
   };
-  let offset = opts.offset ?? 0;
+  let offset = opts.controlOffset ?? opts.offset ?? 0;
   let bends = 0;
-  if (opts.avoid !== false && L >= ROUTE_MIN_LEN) {
+  if (opts.controlOffset === undefined && opts.avoid !== false && L >= ROUTE_MIN_LEN) {
     // Prune to the cards whose inflated box meets the segment's box widened by the curve's largest possible bulge.
     const reach = (ROUTE_MAX_RATIO * L) / 2 + Math.abs(offset) / 2 + m + Math.max(w, h);
     const minX = Math.min(from.x, to.x) - reach, maxX = Math.max(from.x, to.x) + reach;
@@ -652,10 +656,72 @@ export function edgePath(from: Placed, to: Placed, obstacles: readonly Placed[],
   const { c, p0, p2 } = curveOf(offset);
   if (offset === 0) {
     const len = Math.hypot(p2.x - p0.x, p2.y - p0.y) || 1;
-    return { d: `M ${p0.x} ${p0.y} L ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - p0.x) / len, y: (p2.y - p0.y) / len }, control: null, mid: { x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2 }, bends };
+    return { d: `M ${p0.x} ${p0.y} L ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - p0.x) / len, y: (p2.y - p0.y) / len }, control: null, mid: { x: (p0.x + p2.x) / 2, y: (p0.y + p2.y) / 2 }, bends, offset: 0 };
   }
   const tl = Math.hypot(p2.x - c.x, p2.y - c.y) || 1;
-  return { d: `M ${p0.x} ${p0.y} Q ${c.x} ${c.y} ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - c.x) / tl, y: (p2.y - c.y) / tl }, control: c, mid: quad(p0, c, p2, 0.5), bends };
+  return { d: `M ${p0.x} ${p0.y} Q ${c.x} ${c.y} ${p2.x} ${p2.y}`, start: p0, end: p2, tangent: { x: (p2.x - c.x) / tl, y: (p2.y - c.y) / tl }, control: c, mid: quad(p0, c, p2, 0.5), bends, offset };
+}
+
+/** The route drawn with a given (eased) control offset — no obstacle pass; the cheap second call per frame. */
+export function pathFromOffset(from: Placed, to: Placed, offset: number, w = CARD_W, h = CARD_H): EdgeRoute {
+  return edgePath(from, to, [], { controlOffset: offset, w, h });
+}
+
+// ---- temporal smoothing of the control offsets ---------------------------------------------
+
+/** Time constant of the exponential approach, ms. */
+export const EASE_TAU = 150;
+/** Within this distance (px) the eased value snaps to its target. */
+export const EASE_SNAP = 0.5;
+/** A frame longer than this (a background tab, a hitch) counts as this long. */
+export const EASE_MAX_DT = 50;
+
+/** One exponential step of `current` toward `target` over `dt` ms (clamped to `EASE_MAX_DT`), snapping within `snap`. */
+export function easeToward(current: number, target: number, dt: number, tau = EASE_TAU, snap = EASE_SNAP): number {
+  const t = Math.min(Math.max(dt, 0), EASE_MAX_DT);
+  const next = current + (target - current) * (1 - Math.exp(-t / tau));
+  return Math.abs(target - next) < snap ? target : next;
+}
+
+/** The rendered control offset of every edge, eased toward each frame's computed
+ * target so a changed push (an obstacle entering or leaving the segment, the
+ * side flipping) glides — through zero, a straight line, when the side flips —
+ * instead of jumping. A new key starts at its target; keys absent from a frame's
+ * targets are dropped. */
+export class EdgeEaser {
+  private readonly rendered = new Map<string, number>();
+  private readonly tau: number;
+
+  constructor(tau = EASE_TAU) {
+    this.tau = tau;
+  }
+
+  /** Ease every key toward its target over `dt` ms; the rendered offsets. */
+  step(targets: ReadonlyMap<string, number>, dt: number): Map<string, number> {
+    for (const k of [...this.rendered.keys()]) if (!targets.has(k)) this.rendered.delete(k);
+    for (const [k, target] of targets) {
+      const cur = this.rendered.get(k);
+      this.rendered.set(k, cur === undefined ? target : easeToward(cur, target, dt, this.tau));
+    }
+    return new Map(this.rendered);
+  }
+
+  /** Jump every key to its target (reduced motion). */
+  snap(targets: ReadonlyMap<string, number>): Map<string, number> {
+    this.rendered.clear();
+    for (const [k, v] of targets) this.rendered.set(k, v);
+    return new Map(this.rendered);
+  }
+
+  /** True when every rendered offset equals its target (nothing left to animate). */
+  settled(targets: ReadonlyMap<string, number>): boolean {
+    for (const [k, v] of targets) if (this.rendered.get(k) !== v) return false;
+    return true;
+  }
+
+  get size(): number {
+    return this.rendered.size;
+  }
 }
 
 /** How many cards (inflated by `margin`, the endpoints excluded) a route still crosses. */

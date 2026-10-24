@@ -10,9 +10,13 @@
 // `edges` ("curved": obstacle-aware quadratic Béziers routed by `edgePath` every
 // frame — parallel edges fanned by `parallelOffsets`, arrowheads on the end
 // tangent; "straight": plain segments). Routing is O(E·N) after a box prune;
-// when a frame's routing exceeds `ROUTE_BUDGET_MS` the pane routes every other
-// tick while the simulation is hot (straight lines in between) and fully once
-// alpha settles.
+// when a frame's routing exceeds `ROUTE_BUDGET_MS` the pane recomputes targets
+// every other tick while the simulation is hot and every frame once alpha
+// settles. The rendered control offsets are eased toward the targets
+// (`EdgeEaser`, τ = `EASE_TAU`) with the real frame dt, so a push that appears,
+// vanishes or changes side glides — through a straight line — rather than
+// flipping; an animation-frame tail keeps easing after the simulation stops
+// until every edge has snapped (reduced motion snaps at once).
 // Events (all `{ bubbles, composed }`):
 //   graph-select { path | null }          click (null: open canvas), or an arrow key moved the selection
 //   graph-open { path }                   double-click / Enter on the selected node
@@ -36,7 +40,7 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type ForceLink, type ForceX, type ForceY, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from "d3-force";
-import { CARD_H, CARD_W, arrowheadPath, connectorDrop, connectorLine, dragMode, edgeLabel, edgePath, emptyModel, fitTransform, forceConfig, initialView, graphDescription, nearestInDirection, neighborsOf, panBy, parallelOffsets, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type EdgeRoute, type EdgeStyle, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
+import { CARD_H, CARD_W, EdgeEaser, arrowheadPath, connectorDrop, connectorLine, dragMode, edgeLabel, edgePath, emptyModel, fitTransform, forceConfig, initialView, graphDescription, nearestInDirection, neighborsOf, panBy, parallelOffsets, pathFromOffset, toGraph, truncateTitle, wheelZoomFactor, zoomAbout, type Direction, type EdgeRoute, type EdgeStyle, type GraphEdge, type GraphModel, type GraphNode, type Pin, type Placed, type ViewTransform } from "../lib/graph.ts";
 
 export type { EdgeStyle } from "../lib/graph.ts";
 
@@ -157,7 +161,11 @@ export class GraphPane extends LitElement {
   /** Routing went over budget on some frame: route every other tick while hot. */
   private routingSlow = false;
   private frame = 0;
-  private lastRoutes = new Map<string, EdgeRoute>();
+  /** The last computed target offsets (reused on a frame that skips routing). */
+  private lastTargets = new Map<string, number>();
+  private readonly easer = new EdgeEaser();
+  private lastFrameAt = 0;
+  private tailFrame = 0;
 
   constructor() {
     super();
@@ -201,6 +209,8 @@ export class GraphPane extends LitElement {
     super.disconnectedCallback();
     this.resize?.disconnect();
     this.sim.stop();
+    if (this.tailFrame) cancelAnimationFrame(this.tailFrame);
+    this.tailFrame = 0;
     this.removeEventListener("keydown", this.onKey);
   }
 
@@ -472,27 +482,36 @@ export class GraphPane extends LitElement {
 
   // ---- rendering ---------------------------------------------------------------------
 
-  /** Every edge's route for this frame: curved and obstacle-aware within the time budget, else straight (parallel fan kept). */
+  /** Every edge's route for this frame: the target control offsets (obstacle-aware within the
+   * time budget, else last frame's), eased toward with the real frame dt, then drawn. */
   private routeEdges(pos: Map<string, SimNode>): Map<string, EdgeRoute> {
     const edges = [...this.model.edges.values()].filter((e) => e.from !== e.to && pos.has(e.from) && pos.has(e.to));
-    const offsets = parallelOffsets(edges);
     const curved = this.edges === "curved";
     const hot = this.sim.alpha() > 0.1;
+    const now = typeof performance === "undefined" ? 0 : performance.now();
+    const dt = this.lastFrameAt ? now - this.lastFrameAt : 16;
+    this.lastFrameAt = now;
     this.frame++;
-    const avoid = curved && (!this.routingSlow || !hot || this.frame % 2 === 0);
-    const placed = avoid ? this.placed() : [];
-    const t0 = typeof performance === "undefined" ? 0 : performance.now();
-    const routes = new Map<string, EdgeRoute>();
-    for (const e of edges) {
-      const a = pos.get(e.from)!, b = pos.get(e.to)!;
-      routes.set(e.key, edgePath(a, b, placed, { key: e.key, offset: curved ? offsets.get(e.key) ?? 0 : 0, avoid }));
-    }
-    if (avoid && typeof performance !== "undefined") {
-      const dt = performance.now() - t0;
-      if (dt > ROUTE_BUDGET_MS) this.routingSlow = true;
+    const route = curved && (!this.routingSlow || !hot || this.frame % 2 === 0);
+    const targets = new Map<string, number>();
+    if (route) {
+      const offsets = parallelOffsets(edges);
+      const placed = this.placed();
+      for (const e of edges) targets.set(e.key, edgePath(pos.get(e.from)!, pos.get(e.to)!, placed, { key: e.key, offset: offsets.get(e.key) ?? 0 }).offset);
+      const spent = (typeof performance === "undefined" ? 0 : performance.now()) - now;
+      if (spent > ROUTE_BUDGET_MS) this.routingSlow = true;
       else if (!hot) this.routingSlow = false;
+      this.lastTargets = targets;
+    } else {
+      for (const e of edges) targets.set(e.key, curved ? this.lastTargets.get(e.key) ?? 0 : 0);
     }
-    this.lastRoutes = routes;
+    const eased = this.reduced ? this.easer.snap(targets) : this.easer.step(targets, dt);
+    const routes = new Map<string, EdgeRoute>();
+    for (const e of edges) routes.set(e.key, pathFromOffset(pos.get(e.from)!, pos.get(e.to)!, eased.get(e.key) ?? 0));
+    // The tail: keep easing after the simulation stops until every edge has snapped.
+    if (!this.reduced && !this.easer.settled(targets) && !this.tailFrame && typeof requestAnimationFrame === "function") {
+      this.tailFrame = requestAnimationFrame(() => { this.tailFrame = 0; this.requestUpdate(); });
+    }
     return routes;
   }
 

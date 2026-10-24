@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { linkRowsOf, type DocLinks } from "../src/lib/links.ts";
 import {
   CARD_H, CARD_W, ZOOM_MAX, ZOOM_MIN, applyTitles, arrowEnd, collapseNode, edgeDetail, edgeKey, edgeLabel, edgeOf, edgesOf, emptyModel, externalTitle, fetchDocLinks, fetchTitles, fitTransform, graphDescription,
-  PARALLEL_GAP, ROUTE_MARGIN, ROUTE_MIN_LEN, arrowheadPath, connectorDrop, connectorLine, curveHitsRect, dragMode, edgePath, forceConfig, hitTest, initialView, keySide, parallelOffsets, routeViolations, segmentHitsRect, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
+  EASE_MAX_DT, EASE_SNAP, EASE_TAU, EdgeEaser, PARALLEL_GAP, ROUTE_MARGIN, ROUTE_MIN_LEN, arrowheadPath, easeToward, pathFromOffset, connectorDrop, connectorLine, curveHitsRect, dragMode, edgePath, forceConfig, hitTest, initialView, keySide, parallelOffsets, routeViolations, segmentHitsRect, nearestInDirection, neighborsOf, panBy, provenanceText, removeNode, setPin, titleOf, titlesQuery, toGraph, truncateTitle, untitledPaths, wheelZoomFactor, withNeighborhood, zoomAbout, type Placed,
 } from "../src/lib/graph.ts";
 
 const A = "/processes/calcination.md";
@@ -325,6 +325,60 @@ describe("edge routing", () => {
     expect(ab.control!.y).toBeCloseTo(-PARALLEL_GAP);
     expect(ba.control!.y).toBeCloseTo(PARALLEL_GAP);
     expect(ab.bends).toBe(0);
+  });
+
+  it("reports its offset, and `controlOffset` / `pathFromOffset` draw exactly that offset with no obstacle pass", () => {
+    const above = { path: "/o", x: 300, y: -5 };
+    const routed = edgePath(A, B, [A, B, above], { key: "k" });
+    expect(routed.offset).toBeGreaterThan(0);
+    expect(routed.control!.y).toBeCloseTo(routed.offset);
+    expect(edgePath(A, B, [], { avoid: false }).offset).toBe(0);
+    expect(edgePath(A, B, [], { offset: -18 }).offset).toBe(-18);
+    const forced = edgePath(A, B, [A, B, above], { key: "k", offset: 99, controlOffset: -40 });
+    expect(forced.offset).toBe(-40);
+    expect(forced.control!.y).toBeCloseTo(-40);
+    expect(forced.bends).toBe(0);
+    expect(pathFromOffset(A, B, -40)).toEqual(forced);
+    expect(pathFromOffset(A, B, routed.offset).d).toBe(routed.d);
+    expect(pathFromOffset(A, B, 0).control).toBeNull();
+  });
+
+  it("eases a control offset toward its target with the frame dt, snapping within half a pixel", () => {
+    expect(easeToward(0, 100, 0)).toBe(0);
+    // dt is clamped to EASE_MAX_DT (a hitch does not teleport the curve), so one step covers 1 − e^(−50/τ).
+    expect(easeToward(0, 100, EASE_TAU)).toBeCloseTo(100 * (1 - Math.exp(-EASE_MAX_DT / EASE_TAU)));
+    expect(easeToward(0, 100, 30, 30, 0)).toBeCloseTo(100 * (1 - Math.exp(-1)));
+    expect(easeToward(0, 100, 16)).toBeLessThan(easeToward(0, 100, 32));
+    expect(easeToward(0, 100, 1000)).toBe(easeToward(0, 100, EASE_MAX_DT));
+    expect(easeToward(99.8, 100, 16)).toBe(100);
+    expect(easeToward(100, 100 - EASE_SNAP / 2, 1)).toBe(100 - EASE_SNAP / 2);
+    expect(easeToward(-30, 30, 16)).toBeGreaterThan(-30);
+    expect(easeToward(-30, 30, 16)).toBeLessThan(0);
+  });
+
+  it("EdgeEaser: a new key starts at its target, glides toward a changed one through zero when the side flips, drops stale keys, reports settled, snaps", () => {
+    const e = new EdgeEaser();
+    const t1 = new Map([["a", 40], ["b", 0]]);
+    expect(e.step(t1, 16)).toEqual(new Map([["a", 40], ["b", 0]]));
+    expect(e.settled(t1)).toBe(true);
+    const t2 = new Map([["a", -40]]);
+    const trace: number[] = [];
+    for (let i = 0; i < 60; i++) trace.push(e.step(t2, 16).get("a")!);
+    expect(trace[0]).toBeLessThan(40);
+    expect(trace[0]).toBeGreaterThan(-40);
+    expect(trace.some((v) => Math.abs(v) < 10)).toBe(true);
+    expect(trace.every((v, i) => i === 0 || v <= trace[i - 1]!)).toBe(true);
+    expect(trace[trace.length - 1]).toBe(-40);
+    expect(e.settled(t2)).toBe(true);
+    expect(e.size).toBe(1);
+    expect(e.step(t2, 16).has("b")).toBe(false);
+    const t3 = new Map([["a", 0], ["c", 12]]);
+    const after = e.step(t3, 16);
+    expect(after.get("c")).toBe(12);
+    expect(after.get("a")).toBeLessThan(0);
+    expect(e.settled(t3)).toBe(false);
+    expect(e.snap(t3)).toEqual(new Map([["a", 0], ["c", 12]]));
+    expect(e.settled(t3)).toBe(true);
   });
 
   it("draws the arrowhead along the end tangent", () => {
