@@ -180,13 +180,16 @@ null), `deleted` = live docs whose path is not on disk. Touches nothing.
 
 **Recovery** (startup): step 0 as the sweep's — replay the pending
 materialization rows (`materialized`, 2.2), the recorded intent of a write
-the process did not finish; then for every live doc, a missing file is
-`missing`; a file whose hash differs from the current revision's
-`rendered_hash` (or `file_hash` when there is no revision) is re-ingested as
-an observed commit (one document at a time, not a batch — §9) and listed
-`healed`. Recovery records no checkpoint row and does not refresh
-`file_stats` (the next sweep re-hashes the healed file and echo-suppresses
-it).
+the process did not finish (`spec/store` 17.0 §5.7: the row itself carries
+the head it renders and the engine's own prior bytes, so the replay reads no
+history table); then for every live doc, a missing file is `missing`; a file
+whose hash differs from the document's `file_hash` (the bytes its head
+renders to — through 16.x the current revision's `rendered_hash`) is
+re-ingested as an observed commit (one document at a time, not a batch — §9)
+and listed `healed`, and a pending row step 0 kept at that path (foreign
+bytes) goes with the heal: the file won. Recovery records no checkpoint row
+and does not refresh `file_stats` (the next sweep re-hashes the healed file
+and echo-suppresses it).
 
 ### 4.4 Status
 

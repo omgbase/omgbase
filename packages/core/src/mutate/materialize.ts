@@ -1,62 +1,86 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
-import { requireHistory } from "../core/capabilities/registry.js";
 import { reconstructContent } from "../core/read/document.js";
 import type { DocStore } from "./doc-store.js";
 
-// Materialization (spec/store §5.7, store 14.0). The api path commits DB-first:
-// the transaction records what each file must become as a `pending_
-// materializations` row — `write` the revision's bytes at `path`, `rename` the
-// file at `from_path` to `path`, `remove` the file at `path` — and the file
-// half runs AFTER COMMIT, one row at a time, deleting each row once its file is
-// as recorded (autocommit per file, so partial progress is durable). A row that
-// survives a crash, a refused write or a lost process is the recorded intent:
-// any materializer — the commit's own B' phase, the freshness sweep's step 0,
+// Materialization (spec/store §5.7, store 14.0; the self-contained row 17.0 —
+// modular-core Phase 3c, M4). The api path commits DB-first: the transaction
+// records what each file must become as a `pending_materializations` row —
+// `write` the document's bytes at `path`, `rename` the file at `from_path` to
+// `path`, `remove` the file at `path` — and the file half runs AFTER COMMIT,
+// one row at a time, deleting each row once its file is as recorded
+// (autocommit per file, so partial progress is durable). A row that survives a
+// crash, a refused write or a lost process is the recorded intent: any
+// materializer — the commit's own B' phase, the freshness sweep's step 0,
 // recovery — replays it from the document's CURRENT state (`reconstruct`,
-// spec/store §6.1 — a row always names its document's current head, 17.0 §5.7)
+// spec/store §6.1 — a row always names its document's current head, §5.7)
 // with the api commit, its revision and the `changes_since` digest already in
-// place.
+// place. The row carries everything that replay needs and touches no history
+// table: `head` (the token whose bytes it renders; no foreign key),
+// `rendered_hash` (the bytes expected at `path`), `prior_hash` (the bytes the
+// engine itself last wrote at `path` — captured at commit time from the
+// `file_hash` the transaction validated the file against, or inherited from
+// the row it supersedes; NULL when the engine never wrote there), `commit_id`
+// (no foreign key) and `created_at`.
 //
 // Files stay the human's (ADR-004): a materializer never overwrites bytes it
 // does not recognise. At `path` it expects either nothing, the bytes the row
 // names (`rendered_hash`: already materialized, or confirmed by a human who
-// wrote the same), or the engine's OWN previous bytes — the revision before
-// `rev_id`, which is what a file holds when the process died between COMMIT
-// and the write (the `prior` hash; the commit phase passes the hash it
-// validated the file against, a replay derives it from the revision history).
+// wrote the same), or the engine's OWN previous bytes — `prior_hash`, which is
+// what a file holds when the process died between COMMIT and the write.
 // Anything else is foreign — a human edit that landed meanwhile — and the row
 // is KEPT: the next observation of that path applies "file wins" (spec/store
 // §5.7 gate rule: observed ingest, row deleted), so the api intent is
 // superseded by a later edit, never reverted silently and never overwritten.
+//
+// One row per path (spec/store §5.7 "Supersession"): a later `write` to a path
+// that still owes a file replaces the row's TARGET (`head`, `rendered_hash`,
+// `commit_id`, `created_at`) and keeps the EARLIEST `prior_hash` — the bytes
+// that can still be on the disk are the ones the engine wrote before the first
+// unfinished commit, never the superseded row's own target (over a `remove`
+// row the inherited prior is the bytes it owed an unlink); a `write` over a
+// `rename` keeps the rename and its `from_path` obligation and replaces its
+// target; a `rename` supersedes a `write`/`rename` at `from_path` by carrying
+// its `prior_hash` (the commit deletes that row); a `remove` drops whatever
+// the path owed. Unresolved recovery work is never discarded for a storage
+// limit: there is none — a row lives until a materializer or an observation
+// settles its path.
 
 export type PendingKind = "write" | "rename" | "remove";
 
-/** One `pending_materializations` row (spec/store §3.1), hash as the 32 raw bytes. */
+/** One `pending_materializations` row (spec/store §3.1), hashes as the 32 raw bytes. */
 export interface PendingRow {
   path: string;
   kind: PendingKind;
   fromPath: string | null;
   docId: string;
-  revId: string | null;
+  /** `write`/`rename`: the document's head token whose bytes the row renders; `null` for `remove`. */
+  head: string | null;
   renderedHash: Buffer;
+  /** The bytes the engine itself last wrote at `path` (what a crash leaves on the disk); `null` when it never did. */
+  priorHash: Buffer | null;
   commitId: string;
+  /** The recording commit's `ts` (spec/store §2.4). */
+  createdAt: string;
 }
 
-const COLUMNS = "path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id";
+const COLUMNS = "path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at";
 
 interface RawRow {
   path: string;
   kind: PendingKind;
   from_path: string | null;
   doc_id: string;
-  rev_id: string | null;
+  head: string | null;
   rendered_hash: Buffer;
+  prior_hash: Buffer | null;
   commit_id: string;
+  created_at: string;
 }
 
 function fromRaw(r: RawRow): PendingRow {
-  return { path: r.path, kind: r.kind, fromPath: r.from_path, docId: r.doc_id, revId: r.rev_id, renderedHash: r.rendered_hash, commitId: r.commit_id };
+  return { path: r.path, kind: r.kind, fromPath: r.from_path, docId: r.doc_id, head: r.head, renderedHash: r.rendered_hash, priorHash: r.prior_hash, commitId: r.commit_id, createdAt: r.created_at };
 }
 
 /** The pending row at `(repo, path)`, or null. */
@@ -70,25 +94,35 @@ export function listPending(db: Database, repoId: string): PendingRow[] {
   return (db.prepare(`SELECT ${COLUMNS} FROM pending_materializations WHERE repo_id = ? ORDER BY rowid`).all(repoId) as RawRow[]).map(fromRaw);
 }
 
-/** Record an intent (`INSERT OR REPLACE`: one row per path — a later request for the same path supersedes the earlier). */
+/**
+ * The row that results when `incoming` is recorded at a path `existing` still
+ * owes (spec/store §5.7 "Supersession"; `null` existing → `incoming` as is). A
+ * `write` replaces the target and inherits the earliest prior: over a `write`
+ * its `prior_hash`, over a `remove` the bytes that row owed an unlink
+ * (`rendered_hash`), over a `rename` the rename itself stays — `from_path` and
+ * `prior_hash` kept, `head`/`rendered_hash`/`commit_id`/`created_at` the
+ * write's (the self-linking source of a `docs_move`, whose retarget renders new
+ * bytes at the new path). A `rename` or a `remove` replaces whatever is there
+ * (a rename's carry of the row at `from_path` is the commit's, which knows
+ * both paths — `mutate/commit.ts`).
+ */
+export function supersede(existing: PendingRow | null, incoming: PendingRow): PendingRow {
+  if (existing === null || incoming.kind !== "write") return incoming;
+  if (existing.kind === "rename") return { ...existing, head: incoming.head, renderedHash: incoming.renderedHash, commitId: incoming.commitId, createdAt: incoming.createdAt };
+  return { ...incoming, priorHash: existing.kind === "remove" ? existing.renderedHash : existing.priorHash };
+}
+
+/** Record an intent: one row per path — a later request for the same path supersedes the earlier (`supersede`, then `INSERT OR REPLACE`). */
 export function insertPending(db: Database, repoId: string, row: PendingRow): void {
+  const r = supersede(readPending(db, repoId, row.path), row);
   db.prepare(
-    `INSERT OR REPLACE INTO pending_materializations (repo_id, ${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(repoId, row.path, row.kind, row.fromPath, row.docId, row.revId, row.renderedHash, row.commitId);
+    `INSERT OR REPLACE INTO pending_materializations (repo_id, ${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(repoId, r.path, r.kind, r.fromPath, r.docId, r.head, r.renderedHash, r.priorHash, r.commitId, r.createdAt);
 }
 
 /** Drop the intent at `(repo, path)`: the file is as recorded, or a later observation superseded it. */
 export function deletePending(db: Database, repoId: string, path: string): void {
   db.prepare("DELETE FROM pending_materializations WHERE repo_id = ? AND path = ?").run(repoId, path);
-}
-
-/** The rendered hash of the revision BEFORE `revId` of the same document (what
- *  the file held before the commit that recorded the row), or null for a first
- *  revision / an unknown one. */
-export function priorRenderedHash(db: Database, revId: string | null): Buffer | null {
-  // The one current-state read of a NON-current revision (inventory-ts §5.3);
-  // M4 puts `prior_hash` on the pending row in Phase 3. The recorder's until then.
-  return requireHistory(db).priorRenderedHash(revId);
 }
 
 // The bytes a `write`/`rename` row materializes: spec/store §6.1 reconstruct
@@ -98,21 +132,13 @@ export function priorRenderedHash(db: Database, revId: string | null): Buffer | 
 // `rendered_hash`. Null when nothing can be rendered (the head moved under the
 // row — impossible while the replace rule holds, checked anyway) — the row is
 // then left for a later materializer rather than guessed. Through 16.x this
-// was `reconstruct at rev_id` through the Merkle tree (inventory-ts §2.4 row
-// `renderedBytes`); the prior-bytes rule below is still the recorder's (M4, 3c).
+// was `reconstruct at rev_id` through the Merkle tree, and the prior bytes a
+// `revisions` self-join on `seq − 1`; no history table is read here now (M4).
 function renderedBytes(store: Store, row: PendingRow): string | null {
-  if (row.revId === null) return null;
+  if (row.head === null) return null;
   const raw = reconstructContent(store.db, row.docId);
   if (raw === null || !sha256(raw).equals(row.renderedHash)) return null;
   return raw;
-}
-
-export interface MaterializeOptions {
-  /** The hash of the bytes the materializer may overwrite at the row's path (the
-   *  engine's own previous bytes). Defaults to the rendered hash of the revision
-   *  before the row's `rev_id`. `null` = only an absent or already-equal file is
-   *  acceptable (a created document has no previous bytes). */
-  priorHash?: Buffer | null;
 }
 
 /**
@@ -122,12 +148,11 @@ export interface MaterializeOptions {
  * could not be rendered). Never throws for a foreign file; a doc store write
  * failure propagates with the row intact.
  */
-export function materializeRow(store: Store, repoId: string, row: PendingRow, docStore: DocStore, opts: MaterializeOptions = {}): boolean {
+export function materializeRow(store: Store, repoId: string, row: PendingRow, docStore: DocStore): boolean {
   const db = store.db;
-  const prior = opts.priorHash !== undefined ? opts.priorHash : priorRenderedHash(db, row.revId);
   const own = (bytes: string): boolean => {
     const h = sha256(bytes);
-    return h.equals(row.renderedHash) || (prior !== null && h.equals(prior));
+    return h.equals(row.renderedHash) || (row.priorHash !== null && h.equals(row.priorHash));
   };
   let done: boolean;
   switch (row.kind) {
@@ -169,7 +194,7 @@ export function materializeRow(store: Store, repoId: string, row: PendingRow, do
         }
         if (renamed) {
           // A self-linking moved document renders new bytes under its new path:
-          // the renamed file holds the previous revision, so it is rewritten.
+          // the renamed file holds the prior bytes, so it is rewritten.
           const moved = docStore.read(row.path);
           if (moved !== null && !sha256(moved).equals(row.renderedHash) && own(moved)) {
             const bytes = renderedBytes(store, row);
@@ -199,8 +224,9 @@ export function materializeRow(store: Store, repoId: string, row: PendingRow, do
       break;
     }
     case "remove": {
-      // Unlink only the bytes the deleted revision rendered; a file a human
-      // rewrote meanwhile stays (untracked now — the next sweep re-creates it).
+      // Unlink only the bytes the deleted document rendered (`docs.file_hash`
+      // before the tombstone); a file a human rewrote meanwhile stays (untracked
+      // now — the next sweep re-creates it).
       const at = docStore.read(row.path);
       if (at !== null && sha256(at).equals(row.renderedHash)) docStore.remove(row.path);
       done = true;

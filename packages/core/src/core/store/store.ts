@@ -67,13 +67,17 @@ export class Store {
       return;
     }
     if (current === SCHEMA_VERSION) {
-      // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b): a
-      // database a 3a build already moved to 17 has `docs` but no `id_claims`
-      // and the pool's `deleted_commit`. The identity half of the step is
-      // idempotent, so finish it here rather than spend a schema version on a
-      // dev-only state. (A 17 database with no `docs` table — the
+      // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b →
+      // 3c): a database a 3a build already moved to 17 has `docs` but no
+      // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still has
+      // `pending_materializations.rev_id`. Each half of the step is idempotent,
+      // so finish it here rather than spend a schema version on a dev-only
+      // state. (A 17 database with no `docs` table — the
       // `already-current-is-untouched` fixture — is left exactly as it is.)
-      if (this.tableExists("docs")) this.migrateV17Claims();
+      if (this.tableExists("docs")) {
+        this.migrateV17Claims();
+        this.migrateV17Pending();
+      }
       return;
     }
     if (current > SCHEMA_VERSION) {
@@ -91,7 +95,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -432,6 +436,55 @@ CREATE TABLE resurrection_pool_v17 (
       });
     }
     db.exec("DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;");
+  }
+
+  // The recovery half of step 17 (spec/store §3.4 step 17 (5); modular-core
+  // Phase 3c — M4): `pending_materializations` rebuilt self-contained — `head`
+  // = the row's `rev_id` (the same `r_` token: the head IS the revision id the
+  // core mints), `prior_hash` = the `rendered_hash` of the revision before it
+  // (`seq − 1` of the same document, resolved ONCE from the 16.x history; NULL
+  // for a first revision, a `remove` row or an unknown revision), `created_at`
+  // = the recording commit's `ts` (the migration's clock when the commit is
+  // gone); the two foreign keys (`revisions`, `commits`) dropped; `rowid`s
+  // kept (a materializer replays in insertion order). Runs inside
+  // `migrateV17`'s transaction with foreign keys off, or alone for a 3a/3b
+  // database at 17 (a short transaction of its own; the table it rebuilds has
+  // no incoming foreign key). Idempotent: a table that already carries `head`
+  // is left alone.
+  private migrateV17Pending(): void {
+    const db = this.db;
+    const cols = db.pragma("table_info(pending_materializations)") as { name: string }[];
+    if (cols.length === 0 || cols.some((c) => c.name === "head")) return;
+    const clock = new Date().toISOString();
+    const hasRevisions = this.tableExists("revisions");
+    const hasCommits = this.tableExists("commits");
+    db.transaction(() => {
+      db.exec(`
+CREATE TABLE pending_materializations_v17 (
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  path          TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
+  from_path     TEXT,
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
+  head          TEXT,
+  rendered_hash BLOB NOT NULL,
+  prior_hash    BLOB,
+  commit_id     TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (repo_id, path)
+);`);
+      const prior = hasRevisions
+        ? "(SELECT q.rendered_hash FROM revisions r JOIN revisions q ON q.doc_id = r.doc_id AND q.seq = r.seq - 1 WHERE r.rev_id = p.rev_id)"
+        : "NULL";
+      const createdAt = hasCommits ? "COALESCE((SELECT c.ts FROM commits c WHERE c.commit_id = p.commit_id), @clock)" : "@clock";
+      db.prepare(
+        `INSERT INTO pending_materializations_v17 (rowid, repo_id, path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at)
+         SELECT p.rowid, p.repo_id, p.path, p.kind, p.from_path, p.doc_id, p.rev_id, p.rendered_hash,
+                CASE WHEN p.kind = 'remove' THEN NULL ELSE ${prior} END, p.commit_id, ${createdAt}
+           FROM pending_materializations p ORDER BY p.rowid`,
+      ).run({ clock });
+      db.exec("DROP TABLE pending_materializations; ALTER TABLE pending_materializations_v17 RENAME TO pending_materializations;");
+    })();
   }
 
   // The identity half of step 17 (spec/store §3.4 step 17 (4)–(5); modular-core

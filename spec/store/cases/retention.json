@@ -3812,8 +3812,8 @@
       }
     },
     {
-      "name": "never-prunable-current-tombstone-and-pending",
-      "notes": "§7 the never-prunable set: b.md is observed three times and then deleted (tombstoned at c_3; its last revision r_2 stays its `current_rev`), a.md twice; the `exec` device records a `pending_materializations` row naming a.md's OLD revision r_3 (the api path's intent, which only the observe runner cannot produce). Under a one-per-year ladder at Jan 10, 2027 the plan keeps r_2 (the tombstoned document's last revision), r_4 (a.md's current) and r_3 (pinned by the pending row), and archives b.md's r_0 and r_1.",
+      "name": "never-prunable-current-and-tombstone-pending-row-pins-nothing",
+      "notes": "§7 the never-prunable set (17.0): b.md is observed three times and then deleted (tombstoned at c_3; its last revision r_2 stays its `head`), a.md twice; the `exec` device records a `pending_materializations` row for a.md — the api path's intent, which only the observe runner cannot produce — naming a.md's CURRENT head r_4, its `file_hash`, and as `prior_hash` the bytes the engine last wrote there (r_3's rendered hash), as a 17.0 commit would. Under a one-per-year ladder at Jan 10, 2027 the plan keeps r_2 (the tombstoned document's last revision) and r_4 (a.md's head) and archives b.md's r_0 and r_1 AND a.md's r_3: through 16.x rule 2 of §7.1 pinned the revision a pending row named; since 17.0 the row renders from the current rows and names no revision, so nothing is pinned for it — the row survives the squash unchanged and its replay still works (§5.7).",
       "steps": [
         {
           "observe": {
@@ -3877,7 +3877,7 @@
         {
           "exec": {
             "sql": [
-              "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id) SELECT 'rp_0', 'a.md', 'write', NULL, 'd_1', 'r_3', rendered_hash, 'c_4' FROM revisions WHERE rev_id = 'r_3'"
+              "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at) SELECT 'rp_0', 'a.md', 'write', NULL, d.doc_id, d.head, d.file_hash, (SELECT rendered_hash FROM revisions WHERE rev_id = 'r_3'), r.commit_id, c.ts FROM docs d JOIN revisions r ON r.rev_id = d.head JOIN commits c ON c.commit_id = r.commit_id WHERE d.doc_id = 'd_1'"
             ]
           }
         },
@@ -4019,6 +4019,18 @@
               "before": null,
               "docs": [
                 {
+                  "id": "d_1",
+                  "path": "/a.md",
+                  "revisions": 2,
+                  "keep": [
+                    "r_4"
+                  ],
+                  "archive": [
+                    "r_3"
+                  ],
+                  "bytes": 341
+                },
+                {
                   "id": "d_0",
                   "path": "/b.md",
                   "revisions": 3,
@@ -4029,15 +4041,15 @@
                     "r_0",
                     "r_1"
                   ],
-                  "bytes": 335
+                  "bytes": 341
                 }
               ],
               "totals": {
-                "docs": 1,
+                "docs": 2,
                 "revisions": 5,
-                "keep": 3,
-                "archive": 2,
-                "bytes": 335
+                "keep": 2,
+                "archive": 3,
+                "bytes": 676
               }
             }
           },
@@ -4046,21 +4058,21 @@
               "segment": {
                 "id": "s_0",
                 "seq_lo": 1,
-                "seq_hi": 2,
-                "revision_count": 2,
+                "seq_hi": 5,
+                "revision_count": 3,
                 "previous_segment": null
               },
               "reused": false,
               "squashed": {
-                "revisions": 2,
-                "commits": 2,
-                "dispositions": 4,
-                "block_changes": 4,
-                "checkpointed": 1
+                "revisions": 3,
+                "commits": 3,
+                "dispositions": 6,
+                "block_changes": 6,
+                "checkpointed": 2
               },
               "gc": {
-                "blobs": 0,
-                "tree_nodes": 2
+                "blobs": 1,
+                "tree_nodes": 4
               }
             }
           }
@@ -4195,18 +4207,18 @@
             "rev_id": "r_3",
             "doc_id": "d_1",
             "seq": 1,
-            "root_tree": "cdc93c5fd985c2a3e5747f918b3c256e3ea43aa6796033900f2d7f63b7189ffb",
+            "root_tree": null,
             "frontmatter_blob": null,
             "rendered_hash": "615b6c86ef4dc17c15f7fbe7819931ee48e01b95c06a7499661aa3aa5890667f",
             "path": "a.md",
             "commit_id": "c_4",
-            "archive": null
+            "archive": "s_0"
           },
           {
             "rev_id": "r_4",
             "doc_id": "d_1",
             "seq": 2,
-            "root_tree": "ced0528120c5f81ba1326028a0da374142916df14b760e34e16ca72c7d1ba1fc",
+            "root_tree": "594cc99f667b88fc065b8cc08f4ce6a0037c13e3dd85e8cf3a289934a2d004cd",
             "frontmatter_blob": null,
             "rendered_hash": "8e38c7c19f552b8b34c0ceb232364494d61efa4a691a22471dd98e825aeccbd0",
             "path": "a.md",
@@ -4241,11 +4253,6 @@
             "bytes": "Three."
           },
           {
-            "hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
-            "size": 4,
-            "bytes": "One."
-          },
-          {
             "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
             "size": 2,
             "bytes": "\n\n"
@@ -4257,12 +4264,8 @@
             "entries": "[[\"b_0\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           },
           {
-            "hash": "cdc93c5fd985c2a3e5747f918b3c256e3ea43aa6796033900f2d7f63b7189ffb",
-            "entries": "[[\"b_4\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_5\",\"70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
-          },
-          {
-            "hash": "ced0528120c5f81ba1326028a0da374142916df14b760e34e16ca72c7d1ba1fc",
-            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_2\",\"1eb32d1ee4458814f94f8b92d1bd3e06e16dca6fab43d53f700840321f27fdf4\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+            "hash": "594cc99f667b88fc065b8cc08f4ce6a0037c13e3dd85e8cf3a289934a2d004cd",
+            "entries": "[[\"b_4\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"1eb32d1ee4458814f94f8b92d1bd3e06e16dca6fab43d53f700840321f27fdf4\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           }
         ],
         "blocks": [
@@ -4371,24 +4374,6 @@
             "detail": {}
           },
           {
-            "commit_id": "c_4",
-            "block_id": "b_4",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
-            "commit_id": "c_4",
-            "block_id": "b_5",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "matcher_v": "m2.3",
-            "detail": {}
-          },
-          {
             "commit_id": "c_5",
             "block_id": "b_2",
             "kind": "resurrected",
@@ -4416,16 +4401,6 @@
           {
             "block_id": "b_3",
             "commit_id": "c_2",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_4",
-            "commit_id": "c_4",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_5",
-            "commit_id": "c_4",
             "kind": "inserted"
           },
           {
@@ -4583,19 +4558,21 @@
             "kind": "write",
             "from_path": null,
             "doc_id": "d_1",
-            "rev_id": "r_3",
-            "rendered_hash": "615b6c86ef4dc17c15f7fbe7819931ee48e01b95c06a7499661aa3aa5890667f",
-            "commit_id": "c_4"
+            "head": "r_4",
+            "rendered_hash": "8e38c7c19f552b8b34c0ceb232364494d61efa4a691a22471dd98e825aeccbd0",
+            "prior_hash": "615b6c86ef4dc17c15f7fbe7819931ee48e01b95c06a7499661aa3aa5890667f",
+            "commit_id": "c_5",
+            "created_at": "2026-01-05T10:00:00.000Z"
           }
         ],
         "archives": [
           {
             "segment_id": "s_0",
-            "file": "rp_0-1-2-s_0.omgarchive.db",
+            "file": "rp_0-1-5-s_0.omgarchive.db",
             "seq_lo": 1,
-            "seq_hi": 2,
+            "seq_hi": 5,
             "created_at": "2027-01-10T00:00:00.000Z",
-            "revision_count": 2
+            "revision_count": 3
           }
         ]
       }

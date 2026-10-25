@@ -256,7 +256,7 @@ The tables of `schema.sql` this spec fills:
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
 | `id_claims` | id the core has minted (17.0, M3/D5) | §2.1: `id` (the primary key), `repo_id` (`NULL` for a workspace-scoped `src`), `prefix`, `minted_at` (the minting commit's `ts`; the clock for `rp`/`src`), `holders` (the bitmask: bit 0 the core, bit 1 the recorder). Written by the core with the row that carries the id, held by the recorder's capture, probed by every mint; a row leaves only when no holder remains — the claims prune (§7.3) releases the core's hold, `history purge` (Phase 3e) the recorder's. Index `idx_claims_repo_prefix (repo_id, prefix, minted_at)` for the prune and the size line. |
 | `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, **`created_at`** (17.0, D6 — carried from the deleted row so a resurrection restores the block's birth), **`deleted_at`** (17.0 — the deleting commit's `ts`; `deleted_commit` through 16.x), `expires_ts` (= `deleted_at + 30 days`, I6 — anchored on the row's own timestamp, so the pool depends on no history table). Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept; a pooled id keeps its claim (§2.1) whatever happens to the row. |
-| `pending_materializations` | file the `api` path still owes the disk (14.0) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, `rev_id` (the revision whose bytes `write`/`rename` leave at `path`; `NULL` for `remove`), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), `commit_id` (the `api` commit that recorded it). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7). Empty at quiescence; the observe path never inserts. |
+| `pending_materializations` | file the `api` path still owes the disk (14.0; self-contained since 17.0 — M4) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, **`head`** (17.0 — the document's head token whose bytes `write`/`rename` leave at `path`, always its CURRENT head (C8); `NULL` for `remove`; no foreign key — `rev_id → revisions` through 16.x), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), **`prior_hash`** (17.0 — the bytes the engine itself last wrote at `path`: the `file_hash` the commit validated the file against, captured at commit time, or inherited from the row it superseded; `NULL` when the engine never wrote there — a created document, a `remove`), `commit_id` (the `api` commit that recorded it; no foreign key since 17.0 — `commits` is the recorder's), **`created_at`** (17.0 — that commit's `ts`). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7); the replay reads only this row and the document's current rows. Empty at quiescence; the observe path never inserts; no cap — a row lives until its path is settled. |
 | `external_nodes`, `collections`, `checkpoints`, `properties`, `edges`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties`, `edges` and `checkpoints` are written by the reference during the same commit transaction; a runner does not compare them. |
 
 **Which tables are the recorder's (17.0).** `blobs`, `tree_nodes`,
@@ -335,7 +335,7 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
 | 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
-| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). The history tables are read for the backfill and not touched. A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`). (A database a pre-3b 17.0 build already moved to 17 — `docs` present, `id_claims` absent — runs (3)'s rename and (4) on open; 17.0 is unreleased and the step is idempotent, so no version is spent on that state.) |
+| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). (5) **`pending_materializations`** (3c — M4) rebuilt self-contained, `rowid`s kept: `head` = the row's `rev_id` (the same `r_` token — the head IS the revision id the core minted), `prior_hash` = the `rendered_hash` of the revision before `rev_id` (`seq − 1` of the same document) **resolved once** from the 16.x `revisions` — `NULL` for a `remove` row, a first revision or an unknown one, `created_at` = the `ts` of `commit_id`'s commit (the migration's clock when the commit is gone); `rev_id` and both foreign keys (`revisions`, `commits`) dropped. The history tables are read for the backfill and not touched. A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`, which also carries a `write` and a `remove` pending row). (A database a pre-3b or pre-3c 17.0 build already moved to 17 — `docs` present, `id_claims` absent, or `pending_materializations.rev_id` present — runs the missing halves on open; 17.0 is unreleased and each half is idempotent, so no version is spent on those states.) |
 | 16 | **nothing** — no DDL, no data pass. Every node a 15.x store holds is a `[`-form list and every frontmatter blob a raw: exactly the 16.0 **checkpoint forms** (§4.4), so every existing revision is a checkpoint and the store is already a valid 16.0 database; deltas appear with the next commit to each document (§4.4 decides per revision). The step only lets the opener move `user_version`. Compare the per-key-parts branch `2f7b286`, whose migration had to split every frontmatter blob in a verified full pass: there the old encoding was *not* a valid new one; here it is, by construction (§10 Decisions, 16.0) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
@@ -803,21 +803,30 @@ claims it as step 6 does. The known-id resolver's verdicts are
 exactly as `spec/reconcile` §2 classifies a carry, so an untouched block is
 `same` and step 10 drops it there too; a one-block edit writes one row.
 
-**The api path (14.0).** The same transaction records the file half as
-intent, after every document's steps and before COMMIT: one
-`pending_materializations` row per path the request owes the disk (§3.1) —
-`write` for every ingested document (`rev_id` = its new head,
-`rendered_hash` = `sha256(source)`), `rename` for a moved document
-(`from_path` = the old path, `path` = the new one, `rev_id` = the **new
-head the move minted** (17.0, D11: `docs_move` is a transition — `UPDATE
-docs SET path, head = mint r, updated_at = ts` and a captured revision of
-the unchanged tree at the new path; `spec/mutate` §6) and `rendered_hash` =
-`docs.file_hash` — or the head and bytes the retarget gives it when it is a
-self-linking source, which then mints the one head), `remove` for a deleted
-document (`rev_id = NULL`, `rendered_hash` = `docs.file_hash` before the
-tombstone — the bytes its head renders to, I1). `INSERT OR REPLACE`: a later request
-for the same path supersedes the earlier intent. No file is touched inside
-the transaction; §5.7 says how the rows become files.
+**The api path (14.0; the self-contained row 17.0, M4).** The same
+transaction records the file half as intent, after every document's steps
+and before COMMIT: one `pending_materializations` row per path the request
+owes the disk (§3.1) — `write` for every ingested document (`head` = its
+new head, `rendered_hash` = `sha256(source)`, **`prior_hash`** = the
+`file_hash` the transaction validated the file at `path` against
+(`spec/mutate` §4 step 5 (b) — the bytes the engine itself last wrote
+there; `NULL` for a created document, whose guard is `path_taken` and whose
+path had no file)), `rename` for a moved document (`from_path` = the old
+path, `path` = the new one, `head` = the **new head the move minted**
+(17.0, D11: `docs_move` is a transition — `UPDATE docs SET path, head =
+mint r, updated_at = ts` and a captured revision of the unchanged tree at
+the new path; `spec/mutate` §6), `rendered_hash` = `docs.file_hash`,
+`prior_hash` = the same hash — what the engine last wrote at `from_path` —
+or the head and bytes the retarget gives it when it is a self-linking
+source, which then mints the one head and keeps the move's `prior_hash`),
+`remove` for a deleted document (`head = NULL`, `prior_hash = NULL`,
+`rendered_hash` = `docs.file_hash` before the tombstone — the bytes its
+head renders to, I1); every row `commit_id` = this commit, `created_at =
+ts`. A row the path already owes is **superseded** by §5.7's rules (a
+later write replaces the target and keeps the earliest `prior_hash`; a
+rename carries the obligation of the row at `from_path` and deletes it; a
+remove drops the write), then `INSERT OR REPLACE`. No file is touched
+inside the transaction; §5.7 says how the rows become files.
 
 9b. **Properties (store 13.1).** After the blocks and sections: delete the
     doc's `properties` rows and insert the document's property rows as
@@ -879,7 +888,7 @@ step 2 reuses the doc row — **and clears its `deleted_at`**, keeping
 transition, D11), and the next observation of the same bytes is an echo. (§10: the reference did
 not clear the tombstone; found while writing this section.)
 
-### 5.7 Materialization and pending rows (14.0)
+### 5.7 Materialization and pending rows (14.0; self-contained 17.0)
 
 The api path is **DB-first**: its transaction commits the rows (§5.4 "The
 api path") and the files follow, one `pending_materializations` row each.
@@ -892,29 +901,41 @@ process that dies between COMMIT and the file half loses nothing: the
 commit, its revisions and the change-feed digest are durable, and the rows
 say what each file must become.
 
+**The row is self-contained (17.0, M4).** A pending row names everything
+its replay needs and nothing a history table has to answer: `head` — the
+document's **current** head token, whose bytes the row renders (C8; a later
+commit to the path replaces the row, so the row never names an older
+head); `rendered_hash` — the bytes expected at `path`; `prior_hash` — the
+bytes **the engine itself last wrote at `path`**, captured at commit time
+from the `file_hash` the transaction validated the file against (or
+inherited from the row it superseded, below), `NULL` when the engine never
+wrote there; `commit_id` and `created_at` for the record. Through 16.x the
+row named `rev_id` with a foreign key into `revisions`, the bytes were
+`reconstruct at rev_id` through the Merkle tree and the prior bytes a
+`revisions` self-join on `seq − 1` — a crash-recovery path that could not
+run without the recorder's tables. Retention pinned the revision for it
+(§7.1 rule 2, retired).
+
 **Materializing a row** (`materialize_row`), through the repo's doc store,
 then `DELETE` the row — autocommit per file, so partial progress is durable.
-Bytes are **`reconstruct(doc)` — from current state** (§6.1; 17.0: a row
-always names its document's current head because a later commit to the path
-replaces the row, and §6.1 is byte-exact for the head; through 16.x the
-render was `reconstruct at rev_id` through the Merkle tree). A materializer never overwrites bytes
-it does not recognise as the engine's own: at `path` it accepts nothing, the
-bytes the row names (`rendered_hash`), or the **prior** bytes — the rendered
-hash of the revision before `rev_id` (what the file holds when the process
-died after COMMIT; the commit phase itself passes the `file_hash` it
-validated the file against). Anything else is **foreign** — a human edit
-that landed meanwhile — and the row is kept: the next observation of the
-path decides (below), so the api intent is superseded by a later edit, never
-silently reverted and never overwriting it.
+Bytes are **`reconstruct(doc)` — from current state** (§6.1; a row always
+names its document's current head, and §6.1 is byte-exact for the head). A
+materializer never overwrites bytes it does not recognise as the engine's
+own: at `path` it accepts nothing, the bytes the row names
+(`rendered_hash`), or the **prior** bytes — **`prior_hash`**, what the file
+holds when the process died after COMMIT. Anything else is **foreign** — a
+human edit that landed meanwhile — and the row is kept: the next
+observation of the path decides (below), so the api intent is superseded by
+a later edit, never silently reverted and never overwriting it.
 
 | Row | At `path` | Action |
 | --- | --- | --- |
-| `write` | absent, or the prior bytes | write the revision's bytes; delete the row |
+| `write` | absent, or the prior bytes | write the document's bytes; delete the row |
 | `write` | the row's bytes | already there (another materializer, or a human wrote the same); delete the row |
 | `write` | foreign bytes | keep the row (the observation applies "file wins") |
-| `rename` | absent; `from_path` present | rename `from_path` → `path`; if the renamed file holds the prior bytes rather than the row's (a self-linking source), write the revision's bytes over it; delete the row |
-| `rename` | absent; `from_path` absent | write the revision's bytes at `path`; delete the row |
-| `rename` | the row's bytes | done; a stale copy of the engine's own bytes still at `from_path` is removed; delete the row |
+| `rename` | absent; `from_path` present | rename `from_path` → `path`; if the renamed file holds the prior bytes rather than the row's (a self-linking source), write the document's bytes over it; delete the row. (Foreign bytes at `from_path` travel with the rename unrewritten — the human's edit of the document follows the document — and the next observation of `path` lets them win) |
+| `rename` | absent; `from_path` absent | write the document's bytes at `path`; delete the row |
+| `rename` | the row's bytes | done; a stale copy of the engine's own bytes (the row's or the prior) still at `from_path` is removed; delete the row |
 | `rename` | foreign bytes | keep the row (`path` wins; `from_path` becomes an untracked file) |
 | `remove` | the row's bytes | unlink; delete the row |
 | `remove` | absent, or foreign bytes | leave the file (a rewritten file is untracked now — the next sweep re-creates the path, §5.6); delete the row |
@@ -928,8 +949,45 @@ of the freshness sweep and of recovery (`spec/sync` §4.3) — the production
 recovery points — and `spec/mutate` §4 step 5 (a) replays the rows of the
 paths a request touches before reading their files.
 
+**Supersession (17.0).** One row per path; a commit that owes a path a row
+already owes records the row §5.4 describes and then applies, in this
+order, before `INSERT OR REPLACE`:
+
+- a **`write`** over a `write` **replaces the target** (`head`,
+  `rendered_hash`, `commit_id`, `created_at`) and **keeps the earliest
+  `prior_hash`** — the bytes that can still be on the disk are the ones the
+  engine wrote before the first unfinished commit, never a superseded row's
+  own target (which never reached the disk, or the row would be gone); a
+  `write` over a `remove` inherits as `prior_hash` the bytes the remove owed
+  an unlink (`rendered_hash` — the engine's bytes, still on the disk); a
+  `write` over a `rename` keeps the **rename**, its `from_path` and its
+  `prior_hash`, and replaces its target (the self-linking source of a
+  `docs_move`, whose retarget renders new bytes at the new path:
+  `spec/mutate` `materialize::move-self-link-crash-row-is-a-rename-with-the-
+  retargets-target`);
+- a **`rename`** whose `from_path` still owes a `write` or `rename`
+  **carries its obligation**: the rename's `prior_hash` is that row's
+  `prior_hash` (the earliest bytes the engine must still recognise at
+  `from_path`) and that row is deleted in the same transaction — one
+  obligation per path, none lost (`materialize::move-after-crashed-write-
+  carries-the-write-obligation`); a `rename` replaces whatever `path` owed;
+- a **`remove`** drops whatever the path owed — a write the human overtook
+  is never written (`materialize::delete-after-crashed-write-drops-the-
+  write`).
+
+A `write` over a `write` across two requests has no fixture by
+construction: `spec/mutate` §4 step 5 (a) replays an owed row before any
+commit, and a row the replay keeps holds foreign bytes, which step 5 (b)
+refuses (`sync_conflict`, the row dropped with the observed ingest); the
+rule is reachable within one request (the self-linking move) and is
+otherwise a unit-tested property of the row writer. **No limit.** There is
+no cap on pending rows and no age at which one is dropped: unresolved
+recovery work is never discarded for a storage limit — a row lives until a
+materializer or an observation settles its path.
+
 **The gate rule.** An observation (§5.1) of a path that has a pending row
-runs this check first, before the echo gate, keyed by the `(repo, path)` row:
+runs this check first, before the echo gate, keyed by the `(repo, path)` row
+— and reads **the row's `rendered_hash`**, never a history row:
 
 - the bytes hash to `rendered_hash` → an **echo** of the row's `doc_id`
   (`{ echo: true, converged: true }`, nothing minted): the observation
@@ -944,19 +1002,22 @@ runs this check first, before the echo gate, keyed by the `(repo, path)` row:
 - anything else is **foreign bytes → the file wins**: the normal reconciling
   ingest (§5.1 step 4, §5.4) commits them as `observed`, and the row is
   deleted in that member's transaction. In particular a file still holding
-  the **previous** revision's bytes after a crash is foreign to this rule —
-  it does not hash to `rendered_hash`, and it is indistinguishable from a
-  human who reverted the file — so observing it commits the old bytes as a
-  new observed revision over the api one (`spec/mutate`
+  the **prior** bytes after a crash is foreign to this rule — it does not
+  hash to `rendered_hash`, and the observation does not consult
+  `prior_hash`: a file the engine wrote and a human who reverted the file to
+  it are indistinguishable from the disk alone — so observing it commits the
+  old bytes as a new observed revision over the api one (`spec/mutate`
   `materialize::crash-then-observe-of-stale-file-is-foreign`). The api
   revision stays in history; nothing is reverted silently. This is why the
   materializer, not the observation, is the recovery point: the sweep runs
   step 0 before it walks the disk, and a watcher batch that reaches the gate
   first is a human's intent as far as the engine can tell.
 
-`observe_delete` applies the gone-member rule the same way. The disk-drift
-counters (`spec/sync` §4.3) may transiently count a path with a pending row
-as `changed`; they are read-only and the next sweep settles it.
+`observe_delete` applies the gone-member rule the same way. Recovery
+(`spec/sync` §4.3) compares the disk to `docs.file_hash` after step 0 and
+drops a kept row with the heal (the file won). The disk-drift counters
+(`spec/sync` §4.3) may transiently count a path with a pending row as
+`changed`; they are read-only and the next sweep settles it.
 
 ## 6. Reads this spec pins
 
@@ -1126,7 +1187,10 @@ holds, and **archived** otherwise:
 
 1. it is the document's `head` (a tombstoned document's last revision is
    its `head` — §5.6 never clears it);
-2. a `pending_materializations` row names it as `rev_id`;
+2. *(retired in 17.0 — M4: a `pending_materializations` row renders from
+   the current rows and names no revision; through 16.x a revision a
+   pending row named as `rev_id` was kept here. The slot is kept so the
+   rule numbers below do not move.)*
 3. its age — `floor((now − commit.ts) / 86 400 000 ms)` in whole days — is
    less than `keep_days`;
 4. it is among the newest `per_doc_max` live revisions of the document;
@@ -1348,7 +1412,7 @@ clock `now`) releases the **core's hold** (clears bit 0) on every claim of
 that repository whose `minted_at` is older than `now − claims_retain_days`
 **and** whose id names **no core row**: no `docs.doc_id` or `docs.head`, no
 `blocks.block_id`, no `resurrection_pool.block_id`, no
-`pending_materializations.rev_id`, no `external_nodes.node_id`, no
+`pending_materializations.head`, no `external_nodes.node_id`, no
 `edges.edge_id`, no `repos.repo_id`, no `sources.source_id`. A
 workspace-scoped claim (`repo_id` NULL — a `src`) is judged by the
 workspace layer's setting alone. Then every claim with `holders = 0` is
@@ -1417,6 +1481,19 @@ phase-1-contracts.md` §6).
   `NULL` on every live row and non-NULL on every tombstoned one, a live doc
   has no tombstoned block and a tombstoned doc no live one, and a
   tombstoned doc's `deleted_at == updated_at`.
+- **C8 Pending rows (17.0, M4).** Every `pending_materializations` row's
+  `doc_id` names a `docs` row of the repository; `kind = rename` ⇔
+  `from_path IS NOT NULL`; `created_at` is a §2.4 timestamp (with capture
+  on, the `ts` of the `commits` row `commit_id` names) and `commit_id` a `c`
+  id. A `write`/`rename` row names a **live** document, `head == docs.head`
+  (the row always names the document's CURRENT head — the supersession
+  rules of §5.7 are what keep this true), and `rendered_hash ==
+  docs.file_hash == sha256(reconstruct(doc))` (§6.1). A `remove` row names a
+  **tombstoned** document with `head IS NULL`, `prior_hash IS NULL` and
+  `rendered_hash == docs.file_hash` (the bytes before the tombstone, which
+  §5.6 keeps). `prior_hash` is defined, not derivable — it names bytes the
+  engine wrote at the path that no current row holds — so only its nullness
+  is checked.
 - **H1 Capture agrees with the head (I1 restated).** For every live doc
   `docs.head` names a live `revisions` row with `path == docs.path`,
   `rendered_hash == file_hash == sha256(source)` and its commit's `ts ==
@@ -1688,10 +1765,12 @@ unchanged.
   `rp` claim omitted, like `repo_id` is from every row (the runner minted it
   before the first step, at its own clock) — emitted after
   `resurrection_pool`; `sections` by (`doc_id` bytewise, `first_ordinal`);
-  `pending_materializations` (14.0) by `path`, as `{ path, kind, from_path,
-  doc_id, rev_id, rendered_hash, commit_id }` — `[]` here unless an `exec`
-  step put a row in (the never-prunable fixture of §7.1 does), since only
-  the api path inserts rows; the `spec/mutate` scripts (its §9), which share
+  `pending_materializations` (14.0; 17.0's columns) by `path`, as `{ path,
+  kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id,
+  created_at }` (hashes as hex, `prior_hash` `null` when NULL) — `[]` here
+  unless an `exec` step put a row in (`retention::never-prunable-current-
+  and-tombstone-pending-row-pins-nothing` does), since only the api path
+  inserts rows; the `spec/mutate` scripts (its §9), which share
   this shape, pin the rows through their `crash_after_commit` modifier and
   `materialize {}` step; `revisions` rows carry `archive` (15.0; `null`
   until a squash) and `archives` (15.0) is projected by (`seq_lo`,
@@ -1732,6 +1811,32 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (17.0, slice 3c) — the pending row is self-contained; the
+  materializer reads no history table** (`docs/modular-core/`, Phase 3c:
+  M4). `pending_materializations` carries `head` (the token whose bytes it
+  renders; `rev_id` with a foreign key into `revisions` through 16.x),
+  `prior_hash` (the bytes the engine itself last wrote at the path — the
+  `file_hash` the commit validated the file against, captured at commit
+  time; through 16.x the materializer derived it from the revision before
+  the row's by a `revisions` self-join) and `created_at`; `commit_id` loses
+  its foreign key (`commits` is the recorder's). The materializer renders
+  `reconstruct(doc)` from the current rows and recognises the engine's own
+  stale file by the row; recovery compares the disk to `docs.file_hash`;
+  §7.1 rule 2 (the pin on a pending row's revision) is retired; the claims
+  prune (§7.3) probes `pending_materializations.head`. Supersession is
+  stated and pinned (§5.7): a later write replaces the target and keeps the
+  earliest `prior_hash`, a rename carries the obligation of the row at
+  `from_path`, a remove drops the write; no limit on pending rows. New
+  invariant C8. Migration 17 extended in place (step (5)); `migrations::
+  v16-to-v17-heads-inline-bytes-time` carries a `write` and a `remove`
+  pending row; `retention::never-prunable-current-and-tombstone-pending-row-
+  pins-nothing` replaces the case that pinned a revision for a pending row
+  (the revision is archived now and the row survives the squash). The
+  gate rule's outcomes are unchanged — it reads `rendered_hash` and does
+  not consult `prior_hash` (a reverted file and a crash-stale file are the
+  same bytes). Fixtures: the pending-row columns in every projection, the
+  two migration and retention cases above, `schema.json`; `spec/mutate`
+  `materialize.json` +3 cases.
 - **Changed (17.0) — the head and its bytes live on the current rows; no
   current-state read touches a history table** (`docs/modular-core/`, Phase
   3a: M1, M2, D10, D6, D11). `docs.head` (the `r_` token, minted by the core
@@ -1958,6 +2063,31 @@ brought to it).
   `history purge` and the recorder's release (3e), the manifest that would
   let a repository run without a recorder (3e) — until then every claim in
   every fixture carries both bits.
+- 2026-10-25, store 17.0 slice 3c (Phase 3c of `docs/modular-core/`):
+  **the recovery payload is the row.** M4 as planned (`README.md` §2.11,
+  §3) with the contracts (`phase-1-contracts.md` §1.7 the DDL, §1.11 §5.7,
+  §1.15 C10 — numbered C8 here, after C7 — §1.16 step 7, §3.4) as the text
+  §3.1, §3.4, §5.4, §5.7 and §8 follow. Decided in the implementation:
+  **`prior_hash` is inherited, not recomputed** — a superseding write keeps
+  the earliest prior because the superseded target never reached the disk
+  (a row that survives the replay holds foreign bytes), and a write over a
+  `remove` inherits the bytes the remove owed an unlink; **a rename carries
+  the obligation at `from_path` and deletes that row** rather than leaving
+  two rows for one file; **the gate rule does not consult `prior_hash`**
+  (the 14.0 reasoning holds: from the disk alone a crash-stale file and a
+  human revert are the same bytes, so the observation must treat them the
+  same, and the materializer stays the recovery point); **the projection
+  carries `created_at`** although the contracts' §3.4 omits it (it is
+  pinned by the commit's `ts` and lets the Rust twin's value be checked);
+  **recovery drops a kept row with the heal** (the §5.7 "file wins" rule
+  applied to the one materializer that also ingests). Not done here, by
+  design: `repos_status.unconverged` keeps its `revisions` join until D9
+  retires it (3e); `pending_materializations` stays filed under `history`
+  in the size report until the six categories (3e). Measured
+  (`docs/modular-core/baseline.md` §2): no change — pending rows are
+  transient and the two new columns live only between a commit and its
+  file write.
+
 - 2026-10-17, store 16.0: **delta tree nodes** (§4.1, §4.4, §6, §7). The
   math that decided it, from the per-key-parts branch `2f7b286` (built,
   measured, not merged): a Merkle list of hash references costs about 77 B

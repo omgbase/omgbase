@@ -341,8 +341,8 @@ export class ReachMarker {
  * The plan (spec/store §7 "Retention", the policy as an exact rule). Per
  * document, over its live revisions oldest → newest: a revision is KEPT when
  * any rule keeps it — it is the document's current revision (a tombstoned
- * document's last revision is its current one), a `pending_materializations`
- * row names it, it is younger than `keep_days`, it is among the newest
+ * document's last revision is its current one), it is younger than
+ * `keep_days`, it is among the newest
  * `per_doc_max`, its commit's origin is in `keep_origins` with a non-empty
  * reason, it is not before `before`, no ladder rung applies to its age (the
  * gap below the first rung keeps everything), or it is the newest revision of
@@ -365,9 +365,8 @@ export function evaluateRetention(store: Store, repoId: string, opts: EvaluateOp
     `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.commit_id, c.ts, c.origin, c.reason, r.archive
      FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? ORDER BY r.seq`,
   );
-  const pinned = new Set(
-    (db.prepare("SELECT rev_id FROM pending_materializations WHERE repo_id = ? AND rev_id IS NOT NULL").all(repoId) as { rev_id: string }[]).map((r) => r.rev_id),
-  );
+  // 17.0 (M4): a pending materialization row renders from the current rows and
+  // names no revision, so the squash no longer pins one for it (§7.1 rule 2 retired).
 
   const archiveSet = new Set<string>();
   const perDoc: { doc: { doc_id: string; path: string }; live: RevRow[]; keep: string[]; archive: RevRow[] }[] = [];
@@ -382,7 +381,6 @@ export function evaluateRetention(store: Store, repoId: string, opts: EvaluateOp
     rows.forEach((r, i) => {
       const rank = rows.length - i; // 1 = the newest
       if (r.rev_id === d.head) kept.add(r.rev_id);
-      else if (pinned.has(r.rev_id)) kept.add(r.rev_id);
       else if (ageDays(r.ts, nowMs) < policy.keep_days) kept.add(r.rev_id);
       else if (rank <= policy.per_doc_max) kept.add(r.rev_id);
       else if (policy.keep_origins.includes(r.origin) && r.reason !== null && r.reason !== "") kept.add(r.rev_id);

@@ -166,6 +166,51 @@ one write 209–224 / 224–270; `query` docs 204 / 242, blocks filter 194 /
 328): the claim writes are one `INSERT … ON CONFLICT` per minted id inside
 the commit transaction and do not register against node's start.
 
+### 17.0 (3c), TS — the self-contained pending row (`ts-2026-10-25T22-13-16`)
+
+The same harness over the Phase 3c reference (store 17.0 + the
+`pending_materializations` row that carries `head`, `prior_hash` and
+`created_at` with no foreign key into the recorder's tables; the
+materializer rendering from the current rows; the retention pin retired),
+TS CLI, node 24; the 17.0 (3b) TS row above is the comparison.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | 3b TS (db MB / KB / op) | `pending_materializations` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.24 | 6,242 | 31.1 / doc | 3.17 | 2.70 | 6.25 / 31.1 | 0 / 8 |
+| frontmatter hot update | 50 | 6.33 | 86 | 1.7 | 0 | +60 | 6.34 / 1.7 | 0 / 8 |
+| block edit | 50 | 6.42 | 90 | 1.8 | 0 | +80 | 6.43 / 1.8 | 0 / 8 |
+| rolling journal | 50 | 6.59 | 168 | 3.4 | +20 | +140 | 6.59 / 3.2 | 0 / 8 |
+| task churn | 50 | 6.64 | 57 | 1.1 | 0 | +60 | 6.63 / 0.9 | 0 / 8 |
+| link churn | 50 | 6.75 | 102 | 2.0 | +30 | +60 | 6.74 / 2.2 | 0 / 8 |
+| delete / recreate | 20 | 6.87 | 127 | 6.3 | +10 | +120 | 6.87 / 6.6 | 0 / 8 |
+| gc (default sweep) | | 6.88 | 8 | | 0 | 0 | 6.88 / 8 KB | 0 / 8 |
+
+**No measurable change, as expected.** The import is **28.6× the source**
+and the final database **31.5×** — the 3b numbers to the decimal; the file
+is −8 KB after the import (one page), +12 KB after the task churn and equal
+after the journal, the recreate and the gc. The two new columns live only
+between a commit and its file write: `pending_materializations` holds 0
+rows at every stage (the CLI materializes each row in the same process,
+phase B′) and its 8 KB is the empty table's one page, as in every run since
+14.0. `id_claims` is identical to 3b at every stage (4,608 after the
+import, 5,243 at the end); the history tables are row for row the 3b run's
+except the seeded churn's usual ±2 (`dispositions`/`block_changes` 3,824
+vs 3,822, `tree_nodes` 1,000 vs 1,001 — the 3a run had 3,824 and 1,001
+too). Nothing in this slice adds a row to a steady-state database: what it
+removes is a *dependency* — the materializer, recovery and the retention
+plan no longer read `revisions` to render or recognise a pending file — and
+a dependency weighs nothing in `doctor --size`.
+
+Latency (p50 / p95 ms, process start ~270 / 492 included): import 1,416;
+one write 258–285 / 278–357; `query` docs 247 / 291, blocks filter 237 /
+274, `text("furnace")` 337 / 361, links 232 / 248; `outline` 276 / 336;
+`gc` 308. Every row sits ~50–110 ms above the 3b TS run's, and so does the
+process start itself (`spawn-baseline` 270 vs 163 ms p50, 492 vs 224 p95)
+— the machine, not the engine: net of the spawn the writes are 0–15 ms
+over it (3b: ~60 ms), the reads the same, and the commit path gained one
+`SELECT` of the pending row at the path (the supersession read) and lost a
+`revisions` self-join per materialized file.
+
 ### 17.0 (3a), Rust — the twin, same harness (`rust-2026-10-25T19-55-20`)
 
 The Rust twin of 3a (`crates/omgbase-store` at schema 17, release build of

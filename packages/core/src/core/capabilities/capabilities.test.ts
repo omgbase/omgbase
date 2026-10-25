@@ -60,9 +60,9 @@ describe("capabilities", () => {
     // 17.0: the current frontmatter is the doc row's own (`currentFrontmatterRaw(db, docId)`), no longer a recorder read.
     expect(currentFrontmatterRaw(store.db, r2.docId)).toBe("---\ntitle: Seam\n---");
     expect(docsRead(store, r2.docId)?._raw).toBe(DOC.replace("One", "Two"));
-    expect(history.renderedHash(r2.revId)?.toString("hex")).toBe(docsRead(store, r2.docId) && (store.db.prepare("SELECT lower(hex(file_hash)) h FROM docs WHERE doc_id = ?").get(r2.docId) as { h: string }).h);
-    expect(history.priorRenderedHash(r2.revId)).toEqual(history.renderedHash(r1.revId));
-    expect(history.priorRenderedHash(r1.revId)).toBeNull();
+    // 17.0 (3c): no current-state read goes through the recorder — `renderedHash`/`priorRenderedHash` are gone (the pending row carries `prior_hash`).
+    expect("renderedHash" in history).toBe(false);
+    expect("priorRenderedHash" in history).toBe(false);
     expect(history.docsHistory(repoId, { doc: r1.docId }).docs[0]?.versions.map((v) => v._rev)).toEqual([r1.revId, r2.revId]);
     expect(history.changesSince(repoId).digests.map((d) => d.commit)).toEqual([r1.commitId, r2.commitId]);
     expect(history.diffUnified(r1.docId, r1.revId, r2.revId)).toContain("+Two paragraph.");

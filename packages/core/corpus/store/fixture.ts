@@ -5,7 +5,7 @@
 //   runMigrationCase()      §9.3: authored pre-state → open with the reference → projection (or the refusal)
 //   runObserveCase()        §9.4: run an observation script through the production observe path,
 //                           check the §8 invariants after every observe step, project the tables
-//   checkInvariants()       README §8 on a store: the core invariants C1–C7 and, with legacy capture on, H1–H5/I10
+//   checkInvariants()       README §8 on a store: the core invariants C1–C8 and, with legacy capture on, H1–H5/I10
 //   projectStore()          the §9.4 table projection (ordering, hex hashes, JSON attrs/detail)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
@@ -652,7 +652,7 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
     .sort((a, b) => cmp(a.doc_id as string, b.doc_id as string) || (a.first_ordinal as number) - (b.first_ordinal as number));
 
   const pending_materializations = (db
-    .prepare("SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ? ORDER BY path")
+    .prepare("SELECT path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at FROM pending_materializations WHERE repo_id = ? ORDER BY path")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
 
   // 15.0: the recorded segments, `path` reduced to its file name (the directory
@@ -683,7 +683,7 @@ export function projectClaims(db: Db, repoId: string): Row[] {
 // ---- invariants (README §8) --------------------------------------------------------------
 
 /**
- * README §8 on a store (17.0): the core invariants C1–C7 — convergence from the
+ * README §8 on a store (17.0): the core invariants C1–C8 — convergence from the
  * rows alone, row hashes, the head present, the timestamps — and, legacy
  * capture being on for every repository through Phase 3, the history
  * invariants H1–H5 (I2, I4–I10 of 16.0, with I3 restated as the recorder's
@@ -838,6 +838,43 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if (d.created_at > d.updated_at) problems.push(`C7: doc ${d.doc_id} created_at ${d.created_at} > updated_at ${d.updated_at}`);
     if (d.deleted_at === null && d.head === null) problems.push(`C4: live doc ${d.doc_id} (${d.path}) has no head`);
     if (d.deleted_at !== null && d.deleted_at !== d.updated_at) problems.push(`C7: tombstoned doc ${d.doc_id} deleted_at ${d.deleted_at} != updated_at ${d.updated_at}`);
+  }
+
+  // ---- C8 pending rows (17.0, M4): self-contained against the current rows ----------------
+  // A `write`/`rename` row names a live document's current head and the bytes
+  // that head renders to (`rendered_hash == docs.file_hash == sha256(reconstruct)`);
+  // a `remove` row names a tombstoned document, no head, no prior, the bytes it
+  // owes an unlink (`docs.file_hash` before the tombstone). `prior_hash` is
+  // defined, not derivable (the bytes it names left the store), so only its
+  // nullness is checked. Kind and `from_path` agree; `commit_id` is a `c_` id
+  // and, with capture on, a `commits` row whose `ts` is `created_at`.
+  const pendingRows = db
+    .prepare("SELECT path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at FROM pending_materializations WHERE repo_id = ? ORDER BY path")
+    .all(repoId) as { path: string; kind: string; from_path: string | null; doc_id: string; head: string | null; rendered_hash: Buffer; prior_hash: Buffer | null; commit_id: string; created_at: string }[];
+  for (const p of pendingRows) {
+    const at = `pending ${p.kind} at ${p.path}`;
+    const d = docById.get(p.doc_id);
+    if (!d) {
+      problems.push(`C8: ${at} names no docs row (${p.doc_id})`);
+      continue;
+    }
+    if ((p.kind === "rename") !== (p.from_path !== null)) problems.push(`C8: ${at} from_path ${p.from_path} disagrees with its kind`);
+    if (!TS_RE.test(p.created_at)) problems.push(`C8: ${at} created_at ${p.created_at} is not a §2.4 timestamp`);
+    if (!p.commit_id.startsWith("c_")) problems.push(`C8: ${at} commit_id ${p.commit_id} is not a c_ id`);
+    const c = commitById.get(p.commit_id);
+    if (c && c.ts !== p.created_at) problems.push(`C8: ${at} created_at ${p.created_at} != its commit's ts ${c.ts}`);
+    if (p.kind === "remove") {
+      if (p.head !== null) problems.push(`C8: ${at} carries a head (${p.head})`);
+      if (p.prior_hash !== null) problems.push(`C8: ${at} carries a prior_hash`);
+      if (d.deleted_at === null) problems.push(`C8: ${at} names a live document`);
+      if (d.file_hash && !p.rendered_hash.equals(d.file_hash)) problems.push(`C8: ${at} rendered_hash != the tombstoned document's file_hash`);
+      continue;
+    }
+    if (d.deleted_at !== null) problems.push(`C8: ${at} names a tombstoned document`);
+    if (p.head === null || p.head !== d.head) problems.push(`C8: ${at} head ${p.head} != docs.head ${d.head}`);
+    if (!d.file_hash || !p.rendered_hash.equals(d.file_hash)) problems.push(`C8: ${at} rendered_hash != docs.file_hash`);
+    const bytes = reconstructContent(db, p.doc_id);
+    if (bytes === null || !sha256(bytes).equals(p.rendered_hash)) problems.push(`C8: ${at} reconstruct(doc) does not hash to rendered_hash`);
   }
 
   // ---- C1 convergence from the rows; H1/H3 the recorder's capture agrees with the head ----

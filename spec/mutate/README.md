@@ -358,9 +358,22 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path,
      before it, every disposition the api rule's `inserted / 1 / api / null`
      (through 2.x a create was a reconciling ingest and its dispositions
      carried a matcher version — §10 "Changed (3.0)"); finally one **pending row** per file the
-     request owes the disk (`spec/store` §5.4 "The api path (14.0)": `write`
-     per ingested document with its new revision and rendered hash; the
-     document operations' `rename`/`remove` rows, §6). COMMIT. Mint order:
+     request owes the disk (`spec/store` §5.4 "The api path (14.0)", §5.7;
+     self-contained since store 17.0 — M4): `write` per ingested document
+     with its new `head`, `rendered_hash` and **`prior_hash` = the hash of
+     the bytes (a) read for that path** — the `file_hash` this transaction
+     validated against, the bytes the engine itself last wrote there (NULL
+     when the file was absent — a `create`); the document operations'
+     `rename` (`prior_hash` = (a)'s hash at `from_path`, i.e. the moved
+     document's `file_hash`) and `remove` (`head = NULL`, `prior_hash =
+     NULL`) rows, §6; `commit_id` this commit, `created_at` its `ts`. A row
+     the path already owes is superseded by `spec/store` §5.7's rules — a
+     later write replaces the target and keeps the EARLIEST `prior_hash`, a
+     rename carries the obligation of the row at `from_path`, a remove
+     drops the write (`materialize::move-after-crashed-write-carries-the-
+     write-obligation`, `delete-after-crashed-write-drops-the-write`,
+     `move-self-link-crash-row-is-a-rename-with-the-retargets-target`).
+     COMMIT. Mint order:
      one `c`, then per document `r`, `x`, `e`. A failure anywhere in (b)
      rolls back every document — no commit row, no revision, no block row,
      no pending row, no file touched;
@@ -368,11 +381,13 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path,
      request recorded is materialized through the doc store (`spec/store`
      §5.7 — the rendered bytes written atomically, temp file fsynced then
      renamed; a moved file renamed; a deleted file unlinked if it still
-     holds the deleted revision's bytes), the freshness stat cache refreshed
+     holds the deleted document's bytes), the freshness stat cache refreshed
      for each file that landed, and the row deleted as its file is done.
      The bytes the materializer may overwrite are the ones (b) validated the
-     file against (the prior `file_hash`); a file a human changed in
-     between keeps its row and the next observation lets it win. A crash or
+     file against — **the row's `prior_hash`** (store 17.0: the row carries
+     it, so a replay after a crash makes the same decision from the row
+     alone, with no history read); a file a human changed in between keeps
+     its row and the next observation lets it win. A crash or
      a failed write here leaves the commit durable and the remaining rows
      pending for the next materializer (the sweep's step 0, recovery, the
      next request touching the path — `spec/store` §5.7).
@@ -758,9 +773,11 @@ one place §11.9's lines are pinned, since a recorded Plan omits its
 `preview`); `canonical` → `{ json, digest }`. After the last step: `files` (path → bytes
 of the in-memory doc store), and the `spec/store` §9.4 projection of `docs`,
 `blocks`, `commits`, `revisions`, `dispositions`, `resurrection_pool`,
-`pending_materializations` (14.0; `[]` unless a step crashed). The fixture
-minter (`spec/store` §2.2) makes the op-minted `b` ids and the commit ids
-comparable.
+`pending_materializations` (14.0; `[]` unless a step crashed — rows as
+`spec/store` §9.4 projects them: `{ path, kind, from_path, doc_id, head,
+rendered_hash, prior_hash, commit_id, created_at }` since store 17.0). The
+fixture minter (`spec/store` §2.2) makes the op-minted `b` ids and the
+commit ids comparable.
 
 Suites: `ops.json` (each op, each error), `render.json` (list renumbering,
 blockquote rebuild, table delimiter, tight/loose lists, nested items),
@@ -772,7 +789,11 @@ retile, fallback to replace, non-convergent plan refused, stale plan),
 `materialize.json` (2.2: a crash after COMMIT and what each later step — a
 `materialize`, an observation of the stale, the rendered, new or absent
 file, a second request — does with the pending rows, for `apply`, `create`,
-`set_meta`, `delete` and `move`), `effects.json` (2.3, §11: every lowering
+`set_meta`, `delete` and `move`; store 17.0 adds the supersession cases of
+`spec/store` §5.7 — the self-linking move's `rename` row carrying the
+retarget's target and the move's prior, a move after a crashed write
+carrying the write's obligation, a delete after a crashed write dropping
+the write), `effects.json` (2.3, §11: every lowering
 row once, each conflict rule, `plan` → `execute` vs the one-shot `apply`,
 the dry run that burns no id, `stale_plan` after an observation and on
 replay, the digest form equal and mismatched, an unsupported plan version,
@@ -821,6 +842,25 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
+- **Changed (store 17.0, slice 3c — M4) — the pending row is self-contained.**
+  The row §4 step 5 (b) records carries `head` (the token whose bytes it
+  renders; `rev_id` through store 16.x), `prior_hash` (the hash (a) read
+  and (b) validated the file against — captured at commit time; through
+  16.x the materializer derived it from the revision before the row's, a
+  history read) and `created_at`, with no foreign key into the recorder's
+  tables; the materializer renders from the document's current rows. The
+  observable consequences are pinned in `materialize.json`: every crash
+  case's row shows the three columns, and three new cases pin the
+  supersession rules (`spec/store` §5.7). One rule has no cross-request
+  fixture by construction: a later `write` to a path that still owes a
+  `write` would keep the earliest `prior_hash`, but step 5 (a) replays the
+  owed row before any commit and a row that survives the replay holds
+  foreign bytes, which (b) then refuses as `sync_conflict` (the row goes
+  with the observed ingest) — so the rule is reachable only within one
+  request (the self-linking move: `move-self-link-crash-row-is-a-rename-
+  with-the-retargets-target`) and is otherwise a unit-tested property of
+  the row writer. No request or response shape changes; the version is
+  the phase's.
 - **Fixed (1.2) — an insert or move into a leaf block destroyed it.** `to.parent`
   naming a heading (or any leaf) resolved to its empty `children`; the block
   landed there, the leaf was marked dirty and re-rendered from its children,

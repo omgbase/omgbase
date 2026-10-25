@@ -80,12 +80,10 @@ export interface HistoryRecorder {
   /** Step 15: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
   recordDispositions(commitId: string, dispositions: readonly DispositionRow[]): void;
 
-  // ---- current state read THROUGH history (M4 retires both in Phase 3c; M1 retired `currentFrontmatterRaw`/`movePath` in 3a) ----
-
-  /** A revision's `rendered_hash` — the bytes a `rename` row expects at `to` (inventory-ts §2.4 row `move_path`; M4). */
-  renderedHash(revId: string): Buffer | null;
-  /** The `rendered_hash` of the revision BEFORE `revId` of the same document — the materializer's prior-bytes rule (inventory-ts §2.4 row `priorRenderedHash`; M4). */
-  priorRenderedHash(revId: string | null): Buffer | null;
+  // (No current-state read goes THROUGH history any more: M1 retired
+  // `currentFrontmatterRaw`/`movePath` in 3a; M4 retired `renderedHash`/
+  // `priorRenderedHash` in 3c — the pending row carries `prior_hash` and the
+  // materializer renders from the current rows.)
 
   // ---- the surface's reads (spec/surface §3) ----
 

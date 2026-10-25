@@ -167,7 +167,15 @@ apply(changeset):
     the source document's row. This ingest persists blobs, tree_nodes, the
     revision + commit, edge extraction and index maintenance — and, last, one
     `pending_materializations` row per file effect (write / rename / remove,
-    with the hash the file must have; store 14.0). The commit timestamp
+    with the hash the file must have; store 14.0) — self-contained since
+    store 17.0 (M4): the row carries the `head` it renders, `rendered_hash`,
+    `prior_hash` (the `file_hash` this transaction validated the file
+    against — the bytes the engine last wrote there, which a replay may
+    overwrite; NULL for a created document) and `created_at`, with no foreign
+    key into the recorder's tables; a row already owed at the path is
+    superseded (`spec/store` §5.7: a write replaces the target and keeps the
+    earliest `prior_hash`, a rename carries the obligation of a write at
+    `from_path`, a remove drops the write). The commit timestamp
     defaults to now; callers may pin it (`ApplyRequest.ts`, `DocOpContext.ts`,
     `ApplyOpsetRequest.ts`) — the spec fixtures do, so `commits.ts` compares
     across engines. A failure anywhere in here rolls back every document and
@@ -179,7 +187,9 @@ apply(changeset):
     the recorded hash; delete each row as its file lands. A crash here leaves
     rows behind: the next write's materializer, the freshness sweep's step 0 or
     `recoverRepo` replays them with the api intent, commit and change-feed
-    digest intact; an observation of a pending path meanwhile treats bytes that
+    digest intact — rendering the document's CURRENT rows (`reconstruct`) and
+    recognising the engine's own stale file by the row's `prior_hash`, never
+    by a history read; an observation of a pending path meanwhile treats bytes that
     hash to the recorded hash as an echo, a missing file as "not yet written"
     (no tombstone), and anything else as a human edit that wins (ADR-004).
  7. refresh the freshness stat cache (recordFileStat) so a later sweep won't
@@ -188,7 +198,7 @@ apply(changeset):
  8. return results
 ```
 
-Crash safety: the file is written (step 5) before the commit is recorded (step 6); on startup / the next freshness sweep the engine reconciles any file whose content hash ≠ its stored `file_hash` (the normal ingest path heals a crash between the write and the commit — the write is simply observed).
+Crash safety: the commit is recorded (step 5) before the file is written (step 6, DB-first since store 14.0); on startup / the next freshness sweep the engine first replays the pending rows (step 0) and then reconciles any file whose content hash ≠ its stored `file_hash` (the normal ingest path heals a human edit that landed meanwhile — the file wins and the row goes with it).
 
 ## 7. Deletion semantics
 

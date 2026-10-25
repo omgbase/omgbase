@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
-import { deletePending, insertPending, materializeRow, readPending, type PendingRow } from "./materialize.js";
+import { deletePending, insertPending, materializeRow, readPending, supersede, type PendingRow } from "./materialize.js";
 import { requireHistory } from "../core/capabilities/registry.js";
 import { mintId } from "../core/ids.js";
 import { claimsOf } from "../core/capabilities/registry.js";
@@ -38,9 +38,14 @@ import { MutationError, type MutDoc } from "./tree.js";
 //      (`path_taken`, `doc_missing`) — THEN `newCommit`, then per effect
 //      `ingestInto` under that commit, the path change + edge re-point, the
 //      tombstone; finally one `pending_materializations` row per file the
-//      request owes the disk (`write` / `rename` / `remove`, spec/store §5.7).
-//      Validating before the mint means a conflict found here rolls back having
-//      minted nothing — no `c`/`d` id is burned — and having touched no file;
+//      request owes the disk (`write` / `rename` / `remove`, spec/store §5.7),
+//      each carrying what its replay needs — the head it renders, the bytes
+//      expected, and `prior_hash`: the bytes the engine itself last wrote at
+//      the path, which is the `file_hash` this transaction validated the file
+//      against (17.0, M4 — a replay recognises the engine's own stale file by
+//      the row, never by a history read). Validating before the mint means a
+//      conflict found here rolls back having minted nothing — no `c`/`d` id is
+//      burned — and having touched no file;
 //   B'. after COMMIT, in effect order: materialize each effect's row through
 //      the DocStore (`mutate/materialize.ts`: write the rendered bytes, rename
 //      the moved file, unlink the deleted one — each only over bytes the engine
@@ -289,7 +294,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
               resolveIds: makeKnownIdResolver(store, repoId, e.mutDoc, e.priorIds, { path: e.path }),
             });
             ingests.push(res);
-            recordWrite(pending, e.path, res, sha256(e.rendered), commitId);
+            recordWrite(pending, e.path, res, sha256(e.rendered), e.base ? fromHex(e.base.fileHash) : null, commitId, ts);
             break;
           }
           case "ingest_reconciled": {
@@ -299,16 +304,31 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
               resolveIds: makeReconcilingResolver(store, repoId, { ts, path: e.path }),
             });
             ingests.push(res);
-            recordWrite(pending, e.path, res, sha256(e.source), commitId);
+            recordWrite(pending, e.path, res, sha256(e.source), e.precondition ? fromHex(e.precondition.base.fileHash) : null, commitId, ts);
             break;
           }
           case "move_path": {
+            // A `write`/`rename` row still owed at `from` (an earlier request's
+            // unfinished file half) is superseded by this rename, which carries
+            // its obligation: the bytes the engine must still recognise at `from`
+            // are that row's `prior_hash`, and the row goes (spec/store §5.7
+            // "Supersession"). Read before the move rewrites the document's row.
+            const owedAtFrom = pending.get(e.from) ?? readPending(db, repoId, e.from);
             const moved = movePath(db, e, ts, commitId, !rewrittenLater.has(e.docId));
             moves.push(moved);
             // The bytes expected at `to`: the moved document's current bytes —
             // `docs.file_hash` (I1) — under its new head (a self-linking source's
-            // retarget below replaces both with its own).
-            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: moved.head ?? e.currentRev, renderedHash: moved.fileHashHex === null ? sha256(e.bytes) : Buffer.from(moved.fileHashHex, "hex"), commitId });
+            // retarget below replaces both with its own). The prior at `from` is
+            // the same hash — what the engine last wrote there — unless a pending
+            // row says the disk never caught up with it.
+            const current = moved.fileHashHex === null ? sha256(e.bytes) : Buffer.from(moved.fileHashHex, "hex");
+            let prior: Buffer | null = current;
+            if (owedAtFrom && owedAtFrom.kind !== "remove") {
+              prior = owedAtFrom.priorHash;
+              pending.delete(e.from);
+              deletePending(db, repoId, e.from);
+            }
+            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, head: moved.head ?? e.currentRev, renderedHash: current, priorHash: prior, commitId, createdAt: ts });
             break;
           }
           case "tombstone": {
@@ -317,7 +337,8 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
             // observed bytes when it never had a head).
             const row = db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(e.docId) as { file_hash: Buffer | null } | undefined;
             tombstone(db, commitId, ts, e);
-            pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, revId: null, renderedHash: row?.file_hash ?? sha256(""), commitId });
+            // A remove drops whatever the path owed (spec/store §5.7 "Supersession"): no prior, no head.
+            pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, head: null, renderedHash: row?.file_hash ?? sha256(""), priorHash: null, commitId, createdAt: ts });
             break;
           }
           default:
@@ -335,28 +356,29 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   }
 
   // Phase B' — the file half, in effect order, each row deleted as its file
-  // lands. The stat cache follows only a file that landed: a path whose row was
-  // kept (foreign bytes) must stay a candidate for the next sweep, which is
-  // what lets the human's edit win.
+  // lands; the row itself says which bytes may be overwritten (`prior_hash`).
+  // The stat cache follows only a file that landed: a path whose row was kept
+  // (foreign bytes) must stay a candidate for the next sweep, which is what
+  // lets the human's edit win.
   const landed = new Set<string>();
-  const land = (path: string, priorHash: Buffer | null | undefined): void => {
+  const land = (path: string): void => {
     const row = readPending(store.db, repoId, path);
     if (!row) return;
-    if (materializeRow(store, repoId, row, docStore, priorHash === undefined ? {} : { priorHash })) landed.add(path);
+    if (materializeRow(store, repoId, row, docStore)) landed.add(path);
   };
   for (const e of effects) {
     switch (e.kind) {
       case "ingest_known":
-        land(e.path, e.base ? fromHex(e.base.fileHash) : null);
+        land(e.path);
         break;
       case "ingest_reconciled":
-        land(e.path, e.precondition ? fromHex(e.precondition.base.fileHash) : null);
+        land(e.path);
         break;
       case "move_path":
-        land(e.to, undefined);
+        land(e.to);
         break;
       case "tombstone":
-        land(e.path, undefined);
+        land(e.path);
         break;
       case "record_stat":
         if (landed.has(e.path)) docStore.recordStat(store, repoId, e.path, e.bytes);
@@ -371,16 +393,15 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
 }
 
 // The row the file at `path` must become after an ingest: a `write` of the
-// revision's bytes — unless a `rename` already lands the moved document there
-// (the self-linking source of a `docs_move`), which then renders THESE bytes.
-function recordWrite(pending: Map<string, PendingRow>, path: string, res: IngestResult, renderedHash: Buffer, commitId: string): void {
-  const existing = pending.get(path);
-  if (existing && existing.kind === "rename") {
-    existing.revId = res.revId;
-    existing.renderedHash = renderedHash;
-    return;
-  }
-  pending.set(path, { path, kind: "write", fromPath: null, docId: res.docId, revId: res.revId, renderedHash, commitId });
+// document's bytes under its new head, with `prior_hash` = the `file_hash`
+// the transaction validated the file against (`null` for a created document:
+// the engine never wrote there) — unless a `rename` already lands the moved
+// document there (the self-linking source of a `docs_move`), which then
+// renders THESE bytes (`supersede`: the rename and its prior stay, the target
+// is replaced). The same rule is applied again against the database's row at
+// the path when the transaction inserts (`insertPending`).
+function recordWrite(pending: Map<string, PendingRow>, path: string, res: IngestResult, renderedHash: Buffer, priorHash: Buffer | null, commitId: string, ts: string): void {
+  pending.set(path, supersede(pending.get(path) ?? null, { path, kind: "write", fromPath: null, docId: res.docId, head: res.revId, renderedHash, priorHash, commitId, createdAt: ts }));
 }
 
 // Every path whose file an effect reads or leaves: where a pending row of an

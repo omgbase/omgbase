@@ -116,22 +116,6 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     this.store.capabilities.claims.hold(held);
   }
 
-  // ---- current state through history (M4, Phase 3c retires these) ----
-
-  renderedHash(revId: string): Buffer | null {
-    const row = this.store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(revId) as { rendered_hash: Buffer } | undefined;
-    return row?.rendered_hash ?? null;
-  }
-
-  /** The rendered hash of the revision BEFORE `revId` of the same document, or null for a first revision / an unknown one. */
-  priorRenderedHash(revId: string | null): Buffer | null {
-    if (revId === null) return null;
-    const r = this.store.db
-      .prepare("SELECT p.rendered_hash FROM revisions r JOIN revisions p ON p.doc_id = r.doc_id AND p.seq = r.seq - 1 WHERE r.rev_id = ?")
-      .get(revId) as { rendered_hash: Buffer } | undefined;
-    return r?.rendered_hash ?? null;
-  }
-
   // ---- the surface's reads ----
 
   readAtRevision(docId: string, revId: string): DocsReadAtResult | null {

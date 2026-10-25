@@ -1511,7 +1511,7 @@
               },
               {
                 "cid": 5,
-                "name": "rev_id",
+                "name": "head",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -1527,7 +1527,23 @@
               },
               {
                 "cid": 7,
+                "name": "prior_hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
                 "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "created_at",
                 "type": "TEXT",
                 "notnull": 1,
                 "dflt_value": null,
@@ -1535,16 +1551,6 @@
               }
             ],
             "foreign_keys": [
-              {
-                "from": "commit_id",
-                "table": "commits",
-                "to": "commit_id"
-              },
-              {
-                "from": "rev_id",
-                "table": "revisions",
-                "to": "rev_id"
-              },
               {
                 "from": "doc_id",
                 "table": "docs",

@@ -177,9 +177,11 @@ CREATE TABLE IF NOT EXISTS pending_materializations (
   kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
   from_path     TEXT,                          -- rename: the old path
   doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
-  rev_id        TEXT REFERENCES revisions(rev_id),   -- write/rename: the revision the bytes render (NULL for remove)
+  head          TEXT,                          -- write/rename: the head token whose bytes the row renders (NULL for remove); no FK
   rendered_hash BLOB NOT NULL,                 -- the bytes expected at path (remove: the bytes it is safe to unlink)
-  commit_id     TEXT NOT NULL REFERENCES commits(commit_id),
+  prior_hash    BLOB,                          -- the bytes the engine itself last wrote at path, captured at commit (NULL when none)
+  commit_id     TEXT NOT NULL,                 -- the api commit that recorded it; no FK
+  created_at    TEXT NOT NULL,                 -- that commit's ts
   PRIMARY KEY (repo_id, path)
 );
 

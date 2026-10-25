@@ -16,7 +16,7 @@ import { apply, planChangeset } from "./apply.js";
 import { commitChangeset } from "./commit.js";
 import { docsCreate, docsDelete, docsMove } from "./doc-ops.test.helpers.js";
 import { FsDocStore } from "./doc-store.js";
-import { listPending, materializePending, readPending } from "./materialize.js";
+import { insertPending, listPending, materializePending, readPending, supersede, type PendingRow } from "./materialize.js";
 import { MutationError } from "./tree.js";
 
 // DB-first materialization (spec/store 14.0 §5.7; spec/mutate §4 step 5 (c)).
@@ -258,6 +258,88 @@ describe("docs_delete and docs_move materialize", () => {
     expect(res.committed).toBe(true);
     expect(readFileSync(join(dir, "new.md"), "utf8")).toBe("a stray file\n");
     expect(pending()).toEqual([{ path: "new.md", kind: "write", from: null }]);
+  });
+});
+
+describe("the self-contained row (store 17.0, M4)", () => {
+  const row = (over: Partial<PendingRow>): PendingRow => ({ path: "a.md", kind: "write", fromPath: null, docId: "d_x", head: "r_1", renderedHash: sha256("one"), priorHash: sha256("zero"), commitId: "c_1", createdAt: "2026-01-01T00:00:00.000Z", ...over });
+
+  it("supersede: a write replaces the target and keeps the earliest prior; a rename stays a rename; a remove drops everything", () => {
+    const first = row({});
+    const second = row({ head: "r_2", renderedHash: sha256("two"), priorHash: sha256("one"), commitId: "c_2", createdAt: "2026-01-02T00:00:00.000Z" });
+    expect(supersede(null, second)).toEqual(second);
+    // write over write: the target is the second's, the prior the first's
+    expect(supersede(first, second)).toEqual({ ...second, priorHash: sha256("zero") });
+    // a first write whose prior was null (a create) stays null: the engine never wrote there
+    expect(supersede(row({ priorHash: null }), second).priorHash).toBeNull();
+    // write over remove: the prior is the bytes the remove owed an unlink
+    const remove = row({ kind: "remove", head: null, priorHash: null, renderedHash: sha256("old doc") });
+    expect(supersede(remove, second)).toEqual({ ...second, priorHash: sha256("old doc") });
+    // write over rename: the rename, its from_path and its prior stay; the target is the write's
+    const rename = row({ kind: "rename", fromPath: "from.md", head: "r_m", renderedHash: sha256("moved"), priorHash: sha256("moved") });
+    expect(supersede(rename, second)).toEqual({ ...rename, head: "r_2", renderedHash: sha256("two"), commitId: "c_2", createdAt: "2026-01-02T00:00:00.000Z" });
+    // a rename or a remove over anything replaces it
+    expect(supersede(first, rename)).toEqual(rename);
+    expect(supersede(rename, remove)).toEqual(remove);
+  });
+
+  it("insertPending applies the rule against the database's row at the path", () => {
+    const a = save("a.md", "# A\n\nAlpha.\n");
+    insertPending(store.db, repoId, row({ docId: a, priorHash: sha256("disk zero") }));
+    insertPending(store.db, repoId, row({ docId: a, head: "r_2", renderedHash: sha256("two"), priorHash: sha256("one"), commitId: "c_2" }));
+    const got = readPending(store.db, repoId, "a.md")!;
+    expect(got.head).toBe("r_2");
+    expect(got.renderedHash.equals(sha256("two"))).toBe(true);
+    expect(got.priorHash!.equals(sha256("disk zero"))).toBe(true);
+    expect(got.commitId).toBe("c_2");
+    expect(listPending(store.db, repoId)).toHaveLength(1);
+  });
+
+  it("a committed write row carries the head, the validated file_hash as prior_hash and the commit's ts", () => {
+    const a = save("a.md", "# A\n\nAlpha.\n");
+    const ts = "2026-09-26T10:01:00.000Z";
+    expect(() => apply(store, { repoId, docStore: new Crashing(dir), ops: [appendOp(a, "A tail.")], origin: { actor: "agent:test" }, ts })).toThrow(/injected/);
+    const r = readPending(store.db, repoId, "a.md")!;
+    const doc = store.db.prepare("SELECT head, file_hash FROM docs WHERE doc_id = ?").get(a) as { head: string; file_hash: Buffer };
+    expect(r.head).toBe(doc.head);
+    expect(r.renderedHash.equals(doc.file_hash)).toBe(true);
+    expect(r.priorHash!.equals(sha256("# A\n\nAlpha.\n"))).toBe(true);
+    expect(r.createdAt).toBe(ts);
+    expect(r.commitId).toBe(commits()[commits().length - 1]!.commit_id);
+    // No revision pinned, no FK: the recorder's rows are not what the row depends on.
+    expect(store.db.prepare("SELECT sql FROM sqlite_schema WHERE name = 'pending_materializations'").pluck().get()).not.toMatch(/REFERENCES (revisions|commits)/);
+  });
+
+  it("recovery: prior_hash recognises the engine's own stale file and leaves a foreign edit alone (the heal then drops its row)", () => {
+    const a = save("a.md", "# A\n\nAlpha.\n");
+    const b = save("b.md", "# B\n\nBravo.\n");
+    expect(() => apply(store, { repoId, docStore: new Crashing(dir), ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test" } })).toThrow(/injected/);
+    // Reopen: another process recovers with nothing but the database and the disk.
+    store.close();
+    store = new Store({ path: dbPath() });
+    const human = "# B\n\nBravo, by a human.\n";
+    writeFileSync(join(dir, "b.md"), human);
+    const before = commits().length;
+    const res = recoverRepo(store, repoId, dir);
+    // a.md still held the prior bytes → recognised as the engine's own → written; b.md foreign → kept by the replay, then healed as observed and its row dropped.
+    expect(res).toEqual({ materialized: ["a.md"], healed: ["b.md"], missing: [] });
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n\nA tail.\n");
+    expect(readFileSync(join(dir, "b.md"), "utf8")).toBe(human);
+    expect(pending()).toEqual([]);
+    expect(commits()).toHaveLength(before + 1);
+    expect(commits()[commits().length - 1]).toMatchObject({ origin: "observed" });
+    expect((store.db.prepare("SELECT lower(hex(file_hash)) h FROM docs WHERE doc_id = ?").get(b) as { h: string }).h).toBe(sha256(human).toString("hex"));
+  });
+
+  it("a stale file that is neither the prior nor the rendered bytes is foreign to the replay", () => {
+    const a = save("a.md", "# A\n\nAlpha.\n");
+    apply(store, { repoId, docStore: new FsDocStore(dir), ops: [appendOp(a, "A tail.")], origin: { actor: "agent:test" } });
+    expect(() => apply(store, { repoId, docStore: new Crashing(dir), ops: [appendOp(a, "A second tail.")], origin: { actor: "agent:test" } })).toThrow(/injected/);
+    // The row's prior is the first apply's bytes; a revert to the ORIGINAL bytes is two revisions back — foreign.
+    writeFileSync(join(dir, "a.md"), "# A\n\nAlpha.\n");
+    expect(materializePending(store, repoId, new FsDocStore(dir))).toEqual([]);
+    expect(pending()).toHaveLength(1);
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n");
   });
 });
 
