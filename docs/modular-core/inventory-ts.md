@@ -689,7 +689,7 @@ Fixture suites (run by the conformance tests listed in §1 step 5 — e.g.
    of `current_rev`** (`admin.ts:45–48`), which I1 says is always false and
    `ingest.ts:499` guarantees by writing both from `sha256(content)`. It is a
    history join that can only ever return 0; the disk-drift scan is the real
-   signal (`admin.ts:50–52`).
+   signal (`admin.ts:54–56`).
 9. **`size.ts` files `resurrection_pool` and `pending_materializations` under
    "history"** (`size.ts:38–39`) while both are current-state mechanisms
    (identity threading, recovery intent); `checkpoints` is "sync". The modular
