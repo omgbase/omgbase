@@ -191,10 +191,10 @@ export async function drainRepo(store: Store, repoId: string, worker: EmbeddingW
   // Cleanup (S1). Every pass drops a tombstoned document's vectors; a full pass
   // also drops this model's block vectors whose content no live block carries.
   const cleanup = store.write((db) => {
-    const d = db.prepare("DELETE FROM doc_embeddings WHERE model = ? AND doc_id IN (SELECT doc_id FROM docs WHERE deleted_commit IS NOT NULL)").run(identity.model).changes;
+    const d = db.prepare("DELETE FROM doc_embeddings WHERE model = ? AND doc_id IN (SELECT doc_id FROM docs WHERE deleted_at IS NOT NULL)").run(identity.model).changes;
     const b = mode === "catch-up"
       ? 0
-      : db.prepare("DELETE FROM embeddings WHERE model = ? AND content_hash NOT IN (SELECT raw_hash FROM blocks WHERE deleted_commit IS NULL)").run(identity.model).changes;
+      : db.prepare("DELETE FROM embeddings WHERE model = ? AND content_hash NOT IN (SELECT raw_hash FROM blocks WHERE deleted_at IS NULL)").run(identity.model).changes;
     return { blocks: b, docs: d };
   });
   pruned = { blocks: pruned.blocks + cleanup.blocks, docs: pruned.docs + cleanup.docs };

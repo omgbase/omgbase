@@ -55,12 +55,17 @@ CREATE TABLE docs (
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
   path          TEXT NOT NULL,             -- repo-relative, canonical (no leading slash)
   format        TEXT NOT NULL DEFAULT 'markdown', -- adapter format: 'markdown', 'yaml', 'json', …
-  current_rev   TEXT,                      -- REFERENCES revisions(rev_id) (nullable during create)
-  file_hash     BLOB,                      -- sha256 of file bytes at last sync (convergence check)
+  head          TEXT,                      -- the head token (schema v17, D1): an r_ id the core mints on every change — content,
+                                           -- structure, path or liveness; equals revisions.rev_id while history is captured;
+                                           -- the CAS token (`rev`/`_rev`/`expect.revision`); `current_rev` through v16
+  file_hash     BLOB,                      -- sha256 of the bytes the head renders to (convergence check)
   conflicted    INTEGER NOT NULL DEFAULT 0,-- git conflict markers present; mutations refused
   leading_trivia TEXT NOT NULL DEFAULT '', -- bytes before the first block (document-leading trivia; 03 §2.3)
+  frontmatter_raw TEXT,                    -- the frontmatter block's raw, fences included (v17, D10: the current value — never a delta; NULL = none)
   frontmatter_trivia TEXT,                 -- separator between frontmatter and first body block (NULL = no frontmatter)
-  deleted_commit TEXT,                     -- tombstone; NULL = live
+  created_at    TEXT NOT NULL,             -- the identity's birth: the first commit's ts; survives tombstone and revival (v17, D6)
+  updated_at    TEXT NOT NULL,             -- the ts of the commit that last minted the head (a move and a tombstone count)
+  deleted_at    TEXT,                      -- tombstone; NULL = live (`deleted_commit` through v16)
   UNIQUE (repo_id, path)
 );
 -- Adapter-extracted properties (frontmatter, inline key:: value, computed $title/$tags)
@@ -80,17 +85,24 @@ CREATE TABLE blocks (
   type          TEXT NOT NULL,             -- format-qualified block kind: 'heading', 'yaml:mapping_entry', 'json:property', …
   attrs         TEXT NOT NULL DEFAULT '{}',-- JSON typed attrs: checked, lang, level, info, alt…
   text          TEXT NOT NULL,             -- normalized visible text (query/FTS source)
-  raw_hash      BLOB NOT NULL,             -- REFERENCES blobs(hash)
+  raw           TEXT NOT NULL,             -- the block's raw source, inline (v17, D10; through v16 only `blobs` held it)
+  raw_hash      BLOB NOT NULL,             -- sha256(raw): the CAS and dedup key (and the recorder's blobs key)
   norm_hash     BLOB NOT NULL,
-  trivia_hash   BLOB,                      -- trailing-trivia blob hash (NULL = no trivia)
-  created_commit TEXT NOT NULL,            -- the commit that last WROTE this row (rows are rebuilt per commit; a carried block does not keep its birth commit — spec/store §10)
-  deleted_commit TEXT                      -- tombstone; NULL = live
+  trivia        TEXT,                      -- trailing trivia, inline (NULL = none)
+  trivia_hash   BLOB,                      -- sha256(trivia) (NULL = no trivia)
+  created_at    TEXT NOT NULL,             -- the identity's birth, CARRIED across edits, resurrection (the pool row keeps it) and cross-doc moves (v17, D6)
+  updated_at    TEXT NOT NULL,             -- the block's own last change: the commit's ts unless its verdict was `same` (14.2's rule)
+  deleted_at    TEXT                       -- tombstone; NULL = live (a tombstoned doc keeps its rows through Phase 3 — D2 step one)
 );
-CREATE INDEX idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_commit IS NULL;
-CREATE INDEX idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_commit IS NULL;
+CREATE INDEX idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
+CREATE INDEX idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;
 CREATE INDEX idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
 
+-- The recorder's (v17, D10): written only by the history capture, read only by
+-- the history reads (docs_read { at }, docs_diff*); no current read touches it.
+-- With legacy capture on (every repository through Phase 3) the head's bytes
+-- therefore exist twice — on the rows above and here.
 CREATE TABLE blobs (
   hash   BLOB PRIMARY KEY,                 -- sha256(raw bytes)
   bytes  BLOB NOT NULL,
@@ -229,6 +241,7 @@ CREATE TABLE resurrection_pool (
   raw_hash       BLOB NOT NULL,
   norm_hash      BLOB NOT NULL,
   type           TEXT NOT NULL,
+  created_at     TEXT NOT NULL,            -- carried from the deleted row; a resurrection restores it (v17, D6)
   deleted_commit TEXT NOT NULL,
   expires_ts     TEXT NOT NULL             -- default now + 30 days (config)
 );
@@ -455,7 +468,8 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 - **Reading archived history.** `docs_read { at }`, `docs_read_at`, `docs_diff` and `docs_diff_unified` on an archived revision `ATTACH` its segment on demand (read-only; alias `arc_<segment_id>`) and reconstruct through it, byte for byte; when the segment is not recorded (`omg history detach`) or not on disk the read fails `revision_archived { rev, archive, path? }` until `omg history attach <file|dir>` records it again. `omg history list` shows every segment's commit range, revisions, bytes and state (`attached`, `missing`, `pending`, `detached`, `stale`). Archived dispositions are not read back through a segment (yet): `blocks_history` lists the live rows. Compression is at rest (`zstd` the file); a compressed segment is not attachable.
 - **Delta nodes and retention (schema v16, `spec/store` §4.4 "Base liveness", §7, §7.1).** The GC mark is *explicit*: a node marks the objects its own text names (every entry of a full node, the `+`/`~` entries of a delta) and never resolves a delta; what a delta keeps "as the base" is the previous revision's to mark, and the previous revision of a live delta revision is always live — the squash maintains that by re-writing a kept revision in checkpoint form (every list full, the frontmatter raw; `squashed.checkpointed` counts them) before archiving its predecessor. Archive segments hold checkpoint forms only (computed from the resolved trees at export), so a segment never walks back into the store; `archive.sql` is unchanged.
 - `omg gc` (flag-gated, off by default) is the same mark-and-sweep from the live revision roots; after a squash it finds nothing, since the squash swept inside its own transaction. `omg doctor --size` reports `archived { revisions, segments, bytes }` and advises `omg history export --prune` when the policy would archive more than a tenth of the history pages.
-- `resurrection_pool` rows expire by `expires_ts` (default 30 days) via lazy sweep at checkpoint time.
+- `resurrection_pool` rows expire by `expires_ts` (default 30 days) via lazy sweep at checkpoint time; a row carries the deleted block's `created_at` (v17) so a resurrected block keeps its birth.
+- **Schema v17 (`spec/store` 17.0, modular-core Phase 3a).** The current state is self-contained: `docs.head` (the head token the core mints on every change — content, structure, path or liveness; a `docs_move` mints one and is captured as a revision of the unchanged tree at the new path, a delete mints none), `docs.frontmatter_raw`, `blocks.raw`/`trivia` inline, `created_at`/`updated_at`/`deleted_at` on docs and blocks. No current read touches `blobs`, `revisions`, `tree_nodes`, `commits`, `block_changes` or the delta resolver; those tables are the recorder's capture, written on every commit while legacy capture is on and checked to AGREE with the head (`spec/store` §8 H1/H3). The core owns no byte GC: the mark-and-sweep above is the recorder's over its own revisions, and nothing a `blocks` row holds can be swept. Migration 17 rebuilds `docs`/`blocks`/`resurrection_pool` from the v16 history tables (`spec/store` §3.4).
 - `pending_materializations` rows live only between an api commit and its file write; the materializer (phase B' of the write, the freshness sweep's step 0, `recoverRepo`) or the next observation of the path deletes them. A long-lived row means a crashed write nobody has swept yet; it is never garbage.
 
 ## 8. Postgres dialect notes (deferred; do not build in v1)

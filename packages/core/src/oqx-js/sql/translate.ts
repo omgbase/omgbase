@@ -132,7 +132,7 @@ export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> =
 // the authored list and the computed hashtags) returns null → residual, and the
 // caller must NOT fall through to a property read (an engine name is never the
 // author's). `_updated_at` and `_created_at` (4.10) are correlated subqueries
-// over the document's revisions (`current_rev` / `seq = 1`); a block's are
+// over the document's revisions (`head` / `seq = 1`); a block's are
 // residual, as before. `_path` (and the edge field `_dst_path`) is the REFERENCE
 // form on the surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage
 // column>` in SQL — so every comparison, `startsWith`, `contains`, `lower()`…
@@ -157,14 +157,19 @@ function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
     case "_id": return text(`${self}.doc_id`);
     case "_path": return pathColumn(`${doc}.path`);
     case "_hash": return text(`lower(hex(${self}.file_hash))`);
-    // seam: HistoryRecorder → `docs.updated_at`/`created_at` columns (Phase 3, M2; inventory-ts §2.6 row `attributeSql` 160–161, 353–355, 377–379)
-    case "_updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
-    case "_created_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${self}.doc_id AND r.seq = 1)`);
+    // Plain column reads since store 17.0 (M2, D6; spec/surface §1.2) — through
+    // 16.x two correlated subqueries over `revisions × commits`.
+    case "_updated_at": return text(`${self}.updated_at`);
+    case "_created_at": return text(`${self}.created_at`);
   }
   else if (target === "blocks") switch (name) {
     case "_id": return text(`${self}.block_id`);
     case "_path": return pathColumn(`${doc}.path`);
     case "_hash": return text(`lower(hex(${self}.raw_hash))`);
+    // 17.0: pushable at last — the block's own columns (through 16.x the names
+    // were declared in ROW_ATTRIBUTES with no SQL case, so they stayed residual).
+    case "_updated_at": return text(`${self}.updated_at`);
+    case "_created_at": return text(`${self}.created_at`);
   }
   else if (target === "nodes") switch (name) {
     case "_id": return text(`${self}.node_id`);
@@ -352,8 +357,8 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "_id") return text(target === "links" ? `${self}.src_doc` : `${self}.doc_id`);
         if (k === "_path") return pathColumn(`${doc}.path`);
         if (k === "_hash") return text(`lower(hex(${doc}.file_hash))`);
-        if (k === "_updated_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${doc}.current_rev)`);
-        if (k === "_created_at") return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${doc}.doc_id AND r.seq = 1)`);
+        if (k === "_updated_at") return text(`${doc}.updated_at`);
+        if (k === "_created_at") return text(`${doc}.created_at`);
         if (k === "_format") return text(`${doc}.format`);
         if (k.startsWith("$") || k.startsWith("_")) return null; // `_doc._raw`, `_doc._title`, `_doc._nodes`, an unknown engine name: not pushable (decline (b))
         if (TARGETS.has(k)) return null; // a bare target name: the loud error, never a property
@@ -376,8 +381,8 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "_id") return probe("dd.doc_id");
         if (k === "_path") return probe("'/' || dd.path");
         if (k === "_hash") return probe("lower(hex(dd.file_hash))");
-        if (k === "_updated_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)");
-        if (k === "_created_at") return probe("(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)");
+        if (k === "_updated_at") return probe("dd.updated_at");
+        if (k === "_created_at") return probe("dd.created_at");
         if (k === "_format") return probe("dd.format");
         if (k.startsWith("$") || k.startsWith("_") || TARGETS.has(k)) return null;
         return propScalarOf(dstId, k);

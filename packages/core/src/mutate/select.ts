@@ -856,7 +856,7 @@ function scopeOf(store: Store, repoId: string, e: Record<string, unknown>, i: nu
 function parentLookup(store: Store): ShapeFixContext["parentOf"] {
   return (id) => {
     const row = store.db
-      .prepare("SELECT b.parent_block AS parent, d.path AS path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+      .prepare("SELECT b.parent_block AS parent, d.path AS path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL")
       .get(id) as { parent: string | null; path: string } | undefined;
     return row === undefined ? null : { parent: row.parent, path: row.path };
   };

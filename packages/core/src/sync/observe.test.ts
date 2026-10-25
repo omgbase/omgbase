@@ -43,12 +43,12 @@ describe("observeFile", () => {
 
   it("threads block identity across an edit (not a full re-mint)", () => {
     const first = observeFile(store, repoId, "a.md", "# Title\n\nAlpha.\n\nBeta.\n");
-    const blockIdsBefore = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(first.docId) as { block_id: string }[]).map((r) => r.block_id).sort();
+    const blockIdsBefore = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(first.docId) as { block_id: string }[]).map((r) => r.block_id).sort();
 
     // Edit only the second paragraph; the heading + first paragraph should keep ids.
     const second = observeFile(store, repoId, "a.md", "# Title\n\nAlpha.\n\nBeta edited.\n");
     expect(second.echo).toBe(false);
-    const blockIdsAfter = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(second.docId) as { block_id: string }[]).map((r) => r.block_id);
+    const blockIdsAfter = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(second.docId) as { block_id: string }[]).map((r) => r.block_id);
 
     // The unchanged blocks are carried, so their ids survive the re-ingest.
     const survived = blockIdsBefore.filter((id) => blockIdsAfter.includes(id));
@@ -96,7 +96,7 @@ describe("observeMany (batch)", () => {
     ]);
     expect(results).toHaveLength(2);
     expect(results.every((r) => !r.echo && r.rev !== null)).toBe(true);
-    expect((store.db.prepare("SELECT count(*) c FROM docs WHERE deleted_commit IS NULL").get() as { c: number }).c).toBe(2);
+    expect((store.db.prepare("SELECT count(*) c FROM docs WHERE deleted_at IS NULL").get() as { c: number }).c).toBe(2);
 
     // Re-observing an unchanged file in the batch is an echo; a changed one commits.
     const second = observeMany(store, repoId, [
@@ -133,16 +133,16 @@ describe("observeFile after observeDelete (re-creation)", () => {
     const first = observeFile(store, repoId, "a.md", content, { ts: "2026-09-26T10:00:00.000Z" });
     const gone = observeDelete(store, repoId, "a.md", { ts: "2026-09-26T10:01:00.000Z" });
     expect(gone.deleted).toBe(true);
-    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_commit: string | null };
-    expect(tombstoned.deleted_commit).not.toBeNull();
+    const tombstoned = store.db.prepare("SELECT deleted_at FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_at: string | null };
+    expect(tombstoned.deleted_at).not.toBeNull();
 
     const back = observeFile(store, repoId, "a.md", content, { ts: "2026-09-26T10:02:00.000Z" });
     expect(back.docId).toBe(first.docId); // the path keeps its identity
     expect(back.echo).toBe(false);
     expect(back.converged).toBe(true);
-    const revived = store.db.prepare("SELECT deleted_commit, current_rev FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_commit: string | null; current_rev: string };
-    expect(revived.deleted_commit).toBeNull();
-    expect(revived.current_rev).toBe(back.rev);
+    const revived = store.db.prepare("SELECT deleted_at, head FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_at: string | null; head: string };
+    expect(revived.deleted_at).toBeNull();
+    expect(revived.head).toBe(back.rev);
     // Every live block resurrected out of the pool, which is now empty.
     expect(back.dispositions).toEqual([{ kind: "resurrected", count: 2 }]);
     expect((store.db.prepare("SELECT count(*) c FROM resurrection_pool").get() as { c: number }).c).toBe(0);

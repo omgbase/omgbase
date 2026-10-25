@@ -42,13 +42,15 @@ export class Store {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
-    this.migrate();
     // The capabilities (modular-core Phase 1): bound to the connection so a
     // core path holding only `db` reaches them (`capabilitiesOf`). The
     // `cosine` SQL function is the semantic provider's to register (Phase 2):
-    // a core-only store has none.
+    // a core-only store has none. Bound BEFORE the migration since 17.0: step
+    // 17's backfill resolves every live head's frontmatter through the recorder
+    // (`frontmatterAtRevision`), never through the delta module directly.
     this.capabilities = (opts.capabilities ?? envCapabilities())(this);
     bindCapabilities(this.db, this.capabilities);
+    this.migrate();
     // Registered after the migration so every table the oracle reads exists.
     // (A migration's own mints — v13's `src_` per repo — are checked only
     // against the process's issued set; they land in tables that were empty.)
@@ -80,6 +82,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
+      if (v === 17) { this.migrateV17(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -226,6 +229,171 @@ ALTER TABLE revisions_v15 RENAME TO revisions;
       }
     }
     this.db.exec(ARCHIVES_DDL);
+  }
+
+  // v17 (spec/store §3.4 step 17; modular-core Phase 3a — M1, M2, D10, D6):
+  // the head and its bytes live on the current rows. `docs` gains `head`
+  // (`current_rev` renamed), `frontmatter_raw`, `created_at`, `updated_at`,
+  // `deleted_at` (`deleted_commit` gone); `blocks` gains `raw`, `trivia`,
+  // `created_at`, `updated_at`, `deleted_at` (`created_commit`/`deleted_commit`
+  // gone); `resurrection_pool` gains `created_at`. SQLite cannot rename a
+  // column a partial index names or add a NOT NULL column without a default,
+  // so the three tables are rebuilt the documented way (as v15 did), with
+  // `foreign_keys = OFF` for the duration and `PRAGMA foreign_key_check`
+  // empty at the end. The backfill reads the 16.x history tables ONCE: the
+  // frontmatter raw by resolving every live head through the 16.x
+  // `TreeResolver` (a delta chain, §6.1 "Resolving"), the block bytes from
+  // `blobs` by hash (a hash with no blob aborts the migration — I5 made it
+  // impossible), the timestamps from the `revisions`/`commits` and
+  // `block_changes`/`commits` joins that the 16.x readers computed on every
+  // read, `deleted_at` from the tombstone commit's `ts`. `blocks` keeps its
+  // `rowid`s — `blocks_fts` is an external-content index keyed by them.
+  // Idempotent: a `docs` table that already carries `head` is left alone.
+  private migrateV17(): void {
+    const docCols = this.db.pragma("table_info(docs)") as { name: string }[];
+    if (docCols.length === 0 || docCols.some((c) => c.name === "head")) return;
+    const clock = new Date().toISOString();
+    this.db.pragma("foreign_keys = OFF");
+    try {
+      this.db.transaction(() => {
+        const db = this.db;
+        const tsOfCommit = db.prepare("SELECT ts FROM commits WHERE commit_id = ?");
+        const commitTs = (id: string | null): string | null => (id === null ? null : ((tsOfCommit.get(id) as { ts: string } | undefined)?.ts ?? null));
+
+        // ---- docs ----
+        db.exec(`
+CREATE TABLE docs_v17 (
+  doc_id             TEXT PRIMARY KEY,
+  repo_id            TEXT NOT NULL REFERENCES repos(repo_id),
+  path               TEXT NOT NULL,
+  format             TEXT NOT NULL DEFAULT 'markdown',
+  head               TEXT,
+  file_hash          BLOB,
+  conflicted         INTEGER NOT NULL DEFAULT 0,
+  leading_trivia     TEXT NOT NULL DEFAULT '',
+  frontmatter_raw    TEXT,
+  frontmatter_trivia TEXT,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL,
+  deleted_at         TEXT,
+  UNIQUE (repo_id, path)
+);`);
+        const history = this.capabilities.history;
+        if (!history) throw new Error("migration v17: the history recorder is needed to resolve the 16.x frontmatter deltas");
+        const revOf = db.prepare("SELECT doc_id, seq, frontmatter_blob, commit_id FROM revisions WHERE rev_id = ?");
+        const firstRev = db.prepare("SELECT commit_id FROM revisions WHERE doc_id = ? AND seq = 1");
+        const insDoc = db.prepare(
+          `INSERT INTO docs_v17 (rowid, doc_id, repo_id, path, format, head, file_hash, conflicted, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at, deleted_at)
+           VALUES (@rowid, @doc_id, @repo_id, @path, @format, @head, @file_hash, @conflicted, @leading_trivia, @frontmatter_raw, @frontmatter_trivia, @created_at, @updated_at, @deleted_at)`,
+        );
+        const docs = db.prepare("SELECT rowid, doc_id, repo_id, path, format, current_rev, file_hash, conflicted, leading_trivia, frontmatter_trivia, deleted_commit FROM docs ORDER BY rowid").all() as {
+          rowid: number; doc_id: string; repo_id: string; path: string; format: string; current_rev: string | null; file_hash: Buffer | null; conflicted: number;
+          leading_trivia: string; frontmatter_trivia: string | null; deleted_commit: string | null;
+        }[];
+        for (const d of docs) {
+          const rev = d.current_rev === null ? undefined : (revOf.get(d.current_rev) as { doc_id: string; seq: number; frontmatter_blob: Buffer | null; commit_id: string } | undefined);
+          const frontmatterRaw = rev?.frontmatter_blob ? history.frontmatterAtRevision(d.current_rev!) : null;
+          const first = firstRev.get(d.doc_id) as { commit_id: string } | undefined;
+          const createdAt = commitTs(first?.commit_id ?? null) ?? clock;
+          const updatedAt = commitTs(rev?.commit_id ?? null) ?? createdAt;
+          insDoc.run({
+            rowid: d.rowid, doc_id: d.doc_id, repo_id: d.repo_id, path: d.path, format: d.format, head: d.current_rev, file_hash: d.file_hash, conflicted: d.conflicted,
+            leading_trivia: d.leading_trivia, frontmatter_raw: frontmatterRaw, frontmatter_trivia: d.frontmatter_trivia,
+            created_at: createdAt, updated_at: updatedAt, deleted_at: commitTs(d.deleted_commit),
+          });
+        }
+        db.exec("DROP TABLE docs; ALTER TABLE docs_v17 RENAME TO docs;");
+
+        // ---- blocks ----
+        db.exec(`
+CREATE TABLE blocks_v17 (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  doc_id         TEXT NOT NULL REFERENCES docs(doc_id),
+  parent_block   TEXT,
+  order_key      TEXT NOT NULL,
+  ordinal        INTEGER NOT NULL,
+  depth          INTEGER NOT NULL,
+  ancestor_path  TEXT NOT NULL,
+  type           TEXT NOT NULL,
+  attrs          TEXT NOT NULL DEFAULT '{}',
+  text           TEXT NOT NULL,
+  raw            TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  trivia         TEXT,
+  trivia_hash    BLOB,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  deleted_at     TEXT
+);`);
+        const blobOf = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
+        const bytesOf = (hash: Buffer | null, what: string): string | null => {
+          if (hash === null) return null;
+          const b = blobOf.get(hash) as { bytes: Buffer } | undefined;
+          if (!b) throw new Error(`migration v17: ${what} ${hash.toString("hex")} has no blobs row`);
+          return b.bytes.toString("utf8");
+        };
+        const span = db.prepare("SELECT MIN(c.ts) AS lo, MAX(c.ts) AS hi FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?");
+        const insBlock = db.prepare(
+          `INSERT INTO blocks_v17 (rowid, block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at, deleted_at)
+           VALUES (@rowid, @block_id, @repo_id, @doc_id, @parent_block, @order_key, @ordinal, @depth, @ancestor_path, @type, @attrs, @text, @raw, @raw_hash, @norm_hash, @trivia, @trivia_hash, @created_at, @updated_at, @deleted_at)`,
+        );
+        const blocks = db.prepare("SELECT rowid, block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit FROM blocks ORDER BY rowid").all() as {
+          rowid: number; block_id: string; repo_id: string; doc_id: string; parent_block: string | null; order_key: string; ordinal: number; depth: number; ancestor_path: string;
+          type: string; attrs: string; text: string; raw_hash: Buffer; norm_hash: Buffer; trivia_hash: Buffer | null; created_commit: string; deleted_commit: string | null;
+        }[];
+        for (const b of blocks) {
+          const s = span.get(b.block_id) as { lo: string | null; hi: string | null };
+          const fallback = commitTs(b.created_commit) ?? clock;
+          insBlock.run({
+            rowid: b.rowid, block_id: b.block_id, repo_id: b.repo_id, doc_id: b.doc_id, parent_block: b.parent_block, order_key: b.order_key, ordinal: b.ordinal, depth: b.depth,
+            ancestor_path: b.ancestor_path, type: b.type, attrs: b.attrs, text: b.text,
+            raw: bytesOf(b.raw_hash, `block ${b.block_id} raw_hash`), raw_hash: b.raw_hash, norm_hash: b.norm_hash,
+            trivia: bytesOf(b.trivia_hash, `block ${b.block_id} trivia_hash`), trivia_hash: b.trivia_hash,
+            created_at: s.lo ?? fallback, updated_at: s.hi ?? fallback, deleted_at: commitTs(b.deleted_commit),
+          });
+        }
+        db.exec(`
+DROP TABLE blocks;
+ALTER TABLE blocks_v17 RENAME TO blocks;
+CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
+CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);`);
+
+        // ---- resurrection_pool ----
+        db.exec(`
+CREATE TABLE resurrection_pool_v17 (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  type           TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  deleted_commit TEXT NOT NULL,
+  expires_ts     TEXT NOT NULL
+);`);
+        const insPool = db.prepare(
+          `INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+           VALUES (@rowid, @block_id, @repo_id, @doc_id, @raw_hash, @norm_hash, @type, @created_at, @deleted_commit, @expires_ts)`,
+        );
+        const pool = db.prepare("SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid").all() as {
+          rowid: number; block_id: string; repo_id: string; doc_id: string; raw_hash: Buffer; norm_hash: Buffer; type: string; deleted_commit: string; expires_ts: string;
+        }[];
+        for (const p of pool) {
+          const s = span.get(p.block_id) as { lo: string | null };
+          insPool.run({ ...p, created_at: s.lo ?? commitTs(p.deleted_commit) ?? clock });
+        }
+        db.exec("DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;");
+
+        const violations = this.db.pragma("foreign_key_check") as unknown[];
+        if (violations.length > 0) throw new Error(`migration v17: ${violations.length} foreign key violation(s) after rebuilding docs, blocks and resurrection_pool`);
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
   }
 
   /**

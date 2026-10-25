@@ -1,0 +1,10 @@
+---
+npm:
+  "@omgbase/core": minor
+  "@omgbase/sync": patch
+  omgbase: minor
+crates:
+  omgbase-store: major
+  omgbase: minor
+---
+Store 17.0, slice 3a of the modular-core program (TypeScript reference + spec; the Rust twin follows in its own round — a store major ships both engines together, and until it lands a 17.0 database is unreadable by the published Rust binary). The current state is self-contained: `docs.head` is the head token the core mints on every change to a document — content, structure, path or liveness (D1; `current_rev` renamed), `docs.frontmatter_raw` and `blocks.raw`/`trivia` hold the bytes inline (D10: `blobs` is entirely the recorder's; no current read touches it or the delta resolver), `created_at`/`updated_at`/`deleted_at` on `docs` and `blocks` replace the `revisions×commits`/`block_changes×commits` joins and the `created_commit`/`deleted_commit` stamps (D6: `created_at` is the identity's birth, carried through the pool's new `created_at` and across cross-document moves; `updated_at` the entity's own last change), and a `docs_move` is a transition — a new head and, with legacy capture on, a revision of the unchanged tree at the new path; the Receipt and the plan preview list the moved document first (D11). Migration 17 rebuilds `docs`, `blocks` and `resurrection_pool` from the 16.x history tables (the frontmatter resolved once through the recorder, the bytes from `blobs` by hash, the timestamps from the joins). `spec/store` 17.0: the DDL, §3.4 step 17, §5.4 restated as the core's steps plus a capture step 15, §5.6, §6.1, §7, §8 (C1–C7 + H1/H3 — I3 restated as the recorder's capture *agreeing* with the head), `migrations::v16-to-v17-heads-inline-bytes-time`; every store/mutate/sync/surface/cli fixture that projects the renamed columns or gains a revision on a move regenerated. `doctor` renders `head present` / `capture complete`. `HistoryRecorder` gains `frontmatterAtRevision`, loses `currentFrontmatterRaw` and `movePath`; `blockRaw(store, blockId)` takes the block id; `reconstructContent`/`loadMutDoc`/the materializer render from the rows.

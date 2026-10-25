@@ -156,7 +156,7 @@ interface PriorRow {
 
 function priorRows(db: Database, docId: string): Map<string, PriorRow> {
   const rows = db
-    .prepare("SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ? AND deleted_at IS NULL")
     .all(docId) as { block_id: string; parent_block: string | null; ordinal: number; raw_hash: Buffer }[];
   return new Map(rows.map((r) => [r.block_id, { parent: r.parent_block, ordinal: r.ordinal, rawHashHex: r.raw_hash.toString("hex") }]));
 }

@@ -243,13 +243,19 @@ export function planEffects(store: Store, req: PlanEffectsRequest): Plan {
     // path), a removal `bytes → ""`.
     const diffs: Record<string, { before: string; after: string }> = { ...changeset.diffs };
     const revisions: ApplyRevision[] = [...changeset.revisions];
+    // A move is a revision (store 17.0, D11): the moved document — its unchanged
+    // bytes at the new path — is listed before the rewritten sources, unless it
+    // is itself a source (then its rewrite's entry is the one, re-pathed below).
+    const movedFirst: ApplyRevision[] = [];
     for (const m of ctx.moves) {
       const bytes = docStore.read(m.from) ?? "";
       const own = diffs[m.from];
       delete diffs[m.from];
       diffs[m.from] = { before: bytes, after: "" };
       diffs[m.to] = { before: "", after: own?.after ?? bytes };
+      if (!revisions.some((r) => r._id === m.id)) movedFirst.push({ _id: m.id, _path: m.to, _hash: readDocBase(store.db, m.id)?.fileHash ?? sha256(bytes).toString("hex") });
     }
+    revisions.unshift(...movedFirst);
     for (const t of ctx.tombstones) diffs[t.path] = { before: docStore.read(t.path) ?? "", after: "" };
     for (const r of revisions) {
       const moved = ctx.moves.find((m) => m.id === r._id);
@@ -583,12 +589,21 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
   );
 
   // The receipt's revisions, in effect order; the ingest results pair with the
-  // ingest effects in order (a created document's id is the one its ingest minted).
+  // ingest effects in order (a created document's id is the one its ingest
+  // minted), the move outcomes with the `move_path` effects. A move is a
+  // revision since store 17.0 (D11; spec/mutate §6): the moved document is
+  // listed — `_hash` unchanged, the new `_path` — before the rewritten sources,
+  // unless it is itself a source (then its rewrite's entry is the one).
   const revisions: ApplyRevision[] = [];
   let j = 0;
+  let m = 0;
   for (const e of effects) {
     if (e.kind === "ingest_reconciled") revisions.push({ _id: outcome.ingests[j++]!.docId, _path: e.path, _hash: sha256(e.source).toString("hex") });
     else if (e.kind === "ingest_known") revisions.push({ _id: outcome.ingests[j++]!.docId, _path: e.path, _hash: sha256(e.rendered).toString("hex") });
+    else if (e.kind === "move_path") {
+      const moved = outcome.moves[m++]!;
+      if (moved.head !== null) revisions.push({ _id: moved.docId, _path: e.to, _hash: moved.fileHashHex ?? sha256(e.bytes).toString("hex") });
+    }
   }
   // `$new.n` → minted id: the i-th block symbol is the i-th `b` the replay
   // minted (all before the transaction, in the plan's order — the aliases

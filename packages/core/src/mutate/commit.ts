@@ -4,6 +4,8 @@ import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
 import { deletePending, insertPending, materializeRow, readPending, type PendingRow } from "./materialize.js";
 import { requireHistory } from "../core/capabilities/registry.js";
+import { mintId } from "../core/ids.js";
+import type { TreeInputBlock } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
@@ -29,7 +31,7 @@ import { MutationError, type MutDoc } from "./tree.js";
 //      loaded (I/O stays out of the transaction — phase C compares these);
 //   C. one `BEGIN IMMEDIATE` transaction (`store.writeImmediate`): validate
 //      every effect's precondition through the transaction's handle — the row
-//      triple `(path, current_rev, file_hash)` each document was planned
+//      triple `(path, head, file_hash)` each document was planned
 //      against must still be the document's, the bytes phase A read must hash
 //      to the row's `file_hash`, the document operations' own guards
 //      (`path_taken`, `doc_missing`) — THEN `newCommit`, then per effect
@@ -58,25 +60,26 @@ import { MutationError, type MutDoc } from "./tree.js";
 // This effect set is internal to the engine, not a wire format.
 
 /** The row triple a document was planned against (spec/mutate §4 step 5, 2.2):
- *  `docs.path`, `docs.current_rev` and `docs.file_hash` (lower-case hex, `null`
- *  when the row has none) as one `SELECT` read them at plan time. Invariant I3
- *  (spec/store §8) makes `current_rev` the version vector of every live block,
- *  so the commit need not re-read blocks: a block cannot change without a new
- *  revision. The same triple the opset precondition `{ _id, _path, base_revision,
- *  _hash }` freezes. */
+ *  `docs.path`, `docs.head` and `docs.file_hash` (lower-case hex, `null`
+ *  when the row has none) as one `SELECT` read them at plan time. The head
+ *  token (store 17.0, D1) is minted on every change to the document — content,
+ *  structure, path or liveness — so the commit need not re-read blocks: a block
+ *  cannot change without a new head. The same triple the opset precondition
+ *  `{ _id, _path, base_revision, _hash }` freezes. */
 export interface DocBase {
   path: string;
+  /** The head token (`docs.head`). */
   currentRev: string | null;
   fileHash: string | null;
 }
 
-/** One `SELECT path, current_rev, file_hash` of a live document: the triple
+/** One `SELECT path, head, file_hash` of a live document: the triple
  *  the plan captures and the commit re-validates. `null` when no live row. */
 export function readDocBase(db: Database, docId: string): DocBase | null {
-  const row = db.prepare("SELECT path, current_rev, lower(hex(file_hash)) hash FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
-    | { path: string; current_rev: string | null; hash: string | null }
+  const row = db.prepare("SELECT path, head, lower(hex(file_hash)) hash FROM docs WHERE doc_id = ? AND deleted_at IS NULL").get(docId) as
+    | { path: string; head: string | null; hash: string | null }
     | undefined;
-  return row ? { path: row.path, currentRev: row.current_rev, fileHash: row.hash } : null;
+  return row ? { path: row.path, currentRev: row.head, fileHash: row.hash } : null;
 }
 
 export type Effect =
@@ -102,12 +105,16 @@ export type Effect =
    *  `set_meta` is a `sync_conflict`, not an api commit of their bytes);
    *  `original: null` when the doc store had no bytes (headless: no disk check). */
   | { kind: "ingest_reconciled"; path: string; source: string; precondition: { docId: string; base: DocBase; original: string | null } | null }
-  /** `docs_move`'s row half: `docs.path` and the current revision's `path`,
-   *  the open inbound edges re-pointed at `phantom:<from>`, phantoms at `to`
-   *  adopted. The file half (a `rename` row, spec/store §5.7) renames `from` →
-   *  `to`, or writes the revision's bytes at `to` when the source file is
-   *  absent; `bytes` is the source file as read at plan time (the hash the row
-   *  falls back to for a document with no revision). Precondition: the document is live at
+  /** `docs_move`'s row half: `docs.path`, a NEW head (store 17.0, D11: a move
+   *  is a transition — the recorder captures a revision of the unchanged tree
+   *  at the new path), the open inbound edges re-pointed at `phantom:<from>`,
+   *  phantoms at `to` adopted. When the moved document is itself a retarget
+   *  source of the same request (it links to itself by path) its `ingest_known`
+   *  below mints the head and carries the path instead — one revision, not two.
+   *  The file half (a `rename` row, spec/store §5.7) renames `from` → `to`, or
+   *  writes the document's bytes at `to` when the source file is absent; `bytes`
+   *  is the source file as read at plan time (the hash the row falls back to
+   *  for a document with no revision). Precondition: the document is live at
    *  `from` with `currentRev` (else `stale_plan`; gone → `doc_missing`) and no
    *  live document is at `to` (else `path_taken`). */
   | { kind: "move_path"; docId: string; from: string; to: string; currentRev: string | null; inbound: InboundLink[]; bytes: string }
@@ -136,13 +143,25 @@ export interface CommitHead {
   ops?: string | null;
 }
 
+/** What a `move_path` effect minted (store 17.0, D11): the moved document's
+ *  new head and the hash of its (unchanged) bytes — `head: null` when the
+ *  document is itself a retarget source of the request, whose `ingest_known`
+ *  carries the move. */
+export interface MoveOutcome {
+  docId: string;
+  head: string | null;
+  fileHashHex: string | null;
+}
+
 /** What a committed request returns: the shared commit id (`null` when the
  *  request had no effect at all — a changeset that touched no document records
  *  nothing, as before) and, in effect order, one `IngestResult` per
- *  `ingest_known`/`ingest_reconciled` effect. */
+ *  `ingest_known`/`ingest_reconciled` effect and one `MoveOutcome` per
+ *  `move_path` effect. */
 export interface CommitOutcome {
   commitId: string | null;
   ingests: IngestResult[];
+  moves: MoveOutcome[];
 }
 
 /** Validation's finding: the document whose on-disk bytes moved from under the request. */
@@ -204,7 +223,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   // `links_repair` with no hit) writes no file and mints no commit row — an
   // `api` commit with no revision would read as a move or a deletion in the
   // change feed. `macros::links-repair-path-glob-no-hits` pins it.
-  if (effects.length === 0) return { committed: { commitId: null, ingests: [] } };
+  if (effects.length === 0) return { committed: { commitId: null, ingests: [], moves: [] } };
 
   // Phase A — reads only. First the intent an earlier request may have left
   // at a path this one touches (its file is behind the database until some
@@ -233,7 +252,8 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   // Phase C — one IMMEDIATE transaction: validate under the write lock, THEN
   // one commit row, then the database half of every effect in order, then the
   // file intent. Mint order: one `c`, then per document `r`, `x`, `e` (and `d`
-  // for a created document) — nothing before validation passes.
+  // for a created document; a `move_path` mints its `r` first, 17.0 D11) —
+  // nothing before validation passes.
   let committed: CommitOutcome;
   try {
     committed = store.writeImmediate((db): CommitOutcome => {
@@ -250,6 +270,10 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
       });
       const commitId = commit.commitId;
       const ingests: IngestResult[] = [];
+      const moves: MoveOutcome[] = [];
+      // A moved document that the SAME request also rewrites (a self-linking
+      // retarget source): its `ingest_known` mints the head at the new path.
+      const rewrittenLater = new Set(effects.filter((e) => e.kind === "ingest_known").map((e) => e.docId));
       // The rows this request will materialize, keyed by the path the file
       // must end up at (spec/store §5.7): one per path, in effect order.
       const pending = new Map<string, PendingRow>();
@@ -278,23 +302,21 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
             break;
           }
           case "move_path": {
-            movePath(db, e);
-            // The bytes expected at `to`: the moved document's current revision
-            // (a self-linking source's retarget below replaces them with its own).
-            const rendered = e.currentRev === null ? null : history.renderedHash(e.currentRev);
-            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: e.currentRev, renderedHash: rendered ?? sha256(e.bytes), commitId });
+            const moved = movePath(db, e, ts, commitId, !rewrittenLater.has(e.docId));
+            moves.push(moved);
+            // The bytes expected at `to`: the moved document's current bytes —
+            // `docs.file_hash` (I1) — under its new head (a self-linking source's
+            // retarget below replaces both with its own).
+            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: moved.head ?? e.currentRev, renderedHash: moved.fileHashHex === null ? sha256(e.bytes) : Buffer.from(moved.fileHashHex, "hex"), commitId });
             break;
           }
           case "tombstone": {
-            // The bytes it is safe to unlink: what the document's last revision
-            // rendered (or the last observed bytes when it has no revision).
-            // seam: HistoryRecorder.renderedHash (Phase 3, M4 — `docs.file_hash`
-            // holds the same value; inventory-ts §2.4 row `runPhases` `tombstone` 287–295)
-            const row = db
-              .prepare("SELECT r.rendered_hash, d.file_hash FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev WHERE d.doc_id = ?")
-              .get(e.docId) as { rendered_hash: Buffer | null; file_hash: Buffer | null } | undefined;
+            // The bytes it is safe to unlink: the document's current bytes
+            // (`docs.file_hash` — what its head renders to, I1; the last
+            // observed bytes when it never had a head).
+            const row = db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(e.docId) as { file_hash: Buffer | null } | undefined;
             tombstone(db, commitId, ts, e);
-            pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, revId: null, renderedHash: row?.rendered_hash ?? row?.file_hash ?? sha256(""), commitId });
+            pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, revId: null, renderedHash: row?.file_hash ?? sha256(""), commitId });
             break;
           }
           default:
@@ -304,7 +326,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
         }
       }
       for (const row of pending.values()) insertPending(db, repoId, row);
-      return { commitId, ingests };
+      return { commitId, ingests, moves };
     });
   } catch (err) {
     if (err instanceof ConflictSignal) return { conflict: err.conflict };
@@ -396,7 +418,7 @@ function fromHex(hex: string | null): Buffer | null {
 // is `stale_plan` whatever its bytes — then the disk: `file_hash` (when the
 // row has one) must name the bytes phase A read.
 function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<string, string>): void {
-  const liveAt = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL");
+  const liveAt = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL");
   const pathTaken = (path: string): boolean => liveAt.get(repoId, path) !== undefined;
 
   const checkRow = (docId: string, expected: { path: string; currentRev: string | null; fileHash?: string | null }): DocBase => {
@@ -444,20 +466,40 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
   }
 }
 
-// `docs_move`'s rows (spec/mutate §6): the document row's path + its current
-// revision's path pointer; then the edge index. Every open edge from ANOTHER
-// doc into this one resolved via the old path, so it dangles now → re-point it
-// at the old path's phantom (in place, mirroring adoptPhantoms). A self-doc
-// edge dangles only when the link names the path (`[x](/old.md#H)`); a pure
+// `docs_move`'s rows (spec/mutate §6; store 17.0 §5.4 step 6, D11): the
+// document row's path, and — a move is a TRANSITION — a new head token with
+// `updated_at = ts`, handed to the recorder as a revision of the unchanged
+// tree at the new path (`revisions.path` is immutable from 17.0; through 16.x
+// the current revision's path was rewritten in place). `mintsHead` is false
+// for a self-linking source whose own `ingest_known` follows in the request:
+// that ingest mints the head and carries the new path, so the document gets
+// one revision, not two. Then the edge index: every open edge from ANOTHER doc
+// into this one resolved via the old path, so it dangles now → re-point it at
+// the old path's phantom (in place, mirroring adoptPhantoms). A self-doc edge
+// dangles only when the link names the path (`[x](/old.md#H)`); a pure
 // fragment (`#H`) resolves to the doc regardless of path and is left alone —
 // the inbound scan distinguishes them from the raw. Runs BEFORE the retarget's
 // ingests so each rewritten source's `maintainEdges` resolves `[x](new)` to the
 // document (adopted here), not to a phantom.
-function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>): void {
-  db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(e.to, e.docId);
-  // The current revision's path is the recorder's to rewrite (D11 makes a move
-  // a transition in Phase 3; inventory-ts §2.4 row `movePath` 453–471).
-  requireHistory(db).movePath(e.docId, e.currentRev, e.to);
+function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>, ts: string, commitId: string, mintsHead: boolean): MoveOutcome {
+  const doc = db.prepare("SELECT file_hash, frontmatter_raw FROM docs WHERE doc_id = ?").get(e.docId) as { file_hash: Buffer | null; frontmatter_raw: string | null } | undefined;
+  const fileHashHex = doc?.file_hash ? doc.file_hash.toString("hex") : null;
+  let head: string | null = null;
+  if (mintsHead && doc?.file_hash) {
+    head = mintId("r");
+    db.prepare("UPDATE docs SET path = ?, head = ?, updated_at = ? WHERE doc_id = ?").run(e.to, head, ts, e.docId);
+    requireHistory(db).captureRevision({
+      docId: e.docId,
+      head,
+      path: e.to,
+      commitId,
+      blocks: currentTreeInput(db, e.docId),
+      frontmatterRaw: doc.frontmatter_raw,
+      renderedHash: doc.file_hash,
+    });
+  } else {
+    db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(e.to, e.docId);
+  }
 
   const phantom = `phantom:${e.from}`;
   const affected = new Set<string>();
@@ -473,20 +515,51 @@ function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>): void
   for (const d of affected) rebuildDocEdges(db, d);
   // Links already written against the NEW path resolve to this doc now.
   adoptPhantoms(db, e.to, e.docId);
+  return { docId: e.docId, head, fileHashHex };
 }
 
-// Tombstone the document and its live blocks under the commit; FTS rows drop
-// with the blocks. `pool` snapshots the live blocks first (spec/store §5.6).
+/** The document's live body tree as the recorder's input (`TreeInputBlock[]`,
+ *  pre-order by `parent_block` + `ordinal`), read from the current rows — the
+ *  unchanged tree a `docs_move` hands the recorder (store 17.0, D11). */
+export function currentTreeInput(db: Database, docId: string): TreeInputBlock[] {
+  const rows = db
+    .prepare("SELECT block_id, parent_block, ordinal, type, attrs, raw, trivia FROM blocks WHERE doc_id = ? AND deleted_at IS NULL ORDER BY ordinal, block_id")
+    .all(docId) as { block_id: string; parent_block: string | null; ordinal: number; type: string; attrs: string; raw: string; trivia: string | null }[];
+  const ids = new Set(rows.map((r) => r.block_id));
+  const byParent = new Map<string | null, typeof rows>();
+  for (const r of rows) {
+    const parent = r.parent_block !== null && ids.has(r.parent_block) ? r.parent_block : null;
+    let list = byParent.get(parent);
+    if (!list) byParent.set(parent, (list = []));
+    list.push(r);
+  }
+  const build = (parent: string | null): TreeInputBlock[] =>
+    (byParent.get(parent) ?? []).map((r) => ({
+      blockId: r.block_id,
+      type: r.type,
+      raw: r.raw,
+      trivia: r.trivia ?? "",
+      attrs: JSON.parse(r.attrs) as Record<string, unknown>,
+      children: build(r.block_id),
+    }));
+  return build(null);
+}
+
+// Tombstone the document and its live blocks (spec/store §5.6, 17.0: `deleted_at
+// = ts` on the blocks and the doc, `updated_at = ts` on the doc — liveness is
+// a change of the document's own; the head is KEPT and no new one is minted,
+// D11); FTS rows drop with the blocks. `pool` snapshots the live blocks first,
+// each carrying its `created_at` (D6).
 function tombstone(db: Database, commitId: string, ts: string, e: Extract<Effect, { kind: "tombstone" }>): void {
   if (e.pool) {
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     db.prepare(
-      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ?
-         FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL`,
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?, ?
+         FROM blocks WHERE doc_id = ? AND deleted_at IS NULL`,
     ).run(commitId, expires, e.docId);
   }
   ftsDeleteDoc(db, e.docId);
-  db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commitId, e.docId);
-  db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commitId, e.docId);
+  db.prepare("UPDATE blocks SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL").run(ts, e.docId);
+  db.prepare("UPDATE docs SET deleted_at = ?, updated_at = ? WHERE doc_id = ?").run(ts, ts, e.docId);
 }

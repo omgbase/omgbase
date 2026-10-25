@@ -24,8 +24,8 @@ describe("ingestFile", () => {
     expect(res.converged).toBe(true);
     expect(res.blockCount).toBeGreaterThan(0);
 
-    const doc = store.db.prepare("SELECT current_rev, file_hash FROM docs WHERE doc_id = ?").get(res.docId) as { current_rev: string; file_hash: Buffer };
-    expect(doc.current_rev).toBe(res.revId);
+    const doc = store.db.prepare("SELECT head, file_hash FROM docs WHERE doc_id = ?").get(res.docId) as { head: string; file_hash: Buffer };
+    expect(doc.head).toBe(res.revId);
 
     const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(res.revId) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);

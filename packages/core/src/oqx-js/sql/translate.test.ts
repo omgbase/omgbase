@@ -521,7 +521,7 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("blocks", '_doc._path == "/a.md"'), BLOCKS)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
     expect(translatePredicate(predOn("links", '_doc._path == "/a.md"'), EDGES)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
     expect(translatePredicate(predOn("blocks", '_doc._hash == "ab"'), BLOCKS)).toEqual({ sql: "(lower(hex(d.file_hash)) IS ?)", params: ["ab"] });
-    expect(translatePredicate(predOn("nodes", '_doc._updated_at >= "2026"'), NODES)?.sql).toContain("r.rev_id = d.current_rev");
+    expect(translatePredicate(predOn("nodes", '_doc._updated_at >= "2026"'), NODES)?.sql).toContain("d.updated_at");
   });
 
   it("_block.<x> on a link (4.11) is the source block: _block._id the FK column, the rest a probe by src_block (NULL for a frontmatter link)", () => {
@@ -561,7 +561,7 @@ describe("foreign-key elimination (spec/surface §1, 3.0) — a reach-through to
     expect(translatePredicate(predOn("links", '_dst._path == "/a.md"'), EDGES)).toEqual({ sql: "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)", params: ["/a.md"] });
     expect(translatePredicate(predOn("links", '_dst._format == "yaml"'), EDGES)).toEqual({ sql: "((SELECT dd.format FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)", params: ["yaml"] });
     expect(translatePredicate(predOn("links", '_dst._hash == "ab"'), EDGES)?.sql).toContain("lower(hex(dd.file_hash))");
-    expect(translatePredicate(predOn("links", '_dst._updated_at == "t"'), EDGES)?.sql).toContain("WHERE r.rev_id = dd.current_rev");
+    expect(translatePredicate(predOn("links", '_dst._updated_at == "t"'), EDGES)?.sql).toContain("SELECT dd.updated_at FROM docs dd");
     // a property: the properties scope keyed by e.dst_node itself (a non-document destination has no rows)
     const prop = translatePredicate(predOn("links", '_dst.layer == "canon"'), EDGES);
     expect(prop?.sql).toContain("p.doc_id = e.dst_node AND p.key = 'layer'");

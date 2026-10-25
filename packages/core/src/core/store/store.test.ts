@@ -72,7 +72,7 @@ describe("Store — schema & config", () => {
     expect(() =>
       store!.db
         .prepare(
-          "INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_x','rp_missing','a.md')",
+          "INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_x','rp_missing','a.md','t','t')",
         )
         .run(),
     ).toThrow(/FOREIGN KEY/);

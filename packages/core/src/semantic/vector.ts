@@ -59,7 +59,7 @@ export function docVectorSearch(store: Store, repoId: string, model: string, que
     .prepare(
       `SELECT d.doc_id AS docId, d.path AS path, e.vec AS vec
        FROM doc_embeddings e
-       JOIN docs d ON d.doc_id = e.doc_id AND d.deleted_commit IS NULL
+       JOIN docs d ON d.doc_id = e.doc_id AND d.deleted_at IS NULL
        WHERE d.repo_id = ? AND e.model = ?`,
     )
     .all(repoId, model) as { docId: string; path: string; vec: Buffer }[];

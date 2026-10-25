@@ -57,7 +57,7 @@ beforeEach(() => {
 afterEach(() => store.close());
 
 function docCount(): number {
-  return (store.db.prepare("SELECT count(*) c FROM docs WHERE deleted_commit IS NULL").get() as { c: number }).c;
+  return (store.db.prepare("SELECT count(*) c FROM docs WHERE deleted_at IS NULL").get() as { c: number }).c;
 }
 
 describe("Coordinator", () => {

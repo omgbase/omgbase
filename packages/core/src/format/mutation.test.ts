@@ -31,7 +31,7 @@ function save(path: string, content: string): void {
 
 function blockId(path: string, index: number): string {
   const rows = store.db
-    .prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal")
+    .prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal")
     .all(path) as { block_id: string }[];
   return rows[index]!.block_id;
 }

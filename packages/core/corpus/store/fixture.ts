@@ -5,7 +5,7 @@
 //   runMigrationCase()      §9.3: authored pre-state → open with the reference → projection (or the refusal)
 //   runObserveCase()        §9.4: run an observation script through the production observe path,
 //                           check the §8 invariants after every observe step, project the tables
-//   checkInvariants()       README §8 I1–I8 on a store
+//   checkInvariants()       README §8 on a store: the core invariants C1–C7 and, with legacy capture on, H1–H5/I10
 //   projectStore()          the §9.4 table projection (ordering, hex hashes, JSON attrs/detail)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
@@ -523,19 +523,22 @@ interface BlockRaw {
   type: string;
   attrs: string;
   text: string;
+  raw: string;
   raw_hash: Buffer;
   norm_hash: Buffer;
+  trivia: string | null;
   trivia_hash: Buffer | null;
-  created_commit: string;
-  deleted_commit: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
-const BLOCK_COLUMNS = "block_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit";
+const BLOCK_COLUMNS = "block_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at, deleted_at";
 
 /** A doc's `blocks` rows in pre-order (children by `parent_block`, `ordinal` order); tombstoned rows included. */
 function docBlocksPreorder(db: Db, docId: string, liveOnly: boolean): BlockRaw[] {
   const rows = db
-    .prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks WHERE doc_id = ? ${liveOnly ? "AND deleted_commit IS NULL" : ""} ORDER BY ordinal, block_id`)
+    .prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks WHERE doc_id = ? ${liveOnly ? "AND deleted_at IS NULL" : ""} ORDER BY ordinal, block_id`)
     .all(docId) as BlockRaw[];
   const ids = new Set(rows.map((r) => r.block_id));
   const byParent = new Map<string | null, BlockRaw[]>();
@@ -568,18 +571,21 @@ function projectBlock(r: BlockRaw): JsonRow {
     type: r.type,
     attrs: JSON.parse(r.attrs) as Record<string, unknown>,
     text: r.text,
+    raw: r.raw,
     raw_hash: hex(r.raw_hash)!,
     norm_hash: hex(r.norm_hash)!,
+    trivia: r.trivia,
     trivia_hash: hex(r.trivia_hash),
-    created_commit: r.created_commit,
-    deleted_commit: r.deleted_commit,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    deleted_at: r.deleted_at,
   };
 }
 
 /** The §9.4 projection of the durable + pinned derived tables of one repo (`repo_id` omitted). */
 export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> {
   const docs = (db
-    .prepare("SELECT doc_id, path, format, current_rev, file_hash, conflicted, leading_trivia, frontmatter_trivia, deleted_commit FROM docs WHERE repo_id = ? ORDER BY path")
+    .prepare("SELECT doc_id, path, format, head, file_hash, conflicted, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ? ORDER BY path")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
   const docIds = docs.map((d) => d.doc_id as string);
 
@@ -628,7 +634,7 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
     .sort(byCommitBlockKind);
 
   const resurrection_pool = (db
-    .prepare("SELECT block_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?")
+    .prepare("SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?")
     .all(repoId) as Record<string, unknown>[])
     .map(toRow)
     .sort((a, b) => cmp(a.expires_ts as string, b.expires_ts as string) || cmp(a.block_id as string, b.block_id as string));
@@ -656,9 +662,15 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
 // ---- invariants (README §8) --------------------------------------------------------------
 
 /**
- * README §8 I1–I10 on a store. `lastSource` is the last observed source per
- * live path (I1 needs the bytes the store is supposed to hold). Returns the
- * problems found (empty = every invariant holds).
+ * README §8 on a store (17.0): the core invariants C1–C7 — convergence from the
+ * rows alone, row hashes, the head present, the timestamps — and, legacy
+ * capture being on for every repository through Phase 3, the history
+ * invariants H1–H5 (I2, I4–I10 of 16.0, with I3 restated as the recorder's
+ * capture AGREEING with the head: the live rows mirror the resolved tree of
+ * the revision `docs.head` names, and `frontmatter_raw` equals its resolved
+ * frontmatter). `lastSource` is the last observed source per live path (C1
+ * needs the bytes the store is supposed to hold). Returns the problems found
+ * (empty = every invariant holds).
  */
 export function checkInvariants(store: Store, repoId: string, lastSource: ReadonlyMap<string, string>): string[] {
   const db = store.db;
@@ -675,11 +687,11 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   const commits = db.prepare("SELECT commit_id, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; seq: number; ts: string }[];
   const commitById = new Map(commits.map((c) => [c.commit_id, c]));
   const docs = db
-    .prepare("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs WHERE repo_id = ? ORDER BY path")
-    .all(repoId) as { doc_id: string; path: string; current_rev: string | null; file_hash: Buffer | null; deleted_commit: string | null }[];
+    .prepare("SELECT doc_id, path, head, file_hash, frontmatter_raw, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ? ORDER BY path")
+    .all(repoId) as { doc_id: string; path: string; head: string | null; file_hash: Buffer | null; frontmatter_raw: string | null; created_at: string; updated_at: string; deleted_at: string | null }[];
   const revisions = db
-    .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id, r.archive FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
-    .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; rendered_hash: Buffer; commit_id: string; archive: string | null }[];
+    .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
+    .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; rendered_hash: Buffer; path: string; commit_id: string; archive: string | null }[];
   const revById = new Map(revisions.map((r) => [r.rev_id, r]));
 
   // ---- I9 archived revisions (15.0) ---------------------------------------------------
@@ -780,37 +792,75 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
   }
 
-  // ---- I1 convergence, I3 blocks mirror the current revision ------------------------
+  // ---- C2 row hashes (17.0): every block's bytes are on its row ------------------------
+  const allBlocks = db.prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks b WHERE EXISTS (SELECT 1 FROM docs d WHERE d.doc_id = b.doc_id AND d.repo_id = ?)`).all(repoId) as BlockRaw[];
+  for (const b of allBlocks) {
+    if (!sha256(b.raw).equals(b.raw_hash)) problems.push(`C2: block ${b.block_id} raw_hash != sha256(raw)`);
+    if ((b.trivia === null) !== (b.trivia_hash === null)) problems.push(`C2: block ${b.block_id} trivia and trivia_hash disagree on NULL`);
+    else if (b.trivia !== null && !sha256(b.trivia).equals(b.trivia_hash!)) problems.push(`C2: block ${b.block_id} trivia_hash != sha256(trivia)`);
+    if (b.trivia === "") problems.push(`C2: block ${b.block_id} has an empty trivia instead of NULL`);
+    if (!sha256(b.text).equals(b.norm_hash)) problems.push(`C2: block ${b.block_id} norm_hash != sha256(text)`);
+    // C7: a block's timestamps are ordered and bounded by its document's.
+    if (b.created_at > b.updated_at) problems.push(`C7: block ${b.block_id} created_at ${b.created_at} > updated_at ${b.updated_at}`);
+  }
+  const docById = new Map(docs.map((d) => [d.doc_id, d]));
+  for (const b of allBlocks) {
+    const d = docById.get(b.doc_id);
+    if (!d) continue;
+    if (d.deleted_at === null && b.deleted_at !== null) problems.push(`C7: live doc ${d.doc_id} has a tombstoned block ${b.block_id}`);
+    if (d.deleted_at !== null && b.deleted_at === null) problems.push(`C7: tombstoned doc ${d.doc_id} has a live block ${b.block_id}`);
+    if (b.updated_at > d.updated_at) problems.push(`C7: block ${b.block_id} updated_at ${b.updated_at} > its document's ${d.updated_at}`);
+  }
+
+  // ---- C4 the head, C7 the document's timestamps ---------------------------------------
   for (const d of docs) {
-    if (d.deleted_commit !== null || d.current_rev === null) continue;
+    if (d.created_at > d.updated_at) problems.push(`C7: doc ${d.doc_id} created_at ${d.created_at} > updated_at ${d.updated_at}`);
+    if (d.deleted_at === null && d.head === null) problems.push(`C4: live doc ${d.doc_id} (${d.path}) has no head`);
+    if (d.deleted_at !== null && d.deleted_at !== d.updated_at) problems.push(`C7: tombstoned doc ${d.doc_id} deleted_at ${d.deleted_at} != updated_at ${d.updated_at}`);
+  }
+
+  // ---- C1 convergence from the rows; H1/H3 the recorder's capture agrees with the head ----
+  for (const d of docs) {
+    if (d.deleted_at !== null || d.head === null) continue;
     const at = `doc ${d.doc_id} (${d.path})`;
-    const rev = revById.get(d.current_rev);
+    const source = lastSource.get(d.path);
+    if (source === undefined) {
+      problems.push(`C1: ${at} is live but no source was observed for its path`);
+    } else {
+      const want = sha256(source);
+      if (!d.file_hash || !d.file_hash.equals(want)) problems.push(`C1: ${at} file_hash != sha256(source)`);
+      if (reconstructContent(db, d.doc_id) !== source) problems.push(`C1: ${at} reconstruct(doc) != source`);
+    }
+    // H1: with legacy capture on, the head IS a captured revision — same path,
+    // same bytes, the same commit instant as `updated_at` — and reconstruct at it
+    // reproduces the source.
+    const rev = revById.get(d.head);
     if (!rev) {
-      problems.push(`I1: ${at} current_rev ${d.current_rev} is not a revision`);
+      problems.push(`H1: ${at} head ${d.head} has no revisions row (capture disagrees with the head)`);
       continue;
     }
     if (rev.root_tree === null) {
-      problems.push(`I1: ${at} current_rev ${d.current_rev} is archived (never prunable)`);
+      problems.push(`H1: ${at} head ${d.head} is archived (never prunable)`);
       continue;
     }
-    const source = lastSource.get(d.path);
-    if (source === undefined) {
-      problems.push(`I1: ${at} is live but no source was observed for its path`);
-    } else {
-      const want = sha256(source);
-      if (!d.file_hash || !d.file_hash.equals(want)) problems.push(`I1: ${at} file_hash != sha256(source)`);
-      if (!rev.rendered_hash.equals(want)) problems.push(`I1: ${at} rendered_hash != sha256(source)`);
-      if (reconstructContent(db, d.doc_id) !== source) problems.push(`I1: ${at} reconstruct(doc) != source`);
-      const atRev = readDocumentAtRevision(store, d.doc_id, d.current_rev);
-      if (!atRev) problems.push(`I1: ${at} reconstruct at ${d.current_rev} returned nothing`);
+    if (rev.path !== d.path) problems.push(`H1: ${at} revision ${d.head} carries path ${rev.path}`);
+    if (d.file_hash && !rev.rendered_hash.equals(d.file_hash)) problems.push(`H1: ${at} revision ${d.head} rendered_hash != file_hash`);
+    const headCommit = commitById.get(rev.commit_id);
+    if (headCommit && headCommit.ts !== d.updated_at) problems.push(`C7: ${at} updated_at ${d.updated_at} != the head commit's ts ${headCommit.ts}`);
+    if (source !== undefined) {
+      const atRev = readDocumentAtRevision(store, d.doc_id, d.head);
+      if (!atRev) problems.push(`H1: ${at} reconstruct at ${d.head} returned nothing`);
       else {
-        if (atRev._raw !== source) problems.push(`I1: ${at} reconstruct at ${d.current_rev} != source`);
-        if (!atRev.renderedHashMatch) problems.push(`I1: ${at} rendered_hash_match is false at the current revision`);
+        if (atRev._raw !== source) problems.push(`H1: ${at} reconstruct at ${d.head} != source`);
+        if (!atRev.renderedHashMatch) problems.push(`H1: ${at} rendered_hash_match is false at the current revision`);
       }
     }
+    // H3 (frontmatter): the row's current frontmatter equals the head revision's resolved one.
+    const fmResolved = rev.frontmatter_blob ? resolvedFrontmatter.get(rev.rev_id) ?? null : null;
+    if (fmResolved !== d.frontmatter_raw) problems.push(`H3: ${at} frontmatter_raw differs from the head revision's resolved frontmatter`);
 
-    // I3: live rows as a tree vs the revision's Merkle tree.
-    const live = db.prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL`).all(d.doc_id) as BlockRaw[];
+    // H3: live rows as a tree vs the head revision's resolved Merkle tree.
+    const live = db.prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks WHERE doc_id = ? AND deleted_at IS NULL`).all(d.doc_id) as BlockRaw[];
     const liveIds = new Set(live.map((r) => r.block_id));
     const children = new Map<string | null, BlockRaw[]>();
     for (const r of live) {
@@ -820,12 +870,12 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
     for (const list of children.values()) list.sort((a, b) => cmp(a.order_key, b.order_key));
     for (const [parent] of children) {
-      if (parent !== null && !liveIds.has(parent)) problems.push(`I3: ${at} live rows name a parent ${parent} that is not live`);
+      if (parent !== null && !liveIds.has(parent)) problems.push(`C3: ${at} live rows name a parent ${parent} that is not live`);
     }
-    // 16.0: the tree compared is the current revision's RESOLVED tree.
+    // 16.0: the tree compared is the head revision's RESOLVED tree.
     const resolved = resolvedTrees.get(rev.rev_id);
     if (!resolved) {
-      problems.push(`I3: ${at} current revision ${rev.rev_id} did not resolve`);
+      problems.push(`H3: ${at} head revision ${rev.rev_id} did not resolve`);
       continue;
     }
     const compare = (treeHex: string | null, parent: BlockRaw | null, depth: number, ancestorPath: string): void => {
@@ -833,21 +883,20 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       const entries = treeHex === null ? [] : parent === null ? resolved.root.entries : resolved.byBlock.get(parent.block_id)?.entries ?? [];
       const where = parent ? `${at} under ${parent.block_id}` : `${at} top level`;
       if (rows.length !== entries.length) {
-        problems.push(`I3: ${where}: ${rows.length} live rows vs ${entries.length} tree entries`);
+        problems.push(`H3: ${where}: ${rows.length} live rows vs ${entries.length} tree entries`);
         return;
       }
       rows.forEach((r, i) => {
         const [id, raw, child, type, attrs, trivia] = entries[i]!;
-        if (r.block_id !== id) problems.push(`I3: ${where}[${i}]: block ${r.block_id} vs tree entry ${id}`);
-        if (r.type !== type) problems.push(`I3: ${where}[${i}]: type ${r.type} vs ${type}`);
-        if (r.raw_hash.toString("hex") !== raw) problems.push(`I3: ${where}[${i}]: raw_hash differs from the tree entry`);
-        if ((r.trivia_hash ? r.trivia_hash.toString("hex") : null) !== trivia) problems.push(`I3: ${where}[${i}]: trivia_hash differs from the tree entry`);
-        if (r.ordinal !== i) problems.push(`I3: ${where}[${i}]: ordinal ${r.ordinal} (order_key order says ${i})`);
-        if (r.depth !== depth) problems.push(`I3: ${where}[${i}]: depth ${r.depth} != ${depth}`);
-        if (r.ancestor_path !== ancestorPath) problems.push(`I3: ${where}[${i}]: ancestor_path ${r.ancestor_path} != ${ancestorPath}`);
-        if (!sha256(r.text).equals(r.norm_hash)) problems.push(`I3: ${where}[${i}]: norm_hash != sha256(text)`);
+        if (r.block_id !== id) problems.push(`H3: ${where}[${i}]: block ${r.block_id} vs tree entry ${id}`);
+        if (r.type !== type) problems.push(`H3: ${where}[${i}]: type ${r.type} vs ${type}`);
+        if (r.raw_hash.toString("hex") !== raw) problems.push(`H3: ${where}[${i}]: raw_hash differs from the tree entry`);
+        if ((r.trivia_hash ? r.trivia_hash.toString("hex") : null) !== trivia) problems.push(`H3: ${where}[${i}]: trivia_hash differs from the tree entry`);
+        if (r.ordinal !== i) problems.push(`C3: ${where}[${i}]: ordinal ${r.ordinal} (order_key order says ${i})`);
+        if (r.depth !== depth) problems.push(`C3: ${where}[${i}]: depth ${r.depth} != ${depth}`);
+        if (r.ancestor_path !== ancestorPath) problems.push(`C3: ${where}[${i}]: ancestor_path ${r.ancestor_path} != ${ancestorPath}`);
         const diff = deepEqualTol(JSON.parse(r.attrs), attrs, 0);
-        if (diff) problems.push(`I3: ${where}[${i}]: attrs differ from the tree entry (${diff})`);
+        if (diff) problems.push(`H3: ${where}[${i}]: attrs differ from the tree entry (${diff})`);
         compare(child, r, depth + 1, `${ancestorPath}${r.block_id}/`);
       });
     };
@@ -863,8 +912,8 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     revs.forEach((r, i) => {
       if (r.seq !== i + 1) problems.push(`I4: revision ${r.rev_id} of ${d.doc_id} has seq ${r.seq}, expected ${i + 1}`);
     });
-    if (revs.length > 0 && d.current_rev !== revs[revs.length - 1]!.rev_id) problems.push(`I4: doc ${d.doc_id} current_rev ${d.current_rev} is not its greatest-seq revision`);
-    if (revs.length === 0 && d.current_rev !== null) problems.push(`I4: doc ${d.doc_id} has current_rev but no revisions`);
+    if (revs.length > 0 && d.head !== revs[revs.length - 1]!.rev_id) problems.push(`I4: doc ${d.doc_id} head ${d.head} is not its greatest-seq revision`);
+    if (revs.length === 0 && d.head !== null) problems.push(`I4: doc ${d.doc_id} has head but no revisions`);
   }
 
   // ---- I5 nothing to collect -----------------------------------------------------------
@@ -893,13 +942,16 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const h of treeHashes) if (!markedTrees.has(h)) problems.push(`I5: tree_node ${h} is unreachable from every live revision`);
   for (const h of blobHashes) if (!markedBlobs.has(h)) problems.push(`I5: blob ${h} is unreachable from every live revision`);
 
-  // ---- I6 pool -----------------------------------------------------------------------
-  const liveRowOf = db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL");
-  const pool = db.prepare("SELECT block_id, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?").all(repoId) as { block_id: string; deleted_commit: string; expires_ts: string }[];
+  // ---- I6 / C6 pool ----------------------------------------------------------------------
+  const liveRowOf = db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL");
+  const pool = db.prepare("SELECT block_id, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?").all(repoId) as { block_id: string; created_at: string; deleted_commit: string; expires_ts: string }[];
   for (const p of pool) {
     const c = commitById.get(p.deleted_commit);
     if (!c) problems.push(`I6: pool row ${p.block_id} names a missing commit ${p.deleted_commit}`);
-    else if (p.expires_ts !== expiresAfter(c.ts)) problems.push(`I6: pool row ${p.block_id} expires_ts ${p.expires_ts} != ${c.ts} + 30 days`);
+    else {
+      if (p.expires_ts !== expiresAfter(c.ts)) problems.push(`I6: pool row ${p.block_id} expires_ts ${p.expires_ts} != ${c.ts} + 30 days`);
+      if (p.created_at > c.ts) problems.push(`C6: pool row ${p.block_id} created_at ${p.created_at} > its deletion's ts ${c.ts}`);
+    }
     if (liveRowOf.get(p.block_id)) problems.push(`I6: pool row ${p.block_id} has a live blocks row`);
   }
 
@@ -917,8 +969,8 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const x of dispositions) if (!commitById.has(x.commit_id)) problems.push(`I7: disposition ${x.block_id}/${x.kind} names a missing commit ${x.commit_id}`);
   const currentDocsOf = new Map<string, Set<string>>();
   for (const d of docs) {
-    if (d.deleted_commit !== null || d.current_rev === null) continue;
-    const rev = revById.get(d.current_rev);
+    if (d.deleted_at !== null || d.head === null) continue;
+    const rev = revById.get(d.head);
     if (!rev) continue;
     let set = currentDocsOf.get(rev.commit_id);
     if (!set) currentDocsOf.set(rev.commit_id, (set = new Set()));
@@ -940,15 +992,15 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   // at least one (its `inserted`, lineage or resurrection row).
   for (const x of dispositions) if (x.kind === "same") problems.push(`I7: disposition ${x.block_id} of ${x.commit_id} is a persisted \`same\``);
   const unchanged = db
-    .prepare("SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id")
+    .prepare("SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id")
     .all(repoId) as { block_id: string }[];
   for (const r of unchanged) problems.push(`I7: live block ${r.block_id} has no block_changes row`);
 
   // ---- I8 rebuild equivalence -------------------------------------------------------
   for (const d of docs) {
-    if (d.deleted_commit !== null) continue;
+    if (d.deleted_at !== null) continue;
     const tops = db
-      .prepare("SELECT block_id, ordinal, type, json_extract(attrs, '$.level') AS level FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal")
+      .prepare("SELECT block_id, ordinal, type, json_extract(attrs, '$.level') AS level FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal")
       .all(d.doc_id) as { block_id: string; ordinal: number; type: string; level: number | null }[];
     const maxOrdinal = tops.length > 0 ? tops[tops.length - 1]!.ordinal : -1;
     const headings = tops.filter((t) => t.type === "heading");

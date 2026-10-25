@@ -6,9 +6,16 @@ import {
   byteLength, encodeBodyDelta, encodeFrontmatterDelta, entryText, fullNodeText, isCheckpointSeq, type Entry, type ResolvedList, type ResolvedTree,
 } from "./delta.js";
 
-// Immutable store writers (02 §3-4, 01 §4). Blobs and tree nodes are
+// The RECORDER's immutable writers (spec/store §4′, §5.4 step 15 — 17.0):
+// blobs, tree nodes, the commit and revision rows. Since store 17.0 the
+// current-state ingest writes a block's bytes on its own row (`blocks.raw`/
+// `trivia`, `docs.frontmatter_raw`) and never calls these; `putBlob` is
+// reached only through `writeList`/`writeFrontmatterBlob`, i.e. the default
+// `HistoryRecorder`'s capture — so with legacy capture on the head's bytes
+// are stored twice, as the contracts accept (D10). Blobs and tree nodes are
 // content-addressed; INSERT OR IGNORE gives deduplication and structural
-// sharing for free (identical subtrees hash identically → no new row).
+// sharing for free (identical subtrees hash identically → no new row). Only
+// `assignIds`/`TreeInputBlock` are the current-state parts of this module.
 
 /** A block with a minted/assigned id, ready to encode into the tree. */
 export interface TreeInputBlock {
@@ -158,6 +165,8 @@ export function newCommit(db: Database, input: NewCommitInput): { commitId: stri
 }
 
 export interface NewRevisionInput {
+  /** The head token the core minted for this transition (spec/store §5.4 step 6, 17.0 D1) — the row's `rev_id`. */
+  revId: string;
   docId: string;
   rootTreeHex: string;
   frontmatterBlobHex: string | null;
@@ -175,9 +184,9 @@ export function previousRevision(db: Database, docId: string): { rev_id: string;
     .get(docId) as { rev_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; archive: string | null } | undefined;
 }
 
-/** Append a revision; assigns the per-document monotonic seq. */
+/** Append a revision under the core's head token; assigns the per-document monotonic seq. */
 export function writeRevision(db: Database, input: NewRevisionInput): { revId: string; seq: number } {
-  const revId = mintId("r");
+  const revId = input.revId;
   const seq = input.seq ?? (db
     .prepare("SELECT COALESCE(MAX(seq),0)+1 AS seq FROM revisions WHERE doc_id = ?")
     .get(input.docId) as { seq: number }).seq;

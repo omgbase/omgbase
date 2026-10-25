@@ -14,7 +14,7 @@ export const SPEC_VERSIONS = {
   oqx: LANGUAGE_VERSION,
   format: "0.2",
   reconcile: "2.3",
-  store: "16.0",
+  store: "17.0",
   properties: "1.2",
   graph: "2.0",
   search: "3.0",

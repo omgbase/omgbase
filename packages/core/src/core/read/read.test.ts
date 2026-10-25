@@ -299,9 +299,9 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     for (const c of contents) {
       const res = ingestFile(store, repoId, path, c);
       docId = res.docId;
-      const row = store.db.prepare("SELECT current_rev FROM docs WHERE doc_id = ?").get(docId) as { current_rev: string };
-      const revRow = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(row.current_rev) as { rendered_hash: Buffer };
-      revs.push(row.current_rev);
+      const row = store.db.prepare("SELECT head FROM docs WHERE doc_id = ?").get(docId) as { head: string };
+      const revRow = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(row.head) as { rendered_hash: Buffer };
+      revs.push(row.head);
       hashes.push(revRow.rendered_hash);
     }
     return { docId, revs, hashes };
@@ -358,7 +358,7 @@ describe("readDocumentAtRevision — whole-doc time travel", () => {
     const repoId = ensureRepo(store, "t", "/tmp");
     const a = ingestFile(store, repoId, "a.md", V1).docId;
     ingestFile(store, repoId, "b.md", V2);
-    const bRev = (store.db.prepare("SELECT current_rev FROM docs WHERE path = 'b.md'").get() as { current_rev: string }).current_rev;
+    const bRev = (store.db.prepare("SELECT head FROM docs WHERE path = 'b.md'").get() as { head: string }).head;
     // b's revision id is real, but not a revision of document a.
     expect(readDocumentAtRevision(store, a, bRev)).toBeNull();
   });

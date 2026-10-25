@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS archives (
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3, 4, 6, 7, 9, 11, 13, 15 are programmatic — see store.ts.
+// Migrations 3, 4, 6, 7, 9, 11, 13, 15, 17 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
@@ -213,10 +213,11 @@ export const MIGRATIONS: Record<number, string> = {
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
+  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
--- ---- durable tables (02 §3) --------------------------------------------------
+-- ---- durable tables (spec/store §3.1; the history tables are the recorder's — spec/store §3.1 "capture") ----
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
@@ -227,16 +228,19 @@ CREATE TABLE IF NOT EXISTS repos (
 -- the former repos.root_path column was removed in schema v13.
 
 CREATE TABLE IF NOT EXISTS docs (
-  doc_id         TEXT PRIMARY KEY,
-  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
-  path           TEXT NOT NULL,
-  format         TEXT NOT NULL DEFAULT 'markdown',
-  current_rev    TEXT,
-  file_hash      BLOB,
-  conflicted     INTEGER NOT NULL DEFAULT 0,
-  leading_trivia TEXT NOT NULL DEFAULT '',
-  frontmatter_trivia TEXT,                  -- separator between frontmatter and first body block (NULL = no frontmatter)
-  deleted_commit TEXT,
+  doc_id             TEXT PRIMARY KEY,
+  repo_id            TEXT NOT NULL REFERENCES repos(repo_id),
+  path               TEXT NOT NULL,
+  format             TEXT NOT NULL DEFAULT 'markdown',
+  head               TEXT,                    -- the head token (an r_ id the core mints on every head change); equals revisions.rev_id while history is captured
+  file_hash          BLOB,
+  conflicted         INTEGER NOT NULL DEFAULT 0,
+  leading_trivia     TEXT NOT NULL DEFAULT '',
+  frontmatter_raw    TEXT,                    -- the frontmatter block's raw, fences included (NULL = no frontmatter)
+  frontmatter_trivia TEXT,                    -- separator between frontmatter and first body block (NULL = no frontmatter)
+  created_at         TEXT NOT NULL,           -- the identity's birth: the first commit's ts; survives tombstone and revival
+  updated_at         TEXT NOT NULL,           -- the ts of the commit that last minted the head (content, structure, path or liveness)
+  deleted_at         TEXT,                    -- tombstone (NULL = live)
   UNIQUE (repo_id, path)
 );
 
@@ -252,14 +256,17 @@ CREATE TABLE IF NOT EXISTS blocks (
   type           TEXT NOT NULL,
   attrs          TEXT NOT NULL DEFAULT '{}',
   text           TEXT NOT NULL,
-  raw_hash       BLOB NOT NULL,
+  raw            TEXT NOT NULL,               -- the block's raw source (D10)
+  raw_hash       BLOB NOT NULL,               -- sha256(raw): the CAS and dedup key
   norm_hash      BLOB NOT NULL,
-  trivia_hash    BLOB,                     -- trailing trivia blob hash (NULL = no trivia)
-  created_commit TEXT NOT NULL,
-  deleted_commit TEXT
+  trivia         TEXT,                        -- trailing trivia (NULL = none)
+  trivia_hash    BLOB,                        -- sha256(trivia) (NULL = none)
+  created_at     TEXT NOT NULL,               -- the identity's birth, carried (D6)
+  updated_at     TEXT NOT NULL,               -- the block's own last change (14.2 rule)
+  deleted_at     TEXT                         -- tombstone (NULL = live); Phase 4 stops writing tombstoned rows (D2)
 );
-CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
 
@@ -363,6 +370,7 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   raw_hash       BLOB NOT NULL,
   norm_hash      BLOB NOT NULL,
   type           TEXT NOT NULL,
+  created_at     TEXT NOT NULL,            -- carried from the deleted row, restored on resurrection (D6)
   deleted_commit TEXT NOT NULL,
   expires_ts     TEXT NOT NULL
 );

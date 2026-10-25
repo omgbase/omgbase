@@ -33,17 +33,18 @@ import type { DrainResult, SemanticIndexIdentity } from "../../semantic/indexer.
 
 /**
  * What the recorder receives for one accepted transition of a document
- * (spec/store §5.4 steps 0–2, 10): the id-assigned body tree (the structural
- * identities), the frontmatter raw, the accepted content's hash, the path the
- * revision carries and the commit it hangs off. The before-head (the previous
- * revision: its seq, tree and frontmatter as the delta base, the checkpoint
- * rule) is the recorder's OWN state today — `revisions` is both the head
- * token's mint and the history (inventory-ts §3.1; D1 moves the mint to the
- * core in Phase 3).
+ * (spec/store §5.4 step 15, 17.0): the head token the CORE minted (D1), the
+ * id-assigned body tree (the structural identities), the frontmatter raw, the
+ * accepted content's hash, the path the revision carries and the commit it
+ * hangs off. The before-head (the previous captured revision: its seq, tree
+ * and frontmatter as the delta base, the checkpoint rule) is the recorder's
+ * OWN state; the core numbers and hashes the head without reading it (M1).
  */
 export interface RevisionTransition {
   docId: string;
-  /** The path as of this revision (a `docs_move` later rewrites the current revision's — `movePath`). */
+  /** The head token the core minted for this transition (spec/store §5.4 step 6, 17.0 D1): the recorder's `revisions.rev_id`. */
+  head: string;
+  /** The path as of this revision — immutable (17.0 D11: a `docs_move` is a new transition at the new path, with the unchanged tree). */
   path: string;
   /** The `commits` row the revision hangs off (`newCommit`). */
   commitId: string;
@@ -55,7 +56,7 @@ export interface RevisionTransition {
   renderedHash: Buffer;
 }
 
-/** The head token a captured transition minted: the `r_` revision id and the per-document seq. */
+/** A captured transition's row: the head token it was captured under (= `RevisionTransition.head`) and the recorder's per-document seq. */
 export interface CapturedRevision {
   revId: string;
   seq: number;
@@ -74,17 +75,13 @@ export interface HistoryRecorder {
 
   /** Step 5 / the api path's one `commits` row: the transition's origin, actor, reason and ts (inventory-ts §2.2 row `newCommit`). */
   newCommit(input: NewCommitInput): { commitId: string; seq: number };
-  /** Steps 0–2: the Merkle tree (full or delta), the frontmatter blob, the `revisions` row — one accepted transition (inventory-ts §2.1 rows 315–343). */
+  /** Step 15 (17.0): the Merkle tree (full or delta over the recorder's OWN previous captured revision), the frontmatter blob, the `revisions` row under the core's head token — one accepted transition, content, structure or path (D11: a `docs_move` hands the unchanged tree at the new path). */
   captureRevision(transition: RevisionTransition): CapturedRevision;
-  /** Step 10: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
+  /** Step 15: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
   recordDispositions(commitId: string, dispositions: readonly DispositionRow[]): void;
-  /** `docs_move`'s history half: the current revision's `path` rewritten in place (inventory-ts §2.4 row `movePath`; D11 makes a move a transition in Phase 3). */
-  movePath(docId: string, revId: string | null, to: string): void;
 
-  // ---- current state read THROUGH history (Phase 3 retires each: M1, M4) ----
+  // ---- current state read THROUGH history (M4 retires both in Phase 3c; M1 retired `currentFrontmatterRaw`/`movePath` in 3a) ----
 
-  /** The current frontmatter raw of a revision, resolved through its delta chain (spec/store §6.1; inventory-ts §3.2; M1). */
-  currentFrontmatterRaw(revId: string): string | null;
   /** A revision's `rendered_hash` — the bytes a `rename` row expects at `to` (inventory-ts §2.4 row `move_path`; M4). */
   renderedHash(revId: string): Buffer | null;
   /** The `rendered_hash` of the revision BEFORE `revId` of the same document — the materializer's prior-bytes rule (inventory-ts §2.4 row `priorRenderedHash`; M4). */
@@ -92,8 +89,10 @@ export interface HistoryRecorder {
 
   // ---- the surface's reads (spec/surface §3) ----
 
-  /** `docs_read { at }` / `docs_read_at` and the materializer's render: spec/store §6.2 reconstruct at a revision (segment-aware). */
+  /** `docs_read { at }` / `docs_read_at`: spec/store §6.2 reconstruct at a revision (segment-aware). */
   readAtRevision(docId: string, revId: string): DocsReadAtResult | null;
+  /** A captured revision's frontmatter raw, resolved through the recorder's own delta chain (spec/store §6.2 "Resolving"); null when it has none or the row is unknown. Migration 17's backfill reads it once per live head (§3.4 step 17). */
+  frontmatterAtRevision(revId: string): string | null;
   /** `blocks_history`: a block's biography from `block_changes` × `commits` × `dispositions`. */
   blocksHistory(blockId: string, opts?: { limit?: number }): NodeChange[];
   /** `docs_diff`: block-grain diff between two revisions. */
@@ -225,8 +224,9 @@ export interface IdentityClaims {
 /**
  * The capabilities a store runs with. `history`/`semantic` are `null` when the
  * capability is off (D3 `capability_unavailable` names the states) — in Phase
- * 1 the defaults are always present, and the core's writers require history
- * (`requireHistory`) because the head token is still the revision id (D1).
+ * 1 the defaults are always present; through Phase 3 the core's writers still
+ * require history (`requireHistory`) because legacy capture stays on for every
+ * existing repository (the head token is the core's since 17.0, D1).
  */
 export interface Capabilities {
   history: HistoryRecorder | null;

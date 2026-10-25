@@ -134,8 +134,13 @@ function runDoctor(cli: Cli, args: string[]): number {
   const leaves = liveLeafCount(db);
   checks.push({ name: "fts rows == live leaf blocks", ok: ftsCount === leaves, detail: `fts=${ftsCount} leaves=${leaves}` });
 
-  const dangling = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)").get() as { c: number }).c;
-  checks.push({ name: "no dangling current_rev", ok: dangling === 0, detail: `${dangling} dangling` });
+  // Store 17.0 (D1): every live document has a head token, and while legacy
+  // capture is on the recorder's `revisions` row agrees with it (spec/store §8
+  // H1 — the check `doctor` used to call "no dangling current_rev").
+  const headless = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NULL").get() as { c: number }).c;
+  checks.push({ name: "head present", ok: headless === 0, detail: `${headless} without a head` });
+  const uncaptured = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)").get() as { c: number }).c;
+  checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `${uncaptured} heads without a revision` });
 
   const integrity = db.pragma("integrity_check", { simple: true }) as string;
   checks.push({ name: "sqlite integrity", ok: integrity === "ok", detail: integrity });

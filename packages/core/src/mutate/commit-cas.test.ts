@@ -17,7 +17,7 @@ import { FsDocStore } from "./doc-store.js";
 import { MutationError } from "./tree.js";
 
 // spec/mutate §4 step 5 (2.2): every precondition a request was planned
-// against — per document the row triple `(path, current_rev, file_hash)` and
+// against — per document the row triple `(path, head, file_hash)` and
 // the bytes on disk — is validated INSIDE the commit's `BEGIN IMMEDIATE`
 // transaction before the commit row is minted, so a plan the world moved from
 // under rolls back having minted nothing and having touched no file (the files
@@ -50,13 +50,13 @@ function save(path: string, content: string): string {
   mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_commit IS NULL").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_at IS NULL").get(path) as { doc_id: string }).doc_id;
 }
 function commits(): { commit_id: string; origin: string; reason: string | null }[] {
   return store.db.prepare("SELECT commit_id, origin, reason FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; origin: string; reason: string | null }[];
 }
-function row(docId: string): { path: string; current_rev: string | null; hash: string | null } {
-  return store.db.prepare("SELECT path, current_rev, lower(hex(file_hash)) hash FROM docs WHERE doc_id = ?").get(docId) as { path: string; current_rev: string | null; hash: string | null };
+function row(docId: string): { path: string; head: string | null; hash: string | null } {
+  return store.db.prepare("SELECT path, head, lower(hex(file_hash)) hash FROM docs WHERE doc_id = ?").get(docId) as { path: string; head: string | null; hash: string | null };
 }
 const appendOp = (doc: string, markdown: string) => ({ op: "insert" as const, doc, to: { parent: { doc: true as const }, at: "end" as const }, markdown });
 const head = { origin: "api" as const, actor: "agent:test", reason: "tail" };
@@ -82,32 +82,32 @@ function expectNoBurnedCommitId(): void {
 }
 
 describe("commit preconditions — the row triple, re-validated inside the transaction", () => {
-  it("the plan carries each loaded document's (path, current_rev, file_hash) and every ingest_known effect its base", () => {
+  it("the plan carries each loaded document's (path, head, file_hash) and every ingest_known effect its base", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const b = save("b.md", "# B\n\nBravo.\n");
     const plan = planChangeset(store, { repoId, rootPath: dir, ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test" } });
     const ra = row(a);
     const rb = row(b);
     expect(plan.preconditions).toEqual([
-      { id: a, path: "a.md", currentRev: ra.current_rev, fileHash: ra.hash },
-      { id: b, path: "b.md", currentRev: rb.current_rev, fileHash: rb.hash },
+      { id: a, path: "a.md", currentRev: ra.head, fileHash: ra.hash },
+      { id: b, path: "b.md", currentRev: rb.head, fileHash: rb.hash },
     ]);
     expect(ra.hash).toBe(sha256("# A\n\nAlpha.\n").toString("hex"));
     const known = plan.effects.filter((e) => e.kind === "ingest_known");
     expect(known.map((e) => e.base)).toEqual([readDocBase(store.db, a), readDocBase(store.db, b)]);
   });
 
-  it("a second connection bumping docs.current_rev between plan and commit → stale_plan: no file written, no commit row, no id burned", () => {
+  it("a second connection bumping docs.head between plan and commit → stale_plan: no file written, no commit row, no id burned", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const b = save("b.md", "# B\n\nBravo.\n");
     const before = commits();
     const plan = planChangeset(store, { repoId, rootPath: dir, ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test" } });
-    const expectedRev = row(b).current_rev;
+    const expectedRev = row(b).head;
 
     // Another process advanced the second document's revision (no FK on the
     // column; the other engine's revision row lives in its own history).
     const other = new Database(dbPath());
-    other.prepare("UPDATE docs SET current_rev = 'r_elsewhere' WHERE doc_id = ?").run(b);
+    other.prepare("UPDATE docs SET head = 'r_elsewhere' WHERE doc_id = ?").run(b);
     other.close();
 
     const err = fail(() => commitChangeset(store, repoId, head, plan.effects, new Date().toISOString(), { docStore: new FsDocStore(dir) }));
@@ -124,18 +124,20 @@ describe("commit preconditions — the row triple, re-validated inside the trans
     expectNoBurnedCommitId();
   });
 
-  it("a concurrent docs_move changing docs.path (current_rev unchanged) between plan and commit → stale_plan", () => {
+  it("a concurrent docs_move between plan and commit → stale_plan (the path moved AND the head advanced, store 17.0 D11)", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const plan = planChangeset(store, { repoId, rootPath: dir, ops: [appendOp(a, "A tail.")], origin: { actor: "agent:test" } });
-    const rev = row(a).current_rev;
+    const rev = row(a).head;
     docsMove(store, { repoId, rootPath: dir, actor: "agent:other" }, "a.md", "moved/a.md");
-    expect(row(a)).toMatchObject({ path: "moved/a.md", current_rev: rev });
+    const moved = row(a);
+    expect(moved.path).toBe("moved/a.md");
+    // A move is a transition (D11): the head token advanced with the path.
+    expect(moved.head).not.toBe(rev);
     const before = commits();
 
     const err = fail(() => commitChangeset(store, repoId, head, plan.effects, new Date().toISOString(), { docStore: new FsDocStore(dir) }));
     expect(err.code).toBe("stale_plan");
-    // A move advances no revision: the path alone made the plan stale.
-    expect(err.data).toMatchObject({ doc: a, expected_revision: rev, current: { revision: rev } });
+    expect(err.data).toMatchObject({ doc: a, expected_revision: rev, current: { revision: moved.head } });
     expect(existsSync(join(dir, "a.md"))).toBe(false);
     expect(readFileSync(join(dir, "moved/a.md"), "utf8")).toBe("# A\n\nAlpha.\n");
     expect(commits()).toEqual(before);
@@ -151,7 +153,7 @@ describe("commit preconditions — the row triple, re-validated inside the trans
 
     const err = fail(() => commitChangeset(store, repoId, head, plan.effects, new Date().toISOString(), { docStore: new FsDocStore(dir) }));
     expect(err.code).toBe("stale_plan");
-    expect(err.data).toMatchObject({ doc: a, current: { revision: row(a).current_rev, _hash: sha256(human).toString("hex") } });
+    expect(err.data).toMatchObject({ doc: a, current: { revision: row(a).head, _hash: sha256(human).toString("hex") } });
     expect(commits()).toEqual(before);
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe(human);
   });
@@ -244,9 +246,9 @@ describe("commit preconditions — the row triple, re-validated inside the trans
     expect(run([{ kind: "tombstone", docId: "d_nobody", path: "b.md", currentRev: null, pool: false }]).code).toBe("doc_missing");
     // A stale ingest_known whose document was deleted meanwhile is doc_missing, not stale_plan.
     const plan = planChangeset(store, { repoId, rootPath: dir, ops: [appendOp(b, "tail")], origin: { actor: "agent:test" } });
-    store.db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(before[0]!.commit_id, b);
+    store.db.prepare("UPDATE docs SET deleted_at = ? WHERE doc_id = ?").run("2026-01-01T00:00:00.000Z", b);
     expect(run(plan.effects).code).toBe("doc_missing");
-    store.db.prepare("UPDATE docs SET deleted_commit = NULL WHERE doc_id = ?").run(b);
+    store.db.prepare("UPDATE docs SET deleted_at = NULL WHERE doc_id = ?").run(b);
 
     // Every failure rolled back before minting: the files and rows are as they
     // were and the next commit id has no gap.

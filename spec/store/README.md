@@ -1,11 +1,19 @@
 # The omgbase store specification
 
-The store is the embedded SQLite database that owns **identity, history and
-the current state** of a repository of authored files. Files stay the source
-of truth for *content*; the store adds stable block ids, an append-only
-history of revisions and commits, the dispositions the matcher recorded, and
-the derived indexes the query surfaces read. At quiescence
-`sha256(file) == the current revision's rendered hash`. This directory
+The store is the embedded SQLite database that owns the **current state and
+the identity** of a repository of authored files and — through the history
+**recorder**, a capability the core calls inside its own transaction — an
+append-only **capture** of every accepted transition (revisions, commits,
+the dispositions the matcher recorded). Files stay the source of truth for
+*content*; the core adds stable block ids, the current bytes of every
+document on its own rows, and the derived indexes the query surfaces read.
+At quiescence `sha256(file) == docs.file_hash`. **Since 17.0 no current-state
+read touches a history table** (`docs/modular-core/`, Phase 3): the head
+token, the frontmatter raw, every block's bytes and every timestamp are
+columns of the current rows, and the recorder's tables are checked to
+*agree* with them (§8 H1–H3) rather than consulted. Through Phase 3 legacy
+capture stays on for every repository, so the recorder's rows are still
+written on every commit. This directory
 specifies the database so that more than one engine can open the **same
 file** and, given the same sequence of observed changes, write the **same
 rows**. It is owned by neither implementation.
@@ -70,7 +78,7 @@ ignores their rows. Fixtures are Markdown only (`format = 'markdown'`).
 ## Versioning
 
 `VERSION` is `<major>.<minor>`. **The major is the schema version** — the
-`PRAGMA user_version` every database carries (`16`), so a reader of a
+`PRAGMA user_version` every database carries (`17`), so a reader of a
 database knows which spec it conforms to. The minor counts semantic changes
 that need no migration: how a row is filled, an encoding, the observe
 procedure. The `omgbase-store` crate is `<major>.<minor>.<patch>`, exactly as
@@ -131,10 +139,12 @@ Opening a database:
 
 Minted ids are `<prefix>_<7 chars>`, the characters lowercase Crockford
 base32 (`0123456789abcdefghjkmnpqrstvwxyz`, no `i l o u`) from a CSPRNG.
-Prefixes: `d` document, `b` block, `c` commit, `r` revision, `x` external
-node, `col` collection, `cp` checkpoint, `e` edge, `rp` repo, `v` projection
-(reserved), `src` source, `s` archive segment (15.0, §7 "Retention"). Ids are repo-scoped, never reused, never
-re-assigned. An id is opaque: nothing may parse anything but its prefix out
+Prefixes: `d` document, `b` block, `c` commit, `r` revision — since 17.0
+the **head token** the core mints on every change to a document (§5.4 step
+6, D1), which the recorder's `revisions.rev_id` equals while capture is on
+— `x` external node, `col` collection, `cp` checkpoint, `e` edge, `rp` repo,
+`v` projection (reserved), `src` source, `s` archive segment (15.0, §7
+"Retention"). Ids are repo-scoped, never reused, never re-assigned. An id is opaque: nothing may parse anything but its prefix out
 of it, and `isValidId` accepts exactly `^[a-z]+_[alphabet]{7}$`.
 
 **Uniqueness at mint (13.5).** 32⁷ ≈ 3.4 × 10¹⁰ is small enough for the
@@ -145,8 +155,8 @@ duplicate `block_id`). The store therefore never lets a production mint
 return an id that is **in use**: one it has already issued in this process,
 or one that names a row of the prefix's table — `d` in `docs`, `b` in
 `blocks`, `block_changes` or `resurrection_pool` (a block id lives on in
-history after its row is gone), `c` in `commits`, `r` in `revisions`, `x`
-in `external_nodes`, `e` in `edges`, `cp` in `checkpoints`, `rp` in
+history after its row is gone), `c` in `commits`, `r` in `revisions` or as
+a `docs.head` (17.0), `x` in `external_nodes`, `e` in `edges`, `cp` in `checkpoints`, `rp` in
 `repos`, `src` in `sources`, `s` in `archives` — and redraws until it finds one that is not
 (`col` and `v` have no table and no check). A block id's `block_changes`
 row is what keeps it known after its `blocks` row and pool entry are gone,
@@ -180,11 +190,14 @@ characters; nothing in the store truncates.
 
 ### 2.4 Time
 
-Every timestamp column (`commits.ts`, `resurrection_pool.expires_ts`,
-`checkpoints.ts`) is RFC 3339 UTC with exactly three fractional digits and a
-`Z`: `2026-09-26T14:03:07.250Z` (JavaScript's `Date.toISOString()`). A caller
-supplies `ts` for an observation; the store stores it verbatim and derives
-`expires_ts = ts + 30 days` (30 × 86 400 000 ms), formatted the same way.
+Every timestamp column (`docs.created_at`/`updated_at`/`deleted_at`,
+`blocks.created_at`/`updated_at`/`deleted_at`, `resurrection_pool.created_at`/
+`expires_ts` — 17.0 — `commits.ts`, `checkpoints.ts`) is RFC 3339 UTC with
+exactly three fractional digits and a `Z`: `2026-09-26T14:03:07.250Z`
+(JavaScript's `Date.toISOString()`). A caller supplies `ts` for an
+observation; the store stores it verbatim — every `*_at` column of the rows
+a commit writes is that `ts` (§5.4) — and derives `expires_ts = ts + 30
+days` (30 × 86 400 000 ms), formatted the same way.
 Timestamps compare as strings, so the format is load-bearing. A `ts` not in
 this format is a caller error; the reference only notices when it derives
 `expires_ts` (a pool write), a port may reject it up front.
@@ -198,17 +211,31 @@ The tables of `schema.sql` this spec fills:
 | Table | One row per | Meaning |
 | --- | --- | --- |
 | `repos` | repository | `repo_id`, unique `slug`, `settings` JSON (defaults `{}`). A repo owns identity and history, not a filesystem; where its bytes come from is the sync registry's business. |
-| `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; `current_rev`; `file_hash` (of the bytes the current revision renders to — §5.4 step 12); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); `deleted_commit` (tombstone, `NULL` = live). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
-| `blocks` | live or tombstoned block of the **current** revision | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), `raw_hash`, `norm_hash`, `trivia_hash` (`NULL` = no trailing trivia), `created_commit`, `deleted_commit`. Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_commit` set. |
-| `blobs` | distinct byte string | Content-addressed: `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block — and, since 16.0, every **frontmatter delta** (§4.1 "Delta nodes": a `{"f":…}` text a revision's `frontmatter_blob` may name instead of the raw). Never deleted in v1. |
+| `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; **`head`** (17.0, D1 — the head token: an `r_` id the core mints on every change to the document — content, structure, path or liveness, §5.4 step 6; `NULL` only before a new row's first commit, never for a live doc; equal to the recorder's `revisions.rev_id` while capture is on; `current_rev` through 16.x); `file_hash` (of the bytes the head renders to — §5.4 step 12); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); **`frontmatter_raw`** (17.0, D10/M1 — the frontmatter block's raw, fences included, `NULL` when the document has none: the current value, never a delta — through 16.x the current frontmatter lived only in the head revision's `frontmatter_blob`); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); **`created_at`** (17.0, D6 — the identity's birth: the first commit's `ts`; survives tombstone and revival); **`updated_at`** (the `ts` of the commit that last minted the head — content, structure, path or liveness: a move and a tombstone count); **`deleted_at`** (the tombstone's `ts`, `NULL` = live; `deleted_commit` through 16.x). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
+| `blocks` | live or tombstoned block of the **current** head | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), **`raw`** (17.0, D10 — the block's raw source, inline; through 16.x only `blobs` held it), `raw_hash` (= `sha256(raw)`: the CAS and dedup key), `norm_hash`, **`trivia`** (the trailing trivia, `NULL` = none), `trivia_hash` (= `sha256(trivia)`, `NULL` when `trivia` is), **`created_at`** (17.0, D6 — the identity's birth, carried: the previous live row's for a carried block, the pool row's for a resurrected one, the evicted row's for a cross-document move, the commit's `ts` for an inserted or lineage-minted one — §5.4 step 9), **`updated_at`** (the block's own last change: the commit's `ts` unless the block's verdict is `same`, 14.2's rule), **`deleted_at`** (the tombstone's `ts`, `NULL` = live). `created_commit`/`deleted_commit` are gone (M2). Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_at` set (D2, step one — Phase 4 stops writing them). |
+| `blobs` | distinct byte string | **The recorder's** (17.0, D10): content-addressed, `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block — and, since 16.0, every **frontmatter delta** (§4.1 "Delta nodes": a `{"f":…}` text a revision's `frontmatter_blob` may name instead of the raw). Written only by the capture (§5.4 step 15), read only by the history reads (§6.2) — no current read touches it; with legacy capture on the head's bytes are therefore stored twice, on the rows and here. Never deleted except by the §7 sweep. |
 | `tree_nodes` | distinct sibling list, full or delta | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1 — a `[`-form full list, or (16.0) a `{"d":…}` **delta** over the same list of the document's previous revision. Identical subtrees share a row; identical deltas do too. |
 | `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash` — a full or a delta node), `frontmatter_blob` (a `blobs.hash` — the raw or a delta — or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`, `archive` (15.0: `NULL` for a live revision; the `segment_id` of the archive segment holding its bodies once the retention squash moved them — then `root_tree` and `frontmatter_blob` are `NULL` too, §7 "Retention"; the row itself never leaves). Since 15.0 the two body columns are nullable and carry no foreign key. A `{`-form body is meaningful only in this row's context (`doc_id`, `seq`): §6 resolves it against revision `seq − 1`. |
 | `archives` | archive segment the repo knows (15.0) | The registry `history list` reads: `segment_id` (a minted `s_` id, the segment's manifest id), `repo_id`, `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi` (the `commits.seq` span of the segment's commits), `created_at`, `revision_count`, `bytes` (the file's size when recorded). Written by the squash transaction and by `attach`, deleted by `detach`; a revision's `archive` column may name a segment this table no longer carries (detached). |
 | `commits` | write to the repo | `commit_id`, per-repo `seq` from 1 (the change-feed cursor), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `checkpoint_id`, `ops`. Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
-| `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, `deleted_commit`, `expires_ts`. Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept. |
+| `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, **`created_at`** (17.0, D6 — carried from the deleted row so a resurrection restores the block's birth), `deleted_commit`, `expires_ts`. Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept. |
 | `pending_materializations` | file the `api` path still owes the disk (14.0) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, `rev_id` (the revision whose bytes `write`/`rename` leave at `path`; `NULL` for `remove`), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), `commit_id` (the `api` commit that recorded it). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7). Empty at quiescence; the observe path never inserts. |
 | `external_nodes`, `collections`, `checkpoints`, `properties`, `edges`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties`, `edges` and `checkpoints` are written by the reference during the same commit transaction; a runner does not compare them. |
+
+**Which tables are the recorder's (17.0).** `blobs`, `tree_nodes`,
+`revisions`, `commits`, `dispositions`, `block_changes` and `archives` are the
+**capture**: written by the recorder inside the commit transaction (§5.4
+step 15, §5.6 step 1 — `commits` is still minted by the core through Phase
+3d, since it is the change feed's cursor), read by the history reads (§6.2,
+`docs_history`, `changes_since`, `blocks_history`) and by the invariants
+that check they agree with the head (§8 H1–H5). The current state — `docs`,
+`blocks`, `resurrection_pool`, `pending_materializations`, `sections`, the
+graph, properties and search tables, the sync registry — is read and
+written by the core and depends on none of them. The three-file split of
+`schema.sql` into core / history / semantic bundles (`docs/modular-core/
+phase-1-contracts.md` §1.4) lands with the manifest (Phase 3e); through
+then one `schema.sql` creates every table.
 
 ### 3.2 Derived tables
 
@@ -250,7 +277,7 @@ checked without trusting its own copy of the DDL.
 
 ### 3.4 Migrations
 
-A database at `user_version` *n* < 16 is upgraded one version at a time, each
+A database at `user_version` *n* < 17 is upgraded one version at a time, each
 step idempotent (it inspects before it alters), each in a transaction:
 
 | To | Step |
@@ -269,10 +296,11 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
 | 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
+| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else the `ts` of `deleted_commit`'s commit. The history tables are read for the backfill and not touched. A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`) |
 | 16 | **nothing** — no DDL, no data pass. Every node a 15.x store holds is a `[`-form list and every frontmatter blob a raw: exactly the 16.0 **checkpoint forms** (§4.4), so every existing revision is a checkpoint and the store is already a valid 16.0 database; deltas appear with the next commit to each document (§4.4 decides per revision). The step only lets the opener move `user_version`. Compare the per-key-parts branch `2f7b286`, whose migration had to split every frontmatter blob in a verified full pass: there the old encoding was *not* a valid new one; here it is, by construction (§10 Decisions, 16.0) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
-for those tables. After the last step the opener sets `user_version = 16`.
+for those tables. After the last step the opener sets `user_version = 17`.
 `cases/migrations.json` pins these on authored pre-states (§9.3). Because
 every pre-state in the fixtures is a *partial* old schema (the tables the
 step touches, not a whole historical database), the expectation is the
@@ -297,10 +325,12 @@ bytewise ascending (recursively), no whitespace, numbers as JSON integers
 (attrs are booleans, integers and strings — `spec/format` §3). `type` is the
 `spec/format` §3 kind name. The node hash is `sha256(entries)`.
 
-Writing a tree: for each block in sibling order, put the `raw` blob, put the
-trivia blob when trivia is non-empty, write the children's node first when
-there are children, then build this node's entry; when every entry is built,
-put the node. `INSERT OR IGNORE` on `blobs` and `tree_nodes` gives structural
+Writing a tree **is the recorder's** (17.0, §5.4 step 15 — the current-state
+ingest writes a block's bytes on its own row, §3.1, and puts no blob): for
+each block in sibling order, put the `raw` blob, put the trivia blob when
+trivia is non-empty, write the children's node first when there are
+children, then build this node's entry; when every entry is built, put the
+node. `INSERT OR IGNORE` on `blobs` and `tree_nodes` gives structural
 sharing: an unchanged subtree is the same row. Nested blocks carry `""`
 trivia (`spec/format` §1), so `trivia_hash_hex` is `null` below the top level.
 The text above is a node's **full form** (`[`-form). Since 16.0 a node may
@@ -390,7 +420,10 @@ none).
 
 `blobs.bytes` is the UTF-8 encoding of the string (a block `raw`, a trivia,
 the frontmatter block's `raw` including its `---` fences). `size` is the byte
-length. The reference and any port must agree on UTF-8, so a lone surrogate
+length. The core's `blocks.raw`/`trivia` and `docs.frontmatter_raw` (17.0)
+are the **same strings stored inline** as `TEXT`; `raw_hash`/`trivia_hash`
+are their SHA-256 (§8 C2), so a row's bytes and the recorder's blob of the
+same hash are byte-identical. The reference and any port must agree on UTF-8, so a lone surrogate
 in the source (impossible in a valid UTF-8 file) is out of scope.
 
 ### 4.3 Sibling order and containment
@@ -516,7 +549,7 @@ re-pooled block a fresh `rowid` (it moves to the end). Keep a shared
 member in batch order:
 
 1. **Look up the live doc**: the `docs` row with this `path` and
-   `deleted_commit IS NULL`; remember its `file_hash` as `old_hash`.
+   `deleted_at IS NULL`; remember its `file_hash` as `old_hash`.
 2. **Gone** (`source` is null): if there is a live doc, its whole live tree
    (§5.2) is the member's *deleted* list and it contributes to the
    cross-document phase as such; otherwise the member is a no-op. Nothing
@@ -544,8 +577,8 @@ member in batch order:
 ### 5.2 The old tree, from the store
 
 The matcher's old side is rebuilt from the current rows, never from a parse:
-the doc's `blocks` with `deleted_commit IS NULL`, `raw` fetched from `blobs`
-by `raw_hash`, children grouped by `parent_block` and sorted by `ordinal` (a
+the doc's `blocks` with `deleted_at IS NULL`, `raw` **from the row** (17.0;
+`blobs` by `raw_hash` through 16.x), children grouped by `parent_block` and sorted by `ordinal` (a
 row whose `parent_block` names no loaded row counts as top-level),
 positional keys `(parent_key ?? "") + "/" + ordinal`, `text` recomputed by
 the `spec/format` §4.1 tree rule (so it equals what was stored), `norm_hash =
@@ -574,118 +607,122 @@ An echo emits its outcome. A gone member with a live doc runs §5.6.
 Otherwise the member commits as follows (the reference: `ingestFile` with the
 prepared result):
 
-0. **The revision's place (16.0).** Read the document's previous revision —
-   the row with the greatest `seq` for this `doc_id`, tombstoned or not
-   (`previous`; none for a new path). This revision's `seq` is
-   `previous.seq + 1` (1 when none) and it is a **checkpoint** by §4.4 rules
-   1–2: `(seq − 1) mod 16 == 0`, or no `previous`, or `previous.archive IS
-   NOT NULL`. When it is not a checkpoint, resolve `previous`'s tree (§6) as
-   the **base tree** and `previous`'s frontmatter raw as the **base raw**
-   (none when `previous.frontmatter_blob` is `NULL`).
-1. **Frontmatter blob.** When there is a frontmatter block: at a checkpoint,
-   or with no base raw, put its `raw` as a blob; otherwise compute the
-   frontmatter delta of `raw` against the base raw (§4.1) and put **the
-   smaller in UTF-8 bytes** (the raw on a tie). `frontmatter_blob_hex` is the
-   blob's hash, or `null` without a frontmatter block. The planner's
-   per-entry `set`/`unset frontmatter.<k>` (`spec/mutate` §11.3, §11.10)
-   therefore lands as a few line ops — a `set` of a one-line entry is one
-   `["~", line]`, a new key one `["+", line]` before the closing fence's
-   `["=",1]`, an `unset` one `["-"]` — whatever the planner's view of the
-   entries, since the store diffs lines (§10 Decisions).
+0. **Nothing to read (17.0).** The core numbers and hashes the head without
+   a previous revision (M1): 16.0's step 0 — the previous revision, its
+   resolved tree and raw as the delta bases, the checkpoint rule — is the
+   recorder's own, run inside step 15 from **its** previous captured
+   revision.
+1. **Frontmatter.** `frontmatter_raw` = the frontmatter block's `raw`
+   (fences included), or `NULL` without one — a current value on the doc
+   row (step 2), never a delta. The recorder's delta encoding of it (16.0
+   step 1: the raw at a checkpoint or with no base, else the smaller of the
+   line delta and the raw; the planner's per-entry `set`/`unset
+   frontmatter.<k>` landing as a few line ops) is step 15's.
 2. **Doc row.** If no `docs` row exists for `(repo, path)`: **mint `d`**,
-   insert `(doc_id, repo_id, path, format, leading_trivia =
-   tree.leading_trivia, frontmatter_trivia)`; else update `format`,
-   `leading_trivia`, `frontmatter_trivia` on the existing row **and set
-   `deleted_commit = NULL`** (§5.6 "Re-creation"). `frontmatter_trivia` is
-   the frontmatter block's `trivia` when there is one, else `NULL`. `format`
-   is the adapter's for the path in the reference (`markdown` for `.md`); a
-   port without an adapter registry writes `markdown`, which is all the
-   fixtures exercise.
+   insert `(doc_id, repo_id, path, format, head = NULL, leading_trivia =
+   tree.leading_trivia, frontmatter_raw, frontmatter_trivia, created_at =
+   ts, updated_at = ts, deleted_at = NULL)`; else update `format`,
+   `leading_trivia`, `frontmatter_raw`, `frontmatter_trivia` on the
+   existing row **and set `deleted_at = NULL`** (§5.6 "Re-creation") —
+   `created_at` is left alone: a revival keeps the identity's birth (D6).
+   `frontmatter_trivia` is the frontmatter block's `trivia` when there is
+   one, else `NULL`. `format` is the adapter's for the path in the reference
+   (`markdown` for `.md`); a port without an adapter registry writes
+   `markdown`, which is all the fixtures exercise.
 3. **Assign ids** onto the body tree from the reconcile assignment (new key →
    id); every key is assigned, so nothing mints here.
-4. **Write the tree** (§4.1) for the body blocks → `root_tree_hex`. Bottom-up,
-   per sibling list, with the base tree of step 0 (16.0): build the entries
-   (children first) and their canonical texts; find the **base list** — for
-   the root, the base tree's root; for a container's children, the list
-   under the block with the same `block_id` anywhere in the base tree; none
-   without a base tree or when the block has no children there. Then:
-   unchanged (the texts equal the base list's) **and** the base's node
-   self-contained → **reuse** the base's hash, write nothing; else a
-   checkpoint, or no base list → put the **full** node; else put the
-   **smaller** in UTF-8 bytes of the delta against the base list and the
-   full node (the full node on a tie). The reference's `writeBlockTree`
-   with a `TreeWriteContext`; without one (no base, checkpoint) it is the
-   15.x writer exactly.
+4. **(struck, 17.0)** — the Merkle tree is the recorder's (step 15; 16.0's
+   step 4 verbatim, run against the recorder's own base tree).
 5. **Commit row.** **Mint `c`**; `seq = 1 + max(seq)` over the repo's
    commits (0 when none); insert `(commit_id, repo_id, seq, ts, origin =
    'observed', actor = NULL, reason = NULL, checkpoint_id = NULL, ops =
-   NULL)`.
-6. **Revision row.** **Mint `r`**; `seq` is step 0's (`1 + max(seq)` over
-   the doc's revisions); insert `(rev_id, doc_id, seq, root_tree,
-   frontmatter_blob, rendered_hash = sha256(source), path, commit_id)`.
+   NULL)`. (Still the core's through Phase 3d, when the feed replaces it as
+   the change cursor — `docs/modular-core/phase-1-contracts.md` §1.11.)
+6. **Head token (17.0, D1).** **Mint `r`** — the document's new `head`,
+   minted by the core at exactly the point the recorder's revision row was
+   minted through 16.x (so the mint order and every fixture id hold), and
+   minted on **every** commit that renders the document: content,
+   structure, path (D11 — `docs_move`, `spec/mutate` §6) or liveness (a
+   revival). A tombstone (§5.6) mints none. The recorder is handed the
+   token in step 15 and writes its `revisions` row under it.
 7. **Pool the deleted.** For each id in the result's `deleted`, in order:
    `INSERT OR REPLACE` into `resurrection_pool` the doc's `blocks` row of
-   that id (any `deleted_commit`) with `deleted_commit = this commit` and
-   `expires_ts = ts + 30 days`. (A row that does not exist inserts nothing.)
+   that id (any `deleted_at`) as `(block_id, repo_id, doc_id, raw_hash,
+   norm_hash, type, created_at = the row's, deleted_commit = this commit,
+   expires_ts = ts + 30 days)`. (A row that does not exist inserts nothing.)
 8. **Evict foreign rows.** For each id in `cross_doc_ids` then
    `consumed_pool`: delete the `blocks` row with that id whose `doc_id` is
    **not** this doc (its FTS entry first when it was an indexed live leaf,
    `spec/search` §1.1 — decided over the table before any of the batch's
    rows goes, and a live parent the eviction leaves childless is
    re-indexed, since it is a leaf now), and delete the
-   id's `resurrection_pool` row. The id is live here now; `block_id` is a
-   primary key, and the source document — which commits later in the batch
-   or was tombstoned — never lists a carried id as deleted. A live foreign
-   row exists only for a cross-document move whose source commits later in
-   the batch (`batch::cross-doc-move-b-then-a`); a pooled id never has a
-   live row (I6), so a resurrection evicts only tombstoned rows
-   (`pool::resurrect-into-another-doc-evicts-tombstoned-row`).
-9. **Refresh the blocks.** Delete every `blocks` row of this doc (tombstoned
-   included; FTS entries of the live leaves first — `spec/search` §1.1 owns
-   which rows are indexed), then insert one row per
+   id's `resurrection_pool` row — **remembering the evicted row's and the
+   pool row's `created_at`** for step 9 (D6). The id is live here now;
+   `block_id` is a primary key, and the source document — which commits
+   later in the batch or was tombstoned — never lists a carried id as
+   deleted. A live foreign row exists only for a cross-document move whose
+   source commits later in the batch (`batch::cross-doc-move-b-then-a`); a
+   pooled id never has a live row (I6), so a resurrection evicts only
+   tombstoned rows (`pool::resurrect-into-another-doc-evicts-tombstoned-row`).
+9. **Refresh the blocks.** Read the doc's live rows' `created_at`/`updated_at`
+   (the carry source), then delete every `blocks` row of this doc
+   (tombstoned included; FTS entries of the live leaves first —
+   `spec/search` §1.1 owns which rows are indexed), then insert one row per
    body block in pre-order with `parent_block`, `order_key`, `ordinal`,
-   `depth`, `ancestor_path` (§4.3), `type`, `attrs`, `text`, `raw_hash`,
-   `norm_hash`, `trivia_hash` (`NULL` when the trivia is empty; nested blocks
-   always), `created_commit = this commit`, `deleted_commit = NULL`. Then
-   rebuild `sections` (§4.6) and the FTS rows for the doc (live leaves).
-10. **Dispositions.** For each disposition of the result **whose `kind` is
-    not `same`** (14.2): `INSERT OR IGNORE` `(commit_id, block_id, kind,
-    confidence, reason, matcher_v, detail as JSON)` into `dispositions`, and
-    `INSERT OR IGNORE (block_id, commit_id, kind)` into `block_changes`.
-    `detail` keeps the matcher's key spelling (`spec/reconcile` §10). A
-    `same` verdict — the block's raw bytes, parent and sibling index are
-    those of the old tree — is **not persisted**: the matcher still
-    produces one per untouched block (and the outcome below counts it), but
-    the two tables record what *changed*, so a block's rows are its own
-    history — its `inserted` row (the first revision writes one for every
-    block; the mint oracle of §2.1 depends on it), then one row per commit
-    that edited, moved, split, merged or resurrected it — and `MAX(commits.ts)`
-    over a block's `block_changes` is the block's own last change, not its
-    siblings'. Every other kind (`inserted`, `edited`, `moved`,
-    `edited_moved`, `deleted`, `split_from`, `merged_into`, `copied_from`,
-    `resurrected`, `bulk_rewrite`, and the cross-document kinds) is written
-    as before, confidence, reason, matcher version and detail untouched
-    (`spec/reconcile` R5/R6 hold for what is persisted). Through 14.1 every
-    verdict was written: about 18.5 rows per revision on a real repository,
-    nine in ten of them `same`, read by nothing (§10, Decisions).
+   `depth`, `ancestor_path` (§4.3), `type`, `attrs`, `text`, **`raw`**,
+   `raw_hash`, `norm_hash`, **`trivia`** and `trivia_hash` (both `NULL` when
+   the trivia is empty; nested blocks always), and (17.0, D6) **`created_at`**
+   = (a) the previous live row's when the block's verdicts are a carry
+   (`same`, `edited`, `moved`, `edited_moved`); (b) the pool row's when they
+   include `resurrected`; (c) the evicted foreign row's for a cross-document
+   move; (d) `ts` for `inserted` and the lineage kinds (`split_from`,
+   `merged_into`, `copied_from`, `bulk_rewrite`) — a new identity is born
+   now; **`updated_at`** = the previous live row's when the block's one
+   verdict is `same`, else `ts` (14.2's rule: a block is updated when IT
+   changes — a container's raw changes when a child's does, so it is
+   `edited` and moves); `deleted_at = NULL`. Then rebuild `sections` (§4.6)
+   and the FTS rows for the doc (live leaves).
+10. **(struck, 17.0)** — the dispositions are the recorder's (step 15; 16.0's
+    step 10 verbatim: every verdict whose `kind` is not `same`, 14.2).
 11. **Consume the pool.** Delete the `resurrection_pool` row of every id in
     `consumed_pool`.
-12. **Pointers.** `UPDATE docs SET current_rev = rev_id, file_hash =
-    sha256(source)` — `file_hash` is the hash of the bytes the current
-    revision renders to: on the observe path the observed source; on the
+12. **Pointers.** `UPDATE docs SET head = <step 6>, file_hash =
+    sha256(source), updated_at = ts` — `file_hash` is the hash of the bytes
+    the head renders to: on the observe path the observed source; on the
     api path (below) the bytes the engine is materializing, which the file
     holds once §5.7 has run. The echo gate (§5.1 step 3) is unchanged: the
-    materialized file hashes to `file_hash` and is an echo.
+    materialized file hashes to `file_hash` and is an echo. `updated_at`
+    moves with the head (D6): the document's own last change.
 13. **Converged** = `file_hash == rendered_hash` (trivially) **and**
     `render(tree) == source` (`spec/format` §1 inv. 1) **and**
     `reconstruct(doc) == source` (§6.1, read back from the rows just
-    written). Reported in the outcome; a `false` is a bug in one of the
-    three, never a normal state.
+    written — since 17.0 from the rows alone). Reported in the outcome; a
+    `false` is a bug in one of the three, never a normal state.
 14. **Conflict flag**, inside the same transaction, with step 12's pointers
     (13.6; 13.5 ran it after the transaction): `UPDATE docs SET conflicted =
     1|0` for the path, 1 iff `source` has a line starting with `<<<<<<<`
     **and** a line starting with `>>>>>>>`. Only an observed member sets the
     flag; an `api` ingest (`spec/mutate` §4) leaves it untouched.
+15. **Capture (17.0, M1/D1).** The core hands the recorder the accepted
+    transition — the head token of step 6, `doc_id`, `path`, `commit_id`,
+    the id-assigned body tree (every block's `raw`, `trivia`, `type`, `attrs`,
+    children, pre-order), `frontmatter_raw`, `rendered_hash = sha256(source)`
+    — and the verdict list, inside the same transaction, after step 14 and
+    before COMMIT (the reference: `HistoryRecorder.captureRevision` at the
+    point of step 6, `recordDispositions` after step 9c; the order of the
+    recorder's statements within the transaction is not pinned). The
+    recorder writes 16.0's steps 0, 1, 4, 6 and 10 **from its own state**:
+    its previous captured revision of the document (the greatest `seq`,
+    tombstoned or not; none for a new path) as the delta base and the
+    checkpoint decision (§4.4), the frontmatter blob (the raw or its line
+    delta), the blobs and nodes (§4.1 — this is where every `blobs` row is
+    put), the `revisions` row `(rev_id = head, doc_id, seq = 1 + its greatest
+    for the doc, root_tree, frontmatter_blob, rendered_hash, path,
+    commit_id)`, and every verdict whose kind is not `same` into
+    `dispositions`/`block_changes`. A failure inside the recorder rolls the
+    whole transaction back. Legacy capture is **on for every repository**
+    through Phase 3 (the manifest that switches it is Phase 3e), so
+    `revisions.rev_id == docs.head` on every live document (§8 H1).
 
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
 conflicted, dispositions: kind → count over this commit }`. The counts are
@@ -697,17 +734,18 @@ describes what the matcher saw; the tables describe what changed (step
 **The api path (13.7).** `spec/mutate` §4 step 5(c) runs this procedure for
 every document of a changeset inside **one transaction**: step 5 runs once,
 before the first document, with `origin = 'api'`, the request's `actor` and
-`reason`, `checkpoint_id = NULL`, `ops = NULL`; every document's step 6
-names that commit (so N revisions and every `blocks.created_commit`,
-`dispositions.commit_id`, `properties.created_commit` and edge
-`from_commit`/`to_commit` of the request share one `commit_id`); steps 1–4
-and 6–13 run per document in load order with the known-id resolver; step 8
+`reason`, `checkpoint_id = NULL`, `ops = NULL`; every document's step 15
+names that commit (so N revisions and every `dispositions.commit_id`,
+`properties.created_commit` and edge `from_commit`/`to_commit` of the
+request share one `commit_id`, and every document's `updated_at` is its
+`ts`); steps 1–3, 6–9 and 11–13 run per document in load order with the
+known-id resolver, step 15 per document; step 8
 is unchanged (in one transaction the eviction and the pool insert of a
 cross-document move run in load order, so only their visibility changes —
 `spec/mutate` §10); step 14 never runs. The observe path is unchanged: one
 transaction per member, one commit per member (the per-member commit ids
 `spec/store` fixtures pin). Mint order on the api path: one `c`, then per
-document `r`, `x`, `e`. The known-id resolver's verdicts are
+document `r`, `x`, `e` — a `docs_move` mints its `r` first (D11, below). The known-id resolver's verdicts are
 `spec/mutate` §4 step 5(b)'s — since 14.2 a carried block is classified
 exactly as `spec/reconcile` §2 classifies a carry, so an untouched block is
 `same` and step 10 drops it there too; a one-block edit writes one row.
@@ -715,13 +753,16 @@ exactly as `spec/reconcile` §2 classifies a carry, so an untouched block is
 **The api path (14.0).** The same transaction records the file half as
 intent, after every document's steps and before COMMIT: one
 `pending_materializations` row per path the request owes the disk (§3.1) —
-`write` for every ingested document (`rev_id` = its new revision,
+`write` for every ingested document (`rev_id` = its new head,
 `rendered_hash` = `sha256(source)`), `rename` for a moved document
-(`from_path` = the old path, `path` = the new one, `rev_id` = its current
-revision and `rendered_hash` that revision's — or the revision the retarget
-gives it when it is a self-linking source), `remove` for a deleted document
-(`rev_id = NULL`, `rendered_hash` = its last revision's rendered hash, or
-`file_hash` when it has no revision). `INSERT OR REPLACE`: a later request
+(`from_path` = the old path, `path` = the new one, `rev_id` = the **new
+head the move minted** (17.0, D11: `docs_move` is a transition — `UPDATE
+docs SET path, head = mint r, updated_at = ts` and a captured revision of
+the unchanged tree at the new path; `spec/mutate` §6) and `rendered_hash` =
+`docs.file_hash` — or the head and bytes the retarget gives it when it is a
+self-linking source, which then mints the one head), `remove` for a deleted
+document (`rev_id = NULL`, `rendered_hash` = `docs.file_hash` before the
+tombstone — the bytes its head renders to, I1). `INSERT OR REPLACE`: a later request
 for the same path supersedes the earlier intent. No file is touched inside
 the transaction; §5.7 says how the rows become files.
 
@@ -760,10 +801,14 @@ leave a pooled, half-tombstoned doc):
 1. **Mint `c`**; insert a commit `(seq, ts, origin = 'observed', actor =
    NULL, reason = 'observed deletion')`.
 2. `INSERT OR REPLACE` every live block of the doc into `resurrection_pool`
-   with `deleted_commit = this commit`, `expires_ts = ts + 30 days`.
-3. Delete the doc's FTS rows; `UPDATE blocks SET deleted_commit = this commit
-   WHERE doc_id = ? AND deleted_commit IS NULL`; `UPDATE docs SET
-   deleted_commit = this commit`.
+   with `created_at` = the row's, `deleted_commit = this commit`,
+   `expires_ts = ts + 30 days`.
+3. Delete the doc's FTS rows; `UPDATE blocks SET deleted_at = ts WHERE doc_id
+   = ? AND deleted_at IS NULL` (17.0, D2 step one: the rows stay, tombstoned
+   — Phase 4 deletes them); `UPDATE docs SET deleted_at = ts, updated_at =
+   ts` — **`head` is kept** (the token of the last rendered state; a CAS
+   against it fails on liveness, `spec/mutate` §4) and **no head is minted**
+   (D11: a delete is no revision).
 
 No revision, no dispositions. The doc's `sections` rows are left in place
 (§10). The blocks are pooled because a vanished file
@@ -774,9 +819,10 @@ no-op with outcome `{ deleted: false }`.
 **Re-creation.** When bytes are observed again at a tombstoned path, §5.1
 step 4 reconciles against an empty old tree (the tombstoned rows are not
 live) with the pool offered, so identical blocks resurrect (`spec/reconcile`
-phase 6b), and §5.4 step 1 reuses the doc row — **and clears its
-`deleted_commit`**: the row is live again, its `current_rev` advances, and
-the next observation of the same bytes is an echo. (§10: the reference did
+phase 6b — each restoring its `created_at` from the pool row), and §5.4
+step 2 reuses the doc row — **and clears its `deleted_at`**, keeping
+`created_at`: the row is live again, a new head is minted (a revival is a
+transition, D11), and the next observation of the same bytes is an echo. (§10: the reference did
 not clear the tombstone; found while writing this section.)
 
 ### 5.7 Materialization and pending rows (14.0)
@@ -794,9 +840,10 @@ say what each file must become.
 
 **Materializing a row** (`materialize_row`), through the repo's doc store,
 then `DELETE` the row — autocommit per file, so partial progress is durable.
-Bytes are `reconstruct at rev_id` (§6.2 — byte-exact for a current revision,
-and a row always names its document's current revision because a later
-commit to the path replaces the row). A materializer never overwrites bytes
+Bytes are **`reconstruct(doc)` — from current state** (§6.1; 17.0: a row
+always names its document's current head because a later commit to the path
+replaces the row, and §6.1 is byte-exact for the head; through 16.x the
+render was `reconstruct at rev_id` through the Merkle tree). A materializer never overwrites bytes
 it does not recognise as the engine's own: at `path` it accepts nothing, the
 bytes the row names (`rendered_hash`), or the **prior** bytes — the rendered
 hash of the revision before `rev_id` (what the file holds when the process
@@ -818,9 +865,10 @@ silently reverted and never overwriting it.
 | `remove` | the row's bytes | unlink; delete the row |
 | `remove` | absent, or foreign bytes | leave the file (a rewritten file is untracked now — the next sweep re-creates the path, §5.6); delete the row |
 
-A row whose bytes cannot be rendered (`rev_id` names no revision, the
-reconstruction does not hash to `rendered_hash`) is kept for a later
-materializer rather than guessed. `materialize_pending(repo)` replays every
+A row whose bytes cannot be rendered (the document is gone, or its
+reconstruction does not hash to `rendered_hash` — the head moved under the
+row, impossible while the replace rule holds and checked anyway) is kept for
+a later materializer rather than guessed. `materialize_pending(repo)` replays every
 row of a repo in insertion order and returns the paths cleared; it is step 0
 of the freshness sweep and of recovery (`spec/sync` §4.3) — the production
 recovery points — and `spec/mutate` §4 step 5 (a) replays the rows of the
@@ -860,17 +908,19 @@ as `changed`; they are read-only and the next sweep settles it.
 
 ### 6.1 Reconstruct (current bytes)
 
-`reconstruct(doc)` for a live doc: `leading_trivia`, then — if the current
-revision has a `frontmatter_blob` — that revision's **frontmatter raw**
-(below) followed by `frontmatter_trivia`, then for each **top-level** live
-block in `order_key` order the `raw` blob's bytes followed by the trivia
-blob's bytes when `trivia_hash` is not `NULL`. A container's `raw` already
+`reconstruct(doc)` for a live doc: `leading_trivia`, then — when
+`frontmatter_raw` is not `NULL` — `frontmatter_raw` followed by
+`frontmatter_trivia`, then for each **top-level** live block in `order_key`
+order its `raw` followed by its `trivia` when not `NULL`. **Every byte comes
+from the `docs` and `blocks` rows** (17.0, D10/M1): nothing resolves and no
+history table is read — through 16.x the frontmatter was the head revision's
+`frontmatter_blob` resolved through its delta chain, and the body bytes were
+`blobs` rows named by the live rows' hashes. A container's `raw` already
 contains its children (`spec/format` §1 inv. 3), so only roots are walked.
 Equals `source` by construction (§5.4 step 13). `NULL` for a tombstoned or
-unknown doc. The body comes from `blocks`, so a delta root (16.0) costs the
-hot read nothing; only the frontmatter resolves.
+unknown doc.
 
-**Resolving (16.0).** A revision's **frontmatter raw** is its
+**Resolving (16.0; the recorder's since 17.0).** A revision's **frontmatter raw** is its
 `frontmatter_blob`'s bytes when they start with `-`; when they start with
 `{` (a delta, §4.1) it is the ops applied to the lines of revision
 `seq − 1`'s frontmatter raw, recursively — at most 15 steps (§4.4). A
@@ -896,9 +946,9 @@ reads (`docs_diff`'s id → raw maps) resolve the whole tree the same way. `lead
 come from the **current** doc row — they are not versioned — so the result
 is byte-exact for the current revision and best-effort for older ones; the
 read reports `rendered_hash_match = sha256(result) == rendered_hash` as the
-honest signal. The materializer (§5.7) and recovery render a pending row's
-bytes with this read at the row's `rev_id`, and refuse the row when the
-result does not hash to `rendered_hash`.
+honest signal. This is a **history read** (17.0): `docs_read { at }`,
+`docs_diff*` and the §8 agreement checks use it; the materializer (§5.7)
+renders from current state and no longer calls it.
 
 **Through a segment (15.0).** For a revision with `archive IS NOT NULL` the
 bodies are not in the store: the read looks the segment up in `archives` by
@@ -931,10 +981,15 @@ index the whole content table, containers included); `doc_edges` is the graph
 component's. A rebuilt deterministic table equals the maintained one row for
 row (§8 I8).
 
-**Garbage collection** is mark-and-sweep from every **live** revision's
-`root_tree` (`WHERE root_tree IS NOT NULL`, walking `child_tree_hash_hex`)
-and every non-NULL `frontmatter_blob`: reachable tree nodes and blobs (raw,
-trivia, frontmatter) are kept, the rest deleted. **The mark is explicit
+**Garbage collection** is the recorder's (17.0, M7/D10): the core owns **no
+byte GC** — a live or tombstoned block's bytes are on its row and a
+document's frontmatter on its row, so `blobs` reachability is purely a
+question of the recorder's revisions. It is mark-and-sweep from every
+**live** revision's `root_tree` (`WHERE root_tree IS NOT NULL`, walking
+`child_tree_hash_hex`) and every non-NULL `frontmatter_blob`: reachable tree
+nodes and blobs (raw, trivia, frontmatter) are kept, the rest deleted —
+nothing in the current rows roots a blob, and nothing a `blocks` row holds
+can be swept. **The mark is explicit
 (16.0):** a node marks the objects its own text names — every entry of a
 `[`-node, the `+`/`~` entries of a `{`-node (their raw and trivia blobs,
 and their child hashes, walked the same way) — and never resolves a delta.
@@ -1012,8 +1067,8 @@ NULL`) in `seq` order, with the document's policy (the base, or the first
 matching override's keys over it), a revision is **kept** when any of these
 holds, and **archived** otherwise:
 
-1. it is the document's `current_rev` (a tombstoned document's last
-   revision is its `current_rev` — §5.6 never clears it);
+1. it is the document's `head` (a tombstoned document's last revision is
+   its `head` — §5.6 never clears it);
 2. a `pending_materializations` row names it as `rev_id`;
 3. its age — `floor((now − commit.ts) / 86 400 000 ms)` in whole days — is
    less than `keep_days`;
@@ -1228,14 +1283,43 @@ vacuum returns 0.
 
 A runner checks these on the database after every observe step and at the
 end of every case; an implementation may assert them in its own tests.
+Since 17.0 they come in two groups: the **core** invariants (C1–C7) hold on
+the current rows alone, and the **history** invariants (H1–H3 and I2, I4–I10
+as restated) say the recorder's capture **agrees** with the head — legacy
+capture being on for every repository, every runner checks both; the
+compositions that switch capture off are Phase 3e's (`docs/modular-core/
+phase-1-contracts.md` §6).
 
-- **I1 Convergence.** For every live doc with a current revision:
-  `docs.file_hash == revisions.rendered_hash == sha256(last observed
-  source)`; `reconstruct(doc) == source` (§6.1); reconstruct at the current
-  revision (§6.2) `== source` with `rendered_hash_match = true`. (On the
-  api path the file lags the store while a pending row exists — §5.7; the
-  `spec/mutate` runner compares such a path against the store's own
-  reconstruction, as it does for a `disk` edit.)
+- **C1 Convergence.** For every live doc: `docs.file_hash == sha256(last
+  observed source)` and `reconstruct(doc) == source` (§6.1) — from the rows
+  alone. (On the api path the file lags the store while a pending row
+  exists — §5.7; the `spec/mutate` runner compares such a path against the
+  store's own reconstruction, as it does for a `disk` edit.)
+- **C2 Row hashes (17.0).** Every `blocks` row: `raw_hash == sha256(raw)`;
+  `trivia` and `trivia_hash` are both `NULL` or `trivia_hash ==
+  sha256(trivia)` (never an empty `trivia`); `norm_hash == sha256(text)`.
+- **C3 Blocks are the head.** For every live doc the live `blocks` rows read
+  as a tree (children by `parent_block`, `order_key` order) are exactly the
+  parse of `source` with the assigned ids: `ordinal` dense from 0 per parent
+  and agreeing with `order_key` order, `depth`/`ancestor_path` per §4.3,
+  every `parent_block` a live row. (Through 16.x this was I3's structural
+  half; the mirror against the recorder's tree is H3.)
+- **C4 The head.** Every live doc has a non-NULL `head`.
+- **C6 Pool.** Every `resurrection_pool` row has `created_at ≤` its deleting
+  commit's `ts` and a block id with no live `blocks` row (I6 below says the
+  rest).
+- **C7 Timestamps.** `created_at ≤ updated_at` on every doc and block; a
+  live doc's `updated_at` equals the `ts` of the commit that minted its head
+  (H1's commit); a block's `updated_at ≤` its document's; `deleted_at` is
+  `NULL` on every live row and non-NULL on every tombstoned one, a live doc
+  has no tombstoned block and a tombstoned doc no live one, and a
+  tombstoned doc's `deleted_at == updated_at`.
+- **H1 Capture agrees with the head (I1 restated).** For every live doc
+  `docs.head` names a live `revisions` row with `path == docs.path`,
+  `rendered_hash == file_hash == sha256(source)` and its commit's `ts ==
+  updated_at`; reconstruct at it (§6.2) `== source` with
+  `rendered_hash_match = true`; and `docs.frontmatter_raw` equals the
+  revision's resolved frontmatter raw (`NULL` when it has none).
 - **I2 Hash integrity.** Every `blobs` row: `hash == sha256(bytes)`, `size ==
   |bytes|`. Every `tree_nodes` row: `hash == sha256(entries)` and `entries`
   parses as §4.1 — a `[`-form list, or a `{"d":…}` delta — with every
@@ -1245,16 +1329,17 @@ end of every case; an implementation may assert them in its own tests.
   `revisions.root_tree` present in `tree_nodes`; every non-NULL
   `frontmatter_blob` in `blobs`, its bytes a raw (`-`) or a `{"f":…}` delta
   that parses (15.0: an archived revision's are NULL).
-- **I3 Blocks mirror the current revision.** For every live doc, the live
-  `blocks` rows, read as a tree (children by `parent_block`, `order_key`
-  order), have exactly the ids, types, `raw_hash`es and trivia hashes of the
-  current revision's **resolved** tree (§6; walking `child_tree_hash_hex`),
-  in the same order; `ordinal` is dense from 0 per parent and agrees with
-  `order_key` order; `depth` and `ancestor_path` follow §4.3; `norm_hash ==
-  sha256(text)`; `attrs` as JSON equals the tree entry's attrs.
+- **H3 Blocks mirror the head revision (I3 restated as agreement).** For
+  every live doc, the live `blocks` rows, read as a tree (children by
+  `parent_block`, `order_key` order), have exactly the ids, types,
+  `raw_hash`es, trivia hashes and `attrs` of the head revision's
+  **resolved** tree (§6.2; walking `child_tree_hash_hex`), in the same
+  order. Through 16.x this was a dependency (the rows' bytes were readable
+  only through the tree's hashes); since 17.0 it is a check that the
+  recorder captured what the core committed.
 - **I4 Dense sequences.** `commits.seq` is `1..n` per repo in `ts`-then-seq
-  order; `revisions.seq` is `1..k` per doc; `current_rev` is the revision
-  with the greatest `seq`.
+  order; `revisions.seq` is `1..k` per doc; `head` is the revision with the
+  greatest `seq`.
 - **I5 Nothing to collect.** The **explicit** mark set of §7 — from the
   **live** revisions (15.0: `root_tree IS NOT NULL`, plus every non-NULL
   `frontmatter_blob`; 16.0: a `{`-node contributes only the entries it
@@ -1266,7 +1351,7 @@ end of every case; an implementation may assert them in its own tests.
   second through `read_at` (§9.4).
 - **I6 Pool.** Every `resurrection_pool` row names a `deleted_commit` that
   exists, an `expires_ts` exactly 30 days after that commit's `ts`, and a
-  block id that has no live `blocks` row.
+  block id that has no live `blocks` row (C6 adds `created_at`).
 - **I7 Dispositions.** Every disposition's `commit_id` exists. For every
   commit that is the *current* commit of at least one live doc, over the live
   docs whose current revision it wrote (one on the observe path; N for an
@@ -1288,7 +1373,7 @@ end of every case; an implementation may assert them in its own tests.
   wholly archived commit's surviving rows are left as they are).
 - **I9 Archived revisions (15.0).** `archive IS NOT NULL` ⇔ `root_tree IS
   NULL`, and an archived revision's `frontmatter_blob` is NULL; a document's
-  `current_rev` is never archived. A wholly archived commit (one with at
+  `head` is never archived. A wholly archived commit (one with at
   least one revision and no live one) has no `dispositions` row, and each
   of its `block_changes` rows is its block's earliest (no row of the same
   `block_id` belongs to a commit with a smaller `seq`).
@@ -1363,7 +1448,9 @@ repos are visited in `rowid` order).
 minter (§2.2) is active, so ids minted by a migration (`src_0`) compare.
 When opening must fail (a newer `user_version`), `expect` is instead
 `{ "error": "<the exact message>" }` — `migrations::newer-version-is-refused`
-pins `database schema (v17) is newer than this build (v16); upgrade omgbase`.
+pins `database schema (v18) is newer than this build (v17); upgrade omgbase`.
+`migrations::v16-to-v17-heads-inline-bytes-time` pins step 17 over a 16.x
+pre-state with a frontmatter delta chain, a tombstone and two pool rows.
 `migrations::v15-to-v16-is-lazy` pins step 16: a 15.x pre-state with two
 revisions, a full node and a raw frontmatter blob comes out at
 `user_version` 16 with every `revisions`, `tree_nodes` and `blobs` row
@@ -1391,15 +1478,15 @@ unchanged.
             { "path": "b.md", "deleted": false, "doc": null } ],
           { "swept": 0 }
         ],
-        "docs":        [ { "doc_id": "d_0", "path": "a.md", "format": "markdown", "current_rev": "r_1", "file_hash": "<hex>", "conflicted": 0, "leading_trivia": "", "frontmatter_trivia": null, "deleted_commit": null } ],
+        "docs":        [ { "doc_id": "d_0", "path": "a.md", "format": "markdown", "head": "r_1", "file_hash": "<hex>", "conflicted": 0, "leading_trivia": "", "frontmatter_raw": null, "frontmatter_trivia": null, "created_at": "…", "updated_at": "…", "deleted_at": null } ],
         "commits":     [ { "commit_id": "c_0", "seq": 1, "ts": "…", "origin": "observed", "actor": null, "reason": null, "checkpoint_id": null, "ops": null }, … ],
         "revisions":   [ { "rev_id": "r_0", "doc_id": "d_0", "seq": 1, "root_tree": "<hex>", "frontmatter_blob": null, "rendered_hash": "<hex>", "path": "a.md", "commit_id": "c_0" }, … ],
         "blobs":       [ { "hash": "<hex>", "size": 7, "bytes": "# Title" }, … ],
         "tree_nodes":  [ { "hash": "<hex>", "entries": "[[\"b_0\",\"…\",null,\"heading\",{\"level\":1},\"…\"],…]" }, … ],
-        "blocks":      [ { "block_id": "b_0", "doc_id": "d_0", "parent_block": null, "order_key": "V", "ordinal": 0, "depth": 0, "ancestor_path": "/", "type": "heading", "attrs": { "level": 1 }, "text": "Title", "raw_hash": "<hex>", "norm_hash": "<hex>", "trivia_hash": "<hex>", "created_commit": "c_1", "deleted_commit": null }, … ],
+        "blocks":      [ { "block_id": "b_0", "doc_id": "d_0", "parent_block": null, "order_key": "V", "ordinal": 0, "depth": 0, "ancestor_path": "/", "type": "heading", "attrs": { "level": 1 }, "text": "Title", "raw": "# Title", "raw_hash": "<hex>", "norm_hash": "<hex>", "trivia": "\n\n", "trivia_hash": "<hex>", "created_at": "…", "updated_at": "…", "deleted_at": null }, … ],
         "dispositions": [ { "commit_id": "c_0", "block_id": "b_0", "kind": "inserted", "confidence": null, "reason": null, "matcher_v": "m2.3", "detail": {} }, … ],
         "block_changes": [ { "block_id": "b_0", "commit_id": "c_0", "kind": "inserted" }, … ],
-        "resurrection_pool": [ { "block_id": "b_1", "doc_id": "d_0", "raw_hash": "<hex>", "norm_hash": "<hex>", "type": "paragraph", "deleted_commit": "c_1", "expires_ts": "…" } ],
+        "resurrection_pool": [ { "block_id": "b_1", "doc_id": "d_0", "raw_hash": "<hex>", "norm_hash": "<hex>", "type": "paragraph", "created_at": "…", "deleted_commit": "c_1", "expires_ts": "…" } ],
         "sections":    [ { "doc_id": "d_0", "heading_block": "b_0", "level": 1, "first_ordinal": 0, "last_ordinal": 1 } ],
         "pending_materializations": []
       }
@@ -1488,7 +1575,8 @@ unchanged.
   revision_count }` — `file` the recorded path's file name (the directory is
   the run's), `bytes` omitted (a page layout, not a behavior).
 - Hash columns as hex; `attrs` and `detail` as JSON objects (compared with
-  key order ignored); `bytes` as the decoded string; every other column as
+  key order ignored); `bytes` as the decoded string; `raw`, `trivia` and
+  `frontmatter_raw` (17.0) as the strings they are; every other column as
   its SQLite value (`INTEGER` → number, `NULL` → `null`). A `tree_nodes`
   row's `entries` is projected as its text whatever its form (16.0: a
   `{"d":…}` delta reads as the string it is — the fixture pins the
@@ -1520,6 +1608,38 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (17.0) — the head and its bytes live on the current rows; no
+  current-state read touches a history table** (`docs/modular-core/`, Phase
+  3a: M1, M2, D10, D6, D11). `docs.head` (the `r_` token, minted by the core
+  on every change — content, structure, path, liveness; `current_rev`
+  renamed, resolution 15), `docs.frontmatter_raw`, `blocks.raw`/`trivia`,
+  `created_at`/`updated_at`/`deleted_at` on docs and blocks
+  (`created_commit`/`deleted_commit` gone; every `deleted_commit IS NULL`
+  filter reads `deleted_at IS NULL`), `resurrection_pool.created_at`; §5.4
+  restated as the core's steps plus a capture step 15; §5.6 keeps the head
+  and mints none; a `docs_move` mints a head and is captured as a revision
+  of the unchanged tree at the new path (`revisions.path` immutable — the
+  fidelity note: a 16.x move rewrote the current revision's path in place,
+  so a document moved before 17.0 keeps every older revision at the old
+  path and the then-current one at the new); §6.1 reconstructs from the
+  rows; §5.7 renders from current state; §7 the core has no byte GC; §8 is
+  C1–C7 + H1/H3 (I3 restated as agreement). Migration 17 rebuilds the three
+  tables from the 16.x history (§3.4). What moved in the fixtures: every
+  observation case's `docs`/`blocks`/`resurrection_pool` rows gained the
+  columns and lost the renamed ones (no id, hash, order or outcome moved —
+  the head is minted at the recorder's old mint point); `spec/mutate` and
+  `spec/surface` cases with a `docs_move` gained the moved document's
+  revision (and its Receipt entry; the older revision keeps its path);
+  `spec/cli` `doctor` renders `head present` / `capture complete`. New:
+  `migrations::v16-to-v17-heads-inline-bytes-time`; `v1-to-v16-minimal`
+  continues to `v1-to-v17-minimal`; the refusal pins `v18`/`v17`. The Rust
+  twin follows in its own round (a store major ships both engines together;
+  until then a 17.0 database is unreadable by the published Rust binary).
+- **Retired (17.0) — `created_commit` is "last written by".** The column is
+  gone; `created_at` is the identity's birth (carried) and `updated_at` the
+  block's own last change (§3.1, §5.4 step 9) — the meanings a reader
+  wanted and the write stamp never gave (`identity::created-commit-is-last-written`
+  now shows the carried `created_at`).
 - **Changed (16.0) — a node may be a delta over the previous revision.**
   `tree_nodes.entries` is a `[`-form list or a `{"d":…}` delta, a
   `frontmatter_blob` a raw or a `{"f":…}` delta (§4.1 "Delta nodes"); a
@@ -1594,12 +1714,10 @@ brought to it).
   re-ingested). §5.6 "Re-creation" is the rule; `deletion::recreate-revives-doc-row`
   pins it. (The existing `checkpoint.test.ts` recreate test checked the
   block ids only.)
-- **Pinned — `created_commit` is "last written by".** Every `blocks` row is
-  rewritten by every commit to its document, and all of them carry the
-  committing commit as `created_commit` — a carried block does not keep its
-  birth commit. The block's history lives in `dispositions`/`block_changes`;
-  the column is a write stamp. Kept as built; a fixture with two revisions
-  shows it.
+- **Pinned (through 16.x) — `created_commit` was "last written by".** Every
+  `blocks` row was rewritten by every commit to its document, and all of
+  them carried the committing commit as `created_commit`; retired in 17.0
+  (above).
 - **Pinned — `blocks.attrs` is not canonical JSON.** The reference writes
   the attrs object in insertion order; the tree entries (§4.1) canonicalize.
   Compared as JSON; the Rust crate writes sorted keys.
@@ -1645,6 +1763,31 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-25, store 17.0 (Phase 3a of `docs/modular-core/`): **the current
+  state is self-contained.** The decisions were Brendan's (`docs/modular-core/
+  README.md` §4: D1 the head token is the `r_` id minted by the core; D6
+  `created_at` is the identity's birth and `updated_at` the entity's own
+  last change; D10 bytes inline on the rows, `blobs` entirely the
+  recorder's; D11 a move is a transition, a delete is not; resolution 15
+  `current_rev` renamed `head`), and the contracts
+  (`phase-1-contracts.md` §1.7, §1.11, §1.12, §1.15, §1.16) are the text
+  §3–§8 follow. Three things decided in the implementation: **the head is
+  minted where the revision id was** (so no fixture id moves and the
+  per-prefix mint order of §5.4 holds — the recorder receives the token
+  rather than returning one); **a self-linking moved document gets one
+  revision, not two** (its retarget's `ingest_known` mints the head and
+  carries the new path; a bare `move_path` mints it); and **the migration
+  resolves each live head's frontmatter through the recorder's own read**
+  (`frontmatterAtRevision`) rather than importing the delta module into the
+  store, keeping the dependency direction the Phase 1 gate pinned. What
+  this slice does not do, by design (the later slices of Phase 3): the id
+  claims and the pool's `deleted_at` (3b), the self-contained pending row
+  (3c), the feed and `commits`' retirement from the core (3d), open-only
+  edges, the manifest, the alert channel and the dropped objects (3e) —
+  and the capture is still unconditional. Measured (`docs/modular-core/
+  baseline.md` §2): with legacy capture on the head's bytes exist twice, so
+  the import grows by the live content's inline bytes and nothing else
+  changes shape.
 - 2026-10-17, store 16.0: **delta tree nodes** (§4.1, §4.4, §6, §7). The
   math that decided it, from the per-key-parts branch `2f7b286` (built,
   measured, not merged): a Merkle list of hash references costs about 77 B

@@ -57,12 +57,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "acef3b6ca44a269c6635408204954013257aefab0d3182171cf1950c6d4c3944",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           }
         ],
         "commits": [
@@ -147,11 +150,14 @@
               "level": 1
             },
             "text": "H",
+            "raw": "# H",
             "raw_hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
             "norm_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_1",
@@ -164,11 +170,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_2",
@@ -181,11 +190,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey.",
+            "raw": "Beta paragraph about bees and honey.",
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           }
         ],
         "dispositions": [
@@ -241,6 +253,7 @@
             "raw_hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
             "norm_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -250,6 +263,7 @@
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -259,6 +273,7 @@
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -332,12 +347,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -405,11 +423,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -422,11 +443,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey.",
+            "raw": "Beta paragraph about bees and honey.",
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -541,12 +565,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           }
         ],
         "commits": [
@@ -624,11 +651,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_1",
@@ -641,11 +671,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey.",
+            "raw": "Beta paragraph about bees and honey.",
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": "c_1"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           }
         ],
         "dispositions": [
@@ -687,6 +720,7 @@
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -696,6 +730,7 @@
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -809,12 +844,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -913,11 +951,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -930,11 +971,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey.",
+            "raw": "Beta paragraph about bees and honey.",
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1085,12 +1129,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "11f8bc20639eb5fcdbd27d7f47ad4ccae16c60f4ff60ede659fd87ac431b5aaf",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1198,11 +1245,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1215,11 +1265,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Gamma paragraph about goats and cheese.",
+            "raw": "Gamma paragraph about goats and cheese.",
             "raw_hash": "863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316",
             "norm_hash": "863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:02:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1289,6 +1342,7 @@
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -1388,12 +1442,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1507,11 +1564,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards.",
+            "raw": "Alpha paragraph about apples and orchards.",
             "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
             "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1524,11 +1584,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey.",
+            "raw": "Beta paragraph about bees and honey.",
             "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
             "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [

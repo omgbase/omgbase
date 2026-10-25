@@ -39,7 +39,7 @@ export function resolveRef(store: Store, repoId: string, ref: string): ResolvedR
     if (!node) return null;
     if (node.block_id) {
       const live = store.db
-        .prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+        .prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
         .get(node.block_id);
       if (live) return { kind: "block", docId: node.doc_id, blockId: node.block_id };
     }
@@ -49,7 +49,7 @@ export function resolveRef(store: Store, repoId: string, ref: string): ResolvedR
   const prefix = prefixOf(ref);
   if (prefix === "b") {
     const row = store.db
-      .prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+      .prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
       .get(ref) as { doc_id: string } | undefined;
     if (!row) return null;
     return { kind: "block", docId: row.doc_id, blockId: ref };

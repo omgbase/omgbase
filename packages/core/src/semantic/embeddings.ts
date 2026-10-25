@@ -164,7 +164,7 @@ export class EmbeddingWorker {
     // only while the block's row is live and still carries the content hash it
     // was embedded for — a row that moved on, a tombstone, or no row at all (a
     // removed block is evicted) is a stale result, dropped and counted.
-    const current = this.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND raw_hash = ? AND deleted_commit IS NULL");
+    const current = this.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND raw_hash = ? AND deleted_at IS NULL");
     const stillCurrent = (t: EmbedTask): { doc_id: string } | null =>
       (current.get(t.blockId, Buffer.from(t.contentHashHex, "hex")) as { doc_id: string } | undefined) ?? null;
     const batchSize = opts.batchSize && opts.batchSize > 0 ? opts.batchSize : DEFAULT_EMBED_BATCH;
@@ -244,7 +244,7 @@ export class EmbeddingWorker {
     // The late-result guard for documents: the vector is written only while the
     // document still has the content the input was built from (`docs.file_hash`
     // as of the task; a task built off a row without one checks liveness alone).
-    const current = this.store.db.prepare("SELECT lower(hex(file_hash)) AS h FROM docs WHERE doc_id = ? AND deleted_commit IS NULL");
+    const current = this.store.db.prepare("SELECT lower(hex(file_hash)) AS h FROM docs WHERE doc_id = ? AND deleted_at IS NULL");
     const stillCurrent = (t: DocEmbedTask): boolean => {
       const row = current.get(t.docId) as { h: string | null } | undefined;
       if (!row) return false;

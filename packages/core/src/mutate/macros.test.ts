@@ -86,10 +86,10 @@ describe("macros expand to kernel ops (visible)", () => {
 
   it("docs_append preserves existing block ids and only mints the appended block", () => {
     const docId = seed("j.md", "# Journal\n\nexisting paragraph\n");
-    const before = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+    const before = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
     const res = apply(store, { repoId, rootPath: dir, ops: docsAppend(docId, "appended paragraph\n"), origin: { actor: "agent:test" } });
     expect(res.committed).toBe(true);
-    const after = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+    const after = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
     // every prior id is still live (none re-minted) and exactly one new block added
     for (const id of before) expect(after).toContain(id);
     expect(after.length).toBe(before.length + 1);
@@ -127,8 +127,8 @@ describe("linksRepair rewrites LINK DESTINATIONS, coalesced to top-most blocks",
     (store.db.prepare("SELECT type FROM blocks WHERE block_id = ?").get(blockId) as { type: string }).type;
   const liveBytes = (docId: string, type: string): string[] =>
     (store.db.prepare(
-      "SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.doc_id = ? AND bl.type = ? AND bl.deleted_commit IS NULL",
-    ).all(docId, type) as { bytes: Buffer }[]).map((r) => r.bytes.toString("utf8"));
+      "SELECT bl.raw AS bytes FROM blocks bl WHERE bl.doc_id = ? AND bl.type = ? AND bl.deleted_at IS NULL",
+    ).all(docId, type) as { bytes: string }[]).map((r) => r.bytes);
 
   it("a link inside a list: one op on the list (the item hit collapses), apply succeeds, list + item bytes both update", () => {
     const docId = seed("list.md", "# L\n\n- item [b](/b.md) here\n- other\n\nAfter [b](/b.md).\n");

@@ -6182,7 +6182,13 @@
           {
             "plan_id": "487d3339243f069ad3bd5af960c787c16a676bf896ae7d8bce32f3a61e78e7cf",
             "commit": "c_7",
-            "revisions": [],
+            "revisions": [
+              {
+                "_id": "d_2",
+                "_path": "/moved/new.md",
+                "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
+              }
+            ],
             "new_ids": {},
             "committed": true,
             "summary": [
@@ -6194,7 +6200,7 @@
           {
             "_id": "d_2",
             "_path": "/moved/new.md",
-            "rev": "r_6",
+            "rev": "r_7",
             "properties": {
               "frontmatter": {
                 "layer": "draft"
@@ -6207,7 +6213,7 @@
             "_raw": "---\nlayer: draft\n---\n\n# New\n\nCreated.\n"
           },
           {
-            "plan_id": "0c9f3e9c6920739f43250ad7b9519a6f4bade121658686cc84dd55547fad5ce2",
+            "plan_id": "69e1be69f2363a7d4a7ab7e4934b22c4d5179a2b9378a91de22c054093513217",
             "commit": "c_8",
             "revisions": [],
             "new_ids": {},
@@ -6291,7 +6297,7 @@
                 "revisions": [
                   {
                     "_id": "d_2",
-                    "_path": "/moved/new.md",
+                    "_path": "/new.md",
                     "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
                   }
                 ]
@@ -6302,7 +6308,13 @@
                 "ts": "2026-09-27T10:11:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
-                "revisions": []
+                "revisions": [
+                  {
+                    "_id": "d_2",
+                    "_path": "/moved/new.md",
+                    "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
+                  }
+                ]
               },
               {
                 "commit": "c_8",
@@ -12649,7 +12661,13 @@
           {
             "plan_id": "0e25a311db70eec0a6517b761720fd20b8c2872dd6096addd9f7289b8351b2b6",
             "commit": "c_5",
-            "revisions": [],
+            "revisions": [
+              {
+                "_id": "d_1",
+                "_path": "/notes/two.md",
+                "_hash": "d48645d8dd922a50c5617dd6094511b977331ab5fbbf79f8eb1501da305d579b"
+              }
+            ],
             "new_ids": {},
             "committed": true,
             "summary": [
@@ -12712,10 +12730,18 @@
               },
               {
                 "_id": "r_4",
-                "_path": "/notes/two.md",
+                "_path": "/notes/one.md",
                 "_seq": 2,
-                "_is_current": true,
+                "_is_current": false,
                 "o": "observed",
+                "now": "/notes/two.md"
+              },
+              {
+                "_id": "r_5",
+                "_path": "/notes/two.md",
+                "_seq": 3,
+                "_is_current": true,
+                "o": "api",
                 "now": "/notes/two.md"
               }
             ],
@@ -12727,6 +12753,10 @@
             "hits": [
               {
                 "_id": "r_1",
+                "_path": "/notes/one.md"
+              },
+              {
+                "_id": "r_4",
                 "_path": "/notes/one.md"
               }
             ],
@@ -12778,6 +12808,11 @@
                     "_seq": 2,
                     "_origin": "observed",
                     "_reason": null
+                  },
+                  {
+                    "_seq": 3,
+                    "_origin": "api",
+                    "_reason": "move notes/one.md -> notes/two.md"
                   }
                 ]
               }
@@ -12789,8 +12824,12 @@
           {
             "hits": [
               {
-                "_id": "r_4",
+                "_id": "r_5",
                 "_path": "/notes/two.md"
+              },
+              {
+                "_id": "r_4",
+                "_path": "/notes/one.md"
               },
               {
                 "_id": "r_3",
@@ -12818,7 +12857,7 @@
             "truncated": false,
             "cursor": null,
             "consumer": "count",
-            "count": 5
+            "count": 6
           },
           {
             "hits": [
@@ -12836,6 +12875,10 @@
               },
               {
                 "_id": "r_4",
+                "_path": "/notes/one.md"
+              },
+              {
+                "_id": "r_5",
                 "_path": "/notes/two.md"
               },
               {
@@ -12893,7 +12936,7 @@
           },
           {
             "_id": "d_1",
-            "_path": "/notes/two.md",
+            "_path": "/notes/one.md",
             "rev": "r_4",
             "_raw": "# One\n\nA note that will be moved, edited once before the move.\n",
             "renderedHashMatch": true
@@ -13006,7 +13049,7 @@
                 "_id": "d_1",
                 "_path": "/notes/two.md",
                 "deleted": false,
-                "currentRev": "r_4",
+                "currentRev": "r_5",
                 "versions": [
                   {
                     "_rev": "r_1",
@@ -13026,6 +13069,17 @@
                     "_ts": "2026-09-27T10:01:30.000Z",
                     "_origin": "observed",
                     "_actor": null,
+                    "_hash": "d48645d8dd922a50c5617dd6094511b977331ab5fbbf79f8eb1501da305d579b",
+                    "_is_current": false,
+                    "_archived": false
+                  },
+                  {
+                    "_rev": "r_5",
+                    "_seq": 3,
+                    "_commit": "c_5",
+                    "_ts": "2026-09-27T10:02:00.000Z",
+                    "_origin": "api",
+                    "_actor": "agent:mcp",
                     "_hash": "d48645d8dd922a50c5617dd6094511b977331ab5fbbf79f8eb1501da305d579b",
                     "_is_current": true,
                     "_archived": false

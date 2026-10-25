@@ -34,7 +34,7 @@ function blockIds(path: string): { block_id: string; type: string; text: string;
   return store.db
     .prepare(
       `SELECT b.block_id, b.type, b.text, b.parent_block FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-       WHERE d.path = ? AND b.deleted_commit IS NULL ORDER BY b.rowid`,
+       WHERE d.path = ? AND b.deleted_at IS NULL ORDER BY b.rowid`,
     )
     .all(path) as { block_id: string; type: string; text: string; parent_block: string | null }[];
 }
@@ -48,7 +48,7 @@ describe("blocks_fts — leaf-only index (spec/search §1.1)", () => {
     const { hits } = textSearch(store, repoId, "zooxanthellae");
     expect(hits.map((h) => h._type)).toEqual(["list_item"]);
     // Every container (list, item-with-children) is live but unindexed.
-    const containers = store.db.prepare(`SELECT count(*) AS n FROM blocks b WHERE b.deleted_commit IS NULL AND NOT (${LIVE_LEAF_SQL})`).get() as { n: number };
+    const containers = store.db.prepare(`SELECT count(*) AS n FROM blocks b WHERE b.deleted_at IS NULL AND NOT (${LIVE_LEAF_SQL})`).get() as { n: number };
     expect(containers.n).toBe(5); // list, item "corals…", sublist, item "polyps…", sub-sublist
   });
 

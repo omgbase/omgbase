@@ -12,14 +12,12 @@ import { rewriteLinkDestinations, splitDestination } from "../graph/link-destina
 // callers see the kernel ops that ran. Macros compose within one changeset.
 
 function rawHashOfBlock(store: Store, blockId: string): string | null {
-  const row = store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { h: string } | undefined;
+  const row = store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { h: string } | undefined;
   return row?.h ?? null;
 }
 function rawOfBlock(store: Store, blockId: string): string | null {
-  const row = store.db.prepare(
-    "SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ? AND bl.deleted_commit IS NULL",
-  ).get(blockId) as { bytes: Buffer } | undefined;
-  return row?.bytes.toString("utf8") ?? null;
+  const row = store.db.prepare("SELECT raw FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { raw: string } | undefined;
+  return row?.raw ?? null;
 }
 
 /** tasks_complete: update(attrs:{checked:true}) per block. */
@@ -70,7 +68,7 @@ export function sectionsMove(store: Store, heading: string, to: To): Op[] {
   if (!docRow) return [];
   const level = docRow.level ?? 1;
   const tops = store.db.prepare(
-    "SELECT block_id, ordinal, type, json_extract(attrs,'$.level') level FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal",
+    "SELECT block_id, ordinal, type, json_extract(attrs,'$.level') level FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal",
   ).all(docRow.doc_id) as { block_id: string; ordinal: number; type: string; level: number | null }[];
   const startIdx = tops.findIndex((t) => t.block_id === heading);
   let end = tops.length;
@@ -237,12 +235,11 @@ export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[],
     params.push(param);
   }
   const stmt = store.db.prepare(
-    `SELECT bl.block_id, bl.parent_block, d.path, b.bytes
+    `SELECT bl.block_id, bl.parent_block, d.path, bl.raw
      FROM blocks bl
-     JOIN blobs b ON b.hash = bl.raw_hash
      JOIN docs d ON d.doc_id = bl.doc_id
-     WHERE bl.repo_id = ? AND bl.deleted_commit IS NULL AND d.deleted_commit IS NULL
-       AND bl.type != 'code_fence' AND instr(b.bytes, ?) > 0 ${globSql}
+     WHERE bl.repo_id = ? AND bl.deleted_at IS NULL AND d.deleted_at IS NULL
+       AND bl.type != 'code_fence' AND instr(bl.raw, ?) > 0 ${globSql}
      ORDER BY d.path, bl.depth, bl.ordinal, bl.block_id`,
   );
   // The ORDER BY fixes the order of `ops`/`hits` (document path, then shallow
@@ -250,9 +247,9 @@ export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[],
   // an unordered join would leave it to the query planner (spec/mutate §5).
   const candidates = new Map<string, { parent: string | null; path: string; raw: string }>();
   for (const key of new Set(effective.map((r) => stripSlash(r.from)))) {
-    const rows = stmt.all(repoId, key, ...params) as { block_id: string; parent_block: string | null; path: string; bytes: Buffer }[];
+    const rows = stmt.all(repoId, key, ...params) as { block_id: string; parent_block: string | null; path: string; raw: string }[];
     for (const row of rows) {
-      if (!candidates.has(row.block_id)) candidates.set(row.block_id, { parent: row.parent_block, path: row.path, raw: row.bytes.toString("utf8") });
+      if (!candidates.has(row.block_id)) candidates.set(row.block_id, { parent: row.parent_block, path: row.path, raw: row.raw });
     }
   }
 
@@ -271,7 +268,7 @@ export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[],
   }
 
   // Collapse to top-most blocks: drop a hit whose ancestor is also a hit.
-  const parentOf = store.db.prepare("SELECT parent_block FROM blocks WHERE block_id = ? AND deleted_commit IS NULL");
+  const parentOf = store.db.prepare("SELECT parent_block FROM blocks WHERE block_id = ? AND deleted_at IS NULL");
   const hasChangedAncestor = (parent: string | null): boolean => {
     for (let p = parent; p !== null;) {
       if (changed.has(p)) return true;

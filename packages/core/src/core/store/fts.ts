@@ -26,7 +26,7 @@ interface FtsRow {
  * it never changes the answer).
  */
 export const LIVE_LEAF_SQL =
-  "b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_commit IS NULL)";
+  "b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_at IS NULL)";
 
 /**
  * How many rows the FTS index actually holds. `SELECT count(*) FROM blocks_fts`
@@ -72,7 +72,7 @@ export function ftsIndexDoc(db: Database, docId: string): void {
  */
 export function ftsRebuild(db: Database): void {
   db.exec("INSERT INTO blocks_fts(blocks_fts) VALUES('delete-all')");
-  const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
+  const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_at IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
   for (const docId of docIds) ftsIndexDoc(db, docId);
 }
 
@@ -86,22 +86,22 @@ export function ftsRebuild(db: Database): void {
  * loses its last live child becomes a leaf and gains an entry. The caller owns
  * the DELETE of the rows, which must follow this call.
  */
-export function ftsBeforeEvictRows(db: Database, rows: { rowid: number; block_id: string; doc_id: string; parent_block: string | null; text: string; deleted_commit: string | null }[]): void {
+export function ftsBeforeEvictRows(db: Database, rows: { rowid: number; block_id: string; doc_id: string; parent_block: string | null; text: string; deleted_at: string | null }[]): void {
   if (rows.length === 0) return;
   const evicted = new Set(rows.map((r) => r.block_id));
-  const hasLiveChild = db.prepare("SELECT 1 FROM blocks c WHERE c.doc_id = ? AND c.parent_block = ? AND c.deleted_commit IS NULL LIMIT 1");
+  const hasLiveChild = db.prepare("SELECT 1 FROM blocks c WHERE c.doc_id = ? AND c.parent_block = ? AND c.deleted_at IS NULL LIMIT 1");
   const del = db.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?, ?)");
-  const leaves = rows.filter((r) => r.deleted_commit === null && !hasLiveChild.get(r.doc_id, r.block_id));
+  const leaves = rows.filter((r) => r.deleted_at === null && !hasLiveChild.get(r.doc_id, r.block_id));
   for (const r of leaves) del.run(r.rowid, r.text);
   // Parents that stay live but are left childless are leaves from now on.
   const parentRow = db.prepare(
-    `SELECT b.rowid AS rowid, b.text AS text FROM blocks b WHERE b.block_id = ? AND b.doc_id = ? AND b.deleted_commit IS NULL
-       AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_commit IS NULL AND c.block_id NOT IN (${rows.map(() => "?").join(",")}))`,
+    `SELECT b.rowid AS rowid, b.text AS text FROM blocks b WHERE b.block_id = ? AND b.doc_id = ? AND b.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_at IS NULL AND c.block_id NOT IN (${rows.map(() => "?").join(",")}))`,
   );
   const ins = db.prepare("INSERT INTO blocks_fts(rowid, text) VALUES(?, ?)");
   const seen = new Set<string>();
   for (const r of rows) {
-    if (r.deleted_commit !== null || !r.parent_block || evicted.has(r.parent_block) || seen.has(r.parent_block)) continue;
+    if (r.deleted_at !== null || !r.parent_block || evicted.has(r.parent_block) || seen.has(r.parent_block)) continue;
     seen.add(r.parent_block);
     const p = parentRow.get(r.parent_block, r.doc_id, ...rows.map((x) => x.block_id)) as FtsRow | undefined;
     if (p) ins.run(p.rowid, p.text);

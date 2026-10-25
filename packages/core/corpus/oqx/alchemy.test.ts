@@ -822,7 +822,7 @@ describe("alchemy corpus — text() full-text", () => {
   function ftsDocs(term: string): string[] {
     return (store.db.prepare(
       "SELECT DISTINCT '/' || d.path AS path FROM blocks_fts JOIN blocks b ON b.rowid = blocks_fts.rowid " +
-        "JOIN docs d ON d.doc_id = b.doc_id WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_commit IS NULL",
+        "JOIN docs d ON d.doc_id = b.doc_id WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_at IS NULL",
     ).all(term, repoId) as { path: string }[]).map((r) => r.path).sort();
   }
   for (const term of ["mercury", "calcination", "sulphur"]) {

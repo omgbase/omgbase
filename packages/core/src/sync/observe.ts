@@ -113,7 +113,7 @@ export function observeBatch(
 ): BatchOutcome[] {
   const db = store.db;
   const config = opts.config ?? DEFAULT_CONFIG;
-  const liveDoc = db.prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL");
+  const liveDoc = db.prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL");
 
   // ---- pass 1: echo gate + reconcile, no commits -------------------------------
   const pool = loadPool(db, repoId, ts);
@@ -348,7 +348,7 @@ export function observeDelete(store: Store, repoId: string, path: string, opts: 
     deletePending(store.db, repoId, path);
   }
   const existing = store.db
-    .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+    .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL")
     .get(repoId, path) as { doc_id: string } | undefined;
   if (!existing) return { docId: null, path, deleted: false };
   tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);

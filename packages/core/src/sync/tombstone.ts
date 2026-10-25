@@ -47,19 +47,22 @@ export function tombstoneObservedDeletion(store: Store, repoId: string, docId: s
 
     // Snapshot the doc's live blocks into the resurrection pool BEFORE tombstoning,
     // mirroring core/ingest.ts's reconciling-delete snapshot (~30-day expiry) so a
-    // recreate of the same file can resurrect these block identities.
+    // recreate of the same file can resurrect these block identities — each
+    // carrying its `created_at` (D6).
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     db.prepare(
-      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ?
-         FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL`,
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?, ?
+         FROM blocks WHERE doc_id = ? AND deleted_at IS NULL`,
     ).run(commit.commitId, expires, docId);
 
     // Drop FTS index rows (external-content: delete with the original text before the
-    // blocks change), then tombstone the live blocks and the doc row.
+    // blocks change), then tombstone the live blocks and the doc row (spec/store
+    // §5.6, 17.0: `deleted_at = ts`, `updated_at = ts` — liveness is a change of
+    // the document's own; the head is KEPT and no new one is minted, D11).
     ftsDeleteDoc(db, docId);
-    db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, docId);
-    db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, docId);
+    db.prepare("UPDATE blocks SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL").run(ts, docId);
+    db.prepare("UPDATE docs SET deleted_at = ?, updated_at = ? WHERE doc_id = ?").run(ts, ts, docId);
 
     return commit.commitId;
   });

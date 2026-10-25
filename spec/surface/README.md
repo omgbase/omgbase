@@ -184,7 +184,7 @@ history, 4.7):
 
 | root | rows | order |
 | --- | --- | --- |
-| `docs` | `docs` with `deleted_commit IS NULL` | `(path, doc_id)` |
+| `docs` | `docs` with `deleted_at IS NULL` | `(path, doc_id)` |
 | `blocks` | live blocks of live docs | `(doc path, block_id)` |
 | `nodes` | `nodes` of live docs | `(doc path, node_id)` |
 | `links` | open `edges` rows (`to_commit IS NULL`) of live source docs — the link RELATIONS, §1.2 | `(source doc path, edge_id)` |
@@ -368,16 +368,19 @@ _tags }` (§2).
 
 **docs.** Attributes: `_id` (doc id), `_path` (the reference form, `/a/b.md`
 — §1 Paths), `_hash` (hex of `file_hash`, null when none), `_updated_at`
-(the current revision's commit `ts`, null when none), `_created_at` (4.10:
-the commit `ts` of the document's first revision — the `revisions` row with
-`seq = 1`, equivalently the minimum `seq`, so it is exactly `_revisions first
-{ _ts values }` — an ISO string in `_updated_at`'s form, null when the
-document has no revision. **It is the instant omgbase first observed the
-document, not a filesystem time**: a file that existed for years before it
-was observed is created on the day of its first commit. The retention
-squash (`spec/store` §7.1, 15.0) archives bodies but keeps every revision
-and commit row, so `_created_at` survives `history_export { prune }`
-unchanged; `reads::created-at`), `_raw` (the
+(`docs.updated_at` — store 17.0: the `ts` of the commit that last minted the
+document's head, so content, structure, path and liveness changes all count
+and a rename moves it; through 16.x the current revision's commit `ts`),
+`_created_at` (`docs.created_at` — store 17.0: the identity's birth, the
+`ts` of the document's first commit, kept across a tombstone and its
+revival; through 16.x the `seq = 1` revision's commit `ts`, which it equals
+for every document the recorder captured — `_revisions first { _ts values
+}` — an ISO string in `_updated_at`'s form. **It is the instant omgbase
+first observed the document, not a filesystem time**: a file that existed
+for years before it was observed is created on the day of its first commit.
+It is a column of the current row, so it depends on no revision and the
+retention squash (`spec/store` §7.1, 15.0) leaves it unchanged;
+`reads::created-at`), `_raw` (the
 reconstructed file, `spec/store` §6.1), `_title`/`_tags` (above), `_format`
 (the format column). `_data` / `_frontmatter` / `_inline` are **source
 handles**: `_frontmatter.<k>` reads the key from that source only, `_data.<k>`
@@ -418,22 +421,21 @@ inside a block are always §1.1's error, never a relation
 `::linking-docs-through-in-links`, `::out-and-in-are-plain-properties`).
 
 **blocks.** Attributes: `_id`, `_path` (owning doc's path), `_raw` (the
-block's raw source bytes), `_hash` (hex `raw_hash`), `_updated_at` (the
-latest commit `ts` among the block's `block_changes`, null when none —
-since store 14.2 those rows are the commits that *changed* the block, so
-this is the block's own last change: its insertion, edit, move, split/merge
-lineage or resurrection, never a sibling's edit; through 14.1 every commit
-to the document wrote a `same` row and the value was the document's —
-`reads::sibling-updated-at-does-not-move`),
-`_created_at` (4.10: the *earliest* commit `ts` among the block's
-`block_changes` — `_updated_at`'s join under `MIN` — the commit that first
-wrote the id: its `inserted` row, or the split/merge lineage row that
-minted it; null when none. Like the document's it is "first observed by
-omgbase", not a filesystem time; store 14.2 keeps that first row and the
-15.0 squash keeps each block's earliest row (`spec/store` §7.1), so it
-survives archiving — a block whose minting commit is wholly archived keeps
-its `_created_at` (`reads::created-at`); a resurrected block keeps its
-original creation, since the pool returns the same id),
+block's raw source bytes — its own row's `raw`, store 17.0), `_hash` (hex
+`raw_hash`), `_updated_at` (`blocks.updated_at` — store 17.0: the `ts` of
+the commit that last changed THIS block — its insertion, edit, move,
+split/merge lineage or resurrection, a container's when its raw changes —
+never a sibling's edit; the meaning store 14.2 gave the `block_changes` join
+it replaced: through 14.1 every commit to the document wrote a `same` row
+and the value was the document's — `reads::sibling-updated-at-does-not-move`),
+`_created_at` (`blocks.created_at` — store 17.0: the `ts` of the commit
+that first wrote the id — its `inserted` verdict, or the split/merge lineage
+that minted it — carried across every later commit, across a resurrection
+(the pool row keeps it) and across a cross-document move (the evicted row
+keeps it); through 16.x the earliest `block_changes` commit `ts`, which it
+equals. Like the document's it is "first observed by omgbase", not a
+filesystem time, and it depends on no history row, so a block whose minting
+commit is wholly archived keeps its `_created_at` (`reads::created-at`)),
 `_doc_id` (the owning document's id), `_type`, `_text`, `_attrs`
 (parsed), `_ordinal` (the block's 0-based ordinal among its siblings — the
 `ordinal` column), `_depth` (its nesting depth, 0 at the top level — the
@@ -528,9 +530,11 @@ one keep the old path and the current one reads the new; `reads::revisions`),
 `commit_id`), `_ts` / `_origin` / `_actor` / `_reason` (the commit's columns;
 `_actor`/`_reason` null when none), `_hash` (hex of `rendered_hash` — the
 document's `_hash` as of the revision, `docs_history`'s `_hash`),
-`_is_current` (boolean: the revision is the document's `current_rev` —
+`_is_current` (boolean: the revision is the document's `head` —
 `docs_history`'s `_is_current`; a deleted document's last revision stays its
-current one, the tombstone keeps `current_rev`), `_archived` (4.9). No other
+current one, the tombstone keeps `head`; a move mints a new head and its
+revision, store 17.0 D11, so `_path` on the new row is the new path and the
+older rows keep theirs), `_archived` (4.9). No other
 name: a revision carries no authored data, so its row shape is **closed**
 like `links` (§1.5; the 5.0 revisions case of `query-revisions.json` reads
 `_seq` and `_actor`). One
@@ -1499,7 +1503,10 @@ winning a key named in both, as the legacy merge did; an empty patch is
 `filter_invalid` "pass `set` and/or `unset`", §9) — under the `spec/mutate`
 §6 reasons the library wrote (`create <rel>`, `delete <path>`, `move <from>
 -> <to>`, `set_meta <path>`, storage-form paths). Each returns the Receipt
-(4.0) with its own extras: `docs_move` adds `retargeted` and `dangling`,
+(4.0) with its own extras: `docs_move` adds `retargeted` and `dangling` (and
+since store 17.0 its Receipt's `revisions` lists the moved document first —
+`_hash` unchanged, the new `_path` — then the rewritten sources: a move is a
+revision, D11; `reads::workspace-writes`, `reads::revisions`),
 recomputed by the tool from `inbound_links_to` + `plan_inbound_retarget`
 over the current blocks before the commit (pure, so equal to what the planner
 lowered). The tools keep their pre-checks — `locateDoc`'s `doc_missing`, the

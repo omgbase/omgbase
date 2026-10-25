@@ -689,7 +689,7 @@ function runPlan(r: Runner, s: PlanStep): StepOutcome {
 function checkAll(r: Runner): string[] {
   const db = r.store.db;
   const live = db
-    .prepare("SELECT doc_id, path, file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL AND current_rev IS NOT NULL ORDER BY path")
+    .prepare("SELECT doc_id, path, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND head IS NOT NULL ORDER BY path")
     .all(r.repoId) as { doc_id: string; path: string; file_hash: Buffer | null }[];
   const problems: string[] = [];
   const lastSource = new Map<string, string>();

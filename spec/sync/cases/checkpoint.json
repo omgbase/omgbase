@@ -48,23 +48,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "sub/b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -169,11 +175,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -186,11 +195,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -205,11 +217,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -222,11 +237,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -396,12 +414,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -471,11 +492,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -488,11 +512,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -630,12 +657,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -705,11 +735,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -722,11 +755,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -866,12 +902,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -971,11 +1010,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -988,11 +1030,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley lane.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley lane.",
             "raw_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
             "norm_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1159,23 +1204,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_2"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1290,11 +1341,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": "c_2"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_1",
@@ -1307,11 +1361,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": "c_2"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_2",
@@ -1326,11 +1383,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1343,11 +1403,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1417,6 +1480,7 @@
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_2",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1426,6 +1490,7 @@
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_2",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -1536,23 +1601,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1642,11 +1713,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1661,11 +1735,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1824,12 +1901,15 @@
             "doc_id": "d_0",
             "path": "sub/deep/w.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "5b88c0b7cf6a893428f6cce0b1fc1c40656700eff155bd7e77654a00de02f874",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1889,11 +1969,14 @@
               "level": 1
             },
             "text": "W",
+            "raw": "# W",
             "raw_hash": "9c7c95520b21c0c2ebc430d64517ed2800744e637de4388b56dc20d23f4899d1",
             "norm_hash": "fcb5f40df9be6bae66c1d77a6c15968866a9e6cbd7314ca432b019d17392f6f4",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2031,23 +2114,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "a9f64af35a8181bcc72b6c4c648bce3944562d1bd4b3ba9ab71e2641ec2a9e7a",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_3",
+            "head": "r_3",
             "file_hash": "a918c22679923d5ca64af88dba5c4e1391ffda74fde5732f6a0f7102153fe1fe",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2207,11 +2296,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2224,11 +2316,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road and the cider pressed each autumn from the fallen fruit.",
+            "raw": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road and the cider pressed each autumn from the fallen fruit.",
             "raw_hash": "3225ed5ef740820821a4458677a0cfa67412a15f8f846ac4e2de302866cb2710",
             "norm_hash": "3225ed5ef740820821a4458677a0cfa67412a15f8f846ac4e2de302866cb2710",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -2243,11 +2338,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -2260,11 +2358,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the slow work of the keeper through the summer months.",
+            "raw": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the slow work of the keeper through the summer months.",
             "raw_hash": "a42d2d435e275d24569ed71bee96a68087191eb764cb31a7c49504c7e345fee7",
             "norm_hash": "a42d2d435e275d24569ed71bee96a68087191eb764cb31a7c49504c7e345fee7",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -2277,11 +2378,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy that turns the morning milk into wheels for market.",
+            "raw": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy that turns the morning milk into wheels for market.",
             "raw_hash": "f7e62a1a1709904c4c36fccdb402342733e7e8a6a6de15c462be15fe1131887f",
             "norm_hash": "f7e62a1a1709904c4c36fccdb402342733e7e8a6a6de15c462be15fe1131887f",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2526,23 +2630,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2632,11 +2742,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2651,11 +2764,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2811,12 +2927,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2876,11 +2995,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -3062,34 +3184,43 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_4"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "doc_id": "d_2",
             "path": "c.md",
             "format": "markdown",
-            "current_rev": "r_3",
+            "head": "r_3",
             "file_hash": "75893e6adce701bd6c7f089a8f29c6692506f182e8b6c8129e5708576261fa8a",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -3264,11 +3395,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -3281,11 +3415,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley lane.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley lane.",
             "raw_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
             "norm_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -3300,11 +3437,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": "c_4"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_3",
@@ -3317,11 +3457,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": "c_4"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:01:00.000Z"
           },
           {
             "block_id": "b_4",
@@ -3336,11 +3479,14 @@
               "level": 1
             },
             "text": "C",
+            "raw": "# C",
             "raw_hash": "555fc820ecdc0ef529b81cb0639466e4a070b46678b176a887f62725c94abeae",
             "norm_hash": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -3438,6 +3584,7 @@
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_4",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -3447,6 +3594,7 @@
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_4",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -3602,12 +3750,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -3667,11 +3818,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -3827,23 +3981,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_3"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": "2026-09-26T10:02:00.000Z"
           }
         ],
         "commits": [
@@ -3988,11 +4148,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -4005,11 +4168,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley lane.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley lane.",
             "raw_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
             "norm_hash": "7b23f6597a56e7f5e44205c43531586c748225a86fa5ff3f3337f1744d10d2cc",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -4024,11 +4190,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": "c_3"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:02:00.000Z"
           },
           {
             "block_id": "b_3",
@@ -4041,11 +4210,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": "c_3"
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": "2026-09-26T10:02:00.000Z"
           }
         ],
         "dispositions": [
@@ -4129,6 +4301,7 @@
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-10-26T10:02:00.000Z"
           },
@@ -4138,6 +4311,7 @@
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-10-26T10:02:00.000Z"
           }
@@ -4252,12 +4426,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -4317,11 +4494,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -4478,12 +4658,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -4573,11 +4756,14 @@
               "level": 1
             },
             "text": "A edited",
+            "raw": "# A edited",
             "raw_hash": "9c96eb7b657a720cdd7c8273b2a1d9bd06d658e467f9cad36add5eaf5ae96602",
             "norm_hash": "92541bdbd3d86613492f371210e62eaa0f1ef4f5d0bdda01be6229d53a2cfd9a",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -4633,6 +4819,7 @@
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -4766,23 +4953,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "sub/b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -4887,11 +5080,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -4904,11 +5100,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -4923,11 +5122,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -4940,11 +5142,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5144,23 +5349,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "new.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5260,11 +5471,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -5277,11 +5491,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -5296,11 +5513,14 @@
               "level": 1
             },
             "text": "New",
+            "raw": "# New",
             "raw_hash": "705693b420771b793fd200546d0e15744b3eaa61f6e39ed9a4f14b0859948185",
             "norm_hash": "18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5492,23 +5712,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5613,11 +5839,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -5630,11 +5859,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -5649,11 +5881,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -5666,11 +5901,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
             "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5855,12 +6093,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5930,11 +6171,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -5947,11 +6191,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
             "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [

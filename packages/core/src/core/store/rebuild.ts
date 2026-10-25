@@ -18,7 +18,7 @@ export const ARCHIVED_COMMITS_SQL =
 
 export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void {
   store.write((db) => {
-    const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
+    const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_at IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
 
     if (target === "sections" || target === "all") {
       for (const docId of docIds) rebuildSections(db, docId);

@@ -204,7 +204,7 @@ export function buildDocEmbedTasks(store: Store, repoId: string, scope: TaskScop
   // the pooled fallback references exactly the vectors the block embedder cached.
   const docIdByBlock = new Map<string, string>();
   for (const r of store.db.prepare(
-    `SELECT block_id, doc_id FROM blocks WHERE repo_id = ? AND deleted_commit IS NULL`,
+    `SELECT block_id, doc_id FROM blocks WHERE repo_id = ? AND deleted_at IS NULL`,
   ).all(repoId) as { block_id: string; doc_id: string }[]) {
     docIdByBlock.set(r.block_id, r.doc_id);
   }
@@ -221,7 +221,7 @@ export function buildDocEmbedTasks(store: Store, repoId: string, scope: TaskScop
   const narrow = scopeClause("docs", scope);
   const docs = store.db
     .prepare(
-      `SELECT doc_id, path, lower(hex(file_hash)) AS file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL${narrow.sql} ORDER BY path`,
+      `SELECT doc_id, path, lower(hex(file_hash)) AS file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL${narrow.sql} ORDER BY path`,
     )
     .all(repoId, ...narrow.params) as { doc_id: string; path: string; file_hash: string | null }[];
 

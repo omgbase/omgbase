@@ -1,10 +1,11 @@
 import type { Database } from "better-sqlite3";
 import type { MutBlock, MutDoc } from "./tree.js";
-import { currentFrontmatterRaw } from "../core/read/document.js";
 
-// Load a document from the store into a MutDoc. Reads block raw and trivia
-// from the blobs table, and leading_trivia from the document row. No disk
-// access needed — everything is in the database.
+// Load a document from the store into a MutDoc. Reads every block's raw and
+// trivia from its own row and the frontmatter raw, leading_trivia and
+// separator from the document row (store 17.0, D10/M1 — through 16.x the
+// bytes came from `blobs` and the frontmatter from the head revision's delta
+// chain). No disk access needed — everything is in the current rows.
 
 interface Row {
   block_id: string;
@@ -12,43 +13,36 @@ interface Row {
   ordinal: number;
   type: string;
   attrs: string;
-  raw_hash: Buffer;
-  trivia_hash: Buffer | null;
+  raw: string;
+  trivia: string | null;
 }
 
 export function loadMutDoc(db: Database, docId: string): MutDoc | null {
-  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, frontmatter_trivia, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
-    | { doc_id: string; path: string; format: string; leading_trivia: string; frontmatter_trivia: string | null; current_rev: string | null }
+  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, frontmatter_raw, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_at IS NULL").get(docId) as
+    | { doc_id: string; path: string; format: string; leading_trivia: string; frontmatter_raw: string | null; frontmatter_trivia: string | null }
     | undefined;
   if (!doc) return null;
 
   const rows = db
     .prepare(
-      `SELECT block_id, parent_block, ordinal, type, attrs, raw_hash, trivia_hash
-       FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL
+      `SELECT block_id, parent_block, ordinal, type, attrs, raw, trivia
+       FROM blocks WHERE doc_id = ? AND deleted_at IS NULL
        ORDER BY parent_block, ordinal`,
     )
     .all(docId) as Row[];
 
-  const blob = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
   const nodes = new Map<string, MutBlock>();
   for (const r of rows) {
-    const raw = (blob.get(r.raw_hash) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "";
-    // A NULL trivia_hash means the block's trailing trivia was genuinely empty
-    // (e.g. the last block of a file with no trailing newline). Emit "" — never
-    // a fabricated separator, which would corrupt the file on the next write.
+    // A NULL trivia means the block's trailing trivia was genuinely empty (e.g.
+    // the last block of a file with no trailing newline). Emit "" — never a
+    // fabricated separator, which would corrupt the file on the next write.
     // Freshly-inserted blocks carry their own explicit trivia from the op layer,
     // so they are unaffected by this.
-    let trivia = "";
-    if (r.trivia_hash) {
-      const tb = blob.get(r.trivia_hash) as { bytes: Buffer } | undefined;
-      if (tb) trivia = tb.bytes.toString("utf8");
-    }
     nodes.set(r.block_id, {
       id: r.block_id,
       type: r.type,
-      raw,
-      trivia,
+      raw: r.raw,
+      trivia: r.trivia ?? "",
       attrs: JSON.parse(r.attrs) as Record<string, unknown>,
       children: [],
     });
@@ -64,16 +58,11 @@ export function loadMutDoc(db: Database, docId: string): MutDoc | null {
     if (!r.parent_block || !nodes.has(r.parent_block)) roots.push(nodes.get(r.block_id)!);
   }
 
-  let frontmatterRaw: string | null = null;
-  if (doc.current_rev) {
-    // The current revision's frontmatter, resolved when stored as a delta
-    // (spec/store §6.1, 16.0). Append the exact stored separator
-    // (docs.frontmatter_trivia) so the write path round-trips byte-for-byte.
-    // Ingest always captures it when a frontmatter block exists, so the ?? ""
-    // is just a type guard.
-    const fm = currentFrontmatterRaw(db, doc.current_rev);
-    if (fm !== null) frontmatterRaw = fm + (doc.frontmatter_trivia ?? "");
-  }
+  // The current frontmatter raw with its exact stored separator
+  // (docs.frontmatter_trivia) appended, so the write path round-trips
+  // byte-for-byte. Ingest always captures the separator when a frontmatter
+  // block exists, so the ?? "" is just a type guard.
+  const frontmatterRaw = doc.frontmatter_raw === null ? null : doc.frontmatter_raw + (doc.frontmatter_trivia ?? "");
 
   return {
     docId: doc.doc_id,

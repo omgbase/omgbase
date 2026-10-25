@@ -206,7 +206,7 @@ describe("drainRepo", () => {
     expect(r.embedded).toBe(1);
     expect(r.stale).toBe(1);
     expect(r.docStale).toBe(0);
-    const oldHash = (store!.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE deleted_commit IS NOT NULL AND type = 'paragraph'").get() as { h: string } | undefined)?.h;
+    const oldHash = (store!.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE deleted_at IS NOT NULL AND type = 'paragraph'").get() as { h: string } | undefined)?.h;
     if (oldHash) expect(count("SELECT count(*) c FROM embeddings WHERE lower(hex(content_hash)) = ?", oldHash)).toBe(0);
     // The watermark is the head READ AT THE START (2): the edit (seq 3) is caught up next pass.
     expect(readWatermark(store!, repoId)?.processed_seq).toBe(2);

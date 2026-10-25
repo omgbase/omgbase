@@ -39,12 +39,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -114,11 +117,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -131,11 +137,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -245,12 +254,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -320,11 +332,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -337,11 +352,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -454,12 +472,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "8bc68f6304ef142cb8803d049b59a4a238046859a461365caa91c87359f206e6",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -559,11 +580,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -576,11 +600,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road and the juice pressed each autumn from the fallen fruit.",
+            "raw": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road and the juice pressed each autumn from the fallen fruit.",
             "raw_hash": "1370c371135ea9ab0f657602882663540dae65af68bfb3d393b7d8fa461e5997",
             "norm_hash": "1370c371135ea9ab0f657602882663540dae65af68bfb3d393b7d8fa461e5997",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -708,12 +735,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -886,11 +916,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_11",
@@ -903,11 +936,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1229,6 +1265,7 @@
             "raw_hash": "a5c989e47cf0dc996338c9a4e0b6ba83574373c26d6e79d19bc33e96ead2fad3",
             "norm_hash": "9c9ee1e5eccb27ac1bf4da9737426fc4b41ee4d1c6f945c08135dac75c7f3d6c",
             "type": "heading",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1238,6 +1275,7 @@
             "raw_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1247,6 +1285,7 @@
             "raw_hash": "4c55a8552a2c7261f61f798c2265e6f13358f326ae5b934096ff16bd15e62c33",
             "norm_hash": "4c55a8552a2c7261f61f798c2265e6f13358f326ae5b934096ff16bd15e62c33",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1256,6 +1295,7 @@
             "raw_hash": "928962aa17929fd8e9481e2d928f3b3fa1ed30ad5a1a568576b53c4c1571d8e0",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1265,6 +1305,7 @@
             "raw_hash": "06b970377a0f3cb9211af3417dc43d8d6b35c19c9daf6bfb1121970908e47c8a",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1274,6 +1315,7 @@
             "raw_hash": "d03785bd02a56d02142ad1be03abdc3d9a4e8004903036fd253256f0257e88c6",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1283,6 +1325,7 @@
             "raw_hash": "0fedf2c6cdab66b8846d384e26e3104bd36eecdc137c9ba64aabaa2fa7f9044e",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1292,6 +1335,7 @@
             "raw_hash": "ad96a65878d8c84c48af6a6832b0389326ce32c2825fdc4b9f058e6a1cff01f5",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1301,6 +1345,7 @@
             "raw_hash": "4cd7474041210e402bef3c9a6d92aed2b134f0cc27d6056cfd44e0348413ebe7",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
@@ -1310,6 +1355,7 @@
             "raw_hash": "445a72bc69ce233a5a89a81ed12c4953f551644b4475adf48a5f103229922330",
             "norm_hash": "f38c764c8aa00b6578f4254a4dc6d9b50f88fa926e270ea7859bd1b707cd8662",
             "type": "blockquote",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -1365,12 +1411,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "7232fd2d361182691a6ccf53ad168032a3186c9dba5fc9c84ca8b1d7308acee2",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1428,11 +1477,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "<<<<<<< HEAD ours",
+            "raw": "<<<<<<< HEAD\nours",
             "raw_hash": "da4cf12d5b9c34acf215103512f1e41484f9ba3bba382e91b471a78b61793af3",
             "norm_hash": "9c9ee1e5eccb27ac1bf4da9737426fc4b41ee4d1c6f945c08135dac75c7f3d6c",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1495,12 +1547,15 @@
             "doc_id": "d_0",
             "path": "empty.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1580,12 +1635,15 @@
             "doc_id": "d_0",
             "path": "blank.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
             "conflicted": 0,
             "leading_trivia": "\n\n",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1683,23 +1741,29 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "ff26640ce71f904399b7dfbafcfc473710b3f93f43d302d77cce18a6de3cacfb",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "915b967f133f4c429a8601e359791427191322f8456a765bc6aaf2dcedaa789c",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1799,11 +1863,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1816,11 +1883,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1835,11 +1905,14 @@
               "level": 1
             },
             "text": "Other",
+            "raw": "# Other",
             "raw_hash": "5b31751d7ad9515c240b348cd743b74f4f556a67ad86ccd5bae7a5eed9d45d92",
             "norm_hash": "f97e9da0e3b879f0a9df979ae260a5f7e1371edb127c1862d4f861981166cdc1",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1852,11 +1925,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2003,12 +2079,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "98f7d974f004a0b63f60a58b63de0cca692046d716c45490cdac23dc11d1989d",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2108,11 +2187,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n\n",
             "trivia_hash": "6a3cf5192354f71615ac51034b3e97c20eda99643fcaf5bbe6d41ad59bd12167",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2125,11 +2207,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First.",
+            "raw": "First.",
             "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
             "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [

@@ -327,12 +327,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_4",
+            "head": "r_4",
             "file_hash": "8fc84d87f2e45fb3fa529159be3ef450fb873b2dd20829711ee45bf87a6d4b3f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -504,11 +507,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -521,11 +527,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -538,11 +547,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Second day, third afternoon.",
+            "raw": "Second day, third afternoon.",
             "raw_hash": "9e359c382d2b93ddf8c20e86ffedac739a0fc997de3bfa3f22a2cdb064b75075",
             "norm_hash": "9e359c382d2b93ddf8c20e86ffedac739a0fc997de3bfa3f22a2cdb064b75075",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-03T09:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -627,6 +639,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -636,6 +649,7 @@
             "raw_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
+            "created_at": "2026-01-02T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-02T09:00:00.000Z"
           }
@@ -820,12 +834,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "5e3a15045d025248b8373442639a1bf5ff25083498414b4fd5e90e3a297ae55d",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -955,11 +972,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -972,11 +992,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -989,11 +1012,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Second day.",
+            "raw": "Second day.",
             "raw_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-02T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1077,6 +1103,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           }
@@ -1228,12 +1255,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "5e3a15045d025248b8373442639a1bf5ff25083498414b4fd5e90e3a297ae55d",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1363,11 +1393,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1380,11 +1413,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1397,11 +1433,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Second day.",
+            "raw": "Second day.",
             "raw_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-02T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -1485,6 +1524,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           }
@@ -1705,12 +1745,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_4",
+            "head": "r_4",
             "file_hash": "8fc84d87f2e45fb3fa529159be3ef450fb873b2dd20829711ee45bf87a6d4b3f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1900,11 +1943,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1917,11 +1963,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -1934,11 +1983,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Second day, third afternoon.",
+            "raw": "Second day, third afternoon.",
             "raw_hash": "9e359c382d2b93ddf8c20e86ffedac739a0fc997de3bfa3f22a2cdb064b75075",
             "norm_hash": "9e359c382d2b93ddf8c20e86ffedac739a0fc997de3bfa3f22a2cdb064b75075",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-03T09:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2064,6 +2116,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -2073,6 +2126,7 @@
             "raw_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
+            "created_at": "2026-01-02T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-02T09:00:00.000Z"
           }
@@ -2316,12 +2370,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_3",
+            "head": "r_3",
             "file_hash": "c0812aaea78bd528550202eb721c21c8cbdda3ee9598522bc804144aab28de13",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-03T09:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2468,11 +2525,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -2485,11 +2545,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -2502,11 +2565,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Second day, third morning.",
+            "raw": "Second day, third morning.",
             "raw_hash": "641642ef4d1a79b206eb024ad116cd4e636c024dc76a7f7e0727bcef1202ce24",
             "norm_hash": "641642ef4d1a79b206eb024ad116cd4e636c024dc76a7f7e0727bcef1202ce24",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-03T09:00:00.000Z",
+            "updated_at": "2026-01-03T09:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -2586,6 +2652,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -2595,6 +2662,7 @@
             "raw_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
+            "created_at": "2026-01-02T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-02T09:00:00.000Z"
           }
@@ -2833,23 +2901,29 @@
             "doc_id": "d_0",
             "path": "attn/focus.md",
             "format": "markdown",
-            "current_rev": "r_4",
+            "head": "r_4",
             "file_hash": "61a1c6c73f8b0fbb0c6190aba85c621bb2bc1c35a74410f717dbbd064046adff",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_1",
             "path": "projects/p.md",
             "format": "markdown",
-            "current_rev": "r_5",
+            "head": "r_5",
             "file_hash": "9005d340a9445e35637995834cba7eef1ee0489096766496df28ea03b64cc6f7",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -3059,11 +3133,14 @@
               "level": 1
             },
             "text": "Focus",
+            "raw": "# Focus",
             "raw_hash": "ade5773a9944db188021578adbc16ccfe8af9269bba8c908f127bd1e1e5b4dac",
             "norm_hash": "9d3cab2b5efed4eaef42a707dbc813da2ffad53220aa713b5f3c950596fe35f5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_6",
@@ -3076,11 +3153,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Next day.",
+            "raw": "Next day.",
             "raw_hash": "cddf5d9587bcef868d9b283e74506f94853362ed673626805f8feaff10771b5e",
             "norm_hash": "cddf5d9587bcef868d9b283e74506f94853362ed673626805f8feaff10771b5e",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_4",
-            "deleted_commit": null
+            "created_at": "2026-01-02T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -3095,11 +3175,14 @@
               "level": 1
             },
             "text": "P",
+            "raw": "# P",
             "raw_hash": "6f557823a7ff60d1308ba77a7e6cbd33739490cd79e8ad4c1ed6b589da03d9a9",
             "norm_hash": "5c62e091b8c0565f1bafad0dad5934276143ae2ccef7a5381e8ada5b1a8d26d2",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_7",
@@ -3112,11 +3195,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Next day.",
+            "raw": "Next day.",
             "raw_hash": "cddf5d9587bcef868d9b283e74506f94853362ed673626805f8feaff10771b5e",
             "norm_hash": "cddf5d9587bcef868d9b283e74506f94853362ed673626805f8feaff10771b5e",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-02T10:00:00.000Z",
+            "updated_at": "2026-01-02T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -3298,6 +3384,7 @@
             "raw_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "norm_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_2",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -3307,6 +3394,7 @@
             "raw_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "norm_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -3316,6 +3404,7 @@
             "raw_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "norm_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "type": "paragraph",
+            "created_at": "2026-01-01T12:00:00.000Z",
             "deleted_commit": "c_4",
             "expires_ts": "2026-02-01T10:00:00.000Z"
           },
@@ -3325,6 +3414,7 @@
             "raw_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "norm_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "type": "paragraph",
+            "created_at": "2026-01-01T12:00:00.000Z",
             "deleted_commit": "c_5",
             "expires_ts": "2026-02-01T10:00:00.000Z"
           }
@@ -3608,23 +3698,29 @@
             "doc_id": "d_1",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_4",
+            "head": "r_4",
             "file_hash": "8e38c7c19f552b8b34c0ceb232364494d61efa4a691a22471dd98e825aeccbd0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-04T10:00:00.000Z",
+            "updated_at": "2026-01-05T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "doc_id": "d_0",
             "path": "b.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "76e6a6d804b8f9571add4270e085e379bab7819003f9055455834dae253201a5",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": "c_3"
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-04T10:00:00.000Z",
+            "deleted_at": "2026-01-04T10:00:00.000Z"
           }
         ],
         "commits": [
@@ -3811,11 +3907,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-04T10:00:00.000Z",
+            "updated_at": "2026-01-04T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -3828,11 +3927,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Two.",
+            "raw": "Two.",
             "raw_hash": "1eb32d1ee4458814f94f8b92d1bd3e06e16dca6fab43d53f700840321f27fdf4",
             "norm_hash": "1eb32d1ee4458814f94f8b92d1bd3e06e16dca6fab43d53f700840321f27fdf4",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-02T10:00:00.000Z",
+            "updated_at": "2026-01-05T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_0",
@@ -3847,11 +3949,14 @@
               "level": 1
             },
             "text": "B",
+            "raw": "# B",
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": "c_3"
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": "2026-01-04T10:00:00.000Z"
           },
           {
             "block_id": "b_3",
@@ -3864,11 +3969,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Three.",
+            "raw": "Three.",
             "raw_hash": "43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c",
             "norm_hash": "43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": "c_3"
+            "created_at": "2026-01-03T10:00:00.000Z",
+            "updated_at": "2026-01-03T10:00:00.000Z",
+            "deleted_at": "2026-01-04T10:00:00.000Z"
           }
         ],
         "dispositions": [
@@ -3981,6 +4089,7 @@
             "raw_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "norm_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-02-01T10:00:00.000Z"
           },
@@ -3990,6 +4099,7 @@
             "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-03T10:00:00.000Z"
           },
@@ -3999,6 +4109,7 @@
             "raw_hash": "43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c",
             "norm_hash": "43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c",
             "type": "paragraph",
+            "created_at": "2026-01-03T10:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-03T10:00:00.000Z"
           },
@@ -4008,6 +4119,7 @@
             "raw_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "norm_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "type": "paragraph",
+            "created_at": "2026-01-04T10:00:00.000Z",
             "deleted_commit": "c_5",
             "expires_ts": "2026-02-04T10:00:00.000Z"
           }
@@ -4228,12 +4340,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_3",
+            "head": "r_3",
             "file_hash": "a8c1548fa827d042f1499651d2e013e9e76cae5df8afbfdfe1b1e89c16b725ba",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -4393,11 +4508,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -4410,11 +4528,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -4427,11 +4548,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Third afternoon.",
+            "raw": "Third afternoon.",
             "raw_hash": "db53131b53700a364788967805c8a0ff5cdf58bdcdca5227b04ea81d4d427c47",
             "norm_hash": "db53131b53700a364788967805c8a0ff5cdf58bdcdca5227b04ea81d4d427c47",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_3",
-            "deleted_commit": null
+            "created_at": "2026-01-03T15:00:00.000Z",
+            "updated_at": "2026-01-03T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -4543,6 +4667,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -4552,6 +4677,7 @@
             "raw_hash": "d22086156dd0181ceb243160174ed3e61a4d1fb3ea4c3acda9858e273e6fac93",
             "norm_hash": "d22086156dd0181ceb243160174ed3e61a4d1fb3ea4c3acda9858e273e6fac93",
             "type": "paragraph",
+            "created_at": "2026-01-03T09:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-02T15:00:00.000Z"
           }
@@ -4838,12 +4964,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_5",
+            "head": "r_5",
             "file_hash": "8d39b33994589fd01d469655199a2ae3ca3ac4fbf5a1286e68f314cd6cb88ab3",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-12T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5036,11 +5165,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -5053,11 +5185,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -5070,11 +5205,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Eleventh, afternoon.",
+            "raw": "Eleventh, afternoon.",
             "raw_hash": "03217c131cac0334c345bfecd8fd69e3416d594665c7858af78bf86ecb321434",
             "norm_hash": "03217c131cac0334c345bfecd8fd69e3416d594665c7858af78bf86ecb321434",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-11T15:00:00.000Z",
+            "updated_at": "2026-01-11T15:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_6",
@@ -5087,11 +5225,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Twelfth, afternoon.",
+            "raw": "Twelfth, afternoon.",
             "raw_hash": "82dfe6c1fcb66e06248ed5b808f7079eddde1b45b728988a609dad15b8f02de3",
             "norm_hash": "82dfe6c1fcb66e06248ed5b808f7079eddde1b45b728988a609dad15b8f02de3",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_5",
-            "deleted_commit": null
+            "created_at": "2026-01-12T15:00:00.000Z",
+            "updated_at": "2026-01-12T15:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5209,6 +5350,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
@@ -5218,6 +5360,7 @@
             "raw_hash": "8e89058a3b730c228282e6bbac4a8116dbae2772a82224c6958a9b5759894a42",
             "norm_hash": "8e89058a3b730c228282e6bbac4a8116dbae2772a82224c6958a9b5759894a42",
             "type": "paragraph",
+            "created_at": "2026-01-11T09:00:00.000Z",
             "deleted_commit": "c_3",
             "expires_ts": "2026-02-10T15:00:00.000Z"
           },
@@ -5227,6 +5370,7 @@
             "raw_hash": "5e64f093cc72a4cdc5ae307fbd86fe36f7390a02884940bca0f67f7a96c46ffe",
             "norm_hash": "5e64f093cc72a4cdc5ae307fbd86fe36f7390a02884940bca0f67f7a96c46ffe",
             "type": "paragraph",
+            "created_at": "2026-01-12T09:00:00.000Z",
             "deleted_commit": "c_5",
             "expires_ts": "2026-02-11T15:00:00.000Z"
           }
@@ -5439,12 +5583,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "8266f5908d2cddfd5974764c83e2a0fd834fae7212eb13ba7286aa6f7ed6ec2f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5535,11 +5682,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -5552,11 +5702,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5608,6 +5761,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           }
@@ -5814,12 +5968,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "8266f5908d2cddfd5974764c83e2a0fd834fae7212eb13ba7286aa6f7ed6ec2f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -5910,11 +6067,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -5927,11 +6087,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "First draft, noon.",
+            "raw": "First draft, noon.",
             "raw_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
             "norm_hash": "8239913dfb2a95855c13d19a4c99f63954f07a98d536be41a58e118c476a6431",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-01-01T12:00:00.000Z",
+            "updated_at": "2026-01-01T12:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -5983,6 +6146,7 @@
             "raw_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           }
@@ -6206,12 +6370,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_2",
+            "head": "r_2",
             "file_hash": "e60e887be41a12b8cece6657862b3bf3972605e65e0be106733a9fcf28b3176b",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-03T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -6328,11 +6495,14 @@
               "level": 1
             },
             "text": "A",
+            "raw": "# A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -6345,11 +6515,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Shared paragraph.",
+            "raw": "Shared paragraph.",
             "raw_hash": "54ddcd524ac431e62d62aba7167071a0055b05710547190fd815a8dc603fba9d",
             "norm_hash": "54ddcd524ac431e62d62aba7167071a0055b05710547190fd815a8dc603fba9d",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-01T10:00:00.000Z",
+            "updated_at": "2026-01-01T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -6362,11 +6535,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "The current one.",
+            "raw": "The current one.",
             "raw_hash": "29e6b18a53b34f9b919404929cd50022c9c13d721565facd9b1bff0fadc306a8",
             "norm_hash": "29e6b18a53b34f9b919404929cd50022c9c13d721565facd9b1bff0fadc306a8",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_2",
-            "deleted_commit": null
+            "created_at": "2026-01-03T10:00:00.000Z",
+            "updated_at": "2026-01-03T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [
@@ -6423,6 +6599,7 @@
             "raw_hash": "9a3e56f6f111af8c3802567a374452f7cb5f04c241b5ae4ef6da89e8d83518f7",
             "norm_hash": "9a3e56f6f111af8c3802567a374452f7cb5f04c241b5ae4ef6da89e8d83518f7",
             "type": "paragraph",
+            "created_at": "2026-01-01T10:00:00.000Z",
             "deleted_commit": "c_2",
             "expires_ts": "2026-02-02T10:00:00.000Z"
           }

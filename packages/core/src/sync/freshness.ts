@@ -212,7 +212,7 @@ export function detectDiskDrift(store: Store, repoId: string, rootPath: string, 
   // of the derived file_stats cache.
   const docs = new Map<string, Buffer | null>();
   for (const row of store.db
-    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL")
     .all(repoId) as { path: string; file_hash: Buffer | null }[]) {
     docs.set(row.path, row.file_hash);
   }
@@ -254,7 +254,7 @@ export function rebuildFileStats(store: Store, repoId: string, rootPath: string,
   // The live docs' durable convergence signal, keyed by path (one query).
   const live = new Map<string, Buffer>();
   for (const row of store.db
-    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL AND file_hash IS NOT NULL")
+    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND file_hash IS NOT NULL")
     .all(repoId) as { path: string; file_hash: Buffer }[]) {
     live.set(row.path, row.file_hash);
   }

@@ -254,7 +254,7 @@ describe("apply — cross-document move seams", () => {
     apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [moved], to: { parent: { doc: true }, at: { after: bLast } } }], origin: { actor: "agent:test" } });
     expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBeta one.\n\nAlpha two.\n");
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha one.\n\n");
-    const home = store.db.prepare("SELECT d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL").get(moved) as { path: string } | undefined;
+    const home = store.db.prepare("SELECT d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL").get(moved) as { path: string } | undefined;
     expect(home?.path).toBe("b.md");
     expect(store.db.prepare("SELECT count(*) n FROM resurrection_pool").get()).toEqual({ n: 0 });
   });

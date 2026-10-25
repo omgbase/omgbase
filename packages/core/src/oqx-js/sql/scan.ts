@@ -51,10 +51,10 @@ export const ORDER: Record<Target, string> = {
 /** The live-row and repository guards of a target scan. */
 export function guards(target: Target, repoId: string): { sql: string; params: unknown[] } {
   switch (target) {
-    case "docs": return { sql: "d.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
-    case "blocks": return { sql: "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
-    case "nodes": return { sql: "n.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
-    case "links": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
+    case "docs": return { sql: "d.repo_id = ? AND d.deleted_at IS NULL", params: [repoId] };
+    case "blocks": return { sql: "b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL", params: [repoId] };
+    case "nodes": return { sql: "n.repo_id = ? AND d.deleted_at IS NULL", params: [repoId] };
+    case "links": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL", params: [repoId] };
   }
 }
 
@@ -63,8 +63,8 @@ export function guards(target: Target, repoId: string): { sql: string; params: u
  * filter and never selects a `(repo_id, …)` index over the `doc_id` one. */
 export function guardsByDoc(target: Exclude<Target, "docs">, repoId: string): { sql: string; params: unknown[] } {
   switch (target) {
-    case "blocks": return { sql: "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId, repoId] };
-    case "nodes": return { sql: "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId, repoId] };
-    case "links": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId, repoId] };
+    case "blocks": return { sql: "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL", params: [repoId, repoId] };
+    case "nodes": return { sql: "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_at IS NULL", params: [repoId, repoId] };
+    case "links": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL", params: [repoId, repoId] };
   }
 }

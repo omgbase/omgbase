@@ -65,7 +65,7 @@ describe("GC (flag-gated, off by default)", () => {
     expect(runGc(store, { enabled: true })).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0 });
     // What a 14.1 store would have persisted for the two untouched blocks under the second commit.
     const c1 = (store.db.prepare("SELECT commit_id FROM commits WHERE seq = 2").get() as { commit_id: string }).commit_id;
-    const untouched = (store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY ordinal LIMIT 2").all() as { block_id: string }[]).map((r) => r.block_id);
+    const untouched = (store.db.prepare("SELECT block_id FROM blocks WHERE deleted_at IS NULL ORDER BY ordinal LIMIT 2").all() as { block_id: string }[]).map((r) => r.block_id);
     for (const id of untouched) {
       store.db.prepare("INSERT INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail) VALUES (?, ?, 'same', 1, 'exact_hash', 'm2.3', '{}')").run(c1, id);
       store.db.prepare("INSERT INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, 'same')").run(id, c1);

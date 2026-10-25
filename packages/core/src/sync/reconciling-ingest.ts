@@ -24,17 +24,19 @@ interface StoredBlock {
   ordinal: number;
   type: string;
   raw_hash: Buffer;
+  raw: string;
 }
 
-// Rebuild the old tree as positional MatchBlocks straight from stored blocks +
-// blob bytes (so text/hashes match what reconcile expects). Exported so the
+// Rebuild the old tree as positional MatchBlocks straight from the stored
+// blocks' own rows — `raw` inline since store 17.0 (spec/store §5.2) — so
+// text/hashes match what reconcile expects. Exported so the
 // whole-document update planner (mutate/plan-update.ts) reconciles against the
 // same old-tree representation the observation path uses.
 export function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
   const rows = db
     .prepare(
-      `SELECT block_id, parent_block, ordinal, type, raw_hash
-       FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL
+      `SELECT block_id, parent_block, ordinal, type, raw_hash, raw
+       FROM blocks WHERE doc_id = ? AND deleted_at IS NULL
        ORDER BY parent_block, ordinal`,
     )
     .all(docId) as StoredBlock[];
@@ -61,11 +63,8 @@ export function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
   // from their children and nested raws lose up to <blockquote-depth> `> `
   // prefixes. Rebuild the shape (children by parent, in ordinal order) and
   // compute text top-down with the same helper ingest used to store it.
-  const blobBytes = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
   const rawOf = new Map<string, string>();
-  for (const r of rows) {
-    rawOf.set(r.block_id, (blobBytes.get(r.raw_hash) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "");
-  }
+  for (const r of rows) rawOf.set(r.block_id, r.raw);
   const childrenOf = new Map<string | null, StoredBlock[]>();
   for (const r of rows) {
     const parent = r.parent_block && byId.has(r.parent_block) ? r.parent_block : null;

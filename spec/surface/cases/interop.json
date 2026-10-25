@@ -8662,6 +8662,11 @@
             "commit": "c_21",
             "revisions": [
               {
+                "_id": "d_17",
+                "_path": "/texts/silent-book.md",
+                "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
+              },
+              {
                 "_id": "d_0",
                 "_path": "/index.md",
                 "_hash": "dde09ad6a7724d469e393ee9c6bf61bfd1f70a5a59d330ba6549687a2ffbfff2"
@@ -9196,7 +9201,7 @@
           {
             "_id": "d_0",
             "_path": "/index.md",
-            "rev": "r_21",
+            "rev": "r_22",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -9240,7 +9245,7 @@
                 "_id": "d_17",
                 "_path": "/texts/silent-book.md",
                 "deleted": false,
-                "currentRev": "r_17",
+                "currentRev": "r_21",
                 "versions": [
                   {
                     "_rev": "r_17",
@@ -9249,6 +9254,17 @@
                     "_ts": "2026-09-27T00:00:00.000Z",
                     "_origin": "observed",
                     "_actor": null,
+                    "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5",
+                    "_is_current": false,
+                    "_archived": false
+                  },
+                  {
+                    "_rev": "r_21",
+                    "_seq": 2,
+                    "_commit": "c_21",
+                    "_ts": "2026-09-27T00:00:00.000Z",
+                    "_origin": "api",
+                    "_actor": "agent:mcp",
                     "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5",
                     "_is_current": true,
                     "_archived": false
@@ -9281,6 +9297,11 @@
                 "origin": "api",
                 "actor": "agent:mcp",
                 "revisions": [
+                  {
+                    "_id": "d_17",
+                    "_path": "/texts/silent-book.md",
+                    "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
+                  },
                   {
                     "_id": "d_0",
                     "_path": "/index.md",

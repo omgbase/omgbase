@@ -405,7 +405,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   }
   // The owning document of a block id (`blocks_read`): the block must be live.
   function docOfBlock(blockId: string): string {
-    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
+    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { doc_id: string } | undefined;
     if (!row) throw blockMissing(blockId);
     return row.doc_id;
   }
@@ -419,7 +419,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   function blockOfNode(nodeId: string): { docId: string; blockId: string } {
     const node = store.db.prepare("SELECT doc_id, block_id FROM nodes WHERE node_id = ?").get(nodeId) as { doc_id: string; block_id: string | null } | undefined;
     if (!node) throw new EngineError("block_missing", `no node with id ${JSON.stringify(nodeId)}`, { data: { _id: nodeId } });
-    const live = node.block_id ? store.db.prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(node.block_id) : undefined;
+    const live = node.block_id ? store.db.prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(node.block_id) : undefined;
     if (!node.block_id || !live) throw new EngineError("block_missing", `node ${JSON.stringify(nodeId)} has no block`, { data: { _id: nodeId, _doc_id: node.doc_id } });
     return { docId: node.doc_id, blockId: node.block_id };
   }
@@ -438,7 +438,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   function resolveSectionHeading(docId: string, docPath: string, section: string, call: { _id?: string; _path?: string; text: string }): string {
     const needle = /^[ \t]*#/.test(section) ? normalizeVisibleText(section, "heading") : normalizeText(section);
     const rows = store.db
-      .prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL")
+      .prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_at IS NULL")
       .all(docId) as { block_id: string; doc_id: string; text: string }[];
     const matches = rows.filter((r) => normalizeText(r.text) === needle);
     const shown = referencePath(docPath);
@@ -480,7 +480,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     return { parent: r.blockId!, docId: r.docId };
   }
   function docIdOfBlock(blockId: string): string | undefined {
-    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
+    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { doc_id: string } | undefined;
     return row?.doc_id;
   }
   // Resolve the before/after anchor in an `at` spec (itself a block ref) to its
@@ -1249,7 +1249,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const block = resolveBlockRef(repoId, args._id);
         const row = store.db
-          .prepare("SELECT b.type AS type, d.format AS format, b.parent_block AS parent, d.path AS path, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+          .prepare("SELECT b.type AS type, d.format AS format, b.parent_block AS parent, d.path AS path, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_at IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL")
           .get(block) as { type: string; format: string | null; parent: string | null; path: string; children: number } | undefined;
         if (!row) throw blockMissing(args._id);
         let into: EffectTarget;

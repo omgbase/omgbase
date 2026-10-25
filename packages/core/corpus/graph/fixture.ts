@@ -236,7 +236,7 @@ export function checkGraph(db: Db, repoId: string, projected: Projection): strin
 
   // ---- edges -------------------------------------------------------------------
   const commits = new Set((db.prepare("SELECT commit_id FROM commits WHERE repo_id = ?").all(repoId) as { commit_id: string }[]).map((c) => c.commit_id));
-  const liveDocs = db.prepare("SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_commit IS NULL").all(repoId) as { doc_id: string; path: string }[];
+  const liveDocs = db.prepare("SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_at IS NULL").all(repoId) as { doc_id: string; path: string }[];
   const liveDocIds = new Set(liveDocs.map((d) => d.doc_id));
   const livePaths = new Set(liveDocs.map((d) => d.path));
   const externalIds = new Set(projected.external_nodes.map((x) => x.node_id));

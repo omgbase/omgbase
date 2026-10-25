@@ -23,7 +23,7 @@ export function projectSectionNodes(db: Database, docId: string): ProjectedNode[
               hb.text AS text
        FROM sections s
        JOIN blocks hb ON hb.block_id = s.heading_block AND hb.doc_id = s.doc_id
-       WHERE s.doc_id = ? AND hb.deleted_commit IS NULL
+       WHERE s.doc_id = ? AND hb.deleted_at IS NULL
        ORDER BY s.first_ordinal`,
     )
     .all(docId) as { heading_block: string; level: number; first_ordinal: number; last_ordinal: number; text: string }[];

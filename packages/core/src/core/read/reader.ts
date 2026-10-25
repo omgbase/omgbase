@@ -60,14 +60,14 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
     tail = " LIMIT ?";
     params.push(limit);
   }
-  // seam: HistoryRecorder → `docs.updated_at` (Phase 3, M2; inventory-ts §2.3 row `liveDocRows` 51–76, §5.15 — computed for every row unconditionally)
+  // `_updated_at` is the row's own column since store 17.0 (M2, D6): the ts of
+  // the commit that last minted the document's head — a rename counts.
   const rows = store.db
     .prepare(
-      `SELECT d.doc_id AS id, d.path AS path,
-              (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev) AS ts,
-              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks
+      `SELECT d.doc_id AS id, d.path AS path, d.updated_at AS ts,
+              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_at IS NULL) AS blocks
        FROM docs d
-       WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'${where}
+       WHERE d.repo_id = ? AND d.deleted_at IS NULL AND d.path LIKE ? ESCAPE '\\'${where}
        ORDER BY d.path${tail}`,
     )
     .all(...params) as { id: string; path: string; ts: string | null; blocks: number }[];
@@ -298,7 +298,7 @@ export function loadDocBlocks(store: Store, docId: string): BlockNode[] {
   const rows = store.db
     .prepare(
       `SELECT block_id, doc_id, parent_block, order_key, ordinal, depth, type, attrs, text, raw_hash
-       FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL
+       FROM blocks WHERE doc_id = ? AND deleted_at IS NULL
        ORDER BY parent_block, order_key`,
     )
     .all(docId) as BlockRow[];
@@ -319,12 +319,10 @@ export function loadDocBlocks(store: Store, docId: string): BlockNode[] {
   return roots;
 }
 
-/** Retrieve the raw source bytes for a block by its raw_hash. */
-export function blockRaw(store: Store, rawHashHex: string): string {
-  const row = store.db.prepare("SELECT bytes FROM blobs WHERE hash = ?").get(Buffer.from(rawHashHex, "hex")) as
-    | { bytes: Buffer }
-    | undefined;
-  return row ? row.bytes.toString("utf8") : "";
+/** A live block's raw source bytes — its own row's `raw` (store 17.0, D10; through 16.x a `blobs` read by `raw_hash`). */
+export function blockRaw(store: Store, blockId: string): string {
+  const row = store.db.prepare("SELECT raw FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { raw: string } | undefined;
+  return row ? row.raw : "";
 }
 
 export interface DocInfo {
@@ -334,16 +332,17 @@ export interface DocInfo {
    *  a document (file writes, SQL); the surface roots what it returns. */
   path: string;
   format: string;
+  /** The document's head token (`docs.head`, store 17.0 D1) — the `rev` the surface returns. */
   currentRev: string | null;
 }
 
 export function findDoc(store: Store, ref: { docId?: string; repoId?: string; path?: string }): DocInfo | null {
   let row: Record<string, unknown> | undefined;
   if (ref.docId) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, head FROM docs WHERE doc_id = ? AND deleted_at IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
   } else if (ref.repoId && ref.path) {
     // Either path form is accepted (spec/surface §1 "Paths"); the column holds the storage form.
-    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, storagePath(ref.path)) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, head FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL").get(ref.repoId, storagePath(ref.path)) as Record<string, unknown> | undefined;
   }
   if (!row) return null;
   return {
@@ -351,7 +350,7 @@ export function findDoc(store: Store, ref: { docId?: string; repoId?: string; pa
     repoId: row.repo_id as string,
     path: row.path as string,
     format: (row.format as string) ?? "markdown",
-    currentRev: (row.current_rev as string | null) ?? null,
+    currentRev: (row.head as string | null) ?? null,
   };
 }
 

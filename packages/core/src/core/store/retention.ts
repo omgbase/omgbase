@@ -359,8 +359,8 @@ export function evaluateRetention(store: Store, repoId: string, opts: EvaluateOp
   const db = store.db;
 
   const docs = db
-    .prepare("SELECT doc_id, path, current_rev FROM docs WHERE repo_id = ? ORDER BY path")
-    .all(repoId) as { doc_id: string; path: string; current_rev: string | null }[];
+    .prepare("SELECT doc_id, path, head FROM docs WHERE repo_id = ? ORDER BY path")
+    .all(repoId) as { doc_id: string; path: string; head: string | null }[];
   const revStmt = db.prepare(
     `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.commit_id, c.ts, c.origin, c.reason, r.archive
      FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? ORDER BY r.seq`,
@@ -381,7 +381,7 @@ export function evaluateRetention(store: Store, repoId: string, opts: EvaluateOp
     // Rules 1–6: the per-revision keeps.
     rows.forEach((r, i) => {
       const rank = rows.length - i; // 1 = the newest
-      if (r.rev_id === d.current_rev) kept.add(r.rev_id);
+      if (r.rev_id === d.head) kept.add(r.rev_id);
       else if (pinned.has(r.rev_id)) kept.add(r.rev_id);
       else if (ageDays(r.ts, nowMs) < policy.keep_days) kept.add(r.rev_id);
       else if (rank <= policy.per_doc_max) kept.add(r.rev_id);

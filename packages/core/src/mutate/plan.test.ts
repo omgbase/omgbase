@@ -94,8 +94,8 @@ const base = () => ({ repoId, docStore: new NullDocStore(), origin, ts: "2026-10
 function project(): unknown {
   const q = (sql: string): unknown[] => store.db.prepare(sql).all();
   return {
-    docs: q("SELECT doc_id, path, current_rev, lower(hex(file_hash)) h, deleted_commit FROM docs ORDER BY path"),
-    blocks: q("SELECT block_id, doc_id, parent_block, ordinal, text FROM blocks WHERE deleted_commit IS NULL ORDER BY doc_id, ordinal, block_id"),
+    docs: q("SELECT doc_id, path, head, lower(hex(file_hash)) h, deleted_at FROM docs ORDER BY path"),
+    blocks: q("SELECT block_id, doc_id, parent_block, ordinal, text FROM blocks WHERE deleted_at IS NULL ORDER BY doc_id, ordinal, block_id"),
     commits: q("SELECT commit_id, seq, origin, actor, reason, ops FROM commits ORDER BY seq"),
     revisions: q("SELECT rev_id, doc_id, seq, path, commit_id FROM revisions ORDER BY doc_id, seq"),
     pending: q("SELECT path, kind FROM pending_materializations ORDER BY path"),
@@ -176,7 +176,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     const receipt = executePlan(store, { ...base(), docStore, plan });
     expect(receipt.committed).toBe(true);
     expect(store.db.prepare("SELECT count(*) n FROM commits WHERE origin = 'api'").get()).toEqual({ n: 1 });
-    const live = (id: string): boolean => store.db.prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_commit IS NULL UNION SELECT 1 FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(id, id) !== undefined;
+    const live = (id: string): boolean => store.db.prepare("SELECT 1 FROM blocks WHERE block_id = ? AND deleted_at IS NULL UNION SELECT 1 FROM docs WHERE doc_id = ? AND deleted_at IS NULL").get(id, id) !== undefined;
     expect(live(receipt.new_ids["$new.0"]!)).toBe(true);
     expect(live(receipt.new_ids["$new.1"]!)).toBe(true);
     expect(docStore.files.get("n.md")).toBe("# N\n");
@@ -225,7 +225,7 @@ describe("plan + execute (§11.6, §11.7)", () => {
     expect(receipt.new_ids).toEqual({ "$new.0": "d_1", "$new.1": "b_7", "$new.2": "b_8", "$new.3": "b_9", "$new.4": "b_10" });
     expect(receipt.revisions.map((r) => r._id)).toEqual(["d_1", "d_0"]);
     expect(docStore.files.get("n.md")).toBe("---\nk: 1\n---\n\nTail.\n\n# N\n\nBody, edited.\n\nTail.\n");
-    expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' AND deleted_commit IS NULL ORDER BY ordinal").all()).toEqual([
+    expect(store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = 'd_1' AND deleted_at IS NULL ORDER BY ordinal").all()).toEqual([
       { block_id: "b_5", text: "Tail." }, { block_id: "b_7", text: "N" }, { block_id: "b_8", text: "Body, edited." }, { block_id: "b_9", text: "Tail." },
     ]);
     // The api rule: every block of the created document is `inserted / 1 / api / null` — the moved one included.

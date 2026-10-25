@@ -51,7 +51,7 @@ describe("multiformat ingest integration", () => {
     const result = ingestFile(store, repoId, "config.yaml", content);
 
     const blocks = store.db
-      .prepare("SELECT type FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL")
+      .prepare("SELECT type FROM blocks WHERE doc_id = ? AND deleted_at IS NULL")
       .all(result.docId) as { type: string }[];
     expect(blocks.length).toBeGreaterThan(0);
     expect(blocks.every((b) => b.type.startsWith("yaml:"))).toBe(true);
@@ -63,7 +63,7 @@ describe("multiformat ingest integration", () => {
     const result = ingestFile(store, repoId, "data.json", content);
 
     const blocks = store.db
-      .prepare("SELECT type FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL")
+      .prepare("SELECT type FROM blocks WHERE doc_id = ? AND deleted_at IS NULL")
       .all(result.docId) as { type: string }[];
     expect(blocks.length).toBeGreaterThan(0);
     expect(blocks.every((b) => b.type.startsWith("json:"))).toBe(true);

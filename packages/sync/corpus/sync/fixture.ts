@@ -168,7 +168,7 @@ class RecordingEngine implements EngineClient {
   readDoc(path: string): Promise<DocBytes | null> {
     this.calls.push({ engine: "read_doc", path });
     const row = this.store.db
-      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL")
       .get(this.repoId, path) as { doc_id: string; file_hash: Buffer | null } | undefined;
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);
@@ -227,8 +227,8 @@ export async function runCoordinatorCase(c: Omit<CoordinatorCase, "expect">): Pr
         steps.push(outSummary(s, [...calls]));
       }
     }
-    const docs = (store.db.prepare("SELECT doc_id, path, deleted_commit FROM docs WHERE repo_id = ? ORDER BY path").all(repoId) as { doc_id: string; path: string; deleted_commit: string | null }[]).map(
-      (d) => ({ doc_id: d.doc_id, path: d.path, deleted: d.deleted_commit !== null }),
+    const docs = (store.db.prepare("SELECT doc_id, path, deleted_at FROM docs WHERE repo_id = ? ORDER BY path").all(repoId) as { doc_id: string; path: string; deleted_at: string | null }[]).map(
+      (d) => ({ doc_id: d.doc_id, path: d.path, deleted: d.deleted_at !== null }),
     );
     const commits = store.db.prepare("SELECT commit_id, seq, origin, actor FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as CoordinatorProjection["commits"];
     return { expect: { steps, files: source.snapshot(), docs, commits } };

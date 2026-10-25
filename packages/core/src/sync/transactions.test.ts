@@ -67,7 +67,7 @@ describe("the observed-deletion tombstone is one transaction (spec/store §5.6)"
     const { docId } = observeFile(store, repoId, "a.md", "# A\n\nbody\n");
     spyPrepare();
     observeDelete(store, repoId, "a.md");
-    const steps = ran.filter((r) => /INSERT INTO commits|INSERT OR REPLACE INTO resurrection_pool|blocks_fts\(blocks_fts, rowid, text\) VALUES\('delete'|UPDATE blocks SET deleted_commit|UPDATE docs SET deleted_commit/.test(r.sql));
+    const steps = ran.filter((r) => /INSERT INTO commits|INSERT OR REPLACE INTO resurrection_pool|blocks_fts\(blocks_fts, rowid, text\) VALUES\('delete'|UPDATE blocks SET deleted_at|UPDATE docs SET deleted_at/.test(r.sql));
     expect(steps.length).toBeGreaterThanOrEqual(5);
     for (const s of steps) expect(s, s.sql).toMatchObject({ inTransaction: true });
     const order = steps.map((s) => s.sql.match(/INSERT INTO commits|resurrection_pool|blocks_fts|UPDATE blocks|UPDATE docs/)![0]);
@@ -76,7 +76,7 @@ describe("the observed-deletion tombstone is one transaction (spec/store §5.6)"
     const sweep = ranMatching("DELETE FROM resurrection_pool WHERE expires_ts");
     expect(sweep).toHaveLength(1);
     expect(sweep[0]!.inTransaction).toBe(false);
-    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_commit IS NOT NULL", docId)).toBe(1);
+    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_at IS NOT NULL", docId)).toBe(1);
   });
 
   it("a failure in the FTS delete rolls everything back: the doc stays live, no commit, no pool rows", () => {
@@ -87,13 +87,13 @@ describe("the observed-deletion tombstone is one transaction (spec/store §5.6)"
     expect(() => tombstoneObservedDeletion(store, repoId, docId, new Date().toISOString())).toThrow(/injected failure/);
     expect(store.db.inTransaction).toBe(false);
     expect(count("SELECT count(*) c FROM commits")).toBe(commits); // the minted commit row rolled back
-    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_commit IS NULL", docId)).toBe(1);
-    expect(count("SELECT count(*) c FROM blocks WHERE doc_id = ? AND deleted_commit IS NOT NULL", docId)).toBe(0);
+    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_at IS NULL", docId)).toBe(1);
+    expect(count("SELECT count(*) c FROM blocks WHERE doc_id = ? AND deleted_at IS NOT NULL", docId)).toBe(0);
     expect(count("SELECT count(*) c FROM resurrection_pool WHERE doc_id = ?", docId)).toBe(0);
     expect(count("SELECT count(*) c FROM blocks_fts WHERE blocks_fts MATCH 'body'")).toBe(1); // still indexed
     // And the same through observeDelete: the sweep after it never runs.
     expect(() => observeDelete(store, repoId, "a.md")).toThrow(/injected failure/);
-    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_commit IS NULL", docId)).toBe(1);
+    expect(count("SELECT count(*) c FROM docs WHERE doc_id = ? AND deleted_at IS NULL", docId)).toBe(1);
   });
 });
 
@@ -104,7 +104,7 @@ describe("the conflicted flag lands inside the ingest transaction (spec/store §
     expect(clean.conflicted).toBe(false);
     const dirty = observeFile(store, repoId, "a.md", "# A\n\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n");
     expect(dirty.conflicted).toBe(true);
-    const pointers = ranMatching("UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ?");
+    const pointers = ranMatching("UPDATE docs SET head = ?, file_hash = ?, updated_at = ?, conflicted = ?");
     expect(pointers).toHaveLength(2);
     for (const p of pointers) expect(p.inTransaction).toBe(true);
     // No separate autocommit flag update exists any more.
@@ -124,9 +124,9 @@ describe("the conflicted flag lands inside the ingest transaction (spec/store §
     const clean = observeFile(store, repoId, "a.md", "# A\n\nparagraph\n");
     store.db.prepare("UPDATE docs SET conflicted = 1 WHERE doc_id = ?").run(clean.docId);
     spyPrepare();
-    const heading = store.db.prepare("SELECT block_id, raw_hash FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL").get(clean.docId) as { block_id: string; raw_hash: Buffer };
+    const heading = store.db.prepare("SELECT block_id, raw_hash FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_at IS NULL").get(clean.docId) as { block_id: string; raw_hash: Buffer };
     apply(store, { repoId, rootPath: dir, ops: [{ op: "update", block: heading.block_id, markdown: "# A2", expect: { content_hash: heading.raw_hash.toString("hex") } }], origin: { actor: "test" } });
-    expect(ranMatching("UPDATE docs SET current_rev = ?, file_hash = ? WHERE")).toHaveLength(1);
+    expect(ranMatching("UPDATE docs SET head = ?, file_hash = ?, updated_at = ? WHERE")).toHaveLength(1);
     expect(ranMatching("conflicted")).toEqual([]);
     expect(count("SELECT conflicted c FROM docs WHERE doc_id = ?", clean.docId)).toBe(1); // untouched
   });
@@ -136,13 +136,13 @@ describe("the conflicted flag lands inside the ingest transaction (spec/store §
     const commits = count("SELECT count(*) c FROM commits");
     const revs = count("SELECT count(*) c FROM revisions WHERE doc_id = ?", first.docId);
     spyPrepare();
-    failOn = ["UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ?"];
+    failOn = ["UPDATE docs SET head = ?, file_hash = ?, updated_at = ?, conflicted = ?"];
     expect(() => observeFile(store, repoId, "a.md", "# A\n\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n")).toThrow(/injected failure/);
     expect(store.db.inTransaction).toBe(false);
     expect(count("SELECT count(*) c FROM commits")).toBe(commits);
     expect(count("SELECT count(*) c FROM revisions WHERE doc_id = ?", first.docId)).toBe(revs);
-    const row = store.db.prepare("SELECT current_rev, conflicted FROM docs WHERE doc_id = ?").get(first.docId) as { current_rev: string; conflicted: number };
-    expect(row).toEqual({ current_rev: first.rev, conflicted: 0 });
+    const row = store.db.prepare("SELECT head, conflicted FROM docs WHERE doc_id = ?").get(first.docId) as { head: string; conflicted: number };
+    expect(row).toEqual({ head: first.rev, conflicted: 0 });
   });
 });
 
@@ -177,7 +177,7 @@ describe("the checkpoint row and the pool sweep are one transaction (spec/sync �
     expect(() => processCheckpoint(store, repoId, dir, [{ path: "a.md" }])).toThrow(/injected failure/);
     expect(store.db.inTransaction).toBe(false);
     expect(count("SELECT count(*) c FROM checkpoints")).toBe(0);
-    expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_commit IS NULL")).toBe(1); // the member commit stands
+    expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_at IS NULL")).toBe(1); // the member commit stands
     // The same through finishCheckpoint directly, with the row the failing half.
     failOn = ["INSERT INTO checkpoints"];
     expect(() => finishCheckpoint(store, repoId, [], { ts: new Date().toISOString(), gitHead: null })).toThrow(/injected failure/);
@@ -187,7 +187,7 @@ describe("the checkpoint row and the pool sweep are one transaction (spec/sync �
     failOn = ["DELETE FROM resurrection_pool WHERE expires_ts"];
     unlinkSync(join(dir, "a.md"));
     expect(() => processCheckpoint(store, repoId, dir, [{ path: "a.md" }])).toThrow(/injected failure/);
-    expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_commit IS NOT NULL")).toBe(1);
+    expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_at IS NOT NULL")).toBe(1);
     expect(count("SELECT count(*) c FROM checkpoints")).toBe(0);
   });
 });

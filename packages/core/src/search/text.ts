@@ -38,7 +38,7 @@ export function textSearch(
        FROM blocks_fts
        JOIN blocks b ON b.rowid = blocks_fts.rowid
        JOIN docs d ON d.doc_id = b.doc_id
-       WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_commit IS NULL
+       WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_at IS NULL
        ORDER BY score
        LIMIT ?`,
     )

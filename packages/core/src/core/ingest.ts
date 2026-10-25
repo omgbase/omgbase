@@ -20,8 +20,13 @@ import { adapterForPath } from "../format/index.js";
 // Ingest path (07 task 1.4): parse → assign ids → commit. By default every
 // ingest re-mints (no identity threading). A caller (sync/) may supply an
 // IdResolver that carries ids from the previous revision via reconciliation and
-// returns dispositions to persist. Convergence invariant checked:
-// file_hash == rendered_hash.
+// returns dispositions to persist. Since store 17.0 (modular-core Phase 3a) the
+// current state is self-contained: the core mints the head token (`docs.head`,
+// D1), writes the frontmatter raw on the doc row and every block's bytes on its
+// row (D10), stamps `created_at`/`updated_at` (D6), and hands the accepted
+// transition to the recorder (`HistoryRecorder.captureRevision`), which keeps
+// its own history tables. Convergence invariant checked: `reconstruct(doc) ==
+// source` from the rows alone.
 
 // A disposition row to persist (mirrors 02 §3 dispositions; kept structural so
 // core does not depend on the reconcile module's types).
@@ -128,8 +133,12 @@ interface BlockRow {
   type: string;
   attrs: string;
   text: string;
+  /** The block's raw source, stored inline (spec/store §3.1 `blocks.raw`, 17.0 D10). */
+  raw: string;
   rawHash: Buffer;
   normHash: Buffer;
+  /** The trailing trivia, NULL when empty (`blocks.trivia`). */
+  trivia: string | null;
   triviaHash: Buffer | null;
 }
 
@@ -158,8 +167,10 @@ function flatten(
       type: b.type,
       attrs: JSON.stringify(b.attrs),
       text: visible,
+      raw: b.raw,
       rawHash: sha256(b.raw),
       normHash: sha256(visible),
+      trivia: b.trivia.length > 0 ? b.trivia : null,
       triviaHash: b.trivia.length > 0 ? sha256(b.trivia) : null,
     });
     if (b.children.length > 0) {
@@ -232,11 +243,12 @@ export function ingestFile(
 }
 
 /**
- * spec/store §5.4 steps 1–4 and 6–14 for one document under an EXISTING
+ * spec/store §5.4 steps 1–3 and 6–15 for one document under an EXISTING
  * commit row, inside the caller's transaction (`db` is the connection the
- * caller's `store.write` handed it; nothing here opens one). The revision,
- * the block rows' `created_commit`, the pool snapshot, the dispositions and
- * block changes, the properties and the edge intervals all name `commitId`.
+ * caller's `store.write` handed it; nothing here opens one). The head token
+ * is minted here (step 6); the pool snapshot, the properties and the edge
+ * intervals name `commitId`; the captured revision and the dispositions are
+ * the recorder's (step 15).
  */
 export function ingestInto(
   db: Database,
@@ -272,26 +284,33 @@ export function ingestInto(
     ? (adapter.extractMetadata(content) ?? {})
     : parseFrontmatter(fmBlock);
 
-  // Upsert the document row.
-  let doc = db.prepare("SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
-    | { doc_id: string; deleted_commit: string | null }
+  // spec/store §5.4 step 1 (17.0): the frontmatter raw is a current value on
+  // the doc row — fences included, never a delta (the recorder keeps its own
+  // delta-encoded copy, step 15).
+  const fmRaw = fmBlock ? fmBlock.raw : null;
+
+  // Upsert the document row (step 2).
+  let doc = db.prepare("SELECT doc_id, deleted_at FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
+    | { doc_id: string; deleted_at: string | null }
     | undefined;
   const docId = doc?.doc_id ?? mintId("d");
   const isNew = !doc;
   if (!doc) {
+    // `created_at` is the identity's birth (D6); `updated_at` moves with the head (step 12).
     db.prepare(
-      "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
-    doc = { doc_id: docId, deleted_commit: null };
+      "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(docId, repoId, path, format, tree.leadingTrivia, fmRaw, fmTrivia, ts, ts);
+    doc = { doc_id: docId, deleted_at: null };
     // Adopt phantom edges that pointed at this path so backlinks re-point.
     adoptPhantoms(db, path, docId);
   } else {
     // A tombstoned row still owns the path's identity (spec/store §5.6
     // "Re-creation"): bytes observed again at the path revive it — the row is
-    // live again, so reads that filter `deleted_commit IS NULL` see it and the
-    // next identical observation echo-gates instead of re-ingesting.
-    const revived = doc.deleted_commit !== null;
-    db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ?, deleted_commit = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
+    // live again, so reads that filter `deleted_at IS NULL` see it and the
+    // next identical observation echo-gates instead of re-ingesting. A revival
+    // keeps `created_at` (D6).
+    const revived = doc.deleted_at !== null;
+    db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_raw = ?, frontmatter_trivia = ?, deleted_at = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmRaw, fmTrivia, docId);
     // spec/graph §3.5: adoption happens whenever a row BECOMES live, so a
     // revived tombstone also collects the phantom edges minted at its path
     // while it was gone (§8 "Fixed — a revived document adopted no phantoms").
@@ -306,29 +325,53 @@ export function ingestInto(
     : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
   const assigned = resolved.assigned;
 
-  // spec/store §5.4 steps 0–2: the revision — the Merkle tree (full or delta
-  // against the previous revision, §4.4), the frontmatter blob (step 1) and the
-  // `revisions` row (step 2) — is the recorder's (`HistoryRecorder.
-  // captureRevision`); the head token it returns is what `docs.current_rev`
-  // points at below (D1: the core mints it itself in Phase 3).
+  // spec/store §5.4 step 6 (17.0, D1): the HEAD TOKEN is the core's — minted
+  // here, at the point the recorder's `writeRevision` minted it through 16.x,
+  // so the mint order (`b` in pass 1, `d`, `c`, `r`, `x`, `e`) and every
+  // fixture id hold. The core numbers and hashes nothing against a previous
+  // revision (M1): the recorder is handed the accepted transition (step 15)
+  // and writes its `revisions` row under this token, its tree and frontmatter
+  // deltas against its OWN previous captured revision. Legacy capture stays
+  // on for every repository through Phase 3, so `revisions.rev_id == head`.
   const history = requireHistory(db);
   const renderedHash = sha256(content);
-  const rev = history.captureRevision({
+  const head = mintId("r");
+  history.captureRevision({
     docId,
+    head,
     path,
     commitId,
     blocks: assigned,
-    frontmatterRaw: fmBlock ? fmBlock.raw : null,
+    frontmatterRaw: fmRaw,
     renderedHash,
   });
 
+  // The timestamps the new rows carry forward (D6, step 9): the doc's previous
+  // live rows (a carried block keeps `created_at`, and `updated_at` too when
+  // its verdict is `same`), the pool rows about to be consumed (a resurrected
+  // block keeps its birth), and the foreign rows about to be evicted (a
+  // cross-document move keeps it too). Read BEFORE anything below deletes them.
+  const previous = new Map<string, { created_at: string; updated_at: string }>();
+  for (const r of db.prepare("SELECT block_id, created_at, updated_at FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(docId) as { block_id: string; created_at: string; updated_at: string }[]) {
+    previous.set(r.block_id, r);
+  }
+  const pooledBirth = new Map<string, string>();
+  if ((resolved.consumedPool ?? []).length > 0) {
+    const poolRow = db.prepare("SELECT created_at FROM resurrection_pool WHERE block_id = ?");
+    for (const id of resolved.consumedPool!) {
+      const r = poolRow.get(id) as { created_at: string } | undefined;
+      if (r) pooledBirth.set(id, r.created_at);
+    }
+  }
+
   // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
-  // doc's rows (the ingest rebuilds current-state blocks wholesale).
+  // doc's rows (the ingest rebuilds current-state blocks wholesale). The pool
+  // row carries the block's `created_at` so a resurrection restores it (D6).
   if (resolved.deleted.length > 0) {
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     const pool = db.prepare(
-      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+       SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
     );
     for (const id of resolved.deleted) pool.run(commitId, expires, id, docId);
   }
@@ -339,10 +382,34 @@ export function ingestInto(
   // must not collide on the block_id primary key. Evict the foreign row (and
   // its FTS entry when live) and drop any pool row: the id is live here now.
   const incoming = [...(resolved.crossDocIds ?? []), ...(resolved.consumedPool ?? [])];
-  if (incoming.length > 0) evictForeignBlockRows(db, docId, incoming);
+  const foreignBirth = incoming.length > 0 ? evictForeignBlockRows(db, docId, incoming) : new Map<string, string>();
 
-  // Refresh current-state blocks (clear + repopulate with carried/minted ids).
-  // FTS is external-content: delete old index rows before dropping blocks.
+  // The verdict per block decides its timestamps (spec/store §5.4 step 9,
+  // 17.0): `created_at` is carried for a carry (`same`, `edited`, `moved`,
+  // `edited_moved` — the previous live row's), restored for `resurrected`
+  // (the pool row's), kept across a cross-document move (the evicted row's),
+  // and `ts` for `inserted` and the lineage kinds (a new identity is born
+  // now); `updated_at` is the previous row's only under `same` (14.2's rule:
+  // a block is updated when IT changes), else `ts`.
+  const verdicts = new Map<string, Set<string>>();
+  for (const d of resolved.dispositions) {
+    let kinds = verdicts.get(d.blockId);
+    if (!kinds) verdicts.set(d.blockId, (kinds = new Set()));
+    kinds.add(d.kind);
+  }
+  const stamps = (blockId: string): { createdAt: string; updatedAt: string } => {
+    const kinds = verdicts.get(blockId);
+    const prev = previous.get(blockId);
+    if (kinds?.has("resurrected")) return { createdAt: pooledBirth.get(blockId) ?? foreignBirth.get(blockId) ?? ts, updatedAt: ts };
+    const foreign = foreignBirth.get(blockId);
+    if (foreign !== undefined && !prev) return { createdAt: foreign, updatedAt: ts };
+    if (prev) return { createdAt: prev.created_at, updatedAt: kinds !== undefined && kinds.size === 1 && kinds.has("same") ? prev.updated_at : ts };
+    return { createdAt: ts, updatedAt: ts };
+  };
+
+  // Refresh current-state blocks (clear + repopulate with carried/minted ids),
+  // every row carrying its own bytes (step 9; D10). FTS is external-content:
+  // delete old index rows before dropping blocks.
   ftsDeleteDoc(db, docId);
   db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
   const rows: BlockRow[] = [];
@@ -350,13 +417,13 @@ export function ingestInto(
   const insert = db.prepare(
     `INSERT INTO blocks
        (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth,
-        ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit)
+        ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at)
      VALUES
        (@blockId, @repoId, @docId, @parentBlock, @orderKey, @ordinal, @depth,
-        @ancestorPath, @type, @attrs, @text, @rawHash, @normHash, @triviaHash, @createdCommit)`,
+        @ancestorPath, @type, @attrs, @text, @raw, @rawHash, @normHash, @trivia, @triviaHash, @createdAt, @updatedAt)`,
   );
   for (const r of rows) {
-    insert.run({ ...r, repoId, docId, createdCommit: commitId });
+    insert.run({ ...r, repoId, docId, ...stamps(r.blockId) });
   }
   ftsIndexDoc(db, docId);
   rebuildSections(db, docId);
@@ -449,7 +516,7 @@ export function ingestInto(
       ? resolved.dispositions
       : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
 
-  // spec/store §5.4 step 10: the reconciliation evidence is the recorder's
+  // spec/store §5.4 step 15: the reconciliation evidence is the recorder's
   // (`HistoryRecorder.recordDispositions` — every non-`same` verdict, 14.2).
   history.recordDispositions(commitId, dispositions);
 
@@ -458,22 +525,23 @@ export function ingestInto(
     db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?").run(id);
   }
 
-  // Update document current pointers + convergence hash (+ the conflicted
-  // flag when the caller is the observe path — one statement, one transaction).
+  // Step 12: the head, the convergence hash and `updated_at` (the document's
+  // own last change moves with its head, D6) — plus the conflicted flag when
+  // the caller is the observe path. One statement, one transaction.
   const fileHash = sha256(content);
   if (opts.conflicted === undefined) {
-    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(rev.revId, fileHash, docId);
+    db.prepare("UPDATE docs SET head = ?, file_hash = ?, updated_at = ? WHERE doc_id = ?").run(head, fileHash, ts, docId);
   } else {
-    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ?, conflicted = ? WHERE doc_id = ?").run(rev.revId, fileHash, opts.conflicted ? 1 : 0, docId);
+    db.prepare("UPDATE docs SET head = ?, file_hash = ?, updated_at = ?, conflicted = ? WHERE doc_id = ?").run(head, fileHash, ts, opts.conflicted ? 1 : 0, docId);
   }
 
-  // Convergence check (01 §2): file bytes vs rendered revision. Two independent
+  // Convergence check (step 13): file bytes vs the rows. Two independent
   // round-trips must both reproduce the source exactly:
   //   1. the freshly-parsed in-memory tree (validates the parser), and
-  //   2. a reload from storage (validates that persisted blocks + trivia +
-  //      frontmatter separator tile the source — the fidelity a plain read or
-  //      an `apply` write actually depends on). Rendering only the in-memory
-  //      tree hid store→reload separator loss; reconstructContent closes that.
+  //   2. a reload from the rows just written (validates that the inline block
+  //      bytes + trivia + frontmatter raw + separator tile the source — the
+  //      fidelity a plain read or an `apply` write actually depends on; since
+  //      17.0 nothing here reads a history table).
   const renderFn = adapter?.render ?? render;
   const converged =
     fileHash.equals(renderedHash) &&
@@ -483,7 +551,7 @@ export function ingestInto(
   return {
     docId,
     commitId: commitId,
-    revId: rev.revId,
+    revId: head,
     blockCount: rows.length,
     converged,
   };
@@ -496,19 +564,25 @@ export function ingestInto(
 // decides leaf-ness over the table before any row goes and re-indexes a parent
 // left childless. The source document, if it commits later in the same
 // checkpoint, rewrites its rows wholesale and never lists a carried id as
-// deleted, so nothing there depends on the evicted row.
-function evictForeignBlockRows(db: Database, docId: string, ids: string[]): void {
-  const sel = db.prepare("SELECT rowid, block_id, doc_id, parent_block, text, deleted_commit FROM blocks WHERE block_id = ? AND doc_id != ?");
+// deleted, so nothing there depends on the evicted row. Returns each evicted
+// row's `created_at`, which the carried-in row inherits (D6).
+function evictForeignBlockRows(db: Database, docId: string, ids: string[]): Map<string, string> {
+  const sel = db.prepare("SELECT rowid, block_id, doc_id, parent_block, text, deleted_at, created_at FROM blocks WHERE block_id = ? AND doc_id != ?");
   const del = db.prepare("DELETE FROM blocks WHERE block_id = ? AND doc_id != ?");
   const unpool = db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?");
-  const rows: Parameters<typeof ftsBeforeEvictRows>[1] = [];
+  const rows: (Parameters<typeof ftsBeforeEvictRows>[1][number] & { created_at: string })[] = [];
   for (const id of ids) {
     const row = sel.get(id, docId) as (typeof rows)[number] | undefined;
     if (row) rows.push(row);
   }
   ftsBeforeEvictRows(db, rows);
-  for (const r of rows) del.run(r.block_id, docId);
+  const birth = new Map<string, string>();
+  for (const r of rows) {
+    birth.set(r.block_id, r.created_at);
+    del.run(r.block_id, docId);
+  }
   for (const id of ids) unpool.run(id);
+  return birth;
 }
 
 // Zip assigned block ids onto the parsed RawBlocks for node projection. The

@@ -74,6 +74,48 @@ unreachable — growth under the current policy is linear in edits, with the
 per-commit constant (`commits` ≈ 660 B, `revisions` ≈ 500 B) the largest
 single term for small edits.
 
+### 17.0 (3a), TS — the head and its bytes on the current rows (`ts-2026-10-25T18-43-36`)
+
+The same harness over the Phase 3a reference (store 17.0: `docs.head`,
+`frontmatter_raw`, `blocks.raw`/`trivia` inline, the time columns — legacy
+capture still on), TS CLI, node 24; the 16.0 TS row above is the comparison.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | 16.0 TS (KB / op) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 5.62 | 5,624 | 28.0 / doc | 3.15 | 2.10 | 25.6 / doc (db 5.15) |
+| frontmatter hot update | 50 | 5.71 | 86 | 1.7 | +10 | +70 | 1.6 |
+| block edit | 50 | 5.79 | 82 | 1.6 | 0 | +70 | 2.0 |
+| rolling journal | 50 | 5.95 | 160 | 3.2 | +20 | +130 | 3.6 |
+| task churn | 50 | 5.98 | 25 | 0.5 | 0 | +30 | 0.8 |
+| link churn | 50 | 6.05 | 78 | 1.6 | +30 | +40 | 1.8 |
+| delete / recreate | 20 | 6.17 | 115 | 5.7 | +10 | +100 | 4.1 |
+| gc (default sweep) | | 6.18 | 8 | | 0 | 0 | 8 KB, nothing swept |
+
+The import costs **25.7× the source** (16.0: 23.8×) and the database after
+every workload **28.3×** (26.5×): **+475 KB at import (+9 %) and +440 KB at
+the end (+7.7 %)**, all of it in `content` (3.15 vs 2.67 MB; `history` is
+2.10 vs 2.11 MB). That is the expected price of D10 with legacy capture on:
+every live block's `raw` and trivia and every frontmatter raw now sit on the
+current rows **and** in the recorder's `blobs`, so the live content's bytes
+exist twice — the `blobs` table of the live subset is ≈ 0.5 MB, which is the
+growth. The per-operation cost is unchanged within the harness's ±10 KB per
+stage (several workloads read lower than 16.0, which is page-allocation
+noise, not a saving); the one real increase is delete/recreate (+1.6 KB per
+op): a recreated document writes its 17 blocks' bytes onto the new rows,
+where 16.0 wrote 32-byte hashes against blobs that already existed. Nothing
+else changed shape — `commits` + `revisions` are still the per-edit floor, the
+sweep still reclaims nothing. The halving comes when capture is switched off
+for a repository (Phase 3e's manifest, Phase 4): the inline rows then carry
+the only copy and `blobs`/`tree_nodes` are not written at all.
+
+Latency (p50 / p95 ms, process start ~165 / 540 included): import 949;
+one write 245–293 / 265–328; `query` docs 236 / 267, blocks filter 228 /
+268, `text("furnace")` 316 / 382, links 222 / 262; `outline` 217 / 272;
+`gc` 241 — every row within the 16.0 TS run's spread (writes 246–270 / 267–
+344, queries 236–336 / 370–415): the hot `docs_read`/`apply` paths now read
+the rows without a `blobs` join or a frontmatter resolve, but node's start
+dominates every CLI round trip, so the harness cannot see it.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

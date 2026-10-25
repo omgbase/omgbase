@@ -110,12 +110,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "c9a8d3f66fdb5a196422661437d0b3e38e4133d2f082ab0deafb294c3fb420a5",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-10-13T10:00:00.000Z",
+            "updated_at": "2026-10-13T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -225,11 +228,14 @@
               "level": 1
             },
             "text": "Three paragraphs",
+            "raw": "# Three paragraphs",
             "raw_hash": "5e1fff476b11f06a7daea57fb42de421a23919621e2617230a8f9426ccaad226",
             "norm_hash": "a266b87f6ecff79f44ccd4d1957d053a943647c5cd57b27e2e404cb2f11d7bbe",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-10-13T10:00:00.000Z",
+            "updated_at": "2026-10-13T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -242,11 +248,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road.",
+            "raw": "Alpha paragraph about apples and orchards, the long rows of trees that line the valley road.",
             "raw_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
             "norm_hash": "4c9e19659afd85cd993a625573905aacb5b74d6e67cae31c774a36959bde519c",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-10-13T10:00:00.000Z",
+            "updated_at": "2026-10-13T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -259,11 +268,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work.",
+            "raw": "Beta paragraph about bees and honey, the hives at the edge of the meadow and the keeper's patient summer work.",
             "raw_hash": "e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1",
             "norm_hash": "e8ed02cea012300bb85e9b58f4dd81b501bd5f77663a1491691d49ec20dfdbb1",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-10-13T10:00:00.000Z",
+            "updated_at": "2026-10-13T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -276,11 +288,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.",
+            "raw": "Gamma paragraph about goats and cheese, the herd on the hillside and the small dairy by the market.",
             "raw_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
             "norm_hash": "3b5e6393141655cfecf30626a803eb52f9b65c58315487f472625726e92f7664",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-10-13T10:00:00.000Z",
+            "updated_at": "2026-10-13T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "dispositions": [

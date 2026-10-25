@@ -47,7 +47,7 @@ function save(path: string, content: string): string {
   mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_commit IS NULL").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_at IS NULL").get(path) as { doc_id: string }).doc_id;
 }
 function commits(): { commit_id: string; origin: string; reason: string | null }[] {
   return store.db.prepare("SELECT commit_id, origin, reason FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; origin: string; reason: string | null }[];
@@ -93,7 +93,7 @@ describe("the transaction touches no file", () => {
     const before = commits();
     const plan = planChangeset(store, { repoId, rootPath: dir, ops: [appendOp(a, "A tail."), appendOp(b, "B tail.")], origin: { actor: "agent:test" } });
     const other = new Database(dbPath());
-    other.prepare("UPDATE docs SET current_rev = 'r_elsewhere' WHERE doc_id = ?").run(b);
+    other.prepare("UPDATE docs SET head = 'r_elsewhere' WHERE doc_id = ?").run(b);
     other.close();
     const err = fail(() => commitChangeset(store, repoId, { origin: "api", actor: "agent:test", reason: "two" }, plan.effects, new Date().toISOString(), { docStore: new FsDocStore(dir) }));
     expect(err.code).toBe("stale_plan");
@@ -189,7 +189,7 @@ describe("a crash after COMMIT", () => {
     expect(() => apply(store, { repoId, docStore: new Crashing(dir), ops: [appendOp(a, "A tail.")], origin: { actor: "agent:test" } })).toThrow(/injected/);
     rmSync(join(dir, "a.md"));
     expect(observeDelete(store, repoId, "a.md")).toEqual({ docId: null, path: "a.md", deleted: false });
-    expect((store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id = ?").get(a) as { deleted_commit: string | null }).deleted_commit).toBeNull();
+    expect((store.db.prepare("SELECT deleted_at FROM docs WHERE doc_id = ?").get(a) as { deleted_at: string | null }).deleted_at).toBeNull();
     expect(pending()).toHaveLength(1);
     expect(materializePending(store, repoId, new FsDocStore(dir))).toEqual(["a.md"]);
     expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha.\n\nA tail.\n");

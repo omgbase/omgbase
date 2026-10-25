@@ -109,7 +109,7 @@ describe("reposStatus / syncStatus disk drift", () => {
   });
 
   // processCheckpoint/freshnessSweep now reconcile an observed deletion: the
-  // sweep tombstones the doc (docs.deleted_commit set), so the disk-drift detector
+  // sweep tombstones the doc (docs.deleted_at set), so the disk-drift detector
   // stops counting the gone file and convergence returns to true. Before the fix
   // the doc row stayed live forever — a queryable ghost for a file that's gone.
   it("freshnessSweep reconciles a deletion: doc tombstoned, drift clears, convergent", () => {
@@ -119,16 +119,16 @@ describe("reposStatus / syncStatus disk drift", () => {
 
     freshnessSweep(store, repoId, root);
 
-    // The doc for the deleted file is now tombstoned (deleted_commit set) and no
+    // The doc for the deleted file is now tombstoned (deleted_at set) and no
     // longer served by the live-docs query.
     const live = store.db
-      .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = 'a.md' AND deleted_commit IS NULL")
+      .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = 'a.md' AND deleted_at IS NULL")
       .get(repoId);
     expect(live).toBeUndefined();
     const tombstoned = store.db
-      .prepare("SELECT deleted_commit FROM docs WHERE repo_id = ? AND path = 'a.md'")
-      .get(repoId) as { deleted_commit: string | null };
-    expect(tombstoned.deleted_commit).not.toBeNull();
+      .prepare("SELECT deleted_at FROM docs WHERE repo_id = ? AND path = 'a.md'")
+      .get(repoId) as { deleted_at: string | null };
+    expect(tombstoned.deleted_at).not.toBeNull();
 
     // Disk drift clears and the green light returns.
     expect(detectDiskDrift(store, repoId, root).deleted).toBe(0);

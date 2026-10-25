@@ -79,12 +79,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -101,11 +104,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -118,11 +124,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -135,11 +144,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -152,11 +164,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -322,12 +337,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -344,11 +362,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -361,11 +382,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -378,11 +402,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -395,11 +422,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -597,12 +627,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -619,11 +652,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -636,11 +672,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -653,11 +692,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -670,11 +712,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -866,12 +911,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -888,11 +936,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -905,11 +956,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -922,11 +976,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -939,11 +996,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1111,12 +1171,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -1133,11 +1196,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1150,11 +1216,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1167,11 +1236,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1184,11 +1256,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1359,12 +1434,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -1381,11 +1459,14 @@
               "level": 1
             },
             "text": "List",
+            "raw": "# List",
             "raw_hash": "890bc7d586b352871bbc1f2efbb49795dd08fabfab12e37c3659dc4ac12e8e3f",
             "norm_hash": "6f202f54a7b2d8fe42aa804eabe48ef900cdf73a74c570a47fd1b1a4920a051d",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1400,11 +1481,14 @@
               "ordered": false
             },
             "text": "alpha item with several words in it bravo item with several words in it charlie item with several words in it",
+            "raw": "- alpha item with several words in it\n- bravo item with several words in it\n- charlie item with several words in it",
             "raw_hash": "df73e5a5c8cd7597badfaae622408325fb2f37da9b3c893e2c2502920bf4a685",
             "norm_hash": "99ead4e03165781d3fdc8529a3b8327d09f23c5d3f6e7f06615d9da106f108ec",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1417,11 +1501,14 @@
             "type": "list_item",
             "attrs": {},
             "text": "alpha item with several words in it",
+            "raw": "- alpha item with several words in it",
             "raw_hash": "1e0ec98fecf082524d09b50371298097c56c4a8fb6649083f4a69f2bce66cd7f",
             "norm_hash": "cfb39b22f6096299556719d3b3395aacbbce8c9d8e8e7f50b36a73a96e1ec9ed",
+            "trivia": null,
             "trivia_hash": null,
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1434,11 +1521,14 @@
             "type": "list_item",
             "attrs": {},
             "text": "bravo item with several words in it",
+            "raw": "- bravo item with several words in it",
             "raw_hash": "4d3cf9180e31aae4ad27ab6cb1b32c5181da7a9afd593c12a58a9e6e2a25c2a7",
             "norm_hash": "a72f6c0e0304c466bf7cb389a04f5a62171c4c15bae66d4d40fad271effd25e9",
+            "trivia": null,
             "trivia_hash": null,
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_4",
@@ -1451,11 +1541,14 @@
             "type": "list_item",
             "attrs": {},
             "text": "charlie item with several words in it",
+            "raw": "- charlie item with several words in it",
             "raw_hash": "388c3e68e01e6d61d1e562fc9d29cc3848c08a684c13869d53a25561d720e531",
             "norm_hash": "2aea4cabe685efd4e479f085b35b3fd45858a5c318b6c7ed81d9fb627c03570d",
+            "trivia": null,
             "trivia_hash": null,
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1626,12 +1719,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -1648,11 +1744,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1665,11 +1764,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -1682,11 +1784,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -1699,11 +1804,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -1873,12 +1981,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": "---\ntitle: Changed\ntags:\n  - x\n---",
             "frontmatter_trivia": "\n\n",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -1895,11 +2006,14 @@
               "level": 1
             },
             "text": "Body",
+            "raw": "# Body",
             "raw_hash": "cd6eb7d1fa7bffee0d6c0881301abd0ba728a45edcfcf616ecc2a7030c83a4fa",
             "norm_hash": "6ccaa6415b5ee449e3c5c716f57b4608ebe3b780f5aa6b077bc5d8eee5d961f9",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -1912,11 +2026,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Text.",
+            "raw": "Text.",
             "raw_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
             "norm_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2070,12 +2187,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": "---\ntitle: Hello\ntags:\n  - x\n---",
             "frontmatter_trivia": "\n\n",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -2092,11 +2212,14 @@
               "level": 1
             },
             "text": "Body",
+            "raw": "# Body",
             "raw_hash": "cd6eb7d1fa7bffee0d6c0881301abd0ba728a45edcfcf616ecc2a7030c83a4fa",
             "norm_hash": "6ccaa6415b5ee449e3c5c716f57b4608ebe3b780f5aa6b077bc5d8eee5d961f9",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2109,11 +2232,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Text.",
+            "raw": "Text.",
             "raw_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
             "norm_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2253,12 +2379,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -2275,11 +2404,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2292,11 +2424,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -2309,11 +2444,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -2326,11 +2464,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2613,12 +2754,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -2635,11 +2779,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -2652,11 +2799,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha was the first paragraph of this note about planning.",
+            "raw": "Alpha was the first paragraph of this note about planning.",
             "raw_hash": "beeda74c1f071a8ded3470978e6158bdd6ab861497253accc5b7667c2cddaec0",
             "norm_hash": "beeda74c1f071a8ded3470978e6158bdd6ab861497253accc5b7667c2cddaec0",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -2669,11 +2819,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -2686,11 +2839,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -2974,12 +3130,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_1",
+            "head": "r_1",
             "file_hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -2996,11 +3155,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -3013,11 +3175,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning, revised.",
+            "raw": "Alpha is the first paragraph of this note about planning, revised.",
             "raw_hash": "d7e7e1b7066685112bf7449ab2730c956da9888e76c8e23384de86b07cb00887",
             "norm_hash": "d7e7e1b7066685112bf7449ab2730c956da9888e76c8e23384de86b07cb00887",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_8",
@@ -3030,11 +3195,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Delta arrives as a new paragraph at the end of the note.",
+            "raw": "Delta arrives as a new paragraph at the end of the note.",
             "raw_hash": "98435757b8ad9dbf2baae871cb84a9b6d2428c5163ef17f674faa09a58ad90b2",
             "norm_hash": "98435757b8ad9dbf2baae871cb84a9b6d2428c5163ef17f674faa09a58ad90b2",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:01:00.000Z",
+            "updated_at": "2026-09-26T10:01:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -3047,11 +3215,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_1",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [
@@ -3163,6 +3334,7 @@
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "type": "paragraph",
+            "created_at": "2026-09-26T10:00:00.000Z",
             "deleted_commit": "c_1",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
@@ -3223,12 +3395,15 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
-            "current_rev": "r_0",
+            "head": "r_0",
             "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
             "conflicted": 0,
             "leading_trivia": "",
+            "frontmatter_raw": null,
             "frontmatter_trivia": null,
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "blocks": [
@@ -3245,11 +3420,14 @@
               "level": 1
             },
             "text": "Title",
+            "raw": "# Title",
             "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
             "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_1",
@@ -3262,11 +3440,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Alpha is the first paragraph of this note about planning.",
+            "raw": "Alpha is the first paragraph of this note about planning.",
             "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
             "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_2",
@@ -3279,11 +3460,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw": "Bravo is the second paragraph, which talks about something else.",
             "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia": "\n\n",
             "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           },
           {
             "block_id": "b_3",
@@ -3296,11 +3480,14 @@
             "type": "paragraph",
             "attrs": {},
             "text": "Charlie closes the note with a third paragraph.",
+            "raw": "Charlie closes the note with a third paragraph.",
             "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
             "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia": "\n",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_commit": "c_0",
-            "deleted_commit": null
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
           }
         ],
         "commits": [

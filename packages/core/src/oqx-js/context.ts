@@ -106,10 +106,10 @@ export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
 // its commit, in the keyset order `(path as of the revision, rev_id)`. The
 // `revisions` table carries no `repo_id`, so the repository guard joins `docs`.
 // `is_current` is `docs_history`'s `isCurrent`: the revision is the document's
-// `current_rev`.
+// `head`.
 // seam: HistoryRecorder.revisions — the `revisions` root and `_revisions` relation stay archival reads that return the rows
 // that exist plus a `hints` line once the capability may be off (D3; inventory-ts §2.6 rows 239–240, 247).
-const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
+const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /** The source handles of a document (§1.2): `_data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
@@ -322,7 +322,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // (ordinal, block_id)); each row is paired with its top-level ancestor's
   // ordinal, which is what section ranges are expressed in.
   const docBlocksPreorder = (docId: unknown, path: unknown): { row: Row; top: number }[] => {
-    const rows = all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.doc_id = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, path, docId) as Row[];
+    const rows = all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.doc_id = ? AND b.deleted_at IS NULL ORDER BY b.ordinal, b.block_id`, path, docId) as Row[];
     const ids = new Set(rows.map((r) => r.block_id));
     const byParent = new Map<string | null, Row[]>();
     for (const r of rows) {
@@ -369,10 +369,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
       _in_links: (r) => tagAll(all(
         `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
+         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
     },
     blocks: {
-      _children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
+      _children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_at IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
       _nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
       _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
       // enclosing section node(s): md:section whose range contains this block's top ordinal.
@@ -485,7 +485,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // single-with-no-row marker, as `_dst` on a dangling link) for a tombstoned
   // document: its revisions are rows, `_doc == null` tells them apart.
   const revisionDoc = (row: Row): Row | undefined =>
-    tag(one(`SELECT * FROM docs WHERE doc_id = ? AND deleted_commit IS NULL`, row.doc_id), "docs");
+    tag(one(`SELECT * FROM docs WHERE doc_id = ? AND deleted_at IS NULL`, row.doc_id), "docs");
   const owningBlock = (row: Row): Row | undefined => {
     if (!row.block_id) return undefined;
     const load = (): Record<string, unknown> | undefined =>
@@ -518,14 +518,14 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "_id": return row.doc_id;
       case "_path": return referencePath(String(row.path));
       case "_hash": return row.file_hash == null ? null : hex(row.file_hash);
-      // seam: HistoryRecorder → `docs.updated_at`/`created_at` columns (Phase 3, M2/D6; inventory-ts §2.6 rows 241–242, §3.4)
-      case "_updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
-      // `_created_at` (4.10): the commit `ts` of the document's first revision
-      // (`seq = 1`, the row `_revisions first { _ts values }` reads) — when
-      // omgbase first observed the document, not a filesystem time. The
-      // retention squash (spec/store §7.1, 15.0) keeps every revision and
-      // commit row, so the value survives archiving.
-      case "_created_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ? AND r.seq = 1`, row.doc_id) ?? null;
+      // `_updated_at` / `_created_at` are the row's own columns since store
+      // 17.0 (M2, D6; spec/surface §1.2): `updated_at` is the ts of the commit
+      // that last minted the head — content, structure, path or liveness, so a
+      // rename counts — and `created_at` the identity's birth (when omgbase
+      // first observed the document, not a filesystem time), kept across a
+      // tombstone and its revival and independent of any revision row.
+      case "_updated_at": return row.updated_at ?? null;
+      case "_created_at": return row.created_at ?? null;
       // `_raw`: the exact file bytes (spec/store §6.1, frontmatter included).
       case "_raw": return docsRead(store, String(row.doc_id))?._raw ?? null;
       // `_title`: the computed title (spec/properties §3.3 — the authored
@@ -543,19 +543,19 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks") switch (name) {
       case "_id": return row.block_id;
       case "_path": return referencePath(String(row.__path));
-      // `_raw`: the block's raw source bytes — the blob its `raw_hash` names (a
-      // container's raw holds its children verbatim); `_text` is the normalized text.
-      case "_raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
+      // `_raw`: the block's raw source bytes — its own row's `raw` (store 17.0,
+      // D10; a container's raw holds its children verbatim); `_text` is the
+      // normalized text.
+      case "_raw": return row.raw ?? null;
       case "_hash": return row.raw_hash == null ? null : hex(row.raw_hash);
-      // seam: HistoryRecorder → `blocks.updated_at`/`created_at` columns (Phase 3, M2/D6; inventory-ts §2.6 rows 245–246, §3.4)
-      case "_updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
-      // `_created_at` (4.10): the EARLIEST commit `ts` among the block's
-      // `block_changes` — the same join as `_updated_at` under MIN: the commit
-      // that first wrote the id (`inserted`, or the split/merge lineage row
-      // that minted it). Store 14.2 keeps that row and the 15.0 squash keeps
-      // each block's earliest row (spec/store §7.1), so it survives archiving;
-      // a resurrected block keeps its original creation.
-      case "_created_at": return scalar(`SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
+      // `_updated_at` / `_created_at` (store 17.0, M2/D6): the block's own
+      // columns — `updated_at` the ts of the commit that last changed THIS
+      // block (14.2's meaning kept: a `same` carry does not move it; a
+      // container's moves when its raw changes), `created_at` the commit that
+      // first wrote the id, carried across resurrection (the pool row keeps
+      // it) and cross-document moves (the evicted row keeps it).
+      case "_updated_at": return row.updated_at ?? null;
+      case "_created_at": return row.created_at ?? null;
       case "_doc_id": return row.doc_id;
       case "_type": return row.type;
       case "_text": return row.text;
@@ -708,7 +708,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       }
       case "child_count": {
         requireTarget(t, "blocks", "child_count");
-        return { handled: true, value: (scalar(`SELECT COUNT(*) FROM blocks WHERE parent_block = ? AND deleted_commit IS NULL`, r.block_id) as number) };
+        return { handled: true, value: (scalar(`SELECT COUNT(*) FROM blocks WHERE parent_block = ? AND deleted_at IS NULL`, r.block_id) as number) };
       }
       case "parent_type": {
         requireTarget(t, "blocks", "parent_type");

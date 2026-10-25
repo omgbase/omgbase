@@ -134,7 +134,7 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
 export function reconstructAtRevision(store: Store, docId: string, revId: string): DocsReadAtResult | null {
   const db = store.db;
   const doc = db
-    .prepare("SELECT path, leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT path, leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_at IS NULL")
     .get(docId) as { path: string; leading_trivia: string; frontmatter_trivia: string | null } | undefined;
   if (!doc) return null;
 
@@ -351,13 +351,15 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   const digests: CommitDigest[] = page.map((c) => {
     const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ _id: r.doc, _path: referencePath(r.path), _hash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
-    // A deletion writes no revision: the tombstone names the commit
-    // (`docs.deleted_commit`). A move names itself by its reason (`move <from>
-    // -> <to>`) and, since spec/mutate 2.1, carries the inbound retarget's
-    // revisions under the same commit — so the move is read off the reason
-    // whether or not the commit has revisions.
+    // A deletion writes no revision: the tombstone carries the commit's `ts` as
+    // `docs.deleted_at` (store 17.0 — `deleted_commit` is gone; the per-commit
+    // deleted paths become a feed entry in Phase 3d, M5/D7, until which the
+    // tombstone instant is the join). A move names itself by its reason (`move
+    // <from> -> <to>`) and, since spec/mutate 2.1, carries the inbound
+    // retarget's revisions under the same commit — so the move is read off the
+    // reason whether or not the commit has revisions.
     const deleted = revs.length === 0
-      ? (store.db.prepare("SELECT path FROM docs WHERE deleted_commit = ? ORDER BY path").all(c.commit_id) as { path: string }[]).map((r) => referencePath(r.path))
+      ? (store.db.prepare("SELECT path FROM docs WHERE repo_id = ? AND deleted_at = ? ORDER BY path").all(repoId, c.ts) as { path: string }[]).map((r) => referencePath(r.path))
       : [];
     const moved = parseMove(c.reason);
     const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: moved ? { from: referencePath(moved.from), to: referencePath(moved.to) } : null });
@@ -389,7 +391,7 @@ export interface DocVersion {
   _actor: string | null;
   /** hex of the revision's rendered_hash — the row's `_hash` — the document's `_hash` as of this version; spot no-op vs real change, feed into docs_read_at/diff. */
   _hash: string;
-  /** true when this rev == the doc's current_rev. */
+  /** true when this rev == the doc's head. */
   _is_current: boolean;
   /** true when the revision's bodies live in an archive segment (spec/store §7 "Retention", 15.0; `docs_read { at }` reads through it when attached). */
   _archived: boolean;
@@ -407,8 +409,8 @@ export interface DocVersions {
 interface DocRow {
   doc_id: string;
   path: string;
-  current_rev: string | null;
-  deleted_commit: string | null;
+  head: string | null;
+  deleted_at: string | null;
 }
 
 /**
@@ -421,7 +423,7 @@ interface DocRow {
  *   (compileWithin): escape %/_ then map `*`→SQL `%`. So `journal/*` and
  *   `journal/**` both become `journal/%`; `*` matches ACROSS `/` (there is no
  *   distinct single-segment wildcard in this dialect), consistent with within().
- * - By default only NON-deleted docs (deleted_commit IS NULL). includeDeleted:
+ * - By default only NON-deleted docs (deleted_at IS NULL). includeDeleted:
  *   true also returns tombstoned docs, whose past versions remain valuable for
  *   audit (a deleted journal file's history is intact).
  *
@@ -443,7 +445,7 @@ export function docHistory(
     const row = resolveDocRow(store, repoId, opts.doc, includeDeleted);
     docRows = row ? [row] : [];
   } else if (opts.pathGlob) {
-    const deletedClause = includeDeleted ? "" : "AND deleted_commit IS NULL";
+    const deletedClause = includeDeleted ? "" : "AND deleted_at IS NULL";
     const params: unknown[] = [repoId];
     let pathClause: string;
     // The glob is spelled in either path form; the column holds the storage form.
@@ -458,7 +460,7 @@ export function docHistory(
     }
     params.push(limit + 1);
     docRows = store.db
-      .prepare(`SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ? AND ${pathClause} ${deletedClause} ORDER BY path LIMIT ?`)
+      .prepare(`SELECT doc_id, path, head, deleted_at FROM docs WHERE repo_id = ? AND ${pathClause} ${deletedClause} ORDER BY path LIMIT ?`)
       .all(...params) as DocRow[];
   } else {
     throw new Error("docHistory requires one of { doc, pathGlob }");
@@ -486,10 +488,10 @@ export function docHistory(
       _origin: r.origin,
       _actor: r.actor,
       _hash: r.rendered_hash.toString("hex"),
-      _is_current: r.rev === d.current_rev,
+      _is_current: r.rev === d.head,
       _archived: r.archive !== null,
     }));
-    return { _id: d.doc_id, _path: referencePath(d.path), deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
+    return { _id: d.doc_id, _path: referencePath(d.path), deleted: d.deleted_at !== null, currentRev: d.head, versions };
   });
 
   return { docs, truncated };
@@ -497,19 +499,19 @@ export function docHistory(
 
 // Resolve a `doc` ref (id or path) to a docs row. Prefers findDoc (live docs);
 // when includeDeleted is set and findDoc misses (a tombstoned doc), falls back
-// to a direct lookup that ignores the deleted_commit filter.
+// to a direct lookup that ignores the deleted_at filter.
 function resolveDocRow(store: Store, repoId: string, ref: string, includeDeleted: boolean): DocRow | undefined {
   const info = findDocByRef(store, repoId, ref);
   if (info) {
-    return store.db.prepare("SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE doc_id = ?").get(info.docId) as DocRow | undefined;
+    return store.db.prepare("SELECT doc_id, path, head, deleted_at FROM docs WHERE doc_id = ?").get(info.docId) as DocRow | undefined;
   }
   if (!includeDeleted) return undefined;
   // findDocByRef filters deleted docs; for includeDeleted, look through the
   // tombstone using the SAME id-or-path dispatch (isValidId, not a "d_" prefix).
   const asId = isValidId(ref, "d");
   const stmt = asId
-    ? store.db.prepare("SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE doc_id = ?")
-    : store.db.prepare("SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ? AND path = ?");
+    ? store.db.prepare("SELECT doc_id, path, head, deleted_at FROM docs WHERE doc_id = ?")
+    : store.db.prepare("SELECT doc_id, path, head, deleted_at FROM docs WHERE repo_id = ? AND path = ?");
   return (asId ? stmt.get(ref) : stmt.get(repoId, storagePath(ref))) as DocRow | undefined;
 }
 
@@ -534,8 +536,12 @@ function renderSummary(
   disp: { kind: string; n: number }[],
   extra: { deleted: string[]; moved: { from: string; to: string } | null } = { deleted: [], moved: null },
 ): string {
-  let subject = revs.map((r) => r._path).join(", ");
-  if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}${revs.length > 0 ? `; ${subject}` : ""}`;
+  // A move is a revision of the moved document since store 17.0 (D11); the
+  // summary names the move once — `moved <from> → <to>` — and lists only the
+  // OTHER documents the commit rewrote (the retargeted sources), as 16.x did.
+  const listed = extra.moved ? revs.filter((r) => r._path !== extra.moved!.to) : revs;
+  let subject = listed.map((r) => r._path).join(", ");
+  if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}${listed.length > 0 ? `; ${subject}` : ""}`;
   else if (revs.length === 0 && extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
   const parts = disp.filter((d) => d.kind !== "same").map((d) => `${d.n} ${d.kind}`);
   const detail = parts.length > 0 ? ` — ${parts.join(", ")}` : "";

@@ -104,7 +104,7 @@ function resolveDocRef(store: Store, repoId: string, ref: string): string {
 
 // Which doc a given block id lives in (searches loaded docs; falls back to store).
 function docIdForBlock(store: Store, repoId: string, blockId: string): string | null {
-  const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
+  const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(blockId) as { doc_id: string } | undefined;
   return row?.doc_id ?? null;
 }
 
@@ -156,7 +156,7 @@ export class ChangesetPlanner {
   // Block ids present in each doc BEFORE any op — used to label intent
   // dispositions (edited vs inserted) on the known-id commit path.
   private readonly priorIds = new Map<string, Set<string>>();
-  // The row triple `(path, current_rev, file_hash)` each document is loaded
+  // The row triple `(path, head, file_hash)` each document is loaded
   // against — the commit's precondition (spec/mutate §4 step 5, 2.2).
   private readonly bases = new Map<string, DocBase>();
 
@@ -173,7 +173,7 @@ export class ChangesetPlanner {
       this.loaded.set(docId, d);
       this.bases.set(docId, base);
       this.before.set(docId, renderDoc(d));
-      const ids = this.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[];
+      const ids = this.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(docId) as { block_id: string }[];
       this.priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
     }
     return d;

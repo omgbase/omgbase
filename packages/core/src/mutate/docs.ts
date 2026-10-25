@@ -82,7 +82,7 @@ export function planInboundRetarget(store: Store, docId: string, fromPath: strin
   // is reported for BOTH the list and the item. Rewrite the deepest block only:
   // updating the container would re-parse (and re-identify) its children, and
   // the child's update alone already changes the container's rendered raw.
-  const parentOf = store.db.prepare("SELECT parent_block FROM blocks WHERE block_id = ? AND deleted_commit IS NULL");
+  const parentOf = store.db.prepare("SELECT parent_block FROM blocks WHERE block_id = ? AND deleted_at IS NULL");
   const containers = new Set<string>();
   for (const blockId of byBlock.keys()) {
     let cur: string | null = blockId;
@@ -96,15 +96,15 @@ export function planInboundRetarget(store: Store, docId: string, fromPath: strin
   const ops: Op[] = [];
   const blocks: string[] = [];
   const docs = new Set<string>();
-  const readBlock = store.db.prepare("SELECT bl.raw_hash, b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ? AND bl.deleted_commit IS NULL");
+  const readBlock = store.db.prepare("SELECT raw_hash, raw FROM blocks WHERE block_id = ? AND deleted_at IS NULL");
   for (const [blockId, src] of byBlock) {
-    const row = readBlock.get(blockId) as { raw_hash: Buffer; bytes: Buffer } | undefined;
+    const row = readBlock.get(blockId) as { raw_hash: Buffer; raw: string } | undefined;
     if (!row) continue;
     // Match against the directory the link was RESOLVED in (the source's path at
     // extraction time); write relative forms against the source's CURRENT
     // directory — they differ only for links inside the moved doc itself.
     const writeDir = src._doc_id === docId ? dirOf(toRel) : dirOf(src._path);
-    const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src._path), writeDir, fromPath, toRel);
+    const newRaw = retargetLinksInRaw(row.raw, dirOf(src._path), writeDir, fromPath, toRel);
     if (newRaw === null) continue;
     ops.push({ op: "update", block: blockId, markdown: newRaw, expect: { content_hash: row.raw_hash.toString("hex") } });
     blocks.push(blockId);

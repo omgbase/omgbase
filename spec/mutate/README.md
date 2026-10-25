@@ -315,7 +315,7 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path,
      (b)'s;
    - **(b) one transaction**, opened `BEGIN IMMEDIATE` so the writer's lock
      on the database is held from the first statement: **first re-validate**
-     — for every loaded document re-read `(path, current_rev, file_hash)`
+     — for every loaded document re-read `(path, head, file_hash)`
      through the transaction and compare with the values the plan loaded in
      step 1; a document that moved on → ROLLBACK before anything is minted,
      `stale_plan { doc, expected_revision, current: { revision, _hash } }`
@@ -445,8 +445,12 @@ roles they are.
   current directory; the moved document, when it links to itself by path,
   is a source too and renders under the NEW path); then **in one
   transaction with the retarget** (2.1): one `api` commit (`reason: "move
-  <from> -> <to>"`), `docs.path` and the current revision's `path` updated,
-  every open edge from **another** document into this one re-pointed to
+  <from> -> <to>"`), `docs.path` updated **and a new head minted** (store
+  17.0, D11: a move is a transition — the moved document gets a revision of
+  its unchanged tree at the new path, `revisions.path` being immutable;
+  through store 16.x the current revision's `path` was rewritten in place
+  and no head moved), every open edge from **another** document into this
+  one re-pointed to
   `phantom:<old path>`, a self-document edge re-pointed only when its link
   names the path (a pure fragment stays), affected rollups rebuilt,
   phantoms at the new path adopted, then each rewritten source's revision
@@ -523,7 +527,7 @@ plan, result }`). The `plan` fixture step (§9) still records it, so the
 lowering stays pinned on its own — under the 4.0 spellings above.
 
 1. Load the doc (`doc_missing`); `precondition._hash = sha256(render(doc))`
-   (the document's current `_hash`), `base_revision = current_rev` — the
+   (the document's current `_hash`), `base_revision = head` (the document's head token, `docs.head` — store 17.0) — the
    document's row attributes under the engine names, the role `base_revision`
    bare (4.0; `id`/`path`/`hash` 2.0–3.x; `target`/`precondition` spelled
    `doc`/`path`/`base_content_hash` before 2.0).
@@ -893,7 +897,8 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   loaded, on the autocommit connection, before the transaction opened; only
   the writer lock kept another writer out of the gap, and a library caller
   without a workspace (no lock) could commit over a moved document.
-  `spec/store` §8 I3 makes a document's `current_rev` the version vector of
+  the head token (`docs.head`, store 17.0 D1 — minted on every change to the
+  document: content, structure, path or liveness) is the version vector of
   every live block, so (c) re-reads one triple per document — the opset
   precondition's shape — under `BEGIN IMMEDIATE`, before minting. No
   fixture moves: a fixture's conflicts arise from a `disk` step before the
@@ -962,12 +967,19 @@ instead; then the projection deep-equals `expect`. **Generation**: `packages/cor
   same-document move. The kernel op gains `doc` (§2.3), which the lowering
   sets whenever `into` is a document (`effects::create-then-move-block-into-
   new-doc`, `effects.test.ts`).
-- **Pinned — `docs_move` records a commit with no revision of the moved
-  document** (2.1: with retargets, one revision per rewritten source under
-  the move's reason), so a doc's revision `seq` does not advance on a move
-  — unless it is itself a retarget source (it links to itself by path) —
-  although `revisions.path` is rewritten in place for the current revision
-  only.
+- **Changed (store 17.0, D11) — `docs_move` records a revision of the moved
+  document.** The move mints a new head and the recorder captures the
+  unchanged tree at the new path, so the document's revision `seq` advances
+  by one on a move and the Receipt's `revisions` lists the moved document
+  first (`_hash` unchanged, the new `_path`), then the rewritten sources;
+  `revisions.path` is immutable. When the moved document is itself a
+  retarget source (it links to itself by path) its rewrite's revision is the
+  one — it carries the new path and the new bytes — so a document never gets
+  two revisions under one commit. Through 4.0 (store 16.x) a move recorded a
+  commit with no revision of the moved document and rewrote the current
+  revision's `path` in place (`docs::move-leave-inbound`,
+  `docs::move-retarget-inbound`, `effects::move-document-default-retarget`
+  moved accordingly).
 - **Pinned (2.3) — discarded mints are symbols too.** The symbolic minter
   (§11.4) names every `b` the kernel mints while a plan is lowered, in mint
   order — including the ids the kernel mints and discards (an `update`'s
@@ -1071,7 +1083,7 @@ Target  { kind: "document", _id? | _path? }      at least one; a path in either 
         { kind: "block", _id } | { kind: "node", _id }
         { kind: "section", heading_id }           the heading's section range (§1.1), never a stored id
 At      "start" | "end" | { before: <block id> } | { after: <block id> }
-Expect  { content_hash?, parent_children_hash?, revision? }   revision = the document's current_rev
+Expect  { content_hash?, parent_children_hash?, revision? }   revision = the document's head token (`docs.head`)
 
 Effect  { op: "create",   path, markdown, frontmatter? }
         { op: "insert",   into: Target(document|section|block), at? = "end", markdown, expect? }
@@ -1129,7 +1141,7 @@ op (§1.2); a mismatch at plan time is the kernel's `stale_expectation`
 is **pinned from the live row** for every block an effect targets (`set`,
 `split`, each block of `remove`/`merge`; the sugar tools' rule) and the
 pins are the plan's `preconditions.blocks`. `expect.revision` is compared
-with the target document's `current_rev` when the effect is planned; a
+with the target document's `head` when the effect is planned; a
 difference is `stale_plan { doc, expected_revision, current: { revision,
 _hash }, retriable }` (`effects::plan-rejects-stale-revision`).
 
@@ -1154,7 +1166,7 @@ the TypeScript reference's `mutate/effects.ts`, the port's
 | `set markdown` on a block | `update { block, markdown, expect: { content_hash (pinned), parent_children_hash? } }` |
 | `set _attrs.checked` on a block | `update { block, attrs: { checked }, expect }` |
 | `set <prop>` on a node | §5 `node_set(node, prop, value)` → its one `update`, the pin as above (`node_not_editable` / `block_missing` as there) |
-| `move` a document | `opset.moves[] = { _id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` then the sources' revisions, the moved document's own revision (when it is a source) at the NEW path — §6, one commit |
+| `move` a document | `opset.moves[] = { _id, from, to }` (`doc_missing`; `path_taken` for a live document, an earlier create/move of the plan, or a file at `to`; `absent_paths += to`; the document's triple → `preconditions.docs`) and, unless `retarget_inbound` is `false`, the inbound rewrite of §6 `docs_move` as kernel `update`s (pinned). At commit: `move_path` — the moved document's revision of its unchanged tree at the NEW path (store 17.0, D11; when it is itself a source its rewrite's revision carries the path instead) — then the sources' revisions — §6, one commit |
 | `move` blocks | `move { blocks, to, doc?, expect? }` — `doc` the destination document's id (or symbol) when `into` is a document (§2.3, 3.0) |
 | `remove` a document | `opset.tombstones[] = { _id, _path }` (`doc_missing`; the triple → `preconditions.docs`); at commit the tombstone of §6 `docs_delete` (nothing pooled) |
 | `remove` blocks | `remove { blocks, expect: { <id>: { content_hash (pinned), … } } }` |
@@ -1977,7 +1989,7 @@ bytes stay), `::unset-fm-keeps-comments-and-fences`.
   entries are file heads.
 
 - 2026-10-12, mutate 2.2: the commit transaction opens `BEGIN IMMEDIATE`
-  and re-validates every loaded document's `(path, current_rev, file_hash)`
+  and re-validates every loaded document's `(path, head, file_hash)`
   and the document operations' guards before minting anything (§4 step 5
   (b)); `docs_set_meta` is under the same CAS. Foundation step 4 of the
   effect planner: the triple is what a frozen plan's preconditions will

@@ -75,18 +75,18 @@ describe("content-addressed writers", () => {
 describe("commit & revision sequencing", () => {
   it("assigns per-repo commit seq and per-doc revision seq", () => {
     store = fresh();
-    store.db.prepare("INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_1','rp_1','a.md')").run();
+    store.db.prepare("INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_1','rp_1','a.md','t1','t1')").run();
 
     store.write((db) => {
       const c1 = newCommit(db, { repoId: "rp_1", ts: "t1", origin: "observed" });
       expect(c1.seq).toBe(1);
       const root = writeBlockTree(db, assignIds(parseTree("# A\n").children));
-      const r1 = writeRevision(db, { docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c1.commitId });
+      const r1 = writeRevision(db, { revId: "r_1", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c1.commitId });
       expect(r1.seq).toBe(1);
 
       const c2 = newCommit(db, { repoId: "rp_1", ts: "t2", origin: "observed" });
       expect(c2.seq).toBe(2);
-      const r2 = writeRevision(db, { docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c2.commitId });
+      const r2 = writeRevision(db, { revId: "r_2", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c2.commitId });
       expect(r2.seq).toBe(2);
     });
   });

@@ -42,7 +42,7 @@ function hashOf(bId: string): string {
 }
 /** sha256 of the live top-level block ids joined by "," (spec/mutate §1.2). */
 function topLevelHash(docId: string): string {
-  const rows = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[];
+  const rows = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[];
   return sha256(rows.map((r) => r.block_id).join(",")).toString("hex");
 }
 function humanSave(path: string, content: string): void {
@@ -160,8 +160,8 @@ describe("soak: repeated random ops preserve invariants", () => {
       }
     }
     // Convergence invariant: stored file_hash == current revision rendered_hash.
-    const doc = store.db.prepare("SELECT file_hash, current_rev FROM docs WHERE path='soak.md'").get() as { file_hash: Buffer; current_rev: string };
-    const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.current_rev) as { rendered_hash: Buffer };
+    const doc = store.db.prepare("SELECT file_hash, head FROM docs WHERE path='soak.md'").get() as { file_hash: Buffer; head: string };
+    const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.head) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);
     // And the file on disk matches too.
     const onDiskMatches = readFileSync(join(dir, "soak.md"), "utf8");

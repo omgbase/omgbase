@@ -135,8 +135,8 @@ function projection(ws: Ws): Record<string, unknown[]> {
       .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, hex(v)])))
       .sort((a, b) => cmpBytes(JSON.stringify(a), JSON.stringify(b)));
   return {
-    docs: rows("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs"),
-    blocks: rows("SELECT block_id, doc_id, parent_block, order_key, ordinal, depth, type, attrs, text, raw_hash, trivia_hash, created_commit, deleted_commit FROM blocks"),
+    docs: rows("SELECT doc_id, path, head, file_hash, frontmatter_raw, created_at, updated_at, deleted_at FROM docs"),
+    blocks: rows("SELECT block_id, doc_id, parent_block, order_key, ordinal, depth, type, attrs, text, raw, raw_hash, trivia, trivia_hash, created_at, updated_at, deleted_at FROM blocks"),
     revisions: rows("SELECT rev_id, doc_id, seq, root_tree, rendered_hash, path, commit_id FROM revisions"),
     commits: rows("SELECT commit_id, seq, ts, origin, actor, reason FROM commits"),
     dispositions: rows("SELECT commit_id, block_id, kind, confidence, reason, matcher_v, detail FROM dispositions"),
@@ -206,10 +206,10 @@ function resolveParentRef(ws: Ws, ref: string): { parent: string | { doc: true }
   return { parent: r.blockId!, docId: r.docId };
 }
 function pinHash(ws: Ws, id: string): string | undefined {
-  return (ws.store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(id) as { h: string } | undefined)?.h;
+  return (ws.store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(id) as { h: string } | undefined)?.h;
 }
 function docIdOfBlock(ws: Ws, id: string): string | undefined {
-  return (ws.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(id) as { doc_id: string } | undefined)?.doc_id;
+  return (ws.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(id) as { doc_id: string } | undefined)?.doc_id;
 }
 function locateDoc(ws: Ws, a: Args): string {
   const id = a._id as string | undefined;
@@ -224,7 +224,7 @@ function locateDoc(ws: Ws, a: Args): string {
 }
 function resolveSectionHeading(ws: Ws, docId: string, docPath: string, section: string): string {
   const needle = /^[ \t]*#/.test(section) ? normalizeVisibleText(section, "heading") : normalizeText(section);
-  const rows = ws.store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_commit IS NULL").all(docId) as { block_id: string; doc_id: string; text: string }[];
+  const rows = ws.store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ? AND type = 'heading' AND deleted_at IS NULL").all(docId) as { block_id: string; doc_id: string; text: string }[];
   const matches = rows.filter((r) => normalizeText(r.text) === needle);
   const shown = referencePath(docPath);
   if (matches.length === 0) throw new EngineError("parent_missing", `no heading ${JSON.stringify(section)} in ${shown}`, { data: { section, _path: shown } });
@@ -283,7 +283,7 @@ const LEGACY: Record<string, Legacy> = {
   blocks_append: (ws, a) => {
     const block = resolveBlockRef(ws, a._id as string);
     const row = ws.store.db
-      .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+      .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_at IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL")
       .get(block) as { type: string; format: string | null; children: number } | undefined;
     if (!row) throw blockMissing(a._id as string);
     let ops: Op[];
@@ -675,14 +675,18 @@ describe("the document operations return the Receipt and commit through the buil
     expect((empty.outcome.payload as { message: string }).message).toContain("pass `set` and/or `unset` (docs_set_meta takes");
   });
 
-  it("docs_move: the Receipt carries the rewritten sources' revisions plus `retargeted` and `dangling`; `retarget_inbound: false` leaves them as written", async () => {
+  it("docs_move: the Receipt carries the moved document's revision (17.0 D11) and the rewritten sources' plus `retargeted` and `dangling`; `retarget_inbound: false` leaves them as written", async () => {
     const snap = await migratedSide("docs_move", { _path: "texts/mutus-liber.md", to_path: "texts/silent-book.md" });
     expect(snap.outcome.ok).toBe(true);
     const r = snap.outcome.payload as Receipt & { retargeted: { blocks: string[]; docs: string[] } | null; dangling: { _path: string; _block_id: string | null; target: string }[] };
     expect(r.committed).toBe(true);
     expect(r.retargeted).toEqual({ blocks: [expect.stringMatching(/^b_/)], docs: ["d_0"] });
     expect(r.dangling).toEqual([]);
-    expect(r.revisions).toEqual([{ _id: "d_0", _path: "/index.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) }]);
+    // store 17.0 (D11): the moved document first — its unchanged bytes at the new path — then the rewritten source.
+    expect(r.revisions).toEqual([
+      { _id: "d_17", _path: "/texts/silent-book.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      { _id: "d_0", _path: "/index.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    ]);
     expect(snap.files["texts/silent-book.md"]).toBe(CORPUS["texts/mutus-liber.md"]);
     expect(snap.files).not.toHaveProperty("texts/mutus-liber.md");
     expect(snap.files["index.md"]).toContain("[Mutus Liber](/texts/silent-book.md)");
@@ -690,7 +694,7 @@ describe("the document operations return the Receipt and commit through the buil
     const kept = await migratedSide("docs_move", { _path: "texts/mutus-liber.md", to_path: "texts/silent-book.md", retarget_inbound: false });
     const k = kept.outcome.payload as typeof r;
     expect(k.retargeted).toBeNull();
-    expect(k.revisions).toEqual([]);
+    expect(k.revisions).toEqual([{ _id: "d_17", _path: "/texts/silent-book.md", _hash: r.revisions[0]!._hash }]);
     expect(k.dangling.map((l) => [l._path, l._block_id, l.target])).toEqual([["/index.md", r.retargeted!.blocks[0], "/texts/mutus-liber.md"]]);
     expect(k.commit).toMatch(/^c_/);
     const taken = await migratedSide("docs_move", { _path: "index.md", to_path: "texts/mutus-liber.md" });

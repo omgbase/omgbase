@@ -85,18 +85,18 @@ describe("processCheckpoint", () => {
     expect(res.deleted).toEqual(["ghost.md"]);
 
     // The doc row is tombstoned and no longer served by the live-docs query.
-    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='ghost.md' AND deleted_commit IS NULL").get();
+    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='ghost.md' AND deleted_at IS NULL").get();
     expect(live).toBeUndefined();
-    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_commit: string | null };
-    expect(tombstoned.deleted_commit).not.toBeNull();
+    const tombstoned = store.db.prepare("SELECT deleted_at FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_at: string | null };
+    expect(tombstoned.deleted_at).not.toBeNull();
 
     // Its blocks are tombstoned and FTS no longer returns it.
-    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_commit IS NULL").get(doc.doc_id) as { c: number };
+    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_at IS NULL").get(doc.doc_id) as { c: number };
     expect(liveBlocks.c).toBe(0);
     expect(textSearch(store, repoId, "searchableghostword").hits.length).toBe(0);
 
     // The tombstone commit is observed-origin (engine witnessed it, did not author it).
-    const commit = store.db.prepare("SELECT origin FROM commits WHERE commit_id=?").get(tombstoned.deleted_commit) as { origin: string };
+    const commit = store.db.prepare("SELECT origin FROM commits WHERE ts = ? ORDER BY seq DESC LIMIT 1").get(tombstoned.deleted_at) as { origin: string };
     expect(commit.origin).toBe("observed");
   });
 
@@ -117,7 +117,7 @@ describe("processCheckpoint", () => {
     // Recreate the file: the reconciling resolver resurrects the block id.
     writeFileSync(join(dir, "d.md"), content);
     processCheckpoint(store, repoId, dir, [{ path: "d.md" }]);
-    const live = store.db.prepare("SELECT block_id AS id FROM blocks WHERE deleted_commit IS NULL AND text LIKE 'first%'").all() as { id: string }[];
+    const live = store.db.prepare("SELECT block_id AS id FROM blocks WHERE deleted_at IS NULL AND text LIKE 'first%'").all() as { id: string }[];
     expect(live.some((b) => b.id === firstId)).toBe(true);
   });
 
@@ -138,8 +138,8 @@ describe("processCheckpoint", () => {
     processCheckpoint(store, repoId, dir, [{ path: "conv.md" }]);
     const onDisk = readFileSync(join(dir, "conv.md"), "utf8");
     expect(render(parseTree(onDisk))).toBe(content);
-    const doc = store.db.prepare("SELECT file_hash, current_rev FROM docs WHERE path='conv.md'").get() as { file_hash: Buffer; current_rev: string };
-    const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.current_rev) as { rendered_hash: Buffer };
+    const doc = store.db.prepare("SELECT file_hash, head FROM docs WHERE path='conv.md'").get() as { file_hash: Buffer; head: string };
+    const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.head) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);
   });
 });
@@ -159,7 +159,7 @@ describe("processCheckpoint: cross-document moves", () => {
   }
   function blockId(path: string, textPrefix: string): string {
     const row = store.db
-      .prepare("SELECT b.block_id id FROM blocks b JOIN docs d ON d.doc_id=b.doc_id WHERE d.path=? AND b.deleted_commit IS NULL AND b.text LIKE ?")
+      .prepare("SELECT b.block_id id FROM blocks b JOIN docs d ON d.doc_id=b.doc_id WHERE d.path=? AND b.deleted_at IS NULL AND b.text LIKE ?")
       .get(path, `${textPrefix}%`) as { id: string } | undefined;
     if (!row) throw new Error(`no live block in ${path} starting ${textPrefix}`);
     return row.id;
@@ -176,7 +176,7 @@ describe("processCheckpoint: cross-document moves", () => {
   /** convergence invariant for every live doc: docs.file_hash == current revision's rendered hash == sha256(disk). */
   function expectAllConverged(): void {
     const docs = store.db
-      .prepare("SELECT d.path, d.file_hash, r.rendered_hash FROM docs d JOIN revisions r ON r.rev_id=d.current_rev WHERE d.deleted_commit IS NULL")
+      .prepare("SELECT d.path, d.file_hash, r.rendered_hash FROM docs d JOIN revisions r ON r.rev_id=d.head WHERE d.deleted_at IS NULL")
       .all() as { path: string; file_hash: Buffer; rendered_hash: Buffer }[];
     expect(docs.length).toBeGreaterThan(0);
     for (const d of docs) {

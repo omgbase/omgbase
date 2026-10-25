@@ -51,7 +51,7 @@ function bench(n: number, fn: () => void): number {
 // suite is skipped when `CI` is set and stays part of `pnpm test` everywhere else.
 describe.skipIf(!!process.env.CI)("perf at reduced envelope scale", { retry: 2 }, () => {
   it("ingested the synthetic corpus", () => {
-    const blocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE deleted_commit IS NULL").get() as { c: number };
+    const blocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE deleted_at IS NULL").get() as { c: number };
     expect(blocks.c).toBeGreaterThan(DOCS * PARAS_PER_DOC);
   });
 

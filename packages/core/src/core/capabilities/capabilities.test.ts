@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../store/store.js";
 import { ingestFile } from "../ingest.js";
 import { ensureRepo } from "../attach.js";
-import { readDocumentAtRevision, docsRead } from "../read/document.js";
+import { readDocumentAtRevision, docsRead, currentFrontmatterRaw } from "../read/document.js";
 import { capabilitiesOf, requireHistory, requireSemantic, semanticOf } from "./registry.js";
 import { defaultCapabilities, envCapabilities } from "./default.js";
 import { coreCapabilities } from "./core.js";
@@ -57,7 +57,8 @@ describe("capabilities", () => {
     const history = requireHistory(store.db);
     expect(history.readAtRevision(r1.docId, r1.revId)).toEqual(readDocumentAtRevision(store, r1.docId, r1.revId));
     expect(history.readAtRevision(r1.docId, r1.revId)?._raw).toBe(DOC);
-    expect(history.currentFrontmatterRaw(r2.revId)).toBe("---\ntitle: Seam\n---");
+    // 17.0: the current frontmatter is the doc row's own (`currentFrontmatterRaw(db, docId)`), no longer a recorder read.
+    expect(currentFrontmatterRaw(store.db, r2.docId)).toBe("---\ntitle: Seam\n---");
     expect(docsRead(store, r2.docId)?._raw).toBe(DOC.replace("One", "Two"));
     expect(history.renderedHash(r2.revId)?.toString("hex")).toBe(docsRead(store, r2.docId) && (store.db.prepare("SELECT lower(hex(file_hash)) h FROM docs WHERE doc_id = ?").get(r2.docId) as { h: string }).h);
     expect(history.priorRenderedHash(r2.revId)).toEqual(history.renderedHash(r1.revId));

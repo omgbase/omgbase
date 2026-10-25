@@ -63,13 +63,13 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     };
     const node = find(roots);
     if (!node || node.type !== "code_fence") throw new EngineErrorLike("opaque_block", `block ${ref} is not an omg fence`);
-    fenceRaw = blockRaw(ws.store, node.rawHashHex);
+    fenceRaw = blockRaw(ws.store, node.blockId);
   } else {
     const info = findDoc(ws.store, { docId: resolved.docId })!;
     void info;
     const fence = firstOmgFence(loadDocBlocks(ws.store, resolved.docId));
     if (!fence) throw new EngineErrorLike("target_missing", `no \`\`\`omg fence in ${ref}`);
-    fenceRaw = blockRaw(ws.store, fence.rawHashHex);
+    fenceRaw = blockRaw(ws.store, fence.blockId);
   }
 
   const source = fenceBody(fenceRaw).trim();

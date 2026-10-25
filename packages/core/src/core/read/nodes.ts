@@ -45,11 +45,11 @@ function project(store: Store, node: BlockNode, resolution: Resolution, includeC
       out._text = node.text;
       break;
     case "raw":
-      out._raw = blockRaw(store, node.rawHashHex);
+      out._raw = blockRaw(store, node.blockId);
       out._hash = node.rawHashHex;
       break;
     case "full":
-      out._raw = blockRaw(store, node.rawHashHex);
+      out._raw = blockRaw(store, node.blockId);
       out._hash = node.rawHashHex;
       out._text = node.text;
       out._attrs = node.attrs;
@@ -121,7 +121,7 @@ export function nodesGetMany(
   const owner = new Map<string, string>();
   if (capped.length > 0) {
     const rows = store.db
-      .prepare(`SELECT block_id, doc_id FROM blocks WHERE deleted_commit IS NULL AND block_id IN (${capped.map(() => "?").join(",")})`)
+      .prepare(`SELECT block_id, doc_id FROM blocks WHERE deleted_at IS NULL AND block_id IN (${capped.map(() => "?").join(",")})`)
       .all(...capped) as { block_id: string; doc_id: string }[];
     for (const r of rows) if (docId === null || r.doc_id === docId) owner.set(r.block_id, r.doc_id);
   }

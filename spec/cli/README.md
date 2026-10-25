@@ -650,8 +650,11 @@ block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
 `count(*)` on an external-content table answers from `blocks` — against the
 live leaf blocks of `spec/search` §1.1: live rows no live row names as
-`parent_block`; detail `fts=<n> leaves=<n>`), `no dangling current_rev`,
-`sqlite integrity`. Human: `  ok <name>` per passing check,
+`parent_block`; detail `fts=<n> leaves=<n>`), `head present` (every live
+document has a `docs.head`; detail `<n> without a head`), `capture complete`
+(every live head has its `revisions` row — legacy capture agrees with the
+head, `spec/store` §8 H1; detail `<n> heads without a revision`; through
+store 16.x the one check `no dangling current_rev`), `sqlite integrity`. Human: `  ok <name>` per passing check,
 `  x <name>  (<detail>)` per failing one; exit 1 when any fails. `--json`
 (and every non-human mode) `{ ok, checks: [{ name, ok, detail }] }`. The
 FTS check holds after a deletion (observed or `rm --doc`) and after
@@ -1001,9 +1004,11 @@ exit 2. Human, oldest first: `#<seq> <origin padded to 8> <summary>`
 (`observed: <path> — 31 inserted`, `api(<actor>): <path> — 12 edited, 1
 inserted`); a commit that wrote no revision names what it did instead: an
 observed or api deletion `observed: deleted <path>` /
-`api(<actor>): deleted <path>` (the documents whose `deleted_commit` is the
-commit, by path), a move `api(<actor>): moved <from> → <to>` (from the
-commit's `reason`, `move <from> -> <to>`). None → stderr `  no changes`;
+`api(<actor>): deleted <path>` (the documents whose `deleted_at` is the
+commit's `ts`, by path — store 17.0; through 16.x `deleted_commit`), a move
+`api(<actor>): moved <from> → <to>` (from the commit's `reason`, `move <from>
+-> <to>`; the moved document's own revision — a move is one since store 17.0
+— is not repeated in the list, only the rewritten sources are). None → stderr `  no changes`;
 truncated → the footer with the next seq. `--json` the
 `{ digests, cursor, truncated, head }` result (`spec/sync` §6 — a digest's
 `revisions` are `[{ _id, _path, _hash }]`, 5.0); `--jsonl` one digest per
@@ -1787,8 +1792,9 @@ fixture change and a version bump, or keep). None was fixed here.
 - **Fixed — a commit that wrote no revision names what it did**:
   `observed: deleted texts/mutus-liber.md` after an observed deletion,
   `api(human:spec): moved texts/mutus-liber.md → texts/silent-book.md`
-  after `mv` (a deletion is the documents whose `deleted_commit` is the
-  commit; a move is read from the commit's `reason`, `move <from> -> <to>`).
+  after `mv` (a deletion is the documents whose `deleted_at` is the
+  commit's `ts`; a move is read from the commit's `reason`, `move <from> ->
+  <to>`).
   `changesSince`'s summary is in `@omgbase/core`, so the `changes_since`
   tool says the same (its `summary` is unpinned by `spec/surface`)
   (`sync::out-of-band-delete`, `docs::mv`).

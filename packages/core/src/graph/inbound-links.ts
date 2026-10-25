@@ -58,7 +58,7 @@ export function inboundLinksTo(store: Store, repoId: string, docId: string, docP
     .prepare(
       `SELECT DISTINCT e.src_doc AS srcDoc, d.path AS srcPath, e.src_block AS srcBlock, e.src_field AS srcField
        FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-       WHERE e.repo_id = ? AND e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL
+       WHERE e.repo_id = ? AND e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL
        ORDER BY d.path, e.src_block`,
     )
     .all(repoId, docId) as { srcDoc: string; srcPath: string; srcBlock: string | null; srcField: string | null }[];
@@ -73,11 +73,11 @@ export function inboundLinksTo(store: Store, repoId: string, docId: string, docP
     if (seenBlocks.has(r.srcBlock)) continue;
     seenBlocks.add(r.srcBlock);
     const blk = store.db
-      .prepare("SELECT bl.type, b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ? AND bl.deleted_commit IS NULL")
-      .get(r.srcBlock) as { type: string; bytes: Buffer } | undefined;
+      .prepare("SELECT type, raw FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
+      .get(r.srcBlock) as { type: string; raw: string } | undefined;
     if (!blk) continue;
     const srcDir = dirOf(r.srcPath);
-    for (const e of extractFromBlock(r.srcBlock, blk.type, blk.bytes.toString("utf8"))) {
+    for (const e of extractFromBlock(r.srcBlock, blk.type, blk.raw)) {
       if (e.dstKind === "external" || !resolvesTo(e.target, srcDir, docPath)) continue;
       out.push({
         _doc_id: r.srcDoc,

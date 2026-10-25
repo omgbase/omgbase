@@ -41,10 +41,10 @@ function save(path: string, content: string): string {
   mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_commit IS NULL").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_at IS NULL").get(path) as { doc_id: string }).doc_id;
 }
-function commits(): { commit_id: string; origin: string; reason: string | null }[] {
-  return store.db.prepare("SELECT commit_id, origin, reason FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; origin: string; reason: string | null }[];
+function commits(): { commit_id: string; ts: string; origin: string; reason: string | null }[] {
+  return store.db.prepare("SELECT commit_id, ts, origin, reason FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; ts: string; origin: string; reason: string | null }[];
 }
 function revisionsOf(commitId: string): { doc_id: string; path: string }[] {
   return store.db.prepare("SELECT doc_id, path FROM revisions WHERE commit_id = ? ORDER BY path").all(commitId) as { doc_id: string; path: string }[];
@@ -55,7 +55,7 @@ function fileHash(docId: string): string {
 const appendOp = (doc: string, markdown: string) => ({ op: "insert" as const, doc, to: { parent: { doc: true as const }, at: "end" as const }, markdown });
 
 describe("commitChangeset — one transaction, one commit per request", () => {
-  it("a three-document changeset records one api commit with three revisions sharing created_commit", () => {
+  it("a three-document changeset records one api commit with three revisions, every document's updated_at the commit's ts", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const b = save("b.md", "# B\n\nBravo.\n");
     const c = save("c.md", "# C\n\nCharlie.\n");
@@ -70,9 +70,9 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     const commit = all[all.length - 1]!;
     expect(commit).toMatchObject({ origin: "api", reason: "three docs" });
     expect(revisionsOf(commit.commit_id).map((r) => r.path)).toEqual(["a.md", "b.md", "c.md"]);
-    // Every live block of the three documents was re-stamped under the one commit.
-    const created = store.db.prepare("SELECT DISTINCT created_commit c FROM blocks WHERE doc_id IN (?, ?, ?) AND deleted_commit IS NULL").all(a, b, c) as { c: string }[];
-    expect(created.map((r) => r.c)).toEqual([commit.commit_id]);
+    // Every document's head moved under the one commit (store 17.0: `updated_at` is the head's mint instant, D6).
+    const updated = store.db.prepare("SELECT DISTINCT updated_at u FROM docs WHERE doc_id IN (?, ?, ?)").all(a, b, c) as { u: string }[];
+    expect(updated.map((r) => r.u)).toEqual([commit.ts]);
     // `commits.ops` is threaded, not populated (ADR-003's record waits for the planner).
     expect((store.db.prepare("SELECT ops FROM commits WHERE commit_id = ?").get(commit.commit_id) as { ops: string | null }).ops).toBeNull();
   });
@@ -128,7 +128,7 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     const a = save("a.md", "# A\n\nAlpha.\n");
     const b = save("b.md", "# B\n\nBravo.\n");
     const before = commits();
-    const liveBefore = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
+    const liveBefore = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_at IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
 
     // The injected store dies on its SECOND file write: a.md lands, b.md does not.
     class Failing extends FsDocStore {
@@ -159,7 +159,7 @@ describe("commitChangeset — one transaction, one commit per request", () => {
     expect(listPending(store.db, repoId)).toEqual([]);
     expect(commits()).toEqual(after);
     for (const path of ["a.md", "b.md"]) expect(observeFile(store, repoId, path, readFileSync(join(dir, path), "utf8"))).toMatchObject({ echo: true });
-    const liveAfter = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_commit IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
+    const liveAfter = store.db.prepare("SELECT block_id FROM blocks WHERE deleted_at IS NULL ORDER BY block_id").all().map((r) => (r as { block_id: string }).block_id);
     for (const id of liveBefore) expect(liveAfter).toContain(id);
   });
 });
@@ -180,17 +180,20 @@ describe("docsMove — one commit with the retarget", () => {
     const commit = all[all.length - 1]!;
     expect(commit).toMatchObject({ origin: "api", reason: "move old.md -> moved/new.md" });
     expect(all.some((x) => x.reason?.startsWith("retarget inbound links"))).toBe(false);
-    // The moved document's own revision did not advance (it is not a source);
-    // each rewritten source has one under the move's commit.
-    expect(revisionsOf(commit.commit_id).map((r) => r.path)).toEqual(["b.md", "c.md"]);
-    expect((store.db.prepare("SELECT count(*) n FROM revisions WHERE doc_id = ?").get(res.docId) as { n: number }).n).toBe(1);
+    // A move is a transition (store 17.0, D11): the moved document gets a
+    // revision of its unchanged tree at the NEW path, and each rewritten source
+    // one under the same commit.
+    expect(revisionsOf(commit.commit_id).map((r) => r.path)).toEqual(["b.md", "c.md", "moved/new.md"]);
+    expect((store.db.prepare("SELECT count(*) n FROM revisions WHERE doc_id = ?").get(res.docId) as { n: number }).n).toBe(2);
+    expect((store.db.prepare("SELECT path FROM revisions WHERE doc_id = ? ORDER BY seq").all(res.docId) as { path: string }[]).map((r) => r.path)).toEqual(["old.md", "moved/new.md"]);
 
     const feed = changesSince(store, repoId, { cursor: head });
     expect(feed.digests).toHaveLength(1);
     // store 14.2: only the link-bearing blocks the retarget rewrote are `edited`;
     // the sources' other blocks are `same` and not persisted ("5 edited" through 14.1).
     expect(feed.digests[0]!.summary).toBe("api(agent:test): moved /old.md → /moved/new.md; /b.md, /c.md — 3 edited");
-    expect(feed.digests[0]!.revisions.map((r) => r._path)).toEqual(["/b.md", "/c.md"]);
+    // store 17.0 (D11): the moved document's revision rides in the digest (first), the sources' after it.
+    expect(feed.digests[0]!.revisions.map((r) => r._path)).toEqual(["/moved/new.md", "/b.md", "/c.md"]);
     expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nSee [old](/moved/new.md#Top) here.\n");
     expect(existsSync(join(dir, "old.md"))).toBe(false);
   });

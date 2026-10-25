@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { requireHistory } from "../core/capabilities/registry.js";
+import { reconstructContent } from "../core/read/document.js";
 import type { DocStore } from "./doc-store.js";
 
 // Materialization (spec/store §5.7, store 14.0). The api path commits DB-first:
@@ -12,8 +13,10 @@ import type { DocStore } from "./doc-store.js";
 // as recorded (autocommit per file, so partial progress is durable). A row that
 // survives a crash, a refused write or a lost process is the recorded intent:
 // any materializer — the commit's own B' phase, the freshness sweep's step 0,
-// recovery — replays it from `reconstruct at rev_id` (spec/store §6.2) with the
-// api commit, its revision and the `changes_since` digest already in place.
+// recovery — replays it from the document's CURRENT state (`reconstruct`,
+// spec/store §6.1 — a row always names its document's current head, 17.0 §5.7)
+// with the api commit, its revision and the `changes_since` digest already in
+// place.
 //
 // Files stay the human's (ADR-004): a materializer never overwrites bytes it
 // does not recognise. At `path` it expects either nothing, the bytes the row
@@ -88,20 +91,20 @@ export function priorRenderedHash(db: Database, revId: string | null): Buffer | 
   return requireHistory(db).priorRenderedHash(revId);
 }
 
-// The bytes a `write`/`rename` row materializes: spec/store §6.2 reconstruct at
-// the row's revision, which must hash to `rendered_hash` (it does for the
-// current revision; a row always names the document's current revision because
-// a later commit to the same path replaces the row). Null when nothing can be
-// rendered — the row is then left for a later materializer rather than guessed.
+// The bytes a `write`/`rename` row materializes: spec/store §6.1 reconstruct
+// of the document's CURRENT state (17.0, §5.7: a row always names its
+// document's current head, because a later commit to the same path replaces
+// the row, and §6.1 is byte-exact for the head), which must hash to
+// `rendered_hash`. Null when nothing can be rendered (the head moved under the
+// row — impossible while the replace rule holds, checked anyway) — the row is
+// then left for a later materializer rather than guessed. Through 16.x this
+// was `reconstruct at rev_id` through the Merkle tree (inventory-ts §2.4 row
+// `renderedBytes`); the prior-bytes rule below is still the recorder's (M4, 3c).
 function renderedBytes(store: Store, row: PendingRow): string | null {
   if (row.revId === null) return null;
-  // seam: the render is `HistoryRecorder.readAtRevision` (spec/store §6.2) though a
-  // pending row always names the CURRENT revision, for which `reconstructContent`
-  // (§6.1) is byte-exact — M4 renders from current state in Phase 3 (inventory-ts
-  // §2.4 row `renderedBytes` 98–103, §5.3).
-  const at = requireHistory(store.db).readAtRevision(row.docId, row.revId);
-  if (!at || !sha256(at._raw).equals(row.renderedHash)) return null;
-  return at._raw;
+  const raw = reconstructContent(store.db, row.docId);
+  if (raw === null || !sha256(raw).equals(row.renderedHash)) return null;
+  return raw;
 }
 
 export interface MaterializeOptions {

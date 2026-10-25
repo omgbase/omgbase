@@ -224,7 +224,7 @@ export function runCase(c: FixtureCaseInput): Evaluation {
       if (docId !== FIXTURE_DOC_ID) problems.push(`document id ${docId} != ${FIXTURE_DOC_ID}`);
       if (!converged) problems.push("ingest did not converge (sha256(source) != rendered)");
       const live = new Set(
-        (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[]).map((b) => b.block_id),
+        (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(docId) as { block_id: string }[]).map((b) => b.block_id),
       );
       const rows = projectRows(store.db, docId);
       problems.push(...checkRows(rows, docId, live));

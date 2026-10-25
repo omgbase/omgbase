@@ -44,8 +44,8 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
   const count = (sql: string): number => (store.db.prepare(sql).get(repoId) as { c: number }).c;
   // seam: HistoryRecorder.renderedHash → `docs.file_hash` (Phase 3, M4/D9 — `unconverged` is always 0 under I1; inventory-ts §2.8 row `reposStatus` 42–66, §5.8)
   const unconverged = (store.db.prepare(
-    `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.current_rev
-     WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.file_hash IS NOT r.rendered_hash`,
+    `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.head
+     WHERE d.repo_id = ? AND d.deleted_at IS NULL AND d.file_hash IS NOT r.rendered_hash`,
   ).get(repoId) as { c: number }).c;
   // Only scan when the caller explicitly supplies a rootPath. We deliberately
   // do NOT fall back to the repo's stored root_path: that column is a stale,
@@ -59,8 +59,8 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
     _id: repoId,
     slug: repo?.slug ?? "",
     rootPath: rootPath ?? "",
-    docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_commit IS NULL"),
-    blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_commit IS NULL"),
+    docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_at IS NULL"),
+    blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_at IS NULL"),
     commits: count("SELECT count(*) c FROM commits WHERE repo_id = ?"),
     openEdges: count("SELECT count(*) c FROM edges WHERE repo_id = ? AND to_commit IS NULL"),
     unconverged,

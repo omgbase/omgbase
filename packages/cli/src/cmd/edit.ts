@@ -17,7 +17,7 @@ import { runSugar } from "./_mutate.js";
 
 function rawHashOf(ws: ReturnType<Cli["workspace"]>, blockId: string): string | null {
   const row = ws.store.db
-    .prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
     .get(blockId) as { h: string } | undefined;
   return row?.h ?? null;
 }

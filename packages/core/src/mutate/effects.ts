@@ -44,7 +44,7 @@ export type EffectTarget =
 
 export type EffectAt = At;
 
-/** Guards: the kernel's two CAS fields plus the document's `current_rev` at plan time. */
+/** Guards: the kernel's two CAS fields plus the document's `head` at plan time. */
 export interface EffectExpect {
   content_hash?: string;
   parent_children_hash?: string;
@@ -699,7 +699,7 @@ function blockInfo(ctx: LoweringContext, id: string): { docId: string; hash: str
   if (inTree) return { docId: inTree.docId, hash: rawHashHex(inTree.block.raw), block: inTree.block };
   if (isNewSymbol(id)) throw symbolMissing(ctx, id, "block");
   const row = ctx.store.db
-    .prepare("SELECT doc_id, lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT doc_id, lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
     .get(id) as { doc_id: string; h: string } | undefined;
   if (!row) throw new MutationError("block_missing", `block ${id} not found`, { block: id });
   return { docId: row.doc_id, hash: row.h, block: null };
@@ -732,7 +732,7 @@ function docPathOf(ctx: LoweringContext, docId: string): string {
 /** A block's type and visible text: the live row when it has one, else the planner's tree (a `$new.k`). */
 function blockDescriptor(ctx: LoweringContext, id: string): { type: string; text: string } | null {
   if (!isNewSymbol(id)) {
-    const row = ctx.store.db.prepare("SELECT type, text FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(id) as { type: string; text: string } | undefined;
+    const row = ctx.store.db.prepare("SELECT type, text FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(id) as { type: string; text: string } | undefined;
     if (row) return { type: row.type, text: row.text };
   }
   const inTree = locateLoaded(ctx, id);
@@ -801,9 +801,9 @@ function descendantsOf(ctx: LoweringContext, id: string): string[] {
   const rows = ctx.store.db
     .prepare(
       `WITH RECURSIVE sub(block_id) AS (
-         SELECT block_id FROM blocks WHERE parent_block = ? AND deleted_commit IS NULL
+         SELECT block_id FROM blocks WHERE parent_block = ? AND deleted_at IS NULL
          UNION ALL
-         SELECT b.block_id FROM blocks b JOIN sub ON b.parent_block = sub.block_id WHERE b.deleted_commit IS NULL
+         SELECT b.block_id FROM blocks b JOIN sub ON b.parent_block = sub.block_id WHERE b.deleted_at IS NULL
        ) SELECT block_id FROM sub`,
     )
     .all(id) as { block_id: string }[];
@@ -818,7 +818,7 @@ function targetDoc(ctx: LoweringContext, t: ResolvedTarget): string {
     case "section": {
       const inTree = locateLoaded(ctx, t.heading_id);
       if (inTree) return inTree.docId;
-      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(t.heading_id) as { doc_id: string } | undefined;
+      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(t.heading_id) as { doc_id: string } | undefined;
       if (!row) throw new MutationError("parent_missing", `parent ${t.heading_id} not found`);
       return row.doc_id;
     }
@@ -826,7 +826,7 @@ function targetDoc(ctx: LoweringContext, t: ResolvedTarget): string {
       const inTree = locateLoaded(ctx, t._id);
       if (inTree) return inTree.docId;
       if (isNewSymbol(t._id)) throw symbolMissing(ctx, t._id, "block");
-      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(t._id) as { doc_id: string } | undefined;
+      const row = ctx.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL").get(t._id) as { doc_id: string } | undefined;
       if (!row) throw new MutationError("parent_missing", `parent ${t._id} not found`);
       return row.doc_id;
     }
@@ -1208,7 +1208,7 @@ function anchorIds(at: EffectAt): string[] {
 
 function allBlocksOf(ctx: LoweringContext, docId: string): string[] {
   if (isNewSymbol(docId)) return [];
-  return (ctx.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+  return (ctx.store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(docId) as { block_id: string }[]).map((r) => r.block_id);
 }
 
 // The lowering table (§11.3), one resolved effect → kernel ops / document entries. `i` is the effect's index.

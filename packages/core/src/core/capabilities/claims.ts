@@ -5,14 +5,16 @@ import type { IdentityClaims } from "./types.js";
 // spec/store §2.1 "Uniqueness at mint": the table(s) and id column a minted
 // id of each prefix must not already name a row of. A block id lives on in
 // history after its `blocks` row is gone, hence `block_changes` and
-// `resurrection_pool`. `col` and `v` have no table and no check. (Moved from
+// `resurrection_pool`; a head token (17.0, D1) is in use while a `docs` row
+// names it as `head` or a captured revision as `rev_id`. `col` and `v` have no
+// table and no check. (Moved from
 // `core/store/store.ts` unchanged — inventory-ts §2.2 row `ID_TABLES`/`idInUse`,
 // §3.5; M3/D5 replace the union with an `id_claims` table in Phase 3.)
 export const ID_TABLES: Partial<Record<IdPrefix, readonly (readonly [table: string, column: string])[]>> = {
   d: [["docs", "doc_id"]],
   b: [["blocks", "block_id"], ["block_changes", "block_id"], ["resurrection_pool", "block_id"]],
   c: [["commits", "commit_id"]],
-  r: [["revisions", "rev_id"]],
+  r: [["revisions", "rev_id"], ["docs", "head"]],
   x: [["external_nodes", "node_id"]],
   e: [["edges", "edge_id"]],
   cp: [["checkpoints", "id"]],

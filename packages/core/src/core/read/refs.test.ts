@@ -46,7 +46,7 @@ describe("resolveRef — node ids", () => {
     expect(resolved?.blockId).toBe(expected);
     // …and it is a live block of the right type.
     const blk = store!.db
-      .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+      .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
       .get(resolved!.blockId!) as { type: string } | undefined;
     expect(blk?.type).toBe("task");
   });

@@ -20,7 +20,7 @@ export function rebuildSections(db: Database, docId: string): void {
       `SELECT block_id, ordinal, type,
               json_extract(attrs, '$.level') AS level
        FROM blocks
-       WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL
+       WHERE doc_id = ? AND parent_block IS NULL AND deleted_at IS NULL
        ORDER BY ordinal`,
     )
     .all(docId) as TopBlock[];

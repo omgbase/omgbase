@@ -72,11 +72,11 @@ describe("reconcile driver over a non-filesystem source", () => {
     expect(res.deleted).toEqual(["a.md"]);
 
     // Doc + blocks tombstoned; no longer served by the live-docs query.
-    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md' AND deleted_commit IS NULL").get();
+    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md' AND deleted_at IS NULL").get();
     expect(live).toBeUndefined();
-    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_commit: string | null };
-    expect(tombstoned.deleted_commit).not.toBeNull();
-    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_commit IS NULL").get(doc.doc_id) as { c: number };
+    const tombstoned = store.db.prepare("SELECT deleted_at FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_at: string | null };
+    expect(tombstoned.deleted_at).not.toBeNull();
+    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_at IS NULL").get(doc.doc_id) as { c: number };
     expect(liveBlocks.c).toBe(0);
     // Blocks are pooled for resurrection on re-appearance.
     const pooled = store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE doc_id=?").get(doc.doc_id) as { c: number };
@@ -93,7 +93,7 @@ describe("reconcile driver over a non-filesystem source", () => {
     const src = new MemorySource(files);
     const repoId = ensureRepo(store, "mem", null);
     await reconcileChanges(store, repoId, src, [{ path: "a.md" }, { path: "b.md" }]);
-    const before = store.db.prepare("SELECT block_id id FROM blocks WHERE text LIKE 'the quick brown fox%' AND deleted_commit IS NULL").get() as { id: string };
+    const before = store.db.prepare("SELECT block_id id FROM blocks WHERE text LIKE 'the quick brown fox%' AND deleted_at IS NULL").get() as { id: string };
 
     // One watcher batch: the paragraph leaves a.md and lands in b.md (b listed first).
     files.set("a.md", "# A\n\nalpha intro about apples\n");
@@ -108,7 +108,7 @@ describe("reconcile driver over a non-filesystem source", () => {
     const pooled = store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE block_id=?").get(before.id) as { c: number };
     expect(pooled.c).toBe(0);
     // Convergence for both members.
-    const docs = store.db.prepare("SELECT d.path, d.file_hash, r.rendered_hash FROM docs d JOIN revisions r ON r.rev_id=d.current_rev").all() as { path: string; file_hash: Buffer; rendered_hash: Buffer }[];
+    const docs = store.db.prepare("SELECT d.path, d.file_hash, r.rendered_hash FROM docs d JOIN revisions r ON r.rev_id=d.head").all() as { path: string; file_hash: Buffer; rendered_hash: Buffer }[];
     expect(docs).toHaveLength(2);
     for (const d of docs) expect(d.file_hash.equals(d.rendered_hash), d.path).toBe(true);
   });

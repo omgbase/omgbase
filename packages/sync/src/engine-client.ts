@@ -72,7 +72,7 @@ export class InProcessEngineClient implements EngineClient {
 
   readDoc(path: string): Promise<DocBytes | null> {
     const row = this.store.db
-      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_at IS NULL")
       .get(this.repoId, storagePath(path)) as { doc_id: string; file_hash: Buffer | null } | undefined;
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);

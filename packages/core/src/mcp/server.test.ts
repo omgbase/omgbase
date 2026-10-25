@@ -185,7 +185,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("docs_read_at time-travels to an earlier revision's exact bytes", async () => {
-    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const rev1 = (store.db.prepare("SELECT head FROM docs WHERE path='notes.md'").get() as { head: string }).head;
     // Edit the doc so the current revision differs from rev1.
     ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nA freshly added tail paragraph.\n");
     const { payload } = (await call("docs_read_at", { _path: "notes.md", rev: rev1 })) as {
@@ -220,7 +220,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("docs_read_at takes a path as `_path`", async () => {
-    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const rev1 = (store.db.prepare("SELECT head FROM docs WHERE path='notes.md'").get() as { head: string }).head;
     const { payload } = (await call("docs_read_at", { _path: "notes.md", rev: rev1 })) as { payload: { rev: string } };
     expect(payload.rev).toBe(rev1);
   });
@@ -232,9 +232,9 @@ describe("MCP server skeleton", () => {
   });
 
   it("docs_diff resolves `_path` and returns the real block-grain diff (not silent-empty)", async () => {
-    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const rev1 = (store.db.prepare("SELECT head FROM docs WHERE path='notes.md'").get() as { head: string }).head;
     ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nAdded tail.\n");
-    const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const rev2 = (store.db.prepare("SELECT head FROM docs WHERE path='notes.md'").get() as { head: string }).head;
     const { payload, isError } = (await call("docs_diff", { _path: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
       payload: { kind: string }[]; isError: boolean;
     };
@@ -372,7 +372,7 @@ describe("blocks_read_many spans documents (ids are globally unique)", () => {
     ingestFile(store, repoId, "a.md", "# A\n\npara a\n");
     ingestFile(store, repoId, "b.md", "# B\n\npara b\n");
     const idsOf = (path: string): string[] =>
-      (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND deleted_commit IS NULL ORDER BY order_key").all(path) as { block_id: string }[]).map((r) => r.block_id);
+      (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND deleted_at IS NULL ORDER BY order_key").all(path) as { block_id: string }[]).map((r) => r.block_id);
     const notes = idsOf("notes.md");
     const a = idsOf("a.md");
     const b = idsOf("b.md");
@@ -449,8 +449,9 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   it("docs_move renames the document", async () => {
     const { payload, isError } = (await call("docs_move", { _path: "notes.md", to_path: "moved/notes.md" })) as { payload: { committed: boolean; commit: string; revisions: unknown[] }; isError: boolean };
     expect(isError).toBe(false);
-    // The Receipt: a move with nothing to rewrite advances no revision; the commit is the rename.
-    expect(payload).toMatchObject({ committed: true, revisions: [] });
+    // The Receipt (store 17.0, D11): a move is a revision of the moved document — its
+    // unchanged bytes at the new path — even with nothing to rewrite.
+    expect(payload).toMatchObject({ committed: true, revisions: [{ _path: "/moved/notes.md", _hash: expect.stringMatching(/^[0-9a-f]{64}$/) }] });
     expect(payload.commit).toMatch(/^c_/);
     const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { _path: string }[] } };
     expect(q.hits.map((h) => h._path)).toContain("/moved/notes.md");
@@ -842,7 +843,7 @@ describe("apply op schema + blocks_append / docs_append section resolution", () 
   it("blocks_append on a container appends to its children; on a leaf it is block_not_container", async () => {
     writeFileSync(join(root, "list.md"), "# L\n\n- one\n- two\n\nplain\n");
     ingestFile(store, repoId, "list.md", "# L\n\n- one\n- two\n\nplain\n");
-    const rows = store.db.prepare("SELECT block_id, type FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'list.md') AND deleted_commit IS NULL ORDER BY order_key").all() as { block_id: string; type: string }[];
+    const rows = store.db.prepare("SELECT block_id, type FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'list.md') AND deleted_at IS NULL ORDER BY order_key").all() as { block_id: string; type: string }[];
     const list = rows.find((r) => r.type === "list")!.block_id;
     const para = rows.filter((r) => r.type === "paragraph").at(-1)!.block_id;
     const { isError } = (await call("blocks_append", { _id: list, text: "- three" })) as { isError: boolean };

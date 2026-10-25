@@ -22,10 +22,11 @@ import {
 /**
  * The default `HistoryRecorder`: today's history code behind the interface,
  * statement for statement. The capture half is what `core/ingest.ts`
- * (`ingestInto` steps 0–2 and 10), `mutate/commit.ts` (`runPhases` phase C,
- * `movePath`) and `sync/tombstone.ts` ran inline before Phase 1; the reads are
- * `graph/history.ts`, `core/read/document.ts`'s revision reads and
- * `mutate/materialize.ts`'s prior-bytes rule; the maintenance half is
+ * (`ingestInto` steps 0–2 and 10), `mutate/commit.ts` (`runPhases` phase C)
+ * and `sync/tombstone.ts` ran inline before Phase 1 — since 17.0 (Phase 3a)
+ * under the head token the core mints, with a `docs_move` captured as a
+ * transition of the unchanged tree at the new path (D11); the reads are
+ * `graph/history.ts` and `mutate/materialize.ts`'s prior-bytes rule; the maintenance half is
  * `core/store/{gc,retention,archive}.ts`. Bound to one store; the capture
  * methods run on its connection inside the caller's transaction.
  */
@@ -42,9 +43,11 @@ export class HistoryRecorderImpl implements HistoryRecorder {
    * spec/store §4.4 (16.0): the revision's seq decides whether it is a
    * checkpoint; a non-checkpoint revision writes its tree and frontmatter as
    * deltas against the previous revision's RESOLVED tree and raw where that is
-   * smaller. The previous revision is the document's greatest seq — on every
-   * path the current revision, never archived (retention rule 1) — but the
-   * rule is stated for the general case: no live predecessor ⇒ a checkpoint.
+   * smaller. The previous revision is the recorder's OWN state (17.0 M1: the
+   * core hands the transition and reads nothing here) — the document's greatest
+   * captured seq, on every path the current revision, never archived (retention
+   * rule 1) — but the rule is stated for the general case: no live predecessor
+   * ⇒ a checkpoint.
    * Then the frontmatter blob (spec/store §5.4 step 1): the raw at a
    * checkpoint, else the smaller of a line delta over the previous revision's
    * frontmatter and the raw. Then the `revisions` row (step 2).
@@ -68,6 +71,7 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     }
 
     return writeRevision(db, {
+      revId: t.head,
       docId: t.docId,
       rootTreeHex,
       frontmatterBlobHex: fmBlobHex,
@@ -101,26 +105,7 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     }
   }
 
-  movePath(docId: string, revId: string | null, to: string): void {
-    this.store.db.prepare("UPDATE revisions SET path = ? WHERE doc_id = ? AND rev_id = ?").run(to, docId, revId);
-  }
-
-  // ---- current state through history ----
-
-  /**
-   * A live revision's frontmatter raw (spec/store §6.1, 16.0): the blob the
-   * row names, resolved when it is a `{"f":…}` delta over the previous
-   * revision's (`TreeResolver.frontmatter`, at most 15 steps back). `null`
-   * when the revision has no frontmatter.
-   */
-  currentFrontmatterRaw(revId: string): string | null {
-    const db = this.store.db;
-    const rev = db.prepare("SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?").get(revId) as
-      | { doc_id: string; seq: number; frontmatter_blob: Buffer | null }
-      | undefined;
-    if (!rev?.frontmatter_blob) return null;
-    return new TreeResolver(db).frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex"));
-  }
+  // ---- current state through history (M4, Phase 3c retires these) ----
 
   renderedHash(revId: string): Buffer | null {
     const row = this.store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(revId) as { rendered_hash: Buffer } | undefined;
@@ -140,6 +125,15 @@ export class HistoryRecorderImpl implements HistoryRecorder {
 
   readAtRevision(docId: string, revId: string): DocsReadAtResult | null {
     return reconstructAtRevision(this.store, docId, revId);
+  }
+
+  frontmatterAtRevision(revId: string): string | null {
+    const db = this.store.db;
+    const rev = db.prepare("SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?").get(revId) as
+      | { doc_id: string; seq: number; frontmatter_blob: Buffer | null }
+      | undefined;
+    if (!rev?.frontmatter_blob) return null;
+    return new TreeResolver(db).frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex"));
   }
 
   blocksHistory(blockId: string, opts: { limit?: number } = {}): NodeChange[] {

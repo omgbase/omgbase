@@ -64,7 +64,7 @@ describe("vectorSearch (semantic mode, brute-force cosine)", () => {
     const text = "the cat sat on the warm mat by the fireplace all afternoon long today and then slept while the rain fell softly outside the window and the kettle sang";
     ingestFile(store, repoId, "a.md", `# Old\n\n${text}\n`);
     const worker = new EmbeddingWorker(store, bowProvider());
-    const row = store.db.prepare("SELECT block_id, lower(hex(raw_hash)) h FROM blocks WHERE type='paragraph' AND deleted_commit IS NULL").get() as { block_id: string; h: string };
+    const row = store.db.prepare("SELECT block_id, lower(hex(raw_hash)) h FROM blocks WHERE type='paragraph' AND deleted_at IS NULL").get() as { block_id: string; h: string };
     // Two cache rows for the same content: the block's current context (heading
     // "Old") and a foreign one (as a heading rename to "New" would leave behind).
     const current = buildEmbedTasks(store, repoId)[0]!.ctx;

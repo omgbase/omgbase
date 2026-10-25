@@ -5,7 +5,7 @@
       "name": "fresh",
       "notes": "The fingerprint of a fresh database (README §3.3, §9.2): every table's columns and foreign keys, every index, user_version.",
       "expect": {
-        "user_version": 16,
+        "user_version": 17,
         "tables": {
           "adapters": {
             "columns": [
@@ -293,6 +293,14 @@
               },
               {
                 "cid": 11,
+                "name": "raw",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 12,
                 "name": "raw_hash",
                 "type": "BLOB",
                 "notnull": 1,
@@ -300,7 +308,7 @@
                 "pk": 0
               },
               {
-                "cid": 12,
+                "cid": 13,
                 "name": "norm_hash",
                 "type": "BLOB",
                 "notnull": 1,
@@ -308,7 +316,15 @@
                 "pk": 0
               },
               {
-                "cid": 13,
+                "cid": 14,
+                "name": "trivia",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 15,
                 "name": "trivia_hash",
                 "type": "BLOB",
                 "notnull": 0,
@@ -316,16 +332,24 @@
                 "pk": 0
               },
               {
-                "cid": 14,
-                "name": "created_commit",
+                "cid": 16,
+                "name": "created_at",
                 "type": "TEXT",
                 "notnull": 1,
                 "dflt_value": null,
                 "pk": 0
               },
               {
-                "cid": 15,
-                "name": "deleted_commit",
+                "cid": 17,
+                "name": "updated_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 18,
+                "name": "deleted_at",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -824,7 +848,7 @@
               },
               {
                 "cid": 4,
-                "name": "current_rev",
+                "name": "head",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -856,7 +880,7 @@
               },
               {
                 "cid": 8,
-                "name": "frontmatter_trivia",
+                "name": "frontmatter_raw",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -864,7 +888,31 @@
               },
               {
                 "cid": 9,
-                "name": "deleted_commit",
+                "name": "frontmatter_trivia",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 10,
+                "name": "created_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 11,
+                "name": "updated_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 12,
+                "name": "deleted_at",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -1670,7 +1718,7 @@
               },
               {
                 "cid": 6,
-                "name": "deleted_commit",
+                "name": "created_at",
                 "type": "TEXT",
                 "notnull": 1,
                 "dflt_value": null,
@@ -1678,6 +1726,14 @@
               },
               {
                 "cid": 7,
+                "name": "deleted_commit",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
                 "name": "expires_ts",
                 "type": "TEXT",
                 "notnull": 1,

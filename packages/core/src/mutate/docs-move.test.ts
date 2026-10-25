@@ -41,7 +41,7 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function docId(path: string): string {
-  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_commit IS NULL").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ? AND deleted_at IS NULL").get(path) as { doc_id: string }).doc_id;
 }
 function openEdgesTo(dst: string): { src_doc: string; src_block: string | null; anchor: string | null }[] {
   return store.db.prepare("SELECT src_doc, src_block, anchor FROM edges WHERE dst_node = ? AND to_commit IS NULL ORDER BY src_doc").all(dst) as { src_doc: string; src_block: string | null; anchor: string | null }[];

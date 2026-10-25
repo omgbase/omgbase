@@ -17,13 +17,15 @@ import { requireHistory } from "../capabilities/registry.js";
 // their adapter. docsRead is format-neutral — it returns whatever metadata was
 // stored and the exact file bytes.
 //
-// This is a read-side projection over ordered blocks, not blob storage:
-// identity stays block-level. Reconstruction stays in core/ (the 07 §0 boundary
-// forbids importing the mutate splice renderer). Every separator is STORED, not
-// assumed: a block with no trivia_hash genuinely had empty trailing bytes, and
+// This is a read-side projection over ordered blocks: identity stays
+// block-level. Reconstruction stays in core/ (the 07 §0 boundary forbids
+// importing the mutate splice renderer). Every separator is STORED, not
+// assumed: a block with a NULL trivia genuinely had empty trailing bytes, and
 // the frontmatter→body separator is persisted as docs.frontmatter_trivia.
-// So leading_trivia + frontmatter + frontmatter_trivia + Σ(raw + trivia)
-// round-trips the file byte-for-byte (03 §2.1 coverage invariant).
+// So leading_trivia + frontmatter_raw + frontmatter_trivia + Σ(raw + trivia)
+// round-trips the file byte-for-byte (03 §2.1 coverage invariant). Since store
+// 17.0 (D10, M1) every byte comes from the `docs` and `blocks` rows — nothing
+// here reads `blobs`, a revision or the delta resolver (spec/store §6.1).
 
 // The wire shape follows the surface's row rule (spec/surface §1.2, 5.0): the
 // document's identity and location under the row attributes' own names — `_id`,
@@ -63,70 +65,57 @@ export interface DocsReadOptions {
 }
 
 interface TopBlockRow {
-  raw_hash: Buffer;
-  trivia_hash: Buffer | null;
-}
-
-// A revision's root tree node is a JSON array of six-field canonical tuples
-// (see core/hash.ts serializeTreeEntries):
-//   [blockId, rawHashHex, childTreeHashHex, type, attrs, triviaHashHex]
-// — or, since 16.0, a delta over the previous revision's (core/store/delta.ts).
-// We read the top-level entries in array order and keep raw + trivia hashes;
-// child subtrees are NOT walked (a container block's `raw` already contains its
-// children verbatim — the same reason reconstructContent walks only roots).
-
-function blob(db: Database, hash: Buffer): string {
-  const row = db.prepare("SELECT bytes FROM blobs WHERE hash = ?").get(hash) as { bytes: Buffer } | undefined;
-  return row ? row.bytes.toString("utf8") : "";
+  raw: string;
+  trivia: string | null;
 }
 
 /**
- * A live revision's frontmatter raw (spec/store §6.1, 16.0): the blob the row
- * names, resolved when it is a `{"f":…}` delta over the previous revision's
- * (at most 15 steps back). `null` when the revision has no frontmatter. The
- * CURRENT frontmatter is a read through history — the hottest such path
- * (inventory-ts §3.2, §5.1); M1 gives the head its own frontmatter in Phase 3.
- * Through the recorder (`HistoryRecorder.currentFrontmatterRaw`) since Phase 1.
+ * A live document's CURRENT frontmatter raw (spec/store §3.1 `docs.frontmatter_raw`,
+ * 17.0): the fences-included raw the current-state ingest wrote, or `null`
+ * when the document has none (or is not live). A plain column read — through
+ * 16.x this resolved the head revision's `frontmatter_blob` delta chain
+ * (inventory-ts §3.2, the hottest current-state read through history; M1).
  */
-export function currentFrontmatterRaw(db: Database, revId: string): string | null {
-  return requireHistory(db).currentFrontmatterRaw(revId);
+export function currentFrontmatterRaw(db: Database, docId: string): string | null {
+  const row = db.prepare("SELECT frontmatter_raw FROM docs WHERE doc_id = ? AND deleted_at IS NULL").get(docId) as { frontmatter_raw: string | null } | undefined;
+  return row?.frontmatter_raw ?? null;
 }
 
 /**
- * Reconstruct a document's full file bytes from its ordered top-level blocks.
- * Takes a raw Database handle so it can run inside an ingest transaction (the
- * convergence check reloads through this) as well as from a Store.
+ * Reconstruct a document's full file bytes (spec/store §6.1): the doc row's
+ * `leading_trivia`, its `frontmatter_raw` + `frontmatter_trivia` when it has
+ * one, then every top-level live block's `raw` + `trivia` in `order_key`
+ * order. Every byte comes from the current rows (17.0). Takes a raw Database
+ * handle so it can run inside an ingest transaction (the convergence check
+ * reloads through this) as well as from a Store.
  */
 export function reconstructContent(db: Database, docId: string): string | null {
   const doc = db
-    .prepare("SELECT leading_trivia, frontmatter_trivia, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL")
-    .get(docId) as { leading_trivia: string; frontmatter_trivia: string | null; current_rev: string | null } | undefined;
+    .prepare("SELECT leading_trivia, frontmatter_raw, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_at IS NULL")
+    .get(docId) as { leading_trivia: string; frontmatter_raw: string | null; frontmatter_trivia: string | null } | undefined;
   if (!doc) return null;
 
   const out: string[] = [doc.leading_trivia];
 
-  if (doc.current_rev) {
-    const fm = currentFrontmatterRaw(db, doc.current_rev);
-    // Emit the frontmatter block followed by its exact stored separator. Ingest
-    // always captures frontmatter_trivia whenever a frontmatter block exists, so
-    // frontmatter_blob present ⇒ frontmatter_trivia is a real string (possibly
-    // ""); the ?? "" is just a type guard.
-    if (fm !== null) out.push(fm + (doc.frontmatter_trivia ?? ""));
-  }
+  // Emit the frontmatter block followed by its exact stored separator. Ingest
+  // always captures frontmatter_trivia whenever a frontmatter block exists, so
+  // frontmatter_raw present ⇒ frontmatter_trivia is a real string (possibly
+  // ""); the ?? "" is just a type guard.
+  if (doc.frontmatter_raw !== null) out.push(doc.frontmatter_raw + (doc.frontmatter_trivia ?? ""));
 
   // Top-level blocks only: a container's `raw` already contains its nested
   // children verbatim (03 §2.3), so walking roots reconstructs the whole body.
   const rows = db
     .prepare(
-      `SELECT raw_hash, trivia_hash FROM blocks
-       WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL
+      `SELECT raw, trivia FROM blocks
+       WHERE doc_id = ? AND parent_block IS NULL AND deleted_at IS NULL
        ORDER BY order_key`,
     )
     .all(docId) as TopBlockRow[];
 
   for (const r of rows) {
-    out.push(blob(db, r.raw_hash));
-    if (r.trivia_hash) out.push(blob(db, r.trivia_hash));
+    out.push(r.raw);
+    if (r.trivia !== null) out.push(r.trivia);
   }
   return out.join("");
 }

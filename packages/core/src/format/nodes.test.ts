@@ -31,10 +31,9 @@ describe("node projection — markdown", () => {
 
     const rows = store.db.prepare(
       `SELECT n.kind, n.value, n.block_id, n.span_start, n.span_end,
-              substr(bl_blob.bytes, n.span_start + 1, n.span_end - n.span_start) AS sliced
+              substr(CAST(bl.raw AS BLOB), n.span_start + 1, n.span_end - n.span_start) AS sliced
        FROM nodes n
        JOIN blocks bl ON bl.block_id = n.block_id
-       JOIN blobs bl_blob ON bl_blob.hash = bl.raw_hash
        WHERE n.kind = 'md:link' ORDER BY n.span_start`,
     ).all() as { kind: string; value: string; block_id: string; span_start: number; span_end: number; sliced: Buffer }[];
 
@@ -212,7 +211,7 @@ describe("node projection — code is not prose (agrees with edge extraction)", 
 
     // Spans still index the original raw (maskCode is length-preserving).
     for (const r of rows) {
-      const raw = (store.db.prepare("SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ?").get(r.block_id) as { bytes: Buffer }).bytes.toString("utf8");
+      const raw = (store.db.prepare("SELECT raw FROM blocks WHERE block_id = ?").get(r.block_id) as { raw: string }).raw;
       expect(raw).toBe(body);
       const seg = raw.slice(r.span_start, r.span_end);
       expect(seg).toBe(r.kind === "md:wikilink" ? "[[Real]]" : "[r](/real.md)");

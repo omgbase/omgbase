@@ -56,7 +56,7 @@ function parent(ws: ReturnType<Cli["workspace"]>, repoId: string, ref: string): 
 // `edited` commit (its `_attrs.checked` only rewrites a task's marker).
 function taskBlock(ws: ReturnType<Cli["workspace"]>, ref: string, blockId: string): string {
   const row = ws.store.db
-    .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_at IS NULL")
     .get(blockId) as { type: string } | undefined;
   if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(ref)}`, { data: { _id: ref } });
   if (row.type !== "task") {
@@ -380,7 +380,7 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
  *  `block_not_container` (append means into, never a sibling insert). */
 function appendSugar(store: Store, blockId: string, markdown: string): Sugar {
   const row = store.db
-    .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL")
+    .prepare("SELECT b.type AS type, d.format AS format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_at IS NULL) AS children FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL")
     .get(blockId) as { type: string; format: string | null; children: number } | undefined;
   if (!row) throw new EngineErrorLike("block_missing", `no block with id ${JSON.stringify(blockId)}`, { data: { _id: blockId } });
   if (row.type === "heading") return appendEffects({ kind: "section", heading_id: blockId }, markdown);

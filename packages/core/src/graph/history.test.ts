@@ -53,9 +53,9 @@ describe("blocks_history (historyNode)", () => {
 describe("diff (block grain)", () => {
   it("reports added/removed/changed blocks between revisions", () => {
     save("a.md", "# H\n\nkeep me around please\n\nremove me later\n");
-    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='a.md'").get() as { current_rev: string }).current_rev;
+    const rev1 = (store.db.prepare("SELECT head FROM docs WHERE path='a.md'").get() as { head: string }).head;
     save("a.md", "# H\n\nkeep me around please\n\nbrand new paragraph here\n");
-    const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='a.md'").get() as { current_rev: string }).current_rev;
+    const rev2 = (store.db.prepare("SELECT head FROM docs WHERE path='a.md'").get() as { head: string }).head;
 
     const diff = diffBlocks(store, docId("a.md"), rev1, rev2);
     expect(diff.some((d) => d.kind === "removed" && d.before?.includes("remove me"))).toBe(true);
@@ -144,7 +144,7 @@ describe("unifiedDiff (spec/surface §3: Myers script + unified hunks)", () => {
 
 describe("diffUnified (store-backed)", () => {
   function currentRev(path: string): string {
-    return (store.db.prepare("SELECT current_rev FROM docs WHERE path=?").get(path) as { current_rev: string }).current_rev;
+    return (store.db.prepare("SELECT head FROM docs WHERE path=?").get(path) as { head: string }).head;
   }
 
   it("one inserted block is one + line (plus its blank-line separator: the text diffed is the file); identical revisions are \"\"", () => {
