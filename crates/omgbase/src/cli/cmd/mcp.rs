@@ -75,42 +75,30 @@ fn announce_seams(cli: &Cli) {
 
 /// The repo's `embedding.*` settings, when a provider is named.
 fn embedding_settings(store: &omgbase_store::Store, repo_id: &str) -> Option<EmbeddingSettings> {
-    let settings = match omgbase_sync::resolve_settings(store, Some(repo_id)) {
+    match crate::cli::seams::embedding_settings(store, repo_id) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[mcp] settings unreadable: {e}");
-            return None;
+            None
         }
-    };
-    let emb = settings.get("embedding")?.as_object()?;
-    let s = |k: &str| emb.get(k).and_then(|v| v.as_str()).map(str::to_owned);
-    let n = |k: &str| emb.get(k).and_then(serde_json::Value::as_u64);
-    let cfg = EmbeddingSettings {
-        provider: s("provider"),
-        model: s("model"),
-        dim: n("dim").map(|d| usize::try_from(d).unwrap_or(0)),
-        max_input_tokens: n("maxInputTokens")
-            .or_else(|| n("max_input_tokens"))
-            .map(|d| u32::try_from(d).unwrap_or(u32::MAX)),
-    };
-    cfg.provider
-        .as_deref()
-        .is_some_and(|p| !p.trim().is_empty())
-        .then_some(cfg)
+    }
 }
 
 /// The settings as the host's one provider, spawned here and shared by the
-/// query path (`semantic()`, `resolve`) and the drain thread.
-fn embedding_provider(cfg: &EmbeddingSettings) -> Option<SharedProvider> {
+/// query path (`semantic()`, `resolve`) and the drain thread; `Err(reason)`
+/// when it cannot start — the capability's `unavailable` state (Phase 2).
+fn embedding_provider(
+    cfg: &EmbeddingSettings,
+) -> std::result::Result<Option<SharedProvider>, String> {
     match create_external_provider(cfg) {
         Ok(Some(p)) => {
             eprintln!("[mcp] semantic query enabled via {}", p.model());
-            Some(SharedProvider::new(p))
+            Ok(Some(SharedProvider::new(p)))
         }
-        Ok(None) => None,
+        Ok(None) => Ok(None),
         Err(e) => {
             eprintln!("[mcp] embedder nonfunctional — semantic search + auto-embed disabled: {e}");
-            None
+            Err(e.to_string())
         }
     }
 }
@@ -128,9 +116,12 @@ fn start_drainer(
     Drainer::spawn(crate::drain::DEBOUNCE, move || {
         let store = open_store(&db, &minters)?;
         Ok(Box::new(move || {
+            // The indexer (Phase 2): positioned by the watermark.
             let stats = store
-                .drain(&repo_id, &provider)
-                .map_err(|e| e.to_string())?;
+                .require_semantic()
+                .and_then(|sem| sem.drain(&store, &repo_id, &provider))
+                .map_err(|e| e.to_string())?
+                .stats;
             Ok(DrainReport {
                 embedded: stats.blocks.embedded + stats.docs.embedded,
                 pooled: stats.docs.pooled,
@@ -310,7 +301,11 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // Connect the configured embedder once (if any) for `semantic()`; a
     // configured-but-broken embedder is reported, never fatal.
     let embedding = embedding_settings(cli.store()?, &repo.repo_id);
-    let provider = embedding.as_ref().and_then(embedding_provider);
+    let (provider, embedder_fault) = match embedding.as_ref().map(embedding_provider) {
+        Some(Ok(p)) => (p, None),
+        Some(Err(reason)) => (None, Some(reason)),
+        None => (None, None),
+    };
     eprintln!("[mcp] workspace {}", ws.root.display());
     let omgbase_dir = ws.omgbase_dir.clone();
     let db = ws.db_path.clone();
@@ -378,12 +373,24 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // The surface owns its store — a connection of its own over the database
     // — and the query path's handle to the shared provider (the last one
     // standing at shutdown, so dropping the surface kills the child).
-    let store = open_store(&db, &minters).map_err(|e| CliError::engine("error", e))?;
+    let mut store = open_store(&db, &minters).map_err(|e| CliError::engine("error", e))?;
+    // Capability discovery (Phase 2): the state is derived from the
+    // configuration (`version`); a provider configured but failed to start
+    // marks the capability `unavailable` with its reason, so a
+    // `semantic(...)` query answers `capability_unavailable` (retriable)
+    // rather than "none is configured"; nothing configured keeps the
+    // module and the pinned `provider_unavailable`.
+    if let Some(reason) = embedder_fault {
+        store.detach_semantic(Some(reason));
+    }
     let query_provider: Option<Box<dyn EmbeddingProvider>> =
         provider.map(|p| Box::new(p) as Box<dyn EmbeddingProvider>);
     let mut surface = Surface::new(store, &repo.repo_id, query_provider)
         .with_build_info(crate::cli::build_info())
         .with_profile(profile);
+    if let Some(name) = embedding.as_ref().and_then(|e| e.provider.clone()) {
+        surface = surface.with_provider_name(&name);
+    }
     if let Some(ts) = clock {
         surface = surface.with_clock(move || ts.clone());
     }

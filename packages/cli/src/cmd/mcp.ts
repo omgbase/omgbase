@@ -118,7 +118,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     cli.io.err(cli.style.err("[mcp] ✖ EMBEDDER NONFUNCTIONAL — semantic search + auto-embed disabled"));
     cli.io.err(cli.style.err(`      provider: ${d.provider ?? "?"}`));
     cli.io.err(cli.style.err(`      reason:   ${d.reason ?? embedderError.message}`));
-    cli.io.err(cli.style.err("      semantic queries will fail with embedder_failed until this is fixed."));
+    cli.io.err(cli.style.err("      semantic queries will fail with capability_unavailable (state unavailable) until this is fixed."));
   }
 
   // Keep embeddings timely: a background drainer embeds blocks touched by a
@@ -185,19 +185,21 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   if (drainer) cli.io.err(cli.style.dim(`[mcp] auto-embed on mutation enabled`));
   if (tools !== "full") cli.io.err(cli.style.dim(`[mcp] tools profile: ${tools}`));
 
-  // The query surface's `embedQuery`: a live vectorizer when the embedder loaded,
-  // or — when it's configured-but-broken — a hook that throws `embedder_failed`
-  // so semantic access fails loudly and specifically (not the misleading
-  // `provider_unavailable`, which the server emits only when embedQuery is
-  // absent, i.e. genuinely no provider configured). `const` captures satisfy
-  // closure narrowing over the `let`-bound state above.
+  // The query surface's `embedQuery`: a live vectorizer when the embedder loaded.
+  // When it is configured-but-broken the server gets the host's REPORT instead
+  // (`semanticUnavailable`): every semantic path then fails loudly with
+  // `capability_unavailable { semantic, unavailable }` (retriable) naming the
+  // provider and the reason, and `version` reports the state — not the
+  // misleading `provider_unavailable`, which the server emits only when no
+  // provider is configured at all. `const` captures satisfy closure narrowing
+  // over the `let`-bound state above.
   const loaded = embedding;
   const failed = embedderError;
   const embedQuery = loaded
     ? async (text: string) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(text) })
-    : failed
-      ? (_text: string): Promise<{ model: string; vec: Float32Array }> => Promise.reject(failed)
-      : undefined;
+    : undefined;
+  const failedReport = failed ? (failed.data ?? {}) as { provider?: string; reason?: string } : null;
+  const semanticUnavailable = failedReport ? { provider: failedReport.provider ?? "?", reason: failedReport.reason ?? failed!.message } : undefined;
 
   // The workspace dir makes every write tool take the writer lock for its whole
   // call (spec/sync §7) — `omg` verbs, the Rust `omgbase mcp` and the watcher
@@ -210,6 +212,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedQuery ? { embedQuery } : {}),
     ...(loaded ? { embedProvider: loaded.providerName } : {}),
+    ...(semanticUnavailable ? { semanticUnavailable } : {}),
     // The `version` tool's view of this binary (spec/surface §4).
     host: hostInfo(),
     tools,

@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
-import { requireHistory } from "../capabilities/registry.js";
+import { requireHistory, semanticOf } from "../capabilities/registry.js";
 
 // The size report (spec/store §7 "Size", 14.1): what the database is made of,
 // table by table through SQLite's `dbstat` virtual table, grouped into the four
@@ -122,7 +122,6 @@ export const VACUUM_ADVICE_MIN_BYTES = 1024 * 1024;
 export const VACUUM_ADVICE_MIN_SHARE = 10;
 export const HISTORY_ADVICE_MIN_SHARE = 50;
 export const SAME_ADVICE_MIN_SHARE = 25;
-export const EMBEDDINGS_ADVICE_MIN_SHARE = 25;
 /** The retention advice fires when the plan's bytes exceed this share of the `history` category (15.0). */
 export const RETENTION_ADVICE_MIN_SHARE = 10;
 
@@ -156,8 +155,11 @@ export function shareOf(bytes: number, total: number): number {
   return Math.round((bytes * 1000) / total) / 10;
 }
 
-/** spec/store §7: the advice lines, in this order; `nothing to reclaim` when none applies. */
-export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0, retention: SizeRetention = { revisions: 0, bytes: 0 }): string[] {
+/** The semantic bundle's lines about its vectors (`SemanticProvider.sizeAdvice`): given their bytes and the database's. */
+export type VectorAdvice = (vectorBytes: number, totalBytes: number) => string[];
+
+/** spec/store §7: the advice lines, in this order; `nothing to reclaim` when none applies. `vectorAdvice` is the semantic bundle's contribution — null on a store without the module. */
+export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0, retention: SizeRetention = { revisions: 0, bytes: 0 }, vectorAdvice: VectorAdvice | null = null): string[] {
   const advice: string[] = [];
   const logical = file.page_count * file.page_size;
   if (file.reclaimable > VACUUM_ADVICE_MIN_BYTES && file.reclaimable * 100 > logical * VACUUM_ADVICE_MIN_SHARE) {
@@ -180,14 +182,13 @@ export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sam
   if (retention.revisions > 0 && history && history.bytes !== null && retention.bytes * 100 > history.bytes * RETENTION_ADVICE_MIN_SHARE) {
     advice.push(`${retention.revisions} revisions older than the policy would archive ${humanBytes(retention.bytes)}: \`omg history export --prune\``);
   }
+  // The vectors' lines are the semantic bundle's (spec/store §7.5: one `search`
+  // category, two owners): a store without the module has no vectors to advise on.
   const search = categories.find((c) => c.name === "search");
-  if (search && search.bytes !== null) {
+  if (search && search.bytes !== null && vectorAdvice) {
     const total = categories.reduce((n, c) => n + (c.bytes ?? 0), 0);
     const embBytes = search.tables.filter((t) => t.name === "embeddings" || t.name === "doc_embeddings").reduce((n, t) => n + (t.bytes ?? 0), 0);
-    const embShare = shareOf(embBytes, total);
-    if (embShare > EMBEDDINGS_ADVICE_MIN_SHARE) {
-      advice.push(`embeddings are ${formatShare(embShare)} of the database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg embed drain --prune\` after a model switch shrinks them`);
-    }
+    advice.push(...vectorAdvice(embBytes, total));
   }
   if (advice.length === 0) advice.push("nothing to reclaim");
   return advice;
@@ -305,7 +306,8 @@ export function sizeReport(store: Store, opts: { now?: string } = {}): SizeRepor
     retention.revisions += plan.totals.archive;
     retention.bytes += plan.totals.bytes;
   }
-  const report: SizeReport = { file, categories, same_dispositions, archived, advice: sizeAdvice(file, categories, same_dispositions, retention) };
+  const semantic = semanticOf(db);
+  const report: SizeReport = { file, categories, same_dispositions, archived, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }

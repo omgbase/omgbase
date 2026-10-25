@@ -12,43 +12,40 @@ use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{EXIT_OK, Result, js_json};
 use crate::cli::render::{pad_end, shorten_home};
 
-/// `spec/search` §2.3 (§9 Fixed): the stale embeddable blocks — the embed
-/// tasks whose `(content_hash, ctx_hash[, model])` has no cached vector;
-/// the model is the effective `embedding.model` when one is set.
-// seam: SemanticProvider (Phase 2 — the queued count becomes the provider's
-// `stale_blocks`; today the binary reads `embeddings` directly;
-// inventory-rust.md §2.9 `status.rs:27-46`; README §6).
+/// `spec/search` §2.3 (§9 Fixed): the stale embeddable blocks — through the
+/// store's semantic capability (`SemanticProvider::queue`, Phase 2): the
+/// embed tasks whose `(content_hash, ctx_hash[, model])` have no cached
+/// vector; the model is the effective `embedding.model` when one is set.
+/// A store without the bundle (`OMGBASE_CAPABILITIES=core`) has nothing to
+/// read a cache from: the queue is every embeddable live leaf (`should_embed`
+/// over the live leaves — the core's rows, no vector read).
 fn embed_queue(cli: &mut Cli, repo_id: &str) -> Result<i64> {
+    let settings = cli.discover_semantic()?;
     let store = cli.store()?;
-    let model = omgbase_sync::resolve_settings(store, Some(repo_id))?
-        .get("embedding")
-        .and_then(|e| e.get("model"))
-        .and_then(serde_json::Value::as_str)
-        .filter(|m| !m.is_empty())
-        .map(str::to_owned);
-    let conn = store.conn();
-    let tasks = omgbase_store::search::build_embed_tasks(conn, repo_id)?;
-    let mut stale = 0i64;
-    for t in &tasks {
-        let content = omgbase_store::tree::from_hex(&t.content_hash)?;
-        let ctx = omgbase_search::ctx_hash(&t.ctx);
-        let cached = match &model {
-            Some(m) => conn
-                .prepare_cached(
-                    "SELECT 1 FROM embeddings WHERE content_hash = ?1 AND ctx_hash = ?2 AND model = ?3",
-                )?
-                .exists(rusqlite::params![content, &ctx[..], m])?,
-            None => conn
-                .prepare_cached(
-                    "SELECT 1 FROM embeddings WHERE content_hash = ?1 AND ctx_hash = ?2",
-                )?
-                .exists(rusqlite::params![content, &ctx[..]])?,
-        };
-        if !cached {
-            stale += 1;
+    match store.semantic() {
+        Some(sem) => {
+            let model = settings
+                .as_ref()
+                .and_then(|s| s.model.clone())
+                .filter(|m| !m.is_empty());
+            let q = sem.queue(store.conn(), repo_id, model.as_deref())?;
+            Ok(q.stale_blocks as i64)
+        }
+        None => {
+            let mut stmt = store.conn().prepare_cached(&format!(
+                "SELECT b.text FROM blocks b WHERE b.repo_id = ?1 AND {}",
+                omgbase_store::LIVE_LEAF_SQL
+            ))?;
+            let rows = stmt.query_map(rusqlite::params![repo_id], |r| r.get::<_, String>(0))?;
+            let mut n = 0i64;
+            for text in rows {
+                if omgbase_search::should_embed(&text?) {
+                    n += 1;
+                }
+            }
+            Ok(n)
         }
     }
-    Ok(stale)
 }
 
 pub fn status(cli: &mut Cli, args: &[String]) -> Result<i32> {

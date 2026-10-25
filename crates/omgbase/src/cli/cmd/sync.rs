@@ -223,9 +223,12 @@ fn start_drainer(
     Drainer::spawn(crate::drain::DEBOUNCE, move || {
         let store = open_store(&db, &minters)?;
         Ok(Box::new(move || {
+            // The indexer (Phase 2): positioned by the watermark.
             let stats = store
-                .drain(&repo_id, &provider)
-                .map_err(|e| e.to_string())?;
+                .require_semantic()
+                .and_then(|sem| sem.drain(&store, &repo_id, &provider))
+                .map_err(|e| e.to_string())?
+                .stats;
             Ok(DrainReport {
                 embedded: stats.blocks.embedded + stats.docs.embedded,
                 pooled: stats.docs.pooled,

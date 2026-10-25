@@ -55,17 +55,18 @@
 //!   [`gc`] (§7 mark-and-sweep), [`retention`] and [`archive`] (§7.1, 15.0);
 //!   [`Recorder`] implements [`HistoryRecorder`] over them.
 //! - [`semantic`] — the provider: [`search`] (`spec/search`: the embedding
-//!   drain over the `embeddings`/`doc_embeddings` caches, vector, hybrid and
-//!   `resolve`) and the `cosine` scalar; [`Provider`] implements
-//!   [`SemanticProvider`].
+//!   drain over the `embeddings`/`doc_embeddings` caches, vector and hybrid
+//!   search, the vector side of `resolve`), the indexer's watermark and the
+//!   `cosine` scalar; [`Provider`] implements [`SemanticProvider`]. Reached
+//!   only through [`Store::semantic`] (Phase 2).
 //! - this root — [`Store`], the opener ([`schema`]), and
 //!   [`Capabilities::standard`]: the one place that names the core and both
 //!   extensions. Every module keeps its pre-Phase-1 crate-root path
 //!   (`omgbase_store::read`, `omgbase_store::archive`, …) through re-exports.
 //!
-//! The core names nothing of `history` or `semantic` (`tests/boundaries.rs`,
-//! with `boundary-allowlist.txt` for what Phase 3 removes); the semantic
-//! layer names nothing of `history`. Since 13.7 every `api` request — a
+//! The core names nothing of `history` or `semantic` and no SQL of the core
+//! names a vector table (`tests/boundaries.rs`, with `boundary-allowlist.txt`
+//! for what Phase 3 removes); the semantic layer names nothing of `history`. Since 13.7 every `api` request — a
 //! changeset over N documents, a move with its retarget, a create, a delete —
 //! commits as one transaction with one `commits` row through the internal
 //! effect set (`effects`, not public API); since 14.0 it commits **DB-first**,
@@ -100,7 +101,7 @@ pub(crate) use self::core::effects;
 pub use self::core::{
     capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, graph, history_shapes,
     ids, links, macros, materialize, mint, mutate, observe, order_key, plan, properties, read,
-    size, sugar, text_search, time, writers, yaml_emit,
+    semantic_shapes, size, sugar, text_search, time, writers, yaml_emit,
 };
 pub use self::history::{archive, delta, edit_script, gc, retention, tree};
 pub use self::semantic::search;
@@ -116,9 +117,10 @@ pub use archive::{
     read_manifest, segment_basename, segment_file_name,
 };
 pub use capabilities::{
-    Capabilities, ChangesPage, CommitDigest, DigestRevision, DispositionRow, DocEmbedStats,
-    EmbedStats, ForeignVectors, GcResult, HistoryRecorder, HistorySizeFigures, IdentityClaims,
-    RecordedRevision, RevisionRead, RevisionTransition, SemanticProvider,
+    CAPABILITIES_ENV, Capabilities, CapabilityState, ChangesPage, CommitDigest, DigestRevision,
+    DispositionRow, DocEmbedStats, EmbedStats, ForeignVectors, GcResult, HistoryRecorder,
+    HistorySizeFigures, IdentityClaims, RecordedRevision, RevisionRead, RevisionTransition,
+    SemanticProvider,
 };
 pub use claims::TableUnionClaims;
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -164,9 +166,11 @@ pub use omgbase_search::{
 };
 pub use retention::{evaluate_retention, merge_retention_policy, retention_policy};
 pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
-pub use search::{
-    BlockContexts, ContextScope, DocVectorHit, DocVectorRow, DrainStats, HybridHit, HybridQuery,
-    QueryVector, ResolveHit, VectorHit, block_vector,
+pub use search::{BlockContexts, ContextScope, DocVectorRow, block_vector};
+pub use semantic_shapes::{
+    CHUNKING_VERSION, DocVectorHit, DrainMode, DrainOutcome, DrainStats, HybridHit, HybridQuery,
+    IndexIdentity, PrunedVectors, QueryVector, ResolveHit, SemanticFreshness, SemanticQueue,
+    VectorHit,
 };
 pub use size::{
     SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFile, SizeReport, SizeRetention, SizeTable,
@@ -196,6 +200,9 @@ pub struct Store {
     history: Option<Box<dyn HistoryRecorder>>,
     /// The semantic capability, when the store opened with one.
     semantic: Option<Box<dyn SemanticProvider>>,
+    /// Why `semantic` is `None` although one is configured (the
+    /// `unavailable` state); `None` with no provider is `disabled`.
+    semantic_fault: Option<String>,
     /// Test seam: runs inside [`Store::commit_effects`](effects) right after
     /// its `BEGIN IMMEDIATE`, before the validation — a test interleaves a
     /// second connection against the held write lock here.
@@ -251,6 +258,16 @@ impl Store {
         Self::from_connection(Connection::open_in_memory()?, minter)
     }
 
+    /// A fresh in-memory store with a replaceable minter and the
+    /// capabilities given (the fixture runners:
+    /// [`Capabilities::standard_from_env`]).
+    pub fn open_in_memory_with_capabilities(
+        minter: Box<dyn IdMinter>,
+        capabilities: Capabilities,
+    ) -> Result<Self> {
+        Self::from_connection_with(Connection::open_in_memory()?, minter, capabilities)
+    }
+
     /// Adopt an existing connection with the standard capabilities: apply the
     /// §1 pragmas, register `cosine`, run the opener (fresh → `schema.sql`;
     /// older → migrations; newer → [`Error::SchemaTooNew`]).
@@ -270,6 +287,7 @@ impl Store {
         let Capabilities {
             history,
             semantic,
+            semantic_fault,
             claims,
         } = capabilities;
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -285,6 +303,7 @@ impl Store {
             ids,
             history,
             semantic,
+            semantic_fault,
             #[cfg(test)]
             after_begin: None,
         })
@@ -296,20 +315,66 @@ impl Store {
         self.history.as_deref()
     }
 
-    /// The semantic capability this store opened with, if any.
+    /// The semantic capability this store opened with, if any — the one way
+    /// to a vector (Phase 2): `None` is the `disabled` or `unavailable`
+    /// state ([`Store::semantic_state`]).
     #[must_use]
     pub fn semantic(&self) -> Option<&dyn SemanticProvider> {
         self.semantic.as_deref()
     }
 
+    /// The semantic capability or [`capabilities::unavailable`]`("semantic")`.
+    pub fn require_semantic(&self) -> Result<&dyn SemanticProvider> {
+        capabilities::require_semantic(self.semantic.as_deref())
+    }
+
+    /// The history capability's state: `enabled` with a recorder, else
+    /// `disabled` — the store runs without the module (both engines spell a
+    /// module-less store so; no manifest row exists before Phase 3).
+    #[must_use]
+    pub fn history_state(&self) -> CapabilityState {
+        if self.history.is_some() {
+            CapabilityState::Enabled
+        } else {
+            CapabilityState::Disabled
+        }
+    }
+
+    /// The semantic capability's state as the store knows it: `enabled` with
+    /// a provider installed, `unavailable` when the configured one failed
+    /// ([`Store::detach_semantic`] with a reason), else `disabled`. Whether a
+    /// provider is *configured* for a repository (`phase-1-contracts.md` §7
+    /// resolution 1) is the settings' business — the surface's `version`
+    /// folds it in.
+    #[must_use]
+    pub fn semantic_state(&self) -> CapabilityState {
+        match (&self.semantic, &self.semantic_fault) {
+            (Some(_), _) => CapabilityState::Enabled,
+            (None, Some(_)) => CapabilityState::Unavailable,
+            (None, None) => CapabilityState::Disabled,
+        }
+    }
+
+    /// The `unavailable` state's reason, if that is the state.
+    #[must_use]
+    pub fn semantic_fault(&self) -> Option<&str> {
+        self.semantic_fault.as_deref()
+    }
+
+    /// Capability discovery (Phase 2): drop the semantic provider — the
+    /// configured one failed to start (`Some(reason)` → `unavailable`,
+    /// retriable), or the composition decided against the module after open
+    /// (`None` → `disabled`). The `cosine` scalar a provider attached at open
+    /// stays registered; nothing calls it once the provider is gone. Stored
+    /// vectors are never consulted.
+    pub fn detach_semantic(&mut self, fault: Option<String>) {
+        self.semantic = None;
+        self.semantic_fault = fault;
+    }
+
     /// The recorder, or the capability-unavailable error.
     fn recorder(&self) -> Result<&dyn HistoryRecorder> {
         capabilities::require_history(self.history.as_deref())
-    }
-
-    /// The provider, or the capability-unavailable error.
-    fn provider(&self) -> Result<&dyn SemanticProvider> {
-        capabilities::require_semantic(self.semantic.as_deref())
     }
 
     /// The underlying connection.
@@ -496,13 +561,22 @@ impl Store {
     /// through `dbstat`, grouped into categories, the file's pages, advice
     /// (the retention advice of 15.0 evaluated at the wall clock).
     pub fn size_report(&self) -> Result<SizeReport> {
-        size::size_report(&self.conn, self.history.as_deref())
+        size::size_report(
+            &self.conn,
+            self.history.as_deref(),
+            self.semantic.as_deref(),
+        )
     }
 
     /// [`Store::size_report`] with the retention plans evaluated at `now`
     /// (the CLI's pinned clock under `OMGBASE_SPEC_CLOCK`).
     pub fn size_report_at(&self, now: &str) -> Result<SizeReport> {
-        size::size_report_at(&self.conn, self.history.as_deref(), now)
+        size::size_report_at(
+            &self.conn,
+            self.history.as_deref(),
+            self.semantic.as_deref(),
+            now,
+        )
     }
 
     // ---- history retention (§7.1, 15.0) ------------------------------------------------
@@ -587,8 +661,16 @@ impl Capabilities {
         Self {
             history: Some(Box::new(Recorder)),
             semantic: Some(Box::new(Provider)),
+            semantic_fault: None,
             claims: Box::new(TableUnionClaims),
         }
+    }
+
+    /// [`Capabilities::from_env`] over [`Capabilities::standard`]: what every
+    /// fixture runner opens with, so `OMGBASE_CAPABILITIES=core` runs the
+    /// suites without the semantic bundle.
+    pub fn standard_from_env() -> Result<Self> {
+        Self::from_env(Self::standard)
     }
 }
 

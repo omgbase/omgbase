@@ -15,7 +15,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{Map, Value as Json, json};
 
-use crate::core::capabilities::HistoryRecorder;
+use crate::core::capabilities::{HistoryRecorder, SemanticProvider};
 use crate::error::Result;
 
 /// The four categories, in the report's fixed order.
@@ -253,13 +253,16 @@ impl SizeReport {
 
 /// §7: the advice lines, in this order; `nothing to reclaim` when none applies.
 /// `same_dispositions` (14.2) is the report's count of `same` rows;
-/// `retention` (15.0) what the policy would archive now.
+/// `retention` (15.0) what the policy would archive now; `semantic_tables`
+/// the tables the semantic bundle owns ([`SemanticProvider::tables`]) — the
+/// embeddings line is theirs, and a store without the bundle never emits it.
 #[must_use]
 pub fn size_advice(
     file: &SizeFile,
     categories: &[SizeCategory],
     same_dispositions: u64,
     retention: SizeRetention,
+    semantic_tables: &[&str],
 ) -> Vec<String> {
     let mut advice = Vec::new();
     let logical = file.page_count * file.page_size;
@@ -313,7 +316,7 @@ pub fn size_advice(
         let emb: u64 = search
             .tables
             .iter()
-            .filter(|t| t.name == "embeddings" || t.name == "doc_embeddings")
+            .filter(|t| semantic_tables.contains(&t.name.as_str()))
             .filter_map(|t| t.bytes)
             .sum();
         let emb_share = share_of(emb, total);
@@ -368,8 +371,12 @@ fn file_bytes(path: &Path) -> u64 {
 }
 
 /// The size report of an open connection (§7 "Size") at the wall clock.
-pub fn size_report(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> Result<SizeReport> {
-    size_report_at(conn, history, &crate::time::now_ts())
+pub fn size_report(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    semantic: Option<&dyn SemanticProvider>,
+) -> Result<SizeReport> {
+    size_report_at(conn, history, semantic, &crate::time::now_ts())
 }
 
 /// The size report (§7 "Size") with the retention plans (15.0) evaluated at
@@ -377,10 +384,13 @@ pub fn size_report(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> 
 /// repository's plan under its effective policy is summed at one clock. The
 /// history figures (the `same` rows, the archived summary, the plans) come
 /// from the recorder ([`HistoryRecorder::size_figures`]); a store without
-/// one reports them as zero.
+/// one reports them as zero. The embeddings advice names the semantic
+/// bundle's tables ([`SemanticProvider::tables`]); a store without the bundle
+/// gives none.
 pub fn size_report_at(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
+    semantic: Option<&dyn SemanticProvider>,
     now: &str,
 ) -> Result<SizeReport> {
     let path = match conn.path() {
@@ -536,7 +546,14 @@ pub fn size_report_at(
     let same_dispositions = figures.same_dispositions;
     let archived = figures.archived;
     let retention = figures.retention;
-    let advice = size_advice(&file, &categories, same_dispositions, retention);
+    let semantic_tables: &[&str] = semantic.map_or(&[], |s| s.tables());
+    let advice = size_advice(
+        &file,
+        &categories,
+        same_dispositions,
+        retention,
+        semantic_tables,
+    );
     Ok(SizeReport {
         file,
         categories,
@@ -568,6 +585,9 @@ mod tests {
     use super::*;
     use crate::{SCHEMA_SQL, SequentialMinter, Store};
     use omgbase_reconcile::Config;
+
+    /// The semantic bundle's tables, as `Provider::tables` names them.
+    const SEMANTIC_TABLES: &[&str] = &["embeddings", "doc_embeddings"];
 
     #[test]
     fn humanize_and_shares() {
@@ -658,7 +678,8 @@ mod tests {
                 &file_of(|_| {}),
                 &[cat("content", 60, 100, &[]), cat("history", 40, 100, &[])],
                 0,
-                SizeRetention::default()
+                SizeRetention::default(),
+                SEMANTIC_TABLES
             ),
             none
         );
@@ -667,19 +688,25 @@ mod tests {
             f.freelist_count = 200;
             f.reclaimable = 200 * 4096;
         });
-        assert_eq!(size_advice(&small, &[], 0, SizeRetention::default()), none);
+        assert_eq!(
+            size_advice(&small, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
+            none
+        );
         let thin = file_of(|f| {
             f.page_count = 100_000;
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
-        assert_eq!(size_advice(&thin, &[], 0, SizeRetention::default()), none);
+        assert_eq!(
+            size_advice(&thin, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
+            none
+        );
         let fat = file_of(|f| {
             f.freelist_count = 300;
             f.reclaimable = 300 * 4096;
         });
         assert_eq!(
-            size_advice(&fat, &[], 0, SizeRetention::default()),
+            size_advice(&fat, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
             vec!["run `omg gc --vacuum` to return 1.2 MB of free pages to the filesystem"]
         );
         // History past 50 %, embeddings past 25 %, in order.
@@ -689,7 +716,13 @@ mod tests {
             cat("search", 30, 100, &[("embeddings", 26), ("blocks_fts", 4)]),
         ];
         assert_eq!(
-            size_advice(&file_of(|_| {}), &cats, 0, SizeRetention::default()),
+            size_advice(
+                &file_of(|_| {}),
+                &cats,
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES
+            ),
             vec![
                 "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
                 "embeddings are 26.0% of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
@@ -702,7 +735,13 @@ mod tests {
             cat("search", 25, 100, &[("embeddings", 25)]),
         ];
         assert_eq!(
-            size_advice(&file_of(|_| {}), &edge, 0, SizeRetention::default()),
+            size_advice(
+                &file_of(|_| {}),
+                &edge,
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES
+            ),
             none
         );
         let blind = SizeCategory {
@@ -713,7 +752,13 @@ mod tests {
             tables: vec![],
         };
         assert_eq!(
-            size_advice(&file_of(|_| {}), &[blind], 0, SizeRetention::default()),
+            size_advice(
+                &file_of(|_| {}),
+                &[blind],
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES
+            ),
             none
         );
     }
@@ -733,7 +778,13 @@ mod tests {
                 history,
                 cat("search", 30, 100, &[("embeddings", 26)]),
             ];
-            size_advice(&file_of(|_| {}), &cats, same, SizeRetention::default())
+            size_advice(
+                &file_of(|_| {}),
+                &cats,
+                same,
+                SizeRetention::default(),
+                SEMANTIC_TABLES,
+            )
         };
         assert_eq!(
             with_rows(30, 100),
@@ -765,14 +816,21 @@ mod tests {
                 &file_of(|_| {}),
                 std::slice::from_ref(&blind),
                 3,
-                SizeRetention::default()
+                SizeRetention::default(),
+                SEMANTIC_TABLES
             ),
             vec![
                 "3 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
             ]
         );
         assert_eq!(
-            size_advice(&file_of(|_| {}), &[blind], 2, SizeRetention::default()),
+            size_advice(
+                &file_of(|_| {}),
+                &[blind],
+                2,
+                SizeRetention::default(),
+                SEMANTIC_TABLES
+            ),
             none
         );
     }
@@ -795,6 +853,7 @@ mod tests {
                 revisions: 12,
                 bytes: 6,
             },
+            SEMANTIC_TABLES,
         );
         assert_eq!(lines.len(), 3);
         assert_eq!(
@@ -810,7 +869,8 @@ mod tests {
                 SizeRetention {
                     revisions: 1,
                     bytes: 5
-                }
+                },
+                SEMANTIC_TABLES
             )
             .len(),
             2
@@ -823,7 +883,8 @@ mod tests {
                 SizeRetention {
                     revisions: 0,
                     bytes: 60
-                }
+                },
+                SEMANTIC_TABLES
             )
             .len(),
             2
@@ -843,7 +904,8 @@ mod tests {
                 SizeRetention {
                     revisions: 9,
                     bytes: 900
-                }
+                },
+                SEMANTIC_TABLES
             ),
             vec!["nothing to reclaim".to_owned()]
         );

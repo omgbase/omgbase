@@ -7,9 +7,10 @@ import type { DocsReadAtResult } from "../read/document.js";
 import type { CommitDigest, DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
 import type { EvaluateOptions, RetentionPlan, RetentionPolicy } from "../store/retention.js";
 import type { ArchiveListing, AttachResult, ExportOptions, ExportResult } from "../store/archive.js";
-import type { BlockContextInput, BlockContextResolver } from "../../search/tasks.js";
-import type { EmbeddingWorker } from "../../search/embeddings.js";
-import type { DocVectorHit, VectorHit } from "../../search/vector.js";
+import type { BlockContextInput, BlockContextResolver } from "../../semantic/tasks.js";
+import type { EmbeddingWorker } from "../../semantic/embeddings.js";
+import type { DocVectorHit, VectorHit } from "../../semantic/vector.js";
+import type { DrainResult, SemanticIndexIdentity } from "../../semantic/indexer.js";
 
 // The capability seams of the modular-core program, Phase 1
 // (docs/modular-core/README.md §5 "Dependency-direction check", §6 "Phase 2
@@ -27,7 +28,8 @@ import type { DocVectorHit, VectorHit } from "../../search/vector.js";
 //
 // This directory is the one place under `core/` allowed to import the
 // concrete history/semantic modules (`graph/history.ts`, `core/store/
-// {archive,retention,delta}.ts`, `search/{embeddings,vector,tasks,drain}.ts`).
+// {archive,retention,delta}.ts`, `semantic/**` — Phase 2 moved the semantic
+// bundle out of `search/`, which keeps the lexical FTS parts).
 
 /**
  * What the recorder receives for one accepted transition of a document
@@ -128,12 +130,51 @@ export interface HistoryRecorder {
 /** A resolved query embedding for a `semantic("phrase")` call: the query vector as a bound BLOB plus the model whose stored vectors it is compared to. */
 export interface SemanticVec { vec: Buffer; model: string }
 
+/** The block row attributes a `semantic()` score is a function of (spec/search §2.2, §3): its document, path, ordinal and type give the context, `raw_hash` the content key. */
+export interface SemanticBlockRow { doc_id: string; path: string; ordinal: number; type: string; raw_hash: Buffer }
+
 /**
- * The semantic provider (README §6 "Phase 2 opener"): the vector cache's reads
- * (`blockVector`, `docVector`), the `provider_unavailable` gate (`available`)
- * and the drain's halves (`embed`, `embedDocs`, `pruneForeign`). The one
- * cross-dependency — the doc-embedding task's read of the current head — stays
- * inside the implementation (`search/tasks.ts:219`). One instance per store.
+ * The per-query scorer `semantic("phrase")` binds to (`oqx-js/context.ts`):
+ * one instance per query, holding the context resolver (one scan of titles and
+ * sections) across the rows it scores. A row with no vector under the query's
+ * model — stale context, never embedded, below the floor — scores `null`
+ * (absent), never 0.
+ */
+export interface SemanticScorer {
+  block(row: SemanticBlockRow, query: SemanticVec): number | null;
+  doc(docId: string, query: SemanticVec): number | null;
+}
+
+export interface SemanticDrainOptions {
+  batchSize?: number;
+  onProgress?: (p: { phase: "blocks" | "docs"; embedded: number; total: number }) => void;
+  /** Force the full rescan with the prune (`omg embed drain --prune`), whatever the watermark says. */
+  rescan?: boolean;
+}
+
+/**
+ * How current the index is (spec/search §2.6 as restated by Phase 2): the feed
+ * sequence the indexer has processed against the repository's head, and the
+ * identity (model, dims, chunking version) the vectors were produced under.
+ * `fresh` is `processed_seq >= head` under a matching identity; null when no
+ * watermark or no feed exists.
+ */
+export interface SemanticFreshness {
+  processed_seq: number | null;
+  head: number | null;
+  identity: SemanticIndexIdentity | null;
+  fresh: boolean | null;
+}
+
+/**
+ * The semantic provider (README §6 "Phase 2 opener"; Phase 2 moves EVERYTHING
+ * that touches a vector behind it): the vector cache's reads (`blockVector`,
+ * `docVector`), the per-query scorer, the `provider_unavailable` gate
+ * (`available`), the drain — bootstrap / catch-up / rescan over the feed
+ * watermark — and its halves, the brute-force searches, the size advice. The
+ * one cross-dependency — the doc-embedding task's read of the current head —
+ * stays inside the implementation (`semantic/tasks.ts`). One instance per
+ * store; constructing it is what registers the `cosine` SQL function.
  */
 export interface SemanticProvider {
   /** The per-query/per-drain context resolver (spec/search §2.2): one scan of titles and sections, then a chain walk per block. */
@@ -142,18 +183,28 @@ export interface SemanticProvider {
   blockVector(rawHash: Buffer, ctx: string, model: string): Buffer | null;
   /** A document's vector: the `doc_embeddings` row for `(doc_id, model)`, or null. */
   docVector(docId: string, model: string): Buffer | null;
+  /** The scorer one query binds `semantic("…")` to (spec/surface §1.3): cosine of the row's current vector against the query's. */
+  scorer(repoId: string): SemanticScorer;
   /** The gate (spec/surface §4, 3.0): has anything in the repository been embedded under `model`? */
   available(repoId: string, model: string): boolean;
-  /** The drain's block half: every stale embeddable block of the repo through the worker. */
+  /** The drain (spec/search §2.6; Phase 2): bootstrap from a consistent snapshot when there is no watermark, catch up from it, rescan + prune on an expired cursor or an identity change; writes the watermark last. */
+  drain(worker: EmbeddingWorker, repoId: string, opts?: SemanticDrainOptions): Promise<DrainResult>;
+  /** The drain's block half alone (the fixture runner's `drain` step, spec/search §7): every stale embeddable block of the repo through the worker. */
   embed(worker: EmbeddingWorker, repoId: string, opts?: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void }): Promise<{ embedded: number; cached: number }>;
-  /** The drain's document half. */
+  /** The drain's document half alone. */
   embedDocs(worker: EmbeddingWorker, repoId: string, opts?: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void }): Promise<{ embedded: number; cached: number; pooled: number }>;
   /** Delete every cached vector another model produced. */
   pruneForeign(worker: EmbeddingWorker): { blocks: number; docs: number };
+  /** The watermark against the feed head: how far behind the index is (`version`/`omg embed status`). */
+  freshness(repoId: string, identity?: SemanticIndexIdentity): SemanticFreshness;
+  /** The embedding queue depth without a provider process (spec/search §2.3; `omg status`'s `embedQueue`). */
+  staleCount(repoId: string, model?: string): number;
   /** Brute-force cosine over the live embeddable blocks' vectors (spec/search §3). */
   vectorSearch(repoId: string, model: string, queryVec: Float32Array, opts?: { limit?: number }): VectorHit[];
   /** Brute-force cosine over the document vectors. */
   docVectorSearch(repoId: string, model: string, queryVec: Float32Array, opts?: { limit?: number }): DocVectorHit[];
+  /** The size report's vector advice (spec/store §7.5 — one `search` category, two owners): the lines about `embeddings`/`doc_embeddings`, given their bytes and the database's. */
+  sizeAdvice(vectorBytes: number, totalBytes: number): string[];
 }
 
 /**
@@ -186,4 +237,4 @@ export interface Capabilities {
 /** How the composition layer names the implementations: a factory the `Store` calls on itself once its connection is open. */
 export type CapabilitiesFactory = (store: Store) => Capabilities;
 
-export type { BlockContextInput, BlockContextResolver, Database };
+export type { BlockContextInput, BlockContextResolver, Database, DrainResult, SemanticIndexIdentity };

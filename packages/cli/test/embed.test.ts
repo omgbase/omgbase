@@ -100,30 +100,43 @@ describe("embed via external stdio provider (fake embedder)", () => {
     expect(ids).toMatch(/^b_/);
   });
 
-  it("switching models leaves foreign vectors that --prune reclaims", () => {
+  it("switching models invalidates the index: the drain rescans, the old model's vectors go, and --prune has nothing left to reclaim", () => {
     // Embed under the default fake model, then re-run under a different model
-    // name (as a model swap would). The cache keys on model, so old-model rows
-    // linger — reported by status and cleared by `drain --prune`.
-    omg(["embed", "drain"]);
+    // name (as a model swap would). The indexer's watermark records the index
+    // identity (model, dims, chunking); a drain under another identity is a
+    // rescan that deletes the old identity's rows before re-embedding
+    // (modular-core Phase 2) — `--prune` is no longer needed for a model swap.
+    const first = JSON.parse(omg(["embed", "drain", "--json"])) as { mode: string; processed_seq: number | null; head: number | null; pruned: { blocks: number; docs: number } };
+    expect(first.mode).toBe("bootstrap");
+    expect(first.processed_seq).toBe(first.head);
     const swapped = { ...process.env, NO_COLOR: "1", OMGBASE_EMBEDDER_MODEL: "fake-other" };
     const run = (args: string[]): string => execFileSync("node", [BIN, "-C", vault, ...args], { encoding: "utf8", env: swapped });
 
-    // Under the new model everything is a cache miss again; drain re-embeds.
-    run(["embed", "drain"]);
-    const before = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number };
-    expect(before.foreignBlocks).toBeGreaterThanOrEqual(2);
-    expect(before.foreignDocs).toBeGreaterThanOrEqual(1);
+    const status = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number; watermark: { identity: { model: string } | null; fresh: boolean | null } };
+    expect(status.foreignBlocks).toBeGreaterThanOrEqual(2);
+    expect(status.foreignDocs).toBeGreaterThanOrEqual(1);
+    expect(status.watermark.identity?.model).not.toBe("fake-other");
+    expect(status.watermark.fresh).toBe(false); // built under another identity
 
-    const pruned = JSON.parse(run(["embed", "drain", "--prune", "--json"])) as { pruned?: { blocks: number; docs: number } };
-    expect(pruned.pruned?.blocks).toBe(before.foreignBlocks);
-    expect(pruned.pruned?.docs).toBe(before.foreignDocs);
+    // Under the new model: a rescan that invalidates the old identity's rows and re-embeds everything.
+    const swap = JSON.parse(run(["embed", "drain", "--json"])) as { mode: string; embedded: number; pruned: { blocks: number; docs: number } };
+    expect(swap.mode).toBe("rescan");
+    expect(swap.pruned.blocks).toBe(status.foreignBlocks);
+    expect(swap.pruned.docs).toBe(status.foreignDocs);
+    expect(swap.embedded).toBeGreaterThanOrEqual(3);
 
-    const after = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number; queued: number; docsQueued: number };
+    const after = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number; queued: number; docsQueued: number; watermark: { identity: { model: string } | null; fresh: boolean | null } };
     expect(after.foreignBlocks).toBe(0);
     expect(after.foreignDocs).toBe(0);
-    // The new model's own vectors survived the prune — nothing re-queued.
     expect(after.queued).toBe(0);
     expect(after.docsQueued).toBe(0);
+    expect(after.watermark.identity?.model).toBe("fake-other");
+    expect(after.watermark.fresh).toBe(true);
+
+    // --prune still works, and finds nothing foreign.
+    const pruned = JSON.parse(run(["embed", "drain", "--prune", "--json"])) as { mode: string; pruned: { blocks: number; docs: number } };
+    expect(pruned.mode).toBe("rescan");
+    expect(pruned.pruned).toEqual({ blocks: 0, docs: 0 });
   });
 });
 

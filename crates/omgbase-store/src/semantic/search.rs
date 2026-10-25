@@ -1,28 +1,36 @@
-//! Search over the store (`spec/search`, store 13.3): `text_search` (§1.3),
+//! The semantic half of search over the store (`spec/search`, store 13.3):
 //! the embedding tasks and the drain over the `embeddings`/`doc_embeddings`
-//! caches (§2), `vector_search`/`doc_vector_search` (§3), `hybrid_search` and
-//! `resolve` (§4). The pure pieces — sanitizer, inputs, pooling, cosine,
-//! fusion — are `omgbase-search`; this module runs the SQL around them.
+//! caches (§2), `vector_search`/`doc_vector_search` (§3), and the vector
+//! side of `hybrid_search` and `resolve` (§4) — the fusion itself is the
+//! core's (`core::text_search::fuse_and_boost`), handed the vector ranking
+//! computed here. The pure pieces — sanitizer, inputs, pooling, cosine,
+//! fusion — are `omgbase-search`; this module runs the SQL around them. The
+//! only way in from outside `semantic/` is the
+//! [`SemanticProvider`](crate::core::capabilities::SemanticProvider) trait
+//! ([`super::Provider`]); `text_search` is the core's and re-exported here
+//! under its old path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use omgbase_search::{
-    BoostFacts, DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EMBED_BATCH, EmbedTask,
-    EmbeddingProvider, Evidence, HYBRID_PASS_LIMIT, RESOLVE_DEFAULT_LIMIT, apply_boosts,
-    blob_to_f32, compute_boosts, context_prefix, cosine_f32, ctx_hash, default_terms, doc_header,
-    doc_input, estimate_tokens, f32_to_blob, fuse, hex, locator, lower_terms, preview,
-    property_to_string, should_embed, sort_by_score, token_budget,
+    DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EMBED_BATCH, EmbedTask, EmbeddingProvider,
+    HYBRID_PASS_LIMIT, blob_to_f32, context_prefix, cosine_f32, ctx_hash, doc_header, doc_input,
+    estimate_tokens, f32_to_blob, hex, should_embed, sort_by_score, token_budget,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
 use crate::core::codec::from_hex;
+use crate::core::text_search::{fuse_and_boost, resolve as core_resolve};
 use crate::derived::LIVE_LEAF_SQL;
 use crate::error::Result;
+use crate::properties;
 use crate::read::reconstruct;
-use crate::{Store, properties};
 
 pub use crate::core::capabilities::{DocEmbedStats, EmbedStats, ForeignVectors};
+pub use crate::core::semantic_shapes::{
+    DocVectorHit, DrainStats, HybridHit, HybridQuery, QueryVector, ResolveHit, VectorHit,
+};
 pub use crate::core::text_search::{DEFAULT_LIMIT, TextHit, TextSearchResult, text_search};
 
 // ---- embed tasks (§2.2, §2.4) ----------------------------------------------------------
@@ -150,6 +158,17 @@ impl BlockContexts {
 /// embedding it would pool the same words twice) that clear `should_embed` —
 /// in `(path, ordinal, block_id)` order.
 pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTask>> {
+    embed_tasks(conn, ContextScope::Repo(repo_id))
+}
+
+/// [`build_embed_tasks`] over one live document (the catch-up's unit, Phase
+/// 2): a block's task depends on its document alone — the path, the title,
+/// the heading chain — so a document is re-scanned by itself.
+pub fn build_embed_tasks_for_doc(conn: &Connection, doc_id: &str) -> Result<Vec<EmbedTask>> {
+    embed_tasks(conn, ContextScope::Doc(doc_id))
+}
+
+fn embed_tasks(conn: &Connection, scope: ContextScope<'_>) -> Result<Vec<EmbedTask>> {
     struct BlockRow {
         block_id: String,
         doc_id: String,
@@ -159,14 +178,23 @@ pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTa
         text: String,
         raw_hash: Vec<u8>,
     }
+    let (by_repo, key) = match scope {
+        ContextScope::Repo(r) => (true, r),
+        ContextScope::Doc(d) => (false, d),
+    };
     let blocks: Vec<BlockRow> = {
         let mut stmt = conn.prepare_cached(&format!(
             "SELECT b.block_id, b.doc_id, d.path, b.ordinal, b.type, b.text, b.raw_hash
              FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-             WHERE b.repo_id = ?1 AND {LIVE_LEAF_SQL}
-             ORDER BY d.path, b.ordinal, b.block_id"
+             WHERE {} AND {LIVE_LEAF_SQL}
+             ORDER BY d.path, b.ordinal, b.block_id",
+            if by_repo {
+                "b.repo_id = ?1"
+            } else {
+                "b.doc_id = ?1 AND d.deleted_commit IS NULL"
+            }
         ))?;
-        let it = stmt.query_map(params![repo_id], |r| {
+        let it = stmt.query_map(params![key], |r| {
             Ok(BlockRow {
                 block_id: r.get(0)?,
                 doc_id: r.get(1)?,
@@ -179,7 +207,7 @@ pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTa
         })?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
-    let contexts = BlockContexts::load(conn, ContextScope::Repo(repo_id))?;
+    let contexts = BlockContexts::load(conn, scope)?;
 
     let mut tasks = Vec::new();
     for b in &blocks {
@@ -209,28 +237,6 @@ fn nonblank_string(props: &Json, key: &str) -> Option<String> {
 /// content, in `path` order; each carries its embeddable blocks' cache keys
 /// and weights for pooling.
 pub fn build_doc_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<DocEmbedTask>> {
-    let block_tasks = build_embed_tasks(conn, repo_id)?;
-    let doc_of_block: HashMap<String, String> = {
-        let mut stmt = conn.prepare_cached(
-            "SELECT block_id, doc_id FROM blocks WHERE repo_id = ?1 AND deleted_commit IS NULL",
-        )?;
-        let it = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        it.collect::<std::result::Result<HashMap<_, _>, _>>()?
-    };
-    let mut blocks_by_doc: HashMap<String, Vec<DocEmbedBlockRef>> = HashMap::new();
-    for t in &block_tasks {
-        let Some(doc_id) = doc_of_block.get(&t.block_id) else {
-            continue;
-        };
-        blocks_by_doc
-            .entry(doc_id.clone())
-            .or_default()
-            .push(DocEmbedBlockRef {
-                content_hash: t.content_hash.clone(),
-                ctx: t.ctx.clone(),
-                tokens: estimate_tokens(&t.text),
-            });
-    }
     let docs: Vec<(String, String)> = {
         let mut stmt = conn.prepare_cached(
             "SELECT doc_id, path FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path",
@@ -238,6 +244,58 @@ pub fn build_doc_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<Doc
         let it = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
+    doc_embed_tasks(conn, docs, build_embed_tasks(conn, repo_id)?)
+}
+
+/// [`build_doc_embed_tasks`] over a set of documents (the catch-up's unit):
+/// the live ones among `doc_ids`, in `path` order.
+pub fn build_doc_embed_tasks_for_docs(
+    conn: &Connection,
+    doc_ids: &[String],
+) -> Result<Vec<DocEmbedTask>> {
+    let mut docs: Vec<(String, String)> = Vec::new();
+    let mut block_tasks: Vec<EmbedTask> = Vec::new();
+    let mut live =
+        conn.prepare_cached("SELECT path FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL")?;
+    for id in doc_ids {
+        let path: Option<String> = live.query_row(params![id], |r| r.get(0)).optional()?;
+        if let Some(path) = path {
+            docs.push((id.clone(), path));
+            block_tasks.extend(build_embed_tasks_for_doc(conn, id)?);
+        }
+    }
+    docs.sort();
+    docs.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    doc_embed_tasks(conn, docs, block_tasks)
+}
+
+/// §2.4 over `docs` (live, `(doc_id, path)` in path order) given their
+/// blocks' tasks.
+fn doc_embed_tasks(
+    conn: &Connection,
+    docs: Vec<(String, String)>,
+    block_tasks: Vec<EmbedTask>,
+) -> Result<Vec<DocEmbedTask>> {
+    let mut doc_of_block = conn.prepare_cached(
+        "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+    )?;
+    let mut blocks_by_doc: HashMap<String, Vec<DocEmbedBlockRef>> = HashMap::new();
+    for t in &block_tasks {
+        let doc_id: Option<String> = doc_of_block
+            .query_row(params![t.block_id], |r| r.get(0))
+            .optional()?;
+        let Some(doc_id) = doc_id else {
+            continue;
+        };
+        blocks_by_doc
+            .entry(doc_id)
+            .or_default()
+            .push(DocEmbedBlockRef {
+                content_hash: t.content_hash.clone(),
+                ctx: t.ctx.clone(),
+                tokens: estimate_tokens(&t.text),
+            });
+    }
     let mut tasks = Vec::new();
     for (doc_id, path) in docs {
         let Some(body) = reconstruct(conn, &doc_id)? else {
@@ -321,11 +379,42 @@ pub fn get_cached_doc(
     }))
 }
 
-/// One drain: the block pass, then the document pass (§2.6).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DrainStats {
-    pub blocks: EmbedStats,
-    pub docs: DocEmbedStats,
+/// The head token (`docs.current_rev`) of every task's document, read with
+/// the tasks (Phase 2's "late result" rule): a document vector is written
+/// only while the document's head is still the one its task was built from
+/// — a vector embedded from an input the document has since left behind is
+/// never published (the next drain re-tasks the document). Block vectors
+/// need no such check: their key *is* the content (`spec/search` §2.3).
+pub type DocHeads = HashMap<String, Option<String>>;
+
+/// The current heads of `tasks`' documents.
+pub fn doc_heads(conn: &Connection, tasks: &[DocEmbedTask]) -> Result<DocHeads> {
+    let mut stmt = conn.prepare_cached("SELECT current_rev FROM docs WHERE doc_id = ?1")?;
+    let mut out = DocHeads::with_capacity(tasks.len());
+    for t in tasks {
+        let head: Option<Option<String>> =
+            stmt.query_row(params![t.doc_id], |r| r.get(0)).optional()?;
+        out.insert(t.doc_id.clone(), head.flatten());
+    }
+    Ok(out)
+}
+
+/// Is the document's head still `expected` (inside the write transaction)?
+fn head_unchanged(
+    tx: &Connection,
+    doc_id: &str,
+    expected: Option<&Option<String>>,
+) -> Result<bool> {
+    let Some(expected) = expected else {
+        return Ok(true); // no snapshot taken: the full-pass form, caller's choice
+    };
+    let now: Option<Option<String>> = tx
+        .prepare_cached(
+            "SELECT current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+        )?
+        .query_row(params![doc_id], |r| r.get(0))
+        .optional()?;
+    Ok(now.as_ref() == Some(expected))
 }
 
 /// §2.3 `process`: partition into cached and misses; embed the misses'
@@ -380,6 +469,21 @@ pub fn embed_process_docs(
     tasks: &[DocEmbedTask],
     provider: &dyn EmbeddingProvider,
 ) -> Result<DocEmbedStats> {
+    embed_process_docs_at(conn, tasks, provider, None)
+}
+
+/// [`embed_process_docs`] under the late-result rule: with `heads` (the
+/// documents' heads when `tasks` were built, [`doc_heads`]) a vector is
+/// written only if its document's head is unchanged inside the write
+/// transaction; a changed document is counted `skipped` and left to the next
+/// drain.
+pub fn embed_process_docs_at(
+    conn: &Connection,
+    tasks: &[DocEmbedTask],
+    provider: &dyn EmbeddingProvider,
+    heads: Option<&DocHeads>,
+) -> Result<DocEmbedStats> {
+    let head_of = |doc_id: &str| heads.map(|h| h.get(doc_id).cloned().unwrap_or(None));
     let model = provider.model();
     let budget = token_budget(provider.max_input_tokens());
     let mut misses: Vec<&DocEmbedTask> = Vec::new();
@@ -399,6 +503,7 @@ pub fn embed_process_docs(
         "INSERT OR REPLACE INTO doc_embeddings (doc_id, model, input_hash, method, dim, vec)
                           VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
     let mut embedded = 0;
+    let mut skipped = 0;
     for chunk in whole.chunks(EMBED_BATCH) {
         let inputs: Vec<String> = chunk.iter().map(|t| t.input.clone()).collect();
         let vectors = provider.embed(&inputs)?;
@@ -406,6 +511,10 @@ pub fn embed_process_docs(
         {
             let mut insert = tx.prepare_cached(INSERT)?;
             for (t, v) in chunk.iter().zip(&vectors) {
+                if !head_unchanged(&tx, &t.doc_id, head_of(&t.doc_id).as_ref())? {
+                    skipped += 1;
+                    continue;
+                }
                 insert.execute(params![
                     t.doc_id,
                     model,
@@ -414,10 +523,10 @@ pub fn embed_process_docs(
                     provider.dim() as i64,
                     f32_to_blob(v),
                 ])?;
+                embedded += 1;
             }
         }
         tx.commit()?;
-        embedded += chunk.len();
     }
 
     let mut pooled = 0;
@@ -442,6 +551,10 @@ pub fn embed_process_docs(
                 let Some(v) = v else {
                     continue; // nothing cached yet — stays queued
                 };
+                if !head_unchanged(&tx, &t.doc_id, head_of(&t.doc_id).as_ref())? {
+                    skipped += 1;
+                    continue;
+                }
                 insert.execute(params![
                     t.doc_id,
                     model,
@@ -459,26 +572,62 @@ pub fn embed_process_docs(
         embedded,
         cached,
         pooled,
+        skipped,
     })
 }
 
+/// Is a vector cached for the block key under `model` — or, for `None`,
+/// under any model (the queue before a provider is known)?
+fn block_cached(
+    conn: &Connection,
+    content_hash_hex: &str,
+    ctx: &str,
+    model: Option<&str>,
+) -> Result<bool> {
+    match model {
+        Some(m) => Ok(get_cached(conn, content_hash_hex, ctx, m)?.is_some()),
+        None => Ok(conn
+            .prepare_cached("SELECT 1 FROM embeddings WHERE content_hash = ?1 AND ctx_hash = ?2")?
+            .exists(params![from_hex(content_hash_hex)?, &ctx_hash(ctx)[..]])?),
+    }
+}
+
+/// Is a fresh document vector cached under `model`, or under any for `None`?
+fn doc_cached(conn: &Connection, task: &DocEmbedTask, model: Option<&str>) -> Result<bool> {
+    match model {
+        Some(m) => Ok(get_cached_doc(conn, task, m)?.is_some()),
+        None => Ok(conn
+            .prepare_cached("SELECT 1 FROM doc_embeddings WHERE doc_id = ?1 AND input_hash = ?2")?
+            .exists(params![task.doc_id, &task.input_hash()[..]])?),
+    }
+}
+
 /// The block ids among `tasks` whose current key has no cached vector under
-/// `model` (the worker queue).
-pub fn stale_blocks(conn: &Connection, tasks: &[EmbedTask], model: &str) -> Result<Vec<String>> {
+/// `model` (the worker queue); `None` — under any model.
+pub fn stale_blocks(
+    conn: &Connection,
+    tasks: &[EmbedTask],
+    model: Option<&str>,
+) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for t in tasks {
-        if should_embed(&t.text) && get_cached(conn, &t.content_hash, &t.ctx, model)?.is_none() {
+        if should_embed(&t.text) && !block_cached(conn, &t.content_hash, &t.ctx, model)? {
             out.push(t.block_id.clone());
         }
     }
     Ok(out)
 }
 
-/// The doc ids among `tasks` with no fresh cached vector under `model`.
-pub fn stale_docs(conn: &Connection, tasks: &[DocEmbedTask], model: &str) -> Result<Vec<String>> {
+/// The doc ids among `tasks` with no fresh cached vector under `model`
+/// (`None` — under any model).
+pub fn stale_docs(
+    conn: &Connection,
+    tasks: &[DocEmbedTask],
+    model: Option<&str>,
+) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for t in tasks {
-        if get_cached_doc(conn, t, model)?.is_none() {
+        if !doc_cached(conn, t, model)? {
             out.push(t.doc_id.clone());
         }
     }
@@ -515,24 +664,50 @@ pub fn prune_foreign_vectors(conn: &Connection, model: &str) -> Result<ForeignVe
     Ok(ForeignVectors { blocks, docs })
 }
 
+/// `spec/store` §8 S1 (Phase 2, the rescan's prune): delete every block
+/// vector of `model` whose `content_hash` is no live block's `raw_hash` and
+/// every document vector of `model` whose document is not live. Other
+/// models' rows are `prune_foreign`'s (§2.6, on request); content-addressed
+/// rows a heading rename left behind (same content, another `ctx_hash`)
+/// stay — the §2.3 rule — unless their content is gone too.
+pub fn prune_gone(
+    conn: &Connection,
+    model: &str,
+) -> Result<crate::core::semantic_shapes::PrunedVectors> {
+    let tx = conn.unchecked_transaction()?;
+    let docs = prune_gone_docs(&tx, model)?;
+    let blocks = tx.execute(
+        "DELETE FROM embeddings WHERE model = ?1 AND content_hash NOT IN (SELECT raw_hash FROM blocks WHERE deleted_commit IS NULL)",
+        params![model],
+    )?;
+    tx.commit()?;
+    Ok(crate::core::semantic_shapes::PrunedVectors { blocks, docs })
+}
+
+/// S1's document half alone (cheap — identity-keyed): run after every drain.
+pub fn prune_gone_docs(conn: &Connection, model: &str) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM doc_embeddings WHERE model = ?1 AND doc_id NOT IN (SELECT doc_id FROM docs WHERE deleted_commit IS NULL)",
+        params![model],
+    )?)
+}
+
+/// The live documents among `doc_ids` (the catch-up tells a changed document
+/// from a deleted one by this).
+pub fn live_docs(conn: &Connection, doc_ids: &HashSet<String>) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare_cached("SELECT 1 FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL")?;
+    let mut out = Vec::new();
+    for id in doc_ids {
+        if stmt.exists(params![id])? {
+            out.push(id.clone());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 // ---- vector search (§3) ---------------------------------------------------------------
-
-/// One `vector_search` hit.
-#[derive(Clone, Debug, PartialEq)]
-pub struct VectorHit {
-    pub block_id: String,
-    pub doc_id: String,
-    pub path: String,
-    pub cosine: f64,
-}
-
-/// One `doc_vector_search` hit.
-#[derive(Clone, Debug, PartialEq)]
-pub struct DocVectorHit {
-    pub doc_id: String,
-    pub path: String,
-    pub cosine: f64,
-}
 
 /// §3 (1.1): the block's vector is the `embeddings` row for `model` keyed by
 /// its *current* `(content_hash, ctx_hash)`, `None` when it is stale (§2.3) —
@@ -648,130 +823,42 @@ pub fn doc_vector_search(
     Ok(hits)
 }
 
-// ---- hybrid and resolve (§4) ------------------------------------------------------------
+// ---- hybrid and resolve (§4) — the vector half ---------------------------------------------
 
-/// The vector side of a hybrid query: the model whose cache to read and the
-/// query vector.
-#[derive(Clone, Debug, PartialEq)]
-pub struct QueryVector {
-    pub model: String,
-    pub vec: Vec<f32>,
-}
-
-/// The inputs of [`hybrid_search`].
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct HybridQuery {
-    /// The FTS query.
-    pub text: Option<String>,
-    pub vector: Option<QueryVector>,
-    /// Boost terms; default: `text` split on whitespace.
-    pub terms: Option<Vec<String>>,
-    pub limit: Option<usize>,
-}
-
-/// One `hybrid_search` hit.
-#[derive(Clone, Debug, PartialEq)]
-pub struct HybridHit {
-    pub block_id: String,
-    pub doc_id: String,
-    pub path: String,
-    pub score: f64,
-    pub evidence: Evidence,
-}
-
-/// §4 step 4's facts for one block.
-fn boost_facts(conn: &Connection, doc_id: &str, block_id: &str, path: &str) -> Result<BoostFacts> {
-    let props = omgbase_properties::merged(&properties::read_doc_properties(conn, doc_id)?);
-    let headings: Vec<String> = {
-        let mut stmt = conn.prepare_cached(
-            "SELECT hb.text FROM sections s JOIN blocks hb ON hb.block_id = s.heading_block
-             JOIN blocks b ON b.doc_id = s.doc_id AND b.ordinal BETWEEN s.first_ordinal AND s.last_ordinal
-             WHERE b.block_id = ?1",
-        )?;
-        let it = stmt.query_map(params![block_id], |r| r.get(0))?;
-        it.collect::<std::result::Result<Vec<_>, _>>()?
-    };
-    Ok(BoostFacts {
-        title: property_to_string(props.get("title")),
-        layer: property_to_string(props.get("layer")),
-        path: path.to_owned(),
-        headings,
-    })
-}
-
-/// §4: RRF-fuse the FTS and vector rankings (each capped at 200), drop
-/// candidates whose block no longer exists, apply the boosts, sort by score
-/// then `block_id`, limit.
-pub fn hybrid_search(conn: &Connection, repo_id: &str, q: &HybridQuery) -> Result<Vec<HybridHit>> {
-    let limit = q.limit.unwrap_or(DEFAULT_LIMIT);
-    let terms = lower_terms(
-        &q.terms
-            .clone()
-            .unwrap_or_else(|| default_terms(q.text.as_deref())),
-    );
-    let fts_ids: Vec<String> = match q.text.as_deref().filter(|t| !t.is_empty()) {
-        Some(text) => text_search(conn, repo_id, text, HYBRID_PASS_LIMIT)?
-            .hits
-            .into_iter()
-            .map(|h| h.block_id)
-            .collect(),
-        None => Vec::new(),
-    };
-    let vec_hits: Vec<(String, f64)> = match &q.vector {
+/// The vector ranking of a hybrid query (§4 step 2): `vector_search` under
+/// the query vector's model, capped at 200, as `(block_id, cosine)`.
+fn vector_ranking(
+    conn: &Connection,
+    repo_id: &str,
+    vector: Option<&QueryVector>,
+) -> Result<Vec<(String, f64)>> {
+    Ok(match vector {
         Some(v) => vector_search(conn, repo_id, &v.model, &v.vec, HYBRID_PASS_LIMIT)?
             .into_iter()
             .map(|h| (h.block_id, h.cosine))
             .collect(),
         None => Vec::new(),
-    };
-    let mut meta = conn.prepare_cached(
-        "SELECT doc_id, (SELECT path FROM docs WHERE doc_id = blocks.doc_id) FROM blocks WHERE block_id = ?1",
-    )?;
-    let mut hits = Vec::new();
-    for c in fuse(&fts_ids, &vec_hits) {
-        let m: Option<(String, Option<String>)> = meta
-            .query_row(params![c.block_id], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()?;
-        let Some((doc_id, path)) = m else {
-            continue;
-        };
-        let path = path.unwrap_or_default();
-        let boosts = compute_boosts(&boost_facts(conn, &doc_id, &c.block_id, &path)?, &terms);
-        let evidence = Evidence {
-            fts_rank: c.fts_rank,
-            vector_rank: c.vector_rank,
-            cosine: c.cosine,
-            rrf: c.rrf,
-            boosts,
-        };
-        hits.push(HybridHit {
-            block_id: c.block_id,
-            doc_id,
-            path,
-            score: apply_boosts(c.rrf, &boosts),
-            evidence,
-        });
-    }
-    sort_by_score(&mut hits, |h| h.score, |h| &h.block_id);
-    hits.truncate(limit);
-    Ok(hits)
+    })
 }
 
-/// One `resolve` candidate.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ResolveHit {
-    pub id: String,
-    /// `path#type[ordinal]`.
-    pub locator: String,
-    /// The first 12 words of the text (`…` when cut).
-    pub preview: String,
-    pub evidence: Evidence,
+/// §4: RRF-fuse the FTS and vector rankings (each capped at 200), drop
+/// candidates whose block no longer exists, apply the boosts, sort by score
+/// then `block_id`, limit — the vector ranking read here, the fusion the
+/// core's ([`fuse_and_boost`]).
+pub fn hybrid_search(conn: &Connection, repo_id: &str, q: &HybridQuery) -> Result<Vec<HybridHit>> {
+    let vector_hits = vector_ranking(conn, repo_id, q.vector.as_ref())?;
+    fuse_and_boost(
+        conn,
+        repo_id,
+        q.text.as_deref(),
+        &vector_hits,
+        q.terms.as_deref(),
+        q.limit.unwrap_or(DEFAULT_LIMIT),
+    )
 }
 
-/// §4 `resolve`: [`hybrid_search`] over `query` (+ an optional vector),
-/// limit default 10, reshaped to `{ _id, locator, preview, evidence }`
-/// (`id` is the block's `_id` on the wire — `spec/surface` §1.2, 5.0; the
-/// role keys stay bare).
+/// §4 `resolve` with an optional query vector: the vector ranking read here,
+/// the rest the core's ([`core_resolve`]).
 pub fn resolve(
     conn: &Connection,
     repo_id: &str,
@@ -779,169 +866,6 @@ pub fn resolve(
     vector: Option<QueryVector>,
     limit: Option<usize>,
 ) -> Result<Vec<ResolveHit>> {
-    let hits = hybrid_search(
-        conn,
-        repo_id,
-        &HybridQuery {
-            text: Some(query.to_owned()),
-            vector,
-            terms: None,
-            limit: Some(limit.unwrap_or(RESOLVE_DEFAULT_LIMIT)),
-        },
-    )?;
-    let mut row = conn.prepare_cached(
-        "SELECT d.path, b.ordinal, b.type, b.text FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-         WHERE b.block_id = ?1",
-    )?;
-    let mut out = Vec::with_capacity(hits.len());
-    for h in hits {
-        let r: Option<(String, i64, String, String)> = row
-            .query_row(params![h.block_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })
-            .optional()?;
-        let (loc, prev) = match r {
-            Some((path, ordinal, ty, text)) => (
-                locator(&path, &ty, ordinal),
-                preview(&text, omgbase_search::PREVIEW_WORDS),
-            ),
-            None => (h.block_id.clone(), String::new()),
-        };
-        out.push(ResolveHit {
-            id: h.block_id,
-            locator: loc,
-            preview: prev,
-            evidence: h.evidence,
-        });
-    }
-    Ok(out)
-}
-
-// ---- Store surface -------------------------------------------------------------------------
-
-impl Store {
-    /// `spec/search` §2.2: the embeddable blocks' tasks, `(path, ordinal)` order.
-    pub fn build_embed_tasks(&self, repo_id: &str) -> Result<Vec<EmbedTask>> {
-        build_embed_tasks(&self.conn, repo_id)
-    }
-
-    /// `spec/search` §2.4: the live documents' tasks, `path` order.
-    pub fn build_doc_embed_tasks(&self, repo_id: &str) -> Result<Vec<DocEmbedTask>> {
-        build_doc_embed_tasks(&self.conn, repo_id)
-    }
-
-    /// `spec/search` §2.3: embed the cache misses among `tasks`.
-    pub fn embed_process(
-        &self,
-        tasks: &[EmbedTask],
-        provider: &dyn EmbeddingProvider,
-    ) -> Result<EmbedStats> {
-        embed_process(&self.conn, tasks, provider)
-    }
-
-    /// `spec/search` §2.4–§2.5: one vector per document, whole or pooled.
-    pub fn embed_process_docs(
-        &self,
-        tasks: &[DocEmbedTask],
-        provider: &dyn EmbeddingProvider,
-    ) -> Result<DocEmbedStats> {
-        embed_process_docs(&self.conn, tasks, provider)
-    }
-
-    /// `spec/search` §2.6: one drain — the block pass, then the document pass
-    /// ([`SemanticProvider::embed`], [`SemanticProvider::embed_docs`]).
-    ///
-    /// [`SemanticProvider::embed`]: crate::core::capabilities::SemanticProvider::embed
-    /// [`SemanticProvider::embed_docs`]: crate::core::capabilities::SemanticProvider::embed_docs
-    pub fn drain(&self, repo_id: &str, provider: &dyn EmbeddingProvider) -> Result<DrainStats> {
-        let semantic = self.provider()?;
-        let blocks = semantic.embed(&self.conn, repo_id, provider)?;
-        let docs = semantic.embed_docs(&self.conn, repo_id, provider)?;
-        Ok(DrainStats { blocks, docs })
-    }
-
-    /// The cached vector for a block cache key under `model`.
-    pub fn cached_vector(
-        &self,
-        content_hash_hex: &str,
-        ctx: &str,
-        model: &str,
-    ) -> Result<Option<Vec<f32>>> {
-        get_cached(&self.conn, content_hash_hex, ctx, model)
-    }
-
-    /// The fresh cached document vector for a task under `model`.
-    pub fn cached_doc_vector(
-        &self,
-        task: &DocEmbedTask,
-        model: &str,
-    ) -> Result<Option<DocVectorRow>> {
-        get_cached_doc(&self.conn, task, model)
-    }
-
-    /// Block ids among `tasks` with no cached vector under `model`.
-    pub fn stale_blocks(&self, tasks: &[EmbedTask], model: &str) -> Result<Vec<String>> {
-        stale_blocks(&self.conn, tasks, model)
-    }
-
-    /// Doc ids among `tasks` with no fresh cached vector under `model`.
-    pub fn stale_docs(&self, tasks: &[DocEmbedTask], model: &str) -> Result<Vec<String>> {
-        stale_docs(&self.conn, tasks, model)
-    }
-
-    /// `spec/search` §2.6: vectors under another model.
-    pub fn foreign_vector_count(&self, model: &str) -> Result<ForeignVectors> {
-        foreign_vector_count(&self.conn, model)
-    }
-
-    /// `spec/search` §2.6: delete vectors under another model
-    /// ([`SemanticProvider::prune_foreign`](crate::core::capabilities::SemanticProvider::prune_foreign)).
-    pub fn prune_foreign_vectors(&self, model: &str) -> Result<ForeignVectors> {
-        self.provider()?.prune_foreign(&self.conn, model)
-    }
-
-    /// `spec/search` §3 (1.1): a live block's vector — the row for its current
-    /// `(content_hash, ctx_hash)` under `model` — as the stored blob, `None`
-    /// when stale or not live. Serves `semantic()` (`spec/surface` §1.3).
-    pub fn block_vector(&self, block_id: &str, model: &str) -> Result<Option<Vec<u8>>> {
-        self.provider()?.block_vector(&self.conn, block_id, model)
-    }
-
-    /// `spec/search` §3 over blocks.
-    pub fn vector_search(
-        &self,
-        repo_id: &str,
-        model: &str,
-        query: &[f32],
-        limit: usize,
-    ) -> Result<Vec<VectorHit>> {
-        vector_search(&self.conn, repo_id, model, query, limit)
-    }
-
-    /// `spec/search` §3 over documents.
-    pub fn doc_vector_search(
-        &self,
-        repo_id: &str,
-        model: &str,
-        query: &[f32],
-        limit: usize,
-    ) -> Result<Vec<DocVectorHit>> {
-        doc_vector_search(&self.conn, repo_id, model, query, limit)
-    }
-
-    /// `spec/search` §4.
-    pub fn hybrid_search(&self, repo_id: &str, q: &HybridQuery) -> Result<Vec<HybridHit>> {
-        hybrid_search(&self.conn, repo_id, q)
-    }
-
-    /// `spec/search` §4 `resolve`.
-    pub fn resolve(
-        &self,
-        repo_id: &str,
-        query: &str,
-        vector: Option<QueryVector>,
-        limit: Option<usize>,
-    ) -> Result<Vec<ResolveHit>> {
-        resolve(&self.conn, repo_id, query, vector, limit)
-    }
+    let vector_hits = vector_ranking(conn, repo_id, vector.as_ref())?;
+    core_resolve(conn, repo_id, query, &vector_hits, limit)
 }

@@ -434,8 +434,7 @@ omg find "how are ids kept stable" -n 5 # hybrid FTS ⊕ vector (RRF) by default
 Without a configured provider, `semantic(…)` queries return `provider_unavailable` (and `find` falls back to FTS alone); a configured-but-broken provider is a loud `embedder_failed`, never a silent downgrade. The provider contract is `embed(texts) => Promise<number[][]>`; a remote HTTP embedder is the same contract behind a URL.
 
 ```ts
-import { EmbeddingWorker } from "@omgbase/core/search/embeddings";
-import { hybridSearch } from "@omgbase/core/search/rrf";
+import { EmbeddingWorker, hybridSearch } from "@omgbase/core";
 
 const worker = new EmbeddingWorker(store, myProvider);   // provider = { model, dim, embed() }
 const vec = await worker.embedQuery("stable identity across edits");

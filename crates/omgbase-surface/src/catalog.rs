@@ -24,8 +24,8 @@ use omgbase_store::links::inbound_links_to;
 use omgbase_store::mutate_kernel::effects::{Admission, EffectExpect, Target as EffectTarget};
 use omgbase_store::mutate_kernel::{At, ErrorCode, Parent};
 use omgbase_store::{
-    ApplyOrigin, DocStore, Expect, FsDocStore, MutationError, Plan, PlanContext, PublicEffect,
-    QueryVector, Receipt, Retargeted, Store, sugar,
+    ApplyOrigin, CapabilityState, DocStore, Expect, FsDocStore, MutationError, Plan, PlanContext,
+    PublicEffect, QueryVector, Receipt, Retargeted, Store, sugar,
 };
 use omgbase_sync::{RealFileSystem, RepoRow};
 use rusqlite::{OptionalExtension, params};
@@ -44,7 +44,7 @@ use crate::query::{QueryOptions, embed_phrases, query};
 use crate::read::{self, Resolution, ResolvedRef};
 use crate::reference;
 use crate::select::{self, SelectRequest};
-use crate::version::{BuildInfo, version_info};
+use crate::version::{BuildInfo, version_info_for};
 
 /// The actor every write from this surface records.
 pub const ACTOR: &str = "agent:mcp";
@@ -1335,6 +1335,26 @@ impl Surface {
         ))
     }
 
+    /// Phase 2 (`spec/surface` 6.0 §2.1 draft, D3): a tool that needs the
+    /// semantic capability on a store that has none — `disabled` when the
+    /// store runs without the module (`OMGBASE_CAPABILITIES=core`),
+    /// `unavailable` (retriable) when the host's configured provider failed
+    /// to start. A store with the module and no provider configured stays
+    /// `provider_unavailable` (3.0, pinned) — the two codes sit side by side
+    /// as the contracts put it: `capability_unavailable` is "the module is
+    /// not here", `provider_unavailable` "the module is here and has nothing
+    /// to score with".
+    fn require_semantic_capability(&self) -> Result<()> {
+        match self.store.semantic_state() {
+            CapabilityState::Enabled => Ok(()),
+            state => Err(semantic_capability_unavailable(
+                state,
+                self.provider_name.as_deref(),
+                self.store.semantic_fault(),
+            )),
+        }
+    }
+
     /// The owning document of a live block (`blocks_read`).
     fn doc_of_block(&self, block_id: &str) -> Result<String> {
         self.doc_id_of_block(block_id)?
@@ -1672,6 +1692,9 @@ impl Surface {
         select: &str,
     ) -> Result<HashMap<String, crate::context::SemanticVec>> {
         let phrases = crate::query::collect_semantic_phrases(select);
+        if !phrases.is_empty() {
+            self.require_semantic_capability()?;
+        }
         if self.provider.is_none() && !phrases.is_empty() {
             return Err(provider_unavailable());
         }
@@ -1900,11 +1923,17 @@ impl Surface {
             "query" => {
                 let (repo, _) = self.scope(args)?;
                 let source = arg_string(args, "query")?;
-                // A `semantic(...)` query with no provider is `provider_unavailable`
-                // here (the runner itself reports `filter_invalid`, §9).
-                if self.provider.is_none()
-                    && !crate::query::collect_semantic_phrases(&source).is_empty()
-                {
+                // A `semantic(...)` query on a store without the semantic
+                // capability is `capability_unavailable` (Phase 2: `disabled`
+                // when no provider is configured, `unavailable` when the
+                // configured one failed); with the capability and no provider
+                // it stays `provider_unavailable` (the pinned 3.0 case; the
+                // runner itself reports `filter_invalid`, §9).
+                let semantic = !crate::query::collect_semantic_phrases(&source).is_empty();
+                if semantic {
+                    self.require_semantic_capability()?;
+                }
+                if self.provider.is_none() && semantic {
                     return Err(provider_unavailable());
                 }
                 // The named points of `date()` read the clock this surface
@@ -1923,10 +1952,7 @@ impl Surface {
                     // (4.11) the call as received, for a parse error's corrected `fix`.
                     request: Some(args),
                 };
-                self.require_rankable(
-                    &repo,
-                    !crate::query::collect_semantic_phrases(&source).is_empty(),
-                )?;
+                self.require_rankable(&repo, semantic)?;
                 Ok(query(&self.store, &repo, &source, opts)?.to_json())
             }
             "graph" => {
@@ -1943,21 +1969,17 @@ impl Surface {
                     },
                     max_documents: arg_i64(args, "max_documents")?,
                 };
-                if self.provider.is_none()
-                    && g.select.iter().any(|s| {
-                        !crate::query::collect_semantic_phrases(&format!("from docs select x: {s}"))
-                            .is_empty()
-                    })
-                {
+                let semantic = g.select.iter().any(|s| {
+                    !crate::query::collect_semantic_phrases(&format!("from docs select x: {s}"))
+                        .is_empty()
+                });
+                if semantic {
+                    self.require_semantic_capability()?;
+                }
+                if self.provider.is_none() && semantic {
                     return Err(provider_unavailable());
                 }
-                self.require_rankable(
-                    &repo,
-                    g.select.iter().any(|s| {
-                        !crate::query::collect_semantic_phrases(&format!("from docs select x: {s}"))
-                            .is_empty()
-                    }),
-                )?;
+                self.require_rankable(&repo, semantic)?;
                 let now_ms = dates::stamp_ms(&self.now());
                 graph_neighborhood(
                     &self.store,
@@ -1983,18 +2005,38 @@ impl Surface {
             "blocks_resolve" => {
                 let (repo, _) = self.scope(args)?;
                 let q = arg_string(args, "query")?;
-                let vector = match &self.provider {
-                    Some(p) => Some(QueryVector {
-                        model: p.model().to_owned(),
-                        vec: p
-                            .embed_query(&q)
-                            .map_err(|e| SurfaceError::new(e.code(), e.to_string()))?,
-                    }),
-                    None => None,
+                let limit = arg_usize(args, "limit")?;
+                // The hybrid leg runs through the store's semantic capability
+                // (Phase 2): a host with a provider but a store without the
+                // capability is `capability_unavailable`; without a provider
+                // the FTS-only `resolve` is the core's (`find --no-semantic`,
+                // open point 13: it degrades, never errors).
+                let hits = match &self.provider {
+                    None if self.store.semantic_state() == CapabilityState::Unavailable => {
+                        return Err(semantic_capability_unavailable(
+                            CapabilityState::Unavailable,
+                            self.provider_name.as_deref(),
+                            self.store.semantic_fault(),
+                        ));
+                    }
+                    Some(p) => {
+                        self.require_semantic_capability()?;
+                        let vector = QueryVector {
+                            model: p.model().to_owned(),
+                            vec: p
+                                .embed_query(&q)
+                                .map_err(|e| SurfaceError::new(e.code(), e.to_string()))?,
+                        };
+                        self.store.require_semantic()?.resolve(
+                            self.store.conn(),
+                            &repo,
+                            &q,
+                            Some(vector),
+                            limit,
+                        )?
+                    }
+                    None => self.store.resolve(&repo, &q, limit)?,
                 };
-                let hits = self
-                    .store
-                    .resolve(&repo, &q, vector, arg_usize(args, "limit")?)?;
                 // The locator is `<path>#<type>[<ordinal>]`: its path half is rooted
                 // (one without `#` names no path and is left alone).
                 let locator = |l: &str| match l.find('#') {
@@ -2791,7 +2833,12 @@ impl Surface {
                 }))
             }
             // §4 "Profiles": the tool reports which profile the host serves.
-            "version" => version_info(Some(&self.store), &self.build_info, self.profile),
+            "version" => version_info_for(
+                Some(&self.store),
+                Some(&self.default_repo),
+                &self.build_info,
+                self.profile,
+            ),
             other => Err(SurfaceError::other(format!("unknown tool {other}"))),
         }
     }
@@ -2827,6 +2874,64 @@ pub fn provider_unavailable() -> SurfaceError {
         PROVIDER_UNAVAILABLE_MESSAGE,
         json!({ "provider": null }),
     )
+}
+
+/// `capability_unavailable { capability: "semantic", state: "disabled" }`'s
+/// message (Phase 2): the module is not installed because nothing is
+/// configured. Byte for byte the reference's (`core/capabilities/errors.ts`).
+pub const SEMANTIC_DISABLED_MESSAGE: &str = "semantic search is disabled for this repository — configure an embedding provider (omg config set embedding.provider <command|url>) and embed the repository (omg embed drain)";
+
+/// The `disabled` envelope's `fix`.
+pub const SEMANTIC_DISABLED_FIX: &str = "omg config set embedding.provider <command|url>";
+
+/// The `unavailable` message: the configured provider (JSON-quoted) and its
+/// failure (the OS's text, unpinned).
+#[must_use]
+pub fn semantic_unavailable_message(provider: &str, reason: &str) -> String {
+    format!(
+        "semantic search is unavailable — the configured embedding provider {} failed to start: {reason}",
+        Json::String(provider.to_owned())
+    )
+}
+
+/// `capability_unavailable` for the semantic capability (Phase 2, D3): the
+/// envelope of `docs/modular-core/phase-1-contracts.md` §2.1 as both engines
+/// spell it — `data { capability, state, provider?, reason?, fix? }`,
+/// `retriable` only for `unavailable`. `Enabled` is not an error; a caller
+/// never passes it (it is rendered as `disabled`).
+#[must_use]
+pub fn semantic_capability_unavailable(
+    state: CapabilityState,
+    provider: Option<&str>,
+    fault: Option<&str>,
+) -> SurfaceError {
+    match state {
+        CapabilityState::Unavailable => {
+            let provider = provider.unwrap_or("");
+            let reason = fault.unwrap_or("no reason recorded");
+            let mut e = SurfaceError::with_data(
+                "capability_unavailable",
+                semantic_unavailable_message(provider, reason),
+                json!({
+                    "capability": "semantic",
+                    "state": "unavailable",
+                    "provider": provider,
+                    "reason": reason,
+                }),
+            );
+            e.retriable = true;
+            e
+        }
+        CapabilityState::Disabled | CapabilityState::Enabled => SurfaceError::with_data(
+            "capability_unavailable",
+            SEMANTIC_DISABLED_MESSAGE,
+            json!({
+                "capability": "semantic",
+                "state": "disabled",
+                "fix": SEMANTIC_DISABLED_FIX,
+            }),
+        ),
+    }
 }
 
 /// The `effects` argument (`spec/mutate` §11.1): a malformed effect is

@@ -29,6 +29,7 @@ use omgbase_search::{
     DocEmbedMethod, EmbeddingProvider, FixtureEmbedder, cosine_f32, hex, sanitize_fts_query,
     token_budget,
 };
+use omgbase_store::search::{build_doc_embed_tasks, build_embed_tasks};
 use omgbase_store::{
     BatchItem, BatchOutcome, HybridQuery, QueryVector, RebuildTarget, SequentialMinter, Store,
 };
@@ -650,6 +651,15 @@ fn outcome_json(o: &BatchOutcome) -> Json {
     }
 }
 
+/// The store's semantic capability — the search runner always opens the
+/// standard set (this suite *is* the semantic behaviour; the core-only gate
+/// is the store, mutate and surface runners').
+fn capability(store: &Store) -> Result<&dyn omgbase_store::SemanticProvider, String> {
+    store
+        .semantic()
+        .ok_or_else(|| "the store has no semantic capability".to_owned())
+}
+
 fn limit_of(body: &Json, default: usize) -> usize {
     body.get("limit")
         .and_then(Json::as_u64)
@@ -684,8 +694,8 @@ fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String
         }
         (None, Some(s)) => {
             let q = embedder.embed_query(s).map_err(|e| e.to_string())?;
-            let hits = store
-                .vector_search(repo_id, embedder.model(), &q, limit)
+            let hits = capability(store)?
+                .vector_search(store.conn(), repo_id, embedder.model(), &q, limit)
                 .map_err(|e| e.to_string())?;
             Ok(json!({
                 "hits": hits.iter().map(|h| json!({
@@ -695,8 +705,9 @@ fn search_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, String
         }
         (Some(t), Some(s)) => {
             let q = embedder.embed_query(s).map_err(|e| e.to_string())?;
-            let hits = store
+            let hits = capability(store)?
                 .hybrid_search(
+                    store.conn(),
                     repo_id,
                     &HybridQuery {
                         text: Some(t.to_owned()),
@@ -733,8 +744,8 @@ fn resolve_step(store: &Store, repo_id: &str, body: &Json) -> Result<Json, Strin
         None => None,
     };
     let limit = body.get("limit").and_then(Json::as_u64).map(|n| n as usize);
-    let hits = store
-        .resolve(repo_id, query, vector, limit)
+    let hits = capability(store)?
+        .resolve(store.conn(), repo_id, query, vector, limit)
         .map_err(|e| e.to_string())?;
     Ok(json!({
         "hits": hits.iter().map(|h| json!({
@@ -793,9 +804,20 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             let changes = exec_sql(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "changes": changes }));
         } else if step.get("drain").is_some() {
-            let d = store
-                .drain(&repo_id, &embedder)
+            // §2.6 through the capability (Phase 2): the block pass, then the
+            // document pass, each over every task — the figures the fixtures
+            // pin (`cached` counts every task; a tombstoned document's row
+            // lingers). The host's watermark-positioned `drain` re-scans only
+            // what the feed names and sweeps gone document vectors; its
+            // position rule is pinned by the provider's own unit tests.
+            let sem = capability(&store)?;
+            let blocks = sem
+                .embed(store.conn(), &repo_id, &embedder)
                 .map_err(|e| format!("step {i}: {e}"))?;
+            let docs = sem
+                .embed_docs(store.conn(), &repo_id, &embedder)
+                .map_err(|e| format!("step {i}: {e}"))?;
+            let d = omgbase_store::DrainStats { blocks, docs };
             steps.push(json!({
                 "embedded": d.blocks.embedded, "cached": d.blocks.cached,
                 "doc_embedded": d.docs.embedded, "doc_cached": d.docs.cached,
@@ -849,14 +871,12 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
 /// `method_if_embedded` under the fixture embedder's budget), `embeddings` by
 /// (`content_hash`, `ctx_hash`), `doc_embeddings` by `doc_id`.
 fn project_search(store: &Store, repo_id: &str) -> omgbase_store::Result<Vec<(String, Json)>> {
-    let embed_tasks: Vec<Json> = store
-        .build_embed_tasks(repo_id)?
+    let embed_tasks: Vec<Json> = build_embed_tasks(store.conn(), repo_id)?
         .iter()
         .map(|t| json!({ "block_id": t.block_id, "content_hash": t.content_hash, "ctx": t.ctx }))
         .collect();
     let budget = token_budget(FixtureEmbedder.max_input_tokens());
-    let doc_tasks: Vec<Json> = store
-        .build_doc_embed_tasks(repo_id)?
+    let doc_tasks: Vec<Json> = build_doc_embed_tasks(store.conn(), repo_id)?
         .iter()
         .map(|t| {
             json!({

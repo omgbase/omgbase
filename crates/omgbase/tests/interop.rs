@@ -431,8 +431,15 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
             let composed = o.get("data").and_then(Json::as_object).is_some_and(|d| {
                 d.get("hint").and_then(Json::as_str) == Some("arguments")
                     || [
-                        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider",
+                        "_id",
+                        "_path",
+                        "_doc_id",
+                        "doc_path",
+                        "ref",
+                        "section",
+                        "provider",
                         "plan_id",
+                        "capability",
                     ]
                     .iter()
                     .any(|k| d.contains_key(*k))

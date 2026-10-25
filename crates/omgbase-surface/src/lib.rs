@@ -55,7 +55,11 @@ pub mod store_index;
 pub mod translate;
 pub mod version;
 
-pub use catalog::{MINIMAL_TOOLS, Profile, Surface, ToolOutcome, ToolSpec};
+pub use catalog::{
+    MINIMAL_TOOLS, PROVIDER_UNAVAILABLE_MESSAGE, Profile, SEMANTIC_DISABLED_FIX,
+    SEMANTIC_DISABLED_MESSAGE, Surface, ToolOutcome, ToolSpec, provider_unavailable,
+    semantic_capability_unavailable, semantic_unavailable_message,
+};
 pub use context::{SemanticVec, StoreContext, Target, glob_to_like};
 pub use cursor::{decode_cursor, decode_path_cursor, encode_cursor};
 pub use error::{Result, SurfaceError};
@@ -66,7 +70,10 @@ pub use query::{
     OqxResult, QueryOptions, collect_semantic_phrases, embed_phrases, query, query_ast,
     rewrite_query,
 };
-pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
+pub use version::{
+    BuildInfo, MCP_PROTOCOL_VERSION, capabilities, semantic_configured, version_info,
+    version_info_for,
+};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
 pub const SPEC_VERSION: &str = "5.1";

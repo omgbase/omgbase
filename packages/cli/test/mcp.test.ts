@@ -210,7 +210,7 @@ describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
   });
   afterAll(() => rmSync(bdir, { recursive: true, force: true }));
 
-  it("starts serving, warns loudly on stderr, and fails semantic access with embedder_failed", async () => {
+  it("starts serving, warns loudly on stderr, and fails semantic access with capability_unavailable { state: unavailable }", async () => {
     const child = spawn("node", [BIN, "-C", bvault, "mcp", "--no-watch"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, NO_COLOR: "1" },
@@ -228,14 +228,22 @@ describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
     const plain = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs" } });
     expect((plain.result as { isError?: boolean }).isError).toBeFalsy();
 
-    // A semantic query fails LOUDLY and SPECIFICALLY: embedder_failed, not the
-    // misleading provider_unavailable (which means "no provider configured").
+    // A semantic query fails LOUDLY and SPECIFICALLY (modular-core Phase 2):
+    // `capability_unavailable { capability: semantic, state: unavailable }`,
+    // retriable, naming the provider — not the misleading provider_unavailable
+    // (which means "no provider configured").
     const sem = await rpc.send("tools/call", { name: "query", arguments: { query: 'from docs where semantic("hello") > 0.1' } });
     const sc = (sem.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
     expect(sc.isError).toBe(true);
-    const body = JSON.parse(sc.content?.[0]?.text ?? "{}") as { error?: string; message?: string };
-    expect(body.error).toBe("embedder_failed");
+    const body = JSON.parse(sc.content?.[0]?.text ?? "{}") as { error?: string; message?: string; retriable?: boolean; data?: { capability?: string; state?: string; provider?: string } };
+    expect(body.error).toBe("capability_unavailable");
+    expect(body.retriable).toBe(true);
+    expect(body.data).toMatchObject({ capability: "semantic", state: "unavailable", provider: "omg-no-such-embedder-xyz" });
     expect(body.message ?? "").toContain("omg-no-such-embedder-xyz");
+    // `version` reports the state.
+    const ver = await rpc.send("tools/call", { name: "version", arguments: {} });
+    const vbody = JSON.parse(((ver.result as { content?: { text?: string }[] }).content?.[0]?.text) ?? "{}") as { capabilities?: { semantic?: { state?: string } } };
+    expect(vbody.capabilities?.semantic?.state).toBe("unavailable");
 
     // Startup complained loudly on stderr (never on stdout — protocol channel).
     expect(stderr).toContain("EMBEDDER NONFUNCTIONAL");

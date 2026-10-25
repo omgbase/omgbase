@@ -9,10 +9,14 @@
 //!   the projection rebuild, the mark-and-sweep, the retention and archive
 //!   entry points). The default implementation is today's code moved behind
 //!   the trait (`history::Recorder`); nothing in `core/` names it.
-//! - [`SemanticProvider`] — the embedding caches as the query path and the
-//!   drain see them (`README.md` §6): `block_vector`, `doc_vector`, the
-//!   `available` gate behind `provider_unavailable`, `embed`/`embed_docs`/
-//!   `prune_foreign`. Default: `semantic::Provider`.
+//! - [`SemanticProvider`] — the semantic capability as the query path, the
+//!   `blocks_resolve` tool, the CLI's `embed`/`status` verbs and the drain
+//!   see it (`README.md` §6; Phase 2): `block_vector`, `doc_vector`, the
+//!   `available` gate behind `provider_unavailable`, the vector and hybrid
+//!   searches, `resolve`, the queue, and the indexer — `drain` (bootstrap /
+//!   catch-up / rescan over an explicit watermark), `rebuild`, `freshness`,
+//!   `prune_foreign`. Default: `semantic::Provider`. Nothing outside
+//!   `semantic/` reads or writes a vector except through it.
 //! - [`IdentityClaims`] — the mint oracle of `spec/store` §2.1 behind an
 //!   interface: today the union of each prefix's tables
 //!   ([`TableUnionClaims`](crate::core::claims::TableUnionClaims)), in Phase
@@ -38,6 +42,10 @@ use crate::core::history_shapes::{
     RetentionPolicy,
 };
 use crate::core::mint::Mint;
+use crate::core::semantic_shapes::{
+    DocVectorHit, DrainOutcome, HybridHit, HybridQuery, IndexIdentity, QueryVector, ResolveHit,
+    SemanticFreshness, SemanticQueue, VectorHit,
+};
 use crate::core::size::{SizeArchived, SizeRetention};
 use crate::core::writers::{NewCommit, TreeInputBlock};
 use crate::error::{Error, Result};
@@ -376,6 +384,10 @@ pub struct DocEmbedStats {
     pub cached: usize,
     /// Over-budget documents pooled from cached block vectors.
     pub pooled: usize,
+    /// Tasks not written because the document's head moved between the
+    /// snapshot the task was built from and the write (Phase 2's late-result
+    /// rule); the next drain re-tasks them.
+    pub skipped: usize,
 }
 
 /// Counts of `(block, doc)` vectors under a model other than the one asked
@@ -386,15 +398,21 @@ pub struct ForeignVectors {
     pub docs: usize,
 }
 
-/// The semantic capability (`docs/modular-core/README.md` §6): the embedding
-/// caches as `semantic(…)`, `resolve`, the `provider_unavailable` gate and
-/// the drain read and write them. The provider reads the current head only
-/// — never history — and the core never calls it: its callers are the
-/// surface and the binary, through [`Store::semantic`](crate::Store::semantic).
+/// The semantic capability (`docs/modular-core/README.md` §6; Phase 2): the
+/// embedding caches as `semantic(…)`, `blocks_resolve`, the
+/// `provider_unavailable` gate, the `embed`/`status` verbs and the drain read
+/// and write them. The provider reads the current head only — never history
+/// — and the core never calls it: its callers are the surface and the binary,
+/// through [`Store::semantic`](crate::Store::semantic). Every vector read or
+/// write of the engine goes through this trait (`tests/boundaries.rs`).
 pub trait SemanticProvider {
     /// Install what the queries need on a connection — the `cosine` scalar
     /// (`spec/search` §3) — at open.
     fn attach(&self, conn: &Connection) -> Result<()>;
+
+    /// The tables this bundle owns (the size report's advice names them; the
+    /// DDL stays the store's until the bundle carries its own schema file).
+    fn tables(&self) -> &'static [&'static str];
 
     /// Has `model` embedded anything the repository's queries can rank — a
     /// document vector of the repo, or any block vector (the surface's
@@ -414,8 +432,52 @@ pub trait SemanticProvider {
     /// The document's vector under `model` (`doc_embeddings`), as stored.
     fn doc_vector(&self, conn: &Connection, doc_id: &str, model: &str) -> Result<Option<Vec<u8>>>;
 
+    // ---- search (§3, §4) ------------------------------------------------------------
+
+    /// §3 over the repo's live embeddable blocks: cosine against `query`
+    /// under `model`, by score descending then `block_id`, limited.
+    fn vector_search(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        model: &str,
+        query: &[f32],
+        limit: usize,
+    ) -> Result<Vec<VectorHit>>;
+
+    /// §3 over the repo's document vectors.
+    fn doc_vector_search(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        model: &str,
+        query: &[f32],
+        limit: usize,
+    ) -> Result<Vec<DocVectorHit>>;
+
+    /// §4: the FTS and vector rankings fused, boosted, limited.
+    fn hybrid_search(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        q: &HybridQuery,
+    ) -> Result<Vec<HybridHit>>;
+
+    /// §4 `resolve` with a query vector (the FTS-only form is the core's,
+    /// [`Store::resolve`](crate::Store::resolve)).
+    fn resolve(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        query: &str,
+        vector: Option<QueryVector>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ResolveHit>>;
+
+    // ---- the drain and the indexer (§2) ---------------------------------------------
+
     /// §2.2–§2.3: the block pass of a drain over the repo's embeddable live
-    /// leaves.
+    /// leaves (a full pass; no watermark bookkeeping).
     fn embed(
         &self,
         conn: &Connection,
@@ -423,7 +485,7 @@ pub trait SemanticProvider {
         provider: &dyn omgbase_search::EmbeddingProvider,
     ) -> Result<EmbedStats>;
 
-    /// §2.4–§2.5: the document pass of a drain.
+    /// §2.4–§2.5: the document pass of a drain (a full pass).
     fn embed_docs(
         &self,
         conn: &Connection,
@@ -431,20 +493,106 @@ pub trait SemanticProvider {
         provider: &dyn omgbase_search::EmbeddingProvider,
     ) -> Result<DocEmbedStats>;
 
+    /// §2.6, Phase 2: one drain positioned by the watermark — a **bootstrap**
+    /// from a consistent snapshot of the head when there is none (or the
+    /// index identity changed), a **catch-up** over the documents the feed
+    /// names since it, a **rescan** with the prune of gone entities when the
+    /// cursor cannot be served. Writes the watermark only after every half
+    /// succeeded; a document vector is written only while the document's
+    /// head is the one the task was built from (never a stale vector).
+    fn drain(
+        &self,
+        store: &crate::Store,
+        repo_id: &str,
+        provider: &dyn omgbase_search::EmbeddingProvider,
+    ) -> Result<DrainOutcome>;
+
+    /// Phase 2: the forced rescan — every live entity re-scanned, every
+    /// vector of a gone entity deleted (`spec/store` §8 S1), the watermark
+    /// rewritten under the provider's identity.
+    fn rebuild(
+        &self,
+        store: &crate::Store,
+        repo_id: &str,
+        provider: &dyn omgbase_search::EmbeddingProvider,
+    ) -> Result<DrainOutcome>;
+
+    /// Phase 2: the watermark against the head. `index` is the identity the
+    /// caller embeds under (the configured provider's); the watermark is
+    /// `fresh` only under the identity it was written for.
+    fn freshness(
+        &self,
+        store: &crate::Store,
+        repo_id: &str,
+        index: Option<&IndexIdentity>,
+    ) -> Result<SemanticFreshness>;
+
+    /// §2.3: the queue under `model` — the live embeddable blocks and
+    /// documents, and how many of each have no (fresh) vector; `None` counts
+    /// a vector under any model (the CLI's `status` before a provider is
+    /// spawned, when `embedding.model` is unset).
+    fn queue(&self, conn: &Connection, repo_id: &str, model: Option<&str>)
+    -> Result<SemanticQueue>;
+
+    /// §2.6: how many cached vectors belong to another model.
+    fn foreign(&self, conn: &Connection, model: &str) -> Result<ForeignVectors>;
+
     /// §2.6: delete every cached vector not produced by `model`.
     fn prune_foreign(&self, conn: &Connection, model: &str) -> Result<ForeignVectors>;
+}
+
+/// The state of a capability as `version` reports it and
+/// `capability_unavailable` names it (`spec/surface` 6.0 §2.1 draft,
+/// `docs/modular-core/phase-1-contracts.md`): `enabled` — the module is here
+/// and configured; `disabled` — the composition layer installed none
+/// (semantic: no `embedding.provider` is configured for the repository, the
+/// §7 resolution 1 rule — stored vectors are never consulted); `unavailable`
+/// — configured, but the module could not come up (semantic: the provider
+/// failed to start; retriable).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CapabilityState {
+    Enabled,
+    Disabled,
+    Unavailable,
+}
+
+impl CapabilityState {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enabled => "enabled",
+            Self::Disabled => "disabled",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }
 
 // ---- the bundle -------------------------------------------------------------------------
 
 /// The capabilities a store opens with, assembled by the composition layer.
-/// `history` and `semantic` are optional by type — the Phase 2 and Phase 3
-/// gates open a store without one — while every Phase 1 store carries both
-/// ([`Capabilities::standard`](crate::Capabilities::standard)); `claims` is
-/// always present (a store cannot mint without an oracle).
+/// `history` and `semantic` are optional by type — a store without one
+/// answers the calls that need it with [`unavailable`] — while
+/// [`Capabilities::standard`](crate::Capabilities::standard) carries both;
+/// `claims` is always present (a store cannot mint without an oracle).
+///
+/// **Discovery (Phase 2).** The semantic capability's *state* follows
+/// `docs/modular-core/phase-1-contracts.md` §7 resolution 1: `enabled` iff
+/// the repository's effective settings name an `embedding.provider`; stored
+/// vectors are never consulted. The *module* is a composition matter: the
+/// standard set carries it (a loaded module with nothing configured keeps
+/// `spec/surface` 3.0's `provider_unavailable`), [`CAPABILITIES_ENV`]`=core`
+/// opens without it (`disabled`), and a host whose configured provider failed
+/// to start detaches it with the reason
+/// ([`Store::detach_semantic`](crate::Store::detach_semantic), `semantic_fault`
+/// → `unavailable`, retriable). The surface's `version` derives the state
+/// from the configuration and the store together.
 pub struct Capabilities {
     pub history: Option<Box<dyn HistoryRecorder>>,
     pub semantic: Option<Box<dyn SemanticProvider>>,
+    /// Why `semantic` is `None` although a provider is configured — the
+    /// `unavailable` state's reason; `None` with `semantic: None` is
+    /// `disabled`.
+    pub semantic_fault: Option<String>,
     pub claims: Box<dyn IdentityClaims>,
 }
 
@@ -453,9 +601,17 @@ impl std::fmt::Debug for Capabilities {
         f.debug_struct("Capabilities")
             .field("history", &self.history.is_some())
             .field("semantic", &self.semantic.is_some())
+            .field("semantic_fault", &self.semantic_fault)
             .finish_non_exhaustive()
     }
 }
+
+/// The environment variable the fixture runners honour
+/// (`docs/modular-core/README.md`, Phase 2's gate): `core` opens every store
+/// without the semantic bundle, so the reads and mutations run with the
+/// semantic code and data absent; unset or `standard` is
+/// [`Capabilities::standard`](crate::Capabilities::standard).
+pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
 
 impl Capabilities {
     /// The core alone: no recorder, no provider, the table-union oracle. A
@@ -466,7 +622,40 @@ impl Capabilities {
         Self {
             history: None,
             semantic: None,
+            semantic_fault: None,
             claims: Box::new(crate::core::claims::TableUnionClaims),
+        }
+    }
+
+    /// This set without the semantic bundle (`disabled`).
+    #[must_use]
+    pub fn without_semantic(mut self) -> Self {
+        self.semantic = None;
+        self.semantic_fault = None;
+        self
+    }
+
+    /// This set with the semantic bundle marked `unavailable`: a provider is
+    /// configured but could not start (`reason`).
+    #[must_use]
+    pub fn with_semantic_fault(mut self, reason: impl Into<String>) -> Self {
+        self.semantic = None;
+        self.semantic_fault = Some(reason.into());
+        self
+    }
+
+    /// [`CAPABILITIES_ENV`] applied to `standard`: unset / empty / `standard`
+    /// → `standard`; `core` → `standard().without_semantic()` — Phase 2's
+    /// core (the recorder stays until Phase 3's M1 lets the core commit
+    /// without it). Any other value is an error naming the two.
+    pub fn from_env(standard: impl FnOnce() -> Self) -> Result<Self> {
+        match std::env::var(CAPABILITIES_ENV) {
+            Err(_) => Ok(standard()),
+            Ok(v) if v.is_empty() || v == "standard" => Ok(standard()),
+            Ok(v) if v == "core" => Ok(standard().without_semantic()),
+            Ok(v) => Err(Error::Other(format!(
+                "{CAPABILITIES_ENV}={v:?}: the values are \"standard\" and \"core\""
+            ))),
         }
     }
 }

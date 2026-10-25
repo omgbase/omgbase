@@ -34,6 +34,7 @@ import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
 import { oqxRun, type OqxResult } from "../../src/oqx-js/run.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
+import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX } from "../../src/core/capabilities/errors.js";
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
 import { FIXTURE_REPO_SLUG, TS_RE, isHistoryStep, runExecStep, runGcStep, runHistoryStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
@@ -47,9 +48,9 @@ export const ALCHEMY_DIR = fileURLToPath(new URL("../oqx/fixtures/alchemy/", imp
 /** The commit `ts` every corpus-backed suite observes its documents under. */
 export const CORPUS_TS = "2026-09-27T00:00:00.000Z";
 
-/** A recorded query error: the code and a substring of the engine's message (README §1.4, §6). */
+/** A recorded query error: the code and a substring of the engine's message (README §1.4, §6). `capability_unavailable` is never on disk — it is what the core-only run (`OMGBASE_CAPABILITIES=core`) maps a semantic case's expectation to. */
 export interface QueryErrorExpect {
-  error: "filter_invalid";
+  error: "filter_invalid" | "capability_unavailable";
   message_includes: string;
   /** (4.11) the corrected `query` call, canonical JSON, when the error carries one (`data.fix`) — recorded verbatim */
   fix?: string;
@@ -311,7 +312,7 @@ export interface QueryEvaluation {
 // and the other named points of §1.3 read the host clock, which is CORPUS_TS
 // here — the instant the corpus was observed — so their results are committed
 // expectations (`date("today")` is `2026-09-27`).
-function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true; result: OqxResult } | { ok: false; message: string; fix?: string } {
+function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true; result: OqxResult } | { ok: false; error: QueryErrorExpect["error"]; message: string; fix?: string } {
   const restore = pinClock(CORPUS_TS);
   // The case's arguments ARE the `query` tool's (README §6), so a corrected
   // call (4.11, `fix`) is spelled from them exactly as the tool spells it.
@@ -333,8 +334,10 @@ function runOnce(c: LoadedCorpus, q: QueryCaseInput, plan: boolean): { ok: true;
   } catch (e) {
     // An OQX error (the library's, normalized) and a malformed cursor are the
     // surface's `filter_invalid`; anything else is a bug and is rethrown.
-    if (e instanceof FilterInvalid) return { ok: false, message: e.message, ...(e.fix !== undefined ? { fix: e.fix } : {}) };
-    if (e instanceof CursorInvalid) return { ok: false, message: e.message };
+    if (e instanceof FilterInvalid) return { ok: false, error: "filter_invalid", message: e.message, ...(e.fix !== undefined ? { fix: e.fix } : {}) };
+    if (e instanceof CursorInvalid) return { ok: false, error: "filter_invalid", message: e.message };
+    // Phase 2: a `semantic()` on a store without the module (the core-only run).
+    if (e instanceof CapabilityUnavailable) return { ok: false, error: "capability_unavailable", message: e.message };
     throw e;
   } finally {
     restore();
@@ -363,7 +366,7 @@ export function runQueryCase(c: LoadedCorpus, q: QueryCaseInput): QueryEvaluatio
   if (planned.ok) return { expect: planned.result, problems };
   const prev = q.expect && "error" in q.expect ? q.expect.message_includes : undefined;
   const message_includes = prev !== undefined && planned.message.includes(prev) ? prev : planned.message;
-  return { expect: { error: "filter_invalid", message_includes, ...(planned.fix !== undefined ? { fix: planned.fix } : {}) }, problems };
+  return { expect: { error: planned.error, message_includes, ...(planned.fix !== undefined ? { fix: planned.fix } : {}) }, problems };
 }
 
 /** Compare a generated query outcome with the committed `expect` (an error compares by code + substring). Null = equal. */
@@ -377,6 +380,44 @@ export function diffQueryExpect(actual: OqxResult | QueryErrorExpect, expect: Oq
     return null;
   }
   return deepEqualTol(actual, expect, 1e-9);
+}
+
+// ---- the core-only run (modular-core Phase 2 gate) -------------------------------------
+//
+// Under `OMGBASE_CAPABILITIES=core` every store the runner opens has no semantic
+// module. Every non-semantic case must pass UNCHANGED; a semantic case on the
+// provider-less store reports `capability_unavailable { capability: "semantic",
+// state: "disabled" }` instead of what the fixture on disk pins for the full
+// composition (`filter_invalid` "needs an embedding provider" at the runner,
+// `provider_unavailable` at the `query` tool). The fixtures are NOT rewritten:
+// the runner maps the expectation and reports how many it mapped.
+
+/** The envelope the core-only store answers a semantic call with, as the reads runner records it (`toReadOutcome`). */
+export const CORE_SEMANTIC_OUTCOME: ReadErrorOutcome = {
+  error: "capability_unavailable",
+  retriable: false,
+  data: { capability: "semantic", state: "disabled", fix: SEMANTIC_DISABLED_FIX },
+};
+
+/** A query case's expectation under the core-only run: the runner-level "needs an embedding provider" becomes the capability error. */
+export function coreModeQueryExpect(expect: OqxResult | QueryErrorExpect): { expect: OqxResult | QueryErrorExpect; mapped: boolean } {
+  if ("error" in expect && expect.error === "filter_invalid" && /embedding provider/.test(expect.message_includes)) {
+    // The runner records the authored substring while the message still contains it (`runQueryCase`), and the
+    // disabled message does say "embedding provider"; the full message is pinned byte for byte by the unit tests.
+    return { expect: { error: "capability_unavailable", message_includes: expect.message_includes }, mapped: true };
+  }
+  return { expect, mapped: false };
+}
+
+/** A reads case's expectation under the core-only run: every `provider_unavailable` step outcome becomes the capability error. */
+export function coreModeReadsExpect(expect: { steps: StepOutcome[] }): { expect: { steps: StepOutcome[] }; mapped: number } {
+  let mapped = 0;
+  const map = (o: unknown): unknown => {
+    if (Array.isArray(o)) return o.map(map);
+    if (isRecord(o) && o.error === "provider_unavailable") { mapped++; return CORE_SEMANTIC_OUTCOME; }
+    return o;
+  };
+  return { expect: { steps: expect.steps.map(map) as StepOutcome[] }, mapped };
 }
 
 // ---- §2–§4 reads cases -----------------------------------------------------------------

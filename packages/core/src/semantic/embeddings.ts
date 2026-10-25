@@ -100,8 +100,15 @@ export interface DocEmbedBlockRef {
 export interface DocEmbedTask {
   docId: string;
   input: string;
+  /** `docs.file_hash` (hex) when the task was built — the late-result guard compares it before a vector is written (Phase 2); null when the row has none. */
+  docHashHex: string | null;
   blocks: DocEmbedBlockRef[];
 }
+
+/** What a block pass did: `embedded` vectors written, `cached` hits, `stale` results dropped because the block moved on while the provider was answering, and the documents the written vectors belong to (the drain's doc candidates). */
+export interface EmbedResult { embedded: number; cached: number; stale: number; docIds: string[] }
+/** What a document pass did; `stale` as for blocks. */
+export interface DocEmbedResult { embedded: number; cached: number; pooled: number; stale: number }
 
 export type DocEmbedMethod = "whole" | "pooled";
 
@@ -111,7 +118,7 @@ export interface DocVectorRow {
 }
 
 export class EmbeddingWorker {
-  constructor(private store: Store, private provider: EmbeddingProvider | null) {}
+  constructor(private store: Store, readonly provider: EmbeddingProvider | null) {}
 
   get available(): boolean {
     return this.provider !== null;
@@ -141,7 +148,7 @@ export class EmbeddingWorker {
   async process(
     tasks: EmbedTask[],
     opts: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void } = {},
-  ): Promise<{ embedded: number; cached: number }> {
+  ): Promise<EmbedResult> {
     if (!this.provider) throw new SemanticUnavailable("no embedding provider configured");
     const misses: EmbedTask[] = [];
     let cached = 0;
@@ -152,21 +159,34 @@ export class EmbeddingWorker {
     const insert = this.store.db.prepare(
       "INSERT OR REPLACE INTO embeddings (content_hash, ctx_hash, model, dim, vec) VALUES (?, ?, ?, ?, ?)",
     );
+    // The late-result guard (Phase 2): the provider answered asynchronously, so
+    // the block may have been edited or deleted meanwhile. A vector is written
+    // only while the block's row is live and still carries the content hash it
+    // was embedded for — a row that moved on, a tombstone, or no row at all (a
+    // removed block is evicted) is a stale result, dropped and counted.
+    const current = this.store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND raw_hash = ? AND deleted_commit IS NULL");
+    const stillCurrent = (t: EmbedTask): { doc_id: string } | null =>
+      (current.get(t.blockId, Buffer.from(t.contentHashHex, "hex")) as { doc_id: string } | undefined) ?? null;
     const batchSize = opts.batchSize && opts.batchSize > 0 ? opts.batchSize : DEFAULT_EMBED_BATCH;
     let embedded = 0;
+    let stale = 0;
+    const docIds = new Set<string>();
     for (let start = 0; start < misses.length; start += batchSize) {
       const chunk = misses.slice(start, start + batchSize);
       const vectors = await this.provider.embed(chunk.map((t) => embedInput(t.ctx, t.text)));
       this.store.write(() => {
         chunk.forEach((t, i) => {
+          const live = stillCurrent(t);
+          if (!live) { stale++; return; }
           const v = Float32Array.from(vectors[i]!);
           insert.run(Buffer.from(t.contentHashHex, "hex"), Buffer.from(ctxHashHex(t.ctx), "hex"), this.provider!.model, this.provider!.dim, Buffer.from(v.buffer));
+          embedded++;
+          docIds.add(live.doc_id);
         });
       });
-      embedded += chunk.length;
       opts.onProgress?.({ embedded, total: misses.length });
     }
-    return { embedded, cached };
+    return { embedded, cached, stale, docIds: [...docIds] };
   }
 
   /** Embed a bare query string (no context prefix, 05 §6). */
@@ -218,9 +238,19 @@ export class EmbeddingWorker {
   async processDocs(
     tasks: DocEmbedTask[],
     opts: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void } = {},
-  ): Promise<{ embedded: number; cached: number; pooled: number }> {
+  ): Promise<DocEmbedResult> {
     if (!this.provider) throw new SemanticUnavailable("no embedding provider configured");
     const budget = this.docTokenBudget();
+    // The late-result guard for documents: the vector is written only while the
+    // document still has the content the input was built from (`docs.file_hash`
+    // as of the task; a task built off a row without one checks liveness alone).
+    const current = this.store.db.prepare("SELECT lower(hex(file_hash)) AS h FROM docs WHERE doc_id = ? AND deleted_commit IS NULL");
+    const stillCurrent = (t: DocEmbedTask): boolean => {
+      const row = current.get(t.docId) as { h: string | null } | undefined;
+      if (!row) return false;
+      return t.docHashHex === null || (row.h ?? "") === t.docHashHex;
+    };
+    let stale = 0;
 
     const misses: DocEmbedTask[] = [];
     let cached = 0;
@@ -246,11 +276,12 @@ export class EmbeddingWorker {
       const vectors = await this.provider.embed(chunk.map((t) => t.input));
       this.store.write(() => {
         chunk.forEach((t, i) => {
+          if (!stillCurrent(t)) { stale++; return; }
           const v = Float32Array.from(vectors[i]!);
           insert.run(t.docId, this.provider!.model, this.docInputHash(t.input), "whole", this.provider!.dim, Buffer.from(v.buffer));
+          embedded++;
         });
       });
-      embedded += chunk.length;
       opts.onProgress?.({ embedded, total: whole.length });
     }
 
@@ -258,6 +289,7 @@ export class EmbeddingWorker {
     if (pooledTasks.length > 0) {
       this.store.write(() => {
         for (const t of pooledTasks) {
+          if (!stillCurrent(t)) { stale++; continue; }
           const v = this.poolBlockVectors(t.blocks);
           if (!v) continue; // no cached block vectors yet — leave it queued
           insert.run(t.docId, this.provider!.model, this.docInputHash(t.input), "pooled", this.provider!.dim, Buffer.from(v.buffer));
@@ -266,7 +298,7 @@ export class EmbeddingWorker {
       });
     }
 
-    return { embedded, cached, pooled };
+    return { embedded, cached, pooled, stale };
   }
 
   /**

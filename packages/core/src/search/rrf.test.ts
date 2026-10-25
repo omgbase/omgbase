@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
-import { EmbeddingWorker, contextPrefix, type EmbeddingProvider, type EmbedTask } from "./embeddings.js";
+import { EmbeddingWorker, contextPrefix, type EmbeddingProvider, type EmbedTask } from "../semantic/embeddings.js";
 import { hybridSearch } from "./rrf.js";
 import { sha256 } from "../core/hash.js";
 

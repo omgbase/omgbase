@@ -13,7 +13,7 @@ import type {
 
 // External source bridge (sync-plugins §4). Spawns an adapter command and
 // speaks the newline-delimited JSON protocol, presenting the process as a
-// SyncSource. Mirrors the embedder bridge (search/external.ts): a handshake
+// SyncSource. Mirrors the embedder bridge (semantic/external.ts): a handshake
 // line, then id-matched request/response — with one extension, an unsolicited
 // event stream while a watch is live (spec/sync §5).
 //

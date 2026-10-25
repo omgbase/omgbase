@@ -1,6 +1,6 @@
 import type { Store } from "../core/store/store.js";
-import { EmbeddingWorker } from "./embeddings.js";
-import { buildEmbedTasks, buildDocEmbedTasks } from "./tasks.js";
+import type { EmbeddingWorker } from "./embeddings.js";
+import { drainRepo, type DrainResult } from "./indexer.js";
 
 // Background embed drainer (05 §6). Mutations only ever *queue* embeddable
 // blocks; a stale vector degrades semantic search silently until someone runs
@@ -9,13 +9,15 @@ import { buildEmbedTasks, buildDocEmbedTasks } from "./tasks.js";
 // debounced, single-flight background drain embeds the misses — WITHOUT blocking
 // the mutation's response path. The provider round-trip is genuinely async I/O
 // (an external process/endpoint), so awaiting it off the response path keeps the
-// event loop responsive; we simply never await it *on* that path.
+// event loop responsive; we simply never await it *on* that path. Each pass is
+// one `drainRepo` (indexer.ts): the feed watermark decides bootstrap, catch-up
+// or rescan.
 
 export interface DrainerOptions {
   /** Coalesce a burst of mutations into one drain (default 500ms). */
   debounceMs?: number;
-  /** Fired after a drain that embedded ≥1 block (progress/log hook). */
-  onDrain?: (result: { embedded: number; cached: number }) => void;
+  /** Fired after a drain that embedded ≥1 block or document (progress/log hook). */
+  onDrain?: (result: { embedded: number; cached: number; mode: DrainResult["mode"] }) => void;
   /** A drain threw (provider down, etc.). The drainer stays alive. */
   onError?: (err: unknown) => void;
 }
@@ -84,23 +86,16 @@ export class EmbedDrainer {
     while (this.dirty && !this.closed) {
       this.dirty = false;
       try {
-        // Blocks first: the pooled doc-embedding fallback reuses block vectors,
-        // so embedding blocks before docs means a large doc can pool from
-        // freshly-cached vectors in the same drain.
-        const tasks = buildEmbedTasks(this.store, this.repoId);
-        const result = await this.worker.process(tasks);
-        // Then docs: recompute any document whose content changed (a block edit
-        // shifts the whole-doc input, invalidating its cached vector), so doc
-        // vectors never drift from content.
-        const docTasks = buildDocEmbedTasks(this.store, this.repoId);
-        const docResult = await this.worker.processDocs(docTasks);
-        if (result.embedded > 0 || docResult.embedded > 0 || docResult.pooled > 0) {
-          this.opts.onDrain?.({ embedded: result.embedded + docResult.embedded, cached: result.cached });
+        const provider = this.worker.provider;
+        if (!provider) return;
+        const result = await drainRepo(this.store, this.repoId, this.worker, provider);
+        if (result.embedded > 0 || result.docEmbedded > 0 || result.pooled > 0) {
+          this.opts.onDrain?.({ embedded: result.embedded + result.docEmbedded, cached: result.cached, mode: result.mode });
         }
       } catch (err) {
         this.opts.onError?.(err);
         // Swallow — a transient provider failure must not crash the host. The
-        // next schedule() (or flush at shutdown) retries.
+        // next schedule() (or flush at shutdown) retries from the same watermark.
         return;
       }
     }

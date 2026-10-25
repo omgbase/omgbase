@@ -5,6 +5,8 @@ import {
   reposStatus,
   buildEmbedTasks,
   buildDocEmbedTasks,
+  indexIdentity,
+  requireSemantic,
   resolveSettings,
   workspaceSettings,
   repoOwnSettings,
@@ -341,14 +343,23 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
     const docPending = loaded.worker.staleDocs(docTasks);
     // Vectors left by a previous model (dead weight after a model switch).
     const foreign = loaded.worker.foreignVectorCount();
+    // The indexer's watermark against the feed head (modular-core Phase 2):
+    // how far the index is behind, and whether it was built under this provider.
+    const fresh = requireSemantic(ws.store.db).freshness(repo.repoId, indexIdentity(loaded.provider));
 
     // status
-    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length, foreignBlocks: foreign.blocks, foreignDocs: foreign.docs };
+    const payload = {
+      provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length, foreignBlocks: foreign.blocks, foreignDocs: foreign.docs,
+      watermark: { processed_seq: fresh.processed_seq, head: fresh.head, fresh: fresh.fresh, identity: fresh.identity },
+    };
     if (cli.flags.mode !== "human") return emitMachine(cli, payload);
     else {
       cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
       cli.io.out(`  embeddable ${tasks.length}   ${cli.style.dim("queued")} ${payload.queued}`);
       cli.io.out(`  docs ${docTasks.length}   ${cli.style.dim("queued")} ${payload.docsQueued}`);
+      const wm = fresh.processed_seq === null ? "none (the first drain bootstraps)" : `${fresh.processed_seq}${fresh.head !== null ? ` of ${fresh.head}` : ""}${fresh.fresh === true ? " (current)" : fresh.fresh === false ? " (behind)" : ""}`;
+      cli.io.out(`  watermark ${wm}`);
+      if (fresh.identity && (fresh.identity.model !== loaded.provider.model || fresh.identity.dims !== loaded.provider.dim)) cli.io.out(cli.style.dim(`  the index was built under ${fresh.identity.model} (${fresh.identity.dims}d) — the next drain rebuilds it`));
       // `status` reports but never embeds — point the reader at the verb that does.
       if (payload.queued > 0 || payload.docsQueued > 0) cli.io.out(cli.style.dim(`  run \`omg embed drain\` to embed the ${payload.queued} queued block(s) + ${payload.docsQueued} doc(s)`));
       // Stale vectors from another model don't affect search (queries filter by

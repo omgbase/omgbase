@@ -14342,7 +14342,15 @@
             "runtime": "<string>",
             "commit": "<string|null>",
             "built": "<string|null>",
-            "profile": "<string>"
+            "profile": "<string>",
+            "capabilities": {
+              "history": {
+                "state": "<string>"
+              },
+              "semantic": {
+                "state": "<string>"
+              }
+            }
           },
           {
             "rpc_error": {

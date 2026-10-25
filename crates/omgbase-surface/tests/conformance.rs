@@ -432,8 +432,11 @@ fn corpus() -> Option<Vec<(String, String)>> {
 
 fn alchemy_store() -> Option<(Store, String)> {
     let files = corpus()?;
-    let mut store =
-        Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).expect("store");
+    let mut store = Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
+    )
+    .expect("store");
     let repo = store.create_repo("alchemy").expect("repo");
     let items: Vec<BatchItem> = files
         .iter()

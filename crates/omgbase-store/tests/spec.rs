@@ -770,7 +770,13 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
             ));
         }
     };
-    let mut store = Store::open_in_memory_with_minter(minter).map_err(|e| e.to_string())?;
+    // Phase 2's gate: `OMGBASE_CAPABILITIES=core` runs every observation
+    // script without the semantic bundle.
+    let mut store = Store::open_in_memory_with_capabilities(
+        minter,
+        omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;

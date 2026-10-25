@@ -92,8 +92,11 @@ export { resolve, type ResolveHit, type ResolveInput } from "./search/resolve.js
 // structural navigation over docs/blocks/nodes). Coexists with query().
 export { oqxRun, oqxRunAsync, collectSemanticPhrases, parseOqx, type OqxResult, type OqxHit, type OqxOptions, type EmbedQuery } from "./oqx/run.js";
 
-// Embeddings + semantic retrieval (05 §5–6). The provider is a plugin loaded by
-// package name; core carries no ML dependency.
+// The semantic bundle (05 §5–6; modular-core Phase 2: `src/semantic/`, reached
+// by the core only through `SemanticProvider`). The provider is an external
+// process or endpoint named in settings; core carries no ML dependency. These
+// exports are the COMPOSITION layer's (the CLI's `omg embed`, `omg mcp`, a
+// library host); the engine's own paths go through the capability.
 export {
   EmbeddingWorker,
   SemanticUnavailable,
@@ -102,17 +105,24 @@ export {
   estimateTokens,
   type EmbeddingProvider,
   type EmbedTask,
+  type EmbedResult,
   type DocEmbedTask,
+  type DocEmbedResult,
   type DocEmbedBlockRef,
   type DocEmbedMethod,
   type DocVectorRow,
-} from "./search/embeddings.js";
-export { buildEmbedTasks, buildDocEmbedTasks, staleEmbedCount } from "./search/tasks.js";
-export { EmbedDrainer, type DrainerOptions } from "./search/drain.js";
-export { embeddingSettings, type EmbeddingSettings } from "./search/provider.js";
-export { createExternalProvider, type ExternalProvider } from "./search/external.js";
+} from "./semantic/embeddings.js";
+export { buildEmbedTasks, buildDocEmbedTasks, staleEmbedCount, type TaskScope } from "./semantic/tasks.js";
+export { EmbedDrainer, type DrainerOptions } from "./semantic/drain.js";
+export {
+  drainRepo, drainMode, freshness as semanticFreshness, readWatermark, writeWatermark, clearWatermark, feedHead, indexIdentity, sameIdentity, CHUNKING_VERSION, WATERMARK_SOURCE,
+  type DrainMode, type DrainOptions, type DrainResult, type SemanticIndexIdentity, type SemanticWatermark,
+} from "./semantic/indexer.js";
+export { embeddingSettings, type EmbeddingSettings } from "./semantic/provider.js";
+export { createExternalProvider, type ExternalProvider } from "./semantic/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
-export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./search/vector.js";
+export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./semantic/vector.js";
+export { capabilityStates, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
 export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, changesSince, RevisionNotFound, type NodeChange, type CommitDigest, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
 export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./graph/links.js";
 export { FilterInvalid } from "./core/filter-invalid.js";
@@ -237,6 +247,8 @@ export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/f
 // The capability seams (modular-core Phase 1, docs/modular-core/README.md §5–§6): the interfaces the core calls,
 // the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
 export {
-  defaultCapabilities, capabilitiesOf, requireHistory, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, TableUnionClaims,
-  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
+  defaultCapabilities, coreCapabilities, envCapabilities, CAPABILITIES_ENV, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, TableUnionClaims,
+  CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage,
+  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
+  type CapabilityName, type CapabilityState,
 } from "./core/capabilities/index.js";

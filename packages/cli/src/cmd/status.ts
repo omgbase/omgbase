@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { reposStatus, syncStatus, watchLeaseLive, staleEmbedCount, resolveSettings, embeddingSettings } from "@omgbase/core";
+import { reposStatus, syncStatus, watchLeaseLive, resolveSettings, embeddingSettings } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -27,7 +27,9 @@ function runStatus(cli: Cli, args: string[]): number {
   // Embedding queue depth (spec/search §2.3): the embeddable blocks whose
   // current context has no cached vector — for the configured model when one is
   // named, else for any. Counted from the cache alone: no provider is spawned.
-  const queued = staleEmbedCount(ws.store, repo.repoId, embeddingSettings(resolveSettings(ws.store, repo.repoId)).model);
+  // The count is the semantic capability's; a store without the module has
+  // nothing queued (modular-core Phase 2).
+  const queued = ws.store.capabilities.semantic?.staleCount(repo.repoId, embeddingSettings(resolveSettings(ws.store, repo.repoId)).model) ?? 0;
 
   const payload = { ...rs, sync: ss, watcher: watcher ? "live" : "none", embedQueue: queued };
   if (cli.flags.mode !== "human") return emitMachine(cli, payload);

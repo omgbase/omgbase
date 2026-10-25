@@ -23,11 +23,20 @@ fn info(cli: &mut Cli) -> Result<Json> {
     // command still answers (§3.7: version ∈ NO_WORKSPACE_OK), and a
     // workspace that cannot be opened is reported as none.
     let build = crate::cli::build_info();
+    // Phase 2: `capabilities.semantic` is derived for the selected repo
+    // (`enabled` iff its `embedding.provider` is configured); a workspace
+    // with no selectable repo reports the workspace layer's.
+    let repo_id = if cli.workspace().is_ok() {
+        cli.repo().ok().map(|r| r.repo_id)
+    } else {
+        None
+    };
     let store = cli.workspace().ok().and_then(|_| cli.store().ok());
     // The CLI's own verb is the full library: `profile` is `full` (the MCP
     // server's `--tools` is what makes it `minimal`).
-    Ok(omgbase_surface::version_info(
+    Ok(omgbase_surface::version_info_for(
         store,
+        repo_id.as_deref(),
         &build,
         omgbase_surface::Profile::Full,
     )?)

@@ -1,14 +1,18 @@
 //! The surface's half of the modular-core dependency-direction check
-//! (`docs/modular-core/README.md` §5, Phase 1): the query binding —
-//! `context.rs`, `translate.rs`, `planner.rs` — reaches the store's history
-//! and semantic extensions only through the capability traits
-//! (`omgbase_store::{HistoryRecorder, SemanticProvider}` and the `Store`
-//! accessors), never by naming an extension item. Textual, like the store's
-//! `tests/boundaries.rs`: every `omgbase_store::<head>…` path of the three
-//! files (comments and strings stripped) is checked against the names the
-//! store's `lib.rs` re-exports from `history` and `semantic`. The surface's
-//! own `history.rs` and the catalog are the concrete history tools and the
-//! dispatch — they may name the extension; they are not checked.
+//! (`docs/modular-core/README.md` §5, Phase 1; the data boundary, Phase 2):
+//! the query path — `context.rs`, `translate.rs`, `planner.rs`, `query.rs`,
+//! `select.rs` — reaches the store's history and semantic extensions only
+//! through the capability traits (`omgbase_store::{HistoryRecorder,
+//! SemanticProvider}` and the `Store` accessors), never by naming an
+//! extension item, and no SQL of the surface names a vector table
+//! (`embeddings`, `doc_embeddings`) or the `cosine` scalar. Textual, like the
+//! store's `tests/boundaries.rs`: every `omgbase_store::<head>…` path of the
+//! five files (comments and strings stripped) is checked against the names
+//! the store's `lib.rs` re-exports from `history` and `semantic`; the
+//! vector-name check runs over every file of `src/` with comments stripped
+//! and strings kept. The surface's own `history.rs` and the catalog are the
+//! concrete history tools and the dispatch — they may name the history
+//! extension; they are not checked for paths.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -251,6 +255,132 @@ fn extension_heads() -> BTreeSet<String> {
     set
 }
 
+/// The files of the query path (the OQX binding and the runner).
+const QUERY_PATH: [&str; 5] = [
+    "context.rs",
+    "translate.rs",
+    "planner.rs",
+    "query.rs",
+    "select.rs",
+];
+
+/// `src` with comments blanked and string literals kept.
+fn strip_comments_only(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let b = src.as_bytes();
+    let mut i = 0;
+    let mut in_str = false;
+    while i < b.len() {
+        let rest = &src[i..];
+        if in_str {
+            if rest.starts_with('\\') && i + 1 < b.len() {
+                out.push_str(&rest[..2]);
+                i += 2;
+                continue;
+            }
+            if rest.starts_with('"') {
+                in_str = false;
+            }
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        } else if rest.starts_with("//") {
+            let end = rest.find('\n').unwrap_or(rest.len());
+            for _ in 0..end {
+                out.push(' ');
+            }
+            i += end;
+        } else if rest.starts_with("/*") {
+            let end = rest.find("*/").map_or(rest.len(), |n| n + 2);
+            for c in rest[..end].chars() {
+                out.push(if c == '\n' { '\n' } else { ' ' });
+            }
+            i += end;
+        } else {
+            if rest.starts_with('"') {
+                in_str = true;
+            }
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+fn is_ident_byte(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// `(line, name)` of every whole-word `embeddings` / `doc_embeddings` and
+/// every `cosine(` call in `src` (comments stripped, strings kept).
+fn vector_mentions(src: &str) -> Vec<(usize, &'static str)> {
+    let text = strip_comments_only(src);
+    let mut out = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        for name in ["embeddings", "doc_embeddings", "cosine("] {
+            let mut from = 0;
+            while let Some(pos) = line[from..].find(name) {
+                let at = from + pos;
+                from = at + name.len();
+                let word_before = line[..at].bytes().last().is_some_and(is_ident_byte);
+                let word_after = line[at + name.len()..]
+                    .bytes()
+                    .next()
+                    .is_some_and(is_ident_byte);
+                if name == "cosine(" {
+                    if !word_before {
+                        out.push((n + 1, name));
+                    }
+                } else if !word_before && !word_after {
+                    out.push((n + 1, name));
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn no_sql_of_the_surface_names_a_vector_table_or_the_cosine_scalar() {
+    let src = surface_src();
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut stack = vec![src.clone()];
+    while let Some(dir) = stack.pop() {
+        for e in fs::read_dir(&dir).expect("src/").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                files.push(p);
+            }
+        }
+    }
+    files.sort();
+    assert!(files.len() > 10, "the surface's sources were not found");
+    let mut lines = Vec::new();
+    for f in &files {
+        let text = fs::read_to_string(f).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
+        for (line, name) in vector_mentions(&text) {
+            lines.push(format!(
+                "{}:{line} {name}",
+                f.strip_prefix(&src).unwrap_or(f).to_string_lossy()
+            ));
+        }
+    }
+    assert!(
+        lines.is_empty(),
+        "the surface touches the semantic bundle's data; reach a vector through `Store::semantic()`:\n  {}",
+        lines.join("\n  ")
+    );
+    assert_eq!(
+        vector_mentions(
+            "let s = \"SELECT vec FROM doc_embeddings\"; // embeddings\ncosine_bytes(a, b)"
+        ),
+        [(1, "doc_embeddings")]
+    );
+}
+
 #[test]
 fn the_query_binding_reaches_the_extensions_only_through_the_capabilities() {
     let forbidden = extension_heads();
@@ -263,7 +393,7 @@ fn the_query_binding_reaches_the_extensions_only_through_the_capabilities() {
         "the capability traits and the core are not extension names"
     );
     let mut lines = Vec::new();
-    for file in ["context.rs", "translate.rs", "planner.rs"] {
+    for file in QUERY_PATH {
         let path = surface_src().join(file);
         let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         for (line, head) in path_heads(&strip(&text), "omgbase_store::") {

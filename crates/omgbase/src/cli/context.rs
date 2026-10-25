@@ -21,7 +21,7 @@ use serde_json::{Value as Json, json};
 use super::argv::Globals;
 use super::output::{CliError, Io, Result};
 use super::render::Style;
-use super::seams::{MinterSource, Seams, open_store, stamp};
+use super::seams::{MinterSource, Seams, discover_semantic, open_store, stamp};
 
 /// Commands that run without a workspace (§3.7).
 pub const NO_WORKSPACE_OK: &[&str] = &["init", "help", "version"];
@@ -302,25 +302,19 @@ impl Cli {
 
     /// The repo's `embedding.*` settings when a provider is named.
     pub fn embedding_settings(&mut self, repo_id: &str) -> Result<Option<EmbeddingSettings>> {
-        let settings = omgbase_sync::resolve_settings(self.store()?, Some(repo_id))?;
-        let Some(emb) = settings.get("embedding").and_then(Json::as_object) else {
-            return Ok(None);
-        };
-        let s = |k: &str| emb.get(k).and_then(Json::as_str).map(str::to_owned);
-        let n = |k: &str| emb.get(k).and_then(Json::as_u64);
-        let cfg = EmbeddingSettings {
-            provider: s("provider"),
-            model: s("model"),
-            dim: n("dim").map(|d| usize::try_from(d).unwrap_or(0)),
-            max_input_tokens: n("maxInputTokens")
-                .or_else(|| n("max_input_tokens"))
-                .map(|d| u32::try_from(d).unwrap_or(u32::MAX)),
-        };
-        Ok(cfg
-            .provider
-            .as_deref()
-            .is_some_and(|p| !p.trim().is_empty())
-            .then_some(cfg))
+        super::seams::embedding_settings(self.store()?, repo_id)
+            .map_err(|e| CliError::engine("error", e))
+    }
+
+    /// Capability discovery for the selected repo (Phase 2,
+    /// [`discover_semantic`]): the `embedding.*` settings the semantic
+    /// capability's state derives from (`enabled` iff a provider is named).
+    /// Every semantic path — `embed`, `status`, the surface — reads them
+    /// through here.
+    pub fn discover_semantic(&mut self) -> Result<Option<EmbeddingSettings>> {
+        let repo = self.repo()?;
+        let store = self.store()?;
+        discover_semantic(store, &repo.repo_id).map_err(|e| CliError::engine("error", e))
     }
 
     /// Whether the effective settings name an embedding provider.

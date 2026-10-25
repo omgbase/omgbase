@@ -4,6 +4,15 @@ import { docPropertiesMerged } from "../core/store/properties.js";
 import { LIVE_LEAF_SQL } from "../core/store/fts.js";
 import { contextPrefix, ctxHashHex, shouldEmbed, estimateTokens, type EmbedTask, type DocEmbedTask, type DocEmbedBlockRef } from "./embeddings.js";
 
+/** Narrow a task build to some documents (the drain's catch-up, `indexer.ts`); absent ⇒ every live document of the repo. */
+export interface TaskScope { docIds?: readonly string[] }
+
+/** The `AND …` clause (and its bound parameter) restricting `<alias>.doc_id` to the scope — a JSON array through `json_each`, so the id count never hits SQLite's variable limit. */
+function scopeClause(alias: string, scope: TaskScope): { sql: string; params: unknown[] } {
+  if (!scope.docIds) return { sql: "", params: [] };
+  return { sql: ` AND ${alias}.doc_id IN (SELECT value FROM json_each(?))`, params: [JSON.stringify([...scope.docIds])] };
+}
+
 // Build the embedding task list for a repo (05 §6). Walks every live block,
 // keeps those worth embedding on their own (shouldEmbed), and attaches the
 // context prefix the worker embeds with: "{doc title} · {path} · {heading
@@ -124,16 +133,17 @@ export function makeBlockContextResolver(store: Store, scope: { repoId: string }
  * text, so embedding it would pool the same words twice) whose text clears the
  * `shouldEmbed` floor.
  */
-export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
+export function buildEmbedTasks(store: Store, repoId: string, scope: TaskScope = {}): EmbedTask[] {
+  const narrow = scopeClause("b", scope);
   const blocks = store.db
     .prepare(
       `SELECT b.block_id, b.doc_id, d.path AS path,
               b.ordinal, b.type, b.text, b.raw_hash
        FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-       WHERE b.repo_id = ? AND ${LIVE_LEAF_SQL}
+       WHERE b.repo_id = ? AND ${LIVE_LEAF_SQL}${narrow.sql}
        ORDER BY d.path, b.ordinal`,
     )
-    .all(repoId) as BlockRow[];
+    .all(repoId, ...narrow.params) as BlockRow[];
   const contexts = makeBlockContextResolver(store, { repoId });
 
   const tasks: EmbedTask[] = [];
@@ -187,8 +197,8 @@ function docHeader(title: string, path: string, props: Record<string, unknown>):
  * reusing block vectors already keyed in the embeddings cache with the SAME ctx
  * as buildEmbedTasks). Docs with no reconstructable content are skipped.
  */
-export function buildDocEmbedTasks(store: Store, repoId: string): DocEmbedTask[] {
-  const blockTasks = buildEmbedTasks(store, repoId);
+export function buildDocEmbedTasks(store: Store, repoId: string, scope: TaskScope = {}): DocEmbedTask[] {
+  const blockTasks = buildEmbedTasks(store, repoId, scope);
   const blocksByDoc = new Map<string, DocEmbedBlockRef[]>();
   // Map block tasks back to their owning doc via a block_id → doc_id lookup, so
   // the pooled fallback references exactly the vectors the block embedder cached.
@@ -208,11 +218,12 @@ export function buildDocEmbedTasks(store: Store, repoId: string): DocEmbedTask[]
     });
   }
 
+  const narrow = scopeClause("docs", scope);
   const docs = store.db
     .prepare(
-      `SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_commit IS NULL ORDER BY path`,
+      `SELECT doc_id, path, lower(hex(file_hash)) AS file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL${narrow.sql} ORDER BY path`,
     )
-    .all(repoId) as { doc_id: string; path: string }[];
+    .all(repoId, ...narrow.params) as { doc_id: string; path: string; file_hash: string | null }[];
 
   const tasks: DocEmbedTask[] = [];
   for (const d of docs) {
@@ -227,7 +238,7 @@ export function buildDocEmbedTasks(store: Store, repoId: string): DocEmbedTask[]
           : d.path;
     const input = `${docHeader(title, d.path, props)}\n${body}`;
     if (input.trim().length === 0) continue;
-    tasks.push({ docId: d.doc_id, input, blocks: blocksByDoc.get(d.doc_id) ?? [] });
+    tasks.push({ docId: d.doc_id, input, docHashHex: d.file_hash || null, blocks: blocksByDoc.get(d.doc_id) ?? [] });
   }
   return tasks;
 }

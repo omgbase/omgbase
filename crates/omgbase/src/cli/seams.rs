@@ -22,6 +22,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use omgbase_search::EmbeddingSettings;
 use omgbase_store::{Capabilities, IdMinter, RandomMinter, SequentialMinter, Store};
 use omgbase_sync::WriterLockOptions;
 
@@ -198,15 +199,68 @@ impl MinterSource {
 /// (`docs/modular-core/README.md`, Phase 1): the binary assembles the
 /// store's capabilities — the history recorder, the semantic provider, the
 /// identity-claims oracle — and hands them down; the core only ever sees
-/// the traits.
+/// the traits. The standard set, or what `OMGBASE_CAPABILITIES` names (the
+/// Phase 2 gate's `core`: no semantic bundle) — a test seam like the minter
+/// and the clock. The semantic slot is then settled per repository by
+/// [`discover_semantic`].
 pub fn open_store(db: &Path, minters: &MinterSource) -> Result<Store, String> {
-    let store = Store::open_with(db, minters.minter(), Capabilities::standard())
-        .map_err(|e| e.to_string())?;
+    let capabilities = Capabilities::standard_from_env().map_err(|e| e.to_string())?;
+    let store = Store::open_with(db, minters.minter(), capabilities).map_err(|e| e.to_string())?;
     store
         .conn()
         .busy_timeout(BUSY_TIMEOUT)
         .map_err(|e| format!("busy_timeout: {e}"))?;
     Ok(store)
+}
+
+/// The repo's effective `embedding.*` settings when a provider is named
+/// (`spec/sync` §3 resolution: the workspace layer, the repo's over it).
+pub fn embedding_settings(
+    store: &Store,
+    repo_id: &str,
+) -> Result<Option<EmbeddingSettings>, String> {
+    let settings =
+        omgbase_sync::resolve_settings(store, Some(repo_id)).map_err(|e| e.to_string())?;
+    let Some(emb) = settings
+        .get("embedding")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Ok(None);
+    };
+    let s = |k: &str| emb.get(k).and_then(|v| v.as_str()).map(str::to_owned);
+    let n = |k: &str| emb.get(k).and_then(serde_json::Value::as_u64);
+    let cfg = EmbeddingSettings {
+        provider: s("provider"),
+        model: s("model"),
+        dim: n("dim").map(|d| usize::try_from(d).unwrap_or(0)),
+        max_input_tokens: n("maxInputTokens")
+            .or_else(|| n("max_input_tokens"))
+            .map(|d| u32::try_from(d).unwrap_or(u32::MAX)),
+    };
+    Ok(cfg
+        .provider
+        .as_deref()
+        .is_some_and(|p| !p.trim().is_empty())
+        .then_some(cfg))
+}
+
+/// Capability discovery (modular-core Phase 2;
+/// `docs/modular-core/phase-1-contracts.md` §7 resolution 1): the semantic
+/// capability is `enabled` for a repository iff its effective settings name
+/// an `embedding.provider` — stored vectors are never consulted. The state is
+/// **derived**, by `version` and the `embed`/`status` verbs, from these
+/// settings; the module itself stays installed whatever the configuration
+/// (`spec/surface` 3.0 pins `provider_unavailable` for "the module is here
+/// and nothing is configured"; `OMGBASE_CAPABILITIES=core` is what removes
+/// it), and a configured provider the host could not start marks it
+/// `unavailable` ([`Store::detach_semantic`] with the reason — the MCP
+/// server). This is the one place the binary reads the configuration for
+/// the capability; it returns the settings the caller spawns from.
+pub fn discover_semantic(
+    store: &Store,
+    repo_id: &str,
+) -> Result<Option<EmbeddingSettings>, String> {
+    embedding_settings(store, repo_id)
 }
 
 #[cfg(test)]

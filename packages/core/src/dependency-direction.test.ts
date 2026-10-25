@@ -4,14 +4,18 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The dependency-direction check of the modular-core program (Phase 1 gate,
-// docs/modular-core/README.md §5 "Dependency-direction check"): the
+// docs/modular-core/README.md §5 "Dependency-direction check"; Phase 2 §6): the
 // current-state layers — `core/**` (except `core/capabilities/**`, the seam),
 // `mutate/**`, `sync/**`, `oqx-js/**`, `reconcile/**` — import nothing from the
 // concrete HISTORY modules (`graph/history.ts`, `core/store/{archive,retention,
-// delta}.ts`) or the concrete SEMANTIC modules (`search/{embeddings,vector,
-// tasks,drain}.ts`, `search/cel/**`); they reach them through the capability
-// interfaces. Only the composition layer (`mcp/server.ts`, `index.ts`, the CLI
-// package) and the capability implementations may import them.
+// delta}.ts`); they reach them through the capability interfaces. The concrete
+// SEMANTIC bundle is the whole of `semantic/**` (Phase 2 moved it out of
+// `search/`, which keeps the lexical FTS parts and the fusion ranker) plus the
+// dead `search/cel/**`, and its importer set is WIDER: `mcp/**` (the tool
+// bodies), `search/**` (FTS, fusion), `graph/**` and `format/**` are free of it
+// too — the engine reaches a vector only through `SemanticProvider`. Only the
+// composition layer (`index.ts`, the CLI package) and the capability
+// implementations may import it.
 //
 // The import graph is read from the sources (every `import … from "…"`,
 // `export … from "…"` and bare `import "…"` of a production `.ts` file — test
@@ -24,10 +28,13 @@ import { fileURLToPath } from "node:url";
 const SRC = dirname(fileURLToPath(import.meta.url));
 
 const RESTRICTED_IMPORTERS = ["core", "mutate", "sync", "oqx-js", "reconcile"];
+/** Who must not import the semantic bundle: the history importers plus every engine layer a tool body or a lexical search runs through. */
+const SEMANTIC_FREE_IMPORTERS = [...RESTRICTED_IMPORTERS, "mcp", "search", "graph", "format"];
 const SEAM_DIR = "core/capabilities";
 const HISTORY_MODULES = ["graph/history.ts", "core/store/archive.ts", "core/store/retention.ts", "core/store/delta.ts"];
-const SEMANTIC_MODULES = ["search/embeddings.ts", "search/vector.ts", "search/tasks.ts", "search/drain.ts"];
-const SEMANTIC_DIRS = ["search/cel"];
+/** The semantic modules the seam must implement over (the ones the Phase 1 list named, at their Phase 2 paths, plus the indexer). */
+const SEMANTIC_MODULES = ["semantic/embeddings.ts", "semantic/vector.ts", "semantic/tasks.ts", "semantic/indexer.ts"];
+const SEMANTIC_DIRS = ["semantic", "search/cel"];
 
 interface Edge { from: string; to: string }
 interface AllowlistEntry extends Edge { inventory: string; note: string }
@@ -48,13 +55,22 @@ function isTest(file: string): boolean {
   return file.endsWith(".test.ts") || file.endsWith(".test.helpers.ts");
 }
 
+function isHistoryTarget(file: string): boolean {
+  return HISTORY_MODULES.includes(file);
+}
+function isSemanticTarget(file: string): boolean {
+  return SEMANTIC_DIRS.some((d) => file.startsWith(`${d}/`));
+}
 function isRestrictedTarget(file: string): boolean {
-  return HISTORY_MODULES.includes(file) || SEMANTIC_MODULES.includes(file) || SEMANTIC_DIRS.some((d) => file.startsWith(`${d}/`));
+  return isHistoryTarget(file) || isSemanticTarget(file);
 }
 
-function isRestrictedImporter(file: string): boolean {
-  if (isTest(file) || file.startsWith(`${SEAM_DIR}/`) || isRestrictedTarget(file)) return false;
-  return RESTRICTED_IMPORTERS.some((d) => file.startsWith(`${d}/`));
+/** Is `from` → `to` an edge the rule forbids? History targets bind the Phase 1 importers; semantic targets the wider set. */
+function isRestrictedEdge(from: string, to: string): boolean {
+  if (isTest(from) || from.startsWith(`${SEAM_DIR}/`) || isRestrictedTarget(from)) return false;
+  if (isHistoryTarget(to)) return RESTRICTED_IMPORTERS.some((d) => from.startsWith(`${d}/`));
+  if (isSemanticTarget(to)) return SEMANTIC_FREE_IMPORTERS.some((d) => from.startsWith(`${d}/`));
+  return false;
 }
 
 const SPECIFIER = /(?:^|\n)\s*(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']|(?:^|\n)\s*import\s*["']([^"']+)["']/g;
@@ -77,8 +93,7 @@ export function restrictedEdges(): Edge[] {
   const edges: Edge[] = [];
   for (const abs of walk(SRC)) {
     const from = rel(abs);
-    if (!isRestrictedImporter(from)) continue;
-    for (const to of importsOf(abs)) if (isRestrictedTarget(to)) edges.push({ from, to });
+    for (const to of importsOf(abs)) if (isRestrictedEdge(from, to)) edges.push({ from, to });
   }
   return edges.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
 }
@@ -110,7 +125,22 @@ describe("dependency direction (modular-core Phase 1)", () => {
     const seamFiles = walk(join(SRC, SEAM_DIR)).filter((f) => !isTest(rel(f)));
     const reached = new Set(seamFiles.flatMap(importsOf).filter(isRestrictedTarget));
     // The default implementations wrap every concrete history module and every semantic module.
-    for (const m of [...HISTORY_MODULES, ...SEMANTIC_MODULES.filter((m) => m !== "search/drain.ts")]) expect(reached, `core/capabilities should implement over ${m}`).toContain(m);
+    for (const m of [...HISTORY_MODULES, ...SEMANTIC_MODULES]) expect(reached, `core/capabilities should implement over ${m}`).toContain(m);
+  });
+
+  it("the semantic bundle is reached only through the seam: no production module outside semantic/ and the seam imports it, save the composition entry", () => {
+    const files = walk(SRC).map(rel).filter((f) => !isTest(f) && !isSemanticTarget(f) && !f.startsWith(`${SEAM_DIR}/`));
+    const importers = files.filter((f) => importsOf(join(SRC, f)).some(isSemanticTarget));
+    // `index.ts` is the package's composition surface: the CLI's `omg embed`/`omg mcp` compose the worker and the provider from it.
+    expect(importers).toEqual(["index.ts"]);
+  });
+
+  it("the core's current-state tables are the only ones the engine reads outside the bundle: no SQL outside semantic/ names the vector tables", () => {
+    const SQL_ON_VECTORS = /\b(FROM|INTO|UPDATE|JOIN)\s+(doc_)?embeddings\b/i;
+    const offenders = walk(SRC).map(rel).filter((f) => !isTest(f) && !isSemanticTarget(f) && f !== "core/store/schema.ts")
+      .filter((f) => SQL_ON_VECTORS.test(readFileSync(join(SRC, f), "utf8")));
+    // `schema.ts` holds the DDL (the split is the store 17 major); `size.ts` only categorizes the names (spec/store §7.5) and `sqlite_master` walks them.
+    expect(offenders).toEqual([]);
   });
 
   it("the dead CEL filter compiler is gone (D9) and nothing imports search/cel/ outside its own tests", () => {

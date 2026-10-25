@@ -10,6 +10,14 @@
 //! `Cargo.toml`, one `<core file> <head>` pair per line with the inventory
 //! row it cites; an entry that no longer matches fails the test too, so the
 //! allowlist can only shrink.
+//!
+//! Phase 2 adds the data boundary: no SQL under `src/core/` names a vector
+//! table (`embeddings`, `doc_embeddings`) or the `cosine` scalar — every
+//! vector read or write goes through `SemanticProvider` — checked over the
+//! comment-stripped source *with its string literals kept*, since SQL is a
+//! string. `core/size.rs` is the one exception: its category map names every
+//! table of the database for the byte accountant (it reads `dbstat`, never a
+//! row), and its advice takes the bundle's tables from the provider.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -419,6 +427,117 @@ fn the_core_names_no_history_or_semantic_item() {
         "boundary-allowlist.txt entries no core file matches any more — delete them:\n  {}",
         stale.join("\n  ")
     );
+}
+
+/// `src` with comments blanked but string literals kept (the SQL check).
+fn strip_comments_only(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    let b = src.as_bytes();
+    let mut in_str = false;
+    while i < b.len() {
+        let rest = &src[i..];
+        if in_str {
+            if rest.starts_with('\\') && i + 1 < b.len() {
+                out.push_str(&rest[..2]);
+                i += 2;
+                continue;
+            }
+            if rest.starts_with('"') {
+                in_str = false;
+            }
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        } else if rest.starts_with("//") {
+            let end = rest.find('\n').unwrap_or(rest.len());
+            for _ in 0..end {
+                out.push(' ');
+            }
+            i += end;
+        } else if rest.starts_with("/*") {
+            let end = rest.find("*/").map_or(rest.len(), |n| n + 2);
+            for c in rest[..end].chars() {
+                out.push(if c == '\n' { '\n' } else { ' ' });
+            }
+            i += end;
+        } else {
+            if rest.starts_with('"') {
+                in_str = true;
+            }
+            let ch = rest.chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+/// The vector tables and the scalar only the semantic bundle may name.
+const VECTOR_NAMES: [&str; 3] = ["embeddings", "doc_embeddings", "cosine("];
+
+/// Every `(line, name)` of a vector-table or `cosine(` mention in `src`
+/// (comments stripped, strings kept); `embeddings` is matched as a whole word
+/// so `doc_embeddings` counts once.
+fn vector_mentions(src: &str) -> Vec<(usize, &'static str)> {
+    let text = strip_comments_only(src);
+    let mut out = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        for name in VECTOR_NAMES {
+            let mut from = 0;
+            while let Some(pos) = line[from..].find(name) {
+                let at = from + pos;
+                from = at + name.len();
+                let before = line[..at].bytes().last();
+                let after = line[at + name.len()..].bytes().next();
+                let word_before = before.is_some_and(is_ident);
+                let word_after = after.is_some_and(is_ident);
+                if name == "cosine(" {
+                    if !word_before {
+                        out.push((n + 1, name));
+                    }
+                } else if !word_before && !word_after {
+                    out.push((n + 1, name));
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn no_sql_of_the_core_names_a_vector_table_or_the_cosine_scalar() {
+    let src = src_dir();
+    let mut lines = Vec::new();
+    for f in rust_files(&src.join("core")) {
+        let rel = f
+            .strip_prefix(&src)
+            .unwrap_or(&f)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if rel == "core/size.rs" {
+            continue; // the byte accountant's category map (module doc above)
+        }
+        let text = fs::read_to_string(&f).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
+        for (line, name) in vector_mentions(&text) {
+            lines.push(format!("{rel}:{line} {name}"));
+        }
+    }
+    assert!(
+        lines.is_empty(),
+        "src/core touches the semantic bundle's data; route it through `SemanticProvider`:\n  {}",
+        lines.join("\n  ")
+    );
+    // The check bites: the bundle's own files do name them.
+    let provider = fs::read_to_string(src.join("semantic/provider.rs")).expect("provider.rs");
+    assert!(
+        !vector_mentions(&provider).is_empty(),
+        "the semantic provider names its tables"
+    );
+    let sample = vector_mentions(
+        "// embeddings in a comment\nlet q = \"SELECT vec FROM embeddings WHERE 1\"; /* doc_embeddings */\ncosine_bytes(a, b); conn.create_scalar_function(\"cosine\", 2, f); \"SELECT cosine(a, b)\"",
+    );
+    assert_eq!(sample, [(2, "embeddings"), (3, "cosine(")]);
 }
 
 #[test]

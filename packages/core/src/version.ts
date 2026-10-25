@@ -5,6 +5,8 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import type { Store } from "./core/store/store.js";
 import { SPEC_VERSIONS } from "./spec-versions.js";
 import type { ToolsProfile } from "./mcp/server.js";
+import type { CapabilityState } from "./core/capabilities/errors.js";
+import { capabilityStates, type CapabilityStates } from "./sync/capability-state.js";
 
 // The `version` tool (spec/surface §4, 1.4) and `omg version` (spec/cli §6,
 // 1.1): which engine, its own version, every component's version, the spec
@@ -48,6 +50,19 @@ export interface VersionInfo {
   built: string | null;
   /** the catalog profile the server serves (spec/surface §4 "Profiles", 4.3): `omg version` itself reports `full` */
   profile: ToolsProfile;
+  /**
+   * The capability manifest (modular-core Phase 2; phase-1-contracts §2.3,
+   * §7 resolution 1): per capability its state — `enabled`, `disabled` or
+   * `unavailable`. `history` is `enabled` while the recorder is part of the
+   * composition (every composition of this phase). `semantic` is derived from
+   * the repository's PROVIDER CONFIGURATION, never from stored vectors:
+   * `enabled` iff the store runs with the semantic module and
+   * `embedding.provider` is configured; `unavailable` when it is configured
+   * but the host could not start it (retriable); `disabled` otherwise — a
+   * store without the module included. Shape-pinned by spec/surface
+   * `reads::…` like the rest.
+   */
+  capabilities: CapabilityStates;
 }
 
 /** The omgbase packages the reference binary is built from (spec/surface §4). */
@@ -124,7 +139,7 @@ export function coreVersion(): string {
  * `profile` the catalog profile served (the MCP server's `--tools`; the CLI's
  * own `version` verb is the full library and says `full`).
  */
-export function versionInfo(store?: Store | null, host?: HostInfo, profile: ToolsProfile = "full"): VersionInfo {
+export function versionInfo(store?: Store | null, host?: HostInfo, profile: ToolsProfile = "full", capabilities?: CapabilityStates): VersionInfo {
   const anchors = [...(host?.resolveFrom ? [host.resolveFrom] : []), import.meta.url];
   const components: Record<string, string> = {};
   for (const name of COMPONENT_PACKAGES) {
@@ -147,5 +162,9 @@ export function versionInfo(store?: Store | null, host?: HostInfo, profile: Tool
     commit: host?.commit ?? null,
     built: host?.built ?? null,
     profile,
+    // Without a repository the semantic state is the workspace layer's (`omg
+    // version` outside a repo; the surface runner's fixtures); without a store,
+    // nothing is configured and no module runs: both `disabled`.
+    capabilities: capabilities ?? (store ? capabilityStates(store, null) : { history: { state: "disabled" satisfies CapabilityState }, semantic: { state: "disabled" } }),
   };
 }

@@ -10,6 +10,9 @@ import {
   SIZE_CATEGORIES, TABLE_CATEGORY, categoryOf, formatShare, humanBytes, shareOf, sizeAdvice, sizeReport, vacuum,
   type SizeCategoryReport, type SizeFile,
 } from "./size.js";
+import { vectorSizeAdvice } from "../../semantic/advice.js";
+
+const RETENTION = { revisions: 0, bytes: 0 };
 
 // spec/store §7 "Size": the report over dbstat, the categorization, the advice,
 // the fallback without dbstat, and VACUUM.
@@ -175,12 +178,12 @@ describe("advice", () => {
   });
   it("names history past 50 % and embeddings past 25 %, in order", () => {
     const cats = [cat("content", 13, 100), cat("history", 57, 100), cat("search", 30, 100, [["embeddings", 26], ["blocks_fts", 4]])];
-    expect(sizeAdvice(file(), cats)).toEqual([
+    expect(sizeAdvice(file(), cats, 0, RETENTION, vectorSizeAdvice)).toEqual([
       "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
       "embeddings are 26.0% of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
     ]);
     // Exactly 50 / 25 do not fire; null shares (no dbstat) never do.
-    expect(sizeAdvice(file(), [cat("content", 25, 100), cat("history", 50, 100), cat("search", 25, 100, [["embeddings", 25]])])).toEqual(["nothing to reclaim"]);
+    expect(sizeAdvice(file(), [cat("content", 25, 100), cat("history", 50, 100), cat("search", 25, 100, [["embeddings", 25]])], 0, RETENTION, vectorSizeAdvice)).toEqual(["nothing to reclaim"]);
     const blind: SizeCategoryReport = { name: "history", bytes: null, share: null, rows: 9, tables: [] };
     expect(sizeAdvice(file(), [blind])).toEqual(["nothing to reclaim"]);
   });
@@ -201,7 +204,7 @@ describe("advice", () => {
     ]);
     const cats = [cat("content", 13, 100), cat("history", 57, 100, [["dispositions", 57]]), cat("search", 30, 100, [["embeddings", 26]])];
     cats[1]!.tables[0]!.rows = 4;
-    expect(sizeAdvice(file(), cats, 3).map((a) => a.split(":")[0])).toEqual([
+    expect(sizeAdvice(file(), cats, 3, RETENTION, vectorSizeAdvice).map((a) => a.split(":")[0])).toEqual([
       "history dominates (57.0%)",
       "3 same dispositions are history nothing reads (store 14.2)",
       "embeddings are 26.0% of the database",

@@ -23,9 +23,9 @@ import { docsRead } from "../core/read/document.js";
 import { referencePath, storagePath } from "../core/paths.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
-import { cosineBytes } from "../core/vec.js";
 import { semanticOf } from "../core/capabilities/registry.js";
-import type { BlockContextResolver, SemanticVec } from "../core/capabilities/types.js";
+import { CapabilityUnavailable } from "../core/capabilities/errors.js";
+import type { SemanticScorer, SemanticVec } from "../core/capabilities/types.js";
 import { dateFunction, dateMethod } from "./dates.js";
 
 export type Target = "docs" | "blocks" | "nodes" | "links";
@@ -741,31 +741,25 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return !!one(`SELECT 1 FROM blocks_fts WHERE rowid = (SELECT rowid FROM blocks WHERE block_id = ?) AND blocks_fts MATCH ?`, r.block_id, match);
   };
 
-  // A block's vector is the cache row for its CURRENT (raw_hash, ctx_hash)
-  // (spec/surface §1.3, spec/search §3 — since search 1.1; before, the first row
-  // for the raw_hash whatever its context). The context resolver is built once
-  // per query (one scan of titles and sections), then a per-block chain walk.
-  // Both reads are the semantic capability's (`SemanticProvider.blockContexts`
-  // / `blockVector` / `docVector`, README §6); a store with the capability off
-  // has no vectors, so `semantic()` fails the same way as with no provider.
+  // `semantic("phrase")` is the semantic capability's scorer (README §6; Phase
+  // 2): a block's score is the cosine of the cache row for its CURRENT
+  // (raw_hash, ctx_hash) against the query vector (spec/surface §1.3,
+  // spec/search §3 — since search 1.1), a document's that of its doc vector;
+  // the scorer is built once per query. The target check comes first (a
+  // `semantic()` on nodes/links/revisions is `filter_invalid` on every
+  // composition); on a store without the module the call is
+  // `capability_unavailable { semantic, disabled }` (phase-1-contracts §2.1).
   const semantic = semanticOf(db);
-  let blockContexts: BlockContextResolver | undefined;
-  const blockVector = (r: Row, model: string): Buffer | null => {
-    if (!semantic) return null;
-    blockContexts ??= semantic.blockContexts({ repoId });
-    const path = typeof r.__path === "string" ? r.__path : String(scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.doc_id) ?? "");
-    const ctx = blockContexts.ctx({ doc_id: String(r.doc_id), path, ordinal: Number(r.ordinal), type: String(r.type) });
-    return semantic.blockVector(r.raw_hash as Buffer, ctx, model);
-  };
+  let scorer: SemanticScorer | undefined;
   const semanticScore = (t: Kind | undefined, r: Row, phrase: string): number | null => {
     if (t === "nodes" || t === "links" || t === "revisions") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
+    if (!semantic) throw CapabilityUnavailable.semanticDisabled();
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
-    const vec = t === "docs"
-      ? (semantic ? semantic.docVector(String(r.doc_id), resolved.model) : null)
-      : blockVector(r, resolved.model);
-    if (!vec) return null;
-    return cosineBytes(vec, resolved.vec);
+    scorer ??= semantic.scorer(repoId);
+    if (t === "docs") return scorer.doc(String(r.doc_id), resolved);
+    const path = typeof r.__path === "string" ? r.__path : String(scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.doc_id) ?? "");
+    return scorer.block({ doc_id: String(r.doc_id), path, ordinal: Number(r.ordinal), type: String(r.type), raw_hash: r.raw_hash as Buffer }, resolved);
   };
 
   const underSubtree = (r: Row, target: string): boolean => {

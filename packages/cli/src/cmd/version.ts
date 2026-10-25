@@ -63,6 +63,9 @@ async function runVersion(cli: Cli, args: string[]): Promise<number> {
   // The catalog profile served (spec/surface §4 "Profiles", 4.3): `full` for
   // the library itself; over --server, whatever the remote serves.
   line("profile", info.profile);
+  // The capability manifest (modular-core Phase 2) rides in `--json` only:
+  // the human rendering is pinned line for line by spec/cli (`read::version`,
+  // `invoke::version-verb-no-workspace`) and both binaries render it alike.
   return EXIT_OK;
 }
 

@@ -1,7 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
 import { textSearch } from "./text.js";
-import { vectorSearch } from "./vector.js";
+import { requireSemantic } from "../core/capabilities/registry.js";
 
 // Hybrid retrieval & ranking (05 §5). Reciprocal-rank fusion of the FTS and
 // vector rankers, then explainable multiplicative boosts. Every hit carries its
@@ -93,9 +93,13 @@ export function hybridSearch(store: Store, input: HybridInput): HybridHit[] {
   const vecRanks = new Map<string, number>();
   const cosineByBlock = new Map<string, number>();
   if (input.vector) {
+    // The vector leg is the semantic capability's (`SemanticProvider.vectorSearch`,
+    // README §6): a caller that supplies a query vector on a store without the
+    // module gets `capability_unavailable { semantic, disabled }`; with no
+    // vector the ranker is FTS-only on every composition (resolution 13).
     // First occurrence wins, exactly as for FTS (spec/search §4). Since search
     // 1.1 vectorSearch yields one candidate per block, so this is a no-op guard.
-    vectorSearch(store, input.repoId, input.vector.model, input.vector.vec, { limit: 200 }).forEach((h, i) => {
+    requireSemantic(store.db).vectorSearch(input.repoId, input.vector.model, input.vector.vec, { limit: 200 }).forEach((h, i) => {
       if (vecRanks.has(h.blockId)) return;
       vecRanks.set(h.blockId, i + 1);
       cosineByBlock.set(h.blockId, h.cosine);

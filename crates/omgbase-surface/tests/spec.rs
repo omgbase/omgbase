@@ -31,11 +31,12 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use omgbase_reconcile::Config;
 use omgbase_store::{
-    BatchItem, BatchOutcome, ExportOptions, RetentionOptions, SequentialMinter, Store,
+    BatchItem, BatchOutcome, Capabilities, ExportOptions, RetentionOptions, SequentialMinter, Store,
 };
 use omgbase_surface::dates;
 use omgbase_surface::{
@@ -360,8 +361,69 @@ fn load() -> Loaded {
 
 // ---- helpers ----------------------------------------------------------------------
 
+/// A fresh store with the capabilities `OMGBASE_CAPABILITIES` names (Phase
+/// 2's gate: `core` runs every case without the semantic bundle).
 fn fresh_store() -> Store {
-    Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).expect("in-memory store")
+    Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
+    )
+    .expect("in-memory store")
+}
+
+/// Is this a core-only run (`OMGBASE_CAPABILITIES=core`)?
+fn core_only() -> bool {
+    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+}
+
+/// Phase 2: what a semantic step pinned to `provider_unavailable { provider:
+/// null }` (the 3.0 "no provider" case, on a store that carries the
+/// capability) must answer on a store that does not — the
+/// `capability_unavailable { capability: "semantic", state: "disabled" }`
+/// envelope of the 6.0 draft (§2.1), byte for byte. The core-only run
+/// rewrites the expectation and counts the steps it rewrote
+/// ([`CORE_REWRITES`]), so the suite's own pins stay as recorded.
+fn core_only_expectation(expect: &Json) -> Json {
+    let mut out = expect.clone();
+    rewrite_semantic_pins(&mut out);
+    out
+}
+
+static CORE_REWRITES: AtomicUsize = AtomicUsize::new(0);
+
+fn rewrite_semantic_pins(v: &mut Json) {
+    match v {
+        Json::Object(o) => {
+            if o.get("error").and_then(Json::as_str) == Some("provider_unavailable")
+                && o.get("data") == Some(&json!({ "provider": null }))
+            {
+                CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                *o = json!({
+                    "error": "capability_unavailable",
+                    "retriable": false,
+                    "message": omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
+                    "data": {
+                        "capability": "semantic",
+                        "state": "disabled",
+                        "fix": omgbase_surface::SEMANTIC_DISABLED_FIX,
+                    },
+                })
+                .as_object()
+                .cloned()
+                .expect("object");
+                return;
+            }
+            for x in o.values_mut() {
+                rewrite_semantic_pins(x);
+            }
+        }
+        Json::Array(a) => {
+            for x in a {
+                rewrite_semantic_pins(x);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// `spec/store` §9.4's outcome shape for an observe step.
@@ -685,7 +747,15 @@ fn surface_composed(data: Option<&Json>) -> bool {
         return true;
     }
     [
-        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider", "plan_id",
+        "_id",
+        "_path",
+        "_doc_id",
+        "doc_path",
+        "ref",
+        "section",
+        "provider",
+        "plan_id",
+        "capability",
     ]
     .iter()
     .any(|k| o.contains_key(*k))
@@ -1041,11 +1111,21 @@ fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
         }
         Kind::Reads => {
             let actual = run_reads_case(&c.case, None)?;
-            deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
+            let expect = if core_only() {
+                core_only_expectation(&c.case["expect"])
+            } else {
+                c.case["expect"].clone()
+            };
+            deep_eq_tol(&actual, &expect, "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Examples => {
             let actual = run_reads_case(&c.case, Some(suite.corpus))?;
-            deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
+            let expect = if core_only() {
+                core_only_expectation(&c.case["expect"])
+            } else {
+                c.case["expect"].clone()
+            };
+            deep_eq_tol(&actual, &expect, "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Profiles => run_profile_case(&c.case),
         Kind::Interop => Err("interop cases are run by crates/omgbase/tests/interop.rs".to_owned()),
@@ -1208,6 +1288,13 @@ fn spec() {
             ""
         }
     );
+    if core_only() {
+        eprintln!(
+            "spec: {}=core — the semantic bundle absent; {} pinned provider_unavailable step(s) answered capability_unavailable {{ semantic, disabled }}",
+            omgbase_store::CAPABILITIES_ENV,
+            CORE_REWRITES.load(Ordering::SeqCst)
+        );
+    }
     assert!(
         all_ids.len() == passing.len() + failing.len(),
         "case ids are unique across files"

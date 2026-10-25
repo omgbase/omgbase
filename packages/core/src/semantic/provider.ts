@@ -1,7 +1,7 @@
 // Provider configuration (05 §6). The embedding provider is an external
 // *process or endpoint* named in repo settings — `embedding.provider` is either
 // a shell command (spawned and spoken to over the stdio JSON protocol) or an
-// http(s) URL (GET metadata, POST embed) — see `search/external.ts`. Nothing is
+// http(s) URL (GET metadata, POST embed) — see `semantic/external.ts`. Nothing is
 // imported in-process, so core carries no ML dependency and the embedder can be
 // any language. `@omgbase/embedder`'s `omgbase-embedder` binary is the default
 // local implementation; an HTTP endpoint is the same contract over the wire —

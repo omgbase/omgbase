@@ -2,11 +2,10 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL } from "./schema.js";
-import { cosineBytes } from "../vec.js";
 import { mintId, registerIdOracle } from "../ids.js";
 import type { Capabilities, CapabilitiesFactory } from "../capabilities/types.js";
 import { bindCapabilities } from "../capabilities/registry.js";
-import { defaultCapabilities } from "../capabilities/default.js";
+import { envCapabilities } from "../capabilities/default.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -20,9 +19,11 @@ export interface StoreOptions {
    * The capabilities this store runs with (modular-core Phase 1,
    * `core/capabilities/`): the history recorder, the semantic provider and
    * the identity claims. The composition layer (`Workspace`, the CLI, a
-   * library embedding) names a factory; absent, `defaultCapabilities` — the
-   * same implementations — so a bare store (fixtures, tests) behaves exactly
-   * as one opened through the composition layer.
+   * library embedding) names a factory; absent, `envCapabilities()` — the
+   * full set unless `OMGBASE_CAPABILITIES=core` selects the core-only one — so
+   * a bare store (fixtures, tests) behaves exactly as one opened through the
+   * composition layer, and one environment variable runs every fixture suite
+   * with the semantic module absent (the Phase 2 gate).
    */
   capabilities?: CapabilitiesFactory;
 }
@@ -41,15 +42,12 @@ export class Store {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
-    // cosine(vecBlob, queryBlob) → REAL: the similarity used by OQX's semantic()
-    // scalar. Deterministic (same inputs → same score) so SQLite may cache it.
-    this.db.function("cosine", { deterministic: true }, (a, b) =>
-      cosineBytes(a as Uint8Array | null, b as Uint8Array | null),
-    );
     this.migrate();
     // The capabilities (modular-core Phase 1): bound to the connection so a
-    // core path holding only `db` reaches them (`capabilitiesOf`).
-    this.capabilities = (opts.capabilities ?? defaultCapabilities)(this);
+    // core path holding only `db` reaches them (`capabilitiesOf`). The
+    // `cosine` SQL function is the semantic provider's to register (Phase 2):
+    // a core-only store has none.
+    this.capabilities = (opts.capabilities ?? envCapabilities())(this);
     bindCapabilities(this.db, this.capabilities);
     // Registered after the migration so every table the oracle reads exists.
     // (A migration's own mints — v13's `src_` per repo — are checked only

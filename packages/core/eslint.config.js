@@ -16,16 +16,16 @@ const siblingBoundary = {
 // in `import-allowlist.json` are the Phase 3/4 leftovers, each citing its
 // inventory row; `src/dependency-direction.test.ts` checks the same list edge by
 // edge and fails when an entry stops being a live import (the list only shrinks).
+// Phase 2 moved the semantic bundle to `src/semantic/` and widened its importer
+// set: `mcp/**` (the tool bodies), `search/**` (FTS, fusion), `graph/**` and
+// `format/**` are free of it too (`semanticBoundary` below).
+export const semanticModules = ["**/semantic/*", "**/semantic/**", "**/search/cel/*"];
 export const historyAndSemanticModules = [
   "**/graph/history.js",
   "**/store/archive.js",
   "**/store/retention.js",
   "**/store/delta.js",
-  "**/search/embeddings.js",
-  "**/search/vector.js",
-  "**/search/tasks.js",
-  "**/search/drain.js",
-  "**/search/cel/*",
+  ...semanticModules,
   // The same modules imported from their own directory (`core/store/size.ts` →
   // `./archive.js`): `no-restricted-imports` matches the specifier, not the
   // resolved path, so the sibling spellings are listed too. The import-graph
@@ -37,6 +37,10 @@ export const historyAndSemanticModules = [
 const capabilityBoundary = {
   group: historyAndSemanticModules,
   message: "the history/semantic modules are reached through the capability interfaces (src/core/capabilities/, docs/modular-core/README.md §5 \"Dependency-direction check\"); only the composition layer and the capability implementations import them.",
+};
+const semanticBoundary = {
+  group: semanticModules,
+  message: "the semantic bundle (src/semantic/) is reached through SemanticProvider (src/core/capabilities/, docs/modular-core/README.md §6); only index.ts, the capability implementations and the CLI compose it.",
 };
 const allowlisted = importAllowlist.entries.map((e) => `src/${e.from}`);
 const concreteHistoryModules = ["src/graph/history.ts", "src/core/store/archive.ts", "src/core/store/retention.ts", "src/core/store/delta.ts"];
@@ -68,6 +72,13 @@ export default [
     ignores: [...testFiles, ...allowlisted],
     rules: {
       "no-restricted-imports": ["error", { paths: bannedSerializers, patterns: [capabilityBoundary] }],
+    },
+  },
+  {
+    files: ["src/mcp/**/*.ts", "src/search/**/*.ts", "src/graph/**/*.ts", "src/format/**/*.ts"],
+    ignores: testFiles,
+    rules: {
+      "no-restricted-imports": ["error", { paths: bannedSerializers, patterns: [semanticBoundary] }],
     },
   },
 ];

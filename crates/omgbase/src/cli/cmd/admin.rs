@@ -4,7 +4,7 @@
 //! embedding queue of `spec/search` §2 — so §3.2 gives their `--json` shapes
 //! and the CLI names what it did.
 
-use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provider};
+use omgbase_search::{EmbeddingProvider, create_external_provider};
 use omgbase_store::{LIVE_LEAF_SQL, RebuildTarget, SizeReport, format_share, human_bytes};
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings,
@@ -566,29 +566,6 @@ pub fn config(cli: &mut Cli, args: &[String]) -> Result<i32> {
 
 // ---- embed ----------------------------------------------------------------------------
 
-/// The repo's effective `embedding.*` settings when a provider is named.
-fn embedding_settings(cli: &mut Cli, repo_id: &str) -> Result<Option<EmbeddingSettings>> {
-    let settings = resolve_settings(cli.store()?, Some(repo_id))?;
-    let Some(emb) = settings.get("embedding").and_then(Json::as_object) else {
-        return Ok(None);
-    };
-    let s = |k: &str| emb.get(k).and_then(Json::as_str).map(str::to_owned);
-    let n = |k: &str| emb.get(k).and_then(Json::as_u64);
-    let cfg = EmbeddingSettings {
-        provider: s("provider"),
-        model: s("model"),
-        dim: n("dim").map(|d| usize::try_from(d).unwrap_or(0)),
-        max_input_tokens: n("maxInputTokens")
-            .or_else(|| n("max_input_tokens"))
-            .map(|d| u32::try_from(d).unwrap_or(u32::MAX)),
-    };
-    Ok(cfg
-        .provider
-        .as_deref()
-        .is_some_and(|p| !p.trim().is_empty())
-        .then_some(cfg))
-}
-
 /// A configured embedder that cannot start is a loud, typed fault — never
 /// mistaken for an unconfigured one (`data { provider, reason }`; the reason
 /// is the OS's spawn error, unpinned).
@@ -614,7 +591,9 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let prune = args.iter().any(|a| a == "--prune");
     cli.workspace()?;
     let repo = cli.repo()?;
-    let Some(cfg) = embedding_settings(cli, &repo.repo_id)? else {
+    // The repo's effective `embedding.*` settings when a provider is named —
+    // and the capability discovery that goes with them (Phase 2).
+    let Some(cfg) = cli.discover_semantic()? else {
         return no_provider(cli);
     };
     let provider_name = cfg.provider.clone().unwrap_or_default();
@@ -628,10 +607,25 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let io = cli.io;
     let machine = cli.machine();
     let store = cli.store()?;
+    // A configured provider means the capability is `enabled` (discovery);
+    // only a store opened without the bundle (`OMGBASE_CAPABILITIES=core`)
+    // lacks it here.
+    let Some(sem) = store.semantic() else {
+        return Err(CliError::engine_data(
+            "capability_unavailable",
+            omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
+            json!({
+                "capability": "semantic",
+                "state": "disabled",
+                "fix": omgbase_surface::SEMANTIC_DISABLED_FIX,
+            }),
+        ));
+    };
+    let conn = store.conn();
 
     if sub == Some("drain") {
-        let tasks = store.build_embed_tasks(&repo.repo_id)?;
-        let pending = store.stale_blocks(&tasks, &model)?.len();
+        let queue = sem.queue(conn, &repo.repo_id, Some(&model))?;
+        let pending = queue.stale_blocks;
         // Egress notice (`spec/search` §4): a remote provider receives block text.
         let remote = provider_name.to_ascii_lowercase().starts_with("http://")
             || provider_name.to_ascii_lowercase().starts_with("https://");
@@ -644,9 +638,13 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 "  embedding {pending} block(s) via {provider_name} (local process)"
             )));
         }
-        let stats = store.drain(&repo.repo_id, provider.as_ref())?;
+        // The indexer (Phase 2): positioned by the watermark — a bootstrap,
+        // a catch-up over what the feed names, or a rescan with the prune of
+        // gone entities when the cursor cannot be served.
+        let outcome = sem.drain(store, &repo.repo_id, provider.as_ref())?;
+        let stats = outcome.stats;
         let pruned = if prune {
-            let p = store.prune_foreign_vectors(&model)?;
+            let p = sem.prune_foreign(conn, &model)?;
             if !machine && (p.blocks > 0 || p.docs > 0) {
                 io.err(&style.dim(&format!(
                     "  pruned {} block + {} doc vector(s) from other models",
@@ -669,34 +667,59 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 json!({ "blocks": p.blocks, "docs": p.docs }),
             );
         }
+        m.insert("mode".to_owned(), json!(outcome.mode.as_str()));
+        m.insert("processedSeq".to_owned(), json!(outcome.processed_seq));
+        if let Some(n) = outcome.docs_rescanned {
+            m.insert("docsRescanned".to_owned(), json!(n));
+        }
+        if stats.docs.skipped > 0 {
+            m.insert("skipped".to_owned(), json!(stats.docs.skipped));
+        }
+        if outcome.pruned.blocks > 0 || outcome.pruned.docs > 0 {
+            m.insert(
+                "swept".to_owned(),
+                json!({ "blocks": outcome.pruned.blocks, "docs": outcome.pruned.docs }),
+            );
+        }
         let doc = Json::Object(m);
         if let Some(code) = machine_out(cli, &doc, None, None) {
             return code;
         }
+        let how = match outcome.docs_rescanned {
+            Some(n) => format!("{} over {n} changed doc(s)", outcome.mode.as_str()),
+            None => outcome.mode.as_str().to_owned(),
+        };
         cli.io.err(&format!(
-            "  {} embedded {embedded}, cached {cached}",
-            style.ok(style.glyphs().ok)
+            "  {} embedded {embedded}, cached {cached} {}",
+            style.ok(style.glyphs().ok),
+            style.dim(&format!("({how}; watermark seq {})", outcome.processed_seq))
         ));
+        if outcome.pruned.blocks > 0 || outcome.pruned.docs > 0 {
+            cli.io.err(&style.dim(&format!(
+                "  swept {} block + {} doc vector(s) whose entity is gone",
+                outcome.pruned.blocks, outcome.pruned.docs
+            )));
+        }
         return Ok(EXIT_OK);
     }
 
     // status
-    let tasks = store.build_embed_tasks(&repo.repo_id)?;
-    let queued = store.stale_blocks(&tasks, &model)?.len();
-    let doc_tasks = store.build_doc_embed_tasks(&repo.repo_id)?;
-    let docs_queued = store.stale_docs(&doc_tasks, &model)?.len();
-    let foreign = store.foreign_vector_count(&model)?;
+    let queue = sem.queue(conn, &repo.repo_id, Some(&model))?;
+    let foreign = sem.foreign(conn, &model)?;
+    let identity = omgbase_store::IndexIdentity::of(provider.as_ref());
+    let freshness = sem.freshness(store, &repo.repo_id, Some(&identity))?;
     let dim = provider.dim();
     let doc = json!({
         "provider": provider_name,
         "model": model,
         "dim": dim,
-        "embeddable": tasks.len(),
-        "queued": queued,
-        "docs": doc_tasks.len(),
-        "docsQueued": docs_queued,
+        "embeddable": queue.embeddable,
+        "queued": queue.stale_blocks,
+        "docs": queue.docs,
+        "docsQueued": queue.stale_docs,
         "foreignBlocks": foreign.blocks,
         "foreignDocs": foreign.docs,
+        "freshness": freshness.to_json(),
     });
     if let Some(code) = machine_out(cli, &doc, None, None) {
         return code;
@@ -707,18 +730,32 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
         style.dim(&format!("({model}, {dim}d)"))
     ));
     cli.io.out(&format!(
-        "  embeddable {}   {} {queued}",
-        tasks.len(),
-        style.dim("queued")
+        "  embeddable {}   {} {}",
+        queue.embeddable,
+        style.dim("queued"),
+        queue.stale_blocks
     ));
     cli.io.out(&format!(
-        "  docs {}   {} {docs_queued}",
-        doc_tasks.len(),
-        style.dim("queued")
+        "  docs {}   {} {}",
+        queue.docs,
+        style.dim("queued"),
+        queue.stale_docs
     ));
-    if queued > 0 || docs_queued > 0 {
+    // Phase 2: the indexer's position against the head.
+    let position = match freshness.processed_seq {
+        Some(seq) if freshness.fresh => format!("fresh (seq {seq} = head)"),
+        Some(seq) if freshness.index.as_ref().is_some_and(|i| *i != identity) => format!(
+            "indexed under another model/config (seq {seq}; head {}) — the next drain rebuilds",
+            freshness.head
+        ),
+        Some(seq) => format!("behind (seq {seq}; head {})", freshness.head),
+        None => format!("not yet drained (head {})", freshness.head),
+    };
+    cli.io.out(&format!("  index {}", style.dim(&position)));
+    if queue.stale_blocks > 0 || queue.stale_docs > 0 {
         cli.io.out(&style.dim(&format!(
-            "  run `omg embed drain` to embed the {queued} queued block(s) + {docs_queued} doc(s)"
+            "  run `omg embed drain` to embed the {} queued block(s) + {} doc(s)",
+            queue.stale_blocks, queue.stale_docs
         )));
     }
     if foreign.blocks > 0 || foreign.docs > 0 {

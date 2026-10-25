@@ -22,7 +22,7 @@ The provider value is either a shell command (split on whitespace, spawned, spok
 
 ## The stdio protocol
 
-Both sides are small: `src/bin.ts` here, `connectStdio()` in `packages/core/src/search/external.ts` in core. stdout carries **only** protocol JSON, one object per line; all logs go to stderr (core pipes the child's stderr through to its own).
+Both sides are small: `src/bin.ts` here, `connectStdio()` in `packages/core/src/semantic/external.ts` in core. stdout carries **only** protocol JSON, one object per line; all logs go to stderr (core pipes the child's stderr through to its own).
 
 1. **Handshake** — the embedder writes exactly one line on startup, before any request:
    ```json

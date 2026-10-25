@@ -5,6 +5,8 @@ import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "../core/read/document.js";
 import { requireHistory, semanticOf } from "../core/capabilities/registry.js";
+import { CapabilityUnavailable } from "../core/capabilities/errors.js";
+import { capabilityStates, type SemanticHostReport } from "../sync/capability-state.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT } from "../core/read/reader.js";
 import { resolveRef } from "../core/read/refs.js";
@@ -96,6 +98,15 @@ export interface ServerContext {
   /** The configured provider's name (`embedding.provider`), for the
    *  `provider_unavailable` error's `data` when the host knows it. */
   embedProvider?: string;
+  /**
+   * A configured provider the host could NOT start (`omg mcp`'s embedder load
+   * failed to spawn or hand-shake). Set with no `embedQuery`: every semantic
+   * path then raises `capability_unavailable { capability: "semantic", state:
+   * "unavailable" }` (retriable) naming the provider and the reason, and
+   * `version` reports the state — never the misleading `provider_unavailable`
+   * ("none is configured").
+   */
+  semanticUnavailable?: SemanticHostReport;
   /**
    * Called after any successful write tool (apply/macros/doc ops). The host
    * (CLI `omg mcp`) uses this to schedule a background embed drain so a block's
@@ -512,19 +523,34 @@ export function buildServer(ctx: ServerContext): McpServer {
     return rootPath;
   }
 
-  // ---- semantic(): loud when it cannot rank (§4, 3.0) ---------------------------
-  // No provider → `provider_unavailable` before anything runs (`data.provider`
-  // null). A provider that answers but whose model has embedded NOTHING in this
-  // repository would score every row null and hand back path-ordered rows with
-  // no score — so the first phrase embedded checks the index and fails the same
-  // code, naming the provider and model and what to run.
-  // The gate is the semantic capability's (`SemanticProvider.available`, README
-  // §6); with the capability off nothing is embedded, so the answer is false.
+  // ---- semantic(): loud when it cannot rank (§4, 3.0; Phase 2) ------------------
+  // The gate, in this order (phase-1-contracts §2.1 and the Phase 2 rule):
+  //   1. the store runs WITHOUT the semantic module (`coreCapabilities`) →
+  //      `capability_unavailable { capability: "semantic", state: "disabled" }`;
+  //   2. the host configured a provider it could not start →
+  //      `capability_unavailable { …, state: "unavailable" }`, retriable;
+  //   3. the module is here and no provider is configured (no `embedQuery`) →
+  //      `provider_unavailable` (`data.provider` null) — the 3.0 code the spec
+  //      pins (`reads::errors`, `interop`), kept as the alias of `disabled` for
+  //      this composition: "the module is here and has nothing to score with";
+  //   4. a provider that answers but whose model has embedded NOTHING in this
+  //      repository would score every row null and hand back path-ordered rows
+  //      with no score — so the first phrase embedded checks the index and
+  //      fails `provider_unavailable`, naming the provider and model and what
+  //      to run. The index check is the capability's (`SemanticProvider.
+  //      available`, README §6).
   function hasEmbeddings(repoId: string, model: string): boolean {
     return semanticOf(store.db)?.available(repoId, model) ?? false;
   }
   function providerUnavailable(): EngineError {
     return new EngineError("provider_unavailable", PROVIDER_UNAVAILABLE_MESSAGE, { data: { provider: null } });
+  }
+  /** Steps 1–3: what a semantic call raises when nothing can rank, or undefined when the host can embed. */
+  function semanticGate(): Error | undefined {
+    if (!semanticOf(store.db)) return CapabilityUnavailable.semanticDisabled();
+    if (ctx.semanticUnavailable) return CapabilityUnavailable.semanticUnavailable(ctx.semanticUnavailable.provider, ctx.semanticUnavailable.reason);
+    if (!ctx.embedQuery) return providerUnavailable();
+    return undefined;
   }
   function rankableEmbed(repoId: string): EmbedQuery | undefined {
     const embed = ctx.embedQuery;
@@ -836,9 +862,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        // A `semantic(...)` query with no provider is provider_unavailable (not a
-        // generic filter error) — surface that specific code, mirroring graph.
-        if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) throw providerUnavailable();
+        // A `semantic(...)` query the server cannot rank fails with the gate's
+        // specific code (not a generic filter error) before anything runs.
+        if (collectSemanticPhrases(args.query).length > 0) { const gate = semanticGate(); if (gate) throw gate; }
         return ok(await oqxRunAsync(store, repoId, args.query, {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
@@ -872,7 +898,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId } = repoScope(args.repo);
         // A `select` using semantic(...) needs a provider — surface the specific
         // code, mirroring the `query` tool.
-        if (!ctx.embedQuery && (args.select ?? []).some((s) => collectSemanticPhrases(`docs { select x: ${s} }`).length > 0)) throw providerUnavailable();
+        if ((args.select ?? []).some((s) => collectSemanticPhrases(`docs { select x: ${s} }`).length > 0)) { const gate = semanticGate(); if (gate) throw gate; }
         return ok(await graphNeighborhood(store, repoId, args, rankableEmbed(repoId)));
       } catch (e) {
         return fail(e);
@@ -912,8 +938,15 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId } = repoScope(args.repo);
         const input: Parameters<typeof resolveThing>[1] = { repoId, query: args.query, ...(args.limit !== undefined ? { limit: args.limit } : {}) };
         // Hybrid: fuse the query vector into the ranking when a provider is
-        // configured (mirrors CLI `omg find`). Absent ⇒ FTS-only.
-        if (ctx.embedQuery) input.vector = await ctx.embedQuery(args.query);
+        // configured (mirrors CLI `omg find`). Absent ⇒ FTS-only. The semantic
+        // leg on a store without the module, or with a provider the host could
+        // not start, is `capability_unavailable` (resolution 13's letter is
+        // kept to the LEG: with nothing to fuse the ranker is FTS-only).
+        if (ctx.embedQuery || ctx.semanticUnavailable) {
+          const gate = semanticGate();
+          if (gate) throw gate;
+          input.vector = await ctx.embedQuery!(args.query);
+        }
         return ok(surfaceResolveHits(resolveThing(store, input)));
       } catch (e) {
         return fail(e);
@@ -1731,7 +1764,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async () => {
       try {
-        return ok(versionInfo(store, ctx.host, profile));
+        return ok(versionInfo(store, ctx.host, profile, capabilityStates(store, ctx.repoId, ctx.semanticUnavailable ?? null)));
       } catch (e) {
         return fail(e);
       }

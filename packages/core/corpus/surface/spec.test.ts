@@ -14,10 +14,12 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
+import { envCapabilities } from "../../src/core/capabilities/default.js";
+import { coreCapabilities } from "../../src/core/capabilities/core.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { buildServer, toolDescriptions, toolNames, TOOLS_PROFILES, type ToolsProfile } from "../../src/mcp/server.js";
 import {
-  carriesCorpus, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, validateFixtureFile,
+  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, validateFixtureFile,
   type CursorCase, type CursorSuite, type ExamplesSuite, type FixtureFile, type LoadedCorpus, type ProfilesSuite, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
 } from "./fixture.js";
 
@@ -60,6 +62,16 @@ const UPDATE = (() => {
   const v = process.env.SURFACE_SPEC_UPDATE;
   return v !== undefined && v !== "" && v !== "0";
 })();
+
+/**
+ * The core-only run (modular-core Phase 2 gate, `OMGBASE_CAPABILITIES=core`):
+ * the stores have no semantic module, the semantic cases' expectations are
+ * mapped to `capability_unavailable { semantic, disabled }` (fixture.ts), the
+ * count is reported, and the fixtures are never regenerated from it.
+ */
+const CORE_MODE = envCapabilities() === coreCapabilities;
+if (CORE_MODE && UPDATE) throw new Error("SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
+const coreMapped: string[] = [];
 
 /** Nothing projected is floating point except search scores; compare within 1e-9. */
 const EPS = 1e-9;
@@ -183,18 +195,30 @@ for (const file of files) {
 
 // ---- per-case ------------------------------------------------------------------
 
-function runQuery(corpus: LoadedCorpus, c: QueryCase): void {
+function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
   const { expect: actual, problems: runnerProblems } = runQueryCase(corpus, c);
   expect(runnerProblems, "planned and in-memory engines must agree").toEqual([]);
-  const diff = diffQueryExpect(actual, c.expect);
-  if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+  let expected = c.expect;
+  if (CORE_MODE) {
+    const m = coreModeQueryExpect(c.expect);
+    if (m.mapped) coreMapped.push(`${suite}::${c.name}`);
+    expected = m.expect;
+  }
+  const diff = diffQueryExpect(actual, expected);
+  if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
 }
 
-async function runReads(c: ReadsCase, corpus?: Record<string, string>): Promise<void> {
+async function runReads(c: ReadsCase, suite: string, corpus?: Record<string, string>): Promise<void> {
   const { expect: actual, problems: runnerProblems } = await runReadsCase(c, corpus);
   expect(runnerProblems).toEqual([]);
-  const diff = deepEqualTol(actual, c.expect, EPS);
-  if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+  let expected = c.expect;
+  if (CORE_MODE) {
+    const m = coreModeReadsExpect(c.expect);
+    if (m.mapped > 0) coreMapped.push(`${suite}::${c.name} (${m.mapped} step outcome${m.mapped === 1 ? "" : "s"})`);
+    expected = m.expect;
+  }
+  const diff = deepEqualTol(actual, expected, EPS);
+  if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
 }
 
 function runCursor(c: CursorCase): void {
@@ -258,18 +282,18 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
         // One store per suite: the corpus is read-only under every query.
         let corpus: LoadedCorpus | null = null;
         const get = (): LoadedCorpus => (corpus ??= loadCorpus(suite.corpus));
-        for (const c of suite.cases) it(`${stem}::${c.name}`, () => runQuery(get(), c));
+        for (const c of suite.cases) it(`${stem}::${c.name}`, () => runQuery(get(), c, stem));
         afterAll(() => {
           corpus?.store.close();
           corpus = null;
         });
       } else if (kind === "reads") {
-        for (const c of (fixture as ReadsSuite).cases) it(`${stem}::${c.name}`, () => runReads(c));
+        for (const c of (fixture as ReadsSuite).cases) it(`${stem}::${c.name}`, () => runReads(c, stem));
       } else if (kind === "examples") {
         // README §6 (4.3): the descriptions' ladders over the alchemy corpus; the
         // steps themselves are pinned to the descriptions by mcp/examples.test.ts.
         const suite = fixture as ExamplesSuite;
-        for (const c of suite.cases) it(`${stem}::${c.name}`, () => runReads(c, suite.corpus));
+        for (const c of suite.cases) it(`${stem}::${c.name}`, () => runReads(c, stem, suite.corpus));
       } else if (kind === "profiles") {
         // README §4 "Profiles" (4.3): what each profile's server lists.
         const suite = fixture as ProfilesSuite;
@@ -288,4 +312,11 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
       }
     });
   }
+});
+
+// The core-only run's ledger: which semantic cases answered `capability_unavailable`
+// instead of the fixture's full-composition outcome (none on the full run).
+afterAll(() => {
+  if (!CORE_MODE) return;
+  process.stderr.write(`[surface spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} semantic case(s) mapped to capability_unavailable { semantic, disabled }:\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n`);
 });

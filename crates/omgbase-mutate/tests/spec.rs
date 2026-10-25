@@ -1710,8 +1710,13 @@ struct Evaluation {
 
 fn run_case_script(c: &Json) -> Result<Evaluation, String> {
     let config = config_from(c.get("config"))?;
-    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new()))
-        .map_err(|e| e.to_string())?;
+    // Phase 2's gate: `OMGBASE_CAPABILITIES=core` runs every script without
+    // the semantic bundle.
+    let mut store = Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;

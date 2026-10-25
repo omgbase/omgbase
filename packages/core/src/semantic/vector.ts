@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { ctxHashHex } from "./embeddings.js";
 import { buildEmbedTasks } from "./tasks.js";
+import { cosineFloat32 as cosine } from "./vec.js";
 
 // Vector search (spec/search §3). v1 uses brute-force cosine over the live
 // embeddable blocks' vectors — acceptable to ~10^5 vectors (documented ceiling;
@@ -22,18 +23,6 @@ export interface DocVectorHit {
   docId: string;
   path: string;
   cosine: number;
-}
-
-function cosine(a: Float32Array, b: Float32Array): number {
-  let dot = 0, na = 0, nb = 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    dot += a[i]! * b[i]!;
-    na += a[i]! * a[i]!;
-    nb += b[i]! * b[i]!;
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
 export function vectorSearch(store: Store, repoId: string, model: string, queryVec: Float32Array, opts: { limit?: number } = {}): VectorHit[] {
