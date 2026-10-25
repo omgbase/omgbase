@@ -1407,6 +1407,21 @@ Decisions D1–D11 did not settle the following; each is marked where it bites
 above. **Decided here** = a choice this document makes that Brendan should
 confirm; **open** = not decided.
 
+**Resolved by Brendan, 2026-10-25 (the seven open points), plus one addition:**
+
+| # | resolution |
+| --- | --- |
+| 1 | The semantic capability is `enabled` on migration **iff a provider is configured**, else `disabled`; stored vectors are never consulted ("you can't run an embed search without a provider even if you have vector data"). |
+| 2 | **No lease object.** The retention floor is the only promise; retention never waits on a consumer — several users sync the same repository and one falling behind cannot hold the others. A slow consumer rescans. |
+| 3 | **Carry `plan_id` on the feed row** (64 hex), so a Receipt correlates with the documents and hashes it touched when history is off; the effects themselves stay the recorder's. |
+| 11 | `docs_history` **always lists the current head**, each version carrying `retained: true\|false` (the head is `false` when the recorder did not capture it; older versions appear only when captured; `archived` as today), and the result carries the coverage start — nothing is an error. Consequence: `docs_read { at: <current head> }` is served from current state regardless of history; only a PREVIOUS head (an earlier `r_` of the document) raises `capability_unavailable` per D3. |
+| 12 | **Backfill what the rows say** (A): a revision's feed entry is `changed` at the path the row holds; `moved` only where a commit's reason records the move; no per-document path reconstruction ("no real reliance on that migration preserving history with great fidelity"). |
+| 17 | **`writer_requires` defaults to required** on `history enable`: a writer without the recorder refuses to write on that repository with a clear error ("the expectation of any user"); best-effort is an explicit setting. |
+| 18 | **Retry forever, surface loudly** (A): capture failure on the watcher path rolls the member back and the next sweep retries; nothing is written without capture; the stall is reported — through the alert channel below. |
+| + | **The alert channel** (new, Brendan): a per-repository `alerts` table — `code`, `severity`, `message`, `since`, `detail` (JSON), `cleared_at` — raised by the engine when a condition needs a human (capture failing on a file, a materialization backlog, a writer refused by `writer_requires`, a detached segment a read needs, a recorder with an unknown schema) and cleared when the condition ends; **every MCP tool response carries the active alerts** in a top-level `alerts` member (as query results carry `hints`), the CLI prints them to stderr, so users are told where they are working rather than on a dashboard. Core bundle; `doctor` lists them; the spec/surface §4 envelope gains the member for every tool. |
+
+The eleven **decided here** items (4–10, 13–16) stand as written unless Brendan overrules them on reading.
+
 1. **(open) The semantic manifest's initial state on migration** (§1.16 step
    11): `enabled` when a provider is configured or vectors exist, else no
    row — or always a row with `disabled`? Affects `version.capabilities.
