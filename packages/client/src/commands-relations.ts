@@ -66,6 +66,18 @@ export function isPathValue(v: unknown): v is string {
   return typeof v === "string" && (/^\/[^\s]+\.md$/i.test(v) || /^\[\[[^\]]+\]\]$/.test(v));
 }
 
+/** The frontmatter fields whose value is a path (or a wikilink) or a non-empty
+ * list of them — the source document's OWN relation fields, the `extra` a host
+ * hands `relationKinds` so a field the rendered graph does not draw yet is still
+ * offered. In key order; a mixed or empty list is not a path field. */
+export function listPathFields(frontmatter: Record<string, unknown> | null | undefined): string[] {
+  const out: string[] = [];
+  for (const [field, value] of Object.entries(frontmatter ?? {})) {
+    if (Array.isArray(value) ? value.length > 0 && value.every(isPathValue) : isPathValue(value)) out.push(field);
+  }
+  return out;
+}
+
 /** Does `v` (a path or a wikilink) name the document at `to`? */
 export function namesDocument(v: string, to: string): boolean {
   if (v.startsWith("[[")) {

@@ -8,7 +8,8 @@
 // source node or viewport). The global shortcut (⌘K) is the page's.
 //
 // Properties: `open`, `text`, `items`, `loading`, `error`, `placeholder`,
-// `mode`, `heading` (shown above the input in pick mode: "connect /a.md to…").
+// `mode`, `heading` (shown above the input in pick mode: "connect /a.md to…"),
+// `createHint` (the create row's second line — what creating does in this host).
 // Events: `palette-search { text }` (debounced; immediate on open and on a
 // cleared input), `palette-open-doc { path }`, `palette-action { id }`,
 // `palette-create { path }`, `palette-pick { item }`, `palette-close`. The
@@ -30,6 +31,7 @@ export interface PalettePickDetail { item: PaletteItem }
 export type PaletteMode = "navigate" | "pick";
 
 export const SEARCH_DEBOUNCE_MS = 120;
+export const DEFAULT_CREATE_HINT = "a new document with a title heading";
 
 @customElement("omg-palette")
 export class OmgPalette extends LitElement {
@@ -79,6 +81,8 @@ export class OmgPalette extends LitElement {
   @property({ type: String }) mode: PaletteMode = "navigate";
   /** Shown above the input (pick mode: what the pick is for). `title` is the native tooltip attribute, hence the name. */
   @property({ type: String }) heading: string | null = null;
+  /** The create row's hint line: what creating does in this host (a graph adds the document as a node, say). */
+  @property({ type: String, attribute: "create-hint" }) createHint = DEFAULT_CREATE_HINT;
 
   @state() private active = 0;
   @query("input") private inputEl!: HTMLInputElement | null;
@@ -217,7 +221,7 @@ export class OmgPalette extends LitElement {
       case "create":
         return html`<li class="option create" role=${common.role} id=${common.id} aria-selected=${selected ? "true" : "false"} @mousemove=${onEnter} @click=${onClick}>
           <span class="glyph" aria-hidden="true">＋</span>
-          <span class="main"><span class="title">create <code>${item.path}</code></span><span class="hint">a new document with a title heading</span></span>
+          <span class="main"><span class="title">create <code>${item.path}</code></span><span class="hint">${this.createHint}</span></span>
         </li>`;
     }
   }

@@ -15,9 +15,9 @@ describe("edgeQueries", () => {
 
   it("spells `links { … }` with `_path`/`_dst_path`/`_field` (spec/surface 5.0 §1.1–§1.2) — bare for a 4.x server; the aliases are the demo's own", () => {
     expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"])[0]).toBe('links { select src: _path, dst: _dst_path where _field == "before" && _provenance == "frontmatter" && (_path == "/a.md") }');
-    expect(edgeQueries({ name: "_out_links", kind: "links" }, ["/a.md"])[0]).toBe('links { select src: _path, dst: _dst_path where _provenance == "link" && _dst_kind == "document" && (_path == "/a.md") }');
+    expect(edgeQueries({ name: "_out_links", kind: "links" }, ["/a.md"])[0]).toBe('links { select src: _path, dst: _dst_path, block: _block_id where _provenance == "link" && _dst_kind == "document" && (_path == "/a.md") }');
     expect(edgeQueries({ name: "before", kind: "frontmatter" }, ["/a.md"], NAMES_4)[0]).toBe('links { select src: path, dst: dst_path where field == "before" && provenance == "frontmatter" && (path == "/a.md") }');
-    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"], NAMES_4)[0]).toBe('links { select src: path, dst: dst_path where provenance == "link" && dst_kind == "document" && (path == "/a.md") }');
+    expect(edgeQueries({ name: "doc.out_links", kind: "links" }, ["/a.md"], NAMES_4)[0]).toBe('links { select src: path, dst: dst_path, block: block_id where provenance == "link" && dst_kind == "document" && (path == "/a.md") }');
   });
 
   it("spells the path literals rooted whatever form the keys came in", () => {
@@ -54,6 +54,12 @@ describe("edgesFromRows", () => {
   it("flips backlinks", () => {
     expect(edgesFromRows({ name: "_in_links", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
       .toEqual([{ src: "/b.md", dst: "/a.md", rel: "_in_links" }]);
+  });
+  it("a link candidate's edge keeps the row's source block (its deletion handle); a frontmatter edge never does", () => {
+    const withBlock = [{ src: "/a.md", dst: "/b.md", block: "b_7" }];
+    expect(edgesFromRows({ name: "_out_links", kind: "links" }, withBlock, new Set(["/a.md", "/b.md"]))).toEqual([{ src: "/a.md", dst: "/b.md", rel: "_out_links", blockId: "b_7" }]);
+    expect(edgesFromRows({ name: "_in_links", kind: "backlinks" }, withBlock, new Set(["/a.md", "/b.md"]))).toEqual([{ src: "/b.md", dst: "/a.md", rel: "_in_links", blockId: "b_7" }]);
+    expect(edgesFromRows({ name: "before", kind: "frontmatter" }, withBlock, new Set(["/a.md", "/b.md"]))).toEqual([{ src: "/a.md", dst: "/b.md", rel: "before" }]);
   });
 });
 

@@ -25,6 +25,15 @@ second panel, **cards**, where each projected field can be **shown** on the
 node cards and one of them is the card's **label** — see [Choosing what a card
 shows](#choosing-what-a-card-shows).
 
+The graph is also a place to **find, create and connect** documents: a ⌘K
+palette (`<omg-palette>`) puts any document on the canvas by path or title, runs
+the page's actions and creates documents; a drag from a selected node's ⟶
+handle connects it (`<omg-relation-picker>` asks which field, or a body link),
+and a selected edge's ✕ severs it. Every write — those and the ⌘-click toggles —
+is a command on [`@omgbase/client`](../../packages/client/README.md)'s
+`CommandLog`, so ⌘Z / ⇧⌘Z undo and redo them against the repository's current
+state — see [Find, create, connect](#find-create-connect).
+
 It is also a probe of the reflection API being built next door: whatever the
 UI wanted and could not get from `@omgbase/oqx`'s public `parse` or omgbase's
 MCP tools is listed under [Gaps](#gaps-found-in-the-public-api).
@@ -143,10 +152,11 @@ over SSH.
 upstream) after `--idle` seconds without a request (default 3600), and forgets
 every session when it restarts; the page's next request then gets a `404` with
 `-32000 unknown session (expired or the proxy restarted) — send initialize
-again`. The page handles that by itself (`src/lib/mcp-client.ts`,
-`isSessionLost`): it opens a fresh MCP session against the same URL, retries the
-call once and notes *session expired at the server — reconnected* in the status
-line; only a second failure is shown as an error.
+again`. The shared client handles that by itself (`@omgbase/client`'s
+`OmgClient`, `isSessionLost`): it opens a fresh MCP session against the same
+URL, retries the call once and lets the page note *session expired at the
+server — reconnected* in the status line (`onSessionLost`); only a second
+failure is shown as an error.
 
 **Why no CORS or Auth0 setup is needed.** The browser never talks to the
 gateway or to Auth0: it talks to `localhost` (same origin, via Vite's proxy at
@@ -317,17 +327,23 @@ to Vite; `GRAPH_UI_*` variables from earlier runs still work as fallbacks for
 their `WEBDEVPROXY_*` names), `dev:workspace [--force]` (just the workspace),
 `dev:mcp [same flags]` (just the proxy, = `dev --proxy-only`), `logout
 [--remote <url>]` (= `webdevproxy --logout`), `build` (`tsc --noEmit` + `vite
-build`), `test` (vitest over the pure modules, the MCP client's session recovery
-and the dev script's arguments; the proxy's own behaviour is tested in
-[`examples/webdevproxy`](../webdevproxy/README.md)), `lint`.
+build`), `test` (vitest over the pure modules — the candidates, the edges, the
+graph model, the toggle commands, the relation kinds, the loose nodes, the
+palette actions — and the dev script's arguments; the client's session recovery
+is tested in [`packages/client`](../../packages/client/README.md), the proxy's
+own behaviour in [`examples/webdevproxy`](../webdevproxy/README.md)), `lint`.
 
 ### Data access
 
-The browser only ever speaks MCP: `@modelcontextprotocol/sdk`'s `Client` over
-the **Streamable HTTP** transport, calling `version` (once, for the surface),
-`query` (every read: rows, edges, the sample probe) and, for [editing
-edges](#editing-edges), `docs_read` and `apply` (plus `tools/list` to see whether
-`apply` is offered). Those are all in omgbase's **minimal tool profile**
+The browser only ever speaks MCP, through the shared
+[`@omgbase/client`](../../packages/client/README.md) (`OmgClient`:
+`@modelcontextprotocol/sdk`'s `Client` over the **Streamable HTTP** transport,
+with this page's OAuth provider attached for direct mode and the `repo`
+designation passed per call), calling `version` (once, for the surface),
+`query` (every read: rows, edges, the sample probe, the palette's find, a loose
+node's row) and, for the writes ([editing edges](#editing-edges), [Find, create,
+connect](#find-create-connect)), `docs_read` and `apply` (plus `tools/list` to
+see whether `apply` is offered). Those are all in omgbase's **minimal tool profile**
 (`omg mcp --tools minimal`: `query`, `query_syntax`, `docs_read`, `docs_tree`,
 `blocks_resolve`, `changes_since`, `plan`, `execute`, `apply`, `version`), which
 is what `pnpm dev` serves the sample under, so the demo stays honest about
@@ -468,7 +484,7 @@ consecutive result rows.
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
-| `<oqx-graph-pane>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout` = `{ axis, direction, algorithm }`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`) | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }`, `algorithm-request` `{ algorithm }`, `label-fit-change` `{ labelFit }` |
+| `<oqx-graph-pane>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row, `loose` for a guest node), `view: View` (`edges`, `layout` = `{ axis, direction, algorithm }`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]`, `labelFit: "truncate" \| "wrap" \| "expand"` (attribute `label-fit`), `canWrite` (the connector and the edge's ✕ are offered), `edgeStyle` (attribute `edge-style`), `edgeGeneration` (bump to re-fetch the edges); method `fit()` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }`, `algorithm-request` `{ algorithm }`, `label-fit-change` `{ labelFit }`, `edge-style-change` `{ edgeStyle }`, `connect-request` `{ from, to, anchor, edges }`, `connect-empty` `{ from, anchor, edges }`, `edge-delete` `{ edge }` |
 
 ### The renderer: `<omg-graph>`
 
@@ -496,11 +512,16 @@ the edge-style legend — and maps the element's events back: `graph-select` →
 says which document owns the edge; `present` is read off the model),
 `graph-hover` / `graph-edge-hover` → the ⌘-click preview, `graph-pin` /
 `graph-unpin` → session pins (a card you drag stays put until unpinned, under
-every layout), `graph-label-fit` → `label-fit-change`. The element runs with
-`auto-fit` (the picture stays fitted — on resize, after a new layout, while the
-simulation settles — until you pan or zoom; the toolbar's **fit** / `f` hands
-the camera back) and `edgeToggle` (⌘-click), without `canWrite` (no connector
-gesture: the only write gesture here is the toggle).
+every layout), `graph-label-fit` → `label-fit-change`, `graph-edge-style` →
+`edge-style-change`, and — with `canWrite` — `graph-connect` /
+`graph-connect-empty` → `connect-request` / `connect-empty` (the two paths, the
+drop point and the drawn STORED edges, so the page's relation picker can read its
+kinds off them) and `graph-edge-delete` → `edge-delete` (the stored edge behind
+the element's key). The element runs with `auto-fit` (the picture stays fitted —
+on resize, after a new layout, while the simulation settles — until you pan or
+zoom; the toolbar's **fit** / `f` hands the camera back), `edgeToggle` (⌘-click)
+and `canWrite` whenever the server offers `apply` (the connector handle on a
+selected card, `c`, the ✕ on a selected edge).
 
 **Cards.** The element's `renderCard` hook is fed `cardTextFor(node,
 view.projection)`: the label field's value (else the de-rooted path) as the
@@ -514,13 +535,27 @@ model are unit-tested without a DOM (`test/graph-view.test.ts`, the elk ones
 through the real elkjs); the element's own geometry (routing, label fit,
 templates) is tested in `packages/elements`.
 
-What moved out of this demo and into the element: the SVG renderer
+What moved out of this demo and into the shared packages: the SVG renderer
 (`oqx-graph.ts`), the card formatting and sizing (`cards.ts`, `card-size.ts` —
 now the element's `formatValue` / `sizeCard` / `wrapLabel` / `canvasMeasure`),
 the pan/zoom math (`viewport.ts`) and the synchronous force layout
-(`layout-force.ts`). What the element gained for it: `routes`, `auto-fit`,
-`GraphViewEdge.color`, keyed `CardLine`s, the hover events and
-`graph-label-fit`.
+(`layout-force.ts`) into `<omg-graph>`; the MCP client (`mcp-client.ts`'s
+`OmgClient`, its session recovery, the envelope and `OmgError`) into
+`@omgbase/client`, whose `CommandLog`, `attachRelationCommand`,
+`detachRelationCommand` and `createDocumentCommand` replaced this demo's
+`applyFrontmatter` / `PerKeyQueue` write path (the log serializes every write
+and gives each a compensating undo); the find / action / create palette into
+`<omg-palette>` and its pure model; the connector's "which relation" question
+into `<omg-relation-picker>`. What the packages gained for it: `routes`,
+`auto-fit`, `GraphViewEdge.color`, keyed `CardLine`s, the hover events,
+`graph-label-fit` and `graph-edge-style` on the element; `createHint` on the
+palette; `listPathFields` beside `relationKinds` in the client. What stayed
+here, and why: the candidate inference and editability rules (they read this
+query's AST), the form-aware toggle for fields the shared commands cannot
+express (`lib/mutations.ts` `formToggleCommand` — see [Editing
+edges](#editing-edges)), the loose-node model (`lib/loose.ts`), the mapping of
+this demo's drawn edges onto relation kinds (`lib/relations.ts`) and the
+palette's action list (`lib/palette-actions.ts`).
 
 ### The page chrome (Shoelace)
 
@@ -595,7 +630,8 @@ repository lacks, the words) and the delayed loading pill; the preset query
 and the sample-or-not decision are `src/lib/starter-query.ts`; the mode and
 header label that follow the bridge are `src/lib/connection.ts`. Edge edits flow
 the other way: `edge-toggle` → `src/lib/edit.ts` (the plan) →
-`src/lib/mutations.ts` (`docs_set_meta`) → re-run the query.
+`src/lib/mutations.ts` (`toggleCommand` on the `CommandLog`) → the edges
+re-fetched (or the query re-run — see [Find, create, connect](#find-create-connect)).
 
 ## Layouts
 
@@ -789,25 +825,42 @@ gains the selected one). By default a one-line strip shows the file, the field
 and the new value before anything is written (`write /timeline/beta.md · set
 after: […] via apply (expecting revision r_…)?`); untick *confirm before writing* to skip it.
 
-**What gets written.** The field's current value comes from the result row when
-the query projected the field under its own name (`select … after`), else from
-`docs_read` of the owner, so a toggle never clobbers values the query did not
-select. A scalar field is set to the reference (or unset on remove); a list is
-appended to / filtered, order preserved, duplicates (by identity, in any
-spelling) dropped; a list that loses its last member is unset (the *emptied
-list* setting can keep `[]` instead). The call is one `apply` whose effect is
-`{ op: "set", target: { kind: "document", _path | _id }, field:
-"_frontmatter.<field>", value }` or `{ op: "unset", target, field }` (the target
-is `docLocator(doc, names)` — `{ path }`/`{ id }` on a 4.x server; a 5.0 server
-refuses the bare spelling with `filter_invalid` and a `fix`), answered with the
-Receipt `{ plan_id, commit, revisions: [{ _id, _path, _hash }], committed, summary }`.
-When the value was read with `docs_read` the effect carries `expect: { revision }`
-— the document's revision at read time — so a document that changed in between
-fails `stale_plan` ("document … is at revision r_…, not r_…; re-plan") instead of
-being overwritten (the strip says so and the graph refreshes); a value taken
-from the result row has no revision to expect.
-Writes to one document are also queued so two quick toggles cannot race. Then
-the query re-runs and the edges are refetched.
+**What gets written.** The field's current value comes from one `docs_read` of
+the owner (never from the result row — so a toggle never clobbers values the
+query did not select, and the write is always pinned to a revision). A scalar
+field is set to the reference (or unset on remove); a list is appended to /
+filtered, order preserved, duplicates (by identity, in any spelling) dropped; a
+list that loses its last member is unset (the *emptied list* setting can keep
+`[]` instead). The write is ONE command on `@omgbase/client`'s `CommandLog`
+(`src/lib/mutations.ts` `toggleCommand`): in the common case — the field holds
+a list (or nothing yet) of `/`-rooted `.md` paths and an emptied list is unset
+(`sharedCommandFits`) — it IS the shared `attachRelationCommand` /
+`detachRelationCommand`, exactly what repo-explorer's connector and edge ✕ run;
+the cases the shared commands cannot express keep this demo's form-aware
+builder, `formToggleCommand` over `lib/edit.ts`'s `planToggle`: a field spelled
+in another **form** (bare `timeline/beta.md`, `timeline/beta` without `.md`, or
+doc ids `d_…` — the shared commands write rooted paths and would mix forms,
+which this demo refuses), a **scalar** field (an `owner` is replaced, not turned
+into a list as the additive attach would), and the *emptied list → keep `[]`*
+setting. Both follow the same contract: the owner is re-read inside the command
+(a redo gets fresh preconditions; a stale belief is a `noop`, not a wrong write),
+the effect is `{ op: "set" | "unset", target: { kind: "document", _path },
+field: "_frontmatter.<field>", value, expect: { revision } }` — a document that
+changed in between fails `stale_plan` ("document … is at revision r_…, not
+r_…; re-plan") instead of being overwritten (the message says so and the graph
+refreshes) — answered with the Receipt `{ plan_id, commit, revisions: [{ _id,
+_path, _hash }], committed, summary }`; the compensation re-reads the owner and
+REFUSES unless the field still holds exactly what the write produced (someone
+else's edit is never undone). The log serializes every write, so two quick
+toggles cannot race. Then the edges are re-fetched — or the query re-run; see
+[Find, create, connect](#find-create-connect) for the rule.
+
+The shared commands spell the document `{ _path }` and the field
+`_frontmatter.<key>` — surface 5.0's names — so **edge writes need a 5.0+
+server**; against a 3.x/4.x server (which spells `{ path }`) every
+relationship is read-only with the reason *edge writes need omgbase surface ≥
+5.0 … the server reports 4.x*. Reads keep both spellings (see [Server
+version](#server-version)).
 
 **Value form.** New references are spelled the way the field already spells
 them, inferred from its values across the rows: leading `/` or not, `.md` or
@@ -836,8 +889,10 @@ field was not projected) — both in the minimal profile. The page lists the
 server's tools on connect and shows every relationship read-only when `apply` is
 missing; a refusal at write time is reported with the same hint.
 
-**Limits.** Body links (`_out_links`, `_in_links`) and derived sequences
-are read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
+**Limits.** ⌘-click toggles edit frontmatter fields only; a body link is
+authored and severed through the connector and the edge's ✕ ([Find, create,
+connect](#find-create-connect)), and derived sequences, pairs and projected
+relationships are read-only everywhere. Nested property paths (`meta.rel`) are not edited. Edits are per
 document: the inverse relation (e.g. `before` when you edit `after`) is not
 maintained — the engine has no field definitions declaring inverses. In the
 local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
@@ -845,6 +900,91 @@ made by `dev:workspace`; `pnpm --filter graph-ui dev:workspace --force` resets
 it). Try the scalar path with `docs { select _path, _title, owner where
 _path.startsWith("/timeline/") || _path.startsWith("/people/") }` (`owner` is a
 scalar `/people/….md`) and the list path with the default query's `after`.
+
+## Find, create, connect
+
+The graph view can look documents up, create them and connect them — through
+the shared layers `examples/repo-explorer` uses, not a copy:
+[`@omgbase/elements`](../../packages/elements/README.md)' `<omg-palette>` and
+`<omg-relation-picker>` for the asking, [`@omgbase/client`](../../packages/client/README.md)'s
+commands for the writing.
+
+**The palette (⌘K / Ctrl+K, or the header's ⌘K button).** Type to **find** a
+document by path or title (`findQuery`: a regex `and` of the terms over `_path`
+and `_title`, one `query` per keystroke debounced in the element, the hits
+ranked title-prefix first); Enter puts it on the canvas and selects it —
+the node it already has, or a **loose node** (below) when the query did not
+show it. `>` lists this page's **actions** (`src/lib/palette-actions.ts`,
+filtered fuzzily): *run the query again*, *fit the graph to the view*, *new
+document…*, *undo: …* / *redo: …* (with the log's own labels), *lay out: force
+/ stress / radial / tree / grid / auto* (the picker's layout select), *label fit:
+wrap / expand / truncate*, *edges: straight / curved* (the element's toolbar
+button, kept in step through `graph-edge-style`), *edit `after` edges* / *stop
+editing `after`* (arm or disarm a writable relationship for ⌘-click toggles),
+*confirm every edge edit before writing* / *write edge edits without
+confirming*, *show recent documents* (the starter) and *reconnect*. `+path` (or
+`new path`, or a find that matches nothing) **creates** the document — one
+`apply { create }` as `createDocumentCommand` on the log, a title heading from
+the file name, `path_taken` when something is already there — and adds it to
+the graph as a loose node: the query may not match it, and the create row's
+hint says so (*a new document with a title heading, added to the graph as a
+loose node*). A bare name lands in the selected node's folder, else at `/`.
+In **pick** mode (the connector's empty drop, below) Enter hands the chosen or
+created document back as the destination instead.
+
+**Loose nodes** (`src/lib/loose.ts`). A document on the canvas that is not one
+of the query's rows — found, created, or picked as a connector's destination —
+is fetched with one `docs { select _id, _path, _title, <the projected plain
+fields> where _path == "…" }` of its own, so its card reads like the others',
+flagged `loose` (the selection panel shows a *loose* badge; the tooltip ends
+with *not in the query's result*), and kept until the query re-runs: the query
+is the contract for what is on the canvas, a loose node is a guest. Edges to
+and from it are fetched like any other's (the edge queries name every shown
+node), so connecting a query row to a found document draws the new edge.
+
+**The connector.** With a node selected, drag its ⟶ handle (or ⌘-drag the
+card, or press `c` and steer with the arrows) onto another card: the pane
+reports `connect-request` and `<omg-relation-picker>` opens at the drop point
+asking WHICH relation `from → to` is — the rows are the frontmatter fields the
+drawn edges already use (by frequency, with their counts), then this query's
+other frontmatter relationships, then the source's own path-valued fields (one
+`docs_read` of it — `listPathFields`), then *a link in the body*, and *new
+field…* for a name of your own (`src/lib/relations.ts` `connectorKinds` over the
+client's `relationKinds`). Picking a row is the whole gesture: ONE additive
+`attachRelationCommand` on the log (the list gains the destination, a scalar
+path becomes a list, nothing is replaced; *already related* fails before
+writing), drawn as a pending dashed edge meanwhile; a field the view did not
+draw yet is switched on so the edge appears; a field that is no relationship of
+this query is written but not drawn, and the message says so. Dropping on open
+canvas opens the palette in pick mode (*connect /a.md to…*): find or create the
+destination, it joins the canvas as a loose node, then the picker.
+
+**Deleting an edge.** Click an edge to select it, then its ✕ or Delete /
+Backspace: `detachRelationCommand` — the frontmatter field without the
+destination (unset when that empties it), or a body link's block removed by its
+hash (a link candidate's edge rows carry `block: _block_id` for this; a
+backlinks edge is the stored link flipped, so the document holding it is the
+edge's `dst`). A derived edge is not deletable from the graph and the message
+says why: a pair's (`before/after` — draw `before` or `after` and delete that
+edge), an `order by` sequence's, a projected relationship's.
+
+**Undo and redo.** Every write above and every ⌘-click toggle is an entry on
+one session-local `CommandLog`; ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y off macOS; outside a
+text field — inside the query editor they stay the editor's), the header's
+↶ undo / ↷ redo buttons (their tooltips name the entry) and the palette's
+*undo: …* / *redo: …* actions run it. An undo is a NEW forward write computed
+against the repository's current state — the field restored pinned to the
+current revision, a created document removed, a removed link's block
+re-inserted at the end of the document — and is **refused** when what the
+command wrote has moved on (someone else edited the field, the created
+document was edited), with the reason shown and nothing overwritten. The log
+is in memory only; connecting to a different server clears it.
+
+**After a write.** With loose nodes on the canvas only the edges are re-fetched
+(the pane drops its edge cache — `edgeGeneration`), so the guests survive; with
+none the query re-runs as before (rows, candidates and edges all fresh). The
+optimistic dashed edge clears when the pane reports a settled layout either way.
+The query also re-runs when you edit it or ask the palette to.
 
 ## Inference rules (`src/lib/candidates.ts`)
 
@@ -1078,6 +1218,26 @@ cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.
 
 ## Verified headlessly
+
+Shared commands (2026-10-24; the TS `omg` at surface 5.1, the proxy started by
+`dev.mjs --proxy-only --no-browser --port 8794` over the sample — `omg mcp -C
+.dev-workspace --tools minimal` — and a Node script running the page's writes
+through the built `@omgbase/client` and `@omgbase/elements/palette`, exactly as
+`app.ts` does): `capabilities` reported `typescript · surface 5.1 · minimal ·
+canWrite`; `attachRelationCommand` `/timeline/loop-a.md → /timeline/beta.md` in
+`after` committed (`after: ["/timeline/beta.md"]`, the `links { … _field ==
+"after" }` edge row present); the same attach again was `failed` with *already
+related* and nothing applied; `detachRelationCommand` committed and the edge
+row was gone; `undo` of the detach (a compensating `apply`) brought `after`
+back, `undo` of the attach restored the file byte for byte; the body link:
+attach inserted `[Beta](/timeline/beta.md)` (the edge row carried `block:
+b_…`), detach by that block id removed it, undo re-inserted it (a new block id,
+as documented), a second detach cleaned up — leaving one trailing blank line
+from the insert / remove cycle, the only residue; `createDocumentCommand`
+`/scratch/live-palette-test.md` wrote `# Live palette test\n` and its undo
+left `doc_missing`; `findQuery("loop")` found the three `loop-*` notes. The
+browser flow was not re-driven for this change; the workspace was reset with
+`dev:workspace --force` afterwards.
 
 Minimal profile (2026-10-23; the TS `omg` at surface 5.1 / `omgbase` 0.26.2,
 the proxy started by `dev.mjs --proxy-only --repo sample` — so `omg mcp -C

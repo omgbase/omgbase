@@ -132,6 +132,12 @@ export class OqxRelationshipPicker extends LitElement {
     if (name !== null && !this.view.edges.includes(name)) this.overrides = withEdge(this.overrides, name, true);
   }
 
+  /** Draw `name`'s edges (an edge override on) — the connector wrote through a
+   * field the view did not draw, and the new edge should appear. */
+  draw(name: string): void {
+    if (this.candidates.some((c) => c.name === name) && !this.view.edges.includes(name)) this.overrides = withEdge(this.overrides, name, true);
+  }
+
   /** Lay the graph out along `name` (null = no axis, force) — the graph's
    * empty-axis banner asks for this through the page. */
   setAxis(name: string | null): void {

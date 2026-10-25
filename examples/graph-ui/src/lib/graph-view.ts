@@ -15,7 +15,7 @@
 //                                    and one `key: value` line per shown field (a keyed `CardLine`,
 //                                    drawn with the key dimmer, the key kept whole when truncated)
 //   cardTooltip(path, text, choice)  the path, then every shown value in full
-//   viewNodes(nodes, projection, pins)
+//   viewNodes(nodes, projection, pins)  a loose node (lib/loose.ts) draws as kind `loose` with the note in its tooltip
 //   viewEdges(edges, opts)           drawn the relationship's way round (`orientEdge`), keyed by the
 //                                    STORED edge (`edgeKey`), coloured per relationship, `pending`
 //                                    for in-flight toggles and the hover preview, `writable` per
@@ -49,6 +49,9 @@ export interface GraphNode {
   label: string;
   /** The whole projected row — the cards read their fields from it. */
   row: Record<string, unknown>;
+  /** Not one of the query's rows: found through the palette, created, or picked
+   * as a connector's destination (lib/loose.ts); kept until the query re-runs. */
+  loose?: boolean;
 }
 
 /** An optimistic edge: drawn dashed while its write is in flight. */
@@ -130,8 +133,14 @@ export function cardTooltip(path: string, text: CardText, choice: ProjectionChoi
 
 // ---- adapters to the element's view model -------------------------------------------------
 
+/** The tooltip's last line on a loose node. */
+export const LOOSE_NOTE = "(not in the query's result — added from the palette or a connector; gone when the query re-runs)";
+
 export function viewNodes(nodes: readonly GraphNode[], projection: ProjectionChoice, pins: ReadonlyMap<string, Pin> = new Map()): GraphViewNode[] {
-  return nodes.map((n) => ({ id: n.path, row: n.row, pinned: pins.get(n.path) ?? null, tooltip: cardTooltip(n.path, cardTextFor(n, projection), projection, titleKey(n.row, projection)) }));
+  return nodes.map((n) => {
+    const tooltip = cardTooltip(n.path, cardTextFor(n, projection), projection, titleKey(n.row, projection));
+    return { id: n.path, row: n.row, pinned: pins.get(n.path) ?? null, tooltip: n.loose ? `${tooltip}\n${LOOSE_NOTE}` : tooltip, ...(n.loose ? { kind: "loose" } : {}) };
+  });
 }
 
 /** The direction a relationship's edges are drawn (and laid out) in: the axis as the view says, every other one as the candidate's default. */

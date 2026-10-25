@@ -37,6 +37,8 @@ export interface EngineNames {
   field: "_field" | "field";
   provenance: "_provenance" | "provenance";
   dst_kind: "_dst_kind" | "dst_kind";
+  /** The source block of a body link (null on a frontmatter link). */
+  block_id: "_block_id" | "block_id";
   /** A document's link relations, and a link's reach-throughs. */
   out_links: "_out_links" | "out_links";
   in_links: "_in_links" | "in_links";
@@ -56,7 +58,7 @@ export interface EngineNames {
 export const NAMES_5: EngineNames = {
   major: 5,
   id: "_id", path: "_path", title: "_title", updated_at: "_updated_at",
-  dst_path: "_dst_path", field: "_field", provenance: "_provenance", dst_kind: "_dst_kind",
+  dst_path: "_dst_path", field: "_field", provenance: "_provenance", dst_kind: "_dst_kind", block_id: "_block_id",
   out_links: "_out_links", in_links: "_in_links", dst: "_dst", doc: "_doc",
   builtinLinks: "_out_links", builtinBacklinks: "_in_links",
 };
@@ -64,7 +66,7 @@ export const NAMES_5: EngineNames = {
 export const NAMES_4: EngineNames = {
   major: 4,
   id: "id", path: "path", title: "title", updated_at: "updated_at",
-  dst_path: "dst_path", field: "field", provenance: "provenance", dst_kind: "dst_kind",
+  dst_path: "dst_path", field: "field", provenance: "provenance", dst_kind: "dst_kind", block_id: "block_id",
   out_links: "out_links", in_links: "in_links", dst: "dst", doc: "doc",
   builtinLinks: "doc.out_links", builtinBacklinks: "doc.in_links",
 };

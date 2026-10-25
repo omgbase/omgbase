@@ -113,6 +113,16 @@ await log.run(taskCheckCommand({ blockId: hit._id, checked: true, contentHash: d
 const entry = await log.undo();           // → state "undone", or "refused" with entry.refusal
 ```
 
+## Document and relation commands (`@omgbase/client/commands-documents`, `@omgbase/client/commands-relations`)
+
+The commands the Explorers share on top of the log — one guarded `apply` each, each with a compensating undo that re-reads the repository and refuses when the write it made has moved on:
+
+- `createDocumentCommand({ path, markdown?, frontmatter?, repo? })` — one `create` effect (`path_taken` when a document or file is already there), then a `docs_read` whose `_raw` and `rev` guard the undo (the document is removed only while its bytes are still what creation produced). `defaultMarkdown(path, title?)` is the starter body (one H1 from the file name — `titleFromPath`); `creationError(e, path)` reads the errors a create can hit into one line; `rootedPath` / `pathStem` are the path helpers.
+- `relationKinds(edges, extra?)` — the kinds a connector should offer, from the RENDERED graph's edges (`{ provenance, field }`, `EdgeProvenance`): the frontmatter fields by frequency then name, then `extra` fields not already present, then the body link; never empty. `fieldCounts(edges)` is the per-field count the picker shows dimmed; `listPathFields(frontmatter)` names a document's own path-valued fields (a path or wikilink, or a non-empty list of them) — what a host passes as `extra` for the connector's source.
+- `attachRelationCommand({ from, to, toTitle?, how, repo? })` — ADDITIVE, always: `how: { kind: "frontmatter", field }` makes an absent field `[to]`, appends `to` to a list, turns a scalar path into `[scalar, to]` (a non-path scalar is refused, an already-related destination fails before writing); `how: { kind: "body-link" }` appends a `[title](/to.md)` paragraph and remembers the inserted block's id and hash. Values are written as rooted paths. The forward write is pinned to the source's revision; the compensation refuses unless the field (or the block) still holds exactly what the write produced.
+- `detachRelationCommand({ from, to, how, blockId?, repo? })` — the field without `to` (unset when that empties it), or the body link's block removed by its hash (`blockId` required); undo restores the field, or re-inserts the block's source at the END of the document.
+- `describeRelation(how, from, to)` / `describeDetach(how, from, to)` — the one-line labels; `isPathValue`, `namesDocument`, `attachedValue`, `detachedValue` are the pure value rules.
+
 ## Facts worth knowing about the surface
 
 - Every repo-scoped tool takes an optional `repo` slug; `query_syntax` and `version` do not. An unknown slug is `repo_not_found`.

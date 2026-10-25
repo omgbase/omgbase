@@ -36,7 +36,7 @@
 //   graph-edge-delete { key }   (the ✕ at a selected edge's midpoint, or Delete / Backspace while an edge
 //                               is selected; only with canWrite — the host runs the detach)
 //   graph-hover { id | null }  graph-edge-hover { key | null }   (the pointer over a card / an edge)
-//   graph-view { k, tx, ty }  graph-label-fit { labelFit }  (the toolbar's select)
+//   graph-view { k, tx, ty }  graph-label-fit { labelFit }  graph-edge-style { edgeStyle }  (the toolbar's controls)
 // Keys: arrows select (or move the connector target), Enter opens (or confirms a
 // connector), e expands/collapses, u / Backspace unpins (Delete / Backspace on a
 // selected edge asks to delete it), c arms a connector,
@@ -73,6 +73,8 @@ export interface GraphHoverDetail { id: string | null }
 export interface GraphEdgeHoverDetail { key: string | null }
 export type GraphViewDetail = ViewTransform;
 export interface GraphLabelFitDetail { labelFit: LabelFit }
+/** The toolbar's edge-style button was pressed (the host may mirror the choice in its own controls). */
+export interface GraphEdgeStyleDetail { edgeStyle: EdgeStyle }
 
 /** A frame whose routing takes longer than this degrades to every-other-tick routing while hot. */
 export const ROUTE_BUDGET_MS = 4;
@@ -753,7 +755,7 @@ export class OmgGraph extends LitElement {
       </svg>
       ${this.nodes.length === 0 ? html`<div class="empty">no graph yet</div>` : nothing}
       ${this.toolbar ? html`<div class="toolbar">
-        <button @click=${() => { this.edgeStyle = this.edgeStyle === "curved" ? "straight" : "curved"; }} title=${this.edgeStyle === "curved" ? "edges: curved around cards — switch to straight" : "edges: straight — switch to curved"}>${this.edgeStyle === "curved" ? "⤳" : "→"} edges</button>
+        <button @click=${() => { this.edgeStyle = this.edgeStyle === "curved" ? "straight" : "curved"; this.emit<GraphEdgeStyleDetail>("graph-edge-style", { edgeStyle: this.edgeStyle }); }} title=${this.edgeStyle === "curved" ? "edges: curved around cards — switch to straight" : "edges: straight — switch to curved"}>${this.edgeStyle === "curved" ? "⤳" : "→"} edges</button>
         <select title="how a card fits its label" .value=${this.labelFit} @change=${(e: Event) => { this.labelFit = (e.target as HTMLSelectElement).value as LabelFit; this.emit<GraphLabelFitDetail>("graph-label-fit", { labelFit: this.labelFit }); }}>${LABEL_FITS.map((f) => html`<option value=${f} ?selected=${f === this.labelFit}>${f}</option>`)}</select>
         <button @click=${() => this.fit()} title="fit the graph to the view (f)">fit</button>
         <button @click=${() => this.home()} title="1:1 with the origin centred (0)">1:1</button>

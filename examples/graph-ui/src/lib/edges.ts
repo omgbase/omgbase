@@ -19,7 +19,9 @@
 // surface 5.0, bare before). Paths: the shown nodes are keyed by the
 // `/`-rooted path (lib/paths.ts), the literals are spelled rooted, and the
 // rows' paths are rooted before they are compared with the node keys. The
-// projection aliases (`src`/`dst`) are the demo's own.
+// projection aliases (`src`/`dst`/`block`) are the demo's own; a link candidate's
+// rows also carry `block: _block_id`, the source block a body-link edge is
+// severed by (lib/relations.ts `detachFor`).
 
 import { refsOf, type Candidate, type Direction, type InversePair } from "./candidates.ts";
 import { NAMES_5, rooted, type EngineNames } from "./paths.ts";
@@ -31,6 +33,9 @@ export interface GraphEdge {
   dst: string;
   /** The candidate name this edge belongs to. */
   rel: string;
+  /** A body link's source block (the link row's `_block_id`), so the edge can be
+   * severed by `detachRelationCommand`; absent on a frontmatter or derived edge. */
+  blockId?: string | null;
 }
 
 export const CHUNK = 40;
@@ -58,8 +63,10 @@ export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: 
     candidate.kind === "frontmatter"
       ? `${names.field} == ${oqxString(candidate.name)} && ${names.provenance} == "frontmatter"`
       : `${names.provenance} == "link" && ${names.dst_kind} == "document"`;
+  // A body link's row names its source block: the handle an edge deletion removes it by.
+  const select = candidate.kind === "frontmatter" ? `src: ${names.path}, dst: ${names.dst_path}` : `src: ${names.path}, dst: ${names.dst_path}, block: ${names.block_id}`;
   return chunked(paths).map(
-    (chunk) => `links { select src: ${names.path}, dst: ${names.dst_path} where ${relation} && ${pathDisjunction(chunk.map(rooted), names.path)} }`,
+    (chunk) => `links { select ${select} where ${relation} && ${pathDisjunction(chunk.map(rooted), names.path)} }`,
   );
 }
 
@@ -82,7 +89,8 @@ export function edgesFromRows(
     const key = `${edge.src}→${edge.dst}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ ...edge, rel: candidate.name });
+    // A link candidate's row names its source block (`block: _block_id`); the edge keeps it for its deletion.
+    out.push({ ...edge, rel: candidate.name, ...(candidate.kind !== "frontmatter" && typeof row.block === "string" ? { blockId: row.block } : {}) });
   }
   return out;
 }

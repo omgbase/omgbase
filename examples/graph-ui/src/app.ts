@@ -5,6 +5,17 @@
 // the sample, the local bridge proxying a remote it signed in to, or the remote
 // directly with the browser as the OAuth client) and a status line.
 //
+// Writes go through `@omgbase/client`: one `OmgClient` per server URL (the
+// page's OAuth provider attached for direct mode), and every write — a ⌘-click
+// toggle, a connector's attach, an edge's delete, a palette create — is a
+// command on ONE `CommandLog`, so ⌘Z / ⇧⌘Z (and the header buttons) undo and
+// redo them with a compensating `apply` that refuses when the repository moved
+// on. The palette (`<omg-palette>`, ⌘K) finds a document by path or title and
+// puts it on the canvas, runs the page's actions (`>`), creates (`+`), and in
+// pick mode names a connector's destination; `<omg-relation-picker>` asks which
+// relation a connector means. A document that is not one of the query's rows
+// is a LOOSE node (lib/loose.ts) until the query re-runs.
+//
 // Chrome: Shoelace, imported per component — `<sl-split-panel>` between the side
 // panel and the graph (position persisted; the graph refits itself on resize),
 // `<sl-details>` for the side panel's stacked sections (open state persisted).
@@ -23,24 +34,35 @@ import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
 import "./elements/oqx-projection-picker.ts";
 import "./elements/oqx-graph-pane.ts";
+import type { OqxGraphPane } from "./elements/oqx-graph-pane.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
 import type { ArmedChangeDetail, OqxRelationshipPicker, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
 import type { FieldHoverDetail, ProjectionChangeDetail } from "./elements/oqx-projection-picker.ts";
-import type { AlgorithmRequestDetail, AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, LabelFitChangeDetail, PendingEdge } from "./elements/oqx-graph-pane.ts";
+import type { AlgorithmRequestDetail, Anchor, AxisRequestDetail, ConnectEmptyDetail, ConnectRequestDetail, EdgeDeleteDetail, EdgeStyleChangeDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, LabelFitChangeDetail, PendingEdge } from "./elements/oqx-graph-pane.ts";
 import { graphNodes } from "./lib/graph-view.ts";
+import { addLoose, looseNode, looseNodeQuery, withLoose } from "./lib/loose.ts";
+import { connectorKinds, detachFor, relationshipFor } from "./lib/relations.ts";
+import { actionArgument, paletteActions } from "./lib/palette-actions.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
 import { projectionOf, type Projection } from "./lib/projection.ts";
 import { edgeQueries, edgesFromRows, type GraphEdge } from "./lib/edges.ts";
-import { describePatch, editability, projectedFields, type Editability, type EmptyListBehavior, type FrontmatterEffect } from "./lib/edit.ts";
-import { PerKeyQueue, applyToggle, describeMutationError, prepareToggle, type TogglePlan } from "./lib/mutations.ts";
-import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSettings } from "./lib/mcp-client.ts";
+import { describePatch, editability, type Editability, type EmptyListBehavior } from "./lib/edit.ts";
+import { describeMutationError, prepareToggle, toggleCommand, type TogglePlan } from "./lib/mutations.ts";
+import { AuthRequiredError, OmgClient, OmgError, serverUrlFor, type CommandClient, type McpMode, type McpSettings } from "./lib/mcp-client.ts";
+import {
+  CommandLog, attachRelationCommand, createDocumentCommand, creationError, defaultMarkdown, describeDetach, describeRelation, detachRelationCommand,
+  type HistoryEntry, type RelationKind,
+} from "@omgbase/client";
+import "@omgbase/elements";
+import type { PaletteItem, RelationKindItem, RelationPickDetail } from "@omgbase/elements";
+import { findQuery, itemsFor, parseInput } from "@omgbase/elements/palette";
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
-import { DEFAULT_LABEL_FIT, LABEL_FITS, isLabelFit, type LabelFit } from "@omgbase/elements/graph";
+import { DEFAULT_LABEL_FIT, LABEL_FITS, isLabelFit, type EdgeStyle, type LabelFit } from "@omgbase/elements/graph";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
-import { docLocator, hitPath, namesFor, surfaceOf, surfaceProblem } from "./lib/paths.ts";
+import { UNDERSCORE_SURFACE_MAJOR, hitPath, namesFor, rooted, surfaceMajor, surfaceOf, surfaceProblem } from "./lib/paths.ts";
 import { DEFAULT_QUERY } from "./lib/default-query.ts";
 import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
 import { SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
@@ -200,7 +222,16 @@ const view = computed<View>(() => {
 // path); the card's actual title comes from the projection's label field
 // (lib/graph-view.ts `cardTextFor`). The hit's identity is read through
 // `hitId`/`hitPath` (lib/paths.ts): the envelope's `_id`/`_path` (a 4.x server's `id`/`path`).
-const nodes = computed<GraphNode[]>(() => graphNodes(rows.get()));
+/** Documents on the canvas that are not among the rows (lib/loose.ts): found,
+ * created or picked as a connector's destination; dropped when the query re-runs. */
+const looseNodes = signal<GraphNode[]>([]);
+const nodes = computed<GraphNode[]>(() => withLoose(graphNodes(rows.get()), looseNodes.get()));
+/** The selected node (the side panel shows its row; the connector and the toggles start from it). */
+const selectedNode = signal<GraphNode | null>(null);
+/** Bumped after a write that must not re-run the query (loose nodes on the canvas): the pane drops its edge cache and re-fetches. */
+const edgeRefresh = signal(0);
+/** The element's edge style, mirrored so the palette can toggle it. */
+const edgeStyle = signal<EdgeStyle>("curved");
 const graphState = signal<GraphStateDetail | null>(null);
 /** The query is in flight (the spinner and the empty state key off it). */
 const querying = signal(false);
@@ -217,7 +248,16 @@ const repoShape = signal<RepositoryShape | null>(null);
 
 /** The server's tool names (null until listed, or when listing failed — then assume the full set). */
 const tools = signal<string[] | null>(null);
-const canWrite = computed<boolean>(() => tools.get()?.includes("apply") ?? true);
+/** The writes go through `@omgbase/client`'s commands, which spell a document
+ * `{ _path }` and `_frontmatter.<key>` — surface 5.0's names; a 3.x/4.x server
+ * (bare `path`) refuses them, so edge editing is offered from 5.0 up. */
+const writeBlock = computed<string | null>(() => {
+  const surface = serverSurface.get();
+  if (surface !== null && (surfaceMajor(surface) ?? 0) < UNDERSCORE_SURFACE_MAJOR) return `edge writes need omgbase surface ≥ ${UNDERSCORE_SURFACE_MAJOR}.0 (the shared commands spell \`_path\`); the server reports ${surface}`;
+  if (tools.get()?.includes("apply") === false) return "the server offers no apply tool (a gateway's tool allowlist must include it)";
+  return null;
+});
+const canWrite = computed<boolean>(() => writeBlock.get() === null);
 const editable = computed<Record<string, Editability>>(() =>
   Object.fromEntries(candidates.get().map((c) => [c.name, editability(c, rows.get(), canWrite.get())])));
 const writable = computed<string[]>(() => Object.entries(editable.get()).filter(([, e]) => e.writable).map(([name]) => name));
@@ -229,9 +269,27 @@ const pending = signal<PendingEdge[]>([]);
 const proposal = signal<TogglePlan | null>(null);
 const editMessage = signal<{ kind: "error" | "info"; text: string } | null>(null);
 const editBusy = signal(false);
-const mutations = new PerKeyQueue();
 /** Set after a write: the next settled graph layout clears the optimistic edges. */
 let settlePending = false;
+/** Bumped on every command-log event so the computed labels below re-read the log. */
+const logVersion = signal(0);
+const undoLabel = computed(() => { logVersion.get(); const e = log.nextUndo; return e ? `undo: ${e.label}` : null; });
+const redoLabel = computed(() => { logVersion.get(); const e = log.nextRedo; return e ? `redo: ${e.label}` : null; });
+
+/** The command palette (⌘K): find a document by path or title (one `query` per
+ * keystroke, debounced in the element), `>` for the page's actions, `+` to create. */
+const paletteOpen = signal(false);
+const paletteText = signal("");
+const paletteItems = signal<PaletteItem[]>([]);
+const paletteLoading = signal(false);
+const paletteError = signal<string | null>(null);
+const paletteMode = signal<"navigate" | "pick">("navigate");
+const paletteHeading = signal<string | null>(null);
+/** Pick mode's caller (the connector's find-or-create destination): resolved with the picked item, or null when the palette closes. */
+let palettePick: ((item: PaletteItem | null) => void) | null = null;
+
+/** A connector in progress: its source and destination, the relation kinds the drawn graph offers (the picker's rows) and where to show the picker (the drop point). */
+const relationPick = signal<{ from: string; to: string; toTitle: string | null; kinds: RelationKindItem[]; anchor: Anchor | null } | null>(null);
 
 // ---- MCP client + OAuth -----------------------------------------------------------
 
@@ -259,12 +317,17 @@ function providerFor(url: string): BrowserOAuthProvider {
 
 let client: OmgClient | null = null;
 
+/** The shared `OmgClient` (@omgbase/client) for a server URL — one at a time,
+ * with this page's OAuth provider attached (inert against the bridge, which
+ * never answers 401). The repo is per call (`repoArg`), since the designation
+ * can change without the connection changing. */
 function clientFor(url: string): OmgClient {
   if (!client || client.options.url !== url) {
     void client?.close();
     client = new OmgClient({
       url,
       authProvider: providerFor(url),
+      clientInfo: { name: "omgbase-graph-ui", version: "0.0.0" },
       // The proxy forgot our session (idle timeout, or it restarted): the client
       // has already opened a fresh one and retried; just say so in the status line.
       onSessionLost: () => { if (connection.get() === "ok") connectionMessage.set("session expired at the server — reconnected"); },
@@ -272,6 +335,23 @@ function clientFor(url: string): OmgClient {
   }
   return client;
 }
+
+/** The `repo` argument of a call: the designation, or `null` to omit it (the server's default repo). */
+function repoArg(): string | null {
+  return repoInUse.get() || null;
+}
+
+/** What the command log writes through: whichever client the current server URL has (the log outlives a reconnect; a different server clears it). */
+const commandClient: CommandClient = {
+  apply: (req) => clientFor(serverUrl.get()).apply(req),
+  docsRead: (doc, opts) => clientFor(serverUrl.get()).docsRead(doc, opts),
+  query: (q, opts) => clientFor(serverUrl.get()).query(q, opts),
+  call: <T,>(name: string, args?: Record<string, unknown>) => clientFor(serverUrl.get()).call<T>(name, args),
+};
+
+/** The session's commands (@omgbase/client): every write the page makes, with its compensating undo. In memory only. */
+const log = new CommandLog({ client: commandClient });
+log.subscribe(() => logVersion.set(logVersion.get() + 1));
 
 function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -388,6 +468,8 @@ function disconnect(): void {
   if (url) providerFor(url).clear();
   void client?.close();
   client = null;
+  log.clear();
+  looseNodes.set([]);
   identity.set(null);
   rows.set([]);
   emptyResult.set(null);
@@ -427,7 +509,7 @@ async function finishSignIn(): Promise<boolean> {
 /** Does `path` exist in the current repository? null when the probe failed. */
 async function docExists(path: string): Promise<boolean | null> {
   try {
-    const r = await clientFor(serverUrl.get()).query(existsQuery(path, names.get()), { repo: repoInUse.get(), limit: 1 });
+    const r = await clientFor(serverUrl.get()).query(existsQuery(path, names.get()), { repo: repoArg(), limit: 1 });
     return r.hits.length > 0;
   } catch {
     return null;
@@ -456,12 +538,12 @@ async function runQuery(): Promise<void> {
   querying.set(true);
   let empty: EmptyState | null = null;
   try {
-    const result = await clientFor(url).query(text, { repo: repoInUse.get(), limit: 200 });
+    const result = await clientFor(url).query(text, { repo: repoArg(), limit: 200 });
     if (gen !== runGeneration) return;
     truncated.set(result.truncated);
     // An empty result clears the graph (an empty result must not look like a
     // stale one) unless the user asked to keep the last graph.
-    if (result.hits.length > 0 || !uiSettings.get().keepLastGraph) rows.set(result.hits);
+    if (result.hits.length > 0 || !uiSettings.get().keepLastGraph) { rows.set(result.hits); looseNodes.set([]); }
     empty = result.hits.length === 0 ? { where: firstWhereText(text, q), missing: [] } : null;
     emptyResult.set(empty);
   } catch (e) {
@@ -481,27 +563,64 @@ async function runQuery(): Promise<void> {
 async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphEdge[]> {
   const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths, names.get())) all.push(...(await clientFor(url).queryAll(q, { repo: repoInUse.get() })));
+  for (const q of edgeQueries(candidate, paths, names.get())) all.push(...(await clientFor(url).queryAll(q, { repo: repoArg() })));
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
-/** The edit tools with the document argument spelled for the server (`{ _id }`
- * or `{ _path }` — `{ id }`/`{ path }` on 4.x; lib/paths.ts `docLocator`); the
- * plans and the graph speak rooted paths. A write is one `apply` whose effects
- * target the owner document (`{ kind: "document", … }`). */
-function metaClientFor(url: string) {
-  const c = clientFor(url);
-  return {
-    docsRead: (doc: string, repo?: string) => c.docsRead(docLocator(doc, names.get()), repo),
-    applyFrontmatter: (doc: string, effects: FrontmatterEffect[], repo?: string) =>
-      c.apply(effects.map((e) => ({ ...e, target: { kind: "document", ...docLocator(doc, names.get()) } })), { ...(repo ? { repo } : {}), reason: "graph-ui edge toggle" }),
-  };
+// ---- writes: every one a command on the log ------------------------------------------------
+
+/** After a write landed (or was undone): with loose nodes on the canvas only the
+ * edges are re-fetched (a re-run would drop the guests); otherwise the query
+ * re-runs (rows, candidates and edges all fresh). Either way the pane reports a
+ * settled layout and the optimistic edges clear (`onGraphState`). */
+async function afterWrite(): Promise<void> {
+  settlePending = true;
+  if (looseNodes.get().length > 0) edgeRefresh.set(edgeRefresh.get() + 1);
+  else await runQuery();
+  // If the pane never reports (the query failed, rows unchanged), drop the preview anyway.
+  setTimeout(() => { if (settlePending) { settlePending = false; pending.set([]); } }, 4000);
+}
+
+/** The documents a log entry touched (its receipts' revisions), rooted. */
+function touchedByEntry(entry: HistoryEntry): string[] {
+  const paths = new Set<string>();
+  for (const step of entry.steps) for (const r of step.applied?.revisions ?? []) paths.add(rooted(r._path));
+  for (const r of entry.compensation?.revisions ?? []) paths.add(rooted(r._path));
+  return [...paths];
+}
+
+/** A command's failure in one line: the engine's code and message (a stale guard says what to do), else the command's own refusal. */
+function commandError(e: unknown): string {
+  return e instanceof OmgError ? `${e.code}: ${describeMutationError(e)}` : describeMutationError(e);
+}
+
+/** Undo (or redo) the last command on the log: a compensating `apply` computed
+ * against the repository's CURRENT state — refused, with the reason shown, when
+ * what the command wrote has moved on since (nothing is overwritten). */
+async function compensate(dir: "undo" | "redo"): Promise<void> {
+  const next = dir === "undo" ? log.nextUndo : log.nextRedo;
+  if (!next || editBusy.get() || !canWrite.get()) return;
+  editBusy.set(true);
+  editMessage.set(null);
+  try {
+    const entry = dir === "undo" ? await log.undo() : await log.redo();
+    if (!entry) return;
+    if (entry.state === "refused") { editMessage.set({ kind: "error", text: `${dir} refused — ${entry.refusal ?? "the repository moved on"}; nothing was overwritten` }); return; }
+    if (entry.error) throw entry.error;
+    const commit = dir === "undo" ? entry.compensation?.commit : entry.steps[entry.steps.length - 1]?.applied?.receipts[0]?.commit;
+    editMessage.set({ kind: "info", text: `${dir}: ${entry.label} — committed ${commit ?? "nothing"} (${touchedByEntry(entry).join(", ") || "no document"})` });
+    await afterWrite();
+  } catch (e) {
+    editMessage.set({ kind: "error", text: `${dir} failed — ${commandError(e)}` });
+  } finally {
+    editBusy.set(false);
+  }
 }
 
 // ---- edge editing: plan, confirm, write, refresh ----------------------------------------
 
-/** A ⌘-click arrived: work out the exact patch (reading the owner if the query
- * did not project the field), then either show it for confirmation or write it. */
+/** A ⌘-click arrived: work out the exact patch (one `docs_read` of the owner),
+ * then either show it for confirmation or write it. */
 async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
   const { candidate, from: owner, to: target, present } = detail;
   const ed = editable.get()[candidate.name];
@@ -512,20 +631,18 @@ async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
   }
   editBusy.set(true);
   try {
-    const plan = await prepareToggle(metaClientFor(serverUrl.get()), {
+    const plan = await prepareToggle(commandClient, {
       owner: { id: owner.id, path: owner.path },
       target: { id: target.id, path: target.path },
       field: candidate.name,
       present,
       form: ed.form,
       options: { shape: ed.shape, emptyListBehavior: editSettings.get().emptyListBehavior },
-      row: owner.row,
-      projected: projectedFields(ast.get()).includes(candidate.name),
-      ...(repoInUse.get() ? { repo: repoInUse.get() } : {}),
+      repo: repoArg(),
     });
     if (plan.patch.kind === "noop" || plan.patch.kind === "refuse") {
       editMessage.set({ kind: plan.patch.kind === "noop" ? "info" : "error", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
-      if (plan.patch.kind === "noop") void runQuery(); // the drawing was stale — refresh it
+      if (plan.patch.kind === "noop") void afterWrite(); // the drawing was stale — refresh it
       return;
     }
     if (editSettings.get().confirm) proposal.set(plan);
@@ -537,23 +654,29 @@ async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
   }
 }
 
-/** Write the plan with an optimistic dashed edge; on failure revert and say why. */
+/** Write the plan as ONE command on the log (the shared attach / detach when the
+ * field is a list of rooted `.md` paths, this demo's form-aware toggle otherwise
+ * — lib/mutations.ts `toggleCommand`) with an optimistic dashed edge; on failure
+ * revert and say why. */
 async function writeToggle(plan: TogglePlan): Promise<void> {
   proposal.set(null);
+  const ed = editable.get()[plan.field];
+  if (!ed?.writable) { editMessage.set({ kind: "error", text: `${plan.field} is read-only: ${ed?.reason ?? "unknown relationship"}` }); return; }
   const preview: PendingEdge = { src: plan.owner.path, dst: plan.target.path, rel: plan.field, action: plan.present ? "remove" : "add" };
   pending.set([...pending.get(), preview]);
   editBusy.set(true);
   try {
-    await applyToggle(metaClientFor(serverUrl.get()), mutations, plan, repoInUse.get() || undefined);
-    editMessage.set({ kind: "info", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
-    settlePending = true;
-    await runQuery();
-    // The graph refetches edges for the new rows and reports a settled layout; if
-    // that never comes (the query failed, rows unchanged), drop the preview anyway.
-    setTimeout(() => { if (settlePending) { settlePending = false; pending.set([]); } }, 4000);
+    const entry = await log.run(toggleCommand({
+      owner: plan.owner, target: plan.target, field: plan.field, present: plan.present,
+      form: ed.form, shape: ed.shape, emptyListBehavior: editSettings.get().emptyListBehavior, repo: repoArg(),
+    }));
+    if (entry.state !== "applied") throw entry.error;
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    editMessage.set({ kind: "info", text: `${describePatch(plan.owner, plan.field, plan.patch, plan.previous)}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with ⌘Z or the button` });
+    await afterWrite();
   } catch (e) {
     pending.set(pending.get().filter((p) => p !== preview));
-    editMessage.set({ kind: "error", text: describeMutationError(e) });
+    editMessage.set({ kind: "error", text: commandError(e) });
   } finally {
     editBusy.set(false);
   }
@@ -566,6 +689,265 @@ function onGraphState(detail: GraphStateDetail): void {
     pending.set([]);
   }
 }
+
+// ---- loose nodes: a document on the canvas that is not one of the rows -------------------
+
+/** Put `path` on the canvas and select it: the row it already has, else one
+ * `docs { … }` of its own (shaped like the current projection) as a loose node. */
+async function revealDocument(path: string): Promise<GraphNode | null> {
+  const p = rooted(path);
+  const shown = nodes.get().find((n) => n.path === p);
+  if (shown) { selectedNode.set(shown); return shown; }
+  const fields = projection.get().fields.map((f) => f.name);
+  const r = await clientFor(serverUrl.get()).query(looseNodeQuery(p, fields, names.get()), { repo: repoArg(), limit: 1 });
+  const node = r.hits[0] ? looseNode(r.hits[0]) : null;
+  if (!node) { editMessage.set({ kind: "error", text: `${p} is not in the repository` }); return null; }
+  looseNodes.set(addLoose(looseNodes.get(), node));
+  selectedNode.set(node);
+  return node;
+}
+
+// ---- the palette -------------------------------------------------------------------------------
+
+const PALETTE_LIMIT = 20;
+let paletteGeneration = 0;
+
+/** This page's actions for `>`, as it is now (lib/palette-actions.ts). */
+function currentActions() {
+  return paletteActions({
+    connected: serverSurface.get() !== null, canWrite: canWrite.get(), hasQuery: ast.get() !== null,
+    algorithm: view.get().layout.algorithm, labelFit: uiSettings.get().labelFit, edgeStyle: edgeStyle.get(),
+    armed: armed.get()?.name ?? null, writable: writable.get(), confirm: editSettings.get().confirm,
+    undoLabel: undoLabel.get(), redoLabel: redoLabel.get(),
+  });
+}
+
+function openPalette(mode: "navigate" | "pick" = "navigate", heading: string | null = null, text = ""): void {
+  paletteMode.set(mode);
+  paletteHeading.set(heading);
+  paletteText.set(text);
+  paletteError.set(null);
+  paletteOpen.set(true);
+}
+
+function closePalette(): void {
+  paletteOpen.set(false);
+  paletteLoading.set(false);
+  const resolve = palettePick;
+  palettePick = null;
+  resolve?.(null);
+}
+
+/** The connector's find-or-create destination: the palette in pick mode; the picked item, or null when dismissed. */
+export function pickDestination(heading: string): Promise<PaletteItem | null> {
+  const previous = palettePick;
+  previous?.(null);
+  return new Promise((resolve) => {
+    palettePick = resolve;
+    openPalette("pick", heading);
+  });
+}
+
+/** The folder a bare created name lands in: the selected document's, else `/`. */
+function currentFolderDoc(): string | null {
+  return selectedNode.get()?.path ?? null;
+}
+
+async function paletteSearch(text: string): Promise<void> {
+  paletteText.set(text);
+  const input = parseInput(text);
+  const gen = ++paletteGeneration;
+  const ctx = { actions: currentActions(), currentDoc: currentFolderDoc() };
+  if (input.kind !== "find") { paletteItems.set(itemsFor(input, { ...ctx, docs: [] })); paletteLoading.set(false); return; }
+  paletteLoading.set(true);
+  paletteError.set(null);
+  try {
+    const r = await clientFor(serverUrl.get()).query(findQuery(input.text, PALETTE_LIMIT), { repo: repoArg(), limit: PALETTE_LIMIT });
+    if (gen !== paletteGeneration) return;
+    paletteItems.set(itemsFor(input, { ...ctx, docs: r.hits }));
+  } catch (e) {
+    if (gen !== paletteGeneration) return;
+    paletteError.set(describeError(e));
+    paletteItems.set(itemsFor(input, { ...ctx, docs: [] }));
+  } finally {
+    if (gen === paletteGeneration) paletteLoading.set(false);
+  }
+}
+
+/** `+path` or the create suggestion: ONE `apply { create }` as a command on the log
+ * (its undo removes the document, refused when it was edited since), then the new
+ * document on the canvas as a loose node — the query may not match it. */
+async function createDocument(path: string): Promise<GraphNode | null> {
+  if (!canWrite.get()) { paletteError.set(`read-only: ${writeBlock.get()}`); return null; }
+  paletteLoading.set(true);
+  paletteError.set(null);
+  try {
+    const entry = await log.run(createDocumentCommand({ path, markdown: defaultMarkdown(path), repo: repoArg() }));
+    if (entry.state !== "applied") { paletteError.set(creationError(entry.error, path)); return null; }
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    closePalette();
+    const node = await revealDocument(path);
+    editMessage.set({ kind: "info", text: `created ${rooted(path)}${receipt?.commit ? ` — committed ${receipt.commit}` : ""}; on the canvas as a loose node until the query re-runs — undo with ⌘Z or the button` });
+    return node;
+  } finally {
+    paletteLoading.set(false);
+  }
+}
+
+function runPaletteAction(id: string): void {
+  closePalette();
+  const layout = actionArgument(id, "layout");
+  if (layout !== null) { appEl?.picker?.setAlgorithm(layout === "auto" ? "auto" : (layout as View["layout"]["algorithm"])); return; }
+  const fit = actionArgument(id, "label-fit");
+  if (fit !== null && isLabelFit(fit)) { uiSettings.set({ ...uiSettings.get(), labelFit: fit }); return; }
+  const arm = actionArgument(id, "arm");
+  if (arm !== null) { appEl?.picker?.arm(arm); return; }
+  switch (id) {
+    case "run": void runQuery(); return;
+    case "fit": appEl?.pane?.fit(); return;
+    case "create": { const d = currentFolderDoc(); openPalette("navigate", null, `+${d ? d.slice(0, d.lastIndexOf("/") + 1) : "/"}`); return; }
+    case "undo": void compensate("undo"); return;
+    case "redo": void compensate("redo"); return;
+    case "edge-style": edgeStyle.set(edgeStyle.get() === "curved" ? "straight" : "curved"); return;
+    case "disarm": appEl?.picker?.arm(null); return;
+    case "confirm": editSettings.set({ ...editSettings.get(), confirm: !editSettings.get().confirm }); return;
+    case "starter": source.set(starterQuery(names.get())); return;
+    case "reconnect": void connectServer(); return;
+  }
+}
+
+function onPaletteSelect(item: PaletteItem): void {
+  if (paletteMode.get() === "pick") {
+    const resolve = palettePick;
+    palettePick = null;
+    paletteOpen.set(false);
+    resolve?.(item);
+    return;
+  }
+  switch (item.kind) {
+    case "doc": closePalette(); void revealDocument(item.path); return;
+    case "action": runPaletteAction(item.id); return;
+    case "create": void createDocument(item.path); return;
+  }
+}
+
+// ---- the connector and the edge's delete --------------------------------------------------
+
+/** A connector landed on a document (or the palette picked one): the relation
+ * kinds the DRAWN graph already uses — the frontmatter fields of its edges by
+ * frequency, this query's other frontmatter relationships, the source's own
+ * path-valued fields (one `docs_read`), then the body link — offered in a
+ * picker at the drop point. Nothing is written yet. */
+async function startConnect(from: string, to: string, anchor: Anchor | null, edges: readonly GraphEdge[]): Promise<void> {
+  if (!canWrite.get() || from === to) return;
+  editMessage.set(null);
+  try {
+    const d = await clientFor(serverUrl.get()).docsRead({ _path: rooted(from) }, { repo: repoArg() });
+    const kinds = connectorKinds(edges, candidates.get(), d.properties.frontmatter);
+    const toNode = nodes.get().find((n) => n.path === rooted(to));
+    const title = toNode?.row[names.get().title] ?? toNode?.row.title;
+    relationPick.set({ from: rooted(from), to: rooted(to), toTitle: typeof title === "string" ? title : null, kinds, anchor });
+  } catch (e) {
+    editMessage.set({ kind: "error", text: `connect ${from} → ${to}: ${commandError(e)}` });
+  }
+}
+
+/** A connector dropped on open canvas: the palette picks (or creates) the
+ * destination — put on the canvas as a loose node when the query did not show
+ * it — then the picker. */
+async function connectToPicked(from: string, anchor: Anchor | null, edges: readonly GraphEdge[]): Promise<void> {
+  const item = await pickDestination(`connect ${from} to…`);
+  if (!item) return;
+  if (item.kind === "doc") {
+    const node = await revealDocument(item.path);
+    if (node) void startConnect(from, node.path, anchor, edges);
+    return;
+  }
+  if (item.kind === "create") {
+    const node = await createDocument(item.path);
+    if (node) void startConnect(from, node.path, anchor, edges);
+  }
+}
+
+/** A relation kind picked: ONE additive write as a command on the log (the list
+ * gains the destination; a scalar path becomes a list; nothing is replaced —
+ * "already related" and a non-path scalar fail before writing), drawn as a
+ * pending edge meanwhile, then the edges re-fetched. A field the view does not
+ * draw yet is switched on so the new edge shows; a field that is no
+ * relationship of this query is written but not drawn (the message says so). */
+async function attachPicked(item: RelationKindItem): Promise<void> {
+  const c = relationPick.get();
+  if (!c) return;
+  const how: RelationKind = item.kind === "frontmatter" ? { kind: "frontmatter", field: (item.field ?? "").trim() } : { kind: "body-link" };
+  if (how.kind === "frontmatter" && how.field === "") { editMessage.set({ kind: "error", text: "the new frontmatter field needs a name" }); return; }
+  relationPick.set(null);
+  const rel = relationshipFor(how, candidates.get());
+  const preview: PendingEdge | null = rel ? { src: c.from, dst: c.to, rel, action: "add" } : null;
+  if (preview) pending.set([...pending.get(), preview]);
+  editBusy.set(true);
+  editMessage.set(null);
+  try {
+    const entry = await log.run(attachRelationCommand({ from: c.from, to: c.to, toTitle: c.toTitle, how, repo: repoArg() }));
+    if (entry.state !== "applied") throw entry.error;
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    if (rel) appEl?.picker?.draw(rel);
+    const drawn = rel ? "" : how.kind === "frontmatter" ? ` — \`${how.field}\` is not a relationship of this query, so the edge is not drawn (add it to the query to see it)` : " — the query has no link relationship, so the edge is not drawn";
+    editMessage.set({ kind: "info", text: `${entry.label}${receipt?.commit ? ` — committed ${receipt.commit}` : ""}${drawn} — undo with ⌘Z or the button` });
+    await afterWrite();
+  } catch (e) {
+    if (preview) pending.set(pending.get().filter((p) => p !== preview));
+    editMessage.set({ kind: "error", text: `${describeRelation(how, c.from, c.to)} failed — ${commandError(e)}` });
+  } finally {
+    editBusy.set(false);
+  }
+}
+
+/** ✕ on the selected edge, or Delete / Backspace: the sever — the frontmatter
+ * field without the destination (unset when that empties it) or the body link's
+ * block removed by its hash — as a command on the log, then the edges
+ * re-fetched. A derived edge (a pair's, a sequence's, a projected relationship's)
+ * is not deletable from the graph (lib/relations.ts `detachFor` says why). */
+async function deleteGraphEdge(edge: GraphEdge): Promise<void> {
+  if (!canWrite.get() || editBusy.get()) return;
+  editMessage.set(null);
+  const d = detachFor(edge, candidates.get());
+  if ("refused" in d) { editMessage.set({ kind: "error", text: d.refused }); return; }
+  const preview: PendingEdge = { ...edge, action: "remove" };
+  pending.set([...pending.get(), preview]);
+  editBusy.set(true);
+  try {
+    const entry = await log.run(detachRelationCommand({ from: d.from, to: d.to, how: d.how, blockId: d.blockId, repo: repoArg() }));
+    if (entry.state !== "applied") throw entry.error;
+    const receipt = entry.steps[0]?.applied?.receipts[0];
+    editMessage.set({ kind: "info", text: `${entry.label}${d.how.kind === "body-link" ? " (its block)" : ""}${receipt?.commit ? ` — committed ${receipt.commit}` : ""} — undo with ⌘Z or the button` });
+    await afterWrite();
+  } catch (e) {
+    pending.set(pending.get().filter((p) => p !== preview));
+    editMessage.set({ kind: "error", text: `${describeDetach(d.how, d.from, d.to)} failed — ${commandError(e)}` });
+  } finally {
+    editBusy.set(false);
+  }
+}
+
+/** Is the key event's target something that edits text (the query editor, an input, the palette)? ⌘Z belongs to it then. */
+function inEditable(e: KeyboardEvent): boolean {
+  return e.composedPath().some((el) => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)));
+}
+
+// Page-wide keys: ⌘K / Ctrl+K opens the palette; ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y) undo / redo the last command — outside a text field.
+window.addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "k") { e.preventDefault(); if (paletteOpen.get()) closePalette(); else openPalette(); return; }
+  if (inEditable(e)) return;
+  if (k === "z") { e.preventDefault(); void compensate(e.shiftKey ? "redo" : "undo"); }
+  else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); void compensate("redo"); }
+});
+
+/** The page element, for the two child elements the actions reach into (the picker's overrides, the pane's fit). */
+let appEl: GraphUiApp | null = null;
+function registerApp(el: GraphUiApp): void { appEl = el; }
+function unregisterApp(el: GraphUiApp): void { if (appEl === el) appEl = null; }
 
 // Boot: finish a pending sign-in first, then install the effects (persist
 // settings + query; reconnect on URL change; re-run on ast/repo).
@@ -584,6 +966,8 @@ void (async () => {
     last = key;
     discovery.set(null);
     serverSurface.set(null); // unknown until the new server answers `version`
+    log.clear(); // another server: its history is not this one's
+    looseNodes.set([]);
     void connectServer();
   });
   // Which repository: re-probed whenever the repo designation or the connection changes.
@@ -637,6 +1021,8 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     header .conn { font-size: 12px; color: #5a6270; }
     header .conn.error { color: #c62828; }
     header .conn.sign-in { color: #b26a00; }
+    header button { font: inherit; font-size: 12px; padding: 2px 8px; }
+    header button:disabled { opacity: 0.5; }
     main { display: grid; min-height: 0; padding: 8px 14px 12px; }
     /* The split: the side panel (start) and the graph (end); both keep a readable minimum. */
     sl-split-panel { height: 100%; min-height: 0; --min: 360px; --max: calc(100% - 360px); --divider-width: 4px; --divider-hit-area: 16px; }
@@ -690,6 +1076,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     /* The selected row as JSON: at least one line tall, growing with the content, scrolling only past 40vh. */
     .selection { font-size: 12px; line-height: 1.4; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 6px; padding: 8px 10px; }
     .selection pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font: 11px/1.5 ui-monospace, monospace; min-height: calc(11px * 1.5 + 2px); max-height: 40vh; overflow: auto; }
+    .selection .loose { font-size: 11px; color: #b26a00; border: 1px solid #ffb74d; border-radius: 8px; padding: 0 6px; margin-left: 6px; }
     .try pre { line-height: 1.5; min-height: calc(11px * 1.5 + 12px); max-height: 40vh; overflow: auto; }
     .edit { font-size: 12px; color: #5a6270; display: flex; flex-direction: column; gap: 6px; }
     .edit .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
@@ -703,9 +1090,19 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
   `;
 
   @state() private highlights: [number, number][] = [];
-  @state() private selected: GraphNode | null = null;
   @state() private urlDraft: string | null = null;
-  @query("oqx-relationship-picker") private picker!: OqxRelationshipPicker | null;
+  @query("oqx-relationship-picker") picker!: OqxRelationshipPicker | null;
+  @query("oqx-graph-pane") pane!: OqxGraphPane | null;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    registerApp(this);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    unregisterApp(this);
+  }
 
   /** A section's open state, persisted. */
   private setSection(id: SectionId, open: boolean): void {
@@ -829,6 +1226,14 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     </div>`;
   }
 
+  /** The connector's picker (`<omg-relation-picker>`, anchored at the drop point): WHICH relation is from → to, from the kinds the drawn graph uses; picking is the whole gesture. */
+  private renderRelationPicker() {
+    const c = relationPick.get();
+    return html`<omg-relation-picker ?open=${c !== null} .kinds=${c?.kinds ?? []} .from=${c?.from ?? ""} .to=${c?.to ?? ""} allowNew .anchor=${c?.anchor ?? null}
+      @relation-pick=${(e: CustomEvent<RelationPickDetail>) => { void attachPicked(e.detail.item); }}
+      @relation-cancel=${() => relationPick.set(null)}></omg-relation-picker>`;
+  }
+
   /** The edge-editing panel: the confirm strip, the last message, the two settings. */
   private renderEdit() {
     const a = armed.get();
@@ -836,8 +1241,10 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const m = editMessage.get();
     const es = editSettings.get();
     const busy = editBusy.get();
+    const block = writeBlock.get();
     if (!a && !p && !m && Object.keys(editable.get()).length === 0) return nothing;
     return html`<section class="edit">
+      ${block && serverSurface.get() !== null ? html`<div class="msg" data-write-block>read-only: ${block}</div>` : nothing}
       ${p ? html`<div class="strip">
         <span>write <code>${describePatch(p.owner, p.field, p.patch, p.previous)}</code> via <code>apply</code>${p.revision ? html` (expecting revision <code>${p.revision}</code>)` : ""}?</span>
         <button ?disabled=${busy} @click=${() => { void writeToggle(p); }}>apply</button>
@@ -845,7 +1252,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
       </div>` : nothing}
       ${m ? html`<div class="msg ${m.kind}">${m.text} <button @click=${() => editMessage.set(null)}>dismiss</button></div>` : nothing}
       <div class="opts">
-        <span>${busy ? "writing…" : a ? html`editing <code>${a.name}</code>` : "arm a relationship (edit column) to toggle edges"}</span>
+        <span>${busy ? "writing…" : a ? html`editing <code>${a.name}</code>` : canWrite.get() ? "arm a relationship (edit column) to ⌘-click edges; drag a selected node's ⟶ handle to connect; ⌘K finds or creates" : "arm a relationship (edit column) to toggle edges"}</span>
         <label><input type="checkbox" .checked=${es.confirm} @change=${(e: Event) => editSettings.set({ ...es, confirm: (e.target as HTMLInputElement).checked })}> confirm before writing</label>
         <label>emptied list
           <select .value=${es.emptyListBehavior} @change=${(e: Event) => editSettings.set({ ...es, emptyListBehavior: (e.target as HTMLSelectElement).value as EmptyListBehavior })}>
@@ -875,6 +1282,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const es = emptyResult.get();
     const ui = uiSettings.get();
     const shownUrl = s.mode === "direct" ? s.directUrl : s.bridgeUrl;
+    const sel = selectedNode.get();
     const connText = conn === "ok" ? connectionMessage.get() : conn === "error" ? `error: ${connectionMessage.get()}` : conn === "sign-in" ? connectionMessage.get() : conn;
     return html`
       <header>
@@ -885,7 +1293,19 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
           <input class="repo" type="text" .value=${s.repo} placeholder=${info?.repo ?? "server default"} spellcheck="false"
             @change=${(e: Event) => settings.set({ ...settings.get(), repo: (e.target as HTMLInputElement).value.trim() })}>
         </label>
+        <button type="button" data-action="undo" title=${undoLabel.get() ?? "nothing to undo"} ?disabled=${!undoLabel.get() || editBusy.get()} @click=${() => { void compensate("undo"); }}>↶ undo</button>
+        <button type="button" data-action="redo" title=${redoLabel.get() ?? "nothing to redo"} ?disabled=${!redoLabel.get() || editBusy.get()} @click=${() => { void compensate("redo"); }}>↷ redo</button>
+        <button type="button" data-action="palette" title="find a document, run an action, create one (⌘K / Ctrl+K)" ?disabled=${conn !== "ok"} @click=${() => openPalette()}>⌘K</button>
       </header>
+      <omg-palette ?open=${paletteOpen.get()} .text=${paletteText.get()} .items=${paletteItems.get()} ?loading=${paletteLoading.get()} .error=${paletteError.get()} .mode=${paletteMode.get()} .heading=${paletteHeading.get()}
+        create-hint="a new document with a title heading, added to the graph as a loose node"
+        @palette-search=${(e: CustomEvent<{ text: string }>) => { void paletteSearch(e.detail.text); }}
+        @palette-open-doc=${(e: CustomEvent<{ path: string }>) => onPaletteSelect({ kind: "doc", id: "", path: e.detail.path, title: "" })}
+        @palette-action=${(e: CustomEvent<{ id: string }>) => runPaletteAction(e.detail.id)}
+        @palette-create=${(e: CustomEvent<{ path: string }>) => { void createDocument(e.detail.path); }}
+        @palette-pick=${(e: CustomEvent<{ item: PaletteItem }>) => onPaletteSelect(e.detail.item)}
+        @palette-close=${() => closePalette()}></omg-palette>
+      ${this.renderRelationPicker()}
       <main>
         <sl-split-panel position=${ui.splitPosition} @sl-reposition=${this.onSplitReposition}>
         <div class="left" slot="start">
@@ -916,9 +1336,9 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             </label>
           </sl-details>
           ${this.renderEdit()}
-          ${this.selected ? html`<section class="selection" data-selection>
-            <b>${this.selected.path}</b>
-            <pre>${JSON.stringify(this.selected.row, null, 1)}</pre>
+          ${sel ? html`<section class="selection" data-selection>
+            <b>${sel.path}</b>${sel.loose ? html` <span class="loose" title="not one of the query's rows; gone when the query re-runs">loose</span>` : nothing}
+            <pre>${JSON.stringify(sel.row, null, 1)}</pre>
           </section>` : nothing}
           <sl-details class="settings" data-section="settings" ?open=${ui.sections.settings || conn === "error" || conn === "sign-in"} @sl-show=${this.onSectionToggle("settings", true)} @sl-hide=${this.onSectionToggle("settings", false)}>
             <span slot="summary">MCP settings<span class="sub">${MODE_LABEL[s.mode]}${conn === "error" ? " · error" : conn === "sign-in" ? " · sign-in" : ""}</span></span>
@@ -947,8 +1367,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <div class="graph-area" slot="end">
           <oqx-graph-pane .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
             .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()} .labelFit=${ui.labelFit}
-            @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
+            .selected=${sel?.path ?? null} .canWrite=${canWrite.get()} .edgeStyle=${edgeStyle.get()} .edgeGeneration=${edgeRefresh.get()}
+            @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { selectedNode.set(e.detail.node); proposal.set(null); }}
             @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
+            @connect-request=${(e: CustomEvent<ConnectRequestDetail>) => { void startConnect(e.detail.from, e.detail.to, e.detail.anchor, e.detail.edges); }}
+            @connect-empty=${(e: CustomEvent<ConnectEmptyDetail>) => { void connectToPicked(e.detail.from, e.detail.anchor, e.detail.edges); }}
+            @edge-delete=${(e: CustomEvent<EdgeDeleteDetail>) => { void deleteGraphEdge(e.detail.edge); }}
+            @edge-style-change=${(e: CustomEvent<EdgeStyleChangeDetail>) => edgeStyle.set(e.detail.edgeStyle)}
             @axis-request=${this.onAxisRequest}
             @algorithm-request=${this.onAlgorithmRequest}
             @label-fit-change=${(e: CustomEvent<LabelFitChangeDetail>) => { if (e.detail.labelFit !== uiSettings.get().labelFit) uiSettings.set({ ...uiSettings.get(), labelFit: e.detail.labelFit }); }}

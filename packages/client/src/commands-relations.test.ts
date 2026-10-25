@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OmgError, type ApplyRequest, type DocsReadResult, type QueryResult, type Receipt } from "./client.js";
 import { CommandLog, type Applied, type CommandClient } from "./commands.js";
 import {
-  attachRelationCommand, attachedValue, bodyLinkMarkdown, describeDetach, describeRelation, detachRelationCommand, detachedValue, fieldCounts, isPathValue, namesDocument, newTopLevelBlocks, relationKinds,
+  attachRelationCommand, attachedValue, bodyLinkMarkdown, describeDetach, describeRelation, detachRelationCommand, detachedValue, fieldCounts, isPathValue, listPathFields, namesDocument, newTopLevelBlocks, relationKinds,
   type AttachRelationState, type DetachRelationState, type RelationKind,
 } from "./commands-relations.js";
 
@@ -114,6 +114,11 @@ describe("relationKinds", () => {
   it("is never empty: an empty graph offers the body link alone", () => {
     expect(relationKinds([])).toEqual([{ kind: "body-link" }]);
     expect(relationKinds([{ provenance: "body", field: null }], ["parent"])).toEqual([{ kind: "frontmatter", field: "parent" }, { kind: "body-link" }]);
+  });
+  it("listPathFields: the source's own path-valued fields (a path, a wikilink, a non-empty list of them), in key order", () => {
+    expect(listPathFields({ title: "A", owner: "/people/zoe.md", tags: ["x"], after: ["/a.md", "[[Beta]]"], empty: [], mixed: ["/a.md", "b"], n: 3, nil: null })).toEqual(["owner", "after"]);
+    expect(listPathFields(null)).toEqual([]);
+    expect(listPathFields(undefined)).toEqual([]);
   });
 });
 

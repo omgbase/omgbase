@@ -116,7 +116,9 @@ element deletes nothing itself), `graph-hover { id | null }`
 and `graph-edge-hover { key | null }` (the pointer entered / left a card or an
 edge — for a host's own hover previews), `graph-view { k, tx, ty }`,
 `graph-label-fit { labelFit }` (the toolbar's select changed it, so a host
-sizing cards for an external layout can follow).
+sizing cards for an external layout can follow), `graph-edge-style { edgeStyle }`
+(the toolbar's curved / straight button, so a host's own controls — a palette
+action, say — stay in step).
 
 Keys: arrows select (or move the connector target), Enter opens (or confirms a
 connector), `e` expands/collapses, `u`/Backspace unpins (Delete/Backspace with
@@ -157,6 +159,7 @@ ordered list per mode; `stepIndex` — the wrap-around cursor.
 | `placeholder` | the input's hint |
 | `mode` | `navigate` \| `pick` |
 | `heading` | shown above the input (pick mode: what the pick is for, "connect /a.md to…") |
+| `createHint` (attribute `create-hint`) | the create row's second line — what creating does in this host (default "a new document with a title heading"; graph-ui says the document is added to the graph as a loose node) |
 
 Events: `palette-search { text }` (debounced; immediate on open and on a
 cleared input), `palette-open-doc { path }`, `palette-action { id }`,

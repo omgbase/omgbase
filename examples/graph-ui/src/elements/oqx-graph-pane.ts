@@ -30,7 +30,10 @@
 //               armed (Candidate | null — the relationship being edited),
 //               writable (string[] — relationships whose drawn edges can be ⌘-clicked away),
 //               pending (PendingEdge[] — optimistic adds/removes, drawn dashed),
-//               labelFit ("truncate" | "wrap" | "expand"; attribute label-fit)
+//               labelFit ("truncate" | "wrap" | "expand"; attribute label-fit),
+//               canWrite (the element's connector gesture and edge deletion are offered),
+//               edgeStyle ("curved" | "straight" — the element's; the toolbar's button reports back),
+//               edgeGeneration (bump it to drop the edge cache and re-fetch — after a write)
 //   events:     node-select  { node: GraphNode | null }
 //               edge-toggle  { candidate, from: GraphNode, to: GraphNode, present } — ⌘-click on a node
 //                            with a selection and an armed relationship, or on a drawn edge of a
@@ -42,6 +45,14 @@
 //               axis-request { axis } / algorithm-request { algorithm } — the notes' one-click switches;
 //                            the page hands them to the picker (the pane owns no overrides)
 //               label-fit-change { labelFit } — the element's toolbar changed the fit; the page persists it
+//               edge-style-change { edgeStyle } — the element's toolbar switched curved / straight
+//               connect-request { from, to, anchor, edges } — a connector dropped on a node (or confirmed by
+//                            keyboard): the two paths, the drop point in viewport px and the drawn STORED
+//                            edges (what the page's relation picker reads its kinds from); nothing is written
+//               connect-empty { from, anchor, edges } — a connector dropped on open canvas: the page finds or
+//                            creates the destination
+//               edge-delete  { edge } — the selected edge's ✕ or Delete: the drawn STORED edge; the page severs it
+//   method:     fit() — the element's fit (the palette's action)
 //
 // Edit mode: while the modifier is held (tracked on window: keydown/keyup, and
 // mousemove's metaKey/ctrlKey so a key pressed before the pointer arrived counts;
@@ -56,8 +67,8 @@ import { customElement, property, state } from "lit/decorators.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkNode } from "elkjs/lib/elk-api";
 import "@omgbase/elements";
-import type { GraphEdgeHoverDetail, GraphEdgeToggleDetail, GraphHoverDetail, GraphLabelFitDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail } from "@omgbase/elements";
-import { DEFAULT_LABEL_FIT, LABEL_FIT, canvasMeasure, sizeCard, type GraphViewNode, type LabelFit, type Measure, type Pin } from "@omgbase/elements/graph";
+import type { GraphConnectDetail, GraphConnectEmptyDetail, GraphEdgeDeleteDetail, GraphEdgeHoverDetail, GraphEdgeStyleDetail, GraphEdgeToggleDetail, GraphHoverDetail, GraphLabelFitDetail, GraphPinDetail, GraphSelectDetail, GraphUnpinDetail, OmgGraph } from "@omgbase/elements";
+import { DEFAULT_LABEL_FIT, LABEL_FIT, canvasMeasure, sizeCard, type EdgeStyle, type GraphViewNode, type LabelFit, type Measure, type Pin } from "@omgbase/elements/graph";
 import type { Candidate } from "../lib/candidates.ts";
 import type { GraphEdge } from "../lib/edges.ts";
 import { ownerFor } from "../lib/edit.ts";
@@ -92,6 +103,13 @@ export interface EdgeToggleDetail {
   present: boolean;
 }
 
+/** Where the connector was dropped, in viewport px (the page anchors its picker there). */
+export type Anchor = { x: number; y: number };
+export interface ConnectRequestDetail { from: string; to: string; anchor: Anchor; edges: GraphEdge[] }
+export interface ConnectEmptyDetail { from: string; anchor: Anchor; edges: GraphEdge[] }
+export interface EdgeDeleteDetail { edge: GraphEdge }
+export interface EdgeStyleChangeDetail { edgeStyle: EdgeStyle }
+
 const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward", algorithm: "force" }, projection: NO_PROJECTION };
 const elk = new ELK();
 
@@ -100,6 +118,7 @@ export class OqxGraphPane extends LitElement {
   static override styles = css`
     :host { display: block; position: relative; min-height: 320px; border: 1px solid #d0d4dc; border-radius: 6px; overflow: hidden; font: 12px system-ui, sans-serif; color: #1e2430; }
     omg-graph { position: absolute; inset: 0; min-height: 0; --omg-graph-bg: #fafbfc; --omg-graph-card-border: #8a94a6; --omg-graph-accent: #1565c0; }
+    /* a loose node (not one of the query's rows) is marked in its tooltip; the card itself draws like the others */
     .banner { position: absolute; left: 8px; right: 8px; top: 8px; padding: 6px 10px; border-radius: 4px; background: #fff3e0; color: #7a4a00; border: 1px solid #ffcc80; }
     .banner code { font-family: ui-monospace, monospace; }
     .banner.axis-empty { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -140,6 +159,12 @@ export class OqxGraphPane extends LitElement {
   @property({ attribute: false }) pending: PendingEdge[] = [];
   /** How a card fits its label (the element's three modes); the default keeps the one-line cards. */
   @property({ attribute: "label-fit" }) labelFit: LabelFit = DEFAULT_LABEL_FIT;
+  /** The element's connector gesture (⌘-drag, the ⟶ handle, `c`) and edge deletion (✕ / Delete) are offered. */
+  @property({ type: Boolean }) canWrite = false;
+  /** The element's edge style; its toolbar button reports a change back as `edge-style-change`. */
+  @property({ attribute: "edge-style" }) edgeStyle: EdgeStyle = "curved";
+  /** Bumped by the page after a write: the edge cache is dropped and every wanted relationship re-fetched. */
+  @property({ type: Number }) edgeGeneration = 0;
 
   @state() private model: GraphModel | null = null;
   @state() private busy = false;
@@ -196,8 +221,8 @@ export class OqxGraphPane extends LitElement {
   // ---- the model ------------------------------------------------------------------
 
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
-    if (changed.has("nodes") || changed.has("view") || changed.has("candidates") || changed.has("fetchEdges") || changed.has("labelFit")) {
-      if (changed.has("nodes") || changed.has("fetchEdges")) this.edgeCache.clear();
+    if (changed.has("nodes") || changed.has("view") || changed.has("candidates") || changed.has("fetchEdges") || changed.has("labelFit") || changed.has("edgeGeneration")) {
+      if (changed.has("nodes") || changed.has("fetchEdges") || changed.has("edgeGeneration")) this.edgeCache.clear();
       if (changed.has("nodes")) {
         const shown = new Set(this.nodes.map((n) => n.path));
         for (const p of [...this.pins.keys()]) if (!shown.has(p)) this.pins.delete(p);
@@ -268,6 +293,30 @@ export class OqxGraphPane extends LitElement {
   }
 
   // ---- interaction ------------------------------------------------------------
+
+  /** The element's fit (the palette's "fit the graph" action). */
+  fit(): void {
+    this.renderRoot.querySelector<OmgGraph>("omg-graph")?.fit();
+  }
+
+  /** The drawn STORED edges (the model's), for the connector's relation kinds. */
+  private drawn(): GraphEdge[] {
+    return [...(this.model?.edges ?? [])];
+  }
+
+  private onConnect(e: CustomEvent<GraphConnectDetail>): void {
+    this.emit<ConnectRequestDetail>("connect-request", { from: e.detail.from, to: e.detail.to, anchor: { x: e.detail.clientX, y: e.detail.clientY }, edges: this.drawn() });
+  }
+
+  private onConnectEmpty(e: CustomEvent<GraphConnectEmptyDetail>): void {
+    this.emit<ConnectEmptyDetail>("connect-empty", { from: e.detail.from, anchor: { x: e.detail.clientX, y: e.detail.clientY }, edges: this.drawn() });
+  }
+
+  /** The element asked to delete the selected edge (by its key): the stored edge, when it is one of the model's. */
+  private onEdgeDelete(e: CustomEvent<GraphEdgeDeleteDetail>): void {
+    const edge = (this.model?.edges ?? []).find((x) => edgeKey(x) === e.detail.key);
+    if (edge) this.emit<EdgeDeleteDetail>("edge-delete", { edge });
+  }
 
   private nodeAt(path: string | null): GraphNode | undefined {
     return path === null ? undefined : this.nodes.find((n) => n.path === path);
@@ -340,13 +389,17 @@ export class OqxGraphPane extends LitElement {
     const byPath = new Map(this.nodes.map((n) => [n.path, n]));
     const renderCard = (n: GraphViewNode) => cardTextFor(byPath.get(n.id) ?? { label: n.id, row: n.row }, projection);
     return html`
-      <omg-graph auto-fit edgeToggle
+      <omg-graph auto-fit edgeToggle ?canWrite=${this.canWrite}
         .nodes=${viewNodes(this.nodes, projection, this.pins)}
         .edges=${viewEdges(edges, { view: this.view, candidates: this.candidates, colorFor, writable: this.writable, pending: this.pending, preview, modifier: mod })}
-        .renderCard=${renderCard} .labelFit=${this.labelFit} .selected=${this.selected}
+        .renderCard=${renderCard} .labelFit=${this.labelFit} .selected=${this.selected} .edgeStyle=${this.edgeStyle}
         .layout=${fixed ? "fixed" : "force"} .positions=${m?.positions ?? null} .routes=${m?.routes ?? null}
         @graph-select=${(e: CustomEvent<GraphSelectDetail>) => this.select(this.nodeAt(e.detail.id) ?? null)}
         @graph-edge-toggle=${this.onEdgeToggle}
+        @graph-connect=${this.onConnect}
+        @graph-connect-empty=${this.onConnectEmpty}
+        @graph-edge-delete=${this.onEdgeDelete}
+        @graph-edge-style=${(e: CustomEvent<GraphEdgeStyleDetail>) => { this.edgeStyle = e.detail.edgeStyle; this.emit<EdgeStyleChangeDetail>("edge-style-change", { edgeStyle: e.detail.edgeStyle }); }}
         @graph-hover=${(e: CustomEvent<GraphHoverDetail>) => { this.hovered = e.detail.id; }}
         @graph-edge-hover=${(e: CustomEvent<GraphEdgeHoverDetail>) => { this.hoveredEdge = e.detail.key; }}
         @graph-pin=${(e: CustomEvent<GraphPinDetail>) => { this.pins = new Map(this.pins).set(e.detail.id, { x: e.detail.x, y: e.detail.y }); }}
