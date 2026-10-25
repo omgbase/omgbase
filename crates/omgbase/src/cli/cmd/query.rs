@@ -266,7 +266,7 @@ pub fn run(cli: &mut Cli, args: &[String]) -> Result<i32> {
                         format!("block {r} is not an omg fence"),
                     ));
                 };
-                block_raw(conn, &node.raw_hash_hex)?
+                block_raw(conn, &node.block_id)?
             }
             ResolvedRef::Document { doc_id } => {
                 let roots = load_doc_blocks(conn, &doc_id)?;
@@ -276,7 +276,7 @@ pub fn run(cli: &mut Cli, args: &[String]) -> Result<i32> {
                         format!("no ```omg fence in {r}"),
                     ));
                 };
-                block_raw(conn, &fence.raw_hash_hex)?
+                block_raw(conn, &fence.block_id)?
             }
         }
     };

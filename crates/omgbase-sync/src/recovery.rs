@@ -39,7 +39,7 @@ impl RecoveryResult {
 /// there is no revision) is re-ingested with the reconciling resolver and
 /// listed `healed`.
 // seam: self-contained recovery payloads (Phase 3, M4 — compare against
-// `docs.file_hash`, not `revisions.rendered_hash` through `current_rev`;
+// `docs.file_hash`, not `revisions.rendered_hash` through `head`;
 // inventory-rust.md §2.8 `recovery.rs:40-95`, §3.4).
 pub fn recover_repo(
     store: &mut Store,
@@ -54,8 +54,8 @@ pub fn recover_repo(
     let docs: Vec<Row> = {
         let mut stmt = store.conn().prepare(
             "SELECT d.path, d.file_hash, r.rendered_hash
-             FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev
-             WHERE d.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.rowid",
+             FROM docs d LEFT JOIN revisions r ON r.rev_id = d.head
+             WHERE d.repo_id = ?1 AND d.deleted_at IS NULL ORDER BY d.rowid",
         )?;
         let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.collect::<std::result::Result<_, _>>()?
@@ -159,7 +159,7 @@ mod tests {
         let heading: String = store
             .conn()
             .query_row(
-                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
+                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_at IS NULL",
                 params![doc],
                 |r| r.get(0),
             )

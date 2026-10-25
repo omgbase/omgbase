@@ -3,9 +3,9 @@
 //! and hex. The tree-entry encoding itself is the recorder's
 //! (`history::tree`).
 
-use omgbase_format::Attrs;
 use omgbase_format::hash::hex;
 use omgbase_format::json::attrs_to_json;
+use omgbase_format::{AttrValue, Attrs};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
@@ -56,6 +56,31 @@ fn write_canonical(v: &Value, out: &mut String) {
 #[must_use]
 pub fn canonical_attrs(attrs: &Attrs) -> String {
     canonical_json(&attrs_to_json(attrs))
+}
+
+/// The inverse of [`canonical_attrs`] for a stored `blocks.attrs` text: the
+/// typed attributes (`spec/format` §3 — booleans, integers and strings are
+/// the only values the store writes). Anything that does not parse, or a
+/// value of another JSON kind, is dropped.
+#[must_use]
+pub fn attrs_from_json(text: &str) -> Attrs {
+    let mut attrs = Attrs::new();
+    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(text) else {
+        return attrs;
+    };
+    for (k, v) in map {
+        let value = match v {
+            serde_json::Value::Bool(b) => AttrValue::Bool(b),
+            serde_json::Value::Number(n) => match n.as_i64() {
+                Some(i) => AttrValue::Int(i),
+                None => continue,
+            },
+            serde_json::Value::String(s) => AttrValue::Str(s),
+            _ => continue,
+        };
+        attrs.insert(k, value);
+    }
+    attrs
 }
 
 /// Hex of a 32-byte hash (re-exported convenience).

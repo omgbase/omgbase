@@ -2,9 +2,15 @@
 //! Two passes — echo gate + reconcile without writes, the cross-document
 //! phase of `spec/reconcile` §7, then one transaction per member — plus the
 //! observed-deletion tombstone (§5.6). The body of a member's commit,
-//! [`ingest_in`], runs §5.4 steps 1–4 and 6–13 against a transaction and a
+//! [`ingest_in`], runs §5.4 steps 1–3 and 6–15 against a transaction and a
 //! commit id it is handed, so the `api` path ([`crate::effects`], store 13.7)
-//! can run N of them under one commit row.
+//! can run N of them under one commit row. Since store 17.0 (modular-core
+//! Phase 3a) the current state is self-contained: the core mints the head
+//! token (`docs.head`, D1), writes the frontmatter raw on the doc row and
+//! every block's bytes on its row (D10), stamps `created_at`/`updated_at`
+//! (D6), and hands the accepted transition to the recorder
+//! ([`HistoryRecorder::record_revision`]), which keeps its own history
+//! tables. Convergence (step 13) is checked from the rows alone.
 //!
 //! **The gate rule** (store 14.0, §5.7). A path with a `pending_materializations`
 //! row — an `api` commit whose file has not landed yet — is observed against
@@ -14,7 +20,7 @@
 //! still owes the file; the row stays); foreign bytes win (ADR-004) — the
 //! normal reconciling ingest, the row deleted in that member's transaction.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{
@@ -404,8 +410,12 @@ struct BlockRow {
     kind: String,
     attrs: String,
     text: String,
+    /// The block's raw source, stored inline (`blocks.raw`, 17.0 D10).
+    raw: String,
     raw_hash: [u8; 32],
     norm_hash: [u8; 32],
+    /// The trailing trivia, `None` when empty (`blocks.trivia`).
+    trivia: Option<String>,
     trivia_hash: Option<[u8; 32]>,
 }
 
@@ -431,8 +441,10 @@ fn flatten_rows(
             kind: b.kind.clone(),
             attrs: canonical_attrs(&b.attrs),
             text: b.text.clone(),
+            raw: b.raw.clone(),
             raw_hash: sha256(b.raw.as_bytes()),
             norm_hash: sha256(b.text.as_bytes()),
+            trivia: (!b.trivia.is_empty()).then(|| b.trivia.clone()),
             trivia_hash: (!b.trivia.is_empty()).then(|| sha256(b.trivia.as_bytes())),
         });
         if !b.children.is_empty() {
@@ -450,28 +462,38 @@ fn flatten_rows(
 /// §5.4 step 8: delete another document's `blocks` row for each id (its FTS
 /// entry first when it is a live leaf, `spec/search` §1.1 — leaf-ness decided
 /// over the table before any row goes, a parent left childless re-indexed)
-/// and the id's pool row.
-fn evict_foreign_block_rows(conn: &Connection, doc_id: &str, ids: &[String]) -> Result<()> {
+/// and the id's pool row. Returns each evicted row's `created_at`, which the
+/// carried-in row inherits (D6).
+fn evict_foreign_block_rows(
+    conn: &Connection,
+    doc_id: &str,
+    ids: &[String],
+) -> Result<HashMap<String, String>> {
     let mut rows = Vec::new();
+    let mut birth = HashMap::new();
     for id in ids {
-        let row: Option<EvictRow> = conn
+        let row: Option<(EvictRow, String)> = conn
             .query_row(
-                "SELECT rowid, block_id, doc_id, parent_block, text, deleted_commit IS NULL
+                "SELECT rowid, block_id, doc_id, parent_block, text, deleted_at IS NULL, created_at
                  FROM blocks WHERE block_id = ?1 AND doc_id != ?2",
                 params![id, doc_id],
                 |r| {
-                    Ok(EvictRow {
-                        rowid: r.get(0)?,
-                        block_id: r.get(1)?,
-                        doc_id: r.get(2)?,
-                        parent_block: r.get(3)?,
-                        text: r.get(4)?,
-                        live: r.get(5)?,
-                    })
+                    Ok((
+                        EvictRow {
+                            rowid: r.get(0)?,
+                            block_id: r.get(1)?,
+                            doc_id: r.get(2)?,
+                            parent_block: r.get(3)?,
+                            text: r.get(4)?,
+                            live: r.get(5)?,
+                        },
+                        r.get(6)?,
+                    ))
                 },
             )
             .optional()?;
-        if let Some(row) = row {
+        if let Some((row, created_at)) = row {
+            birth.insert(row.block_id.clone(), created_at);
             rows.push(row);
         }
     }
@@ -488,15 +510,16 @@ fn evict_foreign_block_rows(conn: &Connection, doc_id: &str, ids: &[String]) -> 
             params![id],
         )?;
     }
-    Ok(())
+    Ok(birth)
 }
 
-/// What §5.4 steps 1–13 produce: the committed document, commit and
-/// revision, and whether the bytes converged (step 13).
+/// What §5.4 steps 1–15 produce: the committed document, commit and head,
+/// and whether the bytes converged (step 13).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Committed {
     pub doc_id: String,
     pub commit_id: String,
+    /// The head token the commit minted (`docs.head`, 17.0 D1).
     pub rev_id: String,
     pub converged: bool,
 }
@@ -557,25 +580,29 @@ fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
         .collect()
 }
 
-/// §5.4 steps 0–4 and 6–13 for one document against an open transaction
-/// `tx` and the commit row `commit_id` already written in it (step 5 is the
-/// caller's: [`Store::commit_ingest`] writes one row per document, the `api`
-/// path of [`crate::effects`] one row per request — store 13.7). Mints `d`
-/// for a new path, `r`, then `x`/`e` through `mint`, which must be the
-/// store's minter over `tx`. Nothing here opens a transaction of its own.
+/// §5.4 steps 1–3 and 6–15 for one document against an open transaction
+/// `tx` and the commit row `commit_id` already written in it at `ts` (step 5
+/// is the caller's: [`Store::commit_ingest`] writes one row per document, the
+/// `api` path of [`crate::effects`] one row per request — store 13.7). Mints
+/// `d` for a new path, `r` (the head, step 6), then `x`/`e` through `mint`,
+/// which must be the store's minter over `tx`. Nothing here opens a
+/// transaction of its own.
 ///
-/// The history half — steps 0, 1, 4 and 6 (the revision and its bodies) and
-/// step 10 (the verdicts) — goes through `history`
-/// ([`HistoryRecorder::record_revision`], [`HistoryRecorder::record_dispositions`]),
-/// in the same place in the statement order; the current-state half (the
-/// doc row, the pool, the `blocks` refresh, nodes, properties, edges, the
+/// The history half — step 15: the captured revision and its bodies
+/// ([`HistoryRecorder::record_revision`]) and the verdicts
+/// ([`HistoryRecorder::record_dispositions`]) — goes through `history`, in
+/// the same place in the statement order; the current-state half (the doc
+/// row with its frontmatter raw, the head, the pool, the `blocks` refresh
+/// with every row's own bytes and timestamps, nodes, properties, edges, the
 /// pointers) is the core's own.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ingest_in(
     tx: &Connection,
     mint: &mut Mint<'_>,
     history: &dyn HistoryRecorder,
     repo_id: &str,
     plan: &IngestPlan<'_>,
+    ts: &str,
     expires: &str,
     commit_id: &str,
 ) -> Result<Committed> {
@@ -588,39 +615,42 @@ pub(crate) fn ingest_in(
     let format = format_for_path(plan.path);
     let markdown = format == FORMAT_MARKDOWN;
 
+    // 1. The frontmatter raw is a current value on the doc row (17.0) —
+    //    fences included, never a delta (the recorder keeps its own
+    //    delta-encoded copy, step 15).
+    let fm_raw = fm_block.map(|b| b.raw.as_str());
     let fm_trivia = fm_block.map(|b| b.trivia.as_str());
 
-    // seam: explicit tombstone metadata (Phase 3, M2 — `deleted_commit` →
-    //       `deleted_at`; inventory-rust.md §2.2 `observe.rs:604-637`).
     // 2. Doc row (the path's row regardless of tombstone; a re-created
-    //    path is revived — §5.6 "Re-creation"). Steps 0 and 1 follow: they
-    //    need the doc id to find the previous revision.
+    //    path is revived — §5.6 "Re-creation", keeping `created_at`, D6).
     let existing: Option<(String, Option<String>)> = tx
         .query_row(
-            "SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
+            "SELECT doc_id, deleted_at FROM docs WHERE repo_id = ?1 AND path = ?2",
             params![repo_id, plan.path],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
     let doc_id = match existing {
-        Some((id, deleted_commit)) => {
+        Some((id, deleted_at)) => {
             tx.execute(
-                "UPDATE docs SET format = ?1, leading_trivia = ?2, frontmatter_trivia = ?3, deleted_commit = NULL WHERE doc_id = ?4",
-                params![format, tree.leading_trivia, fm_trivia, id],
+                "UPDATE docs SET format = ?1, leading_trivia = ?2, frontmatter_raw = ?3, frontmatter_trivia = ?4, deleted_at = NULL WHERE doc_id = ?5",
+                params![format, tree.leading_trivia, fm_raw, fm_trivia, id],
             )?;
             // spec/graph §3.5: a revived row becomes live again, so the
             // phantom edges that accrued at its path while it was
             // tombstoned re-point to it.
-            if deleted_commit.is_some() {
+            if deleted_at.is_some() {
                 adopt_phantoms(tx, plan.path, &id)?;
             }
             id
         }
         None => {
             let id = minter.mint("d")?;
+            // `created_at` is the identity's birth (D6); `updated_at` moves
+            // with the head (step 12).
             tx.execute(
-                "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![id, repo_id, plan.path, format, tree.leading_trivia, fm_trivia],
+                "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![id, repo_id, plan.path, format, tree.leading_trivia, fm_raw, fm_trivia, ts, ts],
             )?;
             // spec/graph §3.5: a new row at this path adopts the open
             // phantom edges that pointed at it (the reference runs this
@@ -630,54 +660,126 @@ pub(crate) fn ingest_in(
         }
     };
 
-    // 0, 1, 4, 6. The revision: its place, its frontmatter blob, its tree,
-    //    its row — the recorder's (the commit row, step 5, is the caller's).
-    //    The head token the pointers take (step 12) is the revision id it
-    //    returns (D1).
+    // 6. The head token (17.0, D1) is the core's — minted here, at the point
+    //    the recorder's `write_revision` minted it through 16.x, so the mint
+    //    order (`b` in pass 1, `d`, `c`, `r`, `x`, `e`) and every fixture id
+    //    hold. The core numbers and hashes nothing against a previous
+    //    revision (M1): the recorder is handed the accepted transition (step
+    //    15) and writes its `revisions` row under this token, its tree and
+    //    frontmatter deltas against its OWN previous captured revision.
+    //    Legacy capture stays on for every repository through Phase 3, so
+    //    `revisions.rev_id == head`.
     let rendered_hash = sha256(source.as_bytes());
-    let recorded = history.record_revision(
+    let head = minter.mint("r")?;
+    history.record_revision(
         tx,
-        minter,
         &RevisionTransition {
             doc_id: &doc_id,
+            head: &head,
             path: plan.path,
-            frontmatter_raw: fm_block.map(|b| b.raw.as_str()),
+            frontmatter_raw: fm_raw,
             body: &plan.assigned,
             rendered_hash,
             commit_id,
         },
     )?;
-    let rev_id = recorded.rev_id;
     let assigned = &plan.assigned;
 
-    // seam: IdentityClaims (Phase 3, M3 — the pool row's `deleted_commit` →
-    //       `deleted_at`, expiry on its own clock; inventory-rust.md §2.2
-    //       `observe.rs:701-709`, §3.10).
-    // 7. Pool the deleted.
+    // The timestamps the new rows carry forward (D6, step 9): the doc's
+    // previous live rows (a carried block keeps `created_at`, and
+    // `updated_at` too when its verdict is `same`), the pool rows about to be
+    // consumed (a resurrected block keeps its birth), and the foreign rows
+    // about to be evicted (a cross-document move keeps it too). Read BEFORE
+    // anything below deletes them.
+    let previous: HashMap<String, (String, String)> = {
+        let mut stmt = tx.prepare(
+            "SELECT block_id, created_at, updated_at FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL",
+        )?;
+        let it = stmt.query_map(params![doc_id], |r| {
+            Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?)))
+        })?;
+        it.collect::<std::result::Result<HashMap<_, _>, _>>()?
+    };
+    let mut pooled_birth: HashMap<String, String> = HashMap::new();
+    if !plan.consumed_pool.is_empty() {
+        let mut stmt =
+            tx.prepare("SELECT created_at FROM resurrection_pool WHERE block_id = ?1")?;
+        for id in &plan.consumed_pool {
+            let r: Option<String> = stmt.query_row(params![id], |r| r.get(0)).optional()?;
+            if let Some(created_at) = r {
+                pooled_birth.insert(id.clone(), created_at);
+            }
+        }
+    }
+
+    // 7. Pool the deleted — each row carrying the block's `created_at` so a
+    //    resurrection restores it (D6).
     {
         let mut pool = tx.prepare(
-            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-             SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?1, ?2 FROM blocks WHERE block_id = ?3 AND doc_id = ?4",
+            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+             SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?1, ?2 FROM blocks WHERE block_id = ?3 AND doc_id = ?4",
         )?;
         for id in &plan.deleted {
             pool.execute(params![commit_id, expires, id, doc_id])?;
         }
     }
 
-    // 8. Evict foreign rows.
+    // 8. Evict foreign rows, remembering their births.
     let incoming: Vec<String> = plan
         .cross_doc_ids
         .iter()
         .chain(plan.consumed_pool.iter())
         .cloned()
         .collect();
-    if !incoming.is_empty() {
-        evict_foreign_block_rows(tx, &doc_id, &incoming)?;
-    }
+    let foreign_birth = if incoming.is_empty() {
+        HashMap::new()
+    } else {
+        evict_foreign_block_rows(tx, &doc_id, &incoming)?
+    };
 
-    // seam: explicit creation metadata (Phase 3, M2 — `created_commit` →
-    //       `created_at`; inventory-rust.md §2.2 `observe.rs:723-755`).
-    // 9. Refresh the blocks, sections and FTS.
+    // The verdict per block decides its timestamps (§5.4 step 9, 17.0):
+    // `created_at` is carried for a carry (`same`, `edited`, `moved`,
+    // `edited_moved` — the previous live row's), restored for `resurrected`
+    // (the pool row's), kept across a cross-document move (the evicted
+    // row's), and `ts` for `inserted` and the lineage kinds (a new identity
+    // is born now); `updated_at` is the previous row's only under `same`
+    // (14.2's rule: a block is updated when IT changes), else `ts`.
+    let mut verdicts: HashMap<&str, BTreeSet<&str>> = HashMap::new();
+    for d in &plan.dispositions {
+        verdicts
+            .entry(d.block_id.as_str())
+            .or_default()
+            .insert(d.kind.as_str());
+    }
+    let stamps = |block_id: &str| -> (String, String) {
+        let kinds = verdicts.get(block_id);
+        let prev = previous.get(block_id);
+        if kinds.is_some_and(|k| k.contains("resurrected")) {
+            let born = pooled_birth
+                .get(block_id)
+                .or_else(|| foreign_birth.get(block_id))
+                .map_or(ts, String::as_str);
+            return (born.to_owned(), ts.to_owned());
+        }
+        if let (Some(foreign), None) = (foreign_birth.get(block_id), prev) {
+            return (foreign.clone(), ts.to_owned());
+        }
+        if let Some((created_at, updated_at)) = prev {
+            let same = kinds.is_some_and(|k| k.len() == 1 && k.contains("same"));
+            return (
+                created_at.clone(),
+                if same {
+                    updated_at.clone()
+                } else {
+                    ts.to_owned()
+                },
+            );
+        }
+        (ts.to_owned(), ts.to_owned())
+    };
+
+    // 9. Refresh the blocks, sections and FTS — every row carrying its own
+    //    bytes (D10) and timestamps (D6).
     fts_delete_doc(tx, &doc_id)?;
     tx.execute("DELETE FROM blocks WHERE doc_id = ?1", params![doc_id])?;
     let mut rows = Vec::new();
@@ -686,10 +788,11 @@ pub(crate) fn ingest_in(
         let mut insert = tx.prepare(
             "INSERT INTO blocks
                (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth,
-                ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         )?;
         for r in &rows {
+            let (created_at, updated_at) = stamps(&r.block_id);
             insert.execute(params![
                 r.block_id,
                 repo_id,
@@ -702,10 +805,13 @@ pub(crate) fn ingest_in(
                 r.kind,
                 r.attrs,
                 r.text,
+                r.raw,
                 &r.raw_hash[..],
                 &r.norm_hash[..],
+                r.trivia,
                 r.trivia_hash.as_ref().map(|h| &h[..]),
-                commit_id,
+                created_at,
+                updated_at,
             ])?;
         }
     }
@@ -754,7 +860,7 @@ pub(crate) fn ingest_in(
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
     maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved)?;
 
-    // 10. Dispositions and block_changes — the recorder's (14.2: every
+    // 15. Dispositions and block_changes — the recorder's (14.2: every
     //     verdict but `same`).
     history.record_dispositions(tx, commit_id, &plan.dispositions)?;
 
@@ -766,64 +872,65 @@ pub(crate) fn ingest_in(
         )?;
     }
 
-    // seam: HistoryRecorder::record_revision (Phase 3, M1/D1 — the core mints
-    //       the head token itself, equal to the recorder's revision id while
-    //       capture is on; inventory-rust.md §2.2 `observe.rs:844-853`, §3.3).
-    // 12. Pointers — and, on the observed path, the conflict flag, so
-    //     the row the commit leaves behind is consistent as a whole (an
-    //     `api` plan leaves `conflicted` as it is).
+    // 12. Pointers: the head, the convergence hash and `updated_at` (the
+    //     document's own last change moves with its head, D6) — and, on the
+    //     observed path, the conflict flag, so the row the commit leaves
+    //     behind is consistent as a whole (an `api` plan leaves `conflicted`
+    //     as it is).
     match plan.conflicted {
         Some(conflicted) => tx.execute(
-            "UPDATE docs SET current_rev = ?1, file_hash = ?2, conflicted = ?3 WHERE doc_id = ?4",
-            params![rev_id, &rendered_hash[..], i64::from(conflicted), doc_id],
+            "UPDATE docs SET head = ?1, file_hash = ?2, updated_at = ?3, conflicted = ?4 WHERE doc_id = ?5",
+            params![head, &rendered_hash[..], ts, i64::from(conflicted), doc_id],
         )?,
         None => tx.execute(
-            "UPDATE docs SET current_rev = ?1, file_hash = ?2 WHERE doc_id = ?3",
-            params![rev_id, &rendered_hash[..], doc_id],
+            "UPDATE docs SET head = ?1, file_hash = ?2, updated_at = ?3 WHERE doc_id = ?4",
+            params![head, &rendered_hash[..], ts, doc_id],
         )?,
     };
 
     // 13. Converged: file_hash == rendered_hash (trivially), render(tree) ==
-    //     source, reconstruct(doc) == source.
+    //     source, reconstruct(doc) == source — read back from the rows just
+    //     written (17.0: nothing here reads a history table).
     let converged = render(tree) == source && reconstruct(tx, &doc_id)?.as_deref() == Some(source);
 
     Ok(Committed {
         doc_id,
         commit_id: commit_id.to_owned(),
-        rev_id,
+        rev_id: head,
         converged,
     })
 }
 
-/// §5.6's tombstone against an open transaction and its commit row: with
-/// `expires`, every live block is pooled first (the observed deletion);
-/// without, nothing is (`docs_delete`, `spec/mutate` §6). Then the FTS rows
-/// go, the live blocks and the doc row take `deleted_commit`.
-// seam: explicit tombstone metadata (Phase 3, M2/D2 — `deleted_commit` →
-// `deleted_at` on `docs`, the `blocks` rows the recorder's in Phase 4;
-// inventory-rust.md §2.2 `observe.rs:871-895`, §3.8).
+/// §5.6's tombstone against an open transaction and its commit row at `ts`:
+/// with `expires`, every live block is pooled first (the observed deletion),
+/// each carrying its `created_at` (D6); without, nothing is (`docs_delete`,
+/// `spec/mutate` §6). Then the FTS rows go, the live blocks take `deleted_at
+/// = ts`, the doc row `deleted_at = ts, updated_at = ts` — liveness is a
+/// change of the document's own; the head is KEPT and no new one is minted
+/// (17.0, D11).
 pub(crate) fn tombstone_in(
     tx: &Connection,
     doc_id: &str,
     commit_id: &str,
+    ts: &str,
     expires: Option<&str>,
 ) -> Result<()> {
     if let Some(expires) = expires {
         tx.execute(
-            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-             SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?1, ?2
-               FROM blocks WHERE doc_id = ?3 AND deleted_commit IS NULL",
+            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+             SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?1, ?2
+               FROM blocks WHERE doc_id = ?3 AND deleted_at IS NULL",
             params![commit_id, expires, doc_id],
         )?;
     }
     fts_delete_doc(tx, doc_id)?;
     tx.execute(
-        "UPDATE blocks SET deleted_commit = ?1 WHERE doc_id = ?2 AND deleted_commit IS NULL",
-        params![commit_id, doc_id],
+        "UPDATE blocks SET deleted_at = ?1 WHERE doc_id = ?2 AND deleted_at IS NULL",
+        params![ts, doc_id],
     )?;
     tx.execute(
-        "UPDATE docs SET deleted_commit = ?1 WHERE doc_id = ?2",
-        params![commit_id, doc_id],
+        "UPDATE docs SET deleted_at = ?1, updated_at = ?1 WHERE doc_id = ?2",
+        params![ts, doc_id],
     )?;
     Ok(())
 }
@@ -849,7 +956,7 @@ impl Store {
             let existing: Option<(String, Option<Vec<u8>>)> = self
                 .conn
                 .query_row(
-                    "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+                    "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
                     params![repo_id, it.path],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
@@ -1203,7 +1310,9 @@ impl Store {
                     ops: None,
                 },
             )?;
-            let committed = ingest_in(&tx, &mut mint, history, repo_id, plan, expires, &commit_id)?;
+            let committed = ingest_in(
+                &tx, &mut mint, history, repo_id, plan, ts, expires, &commit_id,
+            )?;
             if let Some(path) = clear_pending_at {
                 delete_pending(&tx, repo_id, path)?;
             }
@@ -1235,7 +1344,7 @@ impl Store {
                     ..NewCommit::observed(repo_id, ts)
                 },
             )?;
-            tombstone_in(&tx, doc_id, &commit_id, Some(expires))?;
+            tombstone_in(&tx, doc_id, &commit_id, ts, Some(expires))?;
             commit_id
         };
         tx.commit()?;
@@ -1283,7 +1392,7 @@ impl Store {
         let existing: Option<(String, Option<Vec<u8>>)> = self
             .conn
             .query_row(
-                "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+                "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
                 params![repo_id, path],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )

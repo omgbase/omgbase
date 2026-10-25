@@ -1388,7 +1388,7 @@ impl Surface {
             normalize_text(section)
         };
         let mut stmt = conn.prepare(
-            "SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_commit IS NULL",
+            "SELECT block_id, doc_id, text FROM blocks WHERE doc_id = ?1 AND type = 'heading' AND deleted_at IS NULL",
         )?;
         let rows: Vec<(String, String, String)> = stmt
             .query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
@@ -1491,7 +1491,7 @@ impl Surface {
             .store
             .conn()
             .query_row(
-                "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                 params![block_id],
                 |r| r.get(0),
             )
@@ -1576,7 +1576,7 @@ impl Surface {
     }
 
     /// A located document's row (`locate_doc` has already resolved it, so a
-    /// miss here is a race) as `{ doc_id, path, current_rev }`.
+    /// miss here is a race) as `{ doc_id, path, head }`.
     fn doc_info(&self, repo_id: &str, doc_ref: &str) -> Result<omgbase_store::DocInfo> {
         self.store
             .find_doc_by_ref(repo_id, doc_ref)?
@@ -2334,7 +2334,7 @@ impl Surface {
                     .store
                     .conn()
                     .query_row(
-                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL), b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+                        "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_at IS NULL), b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_at IS NULL",
                         params![block],
                         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                     )
@@ -4185,8 +4185,9 @@ mod tests {
         );
         assert_eq!(fired.get(), 3);
 
-        // The committed move: the Receipt (the rewritten source's revision),
-        // then `dangling` and `retargeted`.
+        // The committed move: the Receipt (store 17.0 D11 — the moved
+        // document's revision first, then the rewritten source's), then
+        // `dangling` and `retargeted`.
         let moved = s.call(
             "docs_move",
             json!({ "_path": "b.md", "to_path": "notes/b.md" }),
@@ -4207,7 +4208,10 @@ mod tests {
         );
         assert_eq!(
             moved.body["revisions"],
-            json!([{ "_id": "d_1", "_path": "/a.md", "_hash": moved.body["revisions"][0]["_hash"] }])
+            json!([
+                { "_id": "d_0", "_path": "/notes/b.md", "_hash": moved.body["revisions"][0]["_hash"] },
+                { "_id": "d_1", "_path": "/a.md", "_hash": moved.body["revisions"][1]["_hash"] },
+            ])
         );
         assert_eq!(moved.body["dangling"], json!([]));
         assert_eq!(
@@ -4223,7 +4227,13 @@ mod tests {
             "docs_move",
             json!({ "_path": "notes/b.md", "to_path": "b.md", "retarget_inbound": false }),
         );
-        assert_eq!(back.body["revisions"], json!([]), "{}", back.body);
+        // 17.0 (D11): a move alone is still a revision of the moved document.
+        assert_eq!(
+            back.body["revisions"],
+            json!([{ "_id": "d_0", "_path": "/b.md", "_hash": back.body["revisions"][0]["_hash"] }]),
+            "{}",
+            back.body
+        );
         assert_eq!(
             back.body["dangling"],
             json!([{ "_doc_id": "d_1", "_path": "/a.md", "_block_id": "b_3", "target": "notes/b.md", "_anchor": null }])

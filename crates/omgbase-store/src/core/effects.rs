@@ -14,10 +14,10 @@
 //!
 //! **CAS inside the transaction** (mutate 2.2). The transaction is `BEGIN
 //! IMMEDIATE`, and before anything is minted every effect's precondition is
-//! re-read through it: per touched document the triple `(path, current_rev,
-//! file_hash)` captured when the document was loaded (invariant I3 of
-//! `spec/store` §8 makes `current_rev` the version vector of every live
-//! block, so no block is re-read), the on-disk hash phase A took, "no live
+//! re-read through it: per touched document the triple `(path, head,
+//! file_hash)` captured when the document was loaded (the head token, store
+//! 17.0 D1, is minted on every change to the document — content, structure,
+//! path or liveness — so no block is re-read), the on-disk hash phase A took, "no live
 //! document at the path" for a create or a move's destination, "still live"
 //! for a tombstone. A database that moved underneath the plan fails
 //! `stale_plan` with the current truth; a destination that appeared fails
@@ -40,8 +40,11 @@ use omgbase_mutate::{ErrorCode, MutationError};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::json;
 
+use std::collections::HashSet;
+
 use crate::Store;
-use crate::core::capabilities::{HistoryRecorder, require_history};
+use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
+use crate::core::codec::attrs_from_json;
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::InboundLink;
@@ -50,7 +53,7 @@ use crate::mint::Mint;
 use crate::mutate::known_plan;
 use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
 use crate::time::pool_expiry;
-use crate::writers::{NewCommit, Origin};
+use crate::writers::{NewCommit, Origin, TreeInputBlock};
 
 /// The commit row a request records (`spec/store` §5.4 step 5). `ops` is
 /// ADR-003's intent record — `canonical({ v: 1, plan_id, effects })` for an
@@ -70,23 +73,22 @@ pub(crate) struct CommitHead<'a> {
 
 /// A live document's precondition as captured when it was loaded (the opset
 /// precondition shape `{ id, path, base_revision, hash }` the planner will
-/// freeze later): the row's `(path, current_rev, file_hash)`.
+/// freeze later): the row's `(path, head, file_hash)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DocBase {
     pub doc_id: String,
     pub path: String,
+    /// The head token (`docs.head`, store 17.0 D1).
     pub current_rev: Option<String>,
     pub file_hash: Option<Vec<u8>>,
 }
 
-// seam: the CAS token is a revision id (Phase 3, M1/D1 — the head token the
-// core mints, same wire shape; inventory-rust.md §2.4 `effects.rs:83-98`, §3.3).
 /// The live row's triple for `doc_id`, or `None` for an unknown or
 /// tombstoned document.
 pub(crate) fn doc_base(conn: &Connection, doc_id: &str) -> Result<Option<DocBase>> {
     Ok(conn
         .query_row(
-            "SELECT path, current_rev, file_hash FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            "SELECT path, head, file_hash FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
             params![doc_id],
             |r| {
                 Ok(DocBase {
@@ -150,11 +152,15 @@ pub(crate) enum Effect {
         prepared: Box<Prepared>,
         guard: Guard,
     },
-    /// `spec/mutate` §6 `docs_move`'s row changes: the doc and current
-    /// revision take the new path, every open edge from another document
-    /// (and a self edge whose link names the path) re-points to
-    /// `phantom:<from>`, the affected rollups are rebuilt, phantoms at the
-    /// new path are adopted. No revision. Runs **first**, so the retarget
+    /// `spec/mutate` §6 `docs_move`'s row changes: the doc takes the new
+    /// path and — a move is a TRANSITION (store 17.0, D11) — a new head with
+    /// `updated_at = ts`, handed to the recorder as a revision of the
+    /// unchanged tree at the new path (skipped when the document is itself
+    /// a retarget source of the request: its `IngestKnown` below mints the
+    /// head and carries the path — one revision, not two); every open edge
+    /// from another document (and a self edge whose link names the path)
+    /// re-points to `phantom:<from>`, the affected rollups are rebuilt,
+    /// phantoms at the new path are adopted. Runs **first**, so the retarget
     /// ingests that follow resolve `[x](<to>)` to the document.
     MovePath {
         doc_id: String,
@@ -222,11 +228,33 @@ pub(crate) struct DiskConflict {
     pub bytes: String,
 }
 
+/// What a `MovePath` effect minted (store 17.0, D11): the moved document's
+/// new head and the hash of its (unchanged) bytes — `head: None` when the
+/// document is itself a retarget source of the request, whose `IngestKnown`
+/// carries the move, or had no bytes to capture.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MoveOutcome {
+    pub doc_id: String,
+    pub head: Option<String>,
+    pub file_hash: Option<Vec<u8>>,
+}
+
+/// What one effect produced inside the transaction.
+enum EffectOutcome {
+    Ingested(Committed),
+    Moved(MoveOutcome),
+    Nothing,
+}
+
 /// What [`Store::commit_effects`] came back with.
 #[derive(Debug)]
 pub(crate) enum Outcome {
-    /// Committed: one [`Committed`] per ingest effect, in order.
-    Committed(Vec<Committed>),
+    /// Committed: one [`Committed`] per ingest effect and one
+    /// [`MoveOutcome`] per `MovePath` effect, each in effect order.
+    Committed {
+        ingests: Vec<Committed>,
+        moves: Vec<MoveOutcome>,
+    },
     /// Rolled back before anything was minted: a file moved under the plan.
     Conflict(DiskConflict),
 }
@@ -236,7 +264,7 @@ impl Outcome {
     /// carry no disk precondition (nothing it could re-ingest).
     pub(crate) fn committed(self) -> Result<Vec<Committed>> {
         match self {
-            Outcome::Committed(c) => Ok(c),
+            Outcome::Committed { ingests, .. } => Ok(ingests),
             Outcome::Conflict(c) => Err(crate::error::Error::Other(format!(
                 "commit_effects: unexpected disk conflict at {}",
                 c.path
@@ -257,7 +285,8 @@ impl Store {
     /// request back — files the caller wrote before this are then ahead of
     /// the database until the next observation heals them (`spec/mutate`
     /// §10). Mints `c` first, then per document `r`, `x`, `e` (and `d` for
-    /// a new path). No effects, no row: a request that touched no document
+    /// a new path; a `MovePath` mints its `r` first, 17.0 D11). No effects,
+    /// no row: a request that touched no document
     /// — a macro that expanded to nothing, a `links_repair` with no hit —
     /// records nothing (`spec/mutate` `macros::sections-move-unknown-heading`).
     pub(crate) fn commit_effects(
@@ -281,7 +310,13 @@ impl Store {
         ts: &str,
     ) -> Result<(Outcome, Option<String>)> {
         if effects.is_empty() {
-            return Ok((Outcome::Committed(Vec::new()), None));
+            return Ok((
+                Outcome::Committed {
+                    ingests: Vec::new(),
+                    moves: Vec::new(),
+                },
+                None,
+            ));
         }
         let expires = pool_expiry(ts)?;
         let Store {
@@ -312,29 +347,51 @@ impl Store {
                     ops: head.ops,
                 },
             )?;
+            // A moved document that the SAME request also rewrites (a
+            // self-linking retarget source): its `IngestKnown` mints the head
+            // at the new path, so the move itself mints none (D11).
+            let rewritten_later: HashSet<&str> = effects
+                .iter()
+                .filter_map(|e| match e {
+                    Effect::IngestKnown { doc_id, .. } => Some(doc_id.as_str()),
+                    _ => None,
+                })
+                .collect();
             let mut outcomes = Vec::with_capacity(effects.len());
             for effect in effects {
+                let mints_head = match effect {
+                    Effect::MovePath { doc_id, .. } => !rewritten_later.contains(doc_id.as_str()),
+                    _ => false,
+                };
                 outcomes.push(run_effect(
-                    &tx, &mut mint, history, repo_id, head, effect, &expires, &commit_id,
+                    &tx, &mut mint, history, repo_id, head, effect, ts, &expires, &commit_id,
+                    mints_head,
                 )?);
             }
             // 14.0: the files this request owes the working tree, recorded
             // before COMMIT so a crash loses nothing (`spec/store` §5.7).
             if head.origin == Origin::Api {
-                record_intent(&tx, history, repo_id, effects, &outcomes, &commit_id)?;
+                record_intent(&tx, repo_id, effects, &outcomes, &commit_id)?;
             }
             if head.clear_pending {
                 for path in touched_paths(effects) {
                     delete_pending(&tx, repo_id, &path)?;
                 }
             }
-            (
-                outcomes.into_iter().flatten().collect::<Vec<_>>(),
-                commit_id,
-            )
+            let mut ingests = Vec::new();
+            let mut moves = Vec::new();
+            for o in outcomes {
+                match o {
+                    EffectOutcome::Ingested(c) => ingests.push(c),
+                    EffectOutcome::Moved(m) => moves.push(m),
+                    EffectOutcome::Nothing => {}
+                }
+            }
+            ((ingests, moves), commit_id)
         };
         tx.commit()?;
-        Ok((Outcome::Committed(committed), Some(commit_id)))
+        let (ingests, moves) = committed;
+        Ok((Outcome::Committed { ingests, moves }, Some(commit_id)))
     }
 }
 
@@ -370,56 +427,47 @@ pub(crate) fn touched_paths(effects: &[Effect]) -> Vec<String> {
     out
 }
 
-/// The document's `(current_rev, rendered_hash)` after the effects ran: the
-/// revision's hash (the recorder's, [`HistoryRecorder::rendered_hash`]), else
-/// the row's `file_hash` (a document no revision rendered yet), else the hash
-/// of what it reconstructs to.
-///
-/// seam: HistoryRecorder::rendered_hash (Phase 3, M4 — `docs.file_hash`
-/// already holds the value; inventory-rust.md §2.4 `effects.rs:370-392
-/// current_bytes_hash`).
-fn current_bytes_hash(
-    tx: &Connection,
-    history: &dyn HistoryRecorder,
-    doc_id: &str,
-) -> Result<Option<(Option<String>, Vec<u8>)>> {
+/// The document's `(head, bytes hash)` after the effects ran: the row's
+/// `file_hash` (what its head renders to, I1 — the ingest's `sha256(source)`,
+/// a move's unchanged bytes), else the hash of what it reconstructs to (a
+/// row no observation has hashed yet). Since 17.0 nothing here reads a
+/// revision: `docs.file_hash` holds the value.
+fn current_bytes_hash(tx: &Connection, doc_id: &str) -> Result<Option<(Option<String>, Vec<u8>)>> {
     let row: Option<(Option<String>, Option<Vec<u8>>)> = tx
         .query_row(
-            "SELECT current_rev, file_hash FROM docs WHERE doc_id = ?1",
+            "SELECT head, file_hash FROM docs WHERE doc_id = ?1",
             params![doc_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let Some((rev, file_hash)) = row else {
+    let Some((head, file_hash)) = row else {
         return Ok(None);
     };
-    let rendered = match &rev {
-        Some(rev) => history.rendered_hash(tx, rev)?,
-        None => None,
-    };
-    let hash = match rendered.or(file_hash) {
+    let hash = match file_hash {
         Some(h) => h,
         None => match crate::read::reconstruct(tx, doc_id)? {
             Some(bytes) => sha256(bytes.as_bytes()).to_vec(),
             None => return Ok(None),
         },
     };
-    Ok(Some((rev, hash)))
+    Ok(Some((head, hash)))
 }
 
 /// One `pending_materializations` row per path the request must write,
 /// rename or remove, in effect order: a `write` per ingested document (the
-/// revision just minted), a `rename` for a moved document — carrying the
-/// revision it holds after the whole request, so a moved document that was
-/// also a retarget source lands its rewritten bytes at the new path and the
-/// old file goes with it — and a `remove` for a tombstoned one (the bytes
-/// its last revision rendered, so a foreign file is never unlinked).
+/// head just minted, `rendered_hash = sha256(source)` — the row's
+/// `file_hash`), a `rename` for a moved document — carrying the head and
+/// bytes it holds after the whole request (17.0 D11: the move's new head and
+/// the unchanged `file_hash`; or, for a moved document that was also a
+/// retarget source, its rewrite's head and bytes, so the rewritten bytes land
+/// at the new path and the old file goes with it) — and a `remove` for a
+/// tombstoned one (the bytes its head rendered, so a foreign file is never
+/// unlinked).
 fn record_intent(
     tx: &Connection,
-    history: &dyn HistoryRecorder,
     repo_id: &str,
     effects: &[Effect],
-    outcomes: &[Option<Committed>],
+    outcomes: &[EffectOutcome],
     commit_id: &str,
 ) -> Result<()> {
     let moved: Option<&str> = effects.iter().find_map(|e| match e {
@@ -433,15 +481,12 @@ fn record_intent(
             _ => None,
         };
         let row = match (ingested_path, effect, outcome) {
-            (Some(path), _, Some(c)) => {
+            (Some(path), _, EffectOutcome::Ingested(c)) => {
                 if moved == Some(c.doc_id.as_str()) {
                     continue; // the rename row lands these bytes
                 }
-                // seam: HistoryRecorder::rendered_hash (Phase 3, M4 — the
-                // pending row carries the hash the commit computed;
-                // inventory-rust.md §2.4 `effects.rs:401-485 record_intent`).
-                let rendered_hash: Vec<u8> = history
-                    .rendered_hash(tx, &c.rev_id)?
+                let rendered_hash: Vec<u8> = current_bytes_hash(tx, &c.doc_id)?
+                    .map(|(_, h)| h)
                     .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
                 PendingRow {
                     path: path.to_owned(),
@@ -460,7 +505,7 @@ fn record_intent(
                 },
                 _,
             ) => {
-                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, history, doc_id)? else {
+                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, doc_id)? else {
                     continue;
                 };
                 PendingRow {
@@ -483,7 +528,7 @@ fn record_intent(
                 if *pool {
                     continue; // an observed deletion owes the tree nothing
                 }
-                let rendered_hash = current_bytes_hash(tx, history, doc_id)?
+                let rendered_hash = current_bytes_hash(tx, doc_id)?
                     .map_or_else(|| sha256(b"").to_vec(), |(_, h)| h);
                 PendingRow {
                     path: path.clone(),
@@ -543,7 +588,7 @@ pub(crate) fn path_taken(path: &str) -> crate::error::Error {
 fn live_doc_at(tx: &Connection, repo_id: &str, path: &str) -> Result<bool> {
     Ok(tx
         .query_row(
-            "SELECT 1 FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+            "SELECT 1 FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
             params![repo_id, path],
             |_| Ok(()),
         )
@@ -669,9 +714,11 @@ fn run_effect(
     repo_id: &str,
     head: &CommitHead<'_>,
     effect: &Effect,
+    ts: &str,
     expires: &str,
     commit_id: &str,
-) -> Result<Option<Committed>> {
+    mints_head: bool,
+) -> Result<EffectOutcome> {
     match effect {
         Effect::IngestKnown {
             doc_id,
@@ -703,60 +750,163 @@ fn run_effect(
                 head.actor,
                 head.reason,
             )?;
-            Ok(Some(ingest_in(
-                tx, mint, history, repo_id, &plan, expires, commit_id,
+            Ok(EffectOutcome::Ingested(ingest_in(
+                tx, mint, history, repo_id, &plan, ts, expires, commit_id,
             )?))
         }
         Effect::IngestReconciled { prepared, .. } => {
             let plan = prepared.plan(mint, head.origin, head.actor, head.reason, None)?;
-            Ok(Some(ingest_in(
-                tx, mint, history, repo_id, &plan, expires, commit_id,
+            Ok(EffectOutcome::Ingested(ingest_in(
+                tx, mint, history, repo_id, &plan, ts, expires, commit_id,
             )?))
         }
         Effect::MovePath {
             doc_id,
             from,
             to,
-            current_rev,
             inbound,
-        } => {
-            move_path_in(
-                tx,
-                history,
-                doc_id,
-                from,
-                to,
-                current_rev.as_deref(),
-                inbound,
-            )?;
-            Ok(None)
-        }
+            ..
+        } => Ok(EffectOutcome::Moved(move_path_in(
+            tx, mint, history, doc_id, from, to, inbound, ts, commit_id, mints_head,
+        )?)),
         Effect::Tombstone { doc_id, pool, .. } => {
-            tombstone_in(tx, doc_id, commit_id, pool.then_some(expires))?;
-            Ok(None)
+            tombstone_in(tx, doc_id, commit_id, ts, pool.then_some(expires))?;
+            Ok(EffectOutcome::Nothing)
         }
     }
 }
 
-/// [`Effect::MovePath`]'s statements (the reference's `docsMove` write
-/// block): path pointers, the edge re-point to the old path's phantom, the
-/// affected rollups, phantom adoption at the new path.
+/// The document's live body tree as the recorder's input ([`TreeInputBlock`]
+/// pre-order by `parent_block` + `ordinal`), read from the current rows — the
+/// unchanged tree a `docs_move` hands the recorder (store 17.0, D11). A row
+/// whose parent is not live counts as top level. `text`/`span` are not
+/// stored and not needed by the tree encoding; they are left empty.
+pub(crate) fn current_tree_input(conn: &Connection, doc_id: &str) -> Result<Vec<TreeInputBlock>> {
+    struct Row {
+        block_id: String,
+        parent_block: Option<String>,
+        kind: String,
+        attrs: String,
+        raw: String,
+        trivia: Option<String>,
+    }
+    let rows: Vec<Row> = {
+        let mut stmt = conn.prepare(
+            "SELECT block_id, parent_block, type, attrs, raw, trivia FROM blocks
+             WHERE doc_id = ?1 AND deleted_at IS NULL ORDER BY ordinal, block_id",
+        )?;
+        let it = stmt.query_map(params![doc_id], |r| {
+            Ok(Row {
+                block_id: r.get(0)?,
+                parent_block: r.get(1)?,
+                kind: r.get(2)?,
+                attrs: r.get(3)?,
+                raw: r.get(4)?,
+                trivia: r.get(5)?,
+            })
+        })?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let ids: HashSet<&str> = rows.iter().map(|r| r.block_id.as_str()).collect();
+    let mut by_parent: std::collections::HashMap<Option<&str>, Vec<&Row>> =
+        std::collections::HashMap::new();
+    for r in &rows {
+        let parent = r.parent_block.as_deref().filter(|p| ids.contains(p));
+        by_parent.entry(parent).or_default().push(r);
+    }
+    fn build(
+        parent: Option<&str>,
+        by_parent: &std::collections::HashMap<Option<&str>, Vec<&Row>>,
+    ) -> Vec<TreeInputBlock> {
+        by_parent
+            .get(&parent)
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .map(|r| TreeInputBlock {
+                block_id: r.block_id.clone(),
+                kind: r.kind.clone(),
+                raw: r.raw.clone(),
+                text: String::new(),
+                trivia: r.trivia.clone().unwrap_or_default(),
+                attrs: attrs_from_json(&r.attrs),
+                span: omgbase_format::Span { start: 0, end: 0 },
+                children: build(Some(&r.block_id), by_parent),
+            })
+            .collect()
+    }
+    Ok(build(None, &by_parent))
+}
+
+/// [`Effect::MovePath`]'s statements (the reference's `movePath` write
+/// block; `spec/mutate` §6, store 17.0 §5.4 step 6, D11): the document
+/// row's path and — a move is a TRANSITION — a new head token with
+/// `updated_at = ts`, handed to the recorder as a revision of the unchanged
+/// tree at the new path (`revisions.path` is immutable from 17.0; through
+/// 16.x the current revision's path was rewritten in place). `mints_head` is
+/// false for a self-linking source whose own `IngestKnown` follows in the
+/// request: that ingest mints the head and carries the new path, so the
+/// document gets one revision, not two. Then the edge index: the re-point to
+/// the old path's phantom, the affected rollups, phantom adoption at the new
+/// path.
+#[allow(clippy::too_many_arguments)]
 fn move_path_in(
     tx: &Connection,
+    mint: &mut Mint<'_>,
     history: &dyn HistoryRecorder,
     doc_id: &str,
     from: &str,
     to: &str,
-    current_rev: Option<&str>,
     inbound: &[InboundLink],
-) -> Result<()> {
-    tx.execute(
-        "UPDATE docs SET path = ?1 WHERE doc_id = ?2",
-        params![to, doc_id],
-    )?;
-    // The current revision's path is the recorder's to re-point (D11: a
-    // move is a transition; inventory-rust.md §3.12 `effects.rs:728-731`).
-    history.record_move(tx, doc_id, current_rev, to)?;
+    ts: &str,
+    commit_id: &str,
+    mints_head: bool,
+) -> Result<MoveOutcome> {
+    let doc: Option<(Option<Vec<u8>>, Option<String>)> = tx
+        .query_row(
+            "SELECT file_hash, frontmatter_raw FROM docs WHERE doc_id = ?1",
+            params![doc_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let (file_hash, frontmatter_raw) = doc.unwrap_or((None, None));
+    let mut head: Option<String> = None;
+    match (&file_hash, mints_head) {
+        (Some(hash), true) => {
+            let minted = mint.mint("r")?;
+            tx.execute(
+                "UPDATE docs SET path = ?1, head = ?2, updated_at = ?3 WHERE doc_id = ?4",
+                params![to, minted, ts, doc_id],
+            )?;
+            let body = current_tree_input(tx, doc_id)?;
+            let mut rendered_hash = [0u8; 32];
+            if hash.len() == 32 {
+                rendered_hash.copy_from_slice(hash);
+            } else {
+                return Err(crate::error::Error::Other(format!(
+                    "move_path: docs.file_hash of {doc_id} is not a 32-byte hash"
+                )));
+            }
+            history.record_revision(
+                tx,
+                &RevisionTransition {
+                    doc_id,
+                    head: &minted,
+                    path: to,
+                    frontmatter_raw: frontmatter_raw.as_deref(),
+                    body: &body,
+                    rendered_hash,
+                    commit_id,
+                },
+            )?;
+            head = Some(minted);
+        }
+        _ => {
+            tx.execute(
+                "UPDATE docs SET path = ?1 WHERE doc_id = ?2",
+                params![to, doc_id],
+            )?;
+        }
+    }
     let phantom = format!("phantom:{from}");
     let mut affected: Vec<String> = Vec::new();
     {
@@ -793,5 +943,10 @@ fn move_path_in(
     for d in &affected {
         rebuild_doc_edges(tx, d)?;
     }
-    adopt_phantoms(tx, to, doc_id)
+    adopt_phantoms(tx, to, doc_id)?;
+    Ok(MoveOutcome {
+        doc_id: doc_id.to_owned(),
+        head,
+        file_hash,
+    })
 }

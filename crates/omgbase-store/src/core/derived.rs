@@ -19,7 +19,7 @@ pub fn rebuild_sections(conn: &Connection, doc_id: &str) -> Result<()> {
     let tops: Vec<(String, i64, String, String)> = {
         let mut stmt = conn.prepare(
             "SELECT block_id, ordinal, type, attrs FROM blocks
-             WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_commit IS NULL
+             WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_at IS NULL
              ORDER BY ordinal",
         )?;
         let rows = stmt.query_map(params![doc_id], |r| {
@@ -59,7 +59,7 @@ pub fn rebuild_sections(conn: &Connection, doc_id: &str) -> Result<()> {
 /// row of the same document names it as `parent_block` (search 1.2: a
 /// container's text is its children's text joined, so only leaves are
 /// indexed). `c.doc_id = b.doc_id` lets the subquery use `idx_blocks_doc`.
-pub const LIVE_LEAF_SQL: &str = "b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_commit IS NULL)";
+pub const LIVE_LEAF_SQL: &str = "b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_at IS NULL)";
 
 fn live_leaf_rows(conn: &Connection, doc_id: &str) -> Result<Vec<(i64, String)>> {
     let mut stmt = conn.prepare_cached(&format!(
@@ -97,7 +97,7 @@ pub fn fts_index_doc(conn: &Connection, doc_id: &str) -> Result<()> {
 pub fn fts_rebuild(conn: &Connection) -> Result<()> {
     conn.execute_batch("INSERT INTO blocks_fts(blocks_fts) VALUES('delete-all')")?;
     let doc_ids: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL")?;
+        let mut stmt = conn.prepare("SELECT doc_id FROM docs WHERE deleted_at IS NULL")?;
         let it = stmt.query_map([], |r| r.get(0))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
@@ -130,7 +130,7 @@ pub(crate) fn fts_before_evict_rows(conn: &Connection, rows: &[EvictRow]) -> Res
     }
     let evicted: HashSet<&str> = rows.iter().map(|r| r.block_id.as_str()).collect();
     let mut has_live_child = conn.prepare_cached(
-        "SELECT 1 FROM blocks c WHERE c.doc_id = ?1 AND c.parent_block = ?2 AND c.deleted_commit IS NULL LIMIT 1",
+        "SELECT 1 FROM blocks c WHERE c.doc_id = ?1 AND c.parent_block = ?2 AND c.deleted_at IS NULL LIMIT 1",
     )?;
     let mut leaves = Vec::new();
     for r in rows.iter().filter(|r| r.live) {
@@ -148,9 +148,9 @@ pub(crate) fn fts_before_evict_rows(conn: &Connection, rows: &[EvictRow]) -> Res
     }
     // Parents that stay live but are left childless are leaves from now on.
     let mut parent_row = conn.prepare(
-        "SELECT b.rowid, b.text FROM blocks b WHERE b.block_id = ?1 AND b.doc_id = ?2 AND b.deleted_commit IS NULL
+        "SELECT b.rowid, b.text FROM blocks b WHERE b.block_id = ?1 AND b.doc_id = ?2 AND b.deleted_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id
-                           AND c.deleted_commit IS NULL AND c.block_id NOT IN (SELECT value FROM json_each(?3)))",
+                           AND c.deleted_at IS NULL AND c.block_id NOT IN (SELECT value FROM json_each(?3)))",
     )?;
     let evicted_json = serde_json::to_string(&rows.iter().map(|r| &r.block_id).collect::<Vec<_>>())
         .expect("ids serialize");
@@ -200,7 +200,7 @@ pub fn rebuild_index(
 ) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     let live_docs = |tx: &Connection| -> Result<Vec<String>> {
-        let mut stmt = tx.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL")?;
+        let mut stmt = tx.prepare("SELECT doc_id FROM docs WHERE deleted_at IS NULL")?;
         let it = stmt.query_map([], |r| r.get(0))?;
         Ok(it.collect::<std::result::Result<Vec<_>, _>>()?)
     };

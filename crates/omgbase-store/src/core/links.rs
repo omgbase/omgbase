@@ -16,7 +16,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value, json};
 
 use crate::error::Result;
-use crate::read::blob_text;
 
 // ---- destinations (link-destinations.ts) ----------------------------------------------
 
@@ -296,7 +295,7 @@ pub fn inbound_links_to(
         let mut stmt = conn.prepare(
             "SELECT DISTINCT e.src_doc, d.path, e.src_block, e.src_field
              FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-             WHERE e.repo_id = ?1 AND e.dst_node = ?2 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
+             WHERE e.repo_id = ?1 AND e.dst_node = ?2 AND e.to_commit IS NULL AND d.deleted_at IS NULL
              ORDER BY d.path, e.src_block",
         )?;
         let it = stmt.query_map(params![repo_id, doc_id], |r| {
@@ -321,17 +320,17 @@ pub fn inbound_links_to(
         if !seen.insert(block_id.clone()) {
             continue;
         }
-        let blk: Option<(String, Vec<u8>)> = conn
+        // The block's bytes are its own row's (17.0, D10).
+        let blk: Option<(String, String)> = conn
             .query_row(
-                "SELECT type, raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                "SELECT type, raw FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                 params![block_id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        let Some((kind, raw_hash)) = blk else {
+        let Some((kind, raw)) = blk else {
             continue;
         };
-        let raw = blob_text(conn, &raw_hash)?;
         let kind = kind.parse::<BlockKind>().unwrap_or(BlockKind::Opaque);
         let src_dir = doc_dir_of(&src_path).to_owned();
         for e in extract_block_edges(&block_id, kind, &raw) {

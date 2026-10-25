@@ -268,7 +268,7 @@ impl Lookup<'_> {
         self.store
             .conn
             .query_row(
-                "SELECT type, text, doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                "SELECT type, text, doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
@@ -370,7 +370,7 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT repo_id FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+                "SELECT repo_id FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
                 params![doc_id],
                 |r| r.get(0),
             )
@@ -562,7 +562,7 @@ impl Store {
         let row: Option<(String, Vec<u8>)> = self
             .conn
             .query_row(
-                "SELECT doc_id, raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                "SELECT doc_id, raw_hash FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                 params![id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -599,9 +599,9 @@ impl Store {
         }
         let mut stmt = self.conn.prepare(
             "WITH RECURSIVE sub(block_id) AS (
-               SELECT block_id FROM blocks WHERE parent_block = ?1 AND deleted_commit IS NULL
+               SELECT block_id FROM blocks WHERE parent_block = ?1 AND deleted_at IS NULL
                UNION ALL
-               SELECT b.block_id FROM blocks b JOIN sub ON b.parent_block = sub.block_id WHERE b.deleted_commit IS NULL
+               SELECT b.block_id FROM blocks b JOIN sub ON b.parent_block = sub.block_id WHERE b.deleted_at IS NULL
              ) SELECT block_id FROM sub",
         )?;
         let it = stmt.query_map(params![id], |r| r.get::<_, String>(0))?;
@@ -615,7 +615,7 @@ impl Store {
         }
         let mut stmt = self
             .conn
-            .prepare("SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL")?;
+            .prepare("SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL")?;
         let it = stmt.query_map(params![doc_id], |r| r.get::<_, String>(0))?;
         Ok(it.collect::<std::result::Result<_, _>>()?)
     }
@@ -635,7 +635,7 @@ impl Store {
                 let row: Option<String> = self
                     .conn
                     .query_row(
-                        "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                        "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                         params![id],
                         |r| r.get(0),
                     )
@@ -1982,11 +1982,34 @@ impl Store {
                 (doc_store.read(&t.path)?.unwrap_or_default(), String::new()),
             );
         }
+        // A move is a revision (store 17.0, D11): the moved document — its
+        // unchanged bytes at the new path — is listed before the rewritten
+        // sources, unless it is itself a source (then its rewrite's entry is
+        // the one, re-pathed below).
+        let mut moved_first: Vec<PlanRevision> = Vec::new();
+        for m in &moves {
+            if revisions.iter().any(|r| r.id == m.id) {
+                continue;
+            }
+            let hash = match doc_base(&self.conn, &m.id)?.and_then(|b| b.file_hash) {
+                Some(h) => hex(&h),
+                None => hex(&sha256(
+                    doc_store.read(&m.from)?.unwrap_or_default().as_bytes(),
+                )),
+            };
+            moved_first.push(PlanRevision {
+                id: m.id.clone(),
+                path: m.to.clone(),
+                hash,
+            });
+        }
         for r in &mut revisions {
             if let Some(m) = moves.iter().find(|m| m.id == r.id) {
                 r.path = m.to.clone();
             }
         }
+        moved_first.extend(revisions);
+        let revisions = moved_first;
         Ok(Plan {
             version: PLAN_VERSION,
             planner_v: PLANNER_V.to_owned(),
@@ -2245,9 +2268,9 @@ impl Store {
             clear_pending: false,
             ops: Some(&record),
         };
-        let (committed, commit) =
+        let (committed, moved, commit) =
             match self.commit_effects_with_id(&ctx.repo_id, &head, &effects, &ctx.ts)? {
-                (Outcome::Committed(c), commit) => (c, commit),
+                (Outcome::Committed { ingests, moves }, commit) => (ingests, moves, commit),
                 (Outcome::Conflict(c), _) => {
                     return Err(self.disk_conflict(&ctx.repo_id, &c.path, &c.bytes, &ctx.ts));
                 }
@@ -2255,11 +2278,36 @@ impl Store {
         // (c) The files.
         self.materialize_paths(&ctx.repo_id, &touched_paths(&effects), doc_store)?;
         // The receipt's revisions, one per ingest in load order; a created
-        // document's `id` is the `d` the ingest minted.
+        // document's `id` is the `d` the ingest minted. A move is a revision
+        // since store 17.0 (D11; `spec/mutate` §6): the moved document is
+        // listed — `_hash` unchanged, the new `_path` — before the rewritten
+        // sources, unless it is itself a source (then its rewrite's entry is
+        // the one; the move minted no head).
         for (rev, c) in known.iter_mut().zip(&committed) {
             rev.doc = c.doc_id.clone();
         }
-        Ok((commit, known))
+        let mut revisions: Vec<Revision> = Vec::new();
+        for m in &moved {
+            if m.head.is_none() {
+                continue;
+            }
+            let Some(mv) = plan.opset.moves.iter().find(|x| x.id == m.doc_id) else {
+                continue;
+            };
+            let hash = match &m.file_hash {
+                Some(h) => hex(h),
+                None => hex(&sha256(
+                    doc_store.read(&mv.from)?.unwrap_or_default().as_bytes(),
+                )),
+            };
+            revisions.push(Revision {
+                doc: m.doc_id.clone(),
+                path: mv.to.clone(),
+                hash,
+            });
+        }
+        revisions.extend(known);
+        Ok((commit, revisions))
     }
 
     /// §11.7 `execute { plan }` (the plan form): `version` read, the

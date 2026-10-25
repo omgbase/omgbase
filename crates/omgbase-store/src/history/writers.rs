@@ -236,9 +236,12 @@ pub fn new_commit(
     Ok((commit_id, seq))
 }
 
-/// What a revision row records besides its minted id and sequence number.
+/// What a revision row records besides its sequence number.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewRevision<'a> {
+    /// The head token the core minted for this transition (`spec/store` §5.4
+    /// step 6, 17.0 D1) — the row's `rev_id`.
+    pub rev_id: &'a str,
     pub doc_id: &'a str,
     pub root_tree_hex: &'a str,
     pub frontmatter_blob_hex: Option<&'a str>,
@@ -250,14 +253,11 @@ pub struct NewRevision<'a> {
     pub seq: Option<i64>,
 }
 
-/// Append a revision (§5.4 step 6): **mints `r`**, `seq = 1 + max(seq)` over
-/// the document (or the caller's). Returns `(rev_id, seq)`.
-pub fn write_revision(
-    conn: &Connection,
-    minter: &mut Mint<'_>,
-    input: &NewRevision<'_>,
-) -> Result<(String, i64)> {
-    let rev_id = minter.mint("r")?;
+/// Append a revision under the core's head token (§5.4 step 15; 17.0 — the
+/// `r` mint is the core's, step 6): `seq = 1 + max(seq)` over the document
+/// (or the caller's). Returns `(rev_id, seq)`.
+pub fn write_revision(conn: &Connection, input: &NewRevision<'_>) -> Result<(String, i64)> {
+    let rev_id = input.rev_id.to_owned();
     let seq: i64 = match input.seq {
         Some(seq) => seq,
         None => conn.query_row(

@@ -157,31 +157,21 @@ pub(crate) fn delete_pending(conn: &Connection, repo_id: &str, path: &str) -> Re
     Ok(())
 }
 
-/// The bytes a `write`/`rename` row must land: the revision's (§6.2, the
-/// recorder's [`HistoryRecorder::read_at_revision`]), or the live document's
-/// current bytes when the row names no revision — and only when they hash to
-/// `rendered_hash`. `None` when nothing can be rendered (the document is no
-/// longer live, the revision is unknown, the reconstruction does not hash to
-/// the row, or the store has no recorder to read the revision): the row is
-/// kept for a later materializer rather than guessed.
-///
-/// seam: HistoryRecorder::read_at_revision (Phase 3, M4 — a row always names
-/// the current revision, so `reconstruct` is sufficient; inventory-rust.md
-/// §2.3 `materialize.rs:183-189 bytes_for`).
-fn bytes_for(
-    conn: &Connection,
-    history: Option<&dyn HistoryRecorder>,
-    row: &PendingRow,
-) -> Result<Option<String>> {
-    let bytes = match &row.rev_id {
-        Some(rev) => match history {
-            Some(h) => h
-                .read_at_revision(conn, &row.doc_id, rev)?
-                .map(|r| r.content),
-            None => None,
-        },
-        None => reconstruct(conn, &row.doc_id)?,
-    };
+/// The bytes a `write`/`rename` row must land: `spec/store` §6.1 reconstruct
+/// of the document's CURRENT state (17.0, §5.7: a row always names its
+/// document's current head, because a later commit to the same path replaces
+/// the row, and §6.1 is byte-exact for the head), which must hash to
+/// `rendered_hash`. `None` when nothing can be rendered (the row names no
+/// head, the document is no longer live, or the head moved under the row —
+/// impossible while the replace rule holds, checked anyway): the row is kept
+/// for a later materializer rather than guessed. Through 16.x this was
+/// `reconstruct at rev_id` through the Merkle tree; the prior-bytes rule
+/// below is still the recorder's (M4, 3c).
+fn bytes_for(conn: &Connection, row: &PendingRow) -> Result<Option<String>> {
+    if row.rev_id.is_none() {
+        return Ok(None);
+    }
+    let bytes = reconstruct(conn, &row.doc_id)?;
     Ok(bytes.filter(|b| hashes_to(b, &row.rendered_hash)))
 }
 
@@ -230,7 +220,7 @@ fn materialize_row(
             Some(on_disk) if hashes_to(&on_disk, &row.rendered_hash) => Ok(true),
             Some(on_disk) if !replaceable(conn, history, row, &on_disk)? => Ok(false),
             _ => {
-                let Some(bytes) = bytes_for(conn, history, row)? else {
+                let Some(bytes) = bytes_for(conn, row)? else {
                     return Ok(false);
                 };
                 doc_store.write(&row.path, &bytes)?;
@@ -260,7 +250,7 @@ fn materialize_row(
                         if let Some(moved) = doc_store.read(&row.path)?
                             && !hashes_to(&moved, &row.rendered_hash)
                             && replaceable(conn, history, row, &moved)?
-                            && let Some(bytes) = bytes_for(conn, history, row)?
+                            && let Some(bytes) = bytes_for(conn, row)?
                         {
                             doc_store.write(&row.path, &bytes)?;
                         }
@@ -270,7 +260,7 @@ fn materialize_row(
                         // EXDEV or the like: write the revision's bytes at
                         // the new path and retire the old file while it still
                         // holds the engine's own bytes.
-                        let Some(bytes) = bytes_for(conn, history, row)? else {
+                        let Some(bytes) = bytes_for(conn, row)? else {
                             return Ok(false);
                         };
                         doc_store.write(&row.path, &bytes)?;
@@ -279,7 +269,7 @@ fn materialize_row(
                     }
                 }
             } else {
-                let Some(bytes) = bytes_for(conn, history, row)? else {
+                let Some(bytes) = bytes_for(conn, row)? else {
                     return Ok(false);
                 };
                 doc_store.write(&row.path, &bytes)?;

@@ -89,8 +89,8 @@ pub fn repos_status(
     let count =
         |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, params![repo_id], |r| r.get(0))?) };
     let unconverged = count(
-        "SELECT count(*) FROM docs d JOIN revisions r ON r.rev_id = d.current_rev
-         WHERE d.repo_id = ?1 AND d.deleted_commit IS NULL AND d.file_hash IS NOT r.rendered_hash",
+        "SELECT count(*) FROM docs d JOIN revisions r ON r.rev_id = d.head
+         WHERE d.repo_id = ?1 AND d.deleted_at IS NULL AND d.file_hash IS NOT r.rendered_hash",
     )?;
     let (root_path, disk) = match disk {
         Some((fs, root)) => (
@@ -106,8 +106,8 @@ pub fn repos_status(
         repo_id: repo_id.to_owned(),
         slug: slug.unwrap_or_default(),
         root_path,
-        docs: count("SELECT count(*) FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL")?,
-        blocks: count("SELECT count(*) FROM blocks WHERE repo_id = ?1 AND deleted_commit IS NULL")?,
+        docs: count("SELECT count(*) FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL")?,
+        blocks: count("SELECT count(*) FROM blocks WHERE repo_id = ?1 AND deleted_at IS NULL")?,
         commits: count("SELECT count(*) FROM commits WHERE repo_id = ?1")?,
         open_edges: count("SELECT count(*) FROM edges WHERE repo_id = ?1 AND to_commit IS NULL")?,
         unconverged,

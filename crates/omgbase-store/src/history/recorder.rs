@@ -46,21 +46,22 @@ impl HistoryRecorder for Recorder {
         new_commit(tx, mint, input)
     }
 
-    /// `spec/store` §5.4 steps 0, 1, 4 and 6, statement for statement as the
-    /// ingest ran them before the seam.
+    /// `spec/store` §5.4 step 15 (17.0): 16.0's steps 0, 1, 4 and 6 from
+    /// the recorder's OWN state, under the head token the core minted.
     fn record_revision(
         &self,
         tx: &Connection,
-        mint: &mut Mint<'_>,
         t: &RevisionTransition<'_>,
     ) -> Result<RecordedRevision> {
         // 0. The revision's place (§4.4, 16.0): its seq decides whether it is
         //    a checkpoint; a non-checkpoint revision writes its tree and
         //    frontmatter as deltas against the previous revision's RESOLVED
         //    tree and raw where that is smaller. The previous revision is the
-        //    document's greatest seq — on every path the current revision,
-        //    never archived (retention rule 1) — but the rule is stated for
-        //    the general case: no live predecessor ⇒ a checkpoint.
+        //    recorder's OWN state (17.0 M1: the core hands the transition and
+        //    reads nothing here) — the document's greatest captured seq, on
+        //    every path the current revision, never archived (retention rule
+        //    1) — but the rule is stated for the general case: no live
+        //    predecessor ⇒ a checkpoint.
         let previous = previous_revision(tx, t.doc_id)?;
         let seq = previous.as_ref().map_or(1, |p| p.seq + 1);
         let checkpoint = is_checkpoint_revision(seq, previous.as_ref());
@@ -98,11 +99,12 @@ impl HistoryRecorder for Recorder {
         // 4. Write the tree.
         let root_tree_hex = write_block_tree_in(tx, t.body, &tree_ctx)?;
 
-        // 6. The revision row (the commit row, step 5, is the caller's).
+        // 6. The revision row under the core's head (the commit row, step 5,
+        //    is the caller's).
         let (rev_id, seq) = write_revision(
             tx,
-            mint,
             &NewRevision {
+                rev_id: t.head,
                 doc_id: t.doc_id,
                 root_tree_hex: &root_tree_hex,
                 frontmatter_blob_hex: fm_blob_hex.as_deref(),
@@ -151,20 +153,6 @@ impl HistoryRecorder for Recorder {
         Ok(())
     }
 
-    fn record_move(
-        &self,
-        tx: &Connection,
-        doc_id: &str,
-        rev_id: Option<&str>,
-        to: &str,
-    ) -> Result<()> {
-        tx.execute(
-            "UPDATE revisions SET path = ?1 WHERE doc_id = ?2 AND rev_id = ?3",
-            params![to, doc_id, rev_id],
-        )?;
-        Ok(())
-    }
-
     fn read_at_revision(
         &self,
         conn: &Connection,
@@ -172,6 +160,31 @@ impl HistoryRecorder for Recorder {
         rev_id: &str,
     ) -> Result<Option<RevisionRead>> {
         read::read_at_revision(conn, doc_id, rev_id)
+    }
+
+    /// A captured revision's frontmatter raw (§6.2 "Resolving", 16.0): the
+    /// blob the row names, resolved when it is a `{"f":…}` delta over the
+    /// previous revision's ([`TreeResolver::frontmatter`], at most 15 steps
+    /// back). `None` when the revision has no frontmatter (or is not a
+    /// revision). Through 16.x this was the CURRENT frontmatter read
+    /// (`core::read::current_frontmatter_raw`); since 17.0 the head carries
+    /// its own and only migration 17 resolves through here.
+    fn frontmatter_at_revision(&self, conn: &Connection, rev_id: &str) -> Result<Option<String>> {
+        let row: Option<(String, i64, Option<Vec<u8>>)> = conn
+            .query_row(
+                "SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?1",
+                params![rev_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((doc_id, seq, Some(fm))) = row else {
+            return Ok(None);
+        };
+        Ok(Some(TreeResolver::new(conn).frontmatter(
+            &doc_id,
+            seq,
+            &hex(&fm),
+        )?))
     }
 
     fn rendered_hash(&self, conn: &Connection, rev_id: &str) -> Result<Option<Vec<u8>>> {

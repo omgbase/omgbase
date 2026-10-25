@@ -155,7 +155,7 @@ fn parent_lookup(store: &Store) -> impl Fn(&str) -> Option<ParentRow> + '_ {
         store
             .conn()
             .query_row(
-                "SELECT b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL",
+                "SELECT b.parent_block, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_at IS NULL",
                 [id],
                 |row| {
                     Ok(ParentRow {

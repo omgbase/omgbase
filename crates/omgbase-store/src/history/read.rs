@@ -28,7 +28,7 @@ pub fn read_at_revision(
 ) -> Result<Option<RevisionRead>> {
     let doc: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            "SELECT leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
             params![doc_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )

@@ -279,7 +279,7 @@ pub fn recent_revs(conn: &Connection, doc_id: &str) -> Result<Vec<String>> {
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
 }
 
-/// A `docs` row: `(doc_id, path, current_rev, deleted_commit)`.
+/// A `docs` row: `(doc_id, path, head, deleted_at)`.
 pub type DocRow = (String, String, Option<String>, Option<String>);
 
 /// The `docs` row of a ref, looking through a tombstone when `include_deleted`.
@@ -293,7 +293,7 @@ pub fn resolve_doc_row(
     let by_id = |id: &str| -> Result<Option<Row>> {
         Ok(conn
             .query_row(
-                "SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE doc_id = ?1",
+                "SELECT doc_id, path, head, deleted_at FROM docs WHERE doc_id = ?1",
                 params![id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
@@ -310,7 +310,7 @@ pub fn resolve_doc_row(
     }
     Ok(conn
         .query_row(
-            "SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
+            "SELECT doc_id, path, head, deleted_at FROM docs WHERE repo_id = ?1 AND path = ?2",
             params![repo_id, storage_path(r)],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -341,7 +341,7 @@ pub fn docs_history(
         let deleted_clause = if include_deleted {
             ""
         } else {
-            "AND deleted_commit IS NULL"
+            "AND deleted_at IS NULL"
         };
         // The glob is spelled in either path form; the column holds the storage form.
         let glob = storage_path(glob);
@@ -354,7 +354,7 @@ pub fn docs_history(
             ("path = ?2", glob.to_owned())
         };
         let sql = format!(
-            "SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ?1 AND {path_clause} {deleted_clause} ORDER BY path LIMIT ?3"
+            "SELECT doc_id, path, head, deleted_at FROM docs WHERE repo_id = ?1 AND {path_clause} {deleted_clause} ORDER BY path LIMIT ?3"
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(
@@ -379,7 +379,7 @@ pub fn docs_history(
          WHERE r.doc_id = ?1 ORDER BY r.seq ASC",
     )?;
     let mut docs = Vec::new();
-    for (doc_id, path, current_rev, deleted_commit) in doc_rows {
+    for (doc_id, path, head, deleted_at) in doc_rows {
         let versions: Vec<Json> = rev_stmt
             .query_map(params![doc_id], |r| {
                 let rev: String = r.get(0)?;
@@ -392,7 +392,7 @@ pub fn docs_history(
                     "_origin": r.get::<_, String>(5)?,
                     "_actor": r.get::<_, Option<String>>(6)?,
                     "_hash": hex(&hash),
-                    "_is_current": current_rev.as_deref() == Some(rev.as_str()),
+                    "_is_current": head.as_deref() == Some(rev.as_str()),
                     // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
                     "_archived": r.get::<_, Option<String>>(7)?.is_some(),
                 }))
@@ -401,8 +401,8 @@ pub fn docs_history(
         let mut m = Map::new();
         m.insert("_id".to_owned(), json!(doc_id));
         m.insert("_path".to_owned(), json!(reference_path(&path)));
-        m.insert("deleted".to_owned(), json!(deleted_commit.is_some()));
-        m.insert("currentRev".to_owned(), json!(current_rev));
+        m.insert("deleted".to_owned(), json!(deleted_at.is_some()));
+        m.insert("currentRev".to_owned(), json!(head));
         m.insert("versions".to_owned(), Json::Array(versions));
         docs.push(Json::Object(m));
     }

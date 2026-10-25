@@ -169,15 +169,30 @@ fn migrates_a_v1_database_forward() {
 #[test]
 fn migrates_documents_columns_and_renames_to_docs() {
     let conn = Connection::open_in_memory().unwrap();
+    // The pre-state carries what step 17 reads: the old `documents` row with
+    // its pointer columns, a `blocks` row with its hashes and a blob, and the
+    // (empty) history tables the backfill joins (17.0).
     conn.execute_batch(
-        "CREATE TABLE documents (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, path TEXT NOT NULL, frontmatter TEXT);
-         CREATE TABLE blocks (block_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES documents(doc_id));
-         INSERT INTO documents VALUES ('d_1', 'rp_1', 'a.md', '{}');
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}');
+         CREATE TABLE documents (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, path TEXT NOT NULL, frontmatter TEXT, current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, deleted_commit TEXT);
+         CREATE TABLE blocks (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL REFERENCES documents(doc_id), parent_block TEXT, order_key TEXT NOT NULL, ordinal INTEGER NOT NULL, depth INTEGER NOT NULL, ancestor_path TEXT NOT NULL, type TEXT NOT NULL, attrs TEXT NOT NULL DEFAULT '{}', text TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, created_commit TEXT NOT NULL, deleted_commit TEXT);
+         CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL);
+         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL);
+         CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, seq INTEGER NOT NULL, root_tree BLOB, frontmatter_blob BLOB, rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL);
+         CREATE TABLE block_changes (block_id TEXT NOT NULL, commit_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (block_id, commit_id, kind));
+         CREATE TABLE resurrection_pool (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, type TEXT NOT NULL, deleted_commit TEXT NOT NULL, expires_ts TEXT NOT NULL);
+         INSERT INTO repos (repo_id, slug) VALUES ('rp_1', 'v');
+         INSERT INTO documents (doc_id, repo_id, path, frontmatter) VALUES ('d_1', 'rp_1', 'a.md', '{}');
+         INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1', 'rp_1', 1, '2026-10-15T00:00:00.000Z', 'observed');
+         INSERT INTO blobs (hash, bytes, size) VALUES (X'bb', X'232041', 3);
+         INSERT INTO blocks (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, created_commit) VALUES ('b_1', 'rp_1', 'd_1', NULL, 'V', 0, 0, '/', 'heading', '{\"level\":1}', 'A', X'bb', X'10', 'c_1');
          PRAGMA user_version = 2;",
     )
     .unwrap();
     let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
     assert!(!schema::table_exists(store.conn(), "documents").unwrap());
+    // Steps 3, 4, 6, 7 and 11 shaped the row; step 17 rebuilt it (the legacy
+    // `metadata` column goes with the rebuild, as the reference's does).
     let cols = schema::column_names(store.conn(), "docs").unwrap();
     assert_eq!(
         cols,
@@ -185,10 +200,16 @@ fn migrates_documents_columns_and_renames_to_docs() {
             "doc_id",
             "repo_id",
             "path",
-            "metadata",
             "format",
+            "head",
+            "file_hash",
+            "conflicted",
             "leading_trivia",
-            "frontmatter_trivia"
+            "frontmatter_raw",
+            "frontmatter_trivia",
+            "created_at",
+            "updated_at",
+            "deleted_at"
         ]
     );
     assert!(
@@ -196,7 +217,8 @@ fn migrates_documents_columns_and_renames_to_docs() {
             .unwrap()
             .contains(&"trivia_hash".to_owned())
     );
-    // The FK on blocks now names docs (SQLite rewrote it with the rename).
+    // The FK on blocks names docs (step 11's rename rewrote it; step 17's
+    // rebuild names `docs` outright).
     let sql: String = store
         .conn()
         .query_row(
@@ -209,6 +231,13 @@ fn migrates_documents_columns_and_renames_to_docs() {
         sql.contains("REFERENCES \"docs\"") || sql.contains("REFERENCES docs"),
         "{sql}"
     );
+    let raw: String = store
+        .conn()
+        .query_row("SELECT raw FROM blocks WHERE block_id = 'b_1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(raw, "# A", "step 17 copied the block's bytes from its blob");
     let format: String = store
         .conn()
         .query_row("SELECT format FROM docs WHERE doc_id = 'd_1'", [], |r| {
@@ -276,19 +305,19 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
 #[test]
 fn refuses_a_newer_database_with_the_exact_message() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch("PRAGMA user_version = 17").unwrap();
+    conn.execute_batch("PRAGMA user_version = 18").unwrap();
     let err = Store::from_connection(conn, Box::new(RandomMinter))
         .err()
         .unwrap();
     assert_eq!(
         err.to_string(),
-        "database schema (v17) is newer than this build (v16); upgrade omgbase"
+        "database schema (v18) is newer than this build (v17); upgrade omgbase"
     );
     assert!(matches!(
         err,
         Error::SchemaTooNew {
-            found: 17,
-            supported: 16
+            found: 18,
+            supported: 17
         }
     ));
 }
@@ -344,7 +373,10 @@ fn migrates_v14_to_v15_rebuilding_revisions() {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(
         "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}');
-         CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, current_rev TEXT, file_hash BLOB);
+         CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT);
+         CREATE TABLE blocks (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL REFERENCES docs(doc_id), parent_block TEXT, order_key TEXT NOT NULL, ordinal INTEGER NOT NULL, depth INTEGER NOT NULL, ancestor_path TEXT NOT NULL, type TEXT NOT NULL, attrs TEXT NOT NULL DEFAULT '{}', text TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, trivia_hash BLOB, created_commit TEXT NOT NULL, deleted_commit TEXT);
+         CREATE TABLE block_changes (block_id TEXT NOT NULL, commit_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (block_id, commit_id, kind));
+         CREATE TABLE resurrection_pool (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, type TEXT NOT NULL, deleted_commit TEXT NOT NULL, expires_ts TEXT NOT NULL);
          CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL);
          CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL);
          CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL);
@@ -618,7 +650,7 @@ fn enforces_foreign_keys_and_check_constraints() {
     let err = store
         .conn()
         .execute(
-            "INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_x', 'rp_missing', 'a.md')",
+            "INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_x', 'rp_missing', 'a.md', 't', 't')",
             [],
         )
         .unwrap_err();
@@ -773,7 +805,7 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
     store
         .conn()
         .execute(
-            "INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_1', ?1, 'a.md')",
+            "INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_1', ?1, 'a.md', 't', 't')",
             params![repo],
         )
         .unwrap();
@@ -783,8 +815,10 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
     let blocks = assign_fresh_ids(&tree.children, &mut store.minter()).unwrap();
     let root = store.write_block_tree(&blocks).unwrap();
     let rev = |store: &mut Store, commit: &str| {
+        let head = store.mint("r").unwrap();
         store
             .write_revision(&NewRevision {
+                rev_id: &head,
                 doc_id: "d_1",
                 root_tree_hex: &root,
                 frontmatter_blob_hex: None,
@@ -891,7 +925,7 @@ fn echo_writes_nothing_and_mints_nothing() {
 }
 
 #[test]
-fn edit_carries_ids_and_stamps_created_commit_as_last_written() {
+fn edit_carries_ids_and_stamps_only_the_changed_block() {
     let (mut store, repo) = fixture_store();
     observe(
         &mut store,
@@ -911,12 +945,14 @@ fn edit_carries_ids_and_stamps_created_commit_as_last_written() {
         kinds(&o),
         [("edited".to_owned(), 1), ("same".to_owned(), 1)]
     );
-    let rows: Vec<(String, String)> = {
+    // 17.0 (D6): both carried ids keep their birth; only the edited block's
+    // `updated_at` moves (14.2's rule — a `same` carry does not touch it).
+    let rows: Vec<(String, String, String)> = {
         let mut stmt = store
             .conn()
-            .prepare("SELECT block_id, created_commit FROM blocks ORDER BY ordinal")
+            .prepare("SELECT block_id, created_at, updated_at FROM blocks ORDER BY ordinal")
             .unwrap();
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .unwrap()
             .map(|r| r.unwrap())
             .collect()
@@ -924,8 +960,8 @@ fn edit_carries_ids_and_stamps_created_commit_as_last_written() {
     assert_eq!(
         rows,
         [
-            ("b_0".to_owned(), "c_1".to_owned()),
-            ("b_1".to_owned(), "c_1".to_owned())
+            ("b_0".to_owned(), T0.to_owned(), T0.to_owned()),
+            ("b_1".to_owned(), T0.to_owned(), T1.to_owned())
         ]
     );
     let seqs: Vec<i64> = {
@@ -1047,15 +1083,26 @@ fn observed_deletion_tombstones_and_recreation_revives_the_doc_row() {
     assert_eq!(d.doc_id.as_deref(), Some("d_0"));
     assert!(d.deleted());
     assert!(d.old_hash_hex.is_some());
-    let (deleted, reason): (Option<String>, Option<String>) = store
+    // 17.0: the tombstone carries the commit's `ts` (`deleted_at`); the
+    // commit is found by that instant.
+    let (deleted, commit): (Option<String>, Option<String>) = store
         .conn()
         .query_row(
-            "SELECT d.deleted_commit, c.reason FROM docs d JOIN commits c ON c.commit_id = d.deleted_commit WHERE d.doc_id = 'd_0'",
+            "SELECT d.deleted_at, c.commit_id FROM docs d JOIN commits c ON c.ts = d.deleted_at AND c.repo_id = d.repo_id WHERE d.doc_id = 'd_0'",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(deleted.as_deref(), Some("c_1"));
+    assert_eq!(deleted.as_deref(), Some(T1));
+    let reason: Option<String> = store
+        .conn()
+        .query_row(
+            "SELECT reason FROM commits WHERE commit_id = ?1",
+            params![commit.as_deref().unwrap_or("")],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(commit.as_deref(), Some("c_1"));
     assert_eq!(reason.as_deref(), Some("observed deletion"));
     assert_eq!(count(&store, "resurrection_pool"), 2);
     assert_eq!(count(&store, "revisions"), 1, "no revision for a tombstone");
@@ -1063,7 +1110,7 @@ fn observed_deletion_tombstones_and_recreation_revives_the_doc_row() {
     let live: i64 = store
         .conn()
         .query_row(
-            "SELECT count(*) FROM blocks WHERE deleted_commit IS NULL",
+            "SELECT count(*) FROM blocks WHERE deleted_at IS NULL",
             [],
             |r| r.get(0),
         )
@@ -1096,7 +1143,7 @@ fn observed_deletion_tombstones_and_recreation_revives_the_doc_row() {
     let deleted: Option<String> = store
         .conn()
         .query_row(
-            "SELECT deleted_commit FROM docs WHERE doc_id = 'd_0'",
+            "SELECT deleted_at FROM docs WHERE doc_id = 'd_0'",
             [],
             |r| r.get(0),
         )
@@ -1195,7 +1242,7 @@ fn cross_document_move_from_a_gone_member_survives_either_batch_order() {
         let rows: Vec<(String, String, Option<String>)> = {
             let mut stmt = store
                 .conn()
-                .prepare("SELECT block_id, doc_id, deleted_commit FROM blocks")
+                .prepare("SELECT block_id, doc_id, deleted_at FROM blocks")
                 .unwrap();
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .unwrap()
@@ -1912,7 +1959,9 @@ fn fts_indexes_leaves_only_through_edits_and_rebuild() {
     let containers: i64 = store
         .conn()
         .query_row(
-            &format!("SELECT count(*) FROM blocks b WHERE b.deleted_commit IS NULL AND NOT ({LIVE_LEAF_SQL})"),
+            &format!(
+                "SELECT count(*) FROM blocks b WHERE b.deleted_at IS NULL AND NOT ({LIVE_LEAF_SQL})"
+            ),
             [],
             |r| r.get(0),
         )
@@ -2320,7 +2369,7 @@ fn tx_of(log: &[String], needle: &str) -> Option<usize> {
 }
 
 const CONFLICT: &str = "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n";
-const FLAG_UPDATE: &str = "file_hash = ?2, conflicted = ?3";
+const FLAG_UPDATE: &str = "file_hash = ?2, updated_at = ?3, conflicted = ?4";
 
 fn conflicted_flag(store: &Store) -> i64 {
     store
@@ -2381,7 +2430,7 @@ fn conflicted_flag_is_written_inside_the_ingest_transaction() {
     assert!(
         tx_of(
             &log,
-            "UPDATE docs SET current_rev = ?1, file_hash = ?2 WHERE"
+            "UPDATE docs SET head = ?1, file_hash = ?2, updated_at = ?3 WHERE"
         )
         .is_some()
     );
@@ -2406,10 +2455,10 @@ fn observe_delete_tombstones_in_one_transaction() {
     let d = store.observe_delete(&repo, "a.md", T1).unwrap();
     assert!(d.doc_id.is_some());
     let log = traced();
-    let tomb = tx_of(&log, "UPDATE docs SET deleted_commit");
+    let tomb = tx_of(&log, "UPDATE docs SET deleted_at");
     assert!(tomb.is_some(), "{log:#?}");
     assert_eq!(tomb, tx_of(&log, "INSERT INTO commits"));
-    assert_eq!(tomb, tx_of(&log, "UPDATE blocks SET deleted_commit"));
+    assert_eq!(tomb, tx_of(&log, "UPDATE blocks SET deleted_at"));
     assert_eq!(
         tomb,
         tx_of(&log, "INSERT OR REPLACE INTO resurrection_pool")
@@ -2453,7 +2502,7 @@ fn commits_by_origin(store: &Store, origin: &str) -> i64 {
 fn current_revs(store: &Store) -> Vec<(String, String)> {
     let mut stmt = store
         .conn()
-        .prepare("SELECT path, current_rev FROM docs ORDER BY path")
+        .prepare("SELECT path, head FROM docs ORDER BY path")
         .unwrap();
     stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap()
@@ -2536,7 +2585,7 @@ fn a_changeset_is_one_commit_with_n_revisions() {
     let created: Vec<String> = {
         let mut stmt = store
             .conn()
-            .prepare("SELECT DISTINCT created_commit FROM blocks WHERE deleted_commit IS NULL")
+            .prepare("SELECT DISTINCT updated_at FROM blocks WHERE deleted_at IS NULL AND type = 'paragraph' AND text LIKE '% tail.'")
             .unwrap();
         stmt.query_map([], |r| r.get(0))
             .unwrap()
@@ -2545,8 +2594,8 @@ fn a_changeset_is_one_commit_with_n_revisions() {
     };
     assert_eq!(
         created,
-        vec!["c_2".to_owned()],
-        "every live block restamped by the shared row"
+        vec![T1.to_owned()],
+        "every block the request wrote is stamped with the shared commit's ts (17.0)"
     );
     assert_eq!(
         current_revs(&store),
@@ -2705,12 +2754,15 @@ fn docs_move_with_retarget_is_one_commit() {
         )
         .unwrap();
     assert_eq!(reason, "move b.md -> n/b.md");
-    assert_eq!(revs, 1, "the rewritten source only");
+    assert_eq!(
+        revs, 2,
+        "the moved document (17.0 D11, minted first) and the rewritten source"
+    );
     assert_eq!(
         current_revs(&store),
         vec![
-            ("a.md".into(), "r_2".into()),
-            ("n/b.md".into(), "r_0".into())
+            ("a.md".into(), "r_3".into()),
+            ("n/b.md".into(), "r_2".into())
         ],
         "the moved doc's revision does not advance"
     );
@@ -2741,8 +2793,11 @@ fn docs_move_with_retarget_is_one_commit() {
         page.digests[0].summary,
         "api(agent:mcp): moved b.md → n/b.md; a.md — 1 edited"
     );
-    assert_eq!(page.digests[0].revisions.len(), 1);
-    assert_eq!(page.digests[0].revisions[0].path, "a.md");
+    // 17.0 (D11): the moved document's revision (minted first) and the
+    // rewritten source's; the summary names the move once.
+    assert_eq!(page.digests[0].revisions.len(), 2);
+    assert_eq!(page.digests[0].revisions[0].path, "n/b.md");
+    assert_eq!(page.digests[0].revisions[1].path, "a.md");
 
     // The self-link hazard: a document whose link names its own path.
     let ctx2 = DocOpContext {
@@ -2768,7 +2823,7 @@ fn docs_move_with_retarget_is_one_commit() {
     let (path, rev_path): (String, String) = store
         .conn()
         .query_row(
-            "SELECT d.path, r.path FROM docs d JOIN revisions r ON r.rev_id = d.current_rev WHERE d.doc_id = ?1",
+            "SELECT d.path, r.path FROM docs d JOIN revisions r ON r.rev_id = d.head WHERE d.doc_id = ?1",
             params![moved.doc_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -2873,16 +2928,8 @@ fn docs_delete_is_one_commit_without_pooling() {
     let log = traced();
     let tx = tx_of(&log, "INSERT INTO commits");
     assert!(tx.is_some());
-    assert_eq!(
-        tx,
-        tx_of(&log, "UPDATE docs SET deleted_commit"),
-        "{log:#?}"
-    );
-    assert_eq!(
-        tx,
-        tx_of(&log, "UPDATE blocks SET deleted_commit"),
-        "{log:#?}"
-    );
+    assert_eq!(tx, tx_of(&log, "UPDATE docs SET deleted_at"), "{log:#?}");
+    assert_eq!(tx, tx_of(&log, "UPDATE blocks SET deleted_at"), "{log:#?}");
     assert!(
         !log.iter().any(|s| s.contains("INTO resurrection_pool")),
         "{log:#?}"
@@ -3002,10 +3049,7 @@ fn a_concurrent_revision_between_plan_and_commit_is_stale_plan() {
     // Another writer commits a revision underneath the plan.
     let other = Connection::open(&path).unwrap();
     other
-        .execute(
-            "UPDATE docs SET current_rev = 'r_9' WHERE path = 'a.md'",
-            [],
-        )
+        .execute("UPDATE docs SET head = 'r_9' WHERE path = 'a.md'", [])
         .unwrap();
     start_trace(store.conn());
     let err = store
@@ -3147,7 +3191,7 @@ fn the_in_tx_disk_check_returns_a_conflict_without_minting() {
         .unwrap();
     let conflict = match out {
         Outcome::Conflict(c) => c,
-        Outcome::Committed(c) => panic!("committed {c:?}"),
+        Outcome::Committed { ingests, .. } => panic!("committed {ingests:?}"),
     };
     assert_eq!(conflict.path, "a.md");
     assert_eq!(conflict.bytes, human);
@@ -3627,7 +3671,7 @@ fn observation_in_the_crash_window_follows_the_gate_rule() {
     let live: i64 = store
         .conn()
         .query_row(
-            "SELECT count(*) FROM docs WHERE path = 'b.md' AND deleted_commit IS NULL",
+            "SELECT count(*) FROM docs WHERE path = 'b.md' AND deleted_at IS NULL",
             [],
             |r| r.get(0),
         )
@@ -3792,8 +3836,8 @@ fn docs_move_falls_back_to_writing_when_the_rename_fails() {
     assert_eq!(rows[0].from_path.as_deref(), Some("b.md"));
     assert_eq!(
         rows[0].rev_id.as_deref(),
-        Some("r_0"),
-        "the moved doc's revision"
+        Some("r_2"),
+        "the moved doc's new head (17.0 D11: a move is a transition)"
     );
     assert_eq!(
         rows[0].rendered_hash,
@@ -4063,8 +4107,8 @@ fn footprint(store: &Store, ds: &MemDocStore) -> Value {
     };
     json!({
         "commits": rows("SELECT commit_id, seq, origin, actor, reason, ops FROM commits ORDER BY seq"),
-        "docs": rows("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs ORDER BY path"),
-        "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, type, raw_hash, created_commit FROM blocks WHERE deleted_commit IS NULL ORDER BY doc_id, ordinal"),
+        "docs": rows("SELECT doc_id, path, head, file_hash, frontmatter_raw, created_at, updated_at, deleted_at FROM docs ORDER BY path"),
+        "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, type, raw, raw_hash, trivia, created_at, updated_at FROM blocks WHERE deleted_at IS NULL ORDER BY doc_id, ordinal"),
         "revisions": rows("SELECT rev_id, doc_id, seq, rendered_hash, path, commit_id FROM revisions ORDER BY rev_id"),
         "pending": rows("SELECT path FROM pending_materializations"),
         "files": ds.files().iter().map(|(k, v)| (k.clone(), json!(v))).collect::<serde_json::Map<_, _>>(),
@@ -4760,10 +4804,12 @@ fn move_document_retargets_inbound_links_in_one_commit() {
     assert_eq!(r.commit.as_deref(), Some("c_2"));
     assert_eq!(
         r.revisions.len(),
-        1,
-        "the rewritten source; a move alone has no revision"
+        2,
+        "the moved document first (17.0 D11), then the rewritten source"
     );
-    assert_eq!(r.revisions[0].doc, "d_0");
+    assert_eq!(r.revisions[0].doc, "d_1");
+    assert_eq!(r.revisions[0].path, "notes/b.md");
+    assert_eq!(r.revisions[1].doc, "d_0");
     assert_eq!(r.new_ids.len(), 1, "{:?}", r.new_ids);
     assert_eq!(count(&store, "commits"), 3);
     assert_eq!(
@@ -4778,8 +4824,8 @@ fn move_document_retargets_inbound_links_in_one_commit() {
     assert_eq!(
         current_revs(&store),
         vec![
-            ("a.md".into(), "r_2".into()),
-            ("notes/b.md".into(), "r_1".into())
+            ("a.md".into(), "r_3".into()),
+            ("notes/b.md".into(), "r_2".into())
         ]
     );
 
@@ -5038,7 +5084,7 @@ fn a_create_after_a_minting_effect_keeps_the_plan_mint_order() {
     let first: String = store
         .conn()
         .query_row(
-            "SELECT block_id FROM blocks WHERE doc_id = 'd_1' AND deleted_commit IS NULL ORDER BY ordinal LIMIT 1",
+            "SELECT block_id FROM blocks WHERE doc_id = 'd_1' AND deleted_at IS NULL ORDER BY ordinal LIMIT 1",
             [],
             |r| r.get(0),
         )
@@ -5247,7 +5293,9 @@ fn doc_format(store: &Store, doc_id: &str) -> String {
 fn block_types(store: &Store, doc_id: &str) -> Vec<String> {
     let mut stmt = store
         .conn()
-        .prepare("SELECT type FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL ORDER BY order_key")
+        .prepare(
+            "SELECT type FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL ORDER BY order_key",
+        )
         .unwrap();
     let rows = stmt
         .query_map(params![doc_id], |r| r.get::<_, String>(0))

@@ -116,6 +116,49 @@ one write 245–293 / 265–328; `query` docs 236 / 267, blocks filter 228 /
 the rows without a `blobs` join or a frontmatter resolve, but node's start
 dominates every CLI round trip, so the harness cannot see it.
 
+### 17.0 (3a), Rust — the twin, same harness (`rust-2026-10-25T19-55-20`)
+
+The Rust twin of 3a (`crates/omgbase-store` at schema 17, release build of
+the `omgbase` crate 0.27.3 + the working tree), the same seeded corpus; the
+TS 3a row above and the 16.0 Rust row at the top of §2 are the comparisons.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | TS 3a (KB / op) | 16.0 Rust (KB / op) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 5.65 | 5,652 | 28.1 / doc | 3.17 | 2.11 | 28.0 / doc (db 5.62) | 25.6 / doc (db 5.15) |
+| frontmatter hot update | 50 | 5.74 | 90 | 1.8 | 0 | +60 | 1.7 | 1.6 |
+| block edit | 50 | 5.83 | 86 | 1.7 | 0 | +70 | 1.6 | 2.0 |
+| rolling journal | 50 | 6.00 | 168 | 3.4 | +20 | +130 | 3.2 | 3.6 |
+| task churn | 50 | 6.05 | 57 | 1.1 | 0 | +50 | 0.5 | 0.8 |
+| link churn | 50 | 6.14 | 82 | 1.6 | +30 | +30 | 1.6 | 1.8 |
+| delete / recreate | 20 | 6.24 | 102 | 5.1 | +10 | +100 | 5.7 | 4.1 |
+| gc (default sweep) | | 6.25 | 8 | | 0 | 0 | 8 KB, nothing swept | 8 KB, nothing swept |
+
+The two engines write the same database: import **5.65 vs 5.62 MB (25.9× vs
+25.7× the source)**, the end **6.25 vs 6.18 MB (28.6× vs 28.3×)**, `content`
+3.17 vs 3.15 MB and `history` 2.11 vs 2.10 MB — the 30–70 KB spread is the
+harness's page-allocation noise (the 16.0 rows differed by the same amount),
+and the per-operation costs match the TS 3a row within ±0.6 KB with the same
+shape: the +9 % at import over 16.0 is the live bytes held twice under legacy
+capture (`content` 3.17 vs 2.67 MB; `history` unchanged), delete/recreate is
+the one operation that costs more (+1.0 KB/op over 16.0: the recreated rows
+carry their bytes), and the sweep still reclaims nothing. The history tables
+after gc are the TS 3a run's and the 16.0 run's row for row — `blobs` 0.63 MB
+(3,218 rows), `tree_nodes` 0.98 MB (1,000), `dispositions` 0.35 MB +
+`block_changes` 0.30 MB (3,824 each), `revisions` 0.11 MB (461), `commits`
+0.16 MB (471): the recorder captures exactly what it did, and the workload
+has no `docs_move`, so D11's extra revision per move does not show here.
+
+Latency (p50 / p95 ms, process start 5 / 258 included): import 848; one write
+21–24 / 26–30; `query` docs 12 / 21, blocks filter 11 / 14, `text("furnace")`
+78 / 116, links 9 / 35; `outline` 8 / 10; `gc` 15. Against the 16.0 Rust run
+(writes 16–20 / 19–38, docs 10 / 11, text 62 / 75, outline 7 / 10) every row
+reads 2–5 ms higher at p50, the untouched read-only shapes included, so the
+gap is the day's machine state rather than the engine (a first run taken
+while the test suite was building read 28–33 ms per write and was discarded);
+the p95s sit inside the 16.0 spread. The hot `docs_read`/`apply` paths now
+read the rows without a `blobs` join or a frontmatter resolve; at these sizes
+the saving is below the harness's resolution.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

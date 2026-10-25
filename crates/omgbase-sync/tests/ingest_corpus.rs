@@ -49,13 +49,10 @@ fn ingests_a_large_corpus_with_the_random_minter() {
     .expect("the sweep ingests every file without a collision");
     let elapsed = started.elapsed();
 
-    let live_docs = count(
-        store,
-        "SELECT COUNT(*) FROM docs WHERE deleted_commit IS NULL",
-    );
+    let live_docs = count(store, "SELECT COUNT(*) FROM docs WHERE deleted_at IS NULL");
     let live_blocks = count(
         store,
-        "SELECT COUNT(*) FROM blocks WHERE deleted_commit IS NULL",
+        "SELECT COUNT(*) FROM blocks WHERE deleted_at IS NULL",
     );
     let all_blocks = count(store, "SELECT COUNT(*) FROM blocks");
     eprintln!(

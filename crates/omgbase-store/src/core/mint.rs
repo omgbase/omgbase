@@ -264,7 +264,7 @@ mod tests {
         store
             .conn()
             .execute(
-                "INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_9', ?1, 'a.md')",
+                "INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_9', ?1, 'a.md', 't', 't')",
                 params![repo],
             )
             .unwrap();
@@ -284,8 +284,8 @@ mod tests {
         store
             .conn()
             .execute(
-                "INSERT INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
-                 VALUES ('b_1', ?1, 'd_9', zeroblob(32), zeroblob(32), 'paragraph', ?2, '2026-10-26T00:00:00.000Z')",
+                "INSERT INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+                 VALUES ('b_1', ?1, 'd_9', zeroblob(32), zeroblob(32), 'paragraph', '2026-09-26T00:00:00.000Z', ?2, '2026-10-26T00:00:00.000Z')",
                 params![repo, commit],
             )
             .unwrap();

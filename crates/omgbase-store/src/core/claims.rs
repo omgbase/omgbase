@@ -2,7 +2,9 @@
 //! [`IdentityClaims`]: an id is claimed when it names a row of its prefix's
 //! table(s). Phase 3 (M3, D5) replaces the table union with an `id_claims`
 //! table written at mint; until then the probe reaches the history tables
-//! `block_changes`, `commits`, `revisions`, `archives` by name.
+//! `block_changes`, `commits`, `revisions`, `archives` by name — and, since
+//! 17.0 (D1), a head token is in use while a `docs` row names it as `head`
+//! or a captured revision as `rev_id`.
 //!
 //! seam: IdentityClaims::is_claimed (Phase 3) — inventory-rust.md §2.1
 //! `mint.rs:28-46 ID_TABLES`, `:61-71 id_in_use`; README §2.8 row 2, §3 M3.
@@ -27,7 +29,7 @@ pub(crate) const ID_TABLES: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     ("c", &[("commits", "commit_id")]),
-    ("r", &[("revisions", "rev_id")]),
+    ("r", &[("revisions", "rev_id"), ("docs", "head")]),
     ("x", &[("external_nodes", "node_id")]),
     ("e", &[("edges", "edge_id")]),
     ("cp", &[("checkpoints", "id")]),

@@ -86,10 +86,10 @@ pub(crate) fn order_clause(t: Target) -> &'static str {
 /// owning `docs` row, since `revisions` carries no `repo_id`.
 pub(crate) fn guards(t: Target) -> &'static str {
     match t {
-        Target::Docs => "d.repo_id = ? AND d.deleted_commit IS NULL",
-        Target::Blocks => "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL",
-        Target::Nodes => "n.repo_id = ? AND d.deleted_commit IS NULL",
-        Target::Links => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL",
+        Target::Docs => "d.repo_id = ? AND d.deleted_at IS NULL",
+        Target::Blocks => "b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL",
+        Target::Nodes => "n.repo_id = ? AND d.deleted_at IS NULL",
+        Target::Links => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL",
         Target::Revisions => "d.repo_id = ?",
     }
 }
@@ -116,11 +116,11 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
     match t {
         Target::Docs | Target::Revisions => guards(t),
         Target::Blocks => {
-            "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL"
+            "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL"
         }
-        Target::Nodes => "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_commit IS NULL",
+        Target::Nodes => "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_at IS NULL",
         Target::Links => {
-            "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL"
+            "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL"
         }
     }
 }
@@ -435,7 +435,7 @@ mod tests {
         assert_eq!(c.target, Target::Docs);
         assert_eq!(
             c.sql,
-            "SELECT d.* FROM docs d WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND ((('/' || d.path) IS ?)) ORDER BY d.path, d.doc_id"
+            "SELECT d.* FROM docs d WHERE d.repo_id = ? AND d.deleted_at IS NULL AND ((('/' || d.path) IS ?)) ORDER BY d.path, d.doc_id"
         );
         assert_eq!(c.params, vec![text("r_1"), text("index.md")]);
         assert_eq!(
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(
             b.sql,
             "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id \
-             WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL \
+             WHERE b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL \
              AND ((substr(('/' || d.path), 1, length(?)) = ?)) ORDER BY d.path, b.block_id"
         );
         assert_eq!(b.params, vec![text("r"), text("lab/"), text("lab/")]);
@@ -471,7 +471,7 @@ mod tests {
         .unwrap();
         assert_eq!(n.target, Target::Nodes);
         assert!(n.sql.starts_with(
-            "SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id WHERE n.repo_id = ? AND d.deleted_commit IS NULL AND ((n.kind IS ?))"
+            "SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id WHERE n.repo_id = ? AND d.deleted_at IS NULL AND ((n.kind IS ?))"
         ));
         assert!(n.sql.ends_with("ORDER BY d.path, n.node_id"));
         let e = compile(
@@ -481,7 +481,7 @@ mod tests {
         )
         .unwrap();
         assert!(e.sql.starts_with(
-            "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL AND ((e.predicate IS ?))"
+            "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL AND ((e.predicate IS ?))"
         ));
         assert!(e.sql.ends_with("ORDER BY d.path, e.edge_id"));
     }

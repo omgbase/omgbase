@@ -1921,11 +1921,11 @@ fn run_coordinator_case(c: &Json) -> Result<Json, String> {
     }
     let docs: Vec<Json> = query_rows(
         store.conn(),
-        "SELECT doc_id, path, deleted_commit FROM docs WHERE repo_id = ?1 ORDER BY path",
+        "SELECT doc_id, path, deleted_at FROM docs WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
     )
     .into_iter()
-    .map(|d| json!({ "doc_id": d["doc_id"], "path": d["path"], "deleted": !d["deleted_commit"].is_null() }))
+    .map(|d| json!({ "doc_id": d["doc_id"], "path": d["path"], "deleted": !d["deleted_at"].is_null() }))
     .collect();
     let commits = query_rows(
         store.conn(),
@@ -2299,7 +2299,7 @@ fn query_rows(conn: &Connection, sql: &str, params: &[&dyn rusqlite::ToSql]) -> 
     rows.map(|r| r.expect("row reads")).collect()
 }
 
-const BLOCK_COLUMNS: &str = "block_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit";
+const BLOCK_COLUMNS: &str = "block_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at, deleted_at";
 
 /// A doc's `blocks` rows in pre-order (children by `parent_block`, `ordinal`
 /// order); an orphaned parent counts as top level.
@@ -2309,7 +2309,7 @@ fn doc_blocks_preorder(conn: &Connection, doc_id: &str, live_only: bool) -> Vec<
         &format!(
             "SELECT {BLOCK_COLUMNS} FROM blocks WHERE doc_id = ?1 {} ORDER BY ordinal, block_id",
             if live_only {
-                "AND deleted_commit IS NULL"
+                "AND deleted_at IS NULL"
             } else {
                 ""
             }
@@ -2366,7 +2366,7 @@ fn int_of(row: &Json, key: &str) -> i64 {
 fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     let docs = query_rows(
         conn,
-        "SELECT doc_id, path, format, current_rev, file_hash, conflicted, leading_trivia, frontmatter_trivia, deleted_commit FROM docs WHERE repo_id = ?1 ORDER BY path",
+        "SELECT doc_id, path, format, head, file_hash, conflicted, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
     );
     let doc_ids: Vec<String> = docs
@@ -2456,7 +2456,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
 
     let mut pool = query_rows(
         conn,
-        "SELECT block_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
+        "SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
         &[&repo_id],
     );
     pool.sort_by(|a, b| {
@@ -2528,6 +2528,8 @@ struct Rev {
     root_tree: Option<String>,
     frontmatter_blob: Option<String>,
     rendered_hash: Vec<u8>,
+    /// The path as of the revision (immutable since 17.0, D11).
+    path: String,
     commit_id: String,
     archive: Option<String>,
 }
@@ -2535,9 +2537,12 @@ struct Rev {
 struct Doc {
     doc_id: String,
     path: String,
-    current_rev: Option<String>,
+    head: Option<String>,
     file_hash: Option<Vec<u8>>,
-    deleted_commit: Option<String>,
+    frontmatter_raw: Option<String>,
+    created_at: String,
+    updated_at: String,
+    deleted_at: Option<String>,
 }
 
 fn all_rows<T>(
@@ -2592,21 +2597,24 @@ fn check_invariants(
         commits.iter().map(|c| (c.0.as_str(), c)).collect();
     let docs: Vec<Doc> = all_rows(
         conn,
-        "SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs WHERE repo_id = ?1 ORDER BY path",
+        "SELECT doc_id, path, head, file_hash, frontmatter_raw, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
         |r| {
             Ok(Doc {
                 doc_id: r.get(0)?,
                 path: r.get(1)?,
-                current_rev: r.get(2)?,
+                head: r.get(2)?,
                 file_hash: r.get(3)?,
-                deleted_commit: r.get(4)?,
+                frontmatter_raw: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+                deleted_at: r.get(7)?,
             })
         },
     );
     let revisions: Vec<Rev> = all_rows(
         conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.commit_id, r.archive
+        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
         |r| {
@@ -2617,8 +2625,9 @@ fn check_invariants(
                 root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
                 frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
                 rendered_hash: r.get(5)?,
-                commit_id: r.get(6)?,
-                archive: r.get(7)?,
+                path: r.get(6)?,
+                commit_id: r.get(7)?,
+                archive: r.get(8)?,
             })
         },
     );
@@ -2721,6 +2730,7 @@ fn check_invariants(
     // form and is the §4.1 encoding against the predecessor's resolved list.
     let mut resolver = TreeResolver::new(conn);
     let mut resolved_trees: HashMap<String, Rc<ResolvedTree>> = HashMap::new();
+    let mut resolved_frontmatter: HashMap<String, String> = HashMap::new();
     for r in &revisions {
         let Some(root_hex) = &r.root_tree else {
             continue;
@@ -2818,6 +2828,7 @@ fn check_invariants(
         if let Some(fm_hex) = &r.frontmatter_blob {
             match resolver.frontmatter(&r.doc_id, r.seq, fm_hex) {
                 Ok(raw) => {
+                    resolved_frontmatter.insert(r.rev_id.clone(), raw.clone());
                     if fm_is_delta && fm_text.is_some_and(|t| t.len() >= raw.len()) {
                         problems.push(format!(
                             "I10: frontmatter delta of {} is not smaller than the raw",
@@ -2854,62 +2865,215 @@ fn check_invariants(
         }
     }
 
-    // ---- I1 convergence, I3 blocks mirror the current revision -----------------------------
+    // ---- C2 row hashes (17.0): every block's bytes are on its row; C7 the block's clocks ----
+    struct BlockStamp {
+        block_id: String,
+        doc_id: String,
+        raw: String,
+        raw_hash: Vec<u8>,
+        text: String,
+        norm_hash: Vec<u8>,
+        trivia: Option<String>,
+        trivia_hash: Option<Vec<u8>>,
+        created_at: String,
+        updated_at: String,
+        deleted_at: Option<String>,
+    }
+    let all_blocks: Vec<BlockStamp> = all_rows(
+        conn,
+        "SELECT b.block_id, b.doc_id, b.raw, b.raw_hash, b.text, b.norm_hash, b.trivia, b.trivia_hash, b.created_at, b.updated_at, b.deleted_at
+         FROM blocks b WHERE EXISTS (SELECT 1 FROM docs d WHERE d.doc_id = b.doc_id AND d.repo_id = ?1)",
+        &[&repo_id],
+        |r| {
+            Ok(BlockStamp {
+                block_id: r.get(0)?,
+                doc_id: r.get(1)?,
+                raw: r.get(2)?,
+                raw_hash: r.get(3)?,
+                text: r.get(4)?,
+                norm_hash: r.get(5)?,
+                trivia: r.get(6)?,
+                trivia_hash: r.get(7)?,
+                created_at: r.get(8)?,
+                updated_at: r.get(9)?,
+                deleted_at: r.get(10)?,
+            })
+        },
+    );
+    for b in &all_blocks {
+        if sha256(b.raw.as_bytes())[..] != b.raw_hash[..] {
+            problems.push(format!("C2: block {} raw_hash != sha256(raw)", b.block_id));
+        }
+        match (&b.trivia, &b.trivia_hash) {
+            (None, None) => {}
+            (Some(t), Some(h)) => {
+                if sha256(t.as_bytes())[..] != h[..] {
+                    problems.push(format!(
+                        "C2: block {} trivia_hash != sha256(trivia)",
+                        b.block_id
+                    ));
+                }
+            }
+            _ => problems.push(format!(
+                "C2: block {} trivia and trivia_hash disagree on NULL",
+                b.block_id
+            )),
+        }
+        if b.trivia.as_deref() == Some("") {
+            problems.push(format!(
+                "C2: block {} has an empty trivia instead of NULL",
+                b.block_id
+            ));
+        }
+        if sha256(b.text.as_bytes())[..] != b.norm_hash[..] {
+            problems.push(format!(
+                "C2: block {} norm_hash != sha256(text)",
+                b.block_id
+            ));
+        }
+        // C7: a block's timestamps are ordered and bounded by its document's.
+        if b.created_at > b.updated_at {
+            problems.push(format!(
+                "C7: block {} created_at {} > updated_at {}",
+                b.block_id, b.created_at, b.updated_at
+            ));
+        }
+    }
+    let doc_by_id: HashMap<&str, &Doc> = docs.iter().map(|d| (d.doc_id.as_str(), d)).collect();
+    for b in &all_blocks {
+        let Some(d) = doc_by_id.get(b.doc_id.as_str()) else {
+            continue;
+        };
+        if d.deleted_at.is_none() && b.deleted_at.is_some() {
+            problems.push(format!(
+                "C7: live doc {} has a tombstoned block {}",
+                d.doc_id, b.block_id
+            ));
+        }
+        if d.deleted_at.is_some() && b.deleted_at.is_none() {
+            problems.push(format!(
+                "C7: tombstoned doc {} has a live block {}",
+                d.doc_id, b.block_id
+            ));
+        }
+        if b.updated_at > d.updated_at {
+            problems.push(format!(
+                "C7: block {} updated_at {} > its document's {}",
+                b.block_id, b.updated_at, d.updated_at
+            ));
+        }
+    }
+
+    // ---- C4 the head, C7 the document's timestamps -----------------------------------------
     for d in &docs {
-        let (Some(current_rev), None) = (&d.current_rev, &d.deleted_commit) else {
+        if d.created_at > d.updated_at {
+            problems.push(format!(
+                "C7: doc {} created_at {} > updated_at {}",
+                d.doc_id, d.created_at, d.updated_at
+            ));
+        }
+        if d.deleted_at.is_none() && d.head.is_none() {
+            problems.push(format!(
+                "C4: live doc {} ({}) has no head",
+                d.doc_id, d.path
+            ));
+        }
+        if let Some(deleted_at) = &d.deleted_at
+            && *deleted_at != d.updated_at
+        {
+            problems.push(format!(
+                "C7: tombstoned doc {} deleted_at {deleted_at} != updated_at {}",
+                d.doc_id, d.updated_at
+            ));
+        }
+    }
+
+    // ---- C1 convergence from the rows; H1/H3 the recorder's capture agrees with the head ----
+    for d in &docs {
+        let (Some(head), None) = (&d.head, &d.deleted_at) else {
             continue;
         };
         let at = format!("doc {} ({})", d.doc_id, d.path);
-        let Some(rev) = rev_by_id.get(current_rev.as_str()) else {
-            problems.push(format!(
-                "I1: {at} current_rev {current_rev} is not a revision"
-            ));
-            continue;
-        };
-        match last_source.get(&d.path) {
+        let source = last_source.get(&d.path);
+        match source {
             None => problems.push(format!(
-                "I1: {at} is live but no source was observed for its path"
+                "C1: {at} is live but no source was observed for its path"
             )),
             Some(source) => {
                 let want = sha256(source.as_bytes());
                 if d.file_hash.as_deref() != Some(&want[..]) {
-                    problems.push(format!("I1: {at} file_hash != sha256(source)"));
-                }
-                if rev.rendered_hash[..] != want[..] {
-                    problems.push(format!("I1: {at} rendered_hash != sha256(source)"));
+                    problems.push(format!("C1: {at} file_hash != sha256(source)"));
                 }
                 if store.reconstruct(&d.doc_id).ok().flatten().as_deref() != Some(source.as_str()) {
-                    problems.push(format!("I1: {at} reconstruct(doc) != source"));
+                    problems.push(format!("C1: {at} reconstruct(doc) != source"));
                 }
-                match store
-                    .read_at_revision(&d.doc_id, current_rev)
-                    .ok()
-                    .flatten()
-                {
-                    None => problems.push(format!(
-                        "I1: {at} reconstruct at {current_rev} returned nothing"
-                    )),
-                    Some(read) => {
-                        if read.content != *source {
-                            problems
-                                .push(format!("I1: {at} reconstruct at {current_rev} != source"));
-                        }
-                        if !read.rendered_hash_match {
-                            problems.push(format!(
-                                "I1: {at} rendered_hash_match is false at the current revision"
-                            ));
-                        }
+            }
+        }
+        // H1: with legacy capture on, the head IS a captured revision — same
+        // path, same bytes, the same commit instant as `updated_at` — and
+        // reconstruct at it reproduces the source.
+        let Some(rev) = rev_by_id.get(head.as_str()) else {
+            problems.push(format!(
+                "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
+            ));
+            continue;
+        };
+        let Some(root_tree) = rev.root_tree.as_deref() else {
+            problems.push(format!("H1: {at} head {head} is archived (never prunable)"));
+            continue;
+        };
+        if rev.path != d.path {
+            problems.push(format!(
+                "H1: {at} revision {head} carries path {}",
+                rev.path
+            ));
+        }
+        if let Some(file_hash) = &d.file_hash
+            && rev.rendered_hash[..] != file_hash[..]
+        {
+            problems.push(format!(
+                "H1: {at} revision {head} rendered_hash != file_hash"
+            ));
+        }
+        if let Some((_, _, ts)) = commit_by_id.get(rev.commit_id.as_str())
+            && *ts != d.updated_at
+        {
+            problems.push(format!(
+                "C7: {at} updated_at {} != the head commit's ts {ts}",
+                d.updated_at
+            ));
+        }
+        if let Some(source) = source {
+            match store.read_at_revision(&d.doc_id, head).ok().flatten() {
+                None => problems.push(format!("H1: {at} reconstruct at {head} returned nothing")),
+                Some(read) => {
+                    if read.content != *source {
+                        problems.push(format!("H1: {at} reconstruct at {head} != source"));
+                    }
+                    if !read.rendered_hash_match {
+                        problems.push(format!(
+                            "H1: {at} rendered_hash_match is false at the current revision"
+                        ));
                     }
                 }
             }
         }
+        // H3 (frontmatter): the row's current frontmatter equals the head
+        // revision's resolved one.
+        let fm_resolved = match &rev.frontmatter_blob {
+            Some(_) => resolved_frontmatter.get(rev.rev_id.as_str()).cloned(),
+            None => None,
+        };
+        if fm_resolved != d.frontmatter_raw {
+            problems.push(format!(
+                "H3: {at} frontmatter_raw differs from the head revision's resolved frontmatter"
+            ));
+        }
 
-        // I3: live rows as a tree vs the revision's Merkle tree.
+        // H3: live rows as a tree vs the head revision's resolved Merkle tree.
         let live = query_rows(
             conn,
-            &format!(
-                "SELECT {BLOCK_COLUMNS} FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL"
-            ),
+            &format!("SELECT {BLOCK_COLUMNS} FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL"),
             &[&d.doc_id],
         );
         let live_ids: HashSet<&str> = live.iter().map(|r| str_of(r, "block_id")).collect();
@@ -2930,7 +3094,7 @@ fn check_invariants(
         for parent in children.keys().flatten() {
             if !live_ids.contains(parent.as_str()) {
                 problems.push(format!(
-                    "I3: {at} live rows name a parent {parent} that is not live"
+                    "C3: {at} live rows name a parent {parent} that is not live"
                 ));
             }
         }
@@ -2947,7 +3111,7 @@ fn check_invariants(
         ) {
             let parent_id = parent.map(|p| str_of(p, "block_id").to_owned());
             let rows = children.get(&parent_id).map_or(&[][..], Vec::as_slice);
-            // 16.0: the tree compared is the current revision's RESOLVED tree.
+            // 16.0: the tree compared is the head revision's RESOLVED tree.
             let empty: Vec<TreeEntry> = Vec::new();
             let entries: &[TreeEntry] = match (tree_hex, &parent_id) {
                 (None, _) => &empty,
@@ -2963,7 +3127,7 @@ fn check_invariants(
             };
             if rows.len() != entries.len() {
                 problems.push(format!(
-                    "I3: {where_}: {} live rows vs {} tree entries",
+                    "H3: {where_}: {} live rows vs {} tree entries",
                     rows.len(),
                     entries.len()
                 ));
@@ -2972,53 +3136,50 @@ fn check_invariants(
             for (i, (r, e)) in rows.iter().zip(entries).enumerate() {
                 if str_of(r, "block_id") != e.block_id {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: block {} vs tree entry {}",
+                        "H3: {where_}[{i}]: block {} vs tree entry {}",
                         str_of(r, "block_id"),
                         e.block_id
                     ));
                 }
                 if str_of(r, "type") != e.kind {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: type {} vs {}",
+                        "H3: {where_}[{i}]: type {} vs {}",
                         str_of(r, "type"),
                         e.kind
                     ));
                 }
                 if str_of(r, "raw_hash") != e.raw_hash_hex {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: raw_hash differs from the tree entry"
+                        "H3: {where_}[{i}]: raw_hash differs from the tree entry"
                     ));
                 }
                 if r["trivia_hash"].as_str() != e.trivia_hash_hex.as_deref() {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: trivia_hash differs from the tree entry"
+                        "H3: {where_}[{i}]: trivia_hash differs from the tree entry"
                     ));
                 }
                 if int_of(r, "ordinal") != i as i64 {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: ordinal {} (order_key order says {i})",
+                        "C3: {where_}[{i}]: ordinal {} (order_key order says {i})",
                         int_of(r, "ordinal")
                     ));
                 }
                 if int_of(r, "depth") != depth {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: depth {} != {depth}",
+                        "C3: {where_}[{i}]: depth {} != {depth}",
                         int_of(r, "depth")
                     ));
                 }
                 if str_of(r, "ancestor_path") != ancestor_path {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: ancestor_path {} != {ancestor_path}",
+                        "C3: {where_}[{i}]: ancestor_path {} != {ancestor_path}",
                         str_of(r, "ancestor_path")
                     ));
-                }
-                if hex(&sha256(str_of(r, "text").as_bytes())) != str_of(r, "norm_hash") {
-                    problems.push(format!("I3: {where_}[{i}]: norm_hash != sha256(text)"));
                 }
                 let attrs: Json = serde_json::from_str(str_of(r, "attrs")).unwrap_or(Json::Null);
                 if let Some(diff) = deep_eq_tol(&attrs, &e.attrs, "attrs", 0.0) {
                     problems.push(format!(
-                        "I3: {where_}[{i}]: attrs differ from the tree entry ({diff})"
+                        "H3: {where_}[{i}]: attrs differ from the tree entry ({diff})"
                     ));
                 }
                 compare(
@@ -3035,13 +3196,13 @@ fn check_invariants(
         }
         let Some(resolved) = resolved_trees.get(rev.rev_id.as_str()) else {
             problems.push(format!(
-                "I3: {at} current revision {} did not resolve",
+                "H3: {at} head revision {} did not resolve",
                 rev.rev_id
             ));
             continue;
         };
         compare(
-            rev.root_tree.as_deref(),
+            Some(root_tree),
             None,
             0,
             "/",
@@ -3076,17 +3237,14 @@ fn check_invariants(
             }
         }
         match revs.last() {
-            Some(last) if d.current_rev.as_deref() != Some(last.rev_id.as_str()) => {
+            Some(last) if d.head.as_deref() != Some(last.rev_id.as_str()) => {
                 problems.push(format!(
-                    "I4: doc {} current_rev {:?} is not its greatest-seq revision",
-                    d.doc_id, d.current_rev
+                    "I4: doc {} head {:?} is not its greatest-seq revision",
+                    d.doc_id, d.head
                 ));
             }
-            None if d.current_rev.is_some() => {
-                problems.push(format!(
-                    "I4: doc {} has current_rev but no revisions",
-                    d.doc_id
-                ));
+            None if d.head.is_some() => {
+                problems.push(format!("I4: doc {} has head but no revisions", d.doc_id));
             }
             _ => {}
         }
@@ -3145,20 +3303,20 @@ fn check_invariants(
     // ---- I6 pool -------------------------------------------------------------------------
     let live_doc_of = |block_id: &str| -> Option<String> {
         conn.query_row(
-            "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+            "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             params![block_id],
             |r| r.get(0),
         )
         .optional()
         .expect("query runs")
     };
-    let pool: Vec<(String, String, String)> = all_rows(
+    let pool: Vec<(String, String, String, String)> = all_rows(
         conn,
-        "SELECT block_id, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
+        "SELECT block_id, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
         &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     );
-    for (block_id, deleted_commit, expires_ts) in &pool {
+    for (block_id, created_at, deleted_commit, expires_ts) in &pool {
         match commit_by_id.get(deleted_commit.as_str()) {
             None => problems.push(format!(
                 "I6: pool row {block_id} names a missing commit {deleted_commit}"
@@ -3168,6 +3326,11 @@ fn check_invariants(
                 if *expires_ts != want {
                     problems.push(format!(
                         "I6: pool row {block_id} expires_ts {expires_ts} != {ts} + 30 days"
+                    ));
+                }
+                if created_at > ts {
+                    problems.push(format!(
+                        "C6: pool row {block_id} created_at {created_at} > its deletion's ts {ts}"
                     ));
                 }
             }
@@ -3196,10 +3359,10 @@ fn check_invariants(
         }
     }
     for d in &docs {
-        let (Some(current_rev), None) = (&d.current_rev, &d.deleted_commit) else {
+        let (Some(head), None) = (&d.head, &d.deleted_at) else {
             continue;
         };
-        let Some(rev) = rev_by_id.get(current_rev.as_str()) else {
+        let Some(rev) = rev_by_id.get(head.as_str()) else {
             continue;
         };
         for (commit_id, block_id, kind) in &dispositions {
@@ -3235,7 +3398,7 @@ fn check_invariants(
     }
     let unchanged: Vec<String> = all_rows(
         conn,
-        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id",
+        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id",
         &[&repo_id],
         |r| r.get(0),
     );
@@ -3247,12 +3410,12 @@ fn check_invariants(
 
     // ---- I8 rebuild equivalence -----------------------------------------------------------
     for d in &docs {
-        if d.deleted_commit.is_some() {
+        if d.deleted_at.is_some() {
             continue;
         }
         let tops: Vec<(String, i64, String, Option<i64>)> = all_rows(
             conn,
-            "SELECT block_id, ordinal, type, json_extract(attrs, '$.level') FROM blocks WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal",
+            "SELECT block_id, ordinal, type, json_extract(attrs, '$.level') FROM blocks WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal",
             &[&d.doc_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         );

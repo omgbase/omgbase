@@ -477,9 +477,8 @@ pub fn evaluate_retention(
     let base = &opts.policy;
 
     let docs: Vec<(String, String, Option<String>)> = {
-        let mut stmt = conn.prepare(
-            "SELECT doc_id, path, current_rev FROM docs WHERE repo_id = ?1 ORDER BY path",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT doc_id, path, head FROM docs WHERE repo_id = ?1 ORDER BY path")?;
         let it = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };

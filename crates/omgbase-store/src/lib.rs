@@ -183,7 +183,7 @@ pub use writers::{NewCommit, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "16.0";
+pub const SPEC_VERSION: &str = "17.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -297,7 +297,9 @@ impl Store {
             s.attach(&conn)?;
         }
         let mut ids = mint::IdSource::new(minter, claims);
-        schema::migrate(&conn, &mut ids)?;
+        // The recorder is bound BEFORE the migration (17.0): step 17's
+        // backfill resolves every live head's frontmatter through it.
+        schema::migrate(&conn, &mut ids, history.as_deref())?;
         Ok(Self {
             conn,
             ids,
@@ -453,9 +455,10 @@ impl Store {
         recorder.new_commit(&self.conn, &mut self.ids.at(&self.conn), input)
     }
 
-    /// [`history::writers::write_revision`]; returns `(rev_id, seq)`.
+    /// [`history::writers::write_revision`] under the caller's head token
+    /// (17.0); returns `(rev_id, seq)`.
     pub fn write_revision(&mut self, input: &NewRevision<'_>) -> Result<(String, i64)> {
-        history::writers::write_revision(&self.conn, &mut self.ids.at(&self.conn), input)
+        history::writers::write_revision(&self.conn, input)
     }
 
     // ---- reads --------------------------------------------------------------------

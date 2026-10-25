@@ -269,9 +269,10 @@ pub(crate) fn row_attributes(t: Target) -> &'static [&'static str] {
 /// Foreign keys and columns are translated in [`operand`]'s ident arm
 /// ([`edge_field`] for edges). Anything not mapped (`_raw`, reconstructed or a
 /// blob; `_title`, computed; `_tags`, the union of the authored list and the
-/// computed hashtags; blocks `_updated_at`/`_created_at`) returns `None` →
-/// residual. `_updated_at` and `_created_at` (4.10) are correlated subqueries
-/// over the document's revisions (`current_rev` / `seq = 1`). Every mapped
+/// computed hashtags) returns `None` → residual. `_updated_at` and
+/// `_created_at` are plain column reads since store 17.0 (M2, D6; through
+/// 16.x two correlated subqueries over `revisions × commits`, and a block's
+/// stayed residual — pushable at last). Every mapped
 /// attribute is text. `_path` is rendered by [`Operand::path_col`] (the rooted
 /// read, `spec/surface` §1 "Paths").
 fn attribute_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
@@ -280,19 +281,15 @@ fn attribute_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
         (Target::Docs, "_id") => format!("{s}.doc_id"),
         (Target::Docs, "_path") => format!("('/' || {d}.path)"),
         (Target::Docs, "_hash") => format!("lower(hex({s}.file_hash))"),
-        // seam: explicit change metadata (Phase 3, M2/D6 — `docs.updated_at` /
-        //       `created_at` columns replace the `revisions` × `commits`
-        //       subqueries here and at the `_doc.` / `_dst.` operands;
-        //       inventory-rust.md §2.7 `translate.rs:282-288`, `:637-643`, `:682-688`).
-        (Target::Docs, "_updated_at") => format!(
-            "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {s}.current_rev)"
-        ),
-        (Target::Docs, "_created_at") => format!(
-            "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = {s}.doc_id AND r.seq = 1)"
-        ),
+        (Target::Docs, "_updated_at") => format!("{s}.updated_at"),
+        (Target::Docs, "_created_at") => format!("{s}.created_at"),
         (Target::Blocks, "_id") => format!("{s}.block_id"),
         (Target::Blocks, "_path") => format!("('/' || {d}.path)"),
         (Target::Blocks, "_hash") => format!("lower(hex({s}.raw_hash))"),
+        // 17.0: pushable at last — the block's own columns (through 16.x the
+        // names were declared with no SQL case, so they stayed residual).
+        (Target::Blocks, "_updated_at") => format!("{s}.updated_at"),
+        (Target::Blocks, "_created_at") => format!("{s}.created_at"),
         (Target::Nodes, "_id") => format!("{s}.node_id"),
         (Target::Nodes, "_path") => format!("('/' || {d}.path)"),
         (Target::Links, "_id") => format!("{s}.edge_id"),
@@ -639,12 +636,8 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     }),
                     "_path" => Operand::path_col(format!("{d}.path")),
                     "_hash" => Operand::text(format!("lower(hex({d}.file_hash))")),
-                    "_updated_at" => Operand::text(format!(
-                        "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {d}.current_rev)"
-                    )),
-                    "_created_at" => Operand::text(format!(
-                        "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = {d}.doc_id AND r.seq = 1)"
-                    )),
+                    "_updated_at" => Operand::text(format!("{d}.updated_at")),
+                    "_created_at" => Operand::text(format!("{d}.created_at")),
                     "_format" => Operand::text(format!("{d}.format")),
                     // `_doc._raw` / `_doc._title` / `_doc._nodes`, an unknown
                     // engine name: not pushable (decline (b)); a bare target
@@ -684,12 +677,8 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     "_id" => probe("dd.doc_id"),
                     "_path" => probe("'/' || dd.path"),
                     "_hash" => probe("lower(hex(dd.file_hash))"),
-                    "_updated_at" => probe(
-                        "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = dd.current_rev)",
-                    ),
-                    "_created_at" => probe(
-                        "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = dd.doc_id AND r.seq = 1)",
-                    ),
+                    "_updated_at" => probe("dd.updated_at"),
+                    "_created_at" => probe("dd.created_at"),
                     "_format" => probe("dd.format"),
                     _ if k.starts_with('$') || k.starts_with('_') || Target::parse(k).is_some() => {
                         None
@@ -1214,31 +1203,28 @@ mod tests {
         assert_eq!(f.params, vec![text("canon")]);
     }
 
+    // Store 17.0 (M2, D6): `_updated_at` is the row's own column — through
+    // 16.x a correlated subquery over `revisions × commits`.
     #[test]
-    fn updated_at_pushes_as_its_revisions_subquery() {
+    fn updated_at_pushes_as_its_own_column() {
         let f =
             translate_predicate(&pred("_updated_at >= \"2026-01-01\""), &DOCS).expect("pushable");
-        assert!(
-            f.sql.contains("FROM revisions r JOIN commits c"),
-            "{}",
-            f.sql
-        );
+        assert_eq!(f.sql, "(d.updated_at >= ?)");
+        assert_eq!(f.params, vec![text("2026-01-01")]);
     }
 
-    // `created_at` (4.10): the same shape at `seq = 1`, keyed by the document.
+    // `_created_at` likewise — and a block's is pushable at last (17.0).
     #[test]
-    fn created_at_pushes_as_its_first_revision_subquery() {
+    fn created_at_pushes_as_its_own_column() {
         let f =
             translate_predicate(&pred("_created_at < \"2026-01-01\""), &DOCS).expect("pushable");
-        assert_eq!(
-            f.sql,
-            "((SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = d.doc_id AND r.seq = 1) < ?)"
-        );
+        assert_eq!(f.sql, "(d.created_at < ?)");
         assert_eq!(f.params, vec![text("2026-01-01")]);
-        // a block's is residual, like its `updated_at`
+        let b = translate_predicate(&pred("_created_at == \"x\""), &BLOCKS).expect("pushable");
+        assert_eq!(b.sql, "(b.created_at IS ?)");
         assert_eq!(
-            translate_predicate(&pred("_created_at == \"x\""), &BLOCKS),
-            None
+            translate_predicate(&pred("_created_at == \"x\""), &BLOCKS).map(|f| f.params),
+            Some(vec![text("x")])
         );
     }
 
@@ -2086,15 +2072,15 @@ mod tests {
             translate_predicate(&pred("$locator == \"x\""), &nodes),
             None
         );
-        // `updated_at` is mapped on docs only.
+        // `_updated_at` is a block's own column since store 17.0 — pushed.
         let blocks = TranslateCtx {
             target: Target::Blocks,
             self_alias: "b",
             ..DOCS
         };
         assert_eq!(
-            translate_predicate(&pred("_updated_at == \"x\""), &blocks),
-            None
+            translate_predicate(&pred("_updated_at == \"x\""), &blocks).map(|f| f.sql),
+            Some("(b.updated_at IS ?)".to_owned())
         );
     }
 
@@ -2419,11 +2405,11 @@ mod tests {
         );
         assert!(
             translate_predicate(&pred("_doc._updated_at >= \"2026\""), &nodes)
-                .is_some_and(|f| f.sql.contains("r.rev_id = d.current_rev"))
+                .is_some_and(|f| f.sql.contains("d.updated_at"))
         );
         assert!(
             translate_predicate(&pred("_doc._created_at >= \"2026\""), &nodes)
-                .is_some_and(|f| f.sql.contains("r.doc_id = d.doc_id AND r.seq = 1"))
+                .is_some_and(|f| f.sql.contains("d.created_at"))
         );
         assert_eq!(
             translate_predicate(&pred("_doc._raw == \"x\""), &blocks),
@@ -2494,11 +2480,11 @@ mod tests {
         );
         assert!(
             translate_predicate(&pred("_dst._updated_at == \"t\""), &edges)
-                .is_some_and(|f| f.sql.contains("WHERE r.rev_id = dd.current_rev"))
+                .is_some_and(|f| f.sql.contains("dd.updated_at"))
         );
         assert!(
             translate_predicate(&pred("_dst._created_at == \"t\""), &edges)
-                .is_some_and(|f| f.sql.contains("WHERE r.doc_id = dd.doc_id AND r.seq = 1"))
+                .is_some_and(|f| f.sql.contains("dd.created_at"))
         );
         // a property: the properties scope keyed by e.dst_node itself
         let prop = translate_predicate(&pred("_dst.layer == \"canon\""), &edges).expect("pushed");

@@ -47,7 +47,7 @@ use oqx::{
     CompiledRegex, DataContext, Object, OqxError, RegexDialect, RowIndex, Value, compile_regex,
 };
 use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{Connection, OptionalExtension, params_from_iter};
+use rusqlite::{Connection, params_from_iter};
 
 use crate::dates;
 use crate::paths::{reference_path, storage_path};
@@ -238,13 +238,13 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
 /// document of the repository — tombstoned documents included, history is
 /// history — with its commit. The `revisions` table carries no `repo_id`, so
 /// the repository guard joins `docs`. `is_current` is `docs_history`'s
-/// `isCurrent`: the revision is the document's `current_rev`. The planner's
+/// `isCurrent`: the revision is the document's `head`. The planner's
 /// clauses for the kind ([`crate::planner::columns`], `from_clause`) are
 /// these same strings.
 // seam: HistoryRecorder (Phase 3, D3 — the `revisions` root returns the rows
 // that exist plus a `hints` line on a capture-off store; inventory-rust.md
 // §2.7 `context.rs:243-245`, `:806-828`, `:1517-1530`).
-pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
+pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 pub(crate) const REVISION_FROM: &str =
     "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /// The source handles of a document (§1.2): `_data` is the merged authored
@@ -807,20 +807,20 @@ impl<'a> StoreContext<'a> {
         let repo = [SqlValue::Text(self.repo_id.clone())];
         let sql = match t {
             Target::Docs => {
-                "SELECT * FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path, doc_id"
+                "SELECT * FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL ORDER BY path, doc_id"
             }
             Target::Blocks => {
                 "SELECT b.*, d.path AS __path FROM docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id
-                 WHERE d.repo_id = ?1 AND +b.repo_id = ?1 AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
+                 WHERE d.repo_id = ?1 AND +b.repo_id = ?1 AND b.deleted_at IS NULL AND d.deleted_at IS NULL
                  ORDER BY d.path, b.block_id"
             }
             Target::Nodes => {
                 "SELECT n.*, d.path AS __path FROM docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id
-                 WHERE d.repo_id = ?1 AND +n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id"
+                 WHERE d.repo_id = ?1 AND +n.repo_id = ?1 AND d.deleted_at IS NULL ORDER BY d.path, n.node_id"
             }
             Target::Links => {
                 "SELECT e.*, d.path AS __path FROM docs d CROSS JOIN edges e ON e.src_doc = d.doc_id
-                 WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
+                 WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_at IS NULL
                  ORDER BY d.path, e.edge_id"
             }
             // The history (4.7): its own statement, in the same `(path, id)`
@@ -1003,7 +1003,7 @@ impl<'a> StoreContext<'a> {
     /// parent is not live is a root) — tagged, with `__path` = `path`.
     fn doc_blocks_preorder(&self, doc_id: &str, path: &str) -> oqx::Result<Vec<Value>> {
         let rows = self.all(
-            "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.doc_id = ?2 AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id",
+            "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.doc_id = ?2 AND b.deleted_at IS NULL ORDER BY b.ordinal, b.block_id",
             &[SqlValue::Text(path.to_owned()), SqlValue::Text(doc_id.to_owned())],
         )?;
         let ids: Vec<String> = rows
@@ -1116,14 +1116,14 @@ impl<'a> StoreContext<'a> {
             (Target::Docs, "_in_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-                     WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id",
+                     WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_id()],
                 )?,
                 Target::Links,
             ),
             (Target::Blocks, "_children") => Self::tag_all(
                 self.all(
-                    "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.parent_block = ?2 AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id",
+                    "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.parent_block = ?2 AND b.deleted_at IS NULL ORDER BY b.ordinal, b.block_id",
                     &[path(), block_id()],
                 )?,
                 Target::Blocks,
@@ -1285,7 +1285,7 @@ impl<'a> StoreContext<'a> {
     fn revision_doc(&self, row: &Value) -> oqx::Result<Value> {
         Ok(self
             .one(
-                "SELECT * FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+                "SELECT * FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
                 &[SqlValue::Text(col_str(row, "doc_id"))],
             )?
             .map_or_else(absent_single, |o| Self::tag(o, Target::Docs)))
@@ -1373,7 +1373,9 @@ impl<'a> StoreContext<'a> {
     /// `_raw` / `_hash` on blocks — loads it.
     fn lazy_needs_load(t: Target, key: &str) -> bool {
         match t {
-            Target::Docs => matches!(key, "_format" | "_hash" | "_updated_at"),
+            // 17.0: `_updated_at` / `_created_at` are the row's own columns,
+            // so a partial owner row must be loaded for either.
+            Target::Docs => matches!(key, "_format" | "_hash" | "_updated_at" | "_created_at"),
             Target::Blocks => {
                 !matches!(
                     key,
@@ -1431,20 +1433,15 @@ impl<'a> StoreContext<'a> {
             (Target::Docs, "_id") => c("doc_id"),
             (Target::Docs, "_path") => rooted("path"),
             (Target::Docs, "_hash") => Self::null_if_absent(c("file_hash")),
-            (Target::Docs, "_updated_at") => Self::null_if_absent(self.scalar(
-                "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
-                &[to_sql(&c("current_rev"))],
-            )?),
-            // `_created_at` (4.10): the commit `ts` of the document's first
-            // revision (`seq = 1`, the row `_revisions first { _ts values }`
-            // reads) — when omgbase first observed the document, not a
-            // filesystem time. The retention squash (`spec/store` §7.1, 15.0)
-            // keeps every revision and commit row, so the value survives
-            // archiving.
-            (Target::Docs, "_created_at") => Self::null_if_absent(self.scalar(
-                "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ?1 AND r.seq = 1",
-                &[to_sql(&c("doc_id"))],
-            )?),
+            // `_updated_at` / `_created_at` are the row's own columns since
+            // store 17.0 (M2, D6; `spec/surface` §1.2): `updated_at` is the ts
+            // of the commit that last minted the head — content, structure,
+            // path or liveness, so a rename counts — and `created_at` the
+            // identity's birth (when omgbase first observed the document, not
+            // a filesystem time), kept across a tombstone and its revival and
+            // independent of any revision row.
+            (Target::Docs, "_updated_at") => Self::null_if_absent(c("updated_at")),
+            (Target::Docs, "_created_at") => Self::null_if_absent(c("created_at")),
             // `_raw`: the exact file bytes (`spec/store` §6.1, frontmatter included).
             (Target::Docs, "_raw") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
@@ -1457,57 +1454,31 @@ impl<'a> StoreContext<'a> {
             // authored title, else the first H1, else absent → null); the
             // store writes it under `$title`. The bare `title` is the authored
             // key alone.
-            (Target::Docs, "_title") => {
-                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$title", Some("computed"))?)
-            }
+            (Target::Docs, "_title") => Self::null_if_absent(self.doc_prop(
+                &col_str(row, "doc_id"),
+                "$title",
+                Some("computed"),
+            )?),
             // `_tags`: authored tags ∪ body `#hashtags` (the computed `$tags`
             // row); the bare `tags` is the authored list alone.
             (Target::Docs, "_tags") => self.doc_tags(&col_str(row, "doc_id"))?,
             (Target::Docs, "_format") => c("format"),
             (Target::Blocks, "_id") => c("block_id"),
             (Target::Blocks, "_path") => rooted("__path"),
-            // `_raw`: the block's raw source bytes — the blob its `raw_hash`
-            // names (a container's raw holds its children verbatim); `_text`
-            // is the normalized text.
-            (Target::Blocks, "_raw") => match c("raw_hash") {
-                Value::Str(hex) => {
-                    let hash = omgbase_store::from_hex(&hex)
-                        .map_err(|e| OqxError::eval(e.to_string()))?;
-                    let bytes: Option<Vec<u8>> = self
-                        .conn
-                        .query_row(
-                            "SELECT bytes FROM blobs WHERE hash = ?1",
-                            rusqlite::params![hash],
-                            |r| r.get(0),
-                        )
-                        .optional()
-                        .map_err(sql_err)?;
-                    self.statements_run.set(self.statements_run.get() + 1);
-                    bytes.map_or(Value::Null, |b| {
-                        Value::Str(String::from_utf8_lossy(&b).into_owned())
-                    })
-                }
-                _ => Value::Null,
-            },
+            // `_raw`: the block's raw source bytes — its own row's `raw`
+            // (store 17.0, D10; a container's raw holds its children
+            // verbatim); `_text` is the normalized text.
+            (Target::Blocks, "_raw") => Self::null_if_absent(c("raw")),
             (Target::Blocks, "_hash") => Self::null_if_absent(c("raw_hash")),
-            // seam: explicit change metadata (Phase 3, M2/D6 — `blocks.created_at`
-            //       / `updated_at` columns; inventory-rust.md §2.7
-            //       `context.rs:1467-1470`, `:1479-1482`, §3.8).
-            (Target::Blocks, "_updated_at") => Self::null_if_absent(self.scalar(
-                "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
-                &[to_sql(&c("block_id"))],
-            )?),
-            // `_created_at` (4.10): the EARLIEST commit `ts` among the block's
-            // `block_changes` — the same join as `_updated_at` under MIN: the
-            // commit that first wrote the id (`inserted`, or the split/merge
-            // lineage row that minted it). Store 14.2 keeps that row and the
-            // 15.0 squash keeps each block's earliest row (`spec/store` §7.1),
-            // so it survives archiving; a resurrected block keeps its original
-            // creation.
-            (Target::Blocks, "_created_at") => Self::null_if_absent(self.scalar(
-                "SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
-                &[to_sql(&c("block_id"))],
-            )?),
+            // `_updated_at` / `_created_at` (store 17.0, M2/D6): the block's
+            // own columns — `updated_at` the ts of the commit that last
+            // changed THIS block (14.2's meaning kept: a `same` carry does not
+            // move it; a container's moves when its raw changes), `created_at`
+            // the commit that first wrote the id, carried across resurrection
+            // (the pool row keeps it) and cross-document moves (the evicted
+            // row keeps it).
+            (Target::Blocks, "_updated_at") => Self::null_if_absent(c("updated_at")),
+            (Target::Blocks, "_created_at") => Self::null_if_absent(c("created_at")),
             // The structural columns and the foreign keys under the surface's
             // names (§1.2).
             (Target::Blocks, "_doc_id" | "_type" | "_text" | "_ordinal" | "_depth") => c(column),
@@ -1592,7 +1563,7 @@ impl<'a> StoreContext<'a> {
             }),
             "child_count" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 Some(self.scalar(
-                    "SELECT COUNT(*) FROM blocks WHERE parent_block = ?1 AND deleted_commit IS NULL",
+                    "SELECT COUNT(*) FROM blocks WHERE parent_block = ?1 AND deleted_at IS NULL",
                     &[to_sql(&c("block_id"))],
                 ))
             }),

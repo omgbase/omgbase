@@ -171,7 +171,7 @@ impl EngineClient for InProcessEngineClient<'_> {
             .store
             .conn()
             .query_row(
-                "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+                "SELECT doc_id, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
                 params![self.repo_id, path],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )

@@ -25,7 +25,7 @@ pub fn project_section_nodes(conn: &Connection, doc_id: &str) -> Result<Vec<Proj
         "SELECT s.heading_block, s.level, s.first_ordinal, s.last_ordinal, hb.text
            FROM sections s
            JOIN blocks hb ON hb.block_id = s.heading_block AND hb.doc_id = s.doc_id
-          WHERE s.doc_id = ?1 AND hb.deleted_commit IS NULL
+          WHERE s.doc_id = ?1 AND hb.deleted_at IS NULL
           ORDER BY s.first_ordinal",
     )?;
     let rows = stmt.query_map(params![doc_id], |r| {
@@ -180,7 +180,7 @@ pub fn resolve_doc_path(conn: &Connection, repo_id: &str, path: &str) -> Result<
     let canonical = canonical_path(path);
     let doc: Option<String> = conn
         .query_row(
-            "SELECT doc_id FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+            "SELECT doc_id FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
             params![repo_id, canonical],
             |r| r.get(0),
         )

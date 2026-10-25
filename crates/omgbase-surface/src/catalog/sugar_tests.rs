@@ -127,8 +127,7 @@ fn footprint(s: &Surface) -> Json {
         .map(|r| r.unwrap())
         .collect()
     };
-    let docs =
-        rows("SELECT doc_id, path, current_rev, file_hash, deleted_commit FROM docs ORDER BY path");
+    let docs = rows("SELECT doc_id, path, head, file_hash, deleted_at FROM docs ORDER BY path");
     let WriteTarget::Fixed(ds) = &s.writes else {
         panic!("the test surfaces write through a fixed doc store")
     };
@@ -140,7 +139,7 @@ fn footprint(s: &Surface) -> Json {
     json!({
         "commits": rows("SELECT commit_id, seq, origin, actor, reason FROM commits ORDER BY seq"),
         "docs": docs,
-        "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, depth, type, raw_hash, trivia_hash, attrs, created_commit FROM blocks WHERE deleted_commit IS NULL ORDER BY doc_id, parent_block, ordinal"),
+        "blocks": rows("SELECT block_id, doc_id, parent_block, ordinal, depth, type, raw_hash, trivia_hash, attrs, created_at FROM blocks WHERE deleted_at IS NULL ORDER BY doc_id, parent_block, ordinal"),
         "revisions": rows("SELECT rev_id, doc_id, seq, rendered_hash, path, commit_id FROM revisions ORDER BY rev_id"),
         "block_changes": rows("SELECT block_id, commit_id, kind FROM block_changes ORDER BY commit_id, block_id"),
         "dispositions": rows("SELECT commit_id, block_id, kind, reason, matcher_v FROM dispositions ORDER BY commit_id, block_id, kind"),
@@ -254,7 +253,7 @@ fn pin_hash(s: &Surface, block_id: &str) -> Option<String> {
         .store
         .conn()
         .query_row(
-            "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+            "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             params![block_id],
             |r| r.get(0),
         )
@@ -430,7 +429,7 @@ fn call_legacy(s: &mut Surface, name: &str, args: &Json) -> Result<Json, Surface
                 .store
                 .conn()
                 .query_row(
-                    "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_commit IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+                    "SELECT b.type, d.format, (SELECT count(*) FROM blocks c WHERE c.parent_block = b.block_id AND c.deleted_at IS NULL) FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1 AND b.deleted_at IS NULL",
                     params![block],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
@@ -682,7 +681,7 @@ fn doc_id(s: &Surface, path: &str) -> String {
     s.store
         .conn()
         .query_row(
-            "SELECT doc_id FROM docs WHERE path = ?1 AND deleted_commit IS NULL",
+            "SELECT doc_id FROM docs WHERE path = ?1 AND deleted_at IS NULL",
             [path],
             |r| r.get(0),
         )
@@ -696,7 +695,7 @@ fn top_blocks(s: &Surface, path: &str, kind: &str) -> Vec<String> {
         .store
         .conn()
         .prepare(
-            "SELECT block_id FROM blocks WHERE doc_id = ?1 AND parent_block IS NULL AND type = ?2 AND deleted_commit IS NULL ORDER BY ordinal",
+            "SELECT block_id FROM blocks WHERE doc_id = ?1 AND parent_block IS NULL AND type = ?2 AND deleted_at IS NULL ORDER BY ordinal",
         )
         .unwrap();
     stmt.query_map([doc.as_str(), kind], |r| r.get(0))
@@ -711,7 +710,7 @@ fn children(s: &Surface, parent: &str) -> Vec<String> {
         .store
         .conn()
         .prepare(
-            "SELECT block_id FROM blocks WHERE parent_block = ?1 AND deleted_commit IS NULL ORDER BY ordinal",
+            "SELECT block_id FROM blocks WHERE parent_block = ?1 AND deleted_at IS NULL ORDER BY ordinal",
         )
         .unwrap();
     stmt.query_map([parent], |r| r.get(0))
@@ -724,11 +723,10 @@ fn raw(s: &Surface, block: &str) -> String {
     s.store
         .conn()
         .query_row(
-            "SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ?1 AND bl.deleted_commit IS NULL",
+            "SELECT raw FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             [block],
-            |r| r.get::<_, Vec<u8>>(0),
+            |r| r.get::<_, String>(0),
         )
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
         .expect("a live block")
 }
 
@@ -1485,12 +1483,15 @@ fn document_operations_are_the_stores_builders() {
     same("move", &a, &b);
     assert_eq!(moved["retargeted"], store_moved["retargeted"]);
     assert_eq!(moved["dangling"], json!([]));
+    // store 17.0 (D11): the moved document first — its unchanged bytes at the
+    // new path — then the rewritten source.
     assert_eq!(
         moved["revisions"].as_array().map(Vec::len),
-        Some(1),
-        "the rewritten source: {moved}"
+        Some(2),
+        "the moved document and the rewritten source: {moved}"
     );
-    assert_eq!(moved["revisions"][0]["_path"], "/index.md");
+    assert_eq!(moved["revisions"][0]["_path"], "/texts/silent-book.md");
+    assert_eq!(moved["revisions"][1]["_path"], "/index.md");
     assert_eq!(
         moved.as_object().unwrap().keys().collect::<Vec<_>>(),
         [
@@ -1523,7 +1524,13 @@ fn document_operations_are_the_stores_builders() {
             .map(|r| r.to_json())
     });
     same("move-no-retarget", &a, &b);
-    assert_eq!(plain["revisions"], json!([]), "{plain}");
+    // 17.0 (D11): a move alone is still a revision of the moved document.
+    assert_eq!(
+        plain["revisions"].as_array().map(Vec::len),
+        Some(1),
+        "{plain}"
+    );
+    assert_eq!(plain["revisions"][0]["_path"], "/texts/tablet.md");
     assert!(
         plain["dangling"].as_array().is_some_and(|d| !d.is_empty()),
         "{plain}"

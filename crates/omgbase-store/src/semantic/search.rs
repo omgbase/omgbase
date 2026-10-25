@@ -191,7 +191,7 @@ fn embed_tasks(conn: &Connection, scope: ContextScope<'_>) -> Result<Vec<EmbedTa
             if by_repo {
                 "b.repo_id = ?1"
             } else {
-                "b.doc_id = ?1 AND d.deleted_commit IS NULL"
+                "b.doc_id = ?1 AND d.deleted_at IS NULL"
             }
         ))?;
         let it = stmt.query_map(params![key], |r| {
@@ -239,7 +239,7 @@ fn nonblank_string(props: &Json, key: &str) -> Option<String> {
 pub fn build_doc_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<DocEmbedTask>> {
     let docs: Vec<(String, String)> = {
         let mut stmt = conn.prepare_cached(
-            "SELECT doc_id, path FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path",
+            "SELECT doc_id, path FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL ORDER BY path",
         )?;
         let it = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
@@ -256,7 +256,7 @@ pub fn build_doc_embed_tasks_for_docs(
     let mut docs: Vec<(String, String)> = Vec::new();
     let mut block_tasks: Vec<EmbedTask> = Vec::new();
     let mut live =
-        conn.prepare_cached("SELECT path FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL")?;
+        conn.prepare_cached("SELECT path FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL")?;
     for id in doc_ids {
         let path: Option<String> = live.query_row(params![id], |r| r.get(0)).optional()?;
         if let Some(path) = path {
@@ -276,9 +276,8 @@ fn doc_embed_tasks(
     docs: Vec<(String, String)>,
     block_tasks: Vec<EmbedTask>,
 ) -> Result<Vec<DocEmbedTask>> {
-    let mut doc_of_block = conn.prepare_cached(
-        "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
-    )?;
+    let mut doc_of_block = conn
+        .prepare_cached("SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL")?;
     let mut blocks_by_doc: HashMap<String, Vec<DocEmbedBlockRef>> = HashMap::new();
     for t in &block_tasks {
         let doc_id: Option<String> = doc_of_block
@@ -379,7 +378,7 @@ pub fn get_cached_doc(
     }))
 }
 
-/// The head token (`docs.current_rev`) of every task's document, read with
+/// The head token (`docs.head`) of every task's document, read with
 /// the tasks (Phase 2's "late result" rule): a document vector is written
 /// only while the document's head is still the one its task was built from
 /// — a vector embedded from an input the document has since left behind is
@@ -389,7 +388,7 @@ pub type DocHeads = HashMap<String, Option<String>>;
 
 /// The current heads of `tasks`' documents.
 pub fn doc_heads(conn: &Connection, tasks: &[DocEmbedTask]) -> Result<DocHeads> {
-    let mut stmt = conn.prepare_cached("SELECT current_rev FROM docs WHERE doc_id = ?1")?;
+    let mut stmt = conn.prepare_cached("SELECT head FROM docs WHERE doc_id = ?1")?;
     let mut out = DocHeads::with_capacity(tasks.len());
     for t in tasks {
         let head: Option<Option<String>> =
@@ -409,9 +408,7 @@ fn head_unchanged(
         return Ok(true); // no snapshot taken: the full-pass form, caller's choice
     };
     let now: Option<Option<String>> = tx
-        .prepare_cached(
-            "SELECT current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
-        )?
+        .prepare_cached("SELECT head FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL")?
         .query_row(params![doc_id], |r| r.get(0))
         .optional()?;
     Ok(now.as_ref() == Some(expected))
@@ -677,7 +674,7 @@ pub fn prune_gone(
     let tx = conn.unchecked_transaction()?;
     let docs = prune_gone_docs(&tx, model)?;
     let blocks = tx.execute(
-        "DELETE FROM embeddings WHERE model = ?1 AND content_hash NOT IN (SELECT raw_hash FROM blocks WHERE deleted_commit IS NULL)",
+        "DELETE FROM embeddings WHERE model = ?1 AND content_hash NOT IN (SELECT raw_hash FROM blocks WHERE deleted_at IS NULL)",
         params![model],
     )?;
     tx.commit()?;
@@ -687,7 +684,7 @@ pub fn prune_gone(
 /// S1's document half alone (cheap — identity-keyed): run after every drain.
 pub fn prune_gone_docs(conn: &Connection, model: &str) -> Result<usize> {
     Ok(conn.execute(
-        "DELETE FROM doc_embeddings WHERE model = ?1 AND doc_id NOT IN (SELECT doc_id FROM docs WHERE deleted_commit IS NULL)",
+        "DELETE FROM doc_embeddings WHERE model = ?1 AND doc_id NOT IN (SELECT doc_id FROM docs WHERE deleted_at IS NULL)",
         params![model],
     )?)
 }
@@ -696,7 +693,7 @@ pub fn prune_gone_docs(conn: &Connection, model: &str) -> Result<usize> {
 /// from a deleted one by this).
 pub fn live_docs(conn: &Connection, doc_ids: &HashSet<String>) -> Result<Vec<String>> {
     let mut stmt =
-        conn.prepare_cached("SELECT 1 FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL")?;
+        conn.prepare_cached("SELECT 1 FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL")?;
     let mut out = Vec::new();
     for id in doc_ids {
         if stmt.exists(params![id])? {
@@ -717,7 +714,7 @@ pub fn block_vector(conn: &Connection, block_id: &str, model: &str) -> Result<Op
         .prepare_cached(
             "SELECT b.doc_id, d.path, b.ordinal, b.type, b.raw_hash
              FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-             WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+             WHERE b.block_id = ?1 AND b.deleted_at IS NULL",
         )?
         .query_row(params![block_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -806,7 +803,7 @@ pub fn doc_vector_search(
     let mut stmt = conn.prepare_cached(
         "SELECT d.doc_id, d.path, e.vec
          FROM doc_embeddings e
-         JOIN docs d ON d.doc_id = e.doc_id AND d.deleted_commit IS NULL
+         JOIN docs d ON d.doc_id = e.doc_id AND d.deleted_at IS NULL
          WHERE d.repo_id = ?1 AND e.model = ?2",
     )?;
     let rows = stmt.query_map(params![repo_id, model], |r| {

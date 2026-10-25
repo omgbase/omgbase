@@ -34,9 +34,17 @@ fn render_summary(
     dispositions: &[(String, i64)],
     extra: &SummaryExtra,
 ) -> String {
-    let mut paths = paths.join(", ");
+    // A move is a revision of the moved document since store 17.0 (D11); the
+    // summary names the move once — `moved <from> → <to>` — and lists only
+    // the OTHER documents the commit rewrote (the retargeted sources), as
+    // 16.x did.
+    let listed: Vec<&str> = match &extra.moved {
+        Some((_, to)) => paths.iter().copied().filter(|p| *p != to).collect(),
+        None => paths.to_vec(),
+    };
+    let mut paths = listed.join(", ");
     if let Some((from, to)) = &extra.moved {
-        paths = if paths.is_empty() {
+        paths = if listed.is_empty() {
             format!("moved {from} → {to}")
         } else {
             format!("moved {from} → {to}; {paths}")
@@ -132,11 +140,14 @@ pub fn changes_since(
     )?;
     let mut disp_stmt =
         conn.prepare("SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind")?;
-    // A deletion writes no revision: the tombstone names the commit
-    // (`docs.deleted_commit`). A move names its reason (`move <from> ->
-    // <to>`) and, with a retarget, carries the rewritten sources' revisions.
+    // A deletion writes no revision: the tombstone carries the commit's `ts`
+    // as `docs.deleted_at` (store 17.0 — `deleted_commit` is gone; the
+    // per-commit deleted paths become a feed entry in Phase 3d, M5/D7, until
+    // which the tombstone instant is the join, within the repo). A move names
+    // its reason (`move <from> -> <to>`) and, with a retarget, carries the
+    // rewritten sources' revisions.
     let mut deleted_stmt =
-        conn.prepare("SELECT path FROM docs WHERE deleted_commit = ?1 ORDER BY path")?;
+        conn.prepare("SELECT path FROM docs WHERE repo_id = ?1 AND deleted_at = ?2 ORDER BY path")?;
     let mut digests = Vec::with_capacity(commits.len());
     for (commit_id, seq, ts, origin, actor, reason) in commits {
         let revisions: Vec<DigestRevision> = revs_stmt
@@ -155,7 +166,7 @@ pub fn changes_since(
         let extra = SummaryExtra {
             deleted: if revisions.is_empty() {
                 deleted_stmt
-                    .query_map(params![commit_id], |r| r.get::<_, String>(0))?
+                    .query_map(params![repo_id, ts], |r| r.get::<_, String>(0))?
                     .collect::<std::result::Result<_, _>>()?
             } else {
                 Vec::new()

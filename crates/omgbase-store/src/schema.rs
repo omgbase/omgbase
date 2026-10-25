@@ -1,8 +1,10 @@
 //! The schema (`spec/store/README.md` §3): the embedded `schema.sql`, the
 //! opener and the migrations of §3.4.
 
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::core::capabilities::HistoryRecorder;
 use crate::error::{Error, Result};
 use crate::mint::{IdSource, Mint};
 
@@ -14,7 +16,7 @@ pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 pub const ARCHIVE_SQL: &str = include_str!("../archive.sql");
 
 /// The `PRAGMA user_version` this crate writes: the spec major.
-pub const SCHEMA_VERSION: i64 = 16;
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// Split the DDL into statements at every `;` outside a `--` comment or a
 /// string literal, keeping each statement's original text (comments included).
@@ -140,8 +142,15 @@ pub(crate) fn quote_ident(name: &str) -> String {
 }
 
 /// Open per §1: `0` → `schema.sql`; equal → done; greater → refuse; less →
-/// migrate step by step, each in its own transaction.
-pub(crate) fn migrate(conn: &Connection, ids: &mut IdSource) -> Result<()> {
+/// migrate step by step, each in its own transaction. `history` is the
+/// recorder the store opens with: step 17 resolves every live head's
+/// frontmatter through it once (`frontmatter_at_revision`), never through
+/// the delta module directly.
+pub(crate) fn migrate(
+    conn: &Connection,
+    ids: &mut IdSource,
+    history: Option<&dyn HistoryRecorder>,
+) -> Result<()> {
     let current = user_version(conn)?;
     if current == 0 {
         let tx = conn.unchecked_transaction()?;
@@ -164,6 +173,11 @@ pub(crate) fn migrate(conn: &Connection, ids: &mut IdSource) -> Result<()> {
             // Brackets its own transaction: `PRAGMA foreign_keys` is a no-op
             // inside one, and the rebuild needs it off (§3.4 step 15).
             migrate_v15(conn)?;
+            continue;
+        }
+        if v == 17 {
+            // Likewise: three rebuilds under `foreign_keys = OFF` (§3.4 step 17).
+            migrate_v17(conn, history)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -290,6 +304,386 @@ ALTER TABLE revisions_v15 RENAME TO revisions;",
         rebuilt?;
     }
     conn.execute_batch(&ddl_for(&["archives"]))?;
+    Ok(())
+}
+
+/// v17 (§3.4 step 17; modular-core Phase 3a — M1, M2, D10, D6): the head and
+/// its bytes live on the current rows. `docs` gains `head` (`current_rev`
+/// renamed), `frontmatter_raw`, `created_at`, `updated_at`, `deleted_at`
+/// (`deleted_commit` gone); `blocks` gains `raw`, `trivia`, `created_at`,
+/// `updated_at`, `deleted_at` (`created_commit`/`deleted_commit` gone);
+/// `resurrection_pool` gains `created_at`. SQLite cannot rename a column a
+/// partial index names or add a NOT NULL column without a default, so the
+/// three tables are rebuilt the documented way (as v15 did), with
+/// `foreign_keys = OFF` for the duration and `PRAGMA foreign_key_check` empty
+/// at the end. The backfill reads the 16.x history tables ONCE: the
+/// frontmatter raw by resolving every live head through the recorder
+/// (`frontmatter_at_revision` — the 16.x delta chain, §6.1 "Resolving"), the
+/// block bytes from `blobs` by hash (a hash with no blob aborts the migration
+/// — I5 made it impossible), the timestamps from the `revisions`/`commits`
+/// and `block_changes`/`commits` joins the 16.x readers computed on every
+/// read, `deleted_at` from the tombstone commit's `ts`. `blocks` keeps its
+/// `rowid`s — `blocks_fts` is an external-content index keyed by them.
+/// Idempotent: a `docs` table that already carries `head` is left alone.
+fn migrate_v17(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> Result<()> {
+    if has_column(conn, "docs", "head")? != Some(false) {
+        return Ok(());
+    }
+    let clock = crate::core::time::now_ts();
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = (|| -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        migrate_v17_in(&tx, history, &clock)?;
+        let violations: i64 = {
+            let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
+            let rows = stmt.query_map([], |_| Ok(()))?;
+            i64::try_from(rows.count()).unwrap_or(i64::MAX)
+        };
+        if violations > 0 {
+            return Err(Error::Other(format!(
+                "migration v17: {violations} foreign key violation(s) after rebuilding docs, blocks and resurrection_pool"
+            )));
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    rebuilt
+}
+
+/// The three rebuilds of step 17 inside the open transaction.
+fn migrate_v17_in(
+    db: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    clock: &str,
+) -> Result<()> {
+    let history = history.ok_or_else(|| {
+        Error::Other(
+            "migration v17: the history recorder is needed to resolve the 16.x frontmatter deltas"
+                .to_owned(),
+        )
+    })?;
+    let mut ts_of_commit = db.prepare("SELECT ts FROM commits WHERE commit_id = ?1")?;
+    let mut commit_ts = |id: Option<&str>| -> Result<Option<String>> {
+        match id {
+            None => Ok(None),
+            Some(id) => Ok(ts_of_commit
+                .query_row(params![id], |r| r.get::<_, String>(0))
+                .optional()?),
+        }
+    };
+
+    // ---- docs ----
+    db.execute_batch(
+        "CREATE TABLE docs_v17 (
+  doc_id             TEXT PRIMARY KEY,
+  repo_id            TEXT NOT NULL REFERENCES repos(repo_id),
+  path               TEXT NOT NULL,
+  format             TEXT NOT NULL DEFAULT 'markdown',
+  head               TEXT,
+  file_hash          BLOB,
+  conflicted         INTEGER NOT NULL DEFAULT 0,
+  leading_trivia     TEXT NOT NULL DEFAULT '',
+  frontmatter_raw    TEXT,
+  frontmatter_trivia TEXT,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL,
+  deleted_at         TEXT,
+  UNIQUE (repo_id, path)
+);",
+    )?;
+    // The columns copied through are read as SQL values: a 16.x fixture may
+    // hold a BLOB where the DDL says TEXT, and the reference copies them as-is.
+    struct DocRow {
+        rowid: i64,
+        doc_id: String,
+        repo_id: SqlValue,
+        path: SqlValue,
+        format: SqlValue,
+        current_rev: Option<String>,
+        file_hash: SqlValue,
+        conflicted: SqlValue,
+        leading_trivia: SqlValue,
+        frontmatter_trivia: SqlValue,
+        deleted_commit: Option<String>,
+    }
+    let docs: Vec<DocRow> = {
+        let mut stmt = db.prepare(
+            "SELECT rowid, doc_id, repo_id, path, format, current_rev, file_hash, conflicted, leading_trivia, frontmatter_trivia, deleted_commit FROM docs ORDER BY rowid",
+        )?;
+        let it = stmt.query_map([], |r| {
+            Ok(DocRow {
+                rowid: r.get(0)?,
+                doc_id: r.get(1)?,
+                repo_id: r.get(2)?,
+                path: r.get(3)?,
+                format: r.get(4)?,
+                current_rev: r.get(5)?,
+                file_hash: r.get(6)?,
+                conflicted: r.get(7)?,
+                leading_trivia: r.get(8)?,
+                frontmatter_trivia: r.get(9)?,
+                deleted_commit: r.get(10)?,
+            })
+        })?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    {
+        let mut rev_of = db.prepare(
+            "SELECT frontmatter_blob IS NOT NULL, commit_id FROM revisions WHERE rev_id = ?1",
+        )?;
+        let mut first_rev =
+            db.prepare("SELECT commit_id FROM revisions WHERE doc_id = ?1 AND seq = 1")?;
+        let mut ins = db.prepare(
+            "INSERT INTO docs_v17 (rowid, doc_id, repo_id, path, format, head, file_hash, conflicted, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        )?;
+        for d in &docs {
+            let rev: Option<(bool, String)> = match &d.current_rev {
+                Some(rev) => rev_of
+                    .query_row(params![rev], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .optional()?,
+                None => None,
+            };
+            let frontmatter_raw = match (&rev, &d.current_rev) {
+                (Some((true, _)), Some(rev)) => history.frontmatter_at_revision(db, rev)?,
+                _ => None,
+            };
+            let first: Option<String> = first_rev
+                .query_row(params![d.doc_id], |r| r.get(0))
+                .optional()?;
+            let created_at = commit_ts(first.as_deref())?.unwrap_or_else(|| clock.to_owned());
+            let updated_at = commit_ts(rev.as_ref().map(|(_, c)| c.as_str()))?
+                .unwrap_or_else(|| created_at.clone());
+            let deleted_at = commit_ts(d.deleted_commit.as_deref())?;
+            ins.execute(params![
+                d.rowid,
+                d.doc_id,
+                d.repo_id,
+                d.path,
+                d.format,
+                d.current_rev,
+                d.file_hash,
+                d.conflicted,
+                d.leading_trivia,
+                frontmatter_raw,
+                d.frontmatter_trivia,
+                created_at,
+                updated_at,
+                deleted_at,
+            ])?;
+        }
+    }
+    db.execute_batch("DROP TABLE docs; ALTER TABLE docs_v17 RENAME TO docs;")?;
+
+    // ---- blocks ----
+    db.execute_batch(
+        "CREATE TABLE blocks_v17 (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  doc_id         TEXT NOT NULL REFERENCES docs(doc_id),
+  parent_block   TEXT,
+  order_key      TEXT NOT NULL,
+  ordinal        INTEGER NOT NULL,
+  depth          INTEGER NOT NULL,
+  ancestor_path  TEXT NOT NULL,
+  type           TEXT NOT NULL,
+  attrs          TEXT NOT NULL DEFAULT '{}',
+  text           TEXT NOT NULL,
+  raw            TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  trivia         TEXT,
+  trivia_hash    BLOB,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  deleted_at     TEXT
+);",
+    )?;
+    let mut blob_of = db.prepare("SELECT bytes FROM blobs WHERE hash = ?1")?;
+    let mut bytes_of = |hash: Option<&[u8]>, what: &str| -> Result<Option<String>> {
+        let Some(hash) = hash else {
+            return Ok(None);
+        };
+        let b: Option<Vec<u8>> = blob_of.query_row(params![hash], |r| r.get(0)).optional()?;
+        match b {
+            Some(b) => Ok(Some(String::from_utf8_lossy(&b).into_owned())),
+            None => Err(Error::Other(format!(
+                "migration v17: {what} {} has no blobs row",
+                omgbase_format::hash::hex(hash)
+            ))),
+        }
+    };
+    let mut span = db.prepare(
+        "SELECT MIN(c.ts), MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
+    )?;
+    struct BlockRow {
+        rowid: i64,
+        block_id: String,
+        repo_id: SqlValue,
+        doc_id: SqlValue,
+        parent_block: SqlValue,
+        order_key: SqlValue,
+        ordinal: SqlValue,
+        depth: SqlValue,
+        ancestor_path: SqlValue,
+        kind: SqlValue,
+        attrs: SqlValue,
+        text: SqlValue,
+        raw_hash: Vec<u8>,
+        norm_hash: SqlValue,
+        trivia_hash: Option<Vec<u8>>,
+        created_commit: String,
+        deleted_commit: Option<String>,
+    }
+    let blocks: Vec<BlockRow> = {
+        let mut stmt = db.prepare(
+            "SELECT rowid, block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit FROM blocks ORDER BY rowid",
+        )?;
+        let it = stmt.query_map([], |r| {
+            Ok(BlockRow {
+                rowid: r.get(0)?,
+                block_id: r.get(1)?,
+                repo_id: r.get(2)?,
+                doc_id: r.get(3)?,
+                parent_block: r.get(4)?,
+                order_key: r.get(5)?,
+                ordinal: r.get(6)?,
+                depth: r.get(7)?,
+                ancestor_path: r.get(8)?,
+                kind: r.get(9)?,
+                attrs: r.get(10)?,
+                text: r.get(11)?,
+                raw_hash: r.get(12)?,
+                norm_hash: r.get(13)?,
+                trivia_hash: r.get(14)?,
+                created_commit: r.get(15)?,
+                deleted_commit: r.get(16)?,
+            })
+        })?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    {
+        let mut ins = db.prepare(
+            "INSERT INTO blocks_v17 (rowid, block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at, deleted_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+        )?;
+        for b in &blocks {
+            let (lo, hi): (Option<String>, Option<String>) =
+                span.query_row(params![b.block_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            let fallback = commit_ts(Some(&b.created_commit))?.unwrap_or_else(|| clock.to_owned());
+            let raw = bytes_of(Some(&b.raw_hash), &format!("block {} raw_hash", b.block_id))?
+                .unwrap_or_default();
+            let trivia = bytes_of(
+                b.trivia_hash.as_deref(),
+                &format!("block {} trivia_hash", b.block_id),
+            )?;
+            ins.execute(params![
+                b.rowid,
+                b.block_id,
+                b.repo_id,
+                b.doc_id,
+                b.parent_block,
+                b.order_key,
+                b.ordinal,
+                b.depth,
+                b.ancestor_path,
+                b.kind,
+                b.attrs,
+                b.text,
+                raw,
+                b.raw_hash,
+                b.norm_hash,
+                trivia,
+                b.trivia_hash,
+                lo.unwrap_or_else(|| fallback.clone()),
+                hi.unwrap_or_else(|| fallback.clone()),
+                commit_ts(b.deleted_commit.as_deref())?,
+            ])?;
+        }
+    }
+    db.execute_batch(
+        "DROP TABLE blocks;
+ALTER TABLE blocks_v17 RENAME TO blocks;
+CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
+CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);",
+    )?;
+
+    // ---- resurrection_pool ----
+    db.execute_batch(
+        "CREATE TABLE resurrection_pool_v17 (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  type           TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  deleted_commit TEXT NOT NULL,
+  expires_ts     TEXT NOT NULL
+);",
+    )?;
+    struct PoolRow {
+        rowid: i64,
+        block_id: String,
+        repo_id: SqlValue,
+        doc_id: SqlValue,
+        raw_hash: SqlValue,
+        norm_hash: SqlValue,
+        kind: SqlValue,
+        deleted_commit: String,
+        expires_ts: SqlValue,
+    }
+    let pool: Vec<PoolRow> = {
+        let mut stmt = db.prepare(
+            "SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid",
+        )?;
+        let it = stmt.query_map([], |r| {
+            Ok(PoolRow {
+                rowid: r.get(0)?,
+                block_id: r.get(1)?,
+                repo_id: r.get(2)?,
+                doc_id: r.get(3)?,
+                raw_hash: r.get(4)?,
+                norm_hash: r.get(5)?,
+                kind: r.get(6)?,
+                deleted_commit: r.get(7)?,
+                expires_ts: r.get(8)?,
+            })
+        })?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    {
+        let mut ins = db.prepare(
+            "INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?;
+        for p in &pool {
+            let (lo, _): (Option<String>, Option<String>) =
+                span.query_row(params![p.block_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            let created_at = match lo {
+                Some(lo) => lo,
+                None => commit_ts(Some(&p.deleted_commit))?.unwrap_or_else(|| clock.to_owned()),
+            };
+            ins.execute(params![
+                p.rowid,
+                p.block_id,
+                p.repo_id,
+                p.doc_id,
+                p.raw_hash,
+                p.norm_hash,
+                p.kind,
+                created_at,
+                p.deleted_commit,
+                p.expires_ts,
+            ])?;
+        }
+    }
+    db.execute_batch(
+        "DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;",
+    )?;
     Ok(())
 }
 

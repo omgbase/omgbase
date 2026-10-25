@@ -199,17 +199,29 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         detail: format!("fts={fts} leaves={leaves}"),
     });
 
-    // seam: the head token (Phase 3, M1/D1 — the check becomes "head present";
-    //       inventory-rust.md §2.9 `admin.rs:202-210`).
-    let dangling: i64 = conn.query_row(
-        "SELECT count(*) c FROM docs d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)",
+    // Store 17.0 (D1): every live document has a head token, and while
+    // legacy capture is on the recorder's `revisions` row agrees with it
+    // (`spec/store` §8 H1 — the check `doctor` used to call "no dangling
+    // current_rev").
+    let headless: i64 = conn.query_row(
+        "SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NULL",
         [],
         |r| r.get(0),
     )?;
     checks.push(Check {
-        name: "no dangling current_rev",
-        ok: dangling == 0,
-        detail: format!("{dangling} dangling"),
+        name: "head present",
+        ok: headless == 0,
+        detail: format!("{headless} without a head"),
+    });
+    let uncaptured: i64 = conn.query_row(
+        "SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)",
+        [],
+        |r| r.get(0),
+    )?;
+    checks.push(Check {
+        name: "capture complete",
+        ok: uncaptured == 0,
+        detail: format!("{uncaptured} heads without a revision"),
     });
 
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;

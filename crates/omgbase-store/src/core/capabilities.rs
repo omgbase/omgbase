@@ -85,13 +85,21 @@ pub struct DispositionRow {
 }
 
 /// What the recorder receives for one document of an accepted transition
-/// (`spec/store` §5.4 steps 0, 1, 4 and 6): the identity, the path, the
-/// accepted content — its frontmatter raw and its id-assigned body (the state
-/// the `blocks` rows mirror) — and the content hash, under the commit row the
-/// transition runs in.
+/// (`spec/store` §5.4 step 15, 17.0): the head token the CORE minted (D1),
+/// the identity, the path, the accepted content — its frontmatter raw and
+/// its id-assigned body (the state the `blocks` rows mirror) — and the
+/// content hash, under the commit row the transition runs in. The
+/// before-head (the previous captured revision: its seq, tree and
+/// frontmatter as the delta base, the checkpoint rule) is the recorder's OWN
+/// state; the core numbers and hashes the head without reading it (M1).
 #[derive(Clone, Debug)]
 pub struct RevisionTransition<'a> {
     pub doc_id: &'a str,
+    /// The head token the core minted for this transition (§5.4 step 6, D1):
+    /// the recorder's `revisions.rev_id`.
+    pub head: &'a str,
+    /// The path as of this revision — immutable (D11: a `docs_move` is a new
+    /// transition at the new path, with the unchanged tree).
     pub path: &'a str,
     /// The frontmatter block's raw, when the document has one.
     pub frontmatter_raw: Option<&'a str>,
@@ -102,9 +110,8 @@ pub struct RevisionTransition<'a> {
     pub commit_id: &'a str,
 }
 
-/// What recording a transition yields: the head token (D1 — the `r_`
-/// revision id, equal to the recorder's revision id while capture is on)
-/// and the document's revision sequence number.
+/// What recording a transition yields: the head token it was captured under
+/// (= `RevisionTransition::head`) and the recorder's per-document seq.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordedRevision {
     pub rev_id: String,
@@ -226,14 +233,15 @@ pub trait HistoryRecorder {
         input: &NewCommit<'_>,
     ) -> Result<(String, i64)>;
 
-    /// §5.4 steps 0, 1, 4 and 6 for one document: its place (seq, checkpoint),
-    /// its frontmatter blob (raw or delta), its Merkle tree (full or delta
-    /// against the previous revision's) and the revision row — **mints
-    /// `r`**. Returns the head token the core points `docs.current_rev` at.
+    /// §5.4 step 15 (17.0): the Merkle tree (full or delta over the
+    /// recorder's OWN previous captured revision), the frontmatter blob (raw
+    /// or delta) and the `revisions` row under the core's head token — one
+    /// accepted transition, content, structure or path (D11: a `docs_move`
+    /// hands the unchanged tree at the new path). Mints nothing: the head is
+    /// the core's (§5.4 step 6).
     fn record_revision(
         &self,
         tx: &Connection,
-        mint: &mut Mint<'_>,
         transition: &RevisionTransition<'_>,
     ) -> Result<RecordedRevision>;
 
@@ -247,16 +255,6 @@ pub trait HistoryRecorder {
         rows: &[DispositionRow],
     ) -> Result<()>;
 
-    /// A `docs_move`: the current revision's path becomes `to` (`spec/surface`
-    /// 4.7 "the path it was committed under"; inventory §3.12).
-    fn record_move(
-        &self,
-        tx: &Connection,
-        doc_id: &str,
-        rev_id: Option<&str>,
-        to: &str,
-    ) -> Result<()>;
-
     // ---- the reads the store exposes ------------------------------------------------
 
     /// `spec/store` §6.2: the bytes at a revision (`docs_read { at }`, the
@@ -267,6 +265,12 @@ pub trait HistoryRecorder {
         doc_id: &str,
         rev_id: &str,
     ) -> Result<Option<RevisionRead>>;
+
+    /// A captured revision's frontmatter raw, resolved through the recorder's
+    /// own delta chain (`spec/store` §6.2 "Resolving"); `None` when it has
+    /// none or the row is unknown. Migration 17's backfill reads it once per
+    /// live head (§3.4 step 17).
+    fn frontmatter_at_revision(&self, conn: &Connection, rev_id: &str) -> Result<Option<String>>;
 
     /// `revisions.rendered_hash` of `rev_id`, `None` for an unknown revision
     /// (the pending row's expected bytes; inventory §3.4).
@@ -614,9 +618,11 @@ impl std::fmt::Debug for Capabilities {
 pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
 
 impl Capabilities {
-    /// The core alone: no recorder, no provider, the table-union oracle. A
-    /// store opened with this cannot commit a transition until Phase 3 lets
-    /// the core mint its own head token (M1); it reads, queries and sweeps.
+    /// The core alone: no recorder, no provider, the table-union oracle. The
+    /// core mints its own head token since 17.0 (M1), but legacy capture is
+    /// on for every repository through Phase 3, so a store opened with this
+    /// still cannot commit a transition (`require_history`); it reads,
+    /// queries and sweeps.
     #[must_use]
     pub fn core_only() -> Self {
         Self {

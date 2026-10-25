@@ -31,7 +31,6 @@ use crate::effects_plan::{PlanContext, Receipt};
 use crate::error::Result;
 use crate::links::{InboundLink, doc_dir_of, inbound_links_to, retarget_links_in_raw};
 use crate::mutate::{ApplyOrigin, find_doc_by_ref};
-use crate::read::blob_text;
 use crate::sugar;
 use crate::yaml_emit::stringify;
 
@@ -241,7 +240,7 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT 1 FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+                "SELECT 1 FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
                 params![repo_id, path],
                 |_| Ok(()),
             )
@@ -390,7 +389,7 @@ impl Store {
             Ok(self
                 .conn
                 .query_row(
-                    "SELECT parent_block FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                    "SELECT parent_block FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                     params![id],
                     |r| r.get::<_, Option<String>>(0),
                 )
@@ -417,18 +416,18 @@ impl Store {
                 continue;
             }
             let src = by_block[block_id];
-            let row: Option<Vec<u8>> = self
+            // The block's bytes are its own row's (17.0, D10).
+            let row: Option<(Vec<u8>, String)> = self
                 .conn
                 .query_row(
-                    "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                    "SELECT raw_hash, raw FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                     params![block_id],
-                    |r| r.get(0),
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()?;
-            let Some(raw_hash) = row else {
+            let Some((raw_hash, raw)) = row else {
                 continue;
             };
-            let raw = blob_text(&self.conn, &raw_hash)?;
             // Match against the directory the link was RESOLVED in (the
             // source's path at extraction time); write relative forms against
             // the source's CURRENT directory — they differ only for links

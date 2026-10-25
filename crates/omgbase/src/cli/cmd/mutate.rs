@@ -1098,7 +1098,7 @@ fn task_block(cli: &mut Cli, r: &str, block: String) -> Result<String> {
         .store()?
         .conn()
         .query_row(
-            "SELECT type FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+            "SELECT type FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             params![block],
             |row| row.get(0),
         )

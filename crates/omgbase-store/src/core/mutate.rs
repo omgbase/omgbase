@@ -3,7 +3,7 @@
 //! documents they touch, and the commit protocol — the on-disk bytes read,
 //! the `api` ingest of every document with the ops' **known ids** under one
 //! commit in one transaction ([`crate::effects`], 2.1) that re-validates
-//! every document's `(path, current_rev, file_hash)` and the bytes read
+//! every document's `(path, head, file_hash)` and the bytes read
 //! before minting anything (2.2) and records the files it owes, then the
 //! files materialized after COMMIT ([`crate::materialize`], store 14.0).
 
@@ -26,7 +26,6 @@ use crate::effects::{CommitHead, DocBase, Effect, Guard, Outcome, doc_base, touc
 use crate::error::{Error, Result};
 use crate::ids::ALPHABET;
 use crate::observe::{DispositionRow, IngestPlan};
-use crate::read::{blob_text, current_frontmatter_raw};
 use crate::writers::{Origin, TreeInputBlock};
 
 /// `^[a-z]+_[alphabet]{1,7}$` with the given prefix: a minted id **or** a
@@ -49,6 +48,8 @@ pub fn is_id_ref(s: &str, prefix: &str) -> bool {
 pub struct DocInfo {
     pub doc_id: String,
     pub path: String,
+    /// The document's head token (`docs.head`, store 17.0 D1) — the `rev`
+    /// the surface returns.
     pub current_rev: Option<String>,
 }
 
@@ -68,13 +69,13 @@ pub fn find_doc_by_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Opti
     // bind against the one-placeholder query is `InvalidParameterCount`).
     let found = if is_id_ref(r, "d") {
         conn.query_row(
-            "SELECT doc_id, path, current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            "SELECT doc_id, path, head FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
             params![r],
             map,
         )
     } else {
         conn.query_row(
-            "SELECT doc_id, path, current_rev FROM docs WHERE path = ?1 AND repo_id = ?2 AND deleted_commit IS NULL",
+            "SELECT doc_id, path, head FROM docs WHERE path = ?1 AND repo_id = ?2 AND deleted_at IS NULL",
             params![r.trim_start_matches('/'), repo_id],
             map,
         )
@@ -90,33 +91,32 @@ struct BlockRow {
     ordinal: i64,
     kind: String,
     attrs: String,
-    raw_hash: Vec<u8>,
-    trivia_hash: Option<Vec<u8>>,
+    raw: String,
+    trivia: Option<String>,
 }
 
 /// §1: a live document as a working tree — blocks from the live rows
 /// (`ORDER BY parent_block, ordinal`; a row whose parent is not loaded is a
-/// root), raw/trivia from the blobs, the frontmatter blob + trivia. `None`
-/// for an unknown or tombstoned doc.
-// seam: HistoryRecorder (Phase 3, M1 — the frontmatter comes off the head, not
-// `current_frontmatter_raw`'s delta chain; inventory-rust.md §2.4
-// `mutate.rs:101-202`, §3.2).
+/// root), every block's raw and trivia from its own row and the frontmatter
+/// raw, `leading_trivia` and separator from the document row (store 17.0,
+/// D10/M1 — through 16.x the bytes came from `blobs` and the frontmatter from
+/// the head revision's delta chain). `None` for an unknown or tombstoned doc.
 pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
     type DocRow = (String, String, String, Option<String>, Option<String>);
     let doc: Option<DocRow> = conn
         .query_row(
-            "SELECT path, format, leading_trivia, frontmatter_trivia, current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            "SELECT path, format, leading_trivia, frontmatter_raw, frontmatter_trivia FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
             params![doc_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
-    let Some((path, format, leading_trivia, frontmatter_trivia, current_rev)) = doc else {
+    let Some((path, format, leading_trivia, fm_raw, frontmatter_trivia)) = doc else {
         return Ok(None);
     };
     let rows: Vec<BlockRow> = {
         let mut stmt = conn.prepare(
-            "SELECT block_id, parent_block, ordinal, type, attrs, raw_hash, trivia_hash
-             FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL
+            "SELECT block_id, parent_block, ordinal, type, attrs, raw, trivia
+             FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL
              ORDER BY parent_block, ordinal",
         )?;
         let it = stmt.query_map(params![doc_id], |r| {
@@ -126,8 +126,8 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
                 ordinal: r.get(2)?,
                 kind: r.get(3)?,
                 attrs: r.get(4)?,
-                raw_hash: r.get(5)?,
-                trivia_hash: r.get(6)?,
+                raw: r.get(5)?,
+                trivia: r.get(6)?,
             })
         })?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
@@ -135,11 +135,11 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
     let ids: HashSet<&str> = rows.iter().map(|r| r.block_id.as_str()).collect();
     let mut nodes: HashMap<String, MutBlock> = HashMap::with_capacity(rows.len());
     for r in &rows {
-        let raw = blob_text(conn, &r.raw_hash)?;
-        let trivia = match &r.trivia_hash {
-            Some(h) => blob_text(conn, h)?,
-            None => String::new(),
-        };
+        // A NULL trivia means the block's trailing trivia was genuinely empty
+        // (the last block of a file with no trailing newline). Emit "" —
+        // never a fabricated separator, which would corrupt the next write.
+        let raw = r.raw.clone();
+        let trivia = r.trivia.clone().unwrap_or_default();
         let attrs = match serde_json::from_str::<Value>(&r.attrs) {
             Ok(Value::Object(m)) => m,
             _ => Map::new(),
@@ -184,16 +184,12 @@ pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
         .map(|id| build(id, &mut nodes, &children_of))
         .collect();
 
-    // The current revision's frontmatter, resolved when stored as a delta
-    // (spec/store §6.1, 16.0), with the exact stored separator appended so
+    // The current frontmatter raw with its exact stored separator appended so
     // the write path round-trips byte for byte.
-    let mut frontmatter_raw = None;
-    if let Some(rev) = current_rev
-        && let Some(mut raw) = current_frontmatter_raw(conn, &rev)?
-    {
+    let frontmatter_raw = fm_raw.map(|mut raw| {
         raw.push_str(frontmatter_trivia.as_deref().unwrap_or(""));
-        frontmatter_raw = Some(raw);
-    }
+        raw
+    });
     Ok(Some(MutDoc {
         doc_id: doc_id.to_owned(),
         path,
@@ -312,7 +308,7 @@ pub(crate) struct LoadedDoc {
     pub(crate) before: String,
     /// The live ids before any op (labels the `api` dispositions).
     pub(crate) prior_ids: Vec<String>,
-    /// The row's `(path, current_rev, file_hash)` as loaded — the
+    /// The row's `(path, head, file_hash)` as loaded — the
     /// precondition the commit re-validates inside its transaction (2.2);
     /// `None` for an adopted document, whose precondition is "no live
     /// document at its path" (`Guard::Absent`).
@@ -349,7 +345,7 @@ impl Store {
         Ok(self
             .conn
             .query_row(
-                "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                 params![block_id],
                 |r| r.get(0),
             )
@@ -388,7 +384,7 @@ impl Store {
     /// commit phase (step 5, 2.2 / store 14.0): **(a)** read every loaded
     /// document's file from `doc_store`; **(b)** one `BEGIN IMMEDIATE`
     /// transaction that first re-validates every document's `(path,
-    /// current_rev, file_hash)` and the bytes (a) read — `stale_plan` with
+    /// head, file_hash)` and the bytes (a) read — `stale_plan` with
     /// the current truth when the database moved, `sync_conflict` after an
     /// `observed` ingest of the disk bytes when the file did, nothing minted
     /// or written either way — then one `api` commit row, the known-id
@@ -449,7 +445,7 @@ impl Store {
         let effects: Vec<Effect> = staged.into_iter().map(Staged::into_effect).collect();
         // (b) The transaction.
         match self.commit_effects(&req.repo_id, &head, &effects, ts)? {
-            Outcome::Committed(_) => {}
+            Outcome::Committed { .. } => {}
             Outcome::Conflict(c) => {
                 return Err(self.disk_conflict(&req.repo_id, &c.path, &c.bytes, ts));
             }
@@ -557,9 +553,9 @@ impl OpsRunner {
         };
         let before = render(&doc);
         let prior_ids: Vec<String> = {
-            let mut stmt = store.conn.prepare(
-                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
-            )?;
+            let mut stmt = store
+                .conn
+                .prepare("SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL")?;
             let it = stmt.query_map(params![doc_id], |r| r.get(0))?;
             it.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -875,7 +871,7 @@ pub(crate) struct PriorRow {
 /// for a document with no row yet (a `create` effect's `$new` symbol).
 pub(crate) fn prior_rows(conn: &Connection, doc_id: &str) -> Result<HashMap<String, PriorRow>> {
     let mut stmt = conn.prepare(
-        "SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
+        "SELECT block_id, parent_block, ordinal, raw_hash FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL",
     )?;
     let rows = stmt.query_map(params![doc_id], |r| {
         Ok((

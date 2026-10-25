@@ -15,12 +15,11 @@ use serde_json::{Map, Value, json};
 use crate::Store;
 use crate::error::{Error, Result};
 use crate::links::{glob_clause, rewrite_link_destinations, split_destination};
-use crate::read::blob_text;
 
 pub(crate) fn raw_hash_of_block(conn: &Connection, block_id: &str) -> Result<Option<String>> {
     let h: Option<Vec<u8>> = conn
         .query_row(
-            "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+            "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             params![block_id],
             |r| r.get(0),
         )
@@ -29,14 +28,13 @@ pub(crate) fn raw_hash_of_block(conn: &Connection, block_id: &str) -> Result<Opt
 }
 
 fn raw_of_block(conn: &Connection, block_id: &str) -> Result<Option<String>> {
-    let h: Option<Vec<u8>> = conn
+    Ok(conn
         .query_row(
-            "SELECT raw_hash FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+            "SELECT raw FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
             params![block_id],
             |r| r.get(0),
         )
-        .optional()?;
-    h.map(|h| blob_text(conn, &h)).transpose()
+        .optional()?)
 }
 
 fn update_markdown(block: &str, markdown: String, hash: Option<String>) -> Op {
@@ -229,7 +227,7 @@ impl Store {
         let tops: Vec<(String, String, Option<i64>)> = {
             let mut stmt = self.conn.prepare(
                 "SELECT block_id, type, json_extract(attrs, '$.level') FROM blocks
-                 WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal",
+                 WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_at IS NULL ORDER BY ordinal",
             )?;
             let it = stmt.query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             it.collect::<std::result::Result<Vec<_>, _>>()?
@@ -472,12 +470,11 @@ impl Store {
             None => (String::new(), None),
         };
         let sql = format!(
-            "SELECT bl.block_id, bl.parent_block, d.path, b.bytes
+            "SELECT bl.block_id, bl.parent_block, d.path, bl.raw
              FROM blocks bl
-             JOIN blobs b ON b.hash = bl.raw_hash
              JOIN docs d ON d.doc_id = bl.doc_id
-             WHERE bl.repo_id = ?1 AND bl.deleted_commit IS NULL AND d.deleted_commit IS NULL
-               AND bl.type != 'code_fence' AND instr(b.bytes, ?2) > 0 {glob_sql}
+             WHERE bl.repo_id = ?1 AND bl.deleted_at IS NULL AND d.deleted_at IS NULL
+               AND bl.type != 'code_fence' AND instr(bl.raw, ?2) > 0 {glob_sql}
              ORDER BY d.path, bl.depth, bl.ordinal, bl.block_id"
         );
         struct Candidate {
@@ -495,7 +492,7 @@ impl Store {
             }
             keys_seen.push(key.clone());
             let mut stmt = self.conn.prepare(&sql)?;
-            let rows: Vec<(String, Option<String>, String, Vec<u8>)> = match &glob_param {
+            let rows: Vec<(String, Option<String>, String, String)> = match &glob_param {
                 Some(p) => stmt
                     .query_map(params![repo_id, key, p], |r| {
                         Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
@@ -507,16 +504,12 @@ impl Store {
                     })?
                     .collect::<std::result::Result<Vec<_>, _>>()?,
             };
-            for (block_id, parent, path, bytes) in rows {
+            for (block_id, parent, path, raw) in rows {
                 if let std::collections::hash_map::Entry::Vacant(slot) =
                     candidates.entry(block_id.clone())
                 {
                     order.push(block_id);
-                    slot.insert(Candidate {
-                        parent,
-                        path,
-                        raw: String::from_utf8_lossy(&bytes).into_owned(),
-                    });
+                    slot.insert(Candidate { parent, path, raw });
                 }
             }
         }
@@ -559,7 +552,7 @@ impl Store {
             Ok(self
                 .conn
                 .query_row(
-                    "SELECT parent_block FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                    "SELECT parent_block FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                     params![id],
                     |r| r.get::<_, Option<String>>(0),
                 )

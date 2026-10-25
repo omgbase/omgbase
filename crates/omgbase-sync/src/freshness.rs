@@ -302,7 +302,7 @@ pub fn detect_disk_drift(
     let cached: HashMap<&str, &CacheRow> = cache.iter().map(|r| (r.path.as_str(), r)).collect();
     let docs: HashMap<String, Option<Vec<u8>>> = {
         let mut stmt = store.conn().prepare(
-            "SELECT path, file_hash FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL",
+            "SELECT path, file_hash FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL",
         )?;
         let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect::<std::result::Result<_, _>>()?
@@ -355,7 +355,7 @@ pub fn rebuild_file_stats(
     let live: HashMap<String, Vec<u8>> = {
         let mut stmt = store.conn().prepare(
             "SELECT path, file_hash FROM docs
-             WHERE repo_id = ?1 AND deleted_commit IS NULL AND file_hash IS NOT NULL",
+             WHERE repo_id = ?1 AND deleted_at IS NULL AND file_hash IS NOT NULL",
         )?;
         let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect::<std::result::Result<_, _>>()?

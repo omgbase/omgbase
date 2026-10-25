@@ -38,6 +38,7 @@ pub struct DocInfo {
     /// surface roots what it returns (`spec/surface` §1 "Paths").
     pub path: String,
     pub format: String,
+    /// The document's head token (`docs.head`, store 17.0 D1) — the `rev` the surface returns.
     pub current_rev: Option<String>,
 }
 
@@ -61,7 +62,7 @@ fn doc_row(conn: &Connection, sql: &str, p: &[&dyn rusqlite::ToSql]) -> Result<O
 pub fn find_doc_by_id(conn: &Connection, doc_id: &str) -> Result<Option<DocInfo>> {
     doc_row(
         conn,
-        "SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+        "SELECT doc_id, repo_id, path, format, head FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
         &[&doc_id],
     )
 }
@@ -70,7 +71,7 @@ pub fn find_doc_by_id(conn: &Connection, doc_id: &str) -> Result<Option<DocInfo>
 pub fn find_doc_by_path(conn: &Connection, repo_id: &str, path: &str) -> Result<Option<DocInfo>> {
     doc_row(
         conn,
-        "SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
+        "SELECT doc_id, repo_id, path, format, head FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
         &[&repo_id, &storage_path(path)],
     )
 }
@@ -133,9 +134,7 @@ pub fn resolve_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Option<R
         };
         if let Some(b) = block_id {
             let live: bool = conn
-                .prepare_cached(
-                    "SELECT 1 FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
-                )?
+                .prepare_cached("SELECT 1 FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL")?
                 .exists(params![b])?;
             if live {
                 return Ok(Some(ResolvedRef::Block {
@@ -150,7 +149,7 @@ pub fn resolve_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Option<R
         Some("b") => {
             let doc: Option<String> = conn
                 .query_row(
-                    "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_commit IS NULL",
+                    "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
                     params![r],
                     |row| row.get(0),
                 )
@@ -203,7 +202,7 @@ pub fn load_doc_blocks(conn: &Connection, doc_id: &str) -> Result<Vec<BlockNode>
     let rows: Vec<Row> = {
         let mut stmt = conn.prepare_cached(
             "SELECT block_id, parent_block, ordinal, depth, type, attrs, text, raw_hash
-             FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL
+             FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL
              ORDER BY parent_block, order_key",
         )?;
         let it = stmt.query_map(params![doc_id], |r| {
@@ -279,12 +278,10 @@ fn find_block<'n>(roots: &'n [BlockNode], block_id: &str) -> Option<&'n BlockNod
     None
 }
 
-/// A block's raw bytes by hex hash (`""` when unknown).
-pub fn block_raw(conn: &Connection, raw_hash_hex: &str) -> Result<String> {
-    let bytes: Vec<u8> = (0..raw_hash_hex.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&raw_hash_hex[2 * i..2 * i + 2], 16).ok())
-        .collect();
-    Ok(omgbase_store::read::blob_text(conn, &bytes)?)
+/// A live block's raw source bytes — its own row's `raw` (store 17.0, D10;
+/// through 16.x a `blobs` read by `raw_hash`); `""` when the block is not live.
+pub fn block_raw(conn: &Connection, block_id: &str) -> Result<String> {
+    Ok(omgbase_store::read::block_raw(conn, block_id)?)
 }
 
 // ---- docs_read ---------------------------------------------------------------------------
@@ -494,17 +491,11 @@ fn project(
             m.insert("_text".to_owned(), json!(node.text));
         }
         Resolution::Raw => {
-            m.insert(
-                "_raw".to_owned(),
-                json!(block_raw(conn, &node.raw_hash_hex)?),
-            );
+            m.insert("_raw".to_owned(), json!(block_raw(conn, &node.block_id)?));
             m.insert("_hash".to_owned(), json!(node.raw_hash_hex));
         }
         Resolution::Full => {
-            m.insert(
-                "_raw".to_owned(),
-                json!(block_raw(conn, &node.raw_hash_hex)?),
-            );
+            m.insert("_raw".to_owned(), json!(block_raw(conn, &node.block_id)?));
             m.insert("_hash".to_owned(), json!(node.raw_hash_hex));
             m.insert("_text".to_owned(), json!(node.text));
             m.insert("_attrs".to_owned(), node.attrs.clone());
@@ -553,7 +544,7 @@ pub fn blocks_read_many(
     if !capped.is_empty() {
         let placeholders: Vec<String> = (1..=capped.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
-            "SELECT block_id, doc_id FROM blocks WHERE deleted_commit IS NULL AND block_id IN ({})",
+            "SELECT block_id, doc_id FROM blocks WHERE deleted_at IS NULL AND block_id IN ({})",
             placeholders.join(",")
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -735,15 +726,14 @@ fn live_doc_rows(
     after: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<DocListRow>> {
-    // seam: explicit change metadata (Phase 3, M2 — `docs.updated_at` replaces
-    //       the correlated `revisions` × `commits` subquery; inventory-rust.md
-    //       §2.7 `read.rs:731-760 live_doc_rows`).
+    // `_updated_at` is the row's own column since store 17.0 (M2, D6): the
+    // ts of the commit that last minted the document's head — a rename counts.
     let mut sql = String::from(
         "SELECT d.path, d.doc_id,
-                (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL),
-                (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev)
+                (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_at IS NULL),
+                d.updated_at
          FROM docs d
-         WHERE d.repo_id = ?1 AND d.deleted_commit IS NULL AND d.path LIKE ?2 ESCAPE '\\'",
+         WHERE d.repo_id = ?1 AND d.deleted_at IS NULL AND d.path LIKE ?2 ESCAPE '\\'",
     );
     let mut p: Vec<rusqlite::types::Value> = vec![
         rusqlite::types::Value::Text(repo_id.to_owned()),

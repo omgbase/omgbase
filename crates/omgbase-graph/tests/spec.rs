@@ -693,13 +693,13 @@ fn check_graph(conn: &Connection, repo_id: &str) -> Vec<String> {
 
     let docs = query_rows(
         conn,
-        "SELECT doc_id, path, deleted_commit FROM docs WHERE repo_id = ?1",
+        "SELECT doc_id, path, deleted_at FROM docs WHERE repo_id = ?1",
         &[&repo_id],
     );
     let doc_ids: HashSet<&str> = docs.iter().map(|d| str_of(d, "doc_id")).collect();
     let live_paths: HashSet<&str> = docs
         .iter()
-        .filter(|d| d["deleted_commit"].is_null())
+        .filter(|d| d["deleted_at"].is_null())
         .map(|d| str_of(d, "path"))
         .collect();
     let commits: HashSet<String> = query_rows(

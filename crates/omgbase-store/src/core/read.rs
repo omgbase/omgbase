@@ -1,6 +1,9 @@
-//! Reads this spec pins (`spec/store/README.md` §5.2, §6): the old tree for
-//! the matcher, the pool, and byte reconstruction from the live rows or a
-//! revision's Merkle root.
+//! Reads this spec pins (`spec/store/README.md` §5.2, §6.1): the old tree for
+//! the matcher, the pool, and byte reconstruction from the live rows. Since
+//! store 17.0 (D10, M1) every byte a current read returns comes from the
+//! `docs` and `blocks` rows — nothing here reads `blobs`, a revision or the
+//! delta resolver; the two blob readers below serve the recorder's §6.2
+//! reads (`history::read`, the surface's history module).
 
 use std::collections::HashMap;
 
@@ -12,10 +15,10 @@ use omgbase_format::text::{
 use omgbase_reconcile::{MatchBlock, PoolEntry};
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::delta::TreeResolver;
 use crate::error::Result;
 
 /// A blob's bytes as text; `""` when the hash is unknown (as the reference).
+/// A history read (§6.2): no current-state path reads a blob since 17.0.
 pub fn blob_text(conn: &Connection, hash: &[u8]) -> Result<String> {
     blob_text_at(conn, "", hash)
 }
@@ -31,71 +34,77 @@ pub fn blob_text_at(conn: &Connection, prefix: &str, hash: &[u8]) -> Result<Stri
     Ok(bytes.map_or_else(String::new, |b| String::from_utf8_lossy(&b).into_owned()))
 }
 
-/// A live revision's frontmatter raw (§6.1 "Resolving", 16.0): the blob the
-/// row names, resolved when it is a `{"f":…}` delta over the previous
-/// revision's ([`TreeResolver::frontmatter`], at most 15 steps back). `None`
-/// when the revision has no frontmatter (or is not a revision).
-// seam: HistoryRecorder (Phase 3, M1 — the head stores its frontmatter raw;
-// inventory-rust.md §2.2 `read.rs:39-55`, §3.2; README §2.2 row 2, D10). The
-// one `crate::delta` reference `boundary-allowlist.txt` carries.
-pub fn current_frontmatter_raw(conn: &Connection, rev_id: &str) -> Result<Option<String>> {
-    let row: Option<(String, i64, Option<Vec<u8>>)> = conn
+/// A live document's CURRENT frontmatter raw (`docs.frontmatter_raw`, 17.0):
+/// the fences-included raw the current-state ingest wrote, or `None` when
+/// the document has none (or is not live). A plain column read — through
+/// 16.x this resolved the head revision's `frontmatter_blob` delta chain
+/// (inventory-rust.md §3.2, the hottest current-state read through history;
+/// M1).
+pub fn current_frontmatter_raw(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
+    let row: Option<Option<String>> = conn
         .query_row(
-            "SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?1",
-            params![rev_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            "SELECT frontmatter_raw FROM docs WHERE doc_id = ?1 AND deleted_at IS NULL",
+            params![doc_id],
+            |r| r.get(0),
         )
         .optional()?;
-    let Some((doc_id, seq, Some(fm))) = row else {
-        return Ok(None);
-    };
-    Ok(Some(TreeResolver::new(conn).frontmatter(
-        &doc_id,
-        seq,
-        &hex(&fm),
-    )?))
+    Ok(row.flatten())
 }
 
-/// §6.1: `leading_trivia`, the frontmatter raw (resolved, 16.0) +
-/// `frontmatter_trivia` when the current revision has one, then every
-/// top-level live block's raw and trivia in `order_key` order. `None` for a
-/// tombstoned or unknown doc. The body comes from `blocks`, so a delta root
-/// costs this read nothing.
+/// §6.1: `leading_trivia`, then `frontmatter_raw` + `frontmatter_trivia`
+/// when the doc has one, then every top-level live block's `raw` + `trivia`
+/// in `order_key` order. Every byte comes from the current rows (17.0, D10/M1
+/// — nothing resolves and no history table is read). `None` for a tombstoned
+/// or unknown doc.
 pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
     let doc: Option<(String, Option<String>, Option<String>)> = conn
         .query_row(
-            "SELECT leading_trivia, frontmatter_trivia, current_rev FROM docs
-             WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            "SELECT leading_trivia, frontmatter_raw, frontmatter_trivia FROM docs
+             WHERE doc_id = ?1 AND deleted_at IS NULL",
             params![doc_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
-    let Some((leading, fm_trivia, current_rev)) = doc else {
+    let Some((leading, fm_raw, fm_trivia)) = doc else {
         return Ok(None);
     };
     let mut out = leading;
-    if let Some(rev) = current_rev
-        && let Some(fm) = current_frontmatter_raw(conn, &rev)?
-    {
+    // The frontmatter block followed by its exact stored separator: ingest
+    // always captures `frontmatter_trivia` whenever a frontmatter block
+    // exists, so the `unwrap_or("")` is just a guard.
+    if let Some(fm) = fm_raw {
         out.push_str(&fm);
         out.push_str(fm_trivia.as_deref().unwrap_or(""));
     }
+    // Top-level blocks only: a container's `raw` already contains its nested
+    // children verbatim (spec/format §1 inv. 3), so walking roots
+    // reconstructs the whole body.
     let mut stmt = conn.prepare(
-        "SELECT raw_hash, trivia_hash FROM blocks
-         WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_commit IS NULL
+        "SELECT raw, trivia FROM blocks
+         WHERE doc_id = ?1 AND parent_block IS NULL AND deleted_at IS NULL
          ORDER BY order_key",
     )?;
     let rows = stmt.query_map(params![doc_id], |r| {
-        Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, Option<Vec<u8>>>(1)?))
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
     })?;
     for row in rows {
         let (raw, trivia) = row?;
-        out.push_str(&blob_text(conn, &raw)?);
+        out.push_str(&raw);
         if let Some(t) = trivia {
-            out.push_str(&blob_text(conn, &t)?);
+            out.push_str(&t);
         }
     }
     Ok(Some(out))
+}
+
+/// A live block's raw source bytes — its own row's `raw` (17.0, D10; through
+/// 16.x a `blobs` read by `raw_hash`); `""` when the block is not live.
+pub fn block_raw(conn: &Connection, block_id: &str) -> Result<String> {
+    let raw: Option<String> = conn
+        .prepare_cached("SELECT raw FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL")?
+        .query_row(params![block_id], |r| r.get(0))
+        .optional()?;
+    Ok(raw.unwrap_or_default())
 }
 
 struct StoredBlock {
@@ -104,17 +113,18 @@ struct StoredBlock {
     ordinal: i64,
     kind: String,
     raw_hash: Vec<u8>,
+    raw: String,
 }
 
 /// §5.2: the matcher's old side from the live `blocks` rows, `ORDER BY
 /// parent_block, ordinal` (pinned as built, §10), positional keys
 /// `(parent_key ?? "") + "/" + ordinal`, `text` recomputed by the
-/// spec/format §4.1 tree rule, `anchors = []`.
+/// spec/format §4.1 tree rule from the rows' own `raw` (17.0), `anchors = []`.
 pub fn load_old_match_blocks(conn: &Connection, doc_id: &str) -> Result<Vec<MatchBlock>> {
     let rows: Vec<StoredBlock> = {
         let mut stmt = conn.prepare(
-            "SELECT block_id, parent_block, ordinal, type, raw_hash
-             FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL
+            "SELECT block_id, parent_block, ordinal, type, raw_hash, raw
+             FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL
              ORDER BY parent_block, ordinal",
         )?;
         let it = stmt.query_map(params![doc_id], |r| {
@@ -124,6 +134,7 @@ pub fn load_old_match_blocks(conn: &Connection, doc_id: &str) -> Result<Vec<Matc
                 ordinal: r.get(2)?,
                 kind: r.get(3)?,
                 raw_hash: r.get(4)?,
+                raw: r.get(5)?,
             })
         })?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
@@ -149,10 +160,7 @@ pub fn load_old_match_blocks(conn: &Connection, doc_id: &str) -> Result<Vec<Matc
     for list in children.values_mut() {
         list.sort_by_key(|&i| rows[i].ordinal);
     }
-    let raws: Vec<String> = rows
-        .iter()
-        .map(|r| blob_text(conn, &r.raw_hash))
-        .collect::<Result<_>>()?;
+    let raws: Vec<String> = rows.iter().map(|r| r.raw.clone()).collect();
 
     // Text top-down (quote depth) with children composed bottom-up.
     fn text_of(
