@@ -50,7 +50,7 @@ use crate::tree::{TreeEntry, from_hex, serialize_tree_entry};
 pub const CHECKPOINT_EVERY: i64 = 16;
 
 /// §4.4 rule 1 alone — the writer adds "no base" and "base archived"
-/// ([`crate::writers::is_checkpoint_revision`]).
+/// ([`crate::history::writers::is_checkpoint_revision`]).
 #[must_use]
 pub fn is_checkpoint_seq(seq: i64) -> bool {
     (seq - 1) % CHECKPOINT_EVERY == 0

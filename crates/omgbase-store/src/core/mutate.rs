@@ -98,6 +98,9 @@ struct BlockRow {
 /// (`ORDER BY parent_block, ordinal`; a row whose parent is not loaded is a
 /// root), raw/trivia from the blobs, the frontmatter blob + trivia. `None`
 /// for an unknown or tombstoned doc.
+// seam: HistoryRecorder (Phase 3, M1 — the frontmatter comes off the head, not
+// `current_frontmatter_raw`'s delta chain; inventory-rust.md §2.4
+// `mutate.rs:101-202`, §3.2).
 pub fn load_mut_doc(conn: &Connection, doc_id: &str) -> Result<Option<MutDoc>> {
     type DocRow = (String, String, String, Option<String>, Option<String>);
     let doc: Option<DocRow> = conn

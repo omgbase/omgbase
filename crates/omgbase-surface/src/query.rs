@@ -1156,8 +1156,9 @@ impl Runner<'_> {
     /// `'static` context a `Plan` carries.
     fn run(&self, q: &Query) -> Result<oqx::OqxResult> {
         let conn = self.store.conn();
-        let ctx =
-            StoreContext::new(conn, self.repo_id, self.semantic.clone()).with_now_ms(self.now_ms);
+        let ctx = StoreContext::new(conn, self.repo_id, self.semantic.clone())
+            .with_semantic_provider(self.store.semantic())
+            .with_now_ms(self.now_ms);
         let plan = if self.planned {
             SqlitePlanner::new(conn, self.repo_id)
                 .try_plan(q, &[])

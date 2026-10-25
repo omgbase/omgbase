@@ -735,6 +735,9 @@ fn live_doc_rows(
     after: Option<&str>,
     limit: Option<usize>,
 ) -> Result<Vec<DocListRow>> {
+    // seam: explicit change metadata (Phase 3, M2 — `docs.updated_at` replaces
+    //       the correlated `revisions` × `commits` subquery; inventory-rust.md
+    //       §2.7 `read.rs:731-760 live_doc_rows`).
     let mut sql = String::from(
         "SELECT d.path, d.doc_id,
                 (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL),

@@ -1,0 +1,15 @@
+# The dependency-direction allowlist (`tests/boundaries.rs`, modular-core
+# Phase 1): every `crate::<head>` path a file under `src/core/` may still
+# use to reach the history or semantic extension, one per line —
+#
+#   <core file> <head>  <why: the Phase that removes it, the mechanism and
+#                        the inventory row (docs/modular-core/inventory-rust.md,
+#                        docs/modular-core/README.md)>
+#
+# The test fails on any core reference not listed here and on any line here
+# that no core file matches any more, so this file only shrinks. Everything
+# else the core still reads from history is SQL over the history tables, not a
+# Rust item — the `// seam: <Trait>::<method> (Phase 3)` comments in the core
+# name those sites.
+
+core/read.rs delta  Phase 3, M1 — `current_frontmatter_raw` resolves the CURRENT frontmatter through `revisions` and `TreeResolver::frontmatter` (≤ 15 deltas back) on every `reconstruct` / `load_mut_doc`; inventory-rust.md §2.2 `read.rs:39-55`, §3.2; README §2.2 row 2. Removed when the head stores its frontmatter raw (M1, D10). A free function over `&Connection` with no recorder in reach (`reconstruct` is called with a bare connection by the surface's `_raw`, the sync engine, the semantic doc-embedding task), so the Phase 1 pass-through cannot route it.

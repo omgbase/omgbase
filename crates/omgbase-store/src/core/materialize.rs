@@ -30,9 +30,10 @@ use omgbase_format::hash::sha256;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Store;
+use crate::core::capabilities::HistoryRecorder;
 use crate::doc_store::DocStore;
 use crate::error::Result;
-use crate::read::{read_at_revision, reconstruct};
+use crate::read::reconstruct;
 
 /// What a pending row asks the working tree for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,33 +157,29 @@ pub(crate) fn delete_pending(conn: &Connection, repo_id: &str, path: &str) -> Re
     Ok(())
 }
 
-/// The `rendered_hash` of the document's revision before `rev_id`: the bytes
-/// a file left behind by the commit still holds.
-fn previous_rendered_hash(
+/// The bytes a `write`/`rename` row must land: the revision's (§6.2, the
+/// recorder's [`HistoryRecorder::read_at_revision`]), or the live document's
+/// current bytes when the row names no revision — and only when they hash to
+/// `rendered_hash`. `None` when nothing can be rendered (the document is no
+/// longer live, the revision is unknown, the reconstruction does not hash to
+/// the row, or the store has no recorder to read the revision): the row is
+/// kept for a later materializer rather than guessed.
+///
+/// seam: HistoryRecorder::read_at_revision (Phase 3, M4 — a row always names
+/// the current revision, so `reconstruct` is sufficient; inventory-rust.md
+/// §2.3 `materialize.rs:183-189 bytes_for`).
+fn bytes_for(
     conn: &Connection,
-    doc_id: &str,
-    rev_id: &str,
-) -> Result<Option<Vec<u8>>> {
-    Ok(conn
-        .query_row(
-            "SELECT rendered_hash FROM revisions
-             WHERE doc_id = ?1 AND seq < (SELECT seq FROM revisions WHERE rev_id = ?2)
-             ORDER BY seq DESC LIMIT 1",
-            params![doc_id, rev_id],
-            |r| r.get(0),
-        )
-        .optional()?)
-}
-
-/// The bytes a `write`/`rename` row must land: the revision's (§6.2), or the
-/// live document's current bytes when the row names no revision — and only
-/// when they hash to `rendered_hash`. `None` when nothing can be rendered
-/// (the document is no longer live, the revision is unknown, the
-/// reconstruction does not hash to the row): the row is kept for a later
-/// materializer rather than guessed.
-fn bytes_for(conn: &Connection, row: &PendingRow) -> Result<Option<String>> {
+    history: Option<&dyn HistoryRecorder>,
+    row: &PendingRow,
+) -> Result<Option<String>> {
     let bytes = match &row.rev_id {
-        Some(rev) => read_at_revision(conn, &row.doc_id, rev)?.map(|r| r.content),
+        Some(rev) => match history {
+            Some(h) => h
+                .read_at_revision(conn, &row.doc_id, rev)?
+                .map(|r| r.content),
+            None => None,
+        },
         None => reconstruct(conn, &row.doc_id)?,
     };
     Ok(bytes.filter(|b| hashes_to(b, &row.rendered_hash)))
@@ -193,17 +190,27 @@ fn hashes_to(bytes: &str, hash: &[u8]) -> bool {
 }
 
 /// Whether the bytes at a path are ones the row may replace: the expected
-/// bytes themselves or the previous revision's.
-fn replaceable(conn: &Connection, row: &PendingRow, bytes: &str) -> Result<bool> {
+/// bytes themselves or the previous revision's (the recorder's
+/// [`HistoryRecorder::previous_rendered_hash`] — the bytes a file left behind
+/// by the commit still holds).
+///
+/// seam: HistoryRecorder::previous_rendered_hash (Phase 3, M4 — `prior_hash`
+/// on the pending row; inventory-rust.md §2.3 `materialize.rs:161-175
+/// previous_rendered_hash`).
+fn replaceable(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    row: &PendingRow,
+    bytes: &str,
+) -> Result<bool> {
     if hashes_to(bytes, &row.rendered_hash) {
         return Ok(true);
     }
-    match &row.rev_id {
-        Some(rev) => {
-            Ok(previous_rendered_hash(conn, &row.doc_id, rev)?
-                .is_some_and(|h| hashes_to(bytes, &h)))
-        }
-        None => Ok(false),
+    match (&row.rev_id, history) {
+        (Some(rev), Some(h)) => Ok(h
+            .previous_rendered_hash(conn, &row.doc_id, rev)?
+            .is_some_and(|hash| hashes_to(bytes, &hash))),
+        _ => Ok(false),
     }
 }
 
@@ -214,15 +221,16 @@ fn replaceable(conn: &Connection, row: &PendingRow, bytes: &str) -> Result<bool>
 /// is the durable record either way); so do database errors.
 fn materialize_row(
     conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
     row: &PendingRow,
     doc_store: &mut dyn DocStore,
 ) -> Result<bool> {
     match row.kind {
         PendingKind::Write => match doc_store.read(&row.path)? {
             Some(on_disk) if hashes_to(&on_disk, &row.rendered_hash) => Ok(true),
-            Some(on_disk) if !replaceable(conn, row, &on_disk)? => Ok(false),
+            Some(on_disk) if !replaceable(conn, history, row, &on_disk)? => Ok(false),
             _ => {
-                let Some(bytes) = bytes_for(conn, row)? else {
+                let Some(bytes) = bytes_for(conn, history, row)? else {
                     return Ok(false);
                 };
                 doc_store.write(&row.path, &bytes)?;
@@ -239,7 +247,7 @@ fn materialize_row(
                 if !hashes_to(&at_to, &row.rendered_hash) {
                     return Ok(false);
                 }
-                remove_if_replaceable(conn, row, from, doc_store)?;
+                remove_if_replaceable(conn, history, row, from, doc_store)?;
                 return Ok(true);
             }
             if let Some(from) = from.filter(|f| doc_store.exists(f)) {
@@ -251,8 +259,8 @@ fn materialize_row(
                         // win at the new path, as the sweep will see.
                         if let Some(moved) = doc_store.read(&row.path)?
                             && !hashes_to(&moved, &row.rendered_hash)
-                            && replaceable(conn, row, &moved)?
-                            && let Some(bytes) = bytes_for(conn, row)?
+                            && replaceable(conn, history, row, &moved)?
+                            && let Some(bytes) = bytes_for(conn, history, row)?
                         {
                             doc_store.write(&row.path, &bytes)?;
                         }
@@ -262,16 +270,16 @@ fn materialize_row(
                         // EXDEV or the like: write the revision's bytes at
                         // the new path and retire the old file while it still
                         // holds the engine's own bytes.
-                        let Some(bytes) = bytes_for(conn, row)? else {
+                        let Some(bytes) = bytes_for(conn, history, row)? else {
                             return Ok(false);
                         };
                         doc_store.write(&row.path, &bytes)?;
-                        remove_if_replaceable(conn, row, Some(from), doc_store)?;
+                        remove_if_replaceable(conn, history, row, Some(from), doc_store)?;
                         Ok(true)
                     }
                 }
             } else {
-                let Some(bytes) = bytes_for(conn, row)? else {
+                let Some(bytes) = bytes_for(conn, history, row)? else {
                     return Ok(false);
                 };
                 doc_store.write(&row.path, &bytes)?;
@@ -295,6 +303,7 @@ fn materialize_row(
 /// accounts for (the revision's or the previous revision's).
 fn remove_if_replaceable(
     conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
     row: &PendingRow,
     from: Option<&str>,
     doc_store: &mut dyn DocStore,
@@ -303,7 +312,7 @@ fn remove_if_replaceable(
         return Ok(());
     };
     if let Some(bytes) = doc_store.read(from)?
-        && replaceable(conn, row, &bytes)?
+        && replaceable(conn, history, row, &bytes)?
     {
         doc_store.remove(from)?;
     }
@@ -329,7 +338,7 @@ impl Store {
     ) -> Result<Vec<String>> {
         let mut done = Vec::new();
         for row in pending_rows(&self.conn, repo_id)? {
-            if materialize_row(&self.conn, &row, doc_store)? {
+            if materialize_row(&self.conn, self.history.as_deref(), &row, doc_store)? {
                 delete_pending(&self.conn, repo_id, &row.path)?;
                 done.push(row.path);
             }
@@ -353,7 +362,7 @@ impl Store {
             let Some(row) = pending_at(&self.conn, repo_id, path)? else {
                 continue;
             };
-            if materialize_row(&self.conn, &row, doc_store)? {
+            if materialize_row(&self.conn, self.history.as_deref(), &row, doc_store)? {
                 delete_pending(&self.conn, repo_id, path)?;
                 done.push(path.clone());
             }

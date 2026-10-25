@@ -38,6 +38,9 @@ impl RecoveryResult {
 /// differs from the current revision's `rendered_hash` (or `file_hash` when
 /// there is no revision) is re-ingested with the reconciling resolver and
 /// listed `healed`.
+// seam: self-contained recovery payloads (Phase 3, M4 — compare against
+// `docs.file_hash`, not `revisions.rendered_hash` through `current_rev`;
+// inventory-rust.md §2.8 `recovery.rs:40-95`, §3.4).
 pub fn recover_repo(
     store: &mut Store,
     repo_id: &str,

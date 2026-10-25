@@ -41,6 +41,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde_json::json;
 
 use crate::Store;
+use crate::core::capabilities::{HistoryRecorder, require_history};
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::InboundLink;
@@ -49,7 +50,7 @@ use crate::mint::Mint;
 use crate::mutate::known_plan;
 use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
 use crate::time::pool_expiry;
-use crate::writers::{NewCommit, Origin, new_commit};
+use crate::writers::{NewCommit, Origin};
 
 /// The commit row a request records (`spec/store` §5.4 step 5). `ops` is
 /// ADR-003's intent record — `canonical({ v: 1, plan_id, effects })` for an
@@ -78,6 +79,8 @@ pub(crate) struct DocBase {
     pub file_hash: Option<Vec<u8>>,
 }
 
+// seam: the CAS token is a revision id (Phase 3, M1/D1 — the head token the
+// core mints, same wire shape; inventory-rust.md §2.4 `effects.rs:83-98`, §3.3).
 /// The live row's triple for `doc_id`, or `None` for an unknown or
 /// tombstoned document.
 pub(crate) fn doc_base(conn: &Connection, doc_id: &str) -> Result<Option<DocBase>> {
@@ -281,7 +284,10 @@ impl Store {
             return Ok((Outcome::Committed(Vec::new()), None));
         }
         let expires = pool_expiry(ts)?;
-        let Store { conn, ids, .. } = self;
+        let Store {
+            conn, ids, history, ..
+        } = self;
+        let history = require_history(history.as_deref())?;
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
         #[cfg(test)]
         if let Some(hook) = self.after_begin.as_mut() {
@@ -293,7 +299,7 @@ impl Store {
         }
         let (committed, commit_id) = {
             let mut mint = ids.at(&tx);
-            let (commit_id, _) = new_commit(
+            let (commit_id, _) = history.new_commit(
                 &tx,
                 &mut mint,
                 &NewCommit {
@@ -309,13 +315,13 @@ impl Store {
             let mut outcomes = Vec::with_capacity(effects.len());
             for effect in effects {
                 outcomes.push(run_effect(
-                    &tx, &mut mint, repo_id, head, effect, &expires, &commit_id,
+                    &tx, &mut mint, history, repo_id, head, effect, &expires, &commit_id,
                 )?);
             }
             // 14.0: the files this request owes the working tree, recorded
             // before COMMIT so a crash loses nothing (`spec/store` §5.7).
             if head.origin == Origin::Api {
-                record_intent(&tx, repo_id, effects, &outcomes, &commit_id)?;
+                record_intent(&tx, history, repo_id, effects, &outcomes, &commit_id)?;
             }
             if head.clear_pending {
                 for path in touched_paths(effects) {
@@ -365,21 +371,31 @@ pub(crate) fn touched_paths(effects: &[Effect]) -> Vec<String> {
 }
 
 /// The document's `(current_rev, rendered_hash)` after the effects ran: the
-/// revision's hash, else the row's `file_hash` (a document no revision
-/// rendered yet), else the hash of what it reconstructs to.
-fn current_bytes_hash(tx: &Connection, doc_id: &str) -> Result<Option<(Option<String>, Vec<u8>)>> {
-    type Row = (Option<String>, Option<Vec<u8>>, Option<Vec<u8>>);
-    let row: Option<Row> = tx
+/// revision's hash (the recorder's, [`HistoryRecorder::rendered_hash`]), else
+/// the row's `file_hash` (a document no revision rendered yet), else the hash
+/// of what it reconstructs to.
+///
+/// seam: HistoryRecorder::rendered_hash (Phase 3, M4 — `docs.file_hash`
+/// already holds the value; inventory-rust.md §2.4 `effects.rs:370-392
+/// current_bytes_hash`).
+fn current_bytes_hash(
+    tx: &Connection,
+    history: &dyn HistoryRecorder,
+    doc_id: &str,
+) -> Result<Option<(Option<String>, Vec<u8>)>> {
+    let row: Option<(Option<String>, Option<Vec<u8>>)> = tx
         .query_row(
-            "SELECT d.current_rev, r.rendered_hash, d.file_hash
-             FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev
-             WHERE d.doc_id = ?1",
+            "SELECT current_rev, file_hash FROM docs WHERE doc_id = ?1",
             params![doc_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let Some((rev, rendered, file_hash)) = row else {
+    let Some((rev, file_hash)) = row else {
         return Ok(None);
+    };
+    let rendered = match &rev {
+        Some(rev) => history.rendered_hash(tx, rev)?,
+        None => None,
     };
     let hash = match rendered.or(file_hash) {
         Some(h) => h,
@@ -400,6 +416,7 @@ fn current_bytes_hash(tx: &Connection, doc_id: &str) -> Result<Option<(Option<St
 /// its last revision rendered, so a foreign file is never unlinked).
 fn record_intent(
     tx: &Connection,
+    history: &dyn HistoryRecorder,
     repo_id: &str,
     effects: &[Effect],
     outcomes: &[Option<Committed>],
@@ -420,11 +437,12 @@ fn record_intent(
                 if moved == Some(c.doc_id.as_str()) {
                     continue; // the rename row lands these bytes
                 }
-                let rendered_hash: Vec<u8> = tx.query_row(
-                    "SELECT rendered_hash FROM revisions WHERE rev_id = ?1",
-                    params![c.rev_id],
-                    |r| r.get(0),
-                )?;
+                // seam: HistoryRecorder::rendered_hash (Phase 3, M4 — the
+                // pending row carries the hash the commit computed;
+                // inventory-rust.md §2.4 `effects.rs:401-485 record_intent`).
+                let rendered_hash: Vec<u8> = history
+                    .rendered_hash(tx, &c.rev_id)?
+                    .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
                 PendingRow {
                     path: path.to_owned(),
                     kind: PendingKind::Write,
@@ -442,7 +460,7 @@ fn record_intent(
                 },
                 _,
             ) => {
-                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, doc_id)? else {
+                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, history, doc_id)? else {
                     continue;
                 };
                 PendingRow {
@@ -465,7 +483,7 @@ fn record_intent(
                 if *pool {
                     continue; // an observed deletion owes the tree nothing
                 }
-                let rendered_hash = current_bytes_hash(tx, doc_id)?
+                let rendered_hash = current_bytes_hash(tx, history, doc_id)?
                     .map_or_else(|| sha256(b"").to_vec(), |(_, h)| h);
                 PendingRow {
                     path: path.clone(),
@@ -643,9 +661,11 @@ fn validate(tx: &Connection, repo_id: &str, effects: &[Effect]) -> Result<Option
 
 // ---- the effects -------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn run_effect(
     tx: &Connection,
     mint: &mut Mint<'_>,
+    history: &dyn HistoryRecorder,
     repo_id: &str,
     head: &CommitHead<'_>,
     effect: &Effect,
@@ -684,13 +704,13 @@ fn run_effect(
                 head.reason,
             )?;
             Ok(Some(ingest_in(
-                tx, mint, repo_id, &plan, expires, commit_id,
+                tx, mint, history, repo_id, &plan, expires, commit_id,
             )?))
         }
         Effect::IngestReconciled { prepared, .. } => {
             let plan = prepared.plan(mint, head.origin, head.actor, head.reason, None)?;
             Ok(Some(ingest_in(
-                tx, mint, repo_id, &plan, expires, commit_id,
+                tx, mint, history, repo_id, &plan, expires, commit_id,
             )?))
         }
         Effect::MovePath {
@@ -700,7 +720,15 @@ fn run_effect(
             current_rev,
             inbound,
         } => {
-            move_path_in(tx, doc_id, from, to, current_rev.as_deref(), inbound)?;
+            move_path_in(
+                tx,
+                history,
+                doc_id,
+                from,
+                to,
+                current_rev.as_deref(),
+                inbound,
+            )?;
             Ok(None)
         }
         Effect::Tombstone { doc_id, pool, .. } => {
@@ -715,6 +743,7 @@ fn run_effect(
 /// affected rollups, phantom adoption at the new path.
 fn move_path_in(
     tx: &Connection,
+    history: &dyn HistoryRecorder,
     doc_id: &str,
     from: &str,
     to: &str,
@@ -725,10 +754,9 @@ fn move_path_in(
         "UPDATE docs SET path = ?1 WHERE doc_id = ?2",
         params![to, doc_id],
     )?;
-    tx.execute(
-        "UPDATE revisions SET path = ?1 WHERE doc_id = ?2 AND rev_id = ?3",
-        params![to, doc_id, current_rev],
-    )?;
+    // The current revision's path is the recorder's to re-point (D11: a
+    // move is a transition; inventory-rust.md §3.12 `effects.rs:728-731`).
+    history.record_move(tx, doc_id, current_rev, to)?;
     let phantom = format!("phantom:{from}");
     let mut affected: Vec<String> = Vec::new();
     {

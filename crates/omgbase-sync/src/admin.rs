@@ -70,6 +70,9 @@ impl RepoStatus {
 
 /// §4.4 `repos_status`: counts, `unconverged`, and the drift with `checked:
 /// true` when a root (and filesystem) was supplied.
+// seam: self-contained recovery payloads (Phase 3, M4/D9 — `unconverged`
+// compares `docs.file_hash` alone or becomes the drift count; `commits` count
+// and `open_edges` follow M5/M6; inventory-rust.md §2.8 `admin.rs:88-109`).
 pub fn repos_status(
     store: &Store,
     repo_id: &str,
@@ -137,6 +140,9 @@ impl SyncStatus {
 }
 
 /// §4.4 `sync_status`.
+// seam: feed sequence / checkpoints (Phase 3, M5 and D4 — `lastCommitSeq` is
+// the feed's head, the checkpoint row collapses to sync state;
+// inventory-rust.md §2.8 `admin.rs:146-155`).
 pub fn sync_status(
     store: &Store,
     repo_id: &str,

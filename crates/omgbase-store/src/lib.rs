@@ -32,31 +32,45 @@
 //!
 //! ## Layering
 //!
-//! [`schema`] (§1, §3: the opener and migrations), [`ids`] (§2.1–2.2),
-//! [`time`] (§2.4), [`tree`] (§4.1 encodings), [`delta`] (§4.1 "Delta
-//! nodes", §4.4, §6: the 16.0 delta forms, their encoding over
-//! [`edit_script`]'s Myers script, and the resolver that walks a delta back
-//! to its checkpoint), [`order_key`] (§4.3),
-//! [`writers`] (blobs, tree nodes, commits, revisions), [`observe`] (§5),
-//! [`properties`] (the `properties` rows of `spec/properties`, written in
-//! §5.4), [`history`] (the `changes_since` feed of `spec/sync` §6), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
-//! rows of `spec/graph`, written in §5.4), [`search`] (`spec/search`:
-//! `text_search`, the embedding drain over the `embeddings`/`doc_embeddings`
-//! caches, vector, hybrid and `resolve`), [`read`] (§5.2, §6), [`derived`]
-//! (§4.5 sections, FTS, §7 rebuild and GC), [`retention`] and [`archive`]
-//! (§7.1, 15.0: the retention policy as an exact rule, archive segments —
-//! export, squash, attach/detach, reads through a segment), and the `spec/mutate` host side
-//! (store 13.4): [`mutate`] (loading the working tree, `apply` with the
-//! file-CAS + known-id `api` commit), [`doc_store`] (the write-target seam),
-//! [`macros`], [`links`] (link-destination rewriting), [`sugar`] (the shared
-//! effect builders every sugar write is made of, mutate 3.0), [`docs_ops`]
-//! (create / move / delete / set_meta over them, [`yaml_emit`]) and [`plan`]
-//! (the whole-document update planner). Since 13.7 every `api` request — a changeset over N
-//! documents, a move with its retarget, a create, a delete — commits as one
-//! transaction with one `commits` row through the internal effect set
-//! (`effects`, not public API); since 14.0 it commits **DB-first**, recording
-//! the files it owes as `pending_materializations` rows and writing them
-//! after COMMIT ([`materialize`]: the replay the sweep, recovery and the
+//! Since the modular-core program's Phase 1 (`docs/modular-core/README.md`)
+//! the crate is three module trees and a composition root:
+//!
+//! - [`core`] — the current-state core: [`schema`]'s companion [`ids`]
+//!   (§2.1–2.2) and [`mint`] (the checking minter over the
+//!   [`IdentityClaims`] oracle, [`claims`]), [`time`] (§2.4), [`order_key`]
+//!   (§4.3), [`codec`] (canonical attrs, hex), [`writers`] (the id-assigned
+//!   body and the commit row's provenance), [`observe`] (§5: the observe
+//!   commit, its history half handed to the recorder), [`properties`],
+//!   [`graph`], [`derived`] (§4.5 sections, FTS, the pool sweep), [`read`]
+//!   (§5.2, §6.1), [`text_search`] (`spec/search` §1.3), the `spec/mutate`
+//!   host side ([`mutate`], [`doc_store`], [`macros`], [`links`], [`sugar`],
+//!   [`docs_ops`], [`yaml_emit`], [`plan`], `effects`, [`effects_plan`]),
+//!   [`materialize`] (§5.7) and [`size`] (§7 "Size") — and the seams,
+//!   [`capabilities`]: [`HistoryRecorder`], [`SemanticProvider`],
+//!   [`IdentityClaims`], bundled as [`Capabilities`].
+//! - [`history`] — the recorder: [`history::writers`] (blobs, tree nodes,
+//!   revisions, commits), [`tree`] (§4.1 encodings), [`delta`] (§4.1 "Delta
+//!   nodes", §4.4, §6 over [`edit_script`]'s Myers script), [`history::feed`]
+//!   (the `changes_since` feed of `spec/sync` §6), [`history::read`] (§6.2),
+//!   [`gc`] (§7 mark-and-sweep), [`retention`] and [`archive`] (§7.1, 15.0);
+//!   [`Recorder`] implements [`HistoryRecorder`] over them.
+//! - [`semantic`] — the provider: [`search`] (`spec/search`: the embedding
+//!   drain over the `embeddings`/`doc_embeddings` caches, vector, hybrid and
+//!   `resolve`) and the `cosine` scalar; [`Provider`] implements
+//!   [`SemanticProvider`].
+//! - this root — [`Store`], the opener ([`schema`]), and
+//!   [`Capabilities::standard`]: the one place that names the core and both
+//!   extensions. Every module keeps its pre-Phase-1 crate-root path
+//!   (`omgbase_store::read`, `omgbase_store::archive`, …) through re-exports.
+//!
+//! The core names nothing of `history` or `semantic` (`tests/boundaries.rs`,
+//! with `boundary-allowlist.txt` for what Phase 3 removes); the semantic
+//! layer names nothing of `history`. Since 13.7 every `api` request — a
+//! changeset over N documents, a move with its retarget, a create, a delete —
+//! commits as one transaction with one `commits` row through the internal
+//! effect set (`effects`, not public API); since 14.0 it commits **DB-first**,
+//! recording the files it owes as `pending_materializations` rows and writing
+//! them after COMMIT ([`materialize`]: the replay the sweep, recovery and the
 //! observe gate rule share). The public effect vocabulary of `spec/mutate`
 //! §11 (mutate 2.3) is planned and executed over that executor by
 //! [`effects_plan`] (`plan` / `execute` / `apply({ effects })`).
@@ -69,62 +83,63 @@
 
 #![forbid(unsafe_code)]
 
-pub mod archive;
-pub mod delta;
-pub mod derived;
-pub mod doc_store;
-pub mod docs_ops;
-pub mod edit_script;
-mod effects;
-pub mod effects_plan;
+pub mod core;
 pub mod error;
-pub mod graph;
 pub mod history;
-pub mod ids;
-pub mod links;
-pub mod macros;
-pub mod materialize;
-pub mod mint;
-pub mod mutate;
-pub mod observe;
-pub mod order_key;
-pub mod plan;
-pub mod properties;
-pub mod read;
-pub mod retention;
 pub mod schema;
-pub mod search;
-pub mod size;
-pub mod sugar;
-pub mod time;
-pub mod tree;
-pub mod writers;
-pub mod yaml_emit;
+pub mod semantic;
+
+// The modular-core layout (`docs/modular-core/README.md`, Phase 1): the
+// current-state core, the history extension and the semantic extension are
+// three module trees; every module keeps its old crate-root path through
+// these re-exports, so `omgbase_store::read::reconstruct`,
+// `omgbase_store::archive::revision_body`, `omgbase_store::search::…` and
+// the rest resolve as before. `lib.rs` is the composition root: the one
+// place that names both the core and its extensions.
+pub(crate) use self::core::effects;
+pub use self::core::{
+    capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, graph, history_shapes,
+    ids, links, macros, materialize, mint, mutate, observe, order_key, plan, properties, read,
+    size, sugar, text_search, time, writers, yaml_emit,
+};
+pub use self::history::{archive, delta, edit_script, gc, retention, tree};
+pub use self::semantic::search;
 
 use std::path::Path;
 
-use rusqlite::functions::{Context, FunctionFlags};
-use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, params};
 
+pub use self::history::writers::{NewRevision, PreviousRevision, TreeWriteContext};
+pub use self::semantic::{Provider, cosine_bytes};
 pub use archive::{
-    ARCHIVE_DIR, ARCHIVE_SQL, ARCHIVE_SUFFIX, ArchiveListing, ArchiveState, AttachResult,
-    AttachedSegment, ExportOptions, ExportResult, Manifest, RevisionBody, SegmentInfo,
-    SquashResult, SweptBodies, parse_segment_file_name, read_manifest, segment_basename,
-    segment_file_name,
+    ARCHIVE_DIR, ARCHIVE_SQL, ARCHIVE_SUFFIX, Manifest, RevisionBody, parse_segment_file_name,
+    read_manifest, segment_basename, segment_file_name,
 };
+pub use capabilities::{
+    Capabilities, ChangesPage, CommitDigest, DigestRevision, DispositionRow, DocEmbedStats,
+    EmbedStats, ForeignVectors, GcResult, HistoryRecorder, HistorySizeFigures, IdentityClaims,
+    RecordedRevision, RevisionRead, RevisionTransition, SemanticProvider,
+};
+pub use claims::TableUnionClaims;
+pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
 pub use delta::{
     CHECKPOINT_EVERY, DeltaOp, Form, FrontmatterBlob, Node, ResolvedList, ResolvedTree,
     TreeResolver, is_checkpoint_seq,
 };
-pub use derived::{ARCHIVED_COMMITS_SQL, GcResult, LIVE_LEAF_SQL, RebuildTarget};
+pub use derived::{LIVE_LEAF_SQL, RebuildTarget};
 pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use edit_script::{EditOp, myers_script};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
+pub use gc::ARCHIVED_COMMITS_SQL;
 pub use graph::ResolvedEdge;
-pub use history::{ChangesPage, CommitDigest, DigestRevision};
+pub use history::Recorder;
+pub use history_shapes::{
+    ArchiveListing, ArchiveState, AttachResult, AttachedSegment, ExportOptions, ExportResult,
+    LadderKeep, LadderRung, RetentionDocPlan, RetentionOptions, RetentionOverride, RetentionPlan,
+    RetentionPolicy, RetentionTotals, SegmentInfo, SquashResult, SweptBodies,
+};
 pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
@@ -147,29 +162,20 @@ pub use omgbase_reconcile::{Config, MatchBlock, PoolEntry};
 pub use omgbase_search::{
     Boosts, DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EmbedTask, EmbeddingProvider, Evidence,
 };
-pub use read::RevisionRead;
-pub use retention::{
-    LadderKeep, LadderRung, RetentionDocPlan, RetentionOptions, RetentionOverride, RetentionPlan,
-    RetentionPolicy, RetentionTotals, evaluate_retention, merge_retention_policy, retention_policy,
-};
+pub use retention::{evaluate_retention, merge_retention_policy, retention_policy};
 pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
 pub use search::{
-    BlockContexts, ContextScope, DocEmbedStats, DocVectorHit, DocVectorRow, DrainStats, EmbedStats,
-    ForeignVectors, HybridHit, HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult,
-    VectorHit, block_vector,
+    BlockContexts, ContextScope, DocVectorHit, DocVectorRow, DrainStats, HybridHit, HybridQuery,
+    QueryVector, ResolveHit, VectorHit, block_vector,
 };
 pub use size::{
     SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFile, SizeReport, SizeRetention, SizeTable,
     TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of, size_advice,
 };
 pub use sugar::Sugar;
-pub use tree::{
-    TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, serialize_tree_entry,
-    tree_hash,
-};
-pub use writers::{
-    NewCommit, NewRevision, Origin, PreviousRevision, TreeInputBlock, TreeWriteContext,
-};
+pub use text_search::{TextHit, TextSearchResult};
+pub use tree::{TreeEntry, serialize_tree_entries, serialize_tree_entry, tree_hash};
+pub use writers::{NewCommit, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
@@ -186,6 +192,10 @@ pub const FORMAT_MARKDOWN: &str = "markdown";
 pub struct Store {
     conn: Connection,
     ids: mint::IdSource,
+    /// The history capability, when the store opened with one.
+    history: Option<Box<dyn HistoryRecorder>>,
+    /// The semantic capability, when the store opened with one.
+    semantic: Option<Box<dyn SemanticProvider>>,
     /// Test seam: runs inside [`Store::commit_effects`](effects) right after
     /// its `BEGIN IMMEDIATE`, before the validation — a test interleaves a
     /// second connection against the held write lock here.
@@ -199,32 +209,6 @@ impl std::fmt::Debug for Store {
     }
 }
 
-/// Cosine similarity of two little-endian float32 vector blobs
-/// (`spec/search` §3, the reference's `cosineFloat32`): products and sums in
-/// f64 over the shorter length (each blob floored to a multiple of 4 bytes);
-/// `0.0` when either norm is zero.
-#[must_use]
-pub fn cosine_bytes(a: &[u8], b: &[u8]) -> f64 {
-    omgbase_search::cosine_bytes(a, b)
-}
-
-fn cosine_udf(ctx: &Context<'_>) -> rusqlite::Result<Option<f64>> {
-    let blob = |i: usize| -> rusqlite::Result<Option<&[u8]>> {
-        match ctx.get_raw(i) {
-            ValueRef::Null => Ok(None),
-            ValueRef::Blob(b) => Ok(Some(b)),
-            other => Err(rusqlite::Error::InvalidFunctionParameterType(
-                i,
-                other.data_type(),
-            )),
-        }
-    };
-    match (blob(0)?, blob(1)?) {
-        (Some(a), Some(b)) => Ok(Some(cosine_bytes(a, b))),
-        _ => Ok(None),
-    }
-}
-
 impl Store {
     /// Open (creating parent directories and the file as needed) with the
     /// production minter. `:memory:` is a valid path.
@@ -232,8 +216,21 @@ impl Store {
         Self::open_with_minter(path, Box::new(RandomMinter))
     }
 
-    /// [`Store::open`] with a replaceable minter (§2.2).
+    /// [`Store::open`] with a replaceable minter (§2.2) and the standard
+    /// capabilities.
     pub fn open_with_minter(path: impl AsRef<Path>, minter: Box<dyn IdMinter>) -> Result<Self> {
+        Self::open_with(path, minter, Capabilities::standard())
+    }
+
+    /// [`Store::open`] with a replaceable minter and the capabilities the
+    /// composition layer assembled (`docs/modular-core/README.md`, Phase 1):
+    /// the `omgbase` binary, the sync workspace and every fixture runner open
+    /// through here or through the [`Capabilities::standard`] shorthands.
+    pub fn open_with(
+        path: impl AsRef<Path>,
+        minter: Box<dyn IdMinter>,
+        capabilities: Capabilities,
+    ) -> Result<Self> {
         let path = path.as_ref();
         if path.as_os_str() != ":memory:"
             && let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty())
@@ -241,7 +238,7 @@ impl Store {
             std::fs::create_dir_all(dir)
                 .map_err(|e| Error::Other(format!("cannot create {}: {e}", dir.display())))?;
         }
-        Self::from_connection(Connection::open(path)?, minter)
+        Self::from_connection_with(Connection::open(path)?, minter, capabilities)
     }
 
     /// A fresh in-memory store (tests, fixtures).
@@ -254,27 +251,65 @@ impl Store {
         Self::from_connection(Connection::open_in_memory()?, minter)
     }
 
-    /// Adopt an existing connection: apply the §1 pragmas, register
-    /// `cosine`, run the opener (fresh → `schema.sql`; older → migrations;
-    /// newer → [`Error::SchemaTooNew`]).
+    /// Adopt an existing connection with the standard capabilities: apply the
+    /// §1 pragmas, register `cosine`, run the opener (fresh → `schema.sql`;
+    /// older → migrations; newer → [`Error::SchemaTooNew`]).
     pub fn from_connection(conn: Connection, minter: Box<dyn IdMinter>) -> Result<Self> {
+        Self::from_connection_with(conn, minter, Capabilities::standard())
+    }
+
+    /// [`Store::from_connection`] with the capabilities the composition layer
+    /// assembled: the semantic provider attaches its `cosine` scalar, the
+    /// claims oracle goes behind the checking minter, the recorder is what
+    /// every commit records through.
+    pub fn from_connection_with(
+        conn: Connection,
+        minter: Box<dyn IdMinter>,
+        capabilities: Capabilities,
+    ) -> Result<Self> {
+        let Capabilities {
+            history,
+            semantic,
+            claims,
+        } = capabilities;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        conn.create_scalar_function(
-            "cosine",
-            2,
-            FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-            cosine_udf,
-        )?;
-        let mut ids = mint::IdSource::new(minter);
+        if let Some(s) = &semantic {
+            s.attach(&conn)?;
+        }
+        let mut ids = mint::IdSource::new(minter, claims);
         schema::migrate(&conn, &mut ids)?;
         Ok(Self {
             conn,
             ids,
+            history,
+            semantic,
             #[cfg(test)]
             after_begin: None,
         })
+    }
+
+    /// The history capability this store opened with, if any.
+    #[must_use]
+    pub fn history(&self) -> Option<&dyn HistoryRecorder> {
+        self.history.as_deref()
+    }
+
+    /// The semantic capability this store opened with, if any.
+    #[must_use]
+    pub fn semantic(&self) -> Option<&dyn SemanticProvider> {
+        self.semantic.as_deref()
+    }
+
+    /// The recorder, or the capability-unavailable error.
+    fn recorder(&self) -> Result<&dyn HistoryRecorder> {
+        capabilities::require_history(self.history.as_deref())
+    }
+
+    /// The provider, or the capability-unavailable error.
+    fn provider(&self) -> Result<&dyn SemanticProvider> {
+        capabilities::require_semantic(self.semantic.as_deref())
     }
 
     /// The underlying connection.
@@ -328,29 +363,34 @@ impl Store {
 
     // ---- writers ------------------------------------------------------------------
 
-    /// [`writers::put_blob`].
+    // The recorder's own writers, exposed for the fixture runners and the
+    // tests that build history by hand (the composition root may name
+    // `history::writers`; the core may not).
+
+    /// [`history::writers::put_blob`].
     pub fn put_blob(&self, text: &str) -> Result<String> {
-        writers::put_blob(&self.conn, text)
+        history::writers::put_blob(&self.conn, text)
     }
 
-    /// [`writers::put_tree_node`].
+    /// [`history::writers::put_tree_node`].
     pub fn put_tree_node(&self, entries: &[TreeEntry]) -> Result<String> {
-        writers::put_tree_node(&self.conn, entries)
+        history::writers::put_tree_node(&self.conn, entries)
     }
 
-    /// [`writers::write_block_tree`].
+    /// [`history::writers::write_block_tree`].
     pub fn write_block_tree(&self, blocks: &[TreeInputBlock]) -> Result<String> {
-        writers::write_block_tree(&self.conn, blocks)
+        history::writers::write_block_tree(&self.conn, blocks)
     }
 
-    /// [`writers::new_commit`]; returns `(commit_id, seq)`.
+    /// [`HistoryRecorder::new_commit`]; returns `(commit_id, seq)`.
     pub fn new_commit(&mut self, input: &NewCommit<'_>) -> Result<(String, i64)> {
-        writers::new_commit(&self.conn, &mut self.ids.at(&self.conn), input)
+        let recorder = capabilities::require_history(self.history.as_deref())?;
+        recorder.new_commit(&self.conn, &mut self.ids.at(&self.conn), input)
     }
 
-    /// [`writers::write_revision`]; returns `(rev_id, seq)`.
+    /// [`history::writers::write_revision`]; returns `(rev_id, seq)`.
     pub fn write_revision(&mut self, input: &NewRevision<'_>) -> Result<(String, i64)> {
-        writers::write_revision(&self.conn, &mut self.ids.at(&self.conn), input)
+        history::writers::write_revision(&self.conn, &mut self.ids.at(&self.conn), input)
     }
 
     // ---- reads --------------------------------------------------------------------
@@ -360,9 +400,11 @@ impl Store {
         read::reconstruct(&self.conn, doc_id)
     }
 
-    /// §6.2: the bytes at a revision, from its Merkle root.
+    /// §6.2: the bytes at a revision, from its Merkle root
+    /// ([`HistoryRecorder::read_at_revision`]).
     pub fn read_at_revision(&self, doc_id: &str, rev_id: &str) -> Result<Option<RevisionRead>> {
-        read::read_at_revision(&self.conn, doc_id, rev_id)
+        self.recorder()?
+            .read_at_revision(&self.conn, doc_id, rev_id)
     }
 
     /// The change feed (`spec/sync` §6): the repo's commits with `seq >
@@ -375,7 +417,8 @@ impl Store {
         limit: usize,
         origin: Option<&str>,
     ) -> Result<ChangesPage> {
-        history::changes_since(&self.conn, repo_id, cursor, limit, origin)
+        self.recorder()?
+            .changes_since(&self.conn, repo_id, cursor, limit, origin)
     }
 
     /// §5.2: the matcher's old side for a doc, from the live `blocks` rows.
@@ -420,26 +463,28 @@ impl Store {
         derived::rebuild_sections(&self.conn, doc_id)
     }
 
-    /// §7: recompute derived tables.
+    /// §7: recompute derived tables (the `block_changes` projection through
+    /// [`HistoryRecorder::rebuild_projection`]).
     pub fn rebuild_index(&self, target: RebuildTarget) -> Result<()> {
-        derived::rebuild_index(&self.conn, target)
+        derived::rebuild_index(&self.conn, target, self.history.as_deref())
     }
 
     /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
-    /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows.
+    /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows
+    /// ([`HistoryRecorder::gc`]).
     pub fn gc(&self, enabled: bool) -> Result<GcResult> {
-        derived::run_gc(&self.conn, enabled)
+        self.recorder()?.gc(&self.conn, enabled)
     }
 
     /// What [`Store::gc`] would sweep, without deleting (§8 I5) — the three
     /// counts, the `same` rows (14.2) included.
     pub fn gc_dry_run(&self) -> Result<GcResult> {
-        derived::gc_dry_run(&self.conn)
+        self.recorder()?.gc_dry_run(&self.conn)
     }
 
     /// §7 (14.2): the `same` disposition rows a store through 14.1 wrote.
     pub fn count_same_dispositions(&self) -> Result<usize> {
-        derived::count_same_dispositions(&self.conn)
+        self.recorder()?.count_same_dispositions(&self.conn)
     }
 
     /// §5.5: delete expired pool rows; returns how many.
@@ -451,13 +496,13 @@ impl Store {
     /// through `dbstat`, grouped into categories, the file's pages, advice
     /// (the retention advice of 15.0 evaluated at the wall clock).
     pub fn size_report(&self) -> Result<SizeReport> {
-        size::size_report(&self.conn)
+        size::size_report(&self.conn, self.history.as_deref())
     }
 
     /// [`Store::size_report`] with the retention plans evaluated at `now`
     /// (the CLI's pinned clock under `OMGBASE_SPEC_CLOCK`).
     pub fn size_report_at(&self, now: &str) -> Result<SizeReport> {
-        size::size_report_at(&self.conn, now)
+        size::size_report_at(&self.conn, self.history.as_deref(), now)
     }
 
     // ---- history retention (§7.1, 15.0) ------------------------------------------------
@@ -469,40 +514,44 @@ impl Store {
         repo_id: &str,
         override_: Option<&serde_json::Value>,
     ) -> Result<RetentionPolicy> {
-        retention::retention_policy(&self.conn, repo_id, override_)
+        self.recorder()?
+            .retention_policy(&self.conn, repo_id, override_)
     }
 
     /// §7.1 "The plan": what the policy would archive, at `opts.now`.
     pub fn retention_plan(&self, repo_id: &str, opts: &RetentionOptions) -> Result<RetentionPlan> {
-        retention::evaluate_retention(&self.conn, repo_id, opts)
+        self.recorder()?.retention_plan(&self.conn, repo_id, opts)
     }
 
     /// §7.1 `history export [--prune]`: write one segment (**mints `s`**),
     /// or finish an unrecorded one, and with `prune` squash the store.
     pub fn export_history(&mut self, repo_id: &str, opts: &ExportOptions) -> Result<ExportResult> {
-        archive::export_history(&self.conn, &mut self.ids.at(&self.conn), repo_id, opts)
+        let recorder = capabilities::require_history(self.history.as_deref())?;
+        recorder.export_history(&self.conn, &mut self.ids.at(&self.conn), repo_id, opts)
     }
 
     /// §7.1 `history attach <file|dir>`: record a segment, or every segment
     /// of a directory that belongs to the repo.
     pub fn attach_archive(&self, repo_id: &str, target: &Path) -> Result<AttachResult> {
-        archive::attach_archive(&self.conn, repo_id, target)
+        self.recorder()?.attach_archive(&self.conn, repo_id, target)
     }
 
     /// §7.1 `history detach <segment_id|path>`: forget a segment; the id, or
     /// `None` when nothing matched.
     pub fn detach_archive(&self, repo_id: &str, r: &str) -> Result<Option<String>> {
-        archive::detach_archive(&self.conn, repo_id, r)
+        self.recorder()?.detach_archive(&self.conn, repo_id, r)
     }
 
     /// §7.1 `history list`: the recorded segments, then the unrecorded ones
     /// under `dest` when given.
     pub fn list_archives(&self, repo_id: &str, dest: Option<&Path>) -> Result<Vec<ArchiveListing>> {
-        archive::list_archives(&self.conn, repo_id, dest)
+        self.recorder()?.list_archives(&self.conn, repo_id, dest)
     }
 
     /// §6.2: a revision's row with its bodies resolved — through its segment
-    /// when archived ([`Error::RevisionArchived`] when unavailable).
+    /// when archived ([`Error::RevisionArchived`] when unavailable). The
+    /// recorder's own read, named from the composition root (the surface's
+    /// `docs_diff` walks the resolved tree itself).
     pub fn revision_body(
         &self,
         rev_id: &str,
@@ -524,6 +573,22 @@ impl Store {
     /// Close the connection.
     pub fn close(self) -> Result<()> {
         self.conn.close().map_err(|(_, e)| Error::Sqlite(e))
+    }
+}
+
+impl Capabilities {
+    /// What every store opens with today: the recorder over the store's own
+    /// history tables ([`Recorder`]), the embedding caches ([`Provider`]) and
+    /// the §2.1 table-union oracle ([`TableUnionClaims`]). Assembled here, on
+    /// the composition root — the one module that names the core and both
+    /// extensions.
+    #[must_use]
+    pub fn standard() -> Self {
+        Self {
+            history: Some(Box::new(Recorder)),
+            semantic: Some(Box::new(Provider)),
+            claims: Box::new(TableUnionClaims),
+        }
     }
 }
 

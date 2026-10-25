@@ -15,12 +15,17 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{Map, Value as Json, json};
 
+use crate::core::capabilities::HistoryRecorder;
 use crate::error::Result;
 
 /// The four categories, in the report's fixed order.
 pub const SIZE_CATEGORIES: [&str; 4] = ["content", "history", "search", "sync"];
 
 /// §7: the category of every table `schema.sql` creates.
+// seam: the categories recast as content / identity / recovery / history /
+// search / sync (Phase 3, D9 — `resurrection_pool` and
+// `pending_materializations` are core, not history; inventory-rust.md §2.6
+// `size.rs:24-57`, §6.9).
 pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("docs", "content"),
     ("blocks", "content"),
@@ -363,14 +368,21 @@ fn file_bytes(path: &Path) -> u64 {
 }
 
 /// The size report of an open connection (§7 "Size") at the wall clock.
-pub fn size_report(conn: &Connection) -> Result<SizeReport> {
-    size_report_at(conn, &crate::time::now_ts())
+pub fn size_report(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> Result<SizeReport> {
+    size_report_at(conn, history, &crate::time::now_ts())
 }
 
 /// The size report (§7 "Size") with the retention plans (15.0) evaluated at
 /// `now` — the report is store-wide, the policy a repository's, so every
-/// repository's plan under its effective policy is summed at one clock.
-pub fn size_report_at(conn: &Connection, now: &str) -> Result<SizeReport> {
+/// repository's plan under its effective policy is summed at one clock. The
+/// history figures (the `same` rows, the archived summary, the plans) come
+/// from the recorder ([`HistoryRecorder::size_figures`]); a store without
+/// one reports them as zero.
+pub fn size_report_at(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    now: &str,
+) -> Result<SizeReport> {
     let path = match conn.path() {
         Some(p) if !p.is_empty() => p.to_owned(),
         _ => ":memory:".to_owned(),
@@ -517,40 +529,13 @@ pub fn size_report_at(conn: &Connection, now: &str) -> Result<SizeReport> {
         }
     }
 
-    let same_dispositions = {
-        let n: i64 = conn.query_row(
-            "SELECT count(*) FROM dispositions WHERE kind = 'same'",
-            [],
-            |r| r.get(0),
-        )?;
-        u64::try_from(n).unwrap_or(0)
+    let figures = match history {
+        Some(h) => h.size_figures(conn, now)?,
+        None => crate::core::capabilities::HistorySizeFigures::default(),
     };
-    let (archived_revisions, segments, archived_bytes) = crate::archive::archived_summary(conn)?;
-    let archived = SizeArchived {
-        revisions: archived_revisions,
-        segments,
-        bytes: archived_bytes,
-    };
-    let mut retention = SizeRetention::default();
-    let repos: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY repo_id")?;
-        let it = stmt.query_map([], |r| r.get(0))?;
-        it.collect::<std::result::Result<Vec<_>, _>>()?
-    };
-    for repo_id in &repos {
-        let policy = crate::retention::retention_policy(conn, repo_id, None)?;
-        let plan = crate::retention::evaluate_retention(
-            conn,
-            repo_id,
-            &crate::retention::RetentionOptions {
-                now: now.to_owned(),
-                before: None,
-                policy,
-            },
-        )?;
-        retention.revisions += u64::try_from(plan.totals.archive).unwrap_or(0);
-        retention.bytes += plan.totals.bytes;
-    }
+    let same_dispositions = figures.same_dispositions;
+    let archived = figures.archived;
+    let retention = figures.retention;
     let advice = size_advice(&file, &categories, same_dispositions, retention);
     Ok(SizeReport {
         file,

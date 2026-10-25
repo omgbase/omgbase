@@ -11,80 +11,19 @@ use omgbase_search::{
     EmbeddingProvider, Evidence, HYBRID_PASS_LIMIT, RESOLVE_DEFAULT_LIMIT, apply_boosts,
     blob_to_f32, compute_boosts, context_prefix, cosine_f32, ctx_hash, default_terms, doc_header,
     doc_input, estimate_tokens, f32_to_blob, fuse, hex, locator, lower_terms, preview,
-    property_to_string, sanitize_fts_query, should_embed, sort_by_score, token_budget,
+    property_to_string, should_embed, sort_by_score, token_budget,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
+use crate::core::codec::from_hex;
 use crate::derived::LIVE_LEAF_SQL;
 use crate::error::Result;
 use crate::read::reconstruct;
-use crate::tree::from_hex;
 use crate::{Store, properties};
 
-/// §1.3 / §4: the default `limit`.
-pub const DEFAULT_LIMIT: usize = 50;
-
-// ---- text search (§1.3) --------------------------------------------------------------
-
-/// One `text_search` hit; `score = −bm25` (higher is better). On the wire
-/// (`blocks_search`) it is the block row under its engine names — `{ _id,
-/// _doc_id, _path, _type, _text, score }` (`spec/surface` §1.2, 5.0).
-#[derive(Clone, Debug, PartialEq)]
-pub struct TextHit {
-    pub block_id: String,
-    pub doc_id: String,
-    pub path: String,
-    pub block_type: String,
-    pub text: String,
-    pub score: f64,
-}
-
-/// `text_search`'s result.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TextSearchResult {
-    pub hits: Vec<TextHit>,
-    /// More than `limit` blocks matched.
-    pub truncated: bool,
-}
-
-/// §1.3: the live blocks of the repo whose FTS row matches the sanitized
-/// query, by `bm25(blocks_fts)` ascending, limited; no hits when the query
-/// sanitizes to nothing.
-pub fn text_search(
-    conn: &Connection,
-    repo_id: &str,
-    query: &str,
-    limit: usize,
-) -> Result<TextSearchResult> {
-    let m = sanitize_fts_query(query);
-    if m.is_empty() {
-        return Ok(TextSearchResult::default());
-    }
-    let mut stmt = conn.prepare_cached(
-        "SELECT b.block_id, b.doc_id, d.path, b.type, b.text, bm25(blocks_fts) AS score
-         FROM blocks_fts
-         JOIN blocks b ON b.rowid = blocks_fts.rowid
-         JOIN docs d ON d.doc_id = b.doc_id
-         WHERE blocks_fts MATCH ?1 AND b.repo_id = ?2 AND b.deleted_commit IS NULL
-         ORDER BY score
-         LIMIT ?3",
-    )?;
-    let rows = stmt.query_map(params![m, repo_id, (limit + 1) as i64], |r| {
-        Ok(TextHit {
-            block_id: r.get(0)?,
-            doc_id: r.get(1)?,
-            path: r.get(2)?,
-            block_type: r.get(3)?,
-            text: r.get(4)?,
-            score: -r.get::<_, f64>(5)?,
-        })
-    })?;
-    let mut hits = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-    let truncated = hits.len() > limit;
-    hits.truncate(limit);
-    Ok(TextSearchResult { hits, truncated })
-}
+pub use crate::core::capabilities::{DocEmbedStats, EmbedStats, ForeignVectors};
+pub use crate::core::text_search::{DEFAULT_LIMIT, TextHit, TextSearchResult, text_search};
 
 // ---- embed tasks (§2.2, §2.4) ----------------------------------------------------------
 
@@ -382,26 +321,6 @@ pub fn get_cached_doc(
     }))
 }
 
-/// What a block pass did.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct EmbedStats {
-    /// Cache misses embedded and written.
-    pub embedded: usize,
-    /// Tasks whose vector was already cached.
-    pub cached: usize,
-}
-
-/// What a document pass did.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DocEmbedStats {
-    /// Whole-document inputs embedded and written.
-    pub embedded: usize,
-    /// Tasks whose fresh vector was already cached.
-    pub cached: usize,
-    /// Over-budget documents pooled from cached block vectors.
-    pub pooled: usize,
-}
-
 /// One drain: the block pass, then the document pass (§2.6).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DrainStats {
@@ -564,13 +483,6 @@ pub fn stale_docs(conn: &Connection, tasks: &[DocEmbedTask], model: &str) -> Res
         }
     }
     Ok(out)
-}
-
-/// Counts of `(block, doc)` vectors under a model other than `model`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ForeignVectors {
-    pub blocks: usize,
-    pub docs: usize,
 }
 
 /// §2.6: how many cached vectors belong to another model.
@@ -908,16 +820,6 @@ pub fn resolve(
 // ---- Store surface -------------------------------------------------------------------------
 
 impl Store {
-    /// `spec/search` §1.3.
-    pub fn text_search(
-        &self,
-        repo_id: &str,
-        query: &str,
-        limit: usize,
-    ) -> Result<TextSearchResult> {
-        text_search(&self.conn, repo_id, query, limit)
-    }
-
     /// `spec/search` §2.2: the embeddable blocks' tasks, `(path, ordinal)` order.
     pub fn build_embed_tasks(&self, repo_id: &str) -> Result<Vec<EmbedTask>> {
         build_embed_tasks(&self.conn, repo_id)
@@ -946,10 +848,15 @@ impl Store {
         embed_process_docs(&self.conn, tasks, provider)
     }
 
-    /// `spec/search` §2.6: one drain — the block pass, then the document pass.
+    /// `spec/search` §2.6: one drain — the block pass, then the document pass
+    /// ([`SemanticProvider::embed`], [`SemanticProvider::embed_docs`]).
+    ///
+    /// [`SemanticProvider::embed`]: crate::core::capabilities::SemanticProvider::embed
+    /// [`SemanticProvider::embed_docs`]: crate::core::capabilities::SemanticProvider::embed_docs
     pub fn drain(&self, repo_id: &str, provider: &dyn EmbeddingProvider) -> Result<DrainStats> {
-        let blocks = self.embed_process(&self.build_embed_tasks(repo_id)?, provider)?;
-        let docs = self.embed_process_docs(&self.build_doc_embed_tasks(repo_id)?, provider)?;
+        let semantic = self.provider()?;
+        let blocks = semantic.embed(&self.conn, repo_id, provider)?;
+        let docs = semantic.embed_docs(&self.conn, repo_id, provider)?;
         Ok(DrainStats { blocks, docs })
     }
 
@@ -987,16 +894,17 @@ impl Store {
         foreign_vector_count(&self.conn, model)
     }
 
-    /// `spec/search` §2.6: delete vectors under another model.
+    /// `spec/search` §2.6: delete vectors under another model
+    /// ([`SemanticProvider::prune_foreign`](crate::core::capabilities::SemanticProvider::prune_foreign)).
     pub fn prune_foreign_vectors(&self, model: &str) -> Result<ForeignVectors> {
-        prune_foreign_vectors(&self.conn, model)
+        self.provider()?.prune_foreign(&self.conn, model)
     }
 
     /// `spec/search` §3 (1.1): a live block's vector — the row for its current
     /// `(content_hash, ctx_hash)` under `model` — as the stored blob, `None`
     /// when stale or not live. Serves `semantic()` (`spec/surface` §1.3).
     pub fn block_vector(&self, block_id: &str, model: &str) -> Result<Option<Vec<u8>>> {
-        block_vector(&self.conn, block_id, model)
+        self.provider()?.block_vector(&self.conn, block_id, model)
     }
 
     /// `spec/search` §3 over blocks.

@@ -236,6 +236,9 @@ pub fn resolve_edges(
 /// `from_commit = commit_id`), then close (`to_commit = commit_id`) every open
 /// row whose key is not wanted or that duplicates an earlier kept row, in
 /// `rowid` order. Then rebuild the rollup (§3.4).
+// seam: current edges separate from transitions (Phase 3, M6 — open rows
+// only, `from_commit`/`to_commit` leave the core table; inventory-rust.md §2.4
+// `graph.rs:239-314`, §3.7).
 pub fn maintain_edges(
     conn: &Connection,
     minter: &mut Mint<'_>,

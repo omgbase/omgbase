@@ -34,17 +34,17 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::{Map, Value as Json};
 
 use crate::delta::{TreeResolver, entry_blobs};
-use crate::derived::sweep_unreachable;
 use crate::error::{Error, Result};
+use crate::history::gc::sweep_unreachable;
+use crate::history::writers::{put_blob, put_node_text};
 use crate::mint::Mint;
 use crate::retention::{
-    LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY, RetentionOptions, RetentionPlan,
-    evaluate_retention, repo_settings,
+    LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY, RetentionPlan, evaluate_retention,
+    repo_settings,
 };
 pub use crate::schema::ARCHIVE_SQL;
 use crate::schema::SCHEMA_VERSION;
 use crate::tree::from_hex;
-use crate::writers::{put_blob, put_node_text};
 
 /// The file suffix every segment carries.
 pub const ARCHIVE_SUFFIX: &str = ".omgarchive.db";
@@ -238,24 +238,10 @@ pub fn file_bytes(path: &Path) -> i64 {
     std::fs::metadata(path).map_or(0, |m| i64::try_from(m.len()).unwrap_or(i64::MAX))
 }
 
-/// One segment `attach` recorded.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AttachedSegment {
-    pub segment_id: String,
-    pub path: String,
-    pub seq_lo: i64,
-    pub seq_hi: i64,
-    pub revision_count: i64,
-    pub bytes: i64,
-}
-
-/// `attach`'s result.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AttachResult {
-    pub attached: Vec<AttachedSegment>,
-    /// Files in a directory that are not this repository's segments.
-    pub skipped: usize,
-}
+pub use crate::core::history_shapes::{
+    ArchiveListing, ArchiveState, AttachResult, AttachedSegment, ExportOptions, ExportResult,
+    SegmentInfo, SquashResult, SweptBodies,
+};
 
 /// `omg history attach <file|dir>` (§7.1 "Attach / detach"): record a segment
 /// (idempotent — a known segment's path is re-recorded) or every
@@ -357,65 +343,6 @@ pub fn detach_archive(conn: &Connection, repo_id: &str, r: &str) -> Result<Optio
     detach_alias(conn, &id)?;
     conn.execute("DELETE FROM archives WHERE segment_id = ?1", params![id])?;
     Ok(Some(id))
-}
-
-/// A segment's state (§7.1): recorded and on disk (`attached`), recorded but
-/// not on disk (`missing`); or unrecorded under the archives directory —
-/// `pending` (complete, its revisions still live: the crash rule finishes it
-/// on the next `export --prune`), `detached` (complete and squashed: `attach`
-/// brings it back), `stale` (some of its revisions live, some not: it belongs
-/// to another store or predates a different squash).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArchiveState {
-    Attached,
-    Missing,
-    Pending,
-    Detached,
-    Stale,
-}
-
-impl ArchiveState {
-    /// The wire spelling.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ArchiveState::Attached => "attached",
-            ArchiveState::Missing => "missing",
-            ArchiveState::Pending => "pending",
-            ArchiveState::Detached => "detached",
-            ArchiveState::Stale => "stale",
-        }
-    }
-}
-
-/// One line of `omg history list`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ArchiveListing {
-    pub segment_id: String,
-    pub path: String,
-    pub seq_lo: i64,
-    pub seq_hi: i64,
-    pub revision_count: i64,
-    pub bytes: i64,
-    pub created_at: String,
-    pub state: ArchiveState,
-}
-
-impl ArchiveListing {
-    /// The `--json` row (`spec/cli` §6 `history list`).
-    #[must_use]
-    pub fn to_json(&self) -> Json {
-        serde_json::json!({
-            "segment_id": self.segment_id,
-            "path": self.path,
-            "seq_lo": self.seq_lo,
-            "seq_hi": self.seq_hi,
-            "revision_count": self.revision_count,
-            "bytes": self.bytes,
-            "created_at": self.created_at,
-            "state": self.state.as_str(),
-        })
-    }
 }
 
 /// `omg history list`: the repository's recorded segments by `seq_lo` then
@@ -800,82 +727,6 @@ pub fn checkpoint_bodies(
 }
 
 // ---- export: write a segment, then squash -------------------------------------------------
-
-/// The segment an export wrote (or finished).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SegmentInfo {
-    pub id: String,
-    pub path: String,
-    pub seq_lo: i64,
-    pub seq_hi: i64,
-    pub created_at: String,
-    pub revision_count: i64,
-    /// The file's size on disk.
-    pub bytes: i64,
-    pub previous_segment: Option<String>,
-}
-
-impl SegmentInfo {
-    /// The `--json` shape (`spec/cli` §6 `history export`).
-    #[must_use]
-    pub fn to_json(&self) -> Json {
-        serde_json::json!({
-            "id": self.id,
-            "path": self.path,
-            "seq_lo": self.seq_lo,
-            "seq_hi": self.seq_hi,
-            "created_at": self.created_at,
-            "revision_count": self.revision_count,
-            "bytes": self.bytes,
-            "previous_segment": self.previous_segment,
-        })
-    }
-}
-
-/// What the squash changed (rows).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SquashResult {
-    pub revisions: usize,
-    /// Commits every revision of which is archived: their dispositions and block changes moved.
-    pub commits: usize,
-    pub dispositions: usize,
-    /// The `block_changes` rows deleted.
-    pub block_changes: usize,
-    /// Kept revisions re-written in checkpoint form because the squash
-    /// archived their base (spec §4.4 "Base liveness", §7.1 step 0, 16.0).
-    pub checkpointed: usize,
-}
-
-/// What the squash's sweep reclaimed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SweptBodies {
-    pub blobs: usize,
-    pub tree_nodes: usize,
-}
-
-/// `history export`'s result.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ExportResult {
-    pub plan: RetentionPlan,
-    /// `None` when nothing was to archive (no file written).
-    pub segment: Option<SegmentInfo>,
-    /// An unrecorded complete segment was finished instead of writing a new one (the crash rule).
-    pub reused: bool,
-    /// `None` without `prune`.
-    pub squashed: Option<SquashResult>,
-    /// `None` without `prune`.
-    pub gc: Option<SweptBodies>,
-}
-
-/// What [`export_history`] runs under.
-#[derive(Clone, Debug)]
-pub struct ExportOptions {
-    pub retention: RetentionOptions,
-    /// The directory the segment is written to (created when missing).
-    pub dest: PathBuf,
-    /// Squash the store after the segment is durable.
-    pub prune: bool,
-}
 
 /// The commits of `rev_ids` every revision of which is in `rev_ids` or already
 /// archived — whose change rows move with the bodies. Sorted by id.

@@ -1,0 +1,46 @@
+//! The current-state core (`docs/modular-core/README.md`, Phase 1 "isolate
+//! interfaces"): identity ([`ids`], [`mint`], [`claims`]), time and order
+//! keys, the document and block rows the observe commit writes
+//! ([`observe`], [`writers`], [`properties`], [`graph`], [`derived`]), the
+//! current reads ([`read`], [`text_search`]), the mutation host side
+//! ([`mutate`], [`effects_plan`], [`docs_ops`], [`macros`], [`links`],
+//! [`sugar`], [`plan`]), recovery ([`materialize`]) and the size report
+//! ([`size`]) — and the seams it reaches its extensions through
+//! ([`capabilities`]). Nothing here names `crate::history` or
+//! `crate::semantic`: `tests/boundaries.rs` checks every `crate::` path of
+//! this directory against the extensions' module stems, with
+//! `boundary-allowlist.txt` listing what Phase 3 still has to remove.
+
+pub mod capabilities;
+pub mod claims;
+pub mod codec;
+pub mod derived;
+pub mod doc_store;
+pub mod docs_ops;
+pub(crate) mod effects;
+pub mod effects_plan;
+pub mod graph;
+pub mod history_shapes;
+pub mod ids;
+pub mod links;
+pub mod macros;
+pub mod materialize;
+pub mod mint;
+pub mod mutate;
+pub mod observe;
+pub mod order_key;
+pub mod plan;
+pub mod properties;
+pub mod read;
+pub mod size;
+pub mod sugar;
+pub mod text_search;
+pub mod time;
+pub mod writers;
+pub mod yaml_emit;
+
+pub use capabilities::{
+    Capabilities, HistoryRecorder, IdentityClaims, SemanticProvider, require_history,
+    require_semantic,
+};
+pub use claims::TableUnionClaims;

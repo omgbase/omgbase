@@ -59,6 +59,9 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
             ));
         }
         (None, Some(since)) => {
+            // seam: feed sequence (Phase 3, M5/D7 — `--since` resolves an
+            //       instant through the feed, not `commits.ts`;
+            //       inventory-rust.md §2.9 `log.rs:63-73`, §6.5).
             let iso = since_instant(since, cli.now_ms())?;
             let repo = cli.repo()?;
             let seq: Option<i64> = cli

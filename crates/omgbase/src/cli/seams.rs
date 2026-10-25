@@ -22,7 +22,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use omgbase_store::{IdMinter, RandomMinter, SequentialMinter, Store};
+use omgbase_store::{Capabilities, IdMinter, RandomMinter, SequentialMinter, Store};
 use omgbase_sync::WriterLockOptions;
 
 use super::output::{CliError, js_string};
@@ -194,9 +194,14 @@ impl MinterSource {
 }
 
 /// Open a store connection over `db` with the busy timeout every connection
-/// of this process carries.
+/// of this process carries. The composition point of the modular core
+/// (`docs/modular-core/README.md`, Phase 1): the binary assembles the
+/// store's capabilities — the history recorder, the semantic provider, the
+/// identity-claims oracle — and hands them down; the core only ever sees
+/// the traits.
 pub fn open_store(db: &Path, minters: &MinterSource) -> Result<Store, String> {
-    let store = Store::open_with_minter(db, minters.minter()).map_err(|e| e.to_string())?;
+    let store = Store::open_with(db, minters.minter(), Capabilities::standard())
+        .map_err(|e| e.to_string())?;
     store
         .conn()
         .busy_timeout(BUSY_TIMEOUT)

@@ -149,6 +149,12 @@ pub fn canonical(path: &str) -> String {
     path.trim_start_matches('/').replace('\\', "/")
 }
 
+/// The reference form of a storage path: exactly one leading `/`.
+#[must_use]
+pub fn reference_path(path: &str) -> String {
+    format!("/{}", path.trim_start_matches('/'))
+}
+
 /// §6: the file bytes from a body and optional frontmatter (the body's
 /// trailing `\n` ensured; a non-empty mapping serialized by the YAML emitter
 /// between fences, a blank line before the body unless it starts with one).

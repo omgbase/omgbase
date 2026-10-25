@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use omgbase_store::{IdMinter, RandomMinter, Store};
+use omgbase_store::{Capabilities, IdMinter, RandomMinter, Store};
 use rusqlite::params;
 
 use crate::error::{Error, Result};
@@ -243,7 +243,11 @@ impl Workspace {
         Self::open_with_minter(root, Box::new(RandomMinter))
     }
 
-    /// [`Workspace::open`] with a replaceable id minter (`spec/store` §2.2).
+    /// [`Workspace::open`] with a replaceable id minter (`spec/store` §2.2)
+    /// and the standard capabilities (`docs/modular-core/README.md`, Phase
+    /// 1): the workspace is a composition point — it assembles the history
+    /// recorder, the semantic provider and the identity-claims oracle the
+    /// store runs with.
     pub fn open_with_minter(root: impl AsRef<Path>, minter: Box<dyn IdMinter>) -> Result<Self> {
         let root = root.as_ref();
         let root = if root.is_absolute() {
@@ -255,7 +259,7 @@ impl Workspace {
         };
         let omgbase_dir = root.join(OMGBASE_DIR);
         let db_path = omgbase_dir.join(DB_FILE);
-        let store = Store::open_with_minter(&db_path, minter)?;
+        let store = Store::open_with(&db_path, minter, Capabilities::standard())?;
         Ok(Self {
             root,
             omgbase_dir,

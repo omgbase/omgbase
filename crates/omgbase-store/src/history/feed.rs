@@ -10,73 +10,7 @@ use rusqlite::{Connection, params};
 
 use crate::error::Result;
 
-/// One revision a commit wrote.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DigestRevision {
-    pub doc: String,
-    pub path: String,
-    /// Hex of the revision's `rendered_hash`.
-    pub content_hash: String,
-}
-
-/// One commit of the feed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CommitDigest {
-    pub commit: String,
-    pub seq: i64,
-    pub ts: String,
-    pub origin: String,
-    pub actor: Option<String>,
-    /// A human line (the fixtures do not pin it).
-    pub summary: String,
-    pub revisions: Vec<DigestRevision>,
-}
-
-/// A page of the feed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChangesPage {
-    pub digests: Vec<CommitDigest>,
-    /// The last digest's `seq`, or the input cursor when the page is empty.
-    pub cursor: i64,
-    /// More commits follow.
-    pub truncated: bool,
-    /// The repo's max `seq` (0 when it has no commits).
-    pub head: i64,
-}
-
-impl ChangesPage {
-    /// The page as the MCP surface renders it (`camelCase` as the reference).
-    #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "digests": self.digests.iter().map(CommitDigest::to_json).collect::<Vec<_>>(),
-            "cursor": self.cursor,
-            "truncated": self.truncated,
-            "head": self.head,
-        })
-    }
-}
-
-impl CommitDigest {
-    /// The digest as the MCP surface renders it (`spec/sync` §6, 3.0): the
-    /// digest's own keys describe a commit and stay bare; a revision is a
-    /// `revisions` row rendered, so it takes the row's engine names
-    /// `{ _id, _path, _hash }` (`spec/surface` §1.2, 5.0).
-    #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "commit": self.commit,
-            "seq": self.seq,
-            "ts": self.ts,
-            "origin": self.origin,
-            "actor": self.actor,
-            "summary": self.summary,
-            "revisions": self.revisions.iter().map(|r| serde_json::json!({
-                "_id": r.doc, "_path": r.path, "_hash": r.content_hash,
-            })).collect::<Vec<_>>(),
-        })
-    }
-}
+pub use crate::core::capabilities::{ChangesPage, CommitDigest, DigestRevision};
 
 /// What a commit did besides its revisions: a document deletion (observed
 /// or api) with no revision names the tombstoned paths; a move names its

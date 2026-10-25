@@ -10,158 +10,16 @@ use std::collections::{HashMap, HashSet};
 
 use omgbase_format::hash::hex;
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Map, Value as Json, json};
+use serde_json::{Map, Value as Json};
 
 use crate::error::{Error, Result};
 use crate::time::{civil_from_days, parse_ms};
 use crate::tree::from_hex;
 
-/// `one per <period>`: a ladder rung's thinning grain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LadderKeep {
-    Day,
-    Week,
-    Month,
-    Year,
-}
-
-/// The wire spellings, in the order the policy error lists them.
-pub const LADDER_KEEPS: [&str; 4] = [
-    "one per day",
-    "one per week",
-    "one per month",
-    "one per year",
-];
-
-impl LadderKeep {
-    /// The wire spelling (`one per day`, …).
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            LadderKeep::Day => "one per day",
-            LadderKeep::Week => "one per week",
-            LadderKeep::Month => "one per month",
-            LadderKeep::Year => "one per year",
-        }
-    }
-
-    /// Parse the wire spelling.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "one per day" => LadderKeep::Day,
-            "one per week" => LadderKeep::Week,
-            "one per month" => LadderKeep::Month,
-            "one per year" => LadderKeep::Year,
-            _ => return None,
-        })
-    }
-}
-
-/// One ladder rung: applies to a revision whose age in whole days is at
-/// least `after_days`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LadderRung {
-    pub after_days: u64,
-    pub keep: LadderKeep,
-}
-
-/// A per-path override: the keys given replace the base policy's for the
-/// documents the glob matches.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RetentionOverride {
-    pub glob: String,
-    pub keep_days: Option<u64>,
-    pub per_doc_max: Option<u64>,
-    pub ladder: Option<Vec<LadderRung>>,
-    pub keep_origins: Option<Vec<String>>,
-}
-
-/// The policy (§7.1 "The policy").
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RetentionPolicy {
-    /// Every revision younger than this many days is kept.
-    pub keep_days: u64,
-    /// Beyond `keep_days`, one revision per period per rung (sorted by `after_days`).
-    pub ladder: Vec<LadderRung>,
-    /// The newest N revisions of a document are kept regardless of age.
-    pub per_doc_max: u64,
-    /// A revision whose commit has one of these origins AND a non-empty reason is kept.
-    pub keep_origins: Vec<String>,
-    pub overrides: Vec<RetentionOverride>,
-}
-
-impl Default for RetentionPolicy {
-    /// The defaults (§7.1): a month hot, then one a day for a year, then one
-    /// a month; 200 per document; `api` commits with a reason.
-    fn default() -> Self {
-        Self {
-            keep_days: 30,
-            ladder: vec![
-                LadderRung {
-                    after_days: 30,
-                    keep: LadderKeep::Day,
-                },
-                LadderRung {
-                    after_days: 365,
-                    keep: LadderKeep::Month,
-                },
-            ],
-            per_doc_max: 200,
-            keep_origins: vec!["api".to_owned()],
-            overrides: Vec::new(),
-        }
-    }
-}
-
-fn ladder_json(ladder: &[LadderRung]) -> Json {
-    Json::Array(
-        ladder
-            .iter()
-            .map(|r| json!({ "after_days": r.after_days, "keep": r.keep.as_str() }))
-            .collect(),
-    )
-}
-
-impl RetentionPolicy {
-    /// The policy as JSON, in the reference's key order (`keep_days`,
-    /// `ladder`, `per_doc_max`, `keep_origins`, `overrides`; an override's
-    /// `glob` first, then only the keys it names).
-    #[must_use]
-    pub fn to_json(&self) -> Json {
-        let mut m = Map::new();
-        m.insert("keep_days".to_owned(), json!(self.keep_days));
-        m.insert("ladder".to_owned(), ladder_json(&self.ladder));
-        m.insert("per_doc_max".to_owned(), json!(self.per_doc_max));
-        m.insert("keep_origins".to_owned(), json!(self.keep_origins));
-        m.insert(
-            "overrides".to_owned(),
-            Json::Array(
-                self.overrides
-                    .iter()
-                    .map(|o| {
-                        let mut om = Map::new();
-                        om.insert("glob".to_owned(), json!(o.glob));
-                        if let Some(k) = o.keep_days {
-                            om.insert("keep_days".to_owned(), json!(k));
-                        }
-                        if let Some(k) = o.per_doc_max {
-                            om.insert("per_doc_max".to_owned(), json!(k));
-                        }
-                        if let Some(l) = &o.ladder {
-                            om.insert("ladder".to_owned(), ladder_json(l));
-                        }
-                        if let Some(k) = &o.keep_origins {
-                            om.insert("keep_origins".to_owned(), json!(k));
-                        }
-                        Json::Object(om)
-                    })
-                    .collect(),
-            ),
-        );
-        Json::Object(m)
-    }
-}
+pub use crate::core::history_shapes::{
+    LADDER_KEEPS, LadderKeep, LadderRung, RetentionDocPlan, RetentionOptions, RetentionOverride,
+    RetentionPlan, RetentionPolicy, RetentionTotals,
+};
 
 /// The settings key the policy lives under (`history.retention`).
 pub const RETENTION_SETTINGS_KEY: &str = "history";
@@ -491,94 +349,6 @@ pub fn period_key(ts_ms: i64, keep: LadderKeep) -> String {
 
 // ---- the plan -----------------------------------------------------------------------
 
-/// One document of the plan.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RetentionDocPlan {
-    pub id: String,
-    /// The document's current path, reference form.
-    pub path: String,
-    /// Live (non-archived) revisions of the document before the plan.
-    pub revisions: usize,
-    /// Revision ids kept, oldest first.
-    pub keep: Vec<String>,
-    /// Revision ids to archive, oldest first.
-    pub archive: Vec<String>,
-    /// Bytes of blobs and tree nodes reachable from the archived revisions and from no kept revision of the store.
-    pub bytes: u64,
-}
-
-/// The plan's totals.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RetentionTotals {
-    /// Documents with at least one revision to archive.
-    pub docs: usize,
-    /// Live revisions of the repository before the plan.
-    pub revisions: usize,
-    pub keep: usize,
-    pub archive: usize,
-    /// Bytes reachable only from the archived revisions, over their union.
-    pub bytes: u64,
-}
-
-/// The plan (§7.1 "The plan").
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RetentionPlan {
-    pub policy: RetentionPolicy,
-    pub now: String,
-    pub before: Option<String>,
-    /// Only the documents with something to archive, by path.
-    pub docs: Vec<RetentionDocPlan>,
-    pub totals: RetentionTotals,
-}
-
-impl RetentionPlan {
-    /// The plan as the fixtures and `history plan --json` print it.
-    #[must_use]
-    pub fn to_json(&self) -> Json {
-        json!({
-            "policy": self.policy.to_json(),
-            "now": self.now,
-            "before": self.before,
-            "docs": self.docs.iter().map(|d| json!({
-                "id": d.id,
-                "path": d.path,
-                "revisions": d.revisions,
-                "keep": d.keep,
-                "archive": d.archive,
-                "bytes": d.bytes,
-            })).collect::<Vec<_>>(),
-            "totals": {
-                "docs": self.totals.docs,
-                "revisions": self.totals.revisions,
-                "keep": self.totals.keep,
-                "archive": self.totals.archive,
-                "bytes": self.totals.bytes,
-            },
-        })
-    }
-
-    /// Every revision id the plan archives, in plan order (documents by
-    /// path, revisions oldest first).
-    #[must_use]
-    pub fn archived_revisions(&self) -> Vec<String> {
-        self.docs
-            .iter()
-            .flat_map(|d| d.archive.iter().cloned())
-            .collect()
-    }
-}
-
-/// What [`evaluate_retention`] runs under.
-#[derive(Clone, Debug)]
-pub struct RetentionOptions {
-    /// The clock (`OMGBASE_SPEC_CLOCK` in a conformance run).
-    pub now: String,
-    /// Only revisions committed strictly before this instant are candidates.
-    pub before: Option<String>,
-    /// The policy in effect.
-    pub policy: RetentionPolicy,
-}
-
 /// A revision's two body hashes (raw bytes), as the mark walks them.
 pub type RevBodies = (Option<Vec<u8>>, Option<Vec<u8>>);
 
@@ -628,7 +398,7 @@ impl<'c> ReachMarker<'c> {
             }
         }
         let sizes = &mut self.tree_sizes;
-        crate::derived::walk_explicit(self.conn, stack, trees, blobs, |h, text| {
+        crate::history::gc::walk_explicit(self.conn, stack, trees, blobs, |h, text| {
             sizes.insert(h.to_owned(), u64::try_from(text.len()).unwrap_or(0));
         })
     }
@@ -684,11 +454,7 @@ struct RevRow {
     reason: Option<String>,
 }
 
-/// The reference form of a storage path: exactly one leading `/`.
-#[must_use]
-pub fn reference_path(path: &str) -> String {
-    format!("/{}", path.trim_start_matches('/'))
-}
+pub use crate::core::docs_ops::reference_path;
 
 /// The plan (§7.1 "The plan", the policy as an exact rule). Per document,
 /// over its live revisions oldest → newest: a revision is KEPT when any rule
@@ -920,6 +686,7 @@ pub fn evaluate_retention(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn ms(ts: &str) -> i64 {
         parse_ms(ts).unwrap()

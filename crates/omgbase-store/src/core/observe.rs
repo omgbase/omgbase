@@ -32,7 +32,9 @@ use omgbase_reconcile::{
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Store;
-use crate::delta::TreeResolver;
+pub use crate::core::capabilities::DispositionRow;
+use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
+use crate::core::codec::canonical_attrs;
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
@@ -47,12 +49,7 @@ use crate::order_key::key_between;
 use crate::properties::{doc_blocks, write_doc_properties};
 use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
-use crate::tree::canonical_attrs;
-use crate::writers::{
-    NewCommit, NewRevision, Origin, TreeInputBlock, TreeWriteContext, assign_fresh_ids,
-    assign_from_map, is_checkpoint_revision, new_commit, previous_revision, write_block_tree_in,
-    write_frontmatter_blob, write_revision,
-};
+use crate::writers::{NewCommit, Origin, TreeInputBlock, assign_fresh_ids, assign_from_map};
 
 /// One member of a batch: the bytes now at `path`, or `None` when the path
 /// is gone.
@@ -504,19 +501,6 @@ pub struct Committed {
     pub converged: bool,
 }
 
-/// A disposition to persist (§5.4 step 10): the matcher's, or the `api`
-/// intent rows of `spec/mutate` §4 (`matcher_v` null, `detail` `{}`).
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct DispositionRow {
-    pub block_id: String,
-    pub kind: String,
-    pub confidence: Option<f64>,
-    pub reason: Option<String>,
-    pub matcher_v: Option<String>,
-    /// JSON text.
-    pub detail: String,
-}
-
 /// Everything §5.4 needs to commit one document: the parsed tree and the
 /// id-assigned body, the identity decisions, and the commit row's provenance.
 pub(crate) struct IngestPlan<'a> {
@@ -579,9 +563,17 @@ fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
 /// path of [`crate::effects`] one row per request — store 13.7). Mints `d`
 /// for a new path, `r`, then `x`/`e` through `mint`, which must be the
 /// store's minter over `tx`. Nothing here opens a transaction of its own.
+///
+/// The history half — steps 0, 1, 4 and 6 (the revision and its bodies) and
+/// step 10 (the verdicts) — goes through `history`
+/// ([`HistoryRecorder::record_revision`], [`HistoryRecorder::record_dispositions`]),
+/// in the same place in the statement order; the current-state half (the
+/// doc row, the pool, the `blocks` refresh, nodes, properties, edges, the
+/// pointers) is the core's own.
 pub(crate) fn ingest_in(
     tx: &Connection,
     mint: &mut Mint<'_>,
+    history: &dyn HistoryRecorder,
     repo_id: &str,
     plan: &IngestPlan<'_>,
     expires: &str,
@@ -598,6 +590,8 @@ pub(crate) fn ingest_in(
 
     let fm_trivia = fm_block.map(|b| b.trivia.as_str());
 
+    // seam: explicit tombstone metadata (Phase 3, M2 — `deleted_commit` →
+    //       `deleted_at`; inventory-rust.md §2.2 `observe.rs:604-637`).
     // 2. Doc row (the path's row regardless of tombstone; a re-created
     //    path is revived — §5.6 "Re-creation"). Steps 0 and 1 follow: they
     //    need the doc id to find the previous revision.
@@ -636,67 +630,29 @@ pub(crate) fn ingest_in(
         }
     };
 
-    // 0. The revision's place (§4.4, 16.0): its seq decides whether it is a
-    //    checkpoint; a non-checkpoint revision writes its tree and frontmatter
-    //    as deltas against the previous revision's RESOLVED tree and raw where
-    //    that is smaller. The previous revision is the document's greatest seq
-    //    — on every path the current revision, never archived (retention rule
-    //    1) — but the rule is stated for the general case: no live predecessor
-    //    ⇒ a checkpoint.
-    let previous = previous_revision(tx, &doc_id)?;
-    let seq = previous.as_ref().map_or(1, |p| p.seq + 1);
-    let checkpoint = is_checkpoint_revision(seq, previous.as_ref());
-    let mut resolver = TreeResolver::new(tx);
-    let base = match &previous {
-        Some(p) if !checkpoint => match &p.root_tree {
-            Some(root) => Some(resolver.tree(&doc_id, p.seq, &hex(root))?),
-            None => None,
-        },
-        _ => None,
-    };
-    let tree_ctx = TreeWriteContext { base, checkpoint };
-
-    // 1. Frontmatter blob: the raw at a checkpoint, else the smaller of a line
-    //    delta over the previous revision's frontmatter and the raw (§5.4 step 1).
-    let fm_blob_hex = match fm_block {
-        Some(b) => {
-            let base_raw = match &previous {
-                Some(p) if !checkpoint => match &p.frontmatter_blob {
-                    Some(fm) => Some(resolver.frontmatter(&doc_id, p.seq, &hex(fm))?),
-                    None => None,
-                },
-                _ => None,
-            };
-            Some(write_frontmatter_blob(
-                tx,
-                &b.raw,
-                base_raw.as_deref(),
-                checkpoint,
-            )?)
-        }
-        None => None,
-    };
-
-    // 4. Write the tree.
-    let assigned = &plan.assigned;
-    let root_tree_hex = write_block_tree_in(tx, assigned, &tree_ctx)?;
-
-    // 6. The revision row (the commit row, step 5, is the caller's).
+    // 0, 1, 4, 6. The revision: its place, its frontmatter blob, its tree,
+    //    its row — the recorder's (the commit row, step 5, is the caller's).
+    //    The head token the pointers take (step 12) is the revision id it
+    //    returns (D1).
     let rendered_hash = sha256(source.as_bytes());
-    let (rev_id, _) = write_revision(
+    let recorded = history.record_revision(
         tx,
         minter,
-        &NewRevision {
+        &RevisionTransition {
             doc_id: &doc_id,
-            root_tree_hex: &root_tree_hex,
-            frontmatter_blob_hex: fm_blob_hex.as_deref(),
-            rendered_hash,
             path: plan.path,
+            frontmatter_raw: fm_block.map(|b| b.raw.as_str()),
+            body: &plan.assigned,
+            rendered_hash,
             commit_id,
-            seq: Some(seq),
         },
     )?;
+    let rev_id = recorded.rev_id;
+    let assigned = &plan.assigned;
 
+    // seam: IdentityClaims (Phase 3, M3 — the pool row's `deleted_commit` →
+    //       `deleted_at`, expiry on its own clock; inventory-rust.md §2.2
+    //       `observe.rs:701-709`, §3.10).
     // 7. Pool the deleted.
     {
         let mut pool = tx.prepare(
@@ -719,6 +675,8 @@ pub(crate) fn ingest_in(
         evict_foreign_block_rows(tx, &doc_id, &incoming)?;
     }
 
+    // seam: explicit creation metadata (Phase 3, M2 — `created_commit` →
+    //       `created_at`; inventory-rust.md §2.2 `observe.rs:723-755`).
     // 9. Refresh the blocks, sections and FTS.
     fts_delete_doc(tx, &doc_id)?;
     tx.execute("DELETE FROM blocks WHERE doc_id = ?1", params![doc_id])?;
@@ -796,39 +754,9 @@ pub(crate) fn ingest_in(
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
     maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved)?;
 
-    // 10. Dispositions and block_changes — every verdict but `same` (14.2).
-    //     The matcher (and the known-id resolver) still produce one per
-    //     untouched block, and the outcome counts them, but the two tables
-    //     record what CHANGED: a block's rows are its own history, so
-    //     `MAX(commits.ts)` over its `block_changes` and `blocks_history`
-    //     are the block's changes, not its siblings'. Every other kind — the
-    //     first revision's `inserted` rows the mint oracle (§2.1) depends on
-    //     included — is written as before.
-    {
-        let mut ins = tx.prepare(
-            "INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        )?;
-        let mut bc = tx.prepare(
-            "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?1, ?2, ?3)",
-        )?;
-        for d in plan
-            .dispositions
-            .iter()
-            .filter(|d| persists_disposition(&d.kind))
-        {
-            ins.execute(params![
-                commit_id,
-                d.block_id,
-                d.kind,
-                d.confidence,
-                d.reason,
-                d.matcher_v,
-                d.detail,
-            ])?;
-            bc.execute(params![d.block_id, commit_id, d.kind])?;
-        }
-    }
+    // 10. Dispositions and block_changes — the recorder's (14.2: every
+    //     verdict but `same`).
+    history.record_dispositions(tx, commit_id, &plan.dispositions)?;
 
     // 11. Consume the pool.
     for id in &plan.consumed_pool {
@@ -838,6 +766,9 @@ pub(crate) fn ingest_in(
         )?;
     }
 
+    // seam: HistoryRecorder::record_revision (Phase 3, M1/D1 — the core mints
+    //       the head token itself, equal to the recorder's revision id while
+    //       capture is on; inventory-rust.md §2.2 `observe.rs:844-853`, §3.3).
     // 12. Pointers — and, on the observed path, the conflict flag, so
     //     the row the commit leaves behind is consistent as a whole (an
     //     `api` plan leaves `conflicted` as it is).
@@ -868,6 +799,9 @@ pub(crate) fn ingest_in(
 /// `expires`, every live block is pooled first (the observed deletion);
 /// without, nothing is (`docs_delete`, `spec/mutate` §6). Then the FTS rows
 /// go, the live blocks and the doc row take `deleted_commit`.
+// seam: explicit tombstone metadata (Phase 3, M2/D2 — `deleted_commit` →
+// `deleted_at` on `docs`, the `blocks` rows the recorder's in Phase 4;
+// inventory-rust.md §2.2 `observe.rs:871-895`, §3.8).
 pub(crate) fn tombstone_in(
     tx: &Connection,
     doc_id: &str,
@@ -1251,11 +1185,12 @@ impl Store {
         expires: &str,
         clear_pending_at: Option<&str>,
     ) -> Result<Committed> {
+        let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
             let mut mint = self.ids.at(&tx);
             // 5. The commit row.
-            let (commit_id, _) = new_commit(
+            let (commit_id, _) = history.new_commit(
                 &tx,
                 &mut mint,
                 &NewCommit {
@@ -1268,7 +1203,7 @@ impl Store {
                     ops: None,
                 },
             )?;
-            let committed = ingest_in(&tx, &mut mint, repo_id, plan, expires, &commit_id)?;
+            let committed = ingest_in(&tx, &mut mint, history, repo_id, plan, expires, &commit_id)?;
             if let Some(path) = clear_pending_at {
                 delete_pending(&tx, repo_id, path)?;
             }
@@ -1288,10 +1223,11 @@ impl Store {
         ts: &str,
         expires: &str,
     ) -> Result<String> {
+        let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let commit_id = {
             let mut mint = self.ids.at(&tx);
-            let (commit_id, _) = new_commit(
+            let (commit_id, _) = history.new_commit(
                 &tx,
                 &mut mint,
                 &NewCommit {

@@ -15,6 +15,9 @@ use crate::cli::render::{pad_end, shorten_home};
 /// `spec/search` §2.3 (§9 Fixed): the stale embeddable blocks — the embed
 /// tasks whose `(content_hash, ctx_hash[, model])` has no cached vector;
 /// the model is the effective `embedding.model` when one is set.
+// seam: SemanticProvider (Phase 2 — the queued count becomes the provider's
+// `stale_blocks`; today the binary reads `embeddings` directly;
+// inventory-rust.md §2.9 `status.rs:27-46`; README §6).
 fn embed_queue(cli: &mut Cli, repo_id: &str) -> Result<i64> {
     let store = cli.store()?;
     let model = omgbase_sync::resolve_settings(store, Some(repo_id))?

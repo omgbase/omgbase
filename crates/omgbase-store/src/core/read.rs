@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use omgbase_format::BlockKind;
-use omgbase_format::hash::{hex, norm_hash, sha256};
+use omgbase_format::hash::{hex, norm_hash};
 use omgbase_format::text::{
     join_texts, normalize_text, normalize_visible_text, uses_children_text,
 };
@@ -14,7 +14,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::delta::TreeResolver;
 use crate::error::Result;
-use crate::tree::from_hex;
 
 /// A blob's bytes as text; `""` when the hash is unknown (as the reference).
 pub fn blob_text(conn: &Connection, hash: &[u8]) -> Result<String> {
@@ -36,6 +35,9 @@ pub fn blob_text_at(conn: &Connection, prefix: &str, hash: &[u8]) -> Result<Stri
 /// row names, resolved when it is a `{"f":…}` delta over the previous
 /// revision's ([`TreeResolver::frontmatter`], at most 15 steps back). `None`
 /// when the revision has no frontmatter (or is not a revision).
+// seam: HistoryRecorder (Phase 3, M1 — the head stores its frontmatter raw;
+// inventory-rust.md §2.2 `read.rs:39-55`, §3.2; README §2.2 row 2, D10). The
+// one `crate::delta` reference `boundary-allowlist.txt` carries.
 pub fn current_frontmatter_raw(conn: &Connection, rev_id: &str) -> Result<Option<String>> {
     let row: Option<(String, i64, Option<Vec<u8>>)> = conn
         .query_row(
@@ -94,65 +96,6 @@ pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
         }
     }
     Ok(Some(out))
-}
-
-/// The result of [`read_at_revision`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RevisionRead {
-    /// The path as of that revision.
-    pub path: String,
-    pub content: String,
-    /// `sha256(content) == revisions.rendered_hash`: byte-exact when true.
-    pub rendered_hash_match: bool,
-}
-
-/// §6.2: the same assembly sourced from the revision's Merkle root (children
-/// not walked), with `leading_trivia`/`frontmatter_trivia` from the current
-/// doc row. `None` when the doc is not live or `rev_id` is not one of its
-/// revisions. An archived revision (15.0) reads **through its segment**,
-/// attached on demand ([`crate::archive::revision_body`]); a segment that is
-/// not recorded or not on disk is [`crate::Error::RevisionArchived`]. A
-/// `{`-form root or frontmatter (16.0) resolves through the previous
-/// revisions of the document ([`TreeResolver`]); a segment holds checkpoint
-/// forms only.
-pub fn read_at_revision(
-    conn: &Connection,
-    doc_id: &str,
-    rev_id: &str,
-) -> Result<Option<RevisionRead>> {
-    let doc: Option<(String, Option<String>)> = conn
-        .query_row(
-            "SELECT leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
-            params![doc_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
-    let Some((leading, fm_trivia)) = doc else {
-        return Ok(None);
-    };
-    let Some(rev) = crate::archive::revision_body(conn, rev_id, Some(doc_id))? else {
-        return Ok(None);
-    };
-    let prefix = rev.prefix.as_str();
-    let mut resolver = TreeResolver::with_prefix(conn, prefix);
-    let mut out = leading;
-    if let Some(hash) = &rev.frontmatter_blob {
-        out.push_str(&resolver.frontmatter(&rev.doc_id, rev.seq, &hex(hash))?);
-        out.push_str(fm_trivia.as_deref().unwrap_or(""));
-    }
-    let root = resolver.list(&rev.doc_id, rev.seq, &hex(&rev.root_tree), None)?;
-    for e in &root.entries {
-        out.push_str(&blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?);
-        if let Some(t) = &e.trivia_hash_hex {
-            out.push_str(&blob_text_at(conn, prefix, &from_hex(t)?)?);
-        }
-    }
-    let rendered_hash_match = sha256(out.as_bytes())[..] == rev.rendered_hash[..];
-    Ok(Some(RevisionRead {
-        path: rev.path,
-        content: out,
-        rendered_hash_match,
-    }))
 }
 
 struct StoredBlock {

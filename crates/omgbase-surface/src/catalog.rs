@@ -1313,16 +1313,13 @@ impl Surface {
             return Ok(());
         };
         let model = provider.model();
-        let any: Option<i64> = self
-            .store
-            .conn()
-            .query_row(
-                "SELECT 1 WHERE EXISTS (SELECT 1 FROM doc_embeddings de JOIN docs d ON d.doc_id = de.doc_id WHERE d.repo_id = ?1 AND de.model = ?2) OR EXISTS (SELECT 1 FROM embeddings WHERE model = ?2)",
-                params![repo_id, model],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if any.is_some() {
+        // Through the store's semantic capability (`SemanticProvider::available`,
+        // `docs/modular-core/README.md` §6), never the tables.
+        let rankable = match self.store.semantic() {
+            Some(semantic) => semantic.available(self.store.conn(), repo_id, model)?,
+            None => false,
+        };
+        if rankable {
             return Ok(());
         }
         let who = match &self.provider_name {

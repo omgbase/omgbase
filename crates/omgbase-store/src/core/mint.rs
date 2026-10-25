@@ -1,8 +1,9 @@
 //! Uniqueness at mint (`spec/store/README.md` §2.1, store 13.5): every id
 //! the store hands out goes through [`Mint`], which draws candidates from the
 //! inner [`IdMinter`] and redraws while a candidate is **in use** — already
-//! issued by this store in this process, or naming a row of the prefix's
-//! table(s). 32⁷ candidates make a random collision certain by a few hundred
+//! issued by this store in this process, or claimed per the store's
+//! [`IdentityClaims`] oracle (today the union of the prefix's table(s),
+//! `core::claims`). 32⁷ candidates make a random collision certain by a few hundred
 //! thousand blocks (§10: a 3,000-document corpus failed at 360,338), so the
 //! check is what makes the production minter safe; the fixture minters never
 //! collide on a fresh database and pass through unchanged.
@@ -10,8 +11,10 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 
+use crate::core::capabilities::IdentityClaims;
+pub use crate::core::claims::{id_in_use, tables_for};
 use crate::error::{Error, Result};
 use crate::ids::IdMinter;
 
@@ -21,61 +24,15 @@ use crate::ids::IdMinter;
 /// fail loudly rather than spin forever.
 pub const MINT_GIVE_UP_AFTER: usize = 1_000;
 
-/// §2.1: the table(s) and id column a minted id of each prefix must not
-/// already name a row of. A block id lives on in history after its `blocks`
-/// row is gone, hence `block_changes` and `resurrection_pool`. `col` and `v`
-/// have no table and no check.
-const ID_TABLES: &[(&str, &[(&str, &str)])] = &[
-    ("d", &[("docs", "doc_id")]),
-    (
-        "b",
-        &[
-            ("blocks", "block_id"),
-            ("block_changes", "block_id"),
-            ("resurrection_pool", "block_id"),
-        ],
-    ),
-    ("c", &[("commits", "commit_id")]),
-    ("r", &[("revisions", "rev_id")]),
-    ("x", &[("external_nodes", "node_id")]),
-    ("e", &[("edges", "edge_id")]),
-    ("cp", &[("checkpoints", "id")]),
-    ("rp", &[("repos", "repo_id")]),
-    ("src", &[("sources", "source_id")]),
-    ("s", &[("archives", "segment_id")]),
-];
-
-/// The tables an id with `prefix` is checked against (empty for `col`, `v`
-/// and any prefix the store does not know).
-#[must_use]
-pub fn tables_for(prefix: &str) -> &'static [(&'static str, &'static str)] {
-    ID_TABLES
-        .iter()
-        .find(|(p, _)| *p == prefix)
-        .map_or(&[], |(_, tables)| tables)
-}
-
-/// §2.1: does `id` name a row of the prefix's table(s) on `conn`? The
-/// statements are cached on the connection, so a check is one indexed probe
-/// per table.
-pub fn id_in_use(conn: &Connection, prefix: &str, id: &str) -> Result<bool> {
-    for (table, column) in tables_for(prefix) {
-        let mut stmt = conn.prepare_cached(&format!(
-            "SELECT 1 FROM {table} WHERE {column} = ?1 LIMIT 1"
-        ))?;
-        if stmt.exists(params![id])? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 /// A store's id source: the inner minter and every id it has issued in this
 /// process (the ids of a transaction in flight are not yet rows, and an id
 /// the fixture's repeating minter offers again must be caught before the
 /// tables know it).
 pub(crate) struct IdSource {
     inner: Box<dyn IdMinter>,
+    /// The §2.1 oracle (`core::capabilities::IdentityClaims`): today the
+    /// table union, in Phase 3 the `id_claims` table.
+    claims: Box<dyn IdentityClaims>,
     issued: HashSet<String>,
     /// The planner's view of the `b`/`d` mints (`spec/mutate` §11): `None`
     /// is production.
@@ -95,9 +52,10 @@ pub(crate) enum Capture {
 }
 
 impl IdSource {
-    pub(crate) fn new(inner: Box<dyn IdMinter>) -> Self {
+    pub(crate) fn new(inner: Box<dyn IdMinter>, claims: Box<dyn IdentityClaims>) -> Self {
         Self {
             inner,
+            claims,
             issued: HashSet::new(),
             capture: None,
         }
@@ -109,6 +67,7 @@ impl IdSource {
         Mint {
             conn,
             inner: &mut *self.inner,
+            claims: &*self.claims,
             issued: &mut self.issued,
             capture: &mut self.capture,
         }
@@ -134,6 +93,7 @@ impl IdSource {
 pub struct Mint<'a> {
     conn: &'a Connection,
     inner: &'a mut dyn IdMinter,
+    claims: &'a dyn IdentityClaims,
     issued: &'a mut HashSet<String>,
     capture: &'a mut Option<Capture>,
 }
@@ -163,9 +123,12 @@ impl Mint<'_> {
         }
         for _ in 0..MINT_GIVE_UP_AFTER {
             let candidate = self.inner.mint(prefix);
-            if self.issued.contains(&candidate) || id_in_use(self.conn, prefix, &candidate)? {
+            if self.issued.contains(&candidate)
+                || self.claims.is_claimed(self.conn, prefix, &candidate)?
+            {
                 continue;
             }
+            self.claims.claim(self.conn, prefix, &candidate)?;
             self.issued.insert(candidate.clone());
             if let (Some(kind), Some(Capture::Record(ids))) = (kind, self.capture.as_mut()) {
                 ids.push((kind, candidate.clone()));
@@ -183,6 +146,7 @@ impl Mint<'_> {
         Mint {
             conn: self.conn,
             inner: &mut *self.inner,
+            claims: self.claims,
             issued: &mut *self.issued,
             capture: &mut *self.capture,
         }
@@ -245,7 +209,9 @@ impl omgbase_reconcile::Minter for Deferred<'_> {
 mod tests {
     use super::*;
     use crate::Store;
+    use crate::core::claims::ID_TABLES;
     use crate::ids::{RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id};
+    use rusqlite::params;
 
     #[test]
     fn every_prefix_with_a_table_is_checked_and_the_rest_are_not() {

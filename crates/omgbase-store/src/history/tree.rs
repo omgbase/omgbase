@@ -1,9 +1,7 @@
 //! Canonical encodings (`spec/store/README.md` §4.1): tree-node entries,
 //! canonical attrs JSON and the Merkle node hash.
 
-use omgbase_format::Attrs;
-use omgbase_format::hash::{hex, sha256};
-use omgbase_format::json::attrs_to_json;
+use omgbase_format::hash::sha256;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
@@ -24,53 +22,7 @@ pub struct TreeEntry {
     pub trivia_hash_hex: Option<String>,
 }
 
-/// JSON with object keys sorted bytewise ascending (recursively) and no
-/// whitespace — the reference's `canonicalAttrs`/`canonicalValue`. Scalars
-/// print as `serde_json` prints them (booleans, integers and strings agree
-/// with `JSON.stringify`; attrs never carry floats).
-#[must_use]
-pub fn canonical_json(v: &Value) -> String {
-    let mut out = String::new();
-    write_canonical(v, &mut out);
-    out
-}
-
-fn write_canonical(v: &Value, out: &mut String) {
-    match v {
-        Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
-            out.push('{');
-            for (i, k) in keys.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                out.push_str(&Value::String((*k).clone()).to_string());
-                out.push(':');
-                write_canonical(&map[*k], out);
-            }
-            out.push('}');
-        }
-        Value::Array(items) => {
-            out.push('[');
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                write_canonical(item, out);
-            }
-            out.push(']');
-        }
-        scalar => out.push_str(&scalar.to_string()),
-    }
-}
-
-/// A block's attrs as canonical JSON (§4.1 `attrs_canonical`; also what this
-/// crate writes to `blocks.attrs`).
-#[must_use]
-pub fn canonical_attrs(attrs: &Attrs) -> String {
-    canonical_json(&attrs_to_json(attrs))
-}
+pub use crate::core::codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
 
 /// The canonical entries serialization: an array of six-element arrays, no
 /// whitespace, `null` for a missing child tree or trivia.
@@ -164,30 +116,11 @@ pub fn parse_tree_entries(text: &str) -> Result<Vec<TreeEntry>> {
         .collect()
 }
 
-/// Hex of a 32-byte hash (re-exported convenience).
-#[must_use]
-pub fn hash_hex(hash: &[u8]) -> String {
-    hex(hash)
-}
-
-/// Decode lowercase or uppercase hex into bytes.
-pub fn from_hex(s: &str) -> Result<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
-        return Err(Error::Other(format!("odd-length hex {s:?}")));
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16)
-                .map_err(|_| Error::Other(format!("invalid hex {s:?}")))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use omgbase_format::AttrValue;
+    use omgbase_format::hash::hex;
+    use omgbase_format::{AttrValue, Attrs};
     use serde_json::json;
 
     fn entry() -> TreeEntry {

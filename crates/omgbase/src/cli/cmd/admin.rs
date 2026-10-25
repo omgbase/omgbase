@@ -199,6 +199,8 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         detail: format!("fts={fts} leaves={leaves}"),
     });
 
+    // seam: the head token (Phase 3, M1/D1 — the check becomes "head present";
+    //       inventory-rust.md §2.9 `admin.rs:202-210`).
     let dangling: i64 = conn.query_row(
         "SELECT count(*) c FROM docs d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)",
         [],

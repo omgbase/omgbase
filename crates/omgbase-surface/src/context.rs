@@ -41,6 +41,7 @@ use std::rc::Rc;
 
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
+use omgbase_store::SemanticProvider;
 use oqx::semantics::{builtin_function, builtin_method_with, make_range, string_form};
 use oqx::{
     CompiledRegex, DataContext, Object, OqxError, RegexDialect, RowIndex, Value, compile_regex,
@@ -240,6 +241,9 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
 /// `isCurrent`: the revision is the document's `current_rev`. The planner's
 /// clauses for the kind ([`crate::planner::columns`], `from_clause`) are
 /// these same strings.
+// seam: HistoryRecorder (Phase 3, D3 — the `revisions` root returns the rows
+// that exist plus a `hints` line on a capture-off store; inventory-rust.md
+// §2.7 `context.rs:243-245`, `:806-828`, `:1517-1530`).
 pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 pub(crate) const REVISION_FROM: &str =
     "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
@@ -317,6 +321,11 @@ pub struct StoreContext<'a> {
     conn: &'a Connection,
     repo_id: String,
     semantic: HashMap<String, SemanticVec>,
+    /// The store's semantic capability, the one way `semantic(…)` reaches a
+    /// stored vector (`docs/modular-core/README.md` §6); `None` when the
+    /// runner installed none — then a resolved phrase has nothing to score
+    /// against.
+    provider: Option<&'a dyn SemanticProvider>,
     /// A store failure inside [`DataContext::root`], the one read the
     /// engine's seam cannot fail through (see the module doc).
     root_failure: RefCell<Option<OqxError>>,
@@ -546,6 +555,7 @@ impl<'a> StoreContext<'a> {
             conn,
             repo_id: repo_id.to_owned(),
             semantic,
+            provider: None,
             root_failure: RefCell::new(None),
             rows_root: None,
             regexes: RefCell::new(HashMap::new()),
@@ -555,6 +565,16 @@ impl<'a> StoreContext<'a> {
             owners: RefCell::new(HashMap::new()),
             now_ms: dates::wall_clock_ms(),
         }
+    }
+
+    /// Score `semantic(…)` through the store's semantic capability
+    /// ([`Store::semantic`](omgbase_store::Store::semantic)): the runner
+    /// installs it per run; a context without one answers every resolved
+    /// phrase with an error.
+    #[must_use]
+    pub fn with_semantic_provider(mut self, provider: Option<&'a dyn SemanticProvider>) -> Self {
+        self.provider = provider;
+        self
     }
 
     /// Resolve the named points of `date()` (`today`, `now`, `sow`…) at
@@ -1451,7 +1471,7 @@ impl<'a> StoreContext<'a> {
             // is the normalized text.
             (Target::Blocks, "_raw") => match c("raw_hash") {
                 Value::Str(hex) => {
-                    let hash = omgbase_store::tree::from_hex(&hex)
+                    let hash = omgbase_store::from_hex(&hex)
                         .map_err(|e| OqxError::eval(e.to_string()))?;
                     let bytes: Option<Vec<u8>> = self
                         .conn
@@ -1470,6 +1490,9 @@ impl<'a> StoreContext<'a> {
                 _ => Value::Null,
             },
             (Target::Blocks, "_hash") => Self::null_if_absent(c("raw_hash")),
+            // seam: explicit change metadata (Phase 3, M2/D6 — `blocks.created_at`
+            //       / `updated_at` columns; inventory-rust.md §2.7
+            //       `context.rs:1467-1470`, `:1479-1482`, §3.8).
             (Target::Blocks, "_updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
@@ -1779,19 +1802,21 @@ impl<'a> StoreContext<'a> {
                 serde_json::Value::String(phrase.to_owned())
             )));
         };
+        let Some(provider) = self.provider else {
+            return Err(OqxError::eval(
+                "semantic(...) cannot score: this store has no semantic capability",
+            ));
+        };
+        // Through the capability (`SemanticProvider`), never the tables: the
+        // document's vector under the model, or — for a block — the row for
+        // its current `(raw_hash, ctx_hash)` only (`spec/search` §3, 1.1): a
+        // stale context row is never read.
         let vec: oqx::Result<Option<Vec<u8>>> = match t {
-            Target::Docs => self
-                .conn
-                .query_row(
-                    "SELECT vec FROM doc_embeddings WHERE doc_id = ?1 AND model = ?2",
-                    rusqlite::params![col_str(row, "doc_id"), resolved.model],
-                    |r| r.get(0),
-                )
-                .optional()
-                .map_err(sql_err),
-            // The row for the block's current `(raw_hash, ctx_hash)` only
-            // (`spec/search` §3, 1.1): a stale context row is never read.
-            _ => omgbase_store::block_vector(self.conn, &col_str(row, "block_id"), &resolved.model)
+            Target::Docs => provider
+                .doc_vector(self.conn, &col_str(row, "doc_id"), &resolved.model)
+                .map_err(|e| OqxError::eval(e.to_string())),
+            _ => provider
+                .block_vector(self.conn, &col_str(row, "block_id"), &resolved.model)
                 .map_err(|e| OqxError::eval(e.to_string())),
         };
         match vec? {

@@ -9,9 +9,10 @@ use omgbase_format::parse_markdown;
 use omgbase_reconcile::Config;
 use rusqlite::{Connection, params};
 
-use crate::derived::mark_reachable;
 use crate::effects::{CommitHead, Effect, Outcome};
-use crate::writers::{Origin, assign_fresh_ids, write_block_tree};
+use crate::history::gc::mark_reachable;
+use crate::history::writers::write_block_tree;
+use crate::writers::{Origin, assign_fresh_ids};
 use crate::*;
 
 const T0: &str = "2026-09-26T10:00:00.000Z";

@@ -69,7 +69,7 @@ use serde_json::{Map, Value, json};
 
 use crate::Store;
 use crate::doc_store::DocStore;
-use crate::docs_ops::{canonical, compose_file, split_frontmatter};
+use crate::docs_ops::{canonical, compose_file, reference_path, split_frontmatter};
 use crate::effects::{CommitHead, DocBase, Effect as Commit, Outcome, doc_base, touched_paths};
 use crate::error::{Error, Result};
 use crate::links::inbound_links_to;
@@ -78,7 +78,6 @@ use crate::mint::Capture;
 use crate::mutate::{
     ApplyOrigin, OpsRunner, Revision, Staged, find_doc_by_ref, read_on_disk, stage,
 };
-use crate::retention::reference_path;
 use crate::writers::Origin;
 use crate::yaml_emit::stringify;
 

@@ -280,6 +280,10 @@ fn attribute_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
         (Target::Docs, "_id") => format!("{s}.doc_id"),
         (Target::Docs, "_path") => format!("('/' || {d}.path)"),
         (Target::Docs, "_hash") => format!("lower(hex({s}.file_hash))"),
+        // seam: explicit change metadata (Phase 3, M2/D6 — `docs.updated_at` /
+        //       `created_at` columns replace the `revisions` × `commits`
+        //       subqueries here and at the `_doc.` / `_dst.` operands;
+        //       inventory-rust.md §2.7 `translate.rs:282-288`, `:637-643`, `:682-688`).
         (Target::Docs, "_updated_at") => format!(
             "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {s}.current_rev)"
         ),

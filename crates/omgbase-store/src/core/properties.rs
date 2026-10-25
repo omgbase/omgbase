@@ -35,6 +35,9 @@ pub fn doc_blocks(blocks: &[TreeInputBlock]) -> Vec<DocBlock<'_>> {
 /// `deleted_commit` stays `NULL`. A NaN `val_num` binds as `NULL` (the row
 /// keeps `type = 'number'`, spec/properties §8). Returns how many rows were
 /// written.
+// seam: explicit creation metadata (Phase 3, M2 — `created_commit` → the
+// change token or dropped, `deleted_commit` dropped (D9); inventory-rust.md
+// §2.4 `properties.rs:38-71`).
 pub fn write_doc_properties(
     conn: &Connection,
     repo_id: &str,
