@@ -21,12 +21,11 @@ import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
 import { docsRead } from "../core/read/document.js";
 import { referencePath, storagePath } from "../core/paths.js";
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { cosineBytes } from "../core/vec.js";
-import { ctxHashHex } from "../search/embeddings.js";
-import { makeBlockContextResolver, type BlockContextResolver } from "../search/tasks.js";
-import type { SemanticVec } from "../search/cel/compile.js";
+import { semanticOf } from "../core/capabilities/registry.js";
+import type { BlockContextResolver, SemanticVec } from "../core/capabilities/types.js";
 import { dateFunction, dateMethod } from "./dates.js";
 
 export type Target = "docs" | "blocks" | "nodes" | "links";
@@ -108,6 +107,8 @@ export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
 // `revisions` table carries no `repo_id`, so the repository guard joins `docs`.
 // `is_current` is `docs_history`'s `isCurrent`: the revision is the document's
 // `current_rev`.
+// seam: HistoryRecorder.revisions — the `revisions` root and `_revisions` relation stay archival reads that return the rows
+// that exist plus a `hints` line once the capability may be off (D3; inventory-ts §2.6 rows 239–240, 247).
 const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.current_rev = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
 /** The source handles of a document (§1.2): `_data` is the merged authored view
@@ -517,6 +518,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "_id": return row.doc_id;
       case "_path": return referencePath(String(row.path));
       case "_hash": return row.file_hash == null ? null : hex(row.file_hash);
+      // seam: HistoryRecorder → `docs.updated_at`/`created_at` columns (Phase 3, M2/D6; inventory-ts §2.6 rows 241–242, §3.4)
       case "_updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
       // `_created_at` (4.10): the commit `ts` of the document's first revision
       // (`seq = 1`, the row `_revisions first { _ts values }` reads) — when
@@ -545,6 +547,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       // container's raw holds its children verbatim); `_text` is the normalized text.
       case "_raw": return row.raw_hash == null ? null : (scalar(`SELECT bytes FROM blobs WHERE hash = ?`, row.raw_hash) as Buffer | undefined)?.toString("utf8") ?? null;
       case "_hash": return row.raw_hash == null ? null : hex(row.raw_hash);
+      // seam: HistoryRecorder → `blocks.updated_at`/`created_at` columns (Phase 3, M2/D6; inventory-ts §2.6 rows 245–246, §3.4)
       case "_updated_at": return scalar(`SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?`, row.block_id) ?? null;
       // `_created_at` (4.10): the EARLIEST commit `ts` among the block's
       // `block_changes` — the same join as `_updated_at` under MIN: the commit
@@ -742,22 +745,27 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // (spec/surface §1.3, spec/search §3 — since search 1.1; before, the first row
   // for the raw_hash whatever its context). The context resolver is built once
   // per query (one scan of titles and sections), then a per-block chain walk.
+  // Both reads are the semantic capability's (`SemanticProvider.blockContexts`
+  // / `blockVector` / `docVector`, README §6); a store with the capability off
+  // has no vectors, so `semantic()` fails the same way as with no provider.
+  const semantic = semanticOf(db);
   let blockContexts: BlockContextResolver | undefined;
-  const blockVector = (r: Row, model: string): Record<string, unknown> | undefined => {
-    blockContexts ??= makeBlockContextResolver(store, { repoId });
+  const blockVector = (r: Row, model: string): Buffer | null => {
+    if (!semantic) return null;
+    blockContexts ??= semantic.blockContexts({ repoId });
     const path = typeof r.__path === "string" ? r.__path : String(scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.doc_id) ?? "");
     const ctx = blockContexts.ctx({ doc_id: String(r.doc_id), path, ordinal: Number(r.ordinal), type: String(r.type) });
-    return one(`SELECT vec FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?`, r.raw_hash, Buffer.from(ctxHashHex(ctx), "hex"), model);
+    return semantic.blockVector(r.raw_hash as Buffer, ctx, model);
   };
   const semanticScore = (t: Kind | undefined, r: Row, phrase: string): number | null => {
     if (t === "nodes" || t === "links" || t === "revisions") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
-    const row = t === "docs"
-      ? one(`SELECT vec FROM doc_embeddings WHERE doc_id = ? AND model = ?`, r.doc_id, resolved.model)
+    const vec = t === "docs"
+      ? (semantic ? semantic.docVector(String(r.doc_id), resolved.model) : null)
       : blockVector(r, resolved.model);
-    if (!row) return null;
-    return cosineBytes(row.vec as Buffer, resolved.vec);
+    if (!vec) return null;
+    return cosineBytes(vec, resolved.vec);
   };
 
   const underSubtree = (r: Row, target: string): boolean => {

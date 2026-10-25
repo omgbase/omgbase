@@ -1,4 +1,4 @@
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 import { CursorInvalid } from "../core/cursor.js";
 import { MutationError } from "../mutate/tree.js";
 import { RevisionNotFound } from "../graph/history.js";

@@ -2,8 +2,8 @@ import { Store } from "./store/store.js";
 import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
-import { assignIds, writeBlockTree, writeFrontmatterBlob, isCheckpointRevision, previousRevision, newCommit, writeRevision, type TreeInputBlock, type TreeWriteContext } from "./store/writers.js";
-import { TreeResolver } from "./store/delta.js";
+import { assignIds, type TreeInputBlock } from "./store/writers.js";
+import { requireHistory } from "./capabilities/registry.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
@@ -219,7 +219,7 @@ export function ingestFile(
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
   return store.write((db): IngestResult => {
-    const commit = newCommit(db, { repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
+    const commit = requireHistory(db).newCommit({ repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
     return ingestInto(db, repoId, path, content, {
       ts,
       commitId: commit.commitId,
@@ -306,40 +306,20 @@ export function ingestInto(
     : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
   const assigned = resolved.assigned;
 
-  // spec/store §4.4 (16.0): the revision's seq decides whether it is a
-  // checkpoint; a non-checkpoint revision writes its tree and frontmatter as
-  // deltas against the previous revision's RESOLVED tree and raw where that is
-  // smaller. The previous revision is the document's greatest seq — on every
-  // path the current revision, never archived (retention rule 1) — but the
-  // rule is stated for the general case: no live predecessor ⇒ a checkpoint.
-  const previous = previousRevision(db, docId);
-  const seq = previous ? previous.seq + 1 : 1;
-  const checkpoint = isCheckpointRevision(seq, previous);
-  const resolver = new TreeResolver(db);
-  const treeCtx: TreeWriteContext = {
-    checkpoint,
-    base: !checkpoint && previous?.root_tree ? resolver.tree(docId, previous.seq, previous.root_tree.toString("hex")) : null,
-  };
-  const rootTreeHex = writeBlockTree(db, assigned, treeCtx);
-
-  // Frontmatter blob (markdown-specific) preserved for revision history: the
-  // raw at a checkpoint, else the smaller of a line delta over the previous
-  // revision's frontmatter and the raw (spec/store §5.4 step 1).
-  let fmBlobHex: string | null = null;
-  if (fmBlock) {
-    const baseRaw = !checkpoint && previous?.frontmatter_blob ? resolver.frontmatter(docId, previous.seq, previous.frontmatter_blob.toString("hex")) : null;
-    fmBlobHex = writeFrontmatterBlob(db, fmBlock.raw, baseRaw, checkpoint);
-  }
-
+  // spec/store §5.4 steps 0–2: the revision — the Merkle tree (full or delta
+  // against the previous revision, §4.4), the frontmatter blob (step 1) and the
+  // `revisions` row (step 2) — is the recorder's (`HistoryRecorder.
+  // captureRevision`); the head token it returns is what `docs.current_rev`
+  // points at below (D1: the core mints it itself in Phase 3).
+  const history = requireHistory(db);
   const renderedHash = sha256(content);
-  const rev = writeRevision(db, {
+  const rev = history.captureRevision({
     docId,
-    rootTreeHex,
-    frontmatterBlobHex: fmBlobHex,
-    renderedHash,
     path,
     commitId,
-    seq,
+    blocks: assigned,
+    frontmatterRaw: fmBlock ? fmBlock.raw : null,
+    renderedHash,
   });
 
   // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
@@ -469,23 +449,9 @@ export function ingestInto(
       ? resolved.dispositions
       : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
 
-  // spec/store §5.4 step 10 (14.2): a `same` verdict is not persisted. The
-  // matcher (and the known-id resolver) still produce one per untouched block
-  // — the outcome counts them — but the table records what CHANGED, so a
-  // block's `updated_at` (MAX commit ts over its `block_changes`) and its
-  // `blocks_history` are the block's own changes, not its siblings'. Every
-  // other kind — the first revision's `inserted` rows the mint oracle (§2.1)
-  // depends on included — is written as before.
-  const insDisp = db.prepare(
-    `INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
-  for (const d of dispositions) {
-    if (!persistsDisposition(d.kind)) continue;
-    insDisp.run(commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
-    bc.run(d.blockId, commitId, d.kind);
-  }
+  // spec/store §5.4 step 10: the reconciliation evidence is the recorder's
+  // (`HistoryRecorder.recordDispositions` — every non-`same` verdict, 14.2).
+  history.recordDispositions(commitId, dispositions);
 
   // Consumed pool rows (resurrected) are removed.
   for (const id of resolved.consumedPool ?? []) {

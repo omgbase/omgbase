@@ -26,6 +26,7 @@ export interface RecoveryResult {
 export function recoverRepo(store: Store, repoId: string, rootPath: string, opts: { ts?: string; fs?: SyncFs; docStore?: DocStore } = {}): RecoveryResult {
   const fs = opts.fs ?? nodeFs;
   const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath));
+  // seam: HistoryRecorder.renderedHash → `docs.file_hash` (Phase 3, M4; inventory-ts §2.8 row `recoverRepo` 26–60, §3.11)
   const docs = store.db
     .prepare(
       `SELECT d.doc_id, d.path, d.file_hash, r.rendered_hash

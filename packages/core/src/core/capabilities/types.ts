@@ -1,0 +1,189 @@
+import type { Database } from "better-sqlite3";
+import type { Store } from "../store/store.js";
+import type { IdPrefix } from "../ids.js";
+import type { DispositionRow } from "../ingest.js";
+import type { NewCommitInput, TreeInputBlock } from "../store/writers.js";
+import type { DocsReadAtResult } from "../read/document.js";
+import type { CommitDigest, DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
+import type { EvaluateOptions, RetentionPlan, RetentionPolicy } from "../store/retention.js";
+import type { ArchiveListing, AttachResult, ExportOptions, ExportResult } from "../store/archive.js";
+import type { BlockContextInput, BlockContextResolver } from "../../search/tasks.js";
+import type { EmbeddingWorker } from "../../search/embeddings.js";
+import type { DocVectorHit, VectorHit } from "../../search/vector.js";
+
+// The capability seams of the modular-core program, Phase 1
+// (docs/modular-core/README.md §5 "Dependency-direction check", §6 "Phase 2
+// opener"). Three interfaces wrap what the engine does with HISTORY (the
+// recorder), with VECTORS (the semantic provider) and with IDENTITY CLAIMS
+// (the mint oracle), each with ONE default implementation that is exactly
+// today's code moved behind it (`history.ts`, `semantic.ts`, `claims.ts` in
+// this directory). The core calls the interface — `capabilitiesOf(db)` in
+// `registry.ts` — never the concrete module; the composition layer (`Store`
+// through `Workspace`, `mcp/server.ts`, `index.ts`, the CLI) names the
+// implementations. Phase 1 changes no behaviour, no schema and no fixture:
+// every method here is a pass-through, and the dependency-direction check
+// (`dependency-direction.test.ts`, the eslint rule in `eslint.config.js`) is
+// what the phase delivers.
+//
+// This directory is the one place under `core/` allowed to import the
+// concrete history/semantic modules (`graph/history.ts`, `core/store/
+// {archive,retention,delta}.ts`, `search/{embeddings,vector,tasks,drain}.ts`).
+
+/**
+ * What the recorder receives for one accepted transition of a document
+ * (spec/store §5.4 steps 0–2, 10): the id-assigned body tree (the structural
+ * identities), the frontmatter raw, the accepted content's hash, the path the
+ * revision carries and the commit it hangs off. The before-head (the previous
+ * revision: its seq, tree and frontmatter as the delta base, the checkpoint
+ * rule) is the recorder's OWN state today — `revisions` is both the head
+ * token's mint and the history (inventory-ts §3.1; D1 moves the mint to the
+ * core in Phase 3).
+ */
+export interface RevisionTransition {
+  docId: string;
+  /** The path as of this revision (a `docs_move` later rewrites the current revision's — `movePath`). */
+  path: string;
+  /** The `commits` row the revision hangs off (`newCommit`). */
+  commitId: string;
+  /** The id-assigned body blocks (frontmatter stripped), as the ingest flattens them into `blocks`. */
+  blocks: TreeInputBlock[];
+  /** The frontmatter block's raw (fences included), or null when the document has none. */
+  frontmatterRaw: string | null;
+  /** sha256 of the accepted content — `revisions.rendered_hash`, and `docs.file_hash` (I1). */
+  renderedHash: Buffer;
+}
+
+/** The head token a captured transition minted: the `r_` revision id and the per-document seq. */
+export interface CapturedRevision {
+  revId: string;
+  seq: number;
+}
+
+/**
+ * The history recorder (plan §3 "capture"): the write half every write entry
+ * point calls per committed transition and the read half the surface exposes
+ * (`docs_read { at }`, `docs_diff*`, `docs_history`, `blocks_history`,
+ * `changes_since`), plus the retention/archive and GC-mark entry points. One
+ * instance per store, bound to its connection — the capture methods run
+ * inside the caller's transaction on that connection.
+ */
+export interface HistoryRecorder {
+  // ---- capture: the write half (spec/store §5.4 step 5, steps 0–2, step 10; §5.6) ----
+
+  /** Step 5 / the api path's one `commits` row: the transition's origin, actor, reason and ts (inventory-ts §2.2 row `newCommit`). */
+  newCommit(input: NewCommitInput): { commitId: string; seq: number };
+  /** Steps 0–2: the Merkle tree (full or delta), the frontmatter blob, the `revisions` row — one accepted transition (inventory-ts §2.1 rows 315–343). */
+  captureRevision(transition: RevisionTransition): CapturedRevision;
+  /** Step 10: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
+  recordDispositions(commitId: string, dispositions: readonly DispositionRow[]): void;
+  /** `docs_move`'s history half: the current revision's `path` rewritten in place (inventory-ts §2.4 row `movePath`; D11 makes a move a transition in Phase 3). */
+  movePath(docId: string, revId: string | null, to: string): void;
+
+  // ---- current state read THROUGH history (Phase 3 retires each: M1, M4) ----
+
+  /** The current frontmatter raw of a revision, resolved through its delta chain (spec/store §6.1; inventory-ts §3.2; M1). */
+  currentFrontmatterRaw(revId: string): string | null;
+  /** A revision's `rendered_hash` — the bytes a `rename` row expects at `to` (inventory-ts §2.4 row `move_path`; M4). */
+  renderedHash(revId: string): Buffer | null;
+  /** The `rendered_hash` of the revision BEFORE `revId` of the same document — the materializer's prior-bytes rule (inventory-ts §2.4 row `priorRenderedHash`; M4). */
+  priorRenderedHash(revId: string | null): Buffer | null;
+
+  // ---- the surface's reads (spec/surface §3) ----
+
+  /** `docs_read { at }` / `docs_read_at` and the materializer's render: spec/store §6.2 reconstruct at a revision (segment-aware). */
+  readAtRevision(docId: string, revId: string): DocsReadAtResult | null;
+  /** `blocks_history`: a block's biography from `block_changes` × `commits` × `dispositions`. */
+  blocksHistory(blockId: string, opts?: { limit?: number }): NodeChange[];
+  /** `docs_diff`: block-grain diff between two revisions. */
+  diffBlocks(docId: string, fromRev: string, toRev: string): DiffEntry[];
+  /** `docs_diff_unified`'s text: the unified diff of two revisions' reconstructed bytes. */
+  diffUnified(docId: string, fromRev: string, toRev: string): string;
+  /** `docs_diff_unified` over a resolved document (defaults: previous → current). */
+  docDiffUnified(docId: string, opts?: { fromRev?: string; toRev?: string; label?: string }): DocDiffUnified;
+  /** `docs_history`: the `revisions` rows per document. */
+  docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): { docs: DocVersions[]; truncated: boolean };
+  /** `changes_since`: the commit feed after a cursor (the sync base; M5 gives the feed its own sequence in Phase 3). */
+  changesSince(repoId: string, opts?: { cursor?: number; limit?: number; origin?: string }): { digests: CommitDigest[]; cursor: number; truncated: boolean; head: number };
+
+  // ---- maintenance: the GC mark, retention, archives (spec/store §7) ----
+
+  /** The mark: every tree node and blob a live revision reaches (M7 roots the core's half on current state in Phase 3). */
+  markReachable(): { trees: Set<string>; blobs: Set<string> };
+  /** The repo's effective retention policy (`history.retention` settings). */
+  retentionPolicy(repoId: string, override?: unknown): RetentionPolicy;
+  /** The retention plan: what the squash would archive (spec/store §7.1). */
+  evaluateRetention(repoId: string, opts?: EvaluateOptions): RetentionPlan;
+  /** `omg history export`: write a segment and squash. */
+  exportHistory(repoId: string, opts: ExportOptions): ExportResult;
+  /** `omg history attach`. */
+  attachArchive(repoId: string, target: string): AttachResult;
+  /** `omg history detach`. */
+  detachArchive(repoId: string, ref: string): string | null;
+  /** `omg history list`. */
+  listArchives(repoId: string, opts?: { dest?: string }): ArchiveListing[];
+  /** The size report's archived line: revisions archived, segments, bytes. */
+  archivedSummary(): { revisions: number; segments: number; bytes: number };
+}
+
+/** A resolved query embedding for a `semantic("phrase")` call: the query vector as a bound BLOB plus the model whose stored vectors it is compared to. */
+export interface SemanticVec { vec: Buffer; model: string }
+
+/**
+ * The semantic provider (README §6 "Phase 2 opener"): the vector cache's reads
+ * (`blockVector`, `docVector`), the `provider_unavailable` gate (`available`)
+ * and the drain's halves (`embed`, `embedDocs`, `pruneForeign`). The one
+ * cross-dependency — the doc-embedding task's read of the current head — stays
+ * inside the implementation (`search/tasks.ts:219`). One instance per store.
+ */
+export interface SemanticProvider {
+  /** The per-query/per-drain context resolver (spec/search §2.2): one scan of titles and sections, then a chain walk per block. */
+  blockContexts(scope: { repoId: string } | { docId: string }): BlockContextResolver;
+  /** A block's vector: the `embeddings` row keyed by its CURRENT `(content_hash = raw_hash, ctx_hash, model)`, or null when stale/missing. */
+  blockVector(rawHash: Buffer, ctx: string, model: string): Buffer | null;
+  /** A document's vector: the `doc_embeddings` row for `(doc_id, model)`, or null. */
+  docVector(docId: string, model: string): Buffer | null;
+  /** The gate (spec/surface §4, 3.0): has anything in the repository been embedded under `model`? */
+  available(repoId: string, model: string): boolean;
+  /** The drain's block half: every stale embeddable block of the repo through the worker. */
+  embed(worker: EmbeddingWorker, repoId: string, opts?: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void }): Promise<{ embedded: number; cached: number }>;
+  /** The drain's document half. */
+  embedDocs(worker: EmbeddingWorker, repoId: string, opts?: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void }): Promise<{ embedded: number; cached: number; pooled: number }>;
+  /** Delete every cached vector another model produced. */
+  pruneForeign(worker: EmbeddingWorker): { blocks: number; docs: number };
+  /** Brute-force cosine over the live embeddable blocks' vectors (spec/search §3). */
+  vectorSearch(repoId: string, model: string, queryVec: Float32Array, opts?: { limit?: number }): VectorHit[];
+  /** Brute-force cosine over the document vectors. */
+  docVectorSearch(repoId: string, model: string, queryVec: Float32Array, opts?: { limit?: number }): DocVectorHit[];
+}
+
+/**
+ * Identity claims (plan §3 "Identity allocation", M3/D5): the oracle `mintId`
+ * asks before issuing an id. Today the claim IS the row the id lands in — a
+ * `b` is claimed while a `blocks`, `block_changes` or `resurrection_pool` row
+ * names it (spec/store §2.1) — so `claim` is a no-op and `isClaimed` is the
+ * table union (`TableUnionClaims`); Phase 3 writes an explicit `id_claims`
+ * row at mint and makes `isClaimed` one probe.
+ */
+export interface IdentityClaims {
+  /** Record that `id` was issued under `prefix` (no-op while the row is the claim). */
+  claim(prefix: IdPrefix, id: string): void;
+  /** Is `id` in use under `prefix` — spec/store §2.1 "Uniqueness at mint". */
+  isClaimed(prefix: IdPrefix, id: string): boolean;
+}
+
+/**
+ * The capabilities a store runs with. `history`/`semantic` are `null` when the
+ * capability is off (D3 `capability_unavailable` names the states) — in Phase
+ * 1 the defaults are always present, and the core's writers require history
+ * (`requireHistory`) because the head token is still the revision id (D1).
+ */
+export interface Capabilities {
+  history: HistoryRecorder | null;
+  semantic: SemanticProvider | null;
+  claims: IdentityClaims;
+}
+
+/** How the composition layer names the implementations: a factory the `Store` calls on itself once its connection is open. */
+export type CapabilitiesFactory = (store: Store) => Capabilities;
+
+export type { BlockContextInput, BlockContextResolver, Database };

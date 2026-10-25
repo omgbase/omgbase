@@ -3,7 +3,8 @@ import { CallToolRequestSchema, ErrorCode } from "@modelcontextprotocol/sdk/type
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
-import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision, type DocsReadAtResult } from "../core/read/document.js";
+import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "../core/read/document.js";
+import { requireHistory, semanticOf } from "../core/capabilities/registry.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT } from "../core/read/reader.js";
 import { resolveRef } from "../core/read/refs.js";
@@ -23,7 +24,6 @@ import {
   moveLinks, nodeSetEffects, removeBlocksEffects, requireAbsentPath, retargetEffects, setMetaEffects, splitEffects, updateBlockEffects, updateContentEffects, type Sugar,
 } from "../mutate/sugar.js";
 import { canonicalJson, fixTool } from "../mutate/canonical.js";
-import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
@@ -382,8 +382,13 @@ export function buildServer(ctx: ServerContext): McpServer {
   // `docs_read { at }` and its sugar `docs_read_at` (spec/surface §2, 4.7): the
   // document AS OF a revision, `spec/store` §6.2 reconstruct; a revision that is
   // not the document's is `target_missing`.
+  // The history tools reach the store's history capability (modular-core Phase 1,
+  // `core/capabilities/`): `history` is the recorder the store was opened with —
+  // never null while the defaults are installed; D3's `capability_unavailable`
+  // is where a disabled recorder will surface.
+  const history = requireHistory(store.db);
   function docsReadAt(docId: string, rev: string): DocsReadAtResult {
-    const res = readDocumentAtRevision(store, docId, rev);
+    const res = history.readAtRevision(docId, rev);
     if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(rev)} for document ${docId}`, { data: { doc: docId, rev } });
     return res;
   }
@@ -513,14 +518,10 @@ export function buildServer(ctx: ServerContext): McpServer {
   // repository would score every row null and hand back path-ordered rows with
   // no score — so the first phrase embedded checks the index and fails the same
   // code, naming the provider and model and what to run.
+  // The gate is the semantic capability's (`SemanticProvider.available`, README
+  // §6); with the capability off nothing is embedded, so the answer is false.
   function hasEmbeddings(repoId: string, model: string): boolean {
-    const row = store.db
-      .prepare(
-        `SELECT 1 WHERE EXISTS (SELECT 1 FROM doc_embeddings de JOIN docs d ON d.doc_id = de.doc_id WHERE d.repo_id = ? AND de.model = ?)
-            OR EXISTS (SELECT 1 FROM embeddings WHERE model = ?)`,
-      )
-      .get(repoId, model, model);
-    return row !== undefined;
+    return semanticOf(store.db)?.available(repoId, model) ?? false;
   }
   function providerUnavailable(): EngineError {
     return new EngineError("provider_unavailable", PROVIDER_UNAVAILABLE_MESSAGE, { data: { provider: null } });
@@ -1531,7 +1532,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(historyNode(store, args._id, args.limit !== undefined ? { limit: args.limit } : {}));
+        return ok(history.blocksHistory(args._id, args.limit !== undefined ? { limit: args.limit } : {}));
       } catch (e) {
         return fail(e);
       }
@@ -1552,7 +1553,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // misleading-empty trap. locateDoc throws doc_missing when the ref
         // names no document.
         const docId = locateDoc(repoId, "docs_diff", registry.get("docs_diff")!.shape, args);
-        return ok(diffBlocks(store, docId, args.from_rev, args.to_rev));
+        return ok(history.diffBlocks(docId, args.from_rev, args.to_rev));
       } catch (e) {
         return fail(e);
       }
@@ -1570,7 +1571,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_diff_unified", registry.get("docs_diff_unified")!.shape, args);
-        return ok(docDiffUnified(store, docId, {
+        return ok(history.docDiffUnified(docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
           label: JSON.stringify(args._id ?? args._path),
@@ -1629,7 +1630,7 @@ export function buildServer(ctx: ServerContext): McpServer {
             : undefined;
           doc = tomb ? tomb.doc_id : locateDoc(repoId, "docs_history", registry.get("docs_history")!.shape, args);
         }
-        return ok(docHistory(store, repoId, {
+        return ok(history.docsHistory(repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(doc ? { doc } : {}),
           ...(args.include_deleted !== undefined ? { includeDeleted: args.include_deleted } : {}),
@@ -1656,7 +1657,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return ok(changesSince(store, repoId, {
+        return ok(history.changesSince(repoId, {
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
           ...(args.origin ? { origin: args.origin } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),

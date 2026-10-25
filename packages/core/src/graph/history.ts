@@ -1,9 +1,10 @@
 import type { Store } from "../core/store/store.js";
 import { findDocByRef } from "../core/read/reader.js";
-import { readDocumentAtRevision } from "../core/read/document.js";
+import type { DocsReadAtResult } from "../core/read/document.js";
 import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
 import { referencePath, storagePath } from "../core/paths.js";
+import { sha256 } from "../core/hash.js";
 import { revisionBody } from "../core/store/archive.js";
 import { myersScript } from "../core/edit-script.js";
 import { TreeResolver, type Entry } from "../core/store/delta.js";
@@ -102,9 +103,90 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
 }
 
 /**
+ * Whole-document TIME-TRAVEL read (spec/store §6.2): reconstruct a document's
+ * full file bytes AS OF a past revision `revId`, using the SAME assembly order
+ * as `reconstructContent` — leading_trivia + frontmatter (from THAT revision's
+ * frontmatter_blob) + frontmatter_trivia + Σ(top-level block raw + its trivia)
+ * IN ORDER — but sourced from the revision's Merkle `root_tree` instead of the
+ * live `blocks` table. Returns null when the doc is missing, or when `revId`
+ * does not name a revision of this document (so the caller can raise a clean
+ * not-found error). An ARCHIVED revision (spec/store §7 "Retention", 15.0)
+ * reads through its segment, attached on demand; when the segment is not
+ * recorded or not on disk this throws `RevisionArchived` (the surface's
+ * `revision_archived`).
+ *
+ * FIDELITY CAVEAT: `leading_trivia` and `frontmatter_trivia` are stored ONLY on
+ * the current `docs` row, NOT per-revision (see schema.ts — the `docs` row is
+ * document-level current state). So for the CURRENT revision they are exact and
+ * `renderedHashMatch` is true; for a PAST revision they may be wrong if the
+ * document's leading/frontmatter trivia changed since — in practice these rarely
+ * change, so we use the current doc-row values as a documented best-effort. The
+ * block bytes themselves ARE per-revision and always faithful. `renderedHashMatch`
+ * is the honest signal: true ⇒ the reconstruction is byte-for-byte the file at
+ * that revision; false ⇒ it differs only by those doc-level trivia bytes (block
+ * content still reconstructs correctly).
+ *
+ * The body of `core/read/document.ts`'s `readDocumentAtRevision` through
+ * modular-core Phase 1, which made that export the `HistoryRecorder.
+ * readAtRevision` pass-through; `docs_read { at }`, `docs_diff_unified` and the
+ * materializer all reach it through the recorder.
+ */
+export function reconstructAtRevision(store: Store, docId: string, revId: string): DocsReadAtResult | null {
+  const db = store.db;
+  const doc = db
+    .prepare("SELECT path, leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_commit IS NULL")
+    .get(docId) as { path: string; leading_trivia: string; frontmatter_trivia: string | null } | undefined;
+  if (!doc) return null;
+
+  // The revision's bodies: the store's for a live revision, its segment's for
+  // an archived one (spec/store §6.2 "through a segment", 15.0 — `prefix` is
+  // the attached alias; an unavailable segment throws RevisionArchived).
+  const rev = revisionBody(store, revId, docId);
+  if (!rev) return null;
+  const at = (table: string): string => `${rev.prefix}${table}`;
+  const blobAt = (hash: Buffer): string => {
+    const row = db.prepare(`SELECT bytes FROM ${at("blobs")} WHERE hash = ?`).get(hash) as { bytes: Buffer } | undefined;
+    return row ? row.bytes.toString("utf8") : "";
+  };
+
+  const out: string[] = [doc.leading_trivia];
+
+  // The revision's nodes resolved in its context (spec/store §6.2, 16.0): a
+  // `{`-form root or frontmatter walks back through the previous revisions
+  // of the document to a checkpoint; a segment holds checkpoint forms only.
+  const resolver = new TreeResolver(db, rev.prefix);
+
+  // Frontmatter for THIS revision (per-revision), then the doc-level
+  // separator (best-effort — see fidelity caveat).
+  if (rev.frontmatter_blob) out.push(resolver.frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex")) + (doc.frontmatter_trivia ?? ""));
+
+  // Top-level blocks in tree order, from THIS revision's Merkle root. A
+  // container's raw already holds its children verbatim, so we deliberately do
+  // NOT recurse into the child trees (mirrors reconstructContent's
+  // parent_block IS NULL walk).
+  const root = resolver.list(rev.doc_id, rev.seq, rev.root_tree.toString("hex"), null);
+  for (const [, rawHashHex, , , , triviaHashHex] of root.entries) {
+    out.push(blobAt(Buffer.from(rawHashHex, "hex")));
+    if (triviaHashHex) out.push(blobAt(Buffer.from(triviaHashHex, "hex")));
+  }
+
+  const content = out.join("");
+  const renderedHashMatch = sha256(content).equals(rev.rendered_hash);
+
+  return {
+    _id: docId,
+    // The revision records the path as of that revision (docs may be moved).
+    _path: referencePath(rev.path),
+    rev: revId,
+    _raw: content,
+    renderedHashMatch,
+  };
+}
+
+/**
  * `docs_diff_unified` (spec/surface §3): a unified diff of the two revisions'
  * **reconstructed file text** — exactly the bytes `docs_read_at` returns for
- * each revision ({@link readDocumentAtRevision}: frontmatter, trivia and
+ * each revision ({@link reconstructAtRevision}: frontmatter, trivia and
  * top-level order included) — via {@link unifiedDiff}, so hunk line numbers
  * are real file lines. Until 1.4.x this diffed the Merkle-tree walk (every
  * live raw at every depth joined by `\n`), which repeated each nested block
@@ -113,7 +195,7 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
  */
 export function diffUnified(store: Store, docId: string, fromRev: string, toRev: string): string {
   const rendered = (rev: string): string => {
-    const at = readDocumentAtRevision(store, docId, rev);
+    const at = reconstructAtRevision(store, docId, rev);
     if (!at) throw new RevisionNotFound(docId, rev);
     return at._raw;
   };

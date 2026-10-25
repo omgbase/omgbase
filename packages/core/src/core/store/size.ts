@@ -1,7 +1,6 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
-import { archivedSummary } from "./archive.js";
-import { evaluateRetention, retentionPolicy } from "./retention.js";
+import { requireHistory } from "../capabilities/registry.js";
 
 // The size report (spec/store §7 "Size", 14.1): what the database is made of,
 // table by table through SQLite's `dbstat` virtual table, grouped into the four
@@ -295,13 +294,14 @@ export function sizeReport(store: Store, opts: { now?: string } = {}): SizeRepor
   });
 
   const same_dispositions = (db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
-  const archived = archivedSummary(store);
+  const history = requireHistory(store.db);
+  const archived = history.archivedSummary();
   // The retention plan of every repository under its effective policy (the
   // report is store-wide; the policy is a repository's) at one clock.
   const now = opts.now ?? new Date().toISOString();
   const retention: SizeRetention = { revisions: 0, bytes: 0 };
   for (const r of db.prepare("SELECT repo_id FROM repos ORDER BY repo_id").all() as { repo_id: string }[]) {
-    const plan = evaluateRetention(store, r.repo_id, { now, policy: retentionPolicy(store, r.repo_id) });
+    const plan = history.evaluateRetention(r.repo_id, { now, policy: history.retentionPolicy(r.repo_id) });
     retention.revisions += plan.totals.archive;
     retention.bytes += plan.totals.bytes;
   }

@@ -2,7 +2,7 @@ import { OqxError, parse, type Query, type SelectItem } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { TUPLE_HINT, bracketListAsTuple, checkRootSpellings, oqxRunQuery, reservedAlias, type OqxHit } from "../oqx-js/run.js";
 import { rootTarget } from "../oqx-js/planner.js";
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 import {
   EFFECT_OPS, EXPRESSION_LEADER, bareTarget, effectInvalid, findDocumentTarget, isNewSymbol, isTargetId, looksLikePath, validateEffect, validateTarget,
   type Effect, type EffectTarget, type ShapeFixContext,

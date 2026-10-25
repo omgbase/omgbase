@@ -115,7 +115,7 @@ export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js"
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./search/vector.js";
 export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, changesSince, RevisionNotFound, type NodeChange, type CommitDigest, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
 export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./graph/links.js";
-export { FilterInvalid } from "./search/cel/parser.js";
+export { FilterInvalid } from "./core/filter-invalid.js";
 export { EngineError, errorBody, type ErrorCode, type ErrorBody } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
 export { isValidId, prefixOf, mintId, setIdMinter, withIdMinter, sequentialMinter, repeatingMinter, registerIdOracle, type IdMinter, type IdOracle, type IdPrefix } from "./core/ids.js";
@@ -234,3 +234,9 @@ export {
   type SizeReport, type SizeCategory, type SizeCategoryReport, type SizeTable, type SizeFile, type SizeArchived, type SizeRetention, type VacuumResult,
 } from "./core/store/size.js";
 export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/fts.js";
+// The capability seams (modular-core Phase 1, docs/modular-core/README.md §5–§6): the interfaces the core calls,
+// the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
+export {
+  defaultCapabilities, capabilitiesOf, requireHistory, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, TableUnionClaims,
+  type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
+} from "./core/capabilities/index.js";

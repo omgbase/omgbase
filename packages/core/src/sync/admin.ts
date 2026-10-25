@@ -42,6 +42,7 @@ export interface RepoStatus {
 export function reposStatus(store: Store, repoId: string, rootPath?: string): RepoStatus {
   const repo = store.db.prepare("SELECT slug FROM repos WHERE repo_id = ?").get(repoId) as { slug: string } | undefined;
   const count = (sql: string): number => (store.db.prepare(sql).get(repoId) as { c: number }).c;
+  // seam: HistoryRecorder.renderedHash → `docs.file_hash` (Phase 3, M4/D9 — `unconverged` is always 0 under I1; inventory-ts §2.8 row `reposStatus` 42–66, §5.8)
   const unconverged = (store.db.prepare(
     `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.current_rev
      WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.file_hash IS NOT r.rendered_hash`,
@@ -93,6 +94,7 @@ export interface SyncStatus {
  *   re-ingested — the exact stale-under-green-light failure this guards against.
  */
 export function syncStatus(store: Store, repoId: string, rootPath?: string): SyncStatus {
+  // seam: HistoryRecorder → the feed's own sequence (Phase 3, M5/D7; inventory-ts §2.8 row `syncStatus` 95–107)
   const lastCommit = store.db.prepare("SELECT MAX(seq) s FROM commits WHERE repo_id = ?").get(repoId) as { s: number | null };
   const lastCp = store.db.prepare("SELECT id FROM checkpoints WHERE repo_id = ? ORDER BY ts DESC LIMIT 1").get(repoId) as { id: string } | undefined;
   const status = reposStatus(store, repoId, rootPath);

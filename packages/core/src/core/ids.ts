@@ -162,6 +162,7 @@ export function mintId(prefix: IdPrefix): string {
   for (let rejected = 0; rejected < MINT_GIVE_UP_AFTER; rejected++) {
     const candidate = minter ? minter(prefix) : `${prefix}_${randomSuffix()}`;
     if (inUse(prefix, candidate, issued)) continue;
+    // seam: IdentityClaims.claim (Phase 3, M3/D5 — an `id_claims` row written here; today the row the id lands in is the claim; inventory-ts §2.3 row `mintId` 147–172, §3.5)
     issued.add(candidate);
     for (const observer of observers) observer(prefix, candidate);
     return candidate;

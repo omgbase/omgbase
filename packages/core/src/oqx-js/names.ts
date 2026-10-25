@@ -37,7 +37,7 @@ import { ATTRIBUTES, REACH_THROUGHS, SOURCE_HANDLES, type Kind } from "./context
 import { ROOTS } from "./root-row.js";
 import { FROM, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 
 /** What to do with an unknown bare name on an open kind: record it in `hints` (every read) or refuse the query (a write selector). */
 export type UnknownNames = "hint" | "refuse";
@@ -88,6 +88,7 @@ interface RepoCache {
 
 const CACHE = new WeakMap<Store, Map<string, RepoCache>>();
 
+// seam: HistoryRecorder → the feed sequence as the vocabulary cache's clock (Phase 3, M5/D7; inventory-ts §2.6 row `headSeq` 91–102, §5.12)
 function headSeq(store: Store, repoId: string): number {
   const row = store.db.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM commits WHERE repo_id = ?").get(repoId) as { seq: number } | undefined;
   return row?.seq ?? 0;

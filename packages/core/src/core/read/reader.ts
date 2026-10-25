@@ -60,6 +60,7 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
     tail = " LIMIT ?";
     params.push(limit);
   }
+  // seam: HistoryRecorder → `docs.updated_at` (Phase 3, M2; inventory-ts §2.3 row `liveDocRows` 51–76, §5.15 — computed for every row unconditionally)
   const rows = store.db
     .prepare(
       `SELECT d.doc_id AS id, d.path AS path,

@@ -3,7 +3,7 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
 import { deletePending, insertPending, materializeRow, readPending, type PendingRow } from "./materialize.js";
-import { newCommit } from "../core/store/writers.js";
+import { requireHistory } from "../core/capabilities/registry.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
@@ -238,7 +238,8 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   try {
     committed = store.writeImmediate((db): CommitOutcome => {
       validate(db, repoId, effects, onDisk);
-      const commit = newCommit(db, {
+      const history = requireHistory(db);
+      const commit = history.newCommit({
         repoId,
         ts,
         origin: head.origin,
@@ -280,13 +281,15 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
             movePath(db, e);
             // The bytes expected at `to`: the moved document's current revision
             // (a self-linking source's retarget below replaces them with its own).
-            const rev = e.currentRev === null ? undefined : (db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(e.currentRev) as { rendered_hash: Buffer } | undefined);
-            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: e.currentRev, renderedHash: rev?.rendered_hash ?? sha256(e.bytes), commitId });
+            const rendered = e.currentRev === null ? null : history.renderedHash(e.currentRev);
+            pending.set(e.to, { path: e.to, kind: "rename", fromPath: e.from, docId: e.docId, revId: e.currentRev, renderedHash: rendered ?? sha256(e.bytes), commitId });
             break;
           }
           case "tombstone": {
             // The bytes it is safe to unlink: what the document's last revision
             // rendered (or the last observed bytes when it has no revision).
+            // seam: HistoryRecorder.renderedHash (Phase 3, M4 — `docs.file_hash`
+            // holds the same value; inventory-ts §2.4 row `runPhases` `tombstone` 287–295)
             const row = db
               .prepare("SELECT r.rendered_hash, d.file_hash FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev WHERE d.doc_id = ?")
               .get(e.docId) as { rendered_hash: Buffer | null; file_hash: Buffer | null } | undefined;
@@ -452,7 +455,9 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
 // document (adopted here), not to a phantom.
 function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>): void {
   db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(e.to, e.docId);
-  db.prepare("UPDATE revisions SET path = ? WHERE doc_id = ? AND rev_id = ?").run(e.to, e.docId, e.currentRev);
+  // The current revision's path is the recorder's to rewrite (D11 makes a move
+  // a transition in Phase 3; inventory-ts §2.4 row `movePath` 453–471).
+  requireHistory(db).movePath(e.docId, e.currentRev, e.to);
 
   const phantom = `phantom:${e.from}`;
   const affected = new Set<string>();

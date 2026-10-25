@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { Store } from "../core/store/store.js";
+import { defaultCapabilities } from "../core/capabilities/default.js";
 
 // Workspace discovery (11 §2.1). Like git: walk up from a start directory
 // looking for .omgbase/. The directory containing it is the workspace; its
@@ -38,7 +39,10 @@ export class Workspace {
     this.root = root;
     this.omgbaseDir = join(root, ".omgbase");
     this.dbPath = join(this.omgbaseDir, "omgbase.db");
-    this.store = new Store({ path: this.dbPath });
+    // The composition layer names the capabilities the engine runs with
+    // (modular-core Phase 1): the recorder, the semantic provider and the
+    // claims over the store's own tables — the one set there is until Phase 2.
+    this.store = new Store({ path: this.dbPath, capabilities: defaultCapabilities });
   }
 
   /** Find the workspace containing `startDir` (walk up); null if none. */

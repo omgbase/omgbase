@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "./store.js";
 import { explicitEntries, parseNodeText } from "./delta.js";
+import { requireHistory } from "../capabilities/registry.js";
 
 // Garbage collection (spec/store §7). Mark-and-sweep from the LIVE revision
 // roots removes unreachable blobs and tree_nodes. Through 14.x nothing was ever
@@ -73,7 +74,10 @@ export function explicitWalker(db: Database, trees: Set<string>, blobs: Set<stri
  */
 export function sweepUnreachable(store: Store, dry = false): { blobsSwept: number; treeNodesSwept: number } {
   const db = store.db;
-  const { trees, blobs } = markReachable(store);
+  // The mark is the recorder's (`HistoryRecorder.markReachable` — M7 adds the
+  // core's own roots, live/tombstoned `blocks` and the heads' frontmatter, in
+  // Phase 3; inventory-ts §2.2 rows `markReachable`/`sweepUnreachable`).
+  const { trees, blobs } = requireHistory(db).markReachable();
 
   let treeNodesSwept = 0;
   const allTrees = db.prepare("SELECT hash FROM tree_nodes").all() as { hash: Buffer }[];

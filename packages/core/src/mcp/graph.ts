@@ -32,7 +32,7 @@ import type { Query, SelectItem } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { findDocByRef } from "../core/read/reader.js";
 import { oqxRunAsync, type EmbedQuery } from "../oqx/run.js";
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 import { EngineError } from "./errors.js";
 
 const DEFAULT_DEGREES = 1;

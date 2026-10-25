@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
-import { readDocumentAtRevision } from "../core/read/document.js";
+import { requireHistory } from "../core/capabilities/registry.js";
 import type { DocStore } from "./doc-store.js";
 
 // Materialization (spec/store §5.7, store 14.0). The api path commits DB-first:
@@ -83,11 +83,9 @@ export function deletePending(db: Database, repoId: string, path: string): void 
  *  the file held before the commit that recorded the row), or null for a first
  *  revision / an unknown one. */
 export function priorRenderedHash(db: Database, revId: string | null): Buffer | null {
-  if (revId === null) return null;
-  const r = db
-    .prepare("SELECT p.rendered_hash FROM revisions r JOIN revisions p ON p.doc_id = r.doc_id AND p.seq = r.seq - 1 WHERE r.rev_id = ?")
-    .get(revId) as { rendered_hash: Buffer } | undefined;
-  return r?.rendered_hash ?? null;
+  // The one current-state read of a NON-current revision (inventory-ts §5.3);
+  // M4 puts `prior_hash` on the pending row in Phase 3. The recorder's until then.
+  return requireHistory(db).priorRenderedHash(revId);
 }
 
 // The bytes a `write`/`rename` row materializes: spec/store §6.2 reconstruct at
@@ -97,7 +95,11 @@ export function priorRenderedHash(db: Database, revId: string | null): Buffer | 
 // rendered — the row is then left for a later materializer rather than guessed.
 function renderedBytes(store: Store, row: PendingRow): string | null {
   if (row.revId === null) return null;
-  const at = readDocumentAtRevision(store, row.docId, row.revId);
+  // seam: the render is `HistoryRecorder.readAtRevision` (spec/store §6.2) though a
+  // pending row always names the CURRENT revision, for which `reconstructContent`
+  // (§6.1) is byte-exact — M4 renders from current state in Phase 3 (inventory-ts
+  // §2.4 row `renderedBytes` 98–103, §5.3).
+  const at = requireHistory(store.db).readAtRevision(row.docId, row.revId);
   if (!at || !sha256(at._raw).equals(row.renderedHash)) return null;
   return at._raw;
 }

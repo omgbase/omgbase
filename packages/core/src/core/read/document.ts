@@ -2,10 +2,8 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
 import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
 import { docPropertiesGrouped, type PropertySource } from "../store/properties.js";
-import { sha256 } from "../hash.js";
 import { referencePath } from "../paths.js";
-import { revisionBody } from "../store/archive.js";
-import { TreeResolver } from "../store/delta.js";
+import { requireHistory } from "../capabilities/registry.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -85,15 +83,13 @@ function blob(db: Database, hash: Buffer): string {
 /**
  * A live revision's frontmatter raw (spec/store §6.1, 16.0): the blob the row
  * names, resolved when it is a `{"f":…}` delta over the previous revision's
- * (`TreeResolver.frontmatter`, at most 15 steps back). `null` when the
- * revision has no frontmatter.
+ * (at most 15 steps back). `null` when the revision has no frontmatter. The
+ * CURRENT frontmatter is a read through history — the hottest such path
+ * (inventory-ts §3.2, §5.1); M1 gives the head its own frontmatter in Phase 3.
+ * Through the recorder (`HistoryRecorder.currentFrontmatterRaw`) since Phase 1.
  */
 export function currentFrontmatterRaw(db: Database, revId: string): string | null {
-  const rev = db.prepare("SELECT doc_id, seq, frontmatter_blob FROM revisions WHERE rev_id = ?").get(revId) as
-    | { doc_id: string; seq: number; frontmatter_blob: Buffer | null }
-    | undefined;
-  if (!rev?.frontmatter_blob) return null;
-  return new TreeResolver(db).frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex"));
+  return requireHistory(db).currentFrontmatterRaw(revId);
 }
 
 /**
@@ -292,77 +288,16 @@ export interface DocsReadAtResult {
 }
 
 /**
- * Whole-document TIME-TRAVEL read: reconstruct a document's full file bytes AS
- * OF a past revision `revId`, using the SAME assembly order as
- * `reconstructContent` — leading_trivia + frontmatter (from THAT revision's
- * frontmatter_blob) + frontmatter_trivia + Σ(top-level block raw + its trivia)
- * IN ORDER — but sourced from the revision's Merkle `root_tree` instead of the
- * live `blocks` table. Returns null when the doc is missing, or when `revId`
- * does not name a revision of this document (so the caller can raise a clean
- * not-found error). An ARCHIVED revision (spec/store §7 "Retention", 15.0)
- * reads through its segment, attached on demand; when the segment is not
- * recorded or not on disk this throws `RevisionArchived` (the surface's
- * `revision_archived`).
- *
- * FIDELITY CAVEAT: `leading_trivia` and `frontmatter_trivia` are stored ONLY on
- * the current `docs` row, NOT per-revision (see schema.ts — the `docs` row is
- * document-level current state). So for the CURRENT revision they are exact and
- * `renderedHashMatch` is true; for a PAST revision they may be wrong if the
- * document's leading/frontmatter trivia changed since — in practice these rarely
- * change, so we use the current doc-row values as a documented best-effort. The
- * block bytes themselves ARE per-revision and always faithful. `renderedHashMatch`
- * is the honest signal: true ⇒ the reconstruction is byte-for-byte the file at
- * that revision; false ⇒ it differs only by those doc-level trivia bytes (block
- * content still reconstructs correctly).
+ * Whole-document TIME-TRAVEL read: the document's full file bytes AS OF a past
+ * revision `revId` (spec/store §6.2) — `HistoryRecorder.readAtRevision`, whose
+ * default implementation is `graph/history.ts`'s `reconstructAtRevision` (the
+ * body that lived here through modular-core Phase 1; its fidelity caveat is
+ * documented there). Null when the doc is missing or `revId` is not one of its
+ * revisions; `RevisionArchived` when the revision's segment is unavailable.
+ * Kept here for the fixture runners and tests that read it from this module;
+ * `docs_read { at }`, `docs_diff_unified` and the materializer call the
+ * recorder directly.
  */
 export function readDocumentAtRevision(store: Store, docId: string, revId: string): DocsReadAtResult | null {
-  const db = store.db;
-  const doc = db
-    .prepare("SELECT path, leading_trivia, frontmatter_trivia FROM docs WHERE doc_id = ? AND deleted_commit IS NULL")
-    .get(docId) as { path: string; leading_trivia: string; frontmatter_trivia: string | null } | undefined;
-  if (!doc) return null;
-
-  // The revision's bodies: the store's for a live revision, its segment's for
-  // an archived one (spec/store §6.2 "through a segment", 15.0 — `prefix` is
-  // the attached alias; an unavailable segment throws RevisionArchived).
-  const rev = revisionBody(store, revId, docId);
-  if (!rev) return null;
-  const at = (table: string): string => `${rev.prefix}${table}`;
-  const blobAt = (hash: Buffer): string => {
-    const row = db.prepare(`SELECT bytes FROM ${at("blobs")} WHERE hash = ?`).get(hash) as { bytes: Buffer } | undefined;
-    return row ? row.bytes.toString("utf8") : "";
-  };
-
-  const out: string[] = [doc.leading_trivia];
-
-  // The revision's nodes resolved in its context (spec/store §6.2, 16.0): a
-  // `{`-form root or frontmatter walks back through the previous revisions
-  // of the document to a checkpoint; a segment holds checkpoint forms only.
-  const resolver = new TreeResolver(db, rev.prefix);
-
-  // Frontmatter for THIS revision (per-revision), then the doc-level
-  // separator (best-effort — see fidelity caveat).
-  if (rev.frontmatter_blob) out.push(resolver.frontmatter(rev.doc_id, rev.seq, rev.frontmatter_blob.toString("hex")) + (doc.frontmatter_trivia ?? ""));
-
-  // Top-level blocks in tree order, from THIS revision's Merkle root. A
-  // container's raw already holds its children verbatim, so we deliberately do
-  // NOT recurse into the child trees (mirrors reconstructContent's
-  // parent_block IS NULL walk).
-  const root = resolver.list(rev.doc_id, rev.seq, rev.root_tree.toString("hex"), null);
-  for (const [, rawHashHex, , , , triviaHashHex] of root.entries) {
-    out.push(blobAt(Buffer.from(rawHashHex, "hex")));
-    if (triviaHashHex) out.push(blobAt(Buffer.from(triviaHashHex, "hex")));
-  }
-
-  const content = out.join("");
-  const renderedHashMatch = sha256(content).equals(rev.rendered_hash);
-
-  return {
-    _id: docId,
-    // The revision records the path as of that revision (docs may be moved).
-    _path: referencePath(rev.path),
-    rev: revId,
-    _raw: content,
-    renderedHashMatch,
-  };
+  return requireHistory(store.db).readAtRevision(docId, revId);
 }

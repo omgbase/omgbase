@@ -14,8 +14,8 @@ import { REPO_REMOVED_MESSAGE, ROOTS, bareTargetMessage, pastRootMessage, unknow
 import { checkNames, type UnknownNames } from "./names.js";
 import { DATE_FUNCTIONS, DATE_METHODS, dateFunction, dateMethod } from "./dates.js";
 import type { Store } from "../core/store/store.js";
-import { FilterInvalid } from "../search/cel/parser.js";
-import type { SemanticVec } from "../search/cel/compile.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
+import type { SemanticVec } from "../core/capabilities/types.js";
 import { float32ToBlob } from "../core/vec.js";
 import { encodeCursor as encodeKeyset, decodePathCursor } from "../core/cursor.js";
 import { referencePath } from "../core/paths.js";

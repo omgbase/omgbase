@@ -1,5 +1,5 @@
 import type { Store } from "../core/store/store.js";
-import { newCommit } from "../core/store/writers.js";
+import { requireHistory } from "../core/capabilities/registry.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 
 // Observed-deletion tombstone (01 §6, 02 §3/§7). Shared by BOTH observed-change
@@ -43,7 +43,7 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
  */
 export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string): string {
   return store.write((db) => {
-    const commit = newCommit(db, { repoId, ts, origin: "observed", reason: "observed deletion" });
+    const commit = requireHistory(db).newCommit({ repoId, ts, origin: "observed", reason: "observed deletion" });
 
     // Snapshot the doc's live blocks into the resurrection pool BEFORE tombstoning,
     // mirroring core/ingest.ts's reconciling-delete snapshot (~30-day expiry) so a

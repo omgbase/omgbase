@@ -4,18 +4,9 @@ import type { Node, Literal, RelOp } from "./ast.js";
 // Recursive-descent parser for the CEL subset (10 §3.1). Throws FilterInvalid
 // with a reason + hint on anything outside the grammar.
 
-export class FilterInvalid extends Error {
-  reason: string;
-  hint: string;
-  /** (spec/surface 4.11) a literal corrected call, canonical JSON, when the surface can spell one (`data.fix`). */
-  fix: string | undefined;
-  constructor(reason: string, hint = "see query-language.md §3", fix?: string) {
-    super(reason);
-    this.reason = reason;
-    this.hint = hint;
-    this.fix = fix;
-  }
-}
+// `FilterInvalid` moved to `core/filter-invalid.ts` (modular-core Phase 1); re-exported here for import stability.
+import { FilterInvalid } from "../../core/filter-invalid.js";
+export { FilterInvalid };
 
 const RELOPS = new Set(["==", "!=", "<", "<=", ">", ">="]);
 

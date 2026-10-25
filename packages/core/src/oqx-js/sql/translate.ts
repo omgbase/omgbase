@@ -157,6 +157,7 @@ function attributeSql(name: string, ctx: TranslateCtx): Operand | null {
     case "_id": return text(`${self}.doc_id`);
     case "_path": return pathColumn(`${doc}.path`);
     case "_hash": return text(`lower(hex(${self}.file_hash))`);
+    // seam: HistoryRecorder → `docs.updated_at`/`created_at` columns (Phase 3, M2; inventory-ts §2.6 row `attributeSql` 160–161, 353–355, 377–379)
     case "_updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
     case "_created_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.doc_id = ${self}.doc_id AND r.seq = 1)`);
   }

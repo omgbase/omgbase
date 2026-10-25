@@ -26,7 +26,7 @@
 // call.
 
 import type { CallResult } from "@omgbase/oqx";
-import { FilterInvalid } from "../search/cel/parser.js";
+import { FilterInvalid } from "../core/filter-invalid.js";
 
 // ---- the date value -------------------------------------------------------------
 
