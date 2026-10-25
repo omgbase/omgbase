@@ -48,7 +48,7 @@ blocks each with headings, a list, three tasks, a quote and three rooted
 links; 0.22 MB of Markdown), `init --no-embedder`, one filesystem source, then
 six write workloads of 50 operations (20 for delete/recreate), four read shapes
 × 20, and the default `gc`. The two engines produce the same database to within
-a few KB; the one divergence is noted below.
+a few KB (the one apparent divergence of a first run was the harness, below).
 
 ### Growth per stage (Rust 0.27.3; TS 0.26.3 within ±10 KB per stage, final database 5.68 vs 5.74 MB)
 
