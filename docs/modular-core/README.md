@@ -299,6 +299,26 @@ every blob (TS §5.2).
 
 ## 4. Decisions required before Phase 1's spec delta
 
+**Decided by Brendan, 2026-10-24/25** (the discussion is in his notes, workstream
+`/workstreams/2026/10/2026-10-24-modular-core-implementation.md` § Decisions):
+
+| # | decision |
+| --- | --- |
+| D1 | **A.** The head token is the `r_` revision id, minted by the core on every head change (content, structure, path, liveness); equal to the recorder's revision id when capture is on; the wire (`rev`, `_rev`, `expect.revision`, `base_revision`) unchanged; the manual says a token does not promise retained content. |
+| D2 | **B**, in two steps. Deleted content is history: the core keeps the `docs` tombstone row (revival, the feed's deleted path), the id claims and the 30-day pool; the `blocks` rows go to the recorder. Phase 3 keeps the rows while making pool and claims independent of them; Phase 4 stops writing them in the core. |
+| D3 | **A.** One additive error `capability_unavailable { capability: history \| semantic, state: disabled \| unavailable \| outside_coverage \| pruned }` (retriable only for `unavailable`, `data.fix` where one exists) for the dedicated history tools; `revision_archived` kept for the pruned-with-segment case; the `revisions` root and `_revisions` relation return the rows that exist plus a `hints` line, never an error; `version` advertises enabled capabilities and the coverage start. |
+| D4 | **C.** `checkpoints` collapses to one row of sync status on the sync state; `files`, `git_head`, `commits.checkpoint_id` dropped; the `cp` prefix retired. A BATCH ID on the feed record (D7) is what a history strategy needs from batches. |
+| D5 | An explicit `id_claims(prefix, id, minted_at, holders)` table written at mint for every core-minted prefix (`r` included); one probe; the squash's earliest-`block_changes` rule retired; the pool stays its own table (`deleted_commit` → `deleted_at`, expiry on its own timestamp). Claims are PRUNABLE by installation policy: pruning releases the core's hold, the row stays while the recorder holds the id; with history off a reused id can only misdirect an unguarded read by name — every guarded write fails `stale_expectation`/`target_missing`. Growth is its own size-report line. |
+| D6 | **A.** `created_at` is the identity's birth and survives resurrection (the pool row carries it), cross-document moves and path revival; `updated_at` is the entity's own last change — a container's when its raw changes, a document's with the head token (renames and liveness count). |
+| D7 | The commit record stays the feed entry with its `c_` id and the `changes_since` shape, slimmed to `epoch, seq, commit_id, ts, origin, actor, reason, batch_id` + one entry per touched document `{ doc_id, path, head token, hash, kind: created \| changed \| deleted \| moved, from_path }`; `ops` and the disposition `summary` leave the core (summary optional); a repository EPOCH (init / restore / rebuild-from-files), cursors `(epoch, seq)`, an explicit `expired_cursor { epoch, oldest, head }` → the consumer rescans; `changes_since` exposes `oldest` and `epoch`; a bounded bootstrap snapshot lease. Retention configurable and documented ("the feed is catch-up, a rescan is recovery, the log is history"): floors `feed.retain_days = 10`, `feed.retain_entries = 10000`, cap `feed.max_entries = 100000`, shown in `doctor --size`. |
+| D8 | **Fixed now** (4bfe2cb): `has_anchor()` reads only open edges in both engines, fixture `reads::has-anchor-open-edges`. |
+| D9 | **Drop them all** in the Phase 1 store major: `commits.checkpoint_id`, `properties.deleted_commit` (+ the partial-index predicates and read filters), `inferred_edges`, `collections`, `idx_edges_temporal`, `repos_status.unconverged` (or redefined as the drift count); the size report recast as content / identity / recovery / history / search / sync. TS `search/cel/compile.ts` deleted now (code only). |
+| D10 | **B.** Raw and trivia bytes inline on `blocks`, the frontmatter raw on `docs`; `raw_hash` stays the CAS and dedup key; `blobs` entirely the recorder's; no byte GC in the core. |
+| D11 | **A.** A move is a transition — a new revision with the same content and the new path; a delete mints no revision (tombstone `deleted_at`, CAS fails on liveness); a revival mints one. |
+
+The questions as they were put, for the record:
+
+
 - **D1 — The head token vs the `r_` revision id.** Whether `rev`/`_rev`/
   `base_revision`/`expect.revision`/`preconditions.docs[].base_revision` are
   the head token with `revisions.rev_id` **equal to it** when capture is on
