@@ -2479,7 +2479,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     });
     let pending = query_rows(
         conn,
-        "SELECT path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
+        "SELECT path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
     );
     // `spec/store` §9.4 (15.0): the recorded segments by `(seq_lo,
@@ -2984,6 +2984,108 @@ fn check_invariants(
             problems.push(format!(
                 "C7: tombstoned doc {} deleted_at {deleted_at} != updated_at {}",
                 d.doc_id, d.updated_at
+            ));
+        }
+    }
+
+    // ---- C8 pending rows (17.0, M4): self-contained against the current rows ----------------
+    // A `write`/`rename` row names a live document's current head and the
+    // bytes that head renders to (`rendered_hash == docs.file_hash ==
+    // sha256(reconstruct)`); a `remove` row names a tombstoned document, no
+    // head, no prior, the bytes it owes an unlink (`docs.file_hash` before the
+    // tombstone). `prior_hash` is defined, not derivable (the bytes it names
+    // left the store), so only its nullness is checked. Kind and `from_path`
+    // agree; `commit_id` is a `c_` id and, with capture on, a `commits` row
+    // whose `ts` is `created_at`.
+    type PendingRowT = (
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Vec<u8>,
+        Option<Vec<u8>>,
+        String,
+        String,
+    );
+    let pending_rows: Vec<PendingRowT> = all_rows(
+        conn,
+        "SELECT path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at FROM pending_materializations WHERE repo_id = ?1 ORDER BY path",
+        &[&repo_id],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+            ))
+        },
+    );
+    for (path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at) in
+        &pending_rows
+    {
+        let at = format!("pending {kind} at {path}");
+        let Some(d) = doc_by_id.get(doc_id.as_str()) else {
+            problems.push(format!("C8: {at} names no docs row ({doc_id})"));
+            continue;
+        };
+        if (kind == "rename") != from_path.is_some() {
+            problems.push(format!(
+                "C8: {at} from_path {from_path:?} disagrees with its kind"
+            ));
+        }
+        if !is_spec_ts(created_at) {
+            problems.push(format!(
+                "C8: {at} created_at {created_at} is not a §2.4 timestamp"
+            ));
+        }
+        if !commit_id.starts_with("c_") {
+            problems.push(format!("C8: {at} commit_id {commit_id} is not a c_ id"));
+        }
+        if let Some((_, _, ts)) = commit_by_id.get(commit_id.as_str())
+            && ts != created_at
+        {
+            problems.push(format!(
+                "C8: {at} created_at {created_at} != its commit's ts {ts}"
+            ));
+        }
+        if kind == "remove" {
+            if let Some(head) = head {
+                problems.push(format!("C8: {at} carries a head ({head})"));
+            }
+            if prior_hash.is_some() {
+                problems.push(format!("C8: {at} carries a prior_hash"));
+            }
+            if d.deleted_at.is_none() {
+                problems.push(format!("C8: {at} names a live document"));
+            }
+            if let Some(file_hash) = &d.file_hash
+                && file_hash[..] != rendered_hash[..]
+            {
+                problems.push(format!(
+                    "C8: {at} rendered_hash != the tombstoned document's file_hash"
+                ));
+            }
+            continue;
+        }
+        if d.deleted_at.is_some() {
+            problems.push(format!("C8: {at} names a tombstoned document"));
+        }
+        if head.is_none() || *head != d.head {
+            problems.push(format!("C8: {at} head {head:?} != docs.head {:?}", d.head));
+        }
+        if d.file_hash.as_deref() != Some(&rendered_hash[..]) {
+            problems.push(format!("C8: {at} rendered_hash != docs.file_hash"));
+        }
+        let bytes = store.reconstruct(doc_id).ok().flatten();
+        if bytes.is_none_or(|b| sha256(b.as_bytes())[..] != rendered_hash[..]) {
+            problems.push(format!(
+                "C8: {at} reconstruct(doc) does not hash to rendered_hash"
             ));
         }
     }

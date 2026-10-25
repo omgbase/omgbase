@@ -286,8 +286,9 @@ pub trait HistoryRecorder {
 
     // ---- the reads the store exposes ------------------------------------------------
 
-    /// `spec/store` §6.2: the bytes at a revision (`docs_read { at }`, the
-    /// materializer's `bytes_for` until M4).
+    /// `spec/store` §6.2: the bytes at a revision (`docs_read { at }`; the
+    /// materializer's `bytes_for` through 16.x — it renders from the current
+    /// rows since 17.0).
     fn read_at_revision(
         &self,
         conn: &Connection,
@@ -301,19 +302,10 @@ pub trait HistoryRecorder {
     /// live head (§3.4 step 17).
     fn frontmatter_at_revision(&self, conn: &Connection, rev_id: &str) -> Result<Option<String>>;
 
-    /// `revisions.rendered_hash` of `rev_id`, `None` for an unknown revision
-    /// (the pending row's expected bytes; inventory §3.4).
-    fn rendered_hash(&self, conn: &Connection, rev_id: &str) -> Result<Option<Vec<u8>>>;
-
-    /// The `rendered_hash` of the document's revision before `rev_id`: the
-    /// bytes a file left behind by the commit still holds (the materializer's
-    /// prior-bytes rule; inventory §3.4).
-    fn previous_rendered_hash(
-        &self,
-        conn: &Connection,
-        doc_id: &str,
-        rev_id: &str,
-    ) -> Result<Option<Vec<u8>>>;
+    // (No current-state read goes THROUGH history any more: M1 retired
+    // `current_frontmatter_raw`/`record_move` in 3a; M4 retired
+    // `rendered_hash`/`previous_rendered_hash` in 3c — the pending row carries
+    // `prior_hash` and the materializer renders from the current rows.)
 
     /// The change feed (`spec/sync` §6): the repo's commits with `seq >
     /// cursor`, optionally of one `origin`, `limit + 1` fetched to set

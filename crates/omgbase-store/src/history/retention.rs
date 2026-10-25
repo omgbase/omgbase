@@ -459,8 +459,8 @@ pub use crate::core::docs_ops::reference_path;
 /// The plan (§7.1 "The plan", the policy as an exact rule). Per document,
 /// over its live revisions oldest → newest: a revision is KEPT when any rule
 /// keeps it — it is the document's current revision (a tombstoned document's
-/// last revision is its current one), a `pending_materializations` row names
-/// it, it is younger than `keep_days`, it is among the newest `per_doc_max`,
+/// last revision is its current one), it is younger than `keep_days`, it is
+/// among the newest `per_doc_max`,
 /// its commit's origin is in `keep_origins` with a non-empty reason, it is
 /// not before `before`, no ladder rung applies to its age (the gap below the
 /// first rung keeps everything), or it is the newest revision of its rung's
@@ -482,13 +482,9 @@ pub fn evaluate_retention(
         let it = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
-    let pinned: HashSet<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT rev_id FROM pending_materializations WHERE repo_id = ?1 AND rev_id IS NOT NULL",
-        )?;
-        let it = stmt.query_map(params![repo_id], |r| r.get::<_, String>(0))?;
-        it.collect::<std::result::Result<HashSet<_>, _>>()?
-    };
+    // 17.0 (M4): a pending materialization row renders from the current rows
+    // and names no revision, so the squash no longer pins one for it (§7.1
+    // rule 2 retired).
     let mut rev_stmt = conn.prepare(
         "SELECT r.rev_id, r.seq, r.root_tree, r.frontmatter_blob, c.ts, c.origin, c.reason
          FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
@@ -545,7 +541,6 @@ pub fn evaluate_retention(
         for (i, r) in rows.iter().enumerate() {
             let rank = u64::try_from(rows.len() - i).unwrap_or(u64::MAX); // 1 = the newest
             let keep = current_rev.as_deref() == Some(r.rev_id.as_str())
-                || pinned.contains(&r.rev_id)
                 || age_days(r.ts_ms, now_ms) < i64::try_from(policy.keep_days).unwrap_or(i64::MAX)
                 || rank <= policy.per_doc_max
                 || (policy.keep_origins.contains(&r.origin)

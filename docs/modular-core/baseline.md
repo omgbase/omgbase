@@ -304,6 +304,53 @@ n = 20 the p95 IS the max, and max equals p95 in every read row), the day's
 machine state rather than the engine, as the 3a section found; the 20 ms
 write p50 at the end of the run is below the 3a run's.
 
+### 17.0 (3c), Rust — the self-contained pending row, the twin (`rust-2026-10-25T22-52-08`)
+
+The Rust twin of 3c (`crates/omgbase-store` at schema 17 with the
+`pending_materializations` row carrying `head`, `prior_hash` and `created_at`
+and no foreign key into the recorder's tables; the materializer rendering
+from the current rows; the retention pin retired), release build of the
+`omgbase` crate 0.27.3 + the working tree, the same seeded corpus; the TS 3c
+row above is the comparison, the Rust 3b row the cost of the slice.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | TS 3c (db MB / KB / op) | Rust 3b (KB / op) | `pending_materializations` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.25 | 6,250 | 31.1 / doc | 3.17 | 2.71 | 6.24 / 31.1 | 31.1 / doc (db 6.25) | 0 / 8 |
+| frontmatter hot update | 50 | 6.34 | 94 | 1.9 | 0 | +60 | 6.33 / 1.7 | 2.0 | 0 / 8 |
+| block edit | 50 | 6.43 | 90 | 1.8 | 0 | +80 | 6.42 / 1.8 | 1.9 | 0 / 8 |
+| rolling journal | 50 | 6.61 | 172 | 3.4 | +20 | +130 | 6.59 / 3.4 | 3.5 | 0 / 8 |
+| task churn | 50 | 6.66 | 53 | 1.1 | 0 | +60 | 6.64 / 1.1 | 1.1 | 0 / 8 |
+| link churn | 50 | 6.77 | 115 | 2.3 | +30 | +60 | 6.75 / 2.0 | 2.2 | 0 / 8 |
+| delete / recreate | 20 | 6.91 | 135 | 6.8 | +10 | +120 | 6.87 / 6.3 | 5.7 | 0 / 8 |
+| gc (default sweep) | | 6.92 | 8 | | 0 | 0 | 6.88 / 8 KB | 8 KB | 0 / 8 |
+
+Import **6.25 vs 6.24 MB (28.6× the source, both)**, the end **6.92 vs
+6.88 MB (31.6× vs 31.5×)**; against the Rust 3b run the database is the same
+to the page at every stage (6.25 / 6.34 / 6.43 / 6.61 / 6.66 / 6.77 / 6.91 /
+6.92 vs 6.25 / 6.35 / 6.44 / 6.62 / 6.67 / 6.78 / 6.90 / 6.91). The
+`pending_materializations` table holds **0 rows / 8,192 B at every stage in
+both engines** (phase B′ materializes every row in the same process; the one
+page is the empty table's). `id_claims` is row for row the TS 3c run's at
+every stage (4,608 → 4,658 → 4,708 → 4,808 → 4,858 → 5,033 → 5,243; 593,920 B
+after the import and 671,744 B at the end in both, three intermediate stages
+±4,096 B — one page). The history tables after gc are row for row the TS 3c
+and Rust 3b runs': `blobs` 3,218 (634,880 B vs TS 630,784), `tree_nodes`
+1,000 (974,848 both), `dispositions` 3,824 (348,160 vs 339,968),
+`block_changes` 3,824 (294,912 vs 303,104), `revisions` 461 (110,592 both),
+`commits` 471 (159,744 both); `content` 3.23 MB and `history` 3.22 MB at the
+end in both engines.
+
+Latency (p50 / p95 ms, process start 5 / 6 included): import 777; one write
+24–29 / 29–35 (frontmatter 26 / 31, block edit 26 / 34, journal 24 / 29, task
+churn 24 / 31, link churn 29 / 35, recreate 25 / 33); `query` docs 13 / 16,
+blocks filter 12 / 17, `text("furnace")` 101 / 180, links 10 / 14; `outline`
+8 / 11; `gc` 17. Against the Rust 3b run (writes 20–23 / 26–32, import 632,
+docs 15, text 99, outline 10, gc 16) the write p50s sit 2–6 ms above and every
+read within 1–3 ms. A first run of the same binary in the same session
+(`spawn-baseline` 266 / 580, writes 32–37 / 43–47, import 1,122, identical
+sizes and rows) was discarded as machine state — the process start itself
+was 260 ms slower — and is not kept under `baseline/`.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

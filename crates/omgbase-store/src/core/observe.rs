@@ -1235,6 +1235,32 @@ impl Store {
             })
     }
 
+    /// [`Store::reconciling_ingest`] for recovery's heal (`spec/sync` §4.3;
+    /// store 17.0, M4): the file at `path` no longer hashes to its document's
+    /// `file_hash`, so its bytes are ingested as `observed` and a pending row
+    /// the step 0 replay kept at the path (foreign bytes) goes in the same
+    /// transaction — the file won (§5.7 gate rule).
+    pub fn healing_ingest(
+        &mut self,
+        repo_id: &str,
+        path: &str,
+        source: &str,
+        ts: &str,
+        config: &Config,
+    ) -> Result<Committed> {
+        let head = CommitHead {
+            origin: Origin::Observed,
+            actor: None,
+            reason: None,
+            clear_pending: true,
+            ops: None,
+        };
+        self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
+            .committed()?
+            .pop()
+            .ok_or_else(|| Error::Other(format!("healing_ingest: nothing committed for {path}")))
+    }
+
     /// [`Store::reconciling_ingest`] with a precondition the transaction
     /// re-validates (`spec/mutate` §6, 2.2): `docs_create` guards "no live
     /// document at the path", `docs_set_meta` the document's triple and the

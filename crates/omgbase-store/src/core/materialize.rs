@@ -1,5 +1,6 @@
-//! Materialization (`spec/store/README.md` §5.7, store 14.0): the file
-//! writes an `api` commit owes the working tree, recorded as intent.
+//! Materialization (`spec/store/README.md` §5.7, store 14.0; the
+//! self-contained row 17.0 — modular-core Phase 3c, M4): the file writes an
+//! `api` commit owes the working tree, recorded as intent.
 //!
 //! Since 14.0 the commit phase is **A → C → B'**: the reads, then one
 //! `BEGIN IMMEDIATE` transaction that validates, commits and inserts one
@@ -13,24 +14,44 @@
 //! them with the commit, its intent and its `changes_since` digest intact. A
 //! request also replays the rows at the paths it touches before reading
 //! their files (`spec/mutate` §4 step 5 (a)), so a stale file never reads
-//! back as a human edit.
+//! back as a human edit. The row carries everything that replay needs and
+//! touches no history table: `head` (the token whose bytes it renders; no
+//! foreign key), `rendered_hash` (the bytes expected at `path`),
+//! `prior_hash` (the bytes the engine itself last wrote at `path` — captured
+//! at commit time from the `file_hash` the transaction validated the file
+//! against, or inherited from the row it supersedes; `NULL` when the engine
+//! never wrote there), `commit_id` (no foreign key) and `created_at`.
 //!
 //! **A file a human changes meanwhile wins** (ADR-004). The materializer
 //! writes a `write` row only over nothing, over the bytes it already
-//! expects, or over the bytes of the document's *previous* revision (the
-//! file the commit left behind); anything else is a foreign edit the row
-//! stays behind for, until the sweep observes it (file wins, row cleared).
-//! A `rename` lands the moved document's bytes at `to` — by rename when the
-//! old file is still there and `to` is free, by writing the revision's bytes
-//! otherwise — and keeps the row when `to` holds foreign bytes. A `remove`
-//! unlinks only a file that still hashes to what the deleted revision
-//! rendered; a foreign file is left for the sweep.
+//! expects, or over the engine's OWN previous bytes — `prior_hash`, which is
+//! what a file holds when the process died between COMMIT and the write;
+//! anything else is a foreign edit the row stays behind for, until the sweep
+//! observes it (file wins, row cleared). A `rename` lands the moved
+//! document's bytes at `to` — by rename when the old file is still there and
+//! `to` is free, by writing the document's bytes otherwise — and keeps the
+//! row when `to` holds foreign bytes. A `remove` unlinks only a file that
+//! still hashes to what the deleted document rendered; a foreign file is
+//! left for the sweep.
+//!
+//! One row per path (§5.7 "Supersession"; [`supersede`]): a later `write` to
+//! a path that still owes a file replaces the row's TARGET (`head`,
+//! `rendered_hash`, `commit_id`, `created_at`) and keeps the EARLIEST
+//! `prior_hash` — the bytes that can still be on the disk are the ones the
+//! engine wrote before the first unfinished commit, never the superseded
+//! row's own target (over a `remove` row the inherited prior is the bytes it
+//! owed an unlink); a `write` over a `rename` keeps the rename and its
+//! `from_path` obligation and replaces its target; a `rename` supersedes a
+//! `write`/`rename` at `from_path` by carrying its `prior_hash` (the commit
+//! deletes that row — [`crate::effects`]); a `remove` drops whatever the
+//! path owed. Unresolved recovery work is never discarded for a storage
+//! limit: there is none — a row lives until a materializer or an observation
+//! settles its path.
 
 use omgbase_format::hash::sha256;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Store;
-use crate::core::capabilities::HistoryRecorder;
 use crate::doc_store::DocStore;
 use crate::error::Result;
 use crate::read::reconstruct;
@@ -38,9 +59,9 @@ use crate::read::reconstruct;
 /// What a pending row asks the working tree for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PendingKind {
-    /// The revision's bytes at `path`.
+    /// The document's bytes at `path`.
     Write,
-    /// The file at `from_path` must end up at `path` holding the revision's
+    /// The file at `from_path` must end up at `path` holding the document's
     /// bytes (a `docs_move`).
     Rename,
     /// The file at `path` must go (a `docs_delete`); `rendered_hash` is the
@@ -68,7 +89,8 @@ impl PendingKind {
     }
 }
 
-/// One `pending_materializations` row (`repo_id` implied).
+/// One `pending_materializations` row (`spec/store` §3.1; `repo_id`
+/// implied), hashes as the 32 raw bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingRow {
     pub path: String,
@@ -76,14 +98,21 @@ pub struct PendingRow {
     /// `rename`: the old path.
     pub from_path: Option<String>,
     pub doc_id: String,
-    /// `write`/`rename`: the revision the bytes render; `None` for `remove`.
-    pub rev_id: Option<String>,
+    /// `write`/`rename`: the document's head token whose bytes the row
+    /// renders; `None` for `remove`.
+    pub head: Option<String>,
     /// The bytes expected at `path` (`remove`: the bytes safe to unlink).
     pub rendered_hash: Vec<u8>,
+    /// The bytes the engine itself last wrote at `path` (what a crash leaves
+    /// on the disk); `None` when it never did.
+    pub prior_hash: Option<Vec<u8>>,
     pub commit_id: String,
+    /// The recording commit's `ts` (`spec/store` §2.4).
+    pub created_at: String,
 }
 
-const COLUMNS: &str = "path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id";
+const COLUMNS: &str =
+    "path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at";
 
 fn row_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<PendingRow> {
     let kind: String = r.get(1)?;
@@ -92,9 +121,11 @@ fn row_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<PendingRow> {
         kind: PendingKind::parse(&kind).unwrap_or(PendingKind::Write),
         from_path: r.get(2)?,
         doc_id: r.get(3)?,
-        rev_id: r.get(4)?,
+        head: r.get(4)?,
         rendered_hash: r.get(5)?,
-        commit_id: r.get(6)?,
+        prior_hash: r.get(6)?,
+        commit_id: r.get(7)?,
+        created_at: r.get(8)?,
     })
 }
 
@@ -125,23 +156,63 @@ pub(crate) fn pending_at(
         .optional()?)
 }
 
-/// Record intent (inside the commit transaction). A row already at the path
-/// — an earlier request's unmaterialized intent — is superseded: the newer
-/// revision is the one the file must hold.
+/// The row that results when `incoming` is recorded at a path `existing`
+/// still owes (`spec/store` §5.7 "Supersession"; no `existing` → `incoming`
+/// as is). A `write` replaces the target and inherits the earliest prior:
+/// over a `write` its `prior_hash`, over a `remove` the bytes that row owed
+/// an unlink (`rendered_hash`), over a `rename` the rename itself stays —
+/// `from_path` and `prior_hash` kept, `head`/`rendered_hash`/`commit_id`/
+/// `created_at` the write's (the self-linking source of a `docs_move`, whose
+/// retarget renders new bytes at the new path). A `rename` or a `remove`
+/// replaces whatever is there (a rename's carry of the row at `from_path` is
+/// the commit's, which knows both paths — [`crate::effects`]).
+#[must_use]
+pub fn supersede(existing: Option<&PendingRow>, incoming: PendingRow) -> PendingRow {
+    let Some(existing) = existing else {
+        return incoming;
+    };
+    if incoming.kind != PendingKind::Write {
+        return incoming;
+    }
+    if existing.kind == PendingKind::Rename {
+        return PendingRow {
+            head: incoming.head,
+            rendered_hash: incoming.rendered_hash,
+            commit_id: incoming.commit_id,
+            created_at: incoming.created_at,
+            ..existing.clone()
+        };
+    }
+    PendingRow {
+        prior_hash: match existing.kind {
+            PendingKind::Remove => Some(existing.rendered_hash.clone()),
+            _ => existing.prior_hash.clone(),
+        },
+        ..incoming
+    }
+}
+
+/// Record intent (inside the commit transaction): one row per path — a row
+/// already at the path (an earlier request's unmaterialized intent) is
+/// superseded by [`supersede`], then `INSERT OR REPLACE`.
 pub(crate) fn insert_pending(conn: &Connection, repo_id: &str, row: &PendingRow) -> Result<()> {
+    let existing = pending_at(conn, repo_id, &row.path)?;
+    let row = supersede(existing.as_ref(), row.clone());
     conn.execute(
         "INSERT OR REPLACE INTO pending_materializations
-           (repo_id, path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+           (repo_id, path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             repo_id,
             row.path,
             row.kind.as_str(),
             row.from_path,
             row.doc_id,
-            row.rev_id,
+            row.head,
             row.rendered_hash,
+            row.prior_hash,
             row.commit_id,
+            row.created_at,
         ],
     )?;
     Ok(())
@@ -165,10 +236,11 @@ pub(crate) fn delete_pending(conn: &Connection, repo_id: &str, path: &str) -> Re
 /// head, the document is no longer live, or the head moved under the row —
 /// impossible while the replace rule holds, checked anyway): the row is kept
 /// for a later materializer rather than guessed. Through 16.x this was
-/// `reconstruct at rev_id` through the Merkle tree; the prior-bytes rule
-/// below is still the recorder's (M4, 3c).
+/// `reconstruct at rev_id` through the Merkle tree, and the prior bytes a
+/// `revisions` self-join on `seq − 1`; no history table is read here now
+/// (M4).
 fn bytes_for(conn: &Connection, row: &PendingRow) -> Result<Option<String>> {
-    if row.rev_id.is_none() {
+    if row.head.is_none() {
         return Ok(None);
     }
     let bytes = reconstruct(conn, &row.doc_id)?;
@@ -179,29 +251,15 @@ fn hashes_to(bytes: &str, hash: &[u8]) -> bool {
     sha256(bytes.as_bytes())[..] == hash[..]
 }
 
-/// Whether the bytes at a path are ones the row may replace: the expected
-/// bytes themselves or the previous revision's (the recorder's
-/// [`HistoryRecorder::previous_rendered_hash`] — the bytes a file left behind
-/// by the commit still holds).
-///
-/// seam: HistoryRecorder::previous_rendered_hash (Phase 3, M4 — `prior_hash`
-/// on the pending row; inventory-rust.md §2.3 `materialize.rs:161-175
-/// previous_rendered_hash`).
-fn replaceable(
-    conn: &Connection,
-    history: Option<&dyn HistoryRecorder>,
-    row: &PendingRow,
-    bytes: &str,
-) -> Result<bool> {
-    if hashes_to(bytes, &row.rendered_hash) {
-        return Ok(true);
-    }
-    match (&row.rev_id, history) {
-        (Some(rev), Some(h)) => Ok(h
-            .previous_rendered_hash(conn, &row.doc_id, rev)?
-            .is_some_and(|hash| hashes_to(bytes, &hash))),
-        _ => Ok(false),
-    }
+/// Whether the bytes at a path are the row's own: the expected bytes
+/// themselves or `prior_hash` — the engine's previous bytes, what a file
+/// left behind by the commit still holds.
+fn own(row: &PendingRow, bytes: &str) -> bool {
+    hashes_to(bytes, &row.rendered_hash)
+        || row
+            .prior_hash
+            .as_deref()
+            .is_some_and(|prior| hashes_to(bytes, prior))
 }
 
 /// Replay one row against the working tree (the §5.7 table). `Ok(true)`:
@@ -211,14 +269,13 @@ fn replaceable(
 /// is the durable record either way); so do database errors.
 fn materialize_row(
     conn: &Connection,
-    history: Option<&dyn HistoryRecorder>,
     row: &PendingRow,
     doc_store: &mut dyn DocStore,
 ) -> Result<bool> {
     match row.kind {
         PendingKind::Write => match doc_store.read(&row.path)? {
             Some(on_disk) if hashes_to(&on_disk, &row.rendered_hash) => Ok(true),
-            Some(on_disk) if !replaceable(conn, history, row, &on_disk)? => Ok(false),
+            Some(on_disk) if !own(row, &on_disk) => Ok(false),
             _ => {
                 let Some(bytes) = bytes_for(conn, row)? else {
                     return Ok(false);
@@ -237,7 +294,7 @@ fn materialize_row(
                 if !hashes_to(&at_to, &row.rendered_hash) {
                     return Ok(false);
                 }
-                remove_if_replaceable(conn, history, row, from, doc_store)?;
+                remove_if_own(row, from, doc_store)?;
                 return Ok(true);
             }
             if let Some(from) = from.filter(|f| doc_store.exists(f)) {
@@ -249,7 +306,7 @@ fn materialize_row(
                         // win at the new path, as the sweep will see.
                         if let Some(moved) = doc_store.read(&row.path)?
                             && !hashes_to(&moved, &row.rendered_hash)
-                            && replaceable(conn, history, row, &moved)?
+                            && own(row, &moved)
                             && let Some(bytes) = bytes_for(conn, row)?
                         {
                             doc_store.write(&row.path, &bytes)?;
@@ -257,14 +314,14 @@ fn materialize_row(
                         Ok(true)
                     }
                     Err(_) => {
-                        // EXDEV or the like: write the revision's bytes at
+                        // EXDEV or the like: write the document's bytes at
                         // the new path and retire the old file while it still
                         // holds the engine's own bytes.
                         let Some(bytes) = bytes_for(conn, row)? else {
                             return Ok(false);
                         };
                         doc_store.write(&row.path, &bytes)?;
-                        remove_if_replaceable(conn, history, row, Some(from), doc_store)?;
+                        remove_if_own(row, Some(from), doc_store)?;
                         Ok(true)
                     }
                 }
@@ -277,32 +334,28 @@ fn materialize_row(
             }
         }
         PendingKind::Remove => {
+            // Unlink only the bytes the deleted document rendered
+            // (`docs.file_hash` before the tombstone); a file a human rewrote
+            // meanwhile stays — untracked now, the next sweep re-creates the
+            // path (§5.6).
             if let Some(on_disk) = doc_store.read(&row.path)?
                 && hashes_to(&on_disk, &row.rendered_hash)
             {
                 doc_store.remove(&row.path)?;
             }
-            // Foreign bytes stay: untracked now, the next sweep re-creates
-            // the path (§5.6).
             Ok(true)
         }
     }
 }
 
 /// Unlink the moved document's old file when it still holds bytes the row
-/// accounts for (the revision's or the previous revision's).
-fn remove_if_replaceable(
-    conn: &Connection,
-    history: Option<&dyn HistoryRecorder>,
-    row: &PendingRow,
-    from: Option<&str>,
-    doc_store: &mut dyn DocStore,
-) -> Result<()> {
+/// accounts for (the document's or the prior bytes).
+fn remove_if_own(row: &PendingRow, from: Option<&str>, doc_store: &mut dyn DocStore) -> Result<()> {
     let Some(from) = from else {
         return Ok(());
     };
     if let Some(bytes) = doc_store.read(from)?
-        && replaceable(conn, history, row, &bytes)?
+        && own(row, &bytes)
     {
         doc_store.remove(from)?;
     }
@@ -328,7 +381,7 @@ impl Store {
     ) -> Result<Vec<String>> {
         let mut done = Vec::new();
         for row in pending_rows(&self.conn, repo_id)? {
-            if materialize_row(&self.conn, self.history.as_deref(), &row, doc_store)? {
+            if materialize_row(&self.conn, &row, doc_store)? {
                 delete_pending(&self.conn, repo_id, &row.path)?;
                 done.push(row.path);
             }
@@ -352,7 +405,7 @@ impl Store {
             let Some(row) = pending_at(&self.conn, repo_id, path)? else {
                 continue;
             };
-            if materialize_row(&self.conn, self.history.as_deref(), &row, doc_store)? {
+            if materialize_row(&self.conn, &row, doc_store)? {
                 delete_pending(&self.conn, repo_id, path)?;
                 done.push(path.clone());
             }

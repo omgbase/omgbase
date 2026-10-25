@@ -202,33 +202,6 @@ impl HistoryRecorder for Recorder {
         )?))
     }
 
-    fn rendered_hash(&self, conn: &Connection, rev_id: &str) -> Result<Option<Vec<u8>>> {
-        Ok(conn
-            .query_row(
-                "SELECT rendered_hash FROM revisions WHERE rev_id = ?1",
-                params![rev_id],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    fn previous_rendered_hash(
-        &self,
-        conn: &Connection,
-        doc_id: &str,
-        rev_id: &str,
-    ) -> Result<Option<Vec<u8>>> {
-        Ok(conn
-            .query_row(
-                "SELECT rendered_hash FROM revisions
-                 WHERE doc_id = ?1 AND seq < (SELECT seq FROM revisions WHERE rev_id = ?2)
-                 ORDER BY seq DESC LIMIT 1",
-                params![doc_id, rev_id],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
     fn changes_since(
         &self,
         conn: &Connection,

@@ -352,9 +352,11 @@ fn migrates_v13_to_v14_with_the_pending_table() {
             "kind",
             "from_path",
             "doc_id",
-            "rev_id",
+            "head",
             "rendered_hash",
-            "commit_id"
+            "prior_hash",
+            "commit_id",
+            "created_at"
         ]
     );
     let tables = count(&store, "sqlite_master WHERE type = 'table'");
@@ -3501,6 +3503,75 @@ fn an_api_commit_records_intent_in_its_transaction_and_phase_b_prime_clears_it()
 }
 
 /// A crash between COMMIT and the writes: the commit, its revisions and its
+/// §5.7 "Supersession" (17.0, M4) as a pure rule: a `write` replaces the
+/// target and keeps the earliest prior; over a `remove` it inherits the
+/// bytes the remove owed an unlink; over a `rename` the rename, its
+/// `from_path` and its prior stay and the target is the write's; a `rename`
+/// or a `remove` replaces whatever is there.
+#[test]
+fn supersede_keeps_the_earliest_prior_and_the_rename() {
+    use crate::materialize::supersede;
+    let h = |s: &str| sha256(s.as_bytes()).to_vec();
+    let row = |over: &dyn Fn(&mut PendingRow)| {
+        let mut r = PendingRow {
+            path: "a.md".into(),
+            kind: PendingKind::Write,
+            from_path: None,
+            doc_id: "d_x".into(),
+            head: Some("r_1".into()),
+            rendered_hash: h("one"),
+            prior_hash: Some(h("zero")),
+            commit_id: "c_1".into(),
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+        };
+        over(&mut r);
+        r
+    };
+    let first = row(&|_| {});
+    let second = row(&|r| {
+        r.head = Some("r_2".into());
+        r.rendered_hash = h("two");
+        r.prior_hash = Some(h("one"));
+        r.commit_id = "c_2".into();
+        r.created_at = "2026-01-02T00:00:00.000Z".into();
+    });
+    assert_eq!(supersede(None, second.clone()), second);
+    // write over write: the target is the second's, the prior the first's
+    let mut want = second.clone();
+    want.prior_hash = Some(h("zero"));
+    assert_eq!(supersede(Some(&first), second.clone()), want);
+    // a first write whose prior was None (a create) stays None
+    let created = row(&|r| r.prior_hash = None);
+    assert_eq!(supersede(Some(&created), second.clone()).prior_hash, None);
+    // write over remove: the prior is the bytes the remove owed an unlink
+    let remove = row(&|r| {
+        r.kind = PendingKind::Remove;
+        r.head = None;
+        r.prior_hash = None;
+        r.rendered_hash = h("old doc");
+    });
+    let mut want = second.clone();
+    want.prior_hash = Some(h("old doc"));
+    assert_eq!(supersede(Some(&remove), second.clone()), want);
+    // write over rename: the rename, its from_path and its prior stay; the target is the write's
+    let rename = row(&|r| {
+        r.kind = PendingKind::Rename;
+        r.from_path = Some("from.md".into());
+        r.head = Some("r_m".into());
+        r.rendered_hash = h("moved");
+        r.prior_hash = Some(h("moved"));
+    });
+    let mut want = rename.clone();
+    want.head = Some("r_2".into());
+    want.rendered_hash = h("two");
+    want.commit_id = "c_2".into();
+    want.created_at = "2026-01-02T00:00:00.000Z".into();
+    assert_eq!(supersede(Some(&rename), second.clone()), want);
+    // a rename or a remove over anything replaces it
+    assert_eq!(supersede(Some(&first), rename.clone()), rename);
+    assert_eq!(supersede(Some(&rename), remove.clone()), remove);
+}
+
 /// `changes_since` digest are durable, the files are the old ones, and the
 /// rows say exactly what is owed. `materialize_pending` replays them (files
 /// written, rows gone, the paths returned, the digest unchanged), and the
@@ -3535,13 +3606,17 @@ fn a_crash_after_commit_leaves_rows_the_materializer_replays() {
             kind: PendingKind::Write,
             from_path: None,
             doc_id: "d_0".into(),
-            rev_id: Some("r_2".into()),
+            head: Some("r_2".into()),
             rendered_hash: sha256("# A\n\nAlpha.\n\nA tail.\n".as_bytes()).to_vec(),
+            // 17.0 (M4): the bytes the engine last wrote at the path — the
+            // `file_hash` the commit validated against — and the commit's ts.
+            prior_hash: Some(sha256("# A\n\nAlpha.\n".as_bytes()).to_vec()),
             commit_id: "c_2".into(),
+            created_at: T1.into(),
         }
     );
     assert_eq!(rows[1].path, "b.md");
-    assert_eq!(rows[1].rev_id.as_deref(), Some("r_3"));
+    assert_eq!(rows[1].head.as_deref(), Some("r_3"));
     let page = store.changes_since(&repo, 2, 50, None).unwrap();
     assert_eq!(page.digests.len(), 1);
     assert_eq!(page.digests[0].commit, "c_2");
@@ -3779,7 +3854,8 @@ fn docs_delete_after_a_crash_unlinks_only_an_unchanged_file() {
     let rows = pending(&store, &repo);
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].kind, PendingKind::Remove);
-    assert_eq!(rows[0].rev_id, None);
+    assert_eq!(rows[0].head, None);
+    assert_eq!(rows[0].prior_hash, None);
     assert_eq!(
         rows[0].rendered_hash,
         sha256("# A\n\nAlpha.\n".as_bytes()).to_vec()
@@ -3838,7 +3914,7 @@ fn docs_move_falls_back_to_writing_when_the_rename_fails() {
     assert_eq!(rows[0].path, "n/b.md");
     assert_eq!(rows[0].from_path.as_deref(), Some("b.md"));
     assert_eq!(
-        rows[0].rev_id.as_deref(),
+        rows[0].head.as_deref(),
         Some("r_2"),
         "the moved doc's new head (17.0 D11: a move is a transition)"
     );
@@ -3941,7 +4017,7 @@ fn docs_set_meta_materializes_after_the_commit() {
     assert_eq!(ds.read("a.md").unwrap().as_deref(), Some("# A\n\nAlpha.\n"));
     let rows = pending(&store, &repo);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].rev_id.as_deref(), Some("r_1"));
+    assert_eq!(rows[0].head.as_deref(), Some("r_1"));
     assert_eq!(store.materialize_pending(&repo, &mut ds).unwrap(), ["a.md"]);
     assert_eq!(
         ds.read("a.md").unwrap().as_deref(),

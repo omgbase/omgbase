@@ -145,7 +145,7 @@ pub use history_shapes::{
 pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
-pub use materialize::{PendingKind, PendingRow};
+pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
 pub use mutate::{
     ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, find_doc_by_ref, is_id_ref,

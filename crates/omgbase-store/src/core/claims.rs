@@ -124,7 +124,7 @@ const NAMES_NO_CORE_ROW_SQL: &str = "
   NOT EXISTS (SELECT 1 FROM docs WHERE doc_id = id_claims.id OR head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM blocks WHERE block_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM resurrection_pool WHERE block_id = id_claims.id)
-  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE rev_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM external_nodes WHERE node_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM edges WHERE edge_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM repos WHERE repo_id = id_claims.id)

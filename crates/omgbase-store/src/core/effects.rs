@@ -48,7 +48,9 @@ use crate::core::codec::attrs_from_json;
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::InboundLink;
-use crate::materialize::{PendingKind, PendingRow, delete_pending, insert_pending};
+use crate::materialize::{
+    PendingKind, PendingRow, delete_pending, insert_pending, pending_at, supersede,
+};
 use crate::mint::Mint;
 use crate::mutate::known_plan;
 use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
@@ -371,7 +373,7 @@ impl Store {
             // 14.0: the files this request owes the working tree, recorded
             // before COMMIT so a crash loses nothing (`spec/store` §5.7).
             if head.origin == Origin::Api {
-                record_intent(&tx, repo_id, effects, &outcomes, &commit_id)?;
+                record_intent(&tx, repo_id, effects, &outcomes, &commit_id, ts)?;
             }
             if head.clear_pending {
                 for path in touched_paths(effects) {
@@ -454,72 +456,135 @@ fn current_bytes_hash(tx: &Connection, doc_id: &str) -> Result<Option<(Option<St
 }
 
 /// One `pending_materializations` row per path the request must write,
-/// rename or remove, in effect order: a `write` per ingested document (the
-/// head just minted, `rendered_hash = sha256(source)` — the row's
-/// `file_hash`), a `rename` for a moved document — carrying the head and
-/// bytes it holds after the whole request (17.0 D11: the move's new head and
-/// the unchanged `file_hash`; or, for a moved document that was also a
-/// retarget source, its rewrite's head and bytes, so the rewritten bytes land
-/// at the new path and the old file goes with it) — and a `remove` for a
-/// tombstoned one (the bytes its head rendered, so a foreign file is never
-/// unlinked).
+/// rename or remove, in effect order, each carrying what its replay needs
+/// (17.0, M4 — `spec/store` §5.7): a `write` per ingested document (the head
+/// just minted, `rendered_hash = sha256(source)` — the row's `file_hash` —
+/// and `prior_hash` = the `file_hash` the transaction validated the file
+/// against, `None` for a created document: the engine never wrote there), a
+/// `rename` for a moved document (the move's new head and its unchanged
+/// `file_hash` as both target and prior — the bytes the engine last wrote at
+/// `from`), a `remove` for a tombstoned one (the bytes its head rendered, so
+/// a foreign file is never unlinked; no head, no prior). One row per path,
+/// keyed by where the file must end up, in the order the paths were first
+/// owed (the reference's `Map`): a later `write` at a path already owed
+/// applies [`supersede`] — so the self-linking source of a `docs_move`
+/// renders its rewrite's bytes under the move's `rename` row, which keeps
+/// the rename's `from_path` and prior; a `rename` whose `from_path` still
+/// owes a `write`/`rename` (this request's or an earlier request's row in
+/// the table) carries its obligation — the rename's prior is that row's and
+/// the row goes, in this transaction. The same rule is applied again against
+/// the table's row at each path when the rows are inserted
+/// ([`insert_pending`]).
 fn record_intent(
     tx: &Connection,
     repo_id: &str,
     effects: &[Effect],
     outcomes: &[EffectOutcome],
     commit_id: &str,
+    ts: &str,
 ) -> Result<()> {
-    let moved: Option<&str> = effects.iter().find_map(|e| match e {
-        Effect::MovePath { doc_id, .. } => Some(doc_id.as_str()),
-        _ => None,
-    });
-    for (effect, outcome) in effects.iter().zip(outcomes) {
-        let ingested_path = match effect {
-            Effect::IngestKnown { path, .. } => Some(path.as_str()),
-            Effect::IngestReconciled { prepared, .. } => Some(prepared.path.as_str()),
-            _ => None,
+    let mut pending: Vec<PendingRow> = Vec::new();
+    fn set(pending: &mut Vec<PendingRow>, row: PendingRow) {
+        match pending.iter_mut().find(|r| r.path == row.path) {
+            Some(slot) => *slot = row,
+            None => pending.push(row),
+        }
+    }
+    let record_write = |pending: &mut Vec<PendingRow>,
+                        path: &str,
+                        c: &Committed,
+                        prior: Option<Vec<u8>>|
+     -> Result<()> {
+        let rendered_hash: Vec<u8> = current_bytes_hash(tx, &c.doc_id)?
+            .map(|(_, h)| h)
+            .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+        let incoming = PendingRow {
+            path: path.to_owned(),
+            kind: PendingKind::Write,
+            from_path: None,
+            doc_id: c.doc_id.clone(),
+            head: Some(c.rev_id.clone()),
+            rendered_hash,
+            prior_hash: prior,
+            commit_id: commit_id.to_owned(),
+            created_at: ts.to_owned(),
         };
-        let row = match (ingested_path, effect, outcome) {
-            (Some(path), _, EffectOutcome::Ingested(c)) => {
-                if moved == Some(c.doc_id.as_str()) {
-                    continue; // the rename row lands these bytes
-                }
-                let rendered_hash: Vec<u8> = current_bytes_hash(tx, &c.doc_id)?
-                    .map(|(_, h)| h)
-                    .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-                PendingRow {
-                    path: path.to_owned(),
-                    kind: PendingKind::Write,
-                    from_path: None,
-                    doc_id: c.doc_id.clone(),
-                    rev_id: Some(c.rev_id.clone()),
-                    rendered_hash,
-                    commit_id: commit_id.to_owned(),
-                }
-            }
-            (
-                _,
-                Effect::MovePath {
-                    doc_id, from, to, ..
-                },
-                _,
-            ) => {
-                let Some((rev_id, rendered_hash)) = current_bytes_hash(tx, doc_id)? else {
-                    continue;
+        let row = supersede(pending.iter().find(|r| r.path == path), incoming);
+        set(pending, row);
+        Ok(())
+    };
+    for (effect, outcome) in effects.iter().zip(outcomes) {
+        match (effect, outcome) {
+            (Effect::IngestKnown { path, guard, .. }, EffectOutcome::Ingested(c)) => {
+                let prior = match guard {
+                    Guard::Doc { base, .. } => base.file_hash.clone(),
+                    _ => None,
                 };
-                PendingRow {
-                    path: to.clone(),
-                    kind: PendingKind::Rename,
-                    from_path: Some(from.clone()),
-                    doc_id: doc_id.clone(),
-                    rev_id,
-                    rendered_hash,
-                    commit_id: commit_id.to_owned(),
-                }
+                record_write(&mut pending, path, c, prior)?;
+            }
+            (Effect::IngestReconciled { prepared, guard }, EffectOutcome::Ingested(c)) => {
+                let prior = match guard {
+                    Guard::Doc { base, .. } => base.file_hash.clone(),
+                    _ => None,
+                };
+                record_write(&mut pending, &prepared.path, c, prior)?;
             }
             (
-                _,
+                Effect::MovePath {
+                    doc_id,
+                    from,
+                    to,
+                    current_rev,
+                    ..
+                },
+                EffectOutcome::Moved(moved),
+            ) => {
+                // A `write`/`rename` row still owed at `from` (this request's,
+                // or an earlier request's unfinished file half) is superseded
+                // by this rename, which carries its obligation: the bytes the
+                // engine must still recognise at `from` are that row's
+                // `prior_hash`, and the row goes (§5.7 "Supersession").
+                let owed_at_from = match pending.iter().find(|r| r.path == *from) {
+                    Some(row) => Some(row.clone()),
+                    None => pending_at(tx, repo_id, from)?,
+                };
+                // The bytes expected at `to`: the moved document's current
+                // bytes — `docs.file_hash` (I1) — under its new head (a
+                // self-linking source's retarget replaces both with its own
+                // through `supersede`). The prior at `from` is the same hash —
+                // what the engine last wrote there — unless a pending row says
+                // the disk never caught up with it.
+                let current: Vec<u8> = match &moved.file_hash {
+                    Some(h) => h.clone(),
+                    None => match current_bytes_hash(tx, doc_id)? {
+                        Some((_, h)) => h,
+                        None => continue,
+                    },
+                };
+                let mut prior = Some(current.clone());
+                if let Some(owed) = owed_at_from
+                    && owed.kind != PendingKind::Remove
+                {
+                    prior = owed.prior_hash;
+                    pending.retain(|r| r.path != *from);
+                    delete_pending(tx, repo_id, from)?;
+                }
+                set(
+                    &mut pending,
+                    PendingRow {
+                        path: to.clone(),
+                        kind: PendingKind::Rename,
+                        from_path: Some(from.clone()),
+                        doc_id: doc_id.clone(),
+                        head: moved.head.clone().or_else(|| current_rev.clone()),
+                        rendered_hash: current,
+                        prior_hash: prior,
+                        commit_id: commit_id.to_owned(),
+                        created_at: ts.to_owned(),
+                    },
+                );
+            }
+            (
                 Effect::Tombstone {
                     doc_id, path, pool, ..
                 },
@@ -528,21 +593,32 @@ fn record_intent(
                 if *pool {
                     continue; // an observed deletion owes the tree nothing
                 }
+                // A remove drops whatever the path owed (§5.7 "Supersession"):
+                // no prior, no head; `rendered_hash` the bytes the deleted
+                // document rendered (`docs.file_hash` before the tombstone, or
+                // the observed bytes when it never had a head).
                 let rendered_hash = current_bytes_hash(tx, doc_id)?
                     .map_or_else(|| sha256(b"").to_vec(), |(_, h)| h);
-                PendingRow {
-                    path: path.clone(),
-                    kind: PendingKind::Remove,
-                    from_path: None,
-                    doc_id: doc_id.clone(),
-                    rev_id: None,
-                    rendered_hash,
-                    commit_id: commit_id.to_owned(),
-                }
+                set(
+                    &mut pending,
+                    PendingRow {
+                        path: path.clone(),
+                        kind: PendingKind::Remove,
+                        from_path: None,
+                        doc_id: doc_id.clone(),
+                        head: None,
+                        rendered_hash,
+                        prior_hash: None,
+                        commit_id: commit_id.to_owned(),
+                        created_at: ts.to_owned(),
+                    },
+                );
             }
-            _ => continue,
-        };
-        insert_pending(tx, repo_id, &row)?;
+            _ => {}
+        }
+    }
+    for row in &pending {
+        insert_pending(tx, repo_id, row)?;
     }
     Ok(())
 }

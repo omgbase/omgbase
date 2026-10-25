@@ -1,14 +1,18 @@
 //! Startup recovery (`spec/sync/README.md` §4.3 "Recovery"): first the
 //! pending materializations are replayed (store 14.0 — the files an `api`
-//! commit still owes are written, not mistaken for divergence), then every
-//! live doc's file is checked against its current revision; a divergent file
-//! is re-ingested as an observed commit, one document at a time (§9).
+//! commit still owes are written, not mistaken for divergence; the row is
+//! self-contained since 17.0: its `head`, `rendered_hash` and `prior_hash`,
+//! no history read), then every live doc's file is checked against the
+//! document's `file_hash`; a divergent file is re-ingested as an observed
+//! commit, one document at a time (§9), and a row step 0 kept for that path
+//! (foreign bytes) goes with the heal — the file won (`spec/store` §5.7 gate
+//! rule).
 
 use std::path::Path;
 
 use omgbase_format::hash::sha256;
 use omgbase_reconcile::Config;
-use omgbase_store::{Origin, Store};
+use omgbase_store::Store;
 use rusqlite::params;
 use serde_json::Value;
 
@@ -35,12 +39,11 @@ impl RecoveryResult {
 
 /// Step 0: [`crate::freshness::materialize_pending`]. Then for every live
 /// doc (in row order): a missing file is `missing`; a file whose hash
-/// differs from the current revision's `rendered_hash` (or `file_hash` when
-/// there is no revision) is re-ingested with the reconciling resolver and
-/// listed `healed`.
-// seam: self-contained recovery payloads (Phase 3, M4 — compare against
-// `docs.file_hash`, not `revisions.rendered_hash` through `head`;
-// inventory-rust.md §2.8 `recovery.rs:40-95`, §3.4).
+/// differs from the document's `file_hash` (17.0, M4 — the convergence
+/// oracle is the row's own, I1/C1: the hash of the bytes its head renders
+/// to; no `revisions` read) is re-ingested with the reconciling resolver —
+/// the pending row at its path, if the replay kept one, dropped in the same
+/// transaction — and listed `healed`.
 pub fn recover_repo(
     store: &mut Store,
     repo_id: &str,
@@ -50,38 +53,28 @@ pub fn recover_repo(
     config: &Config,
 ) -> Result<RecoveryResult> {
     let materialized = crate::freshness::materialize_pending(store, repo_id, fs, root)?;
-    type Row = (String, Option<Vec<u8>>, Option<Vec<u8>>);
-    let docs: Vec<Row> = {
+    let docs: Vec<(String, Option<Vec<u8>>)> = {
         let mut stmt = store.conn().prepare(
-            "SELECT d.path, d.file_hash, r.rendered_hash
-             FROM docs d LEFT JOIN revisions r ON r.rev_id = d.head
-             WHERE d.repo_id = ?1 AND d.deleted_at IS NULL ORDER BY d.rowid",
+            "SELECT path, file_hash FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL ORDER BY rowid",
         )?;
-        let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect::<std::result::Result<_, _>>()?
     };
     let mut result = RecoveryResult {
         materialized,
         ..RecoveryResult::default()
     };
-    for (path, file_hash, rendered_hash) in docs {
+    for (path, file_hash) in docs {
         let Some(content) = fs.read(root, &path)? else {
             result.missing.push(path);
             continue;
         };
         let on_disk = sha256(content.as_bytes());
-        let recorded = rendered_hash.or(file_hash);
-        if recorded.is_none_or(|r| r[..] != on_disk[..]) {
-            store.reconciling_ingest(
-                repo_id,
-                &path,
-                &content,
-                ts,
-                Origin::Observed,
-                None,
-                None,
-                config,
-            )?;
+        if file_hash.is_none_or(|r| r[..] != on_disk[..]) {
+            // Divergence: the file moved ahead of (or behind) the store.
+            // Re-ingest; a pending row the replay kept at this path is
+            // superseded (file wins).
+            store.healing_ingest(repo_id, &path, &content, ts, config)?;
             result.healed.push(path);
         }
     }
@@ -245,6 +238,128 @@ mod tests {
             serde_json::json!({ "healed": [], "missing": [] }),
             "step 0 is not on the wire"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 17.0 (M4): `prior_hash` recognises the engine's own stale file and
+    /// leaves a foreign edit alone — the heal then drops its row. Two
+    /// crashed requests leave two `write` rows; the store is reopened from
+    /// the file (another process recovers with nothing but the database and
+    /// the disk); `a.md` still holds the prior bytes → written, `b.md` was
+    /// edited by a human → kept by the replay, healed as `observed`, its row
+    /// gone.
+    #[test]
+    fn recovery_prior_hash_recognises_own_stale_file_and_the_heal_drops_a_kept_row() {
+        struct Crashed(omgbase_store::FsDocStore);
+        impl omgbase_store::DocStore for Crashed {
+            fn exists(&self, p: &str) -> bool {
+                self.0.exists(p)
+            }
+            fn read(&self, p: &str) -> omgbase_store::Result<Option<String>> {
+                self.0.read(p)
+            }
+            fn write(&mut self, p: &str, _b: &str) -> omgbase_store::Result<()> {
+                Err(omgbase_store::Error::Other(format!("crashed before {p}")))
+            }
+            fn rename(&mut self, f: &str, _t: &str) -> omgbase_store::Result<()> {
+                Err(omgbase_store::Error::Other(format!("crashed before {f}")))
+            }
+            fn remove(&mut self, p: &str) -> omgbase_store::Result<()> {
+                Err(omgbase_store::Error::Other(format!("crashed before {p}")))
+            }
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "omgbase-sync-recover-prior-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "# A\n").unwrap();
+        std::fs::write(dir.join("b.md"), "# B\n").unwrap();
+        let db = dir.join("store.sqlite");
+        let cfg = Config::default();
+        let repo = {
+            let mut store =
+                Store::open_with_minter(&db, Box::new(SequentialMinter::new())).unwrap();
+            let repo = store.create_repo("fixture").unwrap();
+            store
+                .observe_batch(
+                    &repo,
+                    &[
+                        BatchItem::observed("a.md", "# A\n"),
+                        BatchItem::observed("b.md", "# B\n"),
+                    ],
+                    TS,
+                    &cfg,
+                )
+                .unwrap();
+            let ctx = omgbase_store::DocOpContext {
+                repo_id: repo.clone(),
+                actor: Some("agent:test".to_owned()),
+                ts: TS.to_owned(),
+            };
+            let mut set = serde_json::Map::new();
+            set.insert("status".to_owned(), serde_json::json!("done"));
+            for path in ["a.md", "b.md"] {
+                store
+                    .docs_set_meta(
+                        &ctx,
+                        &mut Crashed(omgbase_store::FsDocStore::new(&dir)),
+                        path,
+                        Some(&set),
+                        &[],
+                    )
+                    .unwrap_err();
+            }
+            let rows = store.pending_materializations(&repo).unwrap();
+            assert_eq!(rows.len(), 2);
+            for (row, bytes) in rows.iter().zip(["# A\n", "# B\n"]) {
+                assert_eq!(row.kind, omgbase_store::PendingKind::Write);
+                assert_eq!(
+                    row.prior_hash.as_deref(),
+                    Some(&sha256(bytes.as_bytes())[..]),
+                    "prior_hash is the file_hash the commit validated against"
+                );
+                assert_eq!(row.created_at, TS);
+            }
+            store.close().unwrap();
+            repo
+        };
+        let human = "# B\n\nBravo, by a human.\n";
+        std::fs::write(dir.join("b.md"), human).unwrap();
+        let mut store = Store::open_with_minter(&db, Box::new(SequentialMinter::new())).unwrap();
+        let fs = crate::fs::RealFileSystem;
+        let r = recover_repo(&mut store, &repo, &fs, &dir, TS, &cfg).unwrap();
+        assert_eq!(
+            r,
+            RecoveryResult {
+                materialized: vec!["a.md".to_owned()],
+                healed: vec!["b.md".to_owned()],
+                missing: vec![],
+            }
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.md")).unwrap(),
+            "---\nstatus: done\n---\n\n# A\n"
+        );
+        assert_eq!(std::fs::read_to_string(dir.join("b.md")).unwrap(), human);
+        assert!(
+            store.pending_materializations(&repo).unwrap().is_empty(),
+            "the heal dropped the row the replay kept"
+        );
+        let (origin, file_hash): (String, Vec<u8>) = store
+            .conn()
+            .query_row(
+                "SELECT (SELECT origin FROM commits WHERE repo_id = ?1 ORDER BY seq DESC LIMIT 1), (SELECT file_hash FROM docs WHERE path = 'b.md')",
+                params![repo],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(origin, "observed");
+        assert_eq!(file_hash[..], sha256(human.as_bytes())[..]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

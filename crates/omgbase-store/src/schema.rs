@@ -161,15 +161,16 @@ pub(crate) fn migrate(
         return Ok(());
     }
     if current == SCHEMA_VERSION {
-        // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b):
-        // a database a 3a build already moved to 17 has `docs` but no
-        // `id_claims` and the pool's `deleted_commit`. The identity half of
-        // the step is idempotent, so finish it here rather than spend a
-        // schema version on a dev-only state. (A 17 database with no `docs`
-        // table — the `already-current-is-untouched` fixture — is left
-        // exactly as it is.)
+        // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b
+        // → 3c): a database a 3a build already moved to 17 has `docs` but no
+        // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still
+        // has `pending_materializations.rev_id`. Each half of the step is
+        // idempotent, so finish it here rather than spend a schema version on
+        // a dev-only state. (A 17 database with no `docs` table — the
+        // `already-current-is-untouched` fixture — is left exactly as it is.)
         if table_exists(conn, "docs")? {
             migrate_v17_claims(conn)?;
+            migrate_v17_pending(conn)?;
         }
         return Ok(());
     }
@@ -189,9 +190,11 @@ pub(crate) fn migrate(
         if v == 17 {
             // Likewise: three rebuilds under `foreign_keys = OFF` (§3.4 step
             // 17), then the identity half (3b): the pool's `deleted_at` and
-            // the `id_claims` backfill.
+            // the `id_claims` backfill, then the recovery half (3c): the
+            // self-contained `pending_materializations` row.
             migrate_v17(conn, history)?;
             migrate_v17_claims(conn)?;
+            migrate_v17_pending(conn)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -742,6 +745,68 @@ fn rebuild_pool_v17(db: &Connection, clock: &str) -> Result<()> {
     db.execute_batch(
         "DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;",
     )?;
+    Ok(())
+}
+
+/// The recovery half of step 17 (§3.4 step 17 (5); modular-core Phase 3c —
+/// M4): `pending_materializations` rebuilt self-contained — `head` = the
+/// row's `rev_id` (the same `r_` token: the head IS the revision id the core
+/// mints), `prior_hash` = the `rendered_hash` of the revision before it
+/// (`seq − 1` of the same document, resolved ONCE from the 16.x history;
+/// `NULL` for a first revision, a `remove` row or an unknown revision),
+/// `created_at` = the recording commit's `ts` (the migration's clock when the
+/// commit is gone); the two foreign keys (`revisions`, `commits`) dropped;
+/// `rowid`s kept (a materializer replays in insertion order). Runs after
+/// [`migrate_v17`] and [`migrate_v17_claims`] in step 17, or alone for a
+/// 3a/3b database at 17 (a short transaction of its own; the table it
+/// rebuilds has no incoming foreign key). Idempotent: a table that already
+/// carries `head` is left alone, as is a pre-state without the table.
+fn migrate_v17_pending(conn: &Connection) -> Result<()> {
+    if has_column(conn, "pending_materializations", "head")? != Some(false) {
+        return Ok(());
+    }
+    let clock = crate::core::time::now_ts();
+    let has_revisions = table_exists(conn, "revisions")?;
+    let has_commits = table_exists(conn, "commits")?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE pending_materializations_v17 (
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  path          TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('write','rename','remove')),
+  from_path     TEXT,
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
+  head          TEXT,
+  rendered_hash BLOB NOT NULL,
+  prior_hash    BLOB,
+  commit_id     TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (repo_id, path)
+);",
+    )?;
+    let prior = if has_revisions {
+        "(SELECT q.rendered_hash FROM revisions r JOIN revisions q ON q.doc_id = r.doc_id AND q.seq = r.seq - 1 WHERE r.rev_id = p.rev_id)"
+    } else {
+        "NULL"
+    };
+    let created_at = if has_commits {
+        "COALESCE((SELECT c.ts FROM commits c WHERE c.commit_id = p.commit_id), ?1)"
+    } else {
+        "?1"
+    };
+    tx.execute(
+        &format!(
+            "INSERT INTO pending_materializations_v17 (rowid, repo_id, path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at)
+             SELECT p.rowid, p.repo_id, p.path, p.kind, p.from_path, p.doc_id, p.rev_id, p.rendered_hash,
+                    CASE WHEN p.kind = 'remove' THEN NULL ELSE {prior} END, p.commit_id, {created_at}
+               FROM pending_materializations p ORDER BY p.rowid"
+        ),
+        params![clock],
+    )?;
+    tx.execute_batch(
+        "DROP TABLE pending_materializations; ALTER TABLE pending_materializations_v17 RENAME TO pending_materializations;",
+    )?;
+    tx.commit()?;
     Ok(())
 }
 
