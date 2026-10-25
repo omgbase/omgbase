@@ -15,7 +15,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{Map, Value as Json, json};
 
-use crate::core::capabilities::{HistoryRecorder, SemanticProvider};
+use crate::core::capabilities::{HistoryRecorder, IdentityClaims, SemanticProvider};
 use crate::error::Result;
 
 /// The four categories, in the report's fixed order.
@@ -43,6 +43,7 @@ pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("commits", "history"),
     ("dispositions", "history"),
     ("block_changes", "history"),
+    ("id_claims", "history"),
     ("resurrection_pool", "history"),
     ("pending_materializations", "history"),
     ("archives", "history"),
@@ -185,6 +186,10 @@ pub struct SizeReport {
     /// §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store
     /// through 14.1 wrote and `omg gc` removes; 0 on a fresh 14.2 store.
     pub same_dispositions: u64,
+    /// §7.2 (17.0): `id_claims` rows — one per id ever minted and still held
+    /// (§2.1); `identity.claims_retain_days` lets `omg gc` release old ones
+    /// (§7.3).
+    pub id_claims: u64,
     /// §7.2 (15.0): archived revisions, recorded segments, their bytes on disk.
     pub archived: SizeArchived,
     pub advice: Vec<String>,
@@ -235,6 +240,7 @@ impl SizeReport {
             ),
         );
         m.insert("same_dispositions".into(), json!(self.same_dispositions));
+        m.insert("id_claims".into(), json!(self.id_claims));
         m.insert(
             "archived".into(),
             json!({
@@ -375,8 +381,9 @@ pub fn size_report(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
     semantic: Option<&dyn SemanticProvider>,
+    claims: &dyn IdentityClaims,
 ) -> Result<SizeReport> {
-    size_report_at(conn, history, semantic, &crate::time::now_ts())
+    size_report_at(conn, history, semantic, claims, &crate::time::now_ts())
 }
 
 /// The size report (§7 "Size") with the retention plans (15.0) evaluated at
@@ -386,11 +393,13 @@ pub fn size_report(
 /// from the recorder ([`HistoryRecorder::size_figures`]); a store without
 /// one reports them as zero. The embeddings advice names the semantic
 /// bundle's tables ([`SemanticProvider::tables`]); a store without the bundle
-/// gives none.
+/// gives none. The `id_claims` count (17.0) is the claims oracle's
+/// ([`IdentityClaims::count`]).
 pub fn size_report_at(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
     semantic: Option<&dyn SemanticProvider>,
+    claims: &dyn IdentityClaims,
     now: &str,
 ) -> Result<SizeReport> {
     let path = match conn.path() {
@@ -544,6 +553,7 @@ pub fn size_report_at(
         None => crate::core::capabilities::HistorySizeFigures::default(),
     };
     let same_dispositions = figures.same_dispositions;
+    let id_claims = claims.count(conn)?;
     let archived = figures.archived;
     let retention = figures.retention;
     let semantic_tables: &[&str] = semantic.map_or(&[], |s| s.tables());
@@ -558,6 +568,7 @@ pub fn size_report_at(
         file,
         categories,
         same_dispositions,
+        id_claims,
         archived,
         advice,
         detail: stat.is_none().then_some("dbstat unavailable"),
@@ -990,11 +1001,12 @@ mod tests {
         }
         assert_eq!(r.same_dispositions, 0, "a 14.2 store writes no `same` row");
         assert_eq!(r.advice, vec!["nothing to reclaim"]);
-        // The JSON shape the CLI prints: `same_dispositions` between the
-        // categories and the advice (spec/cli §6).
+        // The JSON shape the CLI prints: `same_dispositions` and `id_claims`
+        // (17.0) between the categories and the advice (spec/cli §6).
         let j = r.to_json();
         assert_eq!(j["file"]["page_size"], json!(r.file.page_size));
         assert_eq!(j["same_dispositions"], json!(0));
+        assert_eq!(j["id_claims"], json!(r.id_claims));
         let keys: Vec<&String> = j.as_object().unwrap().keys().collect();
         assert_eq!(
             keys,
@@ -1002,6 +1014,7 @@ mod tests {
                 "file",
                 "categories",
                 "same_dispositions",
+                "id_claims",
                 "archived",
                 "advice"
             ]

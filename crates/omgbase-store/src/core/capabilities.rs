@@ -18,9 +18,9 @@
 //!   `prune_foreign`. Default: `semantic::Provider`. Nothing outside
 //!   `semantic/` reads or writes a vector except through it.
 //! - [`IdentityClaims`] — the mint oracle of `spec/store` §2.1 behind an
-//!   interface: today the union of each prefix's tables
-//!   ([`TableUnionClaims`](crate::core::claims::TableUnionClaims)), in Phase
-//!   3 an `id_claims` table (D5).
+//!   interface: since 17.0 (Phase 3b, M3/D5) the `id_claims` table
+//!   ([`IdClaims`](crate::core::claims::IdClaims)) — the claim written by the
+//!   row's writer, the recorder's hold, the §7.3 prune, one probe per mint.
 //!
 //! [`Capabilities`] bundles the three; the composition layer (the `omgbase`
 //! binary's store open path, the sync workspace, the surface) assembles it
@@ -37,6 +37,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::Value as Json;
 
+use crate::core::claims::ClaimScope;
 use crate::core::history_shapes::{
     ArchiveListing, AttachResult, ExportOptions, ExportResult, RetentionOptions, RetentionPlan,
     RetentionPolicy,
@@ -52,19 +53,43 @@ use crate::error::{Error, Result};
 
 // ---- the identity oracle --------------------------------------------------------------
 
-/// `spec/store` §2.1 "Uniqueness at mint" as an interface: whether an id is
-/// already claimed, and the claim itself. The checking minter ([`Mint`])
-/// consults it on every draw.
+/// `spec/store` §2.1 "Uniqueness at mint" as an interface (17.0 — M3/D5):
+/// the `id_claims` table the core writes at every row-carrying mint and the
+/// oracle the checking minter ([`Mint`]) asks before issuing an id. `holders`
+/// is a bitmask — bit 0 the core, bit 1 the recorder
+/// ([`IdClaims`](crate::core::claims::IdClaims)). The core's writers call
+/// `claim` in the transaction that writes the row; the recorder calls `hold`
+/// when its capture first names an id; `gc` calls `prune` (§7.3).
 pub trait IdentityClaims {
-    /// Does `id` (of `prefix`) already name an identity this store issued —
-    /// today a row of the prefix's table(s), history tables included
-    /// (`block_changes`, `resurrection_pool`, `commits`, `revisions`, …)?
+    /// Record that the core issued `id` under `prefix` for `repo_id` (`None`
+    /// = workspace-scoped) at `minted_at` — idempotent (a second claim of the
+    /// same id adds nothing but the core bit).
+    fn claim(
+        &self,
+        conn: &Connection,
+        prefix: &str,
+        id: &str,
+        repo_id: Option<&str>,
+        minted_at: &str,
+    ) -> Result<()>;
+
+    /// Set the recorder's hold (bit 1) on every id named; an id with no claim
+    /// row is left alone.
+    fn hold(&self, conn: &Connection, ids: &[&str]) -> Result<()>;
+
+    /// Is `id` in use under `prefix` — §2.1: one probe on `id_claims` for a
+    /// core-minted prefix (`d`, `b`, `r`, `x`, `e`, `rp`, `src`), the table
+    /// probe for `c`/`s`/`cp`.
     fn is_claimed(&self, conn: &Connection, prefix: &str, id: &str) -> Result<bool>;
 
-    /// Record that `id` was just issued. The table-union oracle claims
-    /// nothing here — the row the writer inserts is the claim; Phase 3's
-    /// `id_claims` table (D5) writes its row.
-    fn claim(&self, conn: &Connection, prefix: &str, id: &str) -> Result<()>;
+    /// The claims prune (§7.3) at the clock `now` under the settings layers
+    /// given (every repository's effective settings, then the workspace's for
+    /// the `repo_id`-less claims); returns the holds released. Runs in the
+    /// caller's transaction.
+    fn prune(&self, conn: &Connection, now: &str, scopes: &[ClaimScope]) -> Result<usize>;
+
+    /// `count(*)` of `id_claims` (the size report's `id_claims` line, §7.2).
+    fn count(&self, conn: &Connection) -> Result<u64>;
 }
 
 // ---- the history recorder -------------------------------------------------------------
@@ -136,6 +161,10 @@ pub struct GcResult {
     /// §7 "The `same` sweep" (14.2): the `same` rows a store through 14.1
     /// wrote into `dispositions` / `block_changes` — history nothing reads.
     pub same_dispositions_swept: usize,
+    /// §7.3 (17.0): the core holds released from `id_claims` under
+    /// `identity.claims_retain_days` (0 while the setting is null, and on a
+    /// dry run).
+    pub claims_released: usize,
 }
 
 /// One revision a commit wrote (the change feed, `spec/sync` §6).
@@ -304,9 +333,12 @@ pub trait HistoryRecorder {
     /// the caller's transaction.
     fn rebuild_projection(&self, tx: &Connection) -> Result<()>;
 
-    /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
-    /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows.
-    fn gc(&self, conn: &Connection, enabled: bool) -> Result<GcResult>;
+    /// §7: the recorder's half of a garbage collection inside the caller's
+    /// transaction — the mark-and-sweep over `tree_nodes`/`blobs` and, since
+    /// 14.2, the removal of a 14.1 store's `same` disposition rows. The
+    /// claims prune (§7.3) is the core's and follows in the same transaction
+    /// (`Store::gc_at`); `claims_released` is left 0 here.
+    fn gc(&self, tx: &Connection) -> Result<GcResult>;
 
     /// What [`HistoryRecorder::gc`] would sweep, without deleting (§8 I5).
     fn gc_dry_run(&self, conn: &Connection) -> Result<GcResult>;
@@ -618,7 +650,7 @@ impl std::fmt::Debug for Capabilities {
 pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
 
 impl Capabilities {
-    /// The core alone: no recorder, no provider, the table-union oracle. The
+    /// The core alone: no recorder, no provider, the `id_claims` oracle. The
     /// core mints its own head token since 17.0 (M1), but legacy capture is
     /// on for every repository through Phase 3, so a store opened with this
     /// still cannot commit a transition (`require_history`); it reads,
@@ -629,7 +661,7 @@ impl Capabilities {
             history: None,
             semantic: None,
             semantic_fault: None,
-            claims: Box::new(crate::core::claims::TableUnionClaims),
+            claims: Box::new(crate::core::claims::IdClaims),
         }
     }
 

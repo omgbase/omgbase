@@ -4,6 +4,7 @@
 //! `history::gc`, the retention and archive entry points — so Phase 1
 //! changes no row and no byte.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use omgbase_format::hash::hex;
@@ -14,6 +15,7 @@ use crate::core::capabilities::{
     ChangesPage, DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision,
     RevisionRead, RevisionTransition,
 };
+use crate::core::claims;
 use crate::core::history_shapes::{
     ArchiveListing, AttachResult, ExportOptions, ExportResult, RetentionOptions, RetentionPlan,
     RetentionPolicy,
@@ -114,6 +116,10 @@ impl HistoryRecorder for Recorder {
                 seq: Some(seq),
             },
         )?;
+        // §2.1 (17.0): the recorder's hold (bit 1) on every id its
+        // `revisions` row names — the head and the document — so the claims
+        // prune never releases an id the history still refers to.
+        claims::hold(tx, &[t.head, t.doc_id])?;
         Ok(RecordedRevision { rev_id, seq })
     }
 
@@ -122,9 +128,10 @@ impl HistoryRecorder for Recorder {
     /// one per untouched block, and the outcome counts them, but the two
     /// tables record what CHANGED: a block's rows are its own history, so
     /// `MAX(commits.ts)` over its `block_changes` and `blocks_history` are the
-    /// block's changes, not its siblings'. Every other kind — the first
-    /// revision's `inserted` rows the mint oracle (§2.1) depends on included
-    /// — is written as before.
+    /// block's changes, not its siblings'. Every other kind is written, and
+    /// the block ids named gain the recorder's hold on their claims (§2.1,
+    /// 17.0) — this, not an earliest row the squash keeps, is what keeps an
+    /// archived block's id reserved (§7.1 step 2).
     fn record_dispositions(
         &self,
         tx: &Connection,
@@ -138,6 +145,10 @@ impl HistoryRecorder for Recorder {
         let mut bc = tx.prepare(
             "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?1, ?2, ?3)",
         )?;
+        // §2.1 (17.0): the recorder's hold (bit 1) on every block id a
+        // `block_changes` row now names, each once, in first-seen order.
+        let mut held: Vec<&str> = Vec::new();
+        let mut seen: HashSet<&str> = HashSet::new();
         for d in rows.iter().filter(|d| persists_disposition(&d.kind)) {
             ins.execute(params![
                 commit_id,
@@ -149,7 +160,11 @@ impl HistoryRecorder for Recorder {
                 d.detail,
             ])?;
             bc.execute(params![d.block_id, commit_id, d.kind])?;
+            if d.block_id != "DOC" && seen.insert(d.block_id.as_str()) {
+                held.push(&d.block_id);
+            }
         }
+        claims::hold(tx, &held)?;
         Ok(())
     }
 
@@ -229,8 +244,8 @@ impl HistoryRecorder for Recorder {
         gc::rebuild_block_changes(tx)
     }
 
-    fn gc(&self, conn: &Connection, enabled: bool) -> Result<GcResult> {
-        gc::run_gc(conn, enabled)
+    fn gc(&self, tx: &Connection) -> Result<GcResult> {
+        gc::run_gc_in(tx)
     }
 
     fn gc_dry_run(&self, conn: &Connection) -> Result<GcResult> {

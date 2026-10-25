@@ -11,10 +11,11 @@
 //! archived revision keeps its row (id, doc, seq, path, rendered hash, commit
 //! — so the `revisions` target, `docs_history` and `changes_since` keep
 //! listing it) and loses `root_tree` and `frontmatter_blob`, gaining
-//! `archive` = the segment id; the wholly archived commits' dispositions go,
-//! their block_changes go except each block's EARLIEST row (the mint oracle of
-//! §2.1 reads `block_changes`, so a minted id stays known); the GC sweep
-//! reclaims the bodies now reachable from nothing; the segment is recorded in
+//! `archive` = the segment id; the wholly archived commits' dispositions and
+//! block_changes go (17.0: the recorder's hold on the id's `id_claims` row
+//! keeps a minted id known, §2.1 — through 16.x each block's earliest row
+//! stayed for the mint oracle); the GC sweep reclaims the bodies now reachable
+//! from nothing; the segment is recorded in
 //! `archives`. Two phases on purpose: the file is complete and durable before
 //! a single row of the store moves, and a crash between the phases leaves a
 //! complete, unrecorded segment that the next run finds and finishes (the
@@ -1065,10 +1066,10 @@ fn write_segment(
 
 /// Phase 2: squash the store for a complete segment, in one transaction — the
 /// archived revisions lose their bodies and gain `archive`; the wholly
-/// archived commits lose their dispositions and every block_changes row but
-/// each block's earliest; the GC sweep reclaims what is reachable from
-/// nothing; the segment is recorded in `archives` and as the repo's
-/// `history.last_segment`.
+/// archived commits lose their dispositions and every one of their
+/// block_changes rows (17.0: the claim holds the id); the GC sweep reclaims
+/// what is reachable from nothing; the segment is recorded in `archives` and
+/// as the repo's `history.last_segment`.
 fn squash(
     conn: &Connection,
     repo_id: &str,
@@ -1098,14 +1099,12 @@ fn squash(
     let mut block_changes = 0usize;
     {
         let mut del_disp = tx.prepare("DELETE FROM dispositions WHERE commit_id = ?1")?;
-        // The rows that stay: a block's earliest block_changes row (by commit
-        // seq) — the mint oracle (§2.1) reads this table, so an id ever minted
-        // stays in use after its row, its pool entry and its history are gone.
-        let mut del_bc = tx.prepare(
-            "DELETE FROM block_changes WHERE commit_id = ?1 AND EXISTS (
-               SELECT 1 FROM block_changes b2 JOIN commits c2 ON c2.commit_id = b2.commit_id JOIN commits c ON c.commit_id = block_changes.commit_id
-               WHERE b2.block_id = block_changes.block_id AND c2.seq < c.seq)",
-        )?;
+        // Every block_changes row of a wholly archived commit goes (§7.1 step
+        // 2, 17.0). Through 16.x each block's earliest row stayed "for the
+        // mint oracle"; since 17.0 the recorder's hold on the id's `id_claims`
+        // row (§2.1, bit 1) is what keeps an archived block's id reserved, so
+        // this table is a pure projection the squash may empty.
+        let mut del_bc = tx.prepare("DELETE FROM block_changes WHERE commit_id = ?1")?;
         for c in &wholly {
             dispositions += del_disp.execute(params![c])?;
             block_changes += del_bc.execute(params![c])?;

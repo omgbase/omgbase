@@ -903,7 +903,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "gc" => spec(
             s(
-                "Mark-and-sweep unreferenced blobs and tree nodes, and the `same` disposition rows a pre-14.2 store wrote (refuses unless gc.enabled is set in repo settings)",
+                "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row (refuses unless gc.enabled is set in repo settings)",
             ),
             vec![s("gc [--dry-run] [--vacuum]")],
             opts(&[
@@ -930,7 +930,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (
                     "--json",
-                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, archived, advice }`",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, advice }`",
                 ),
             ]),
             vec![],

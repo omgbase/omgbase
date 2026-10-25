@@ -646,6 +646,10 @@ pub(crate) fn ingest_in(
         }
         None => {
             let id = minter.mint("d")?;
+            // §2.1 (17.0): every id the core mints is claimed in the
+            // transaction that writes the row carrying it — the claim is the
+            // writer's, written after the minter yielded (`minted_at = ts`).
+            minter.claim("d", &id, Some(repo_id), ts)?;
             // `created_at` is the identity's birth (D6); `updated_at` moves
             // with the head (step 12).
             tx.execute(
@@ -671,6 +675,7 @@ pub(crate) fn ingest_in(
     //    `revisions.rev_id == head`.
     let rendered_hash = sha256(source.as_bytes());
     let head = minter.mint("r")?;
+    minter.claim("r", &head, Some(repo_id), ts)?;
     history.record_revision(
         tx,
         &RevisionTransition {
@@ -713,14 +718,17 @@ pub(crate) fn ingest_in(
     }
 
     // 7. Pool the deleted — each row carrying the block's `created_at` so a
-    //    resurrection restores it (D6).
+    //    resurrection restores it (D6), `deleted_at = ts` and `expires_ts =
+    //    deleted_at + 30 days` (I6, 17.0: the pool row's expiry is anchored
+    //    on its own timestamp, not on a commit). The deleted ids keep their
+    //    claims (§2.1): nothing here releases one.
     {
         let mut pool = tx.prepare(
-            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
              SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?1, ?2 FROM blocks WHERE block_id = ?3 AND doc_id = ?4",
         )?;
         for id in &plan.deleted {
-            pool.execute(params![commit_id, expires, id, doc_id])?;
+            pool.execute(params![ts, expires, id, doc_id])?;
         }
     }
 
@@ -793,6 +801,17 @@ pub(crate) fn ingest_in(
         )?;
         for r in &rows {
             let (created_at, updated_at) = stamps(&r.block_id);
+            // §2.1 / §5.4 step 9 (17.0): a block id that was neither a live
+            // row of this doc, nor pooled, nor evicted from another doc was
+            // minted for this commit — claim it now, in this transaction
+            // (idempotent: an id that came from any of the three already has
+            // its claim). Written before the row, as the reference does.
+            if !previous.contains_key(&r.block_id)
+                && !pooled_birth.contains_key(&r.block_id)
+                && !foreign_birth.contains_key(&r.block_id)
+            {
+                minter.claim("b", &r.block_id, Some(repo_id), ts)?;
+            }
             insert.execute(params![
                 r.block_id,
                 repo_id,
@@ -858,7 +877,7 @@ pub(crate) fn ingest_in(
         extract_doc_edges(&[], mapping.as_ref())
     };
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
-    maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved)?;
+    maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved, ts)?;
 
     // 15. Dispositions and block_changes — the recorder's (14.2: every
     //     verdict but `same`).
@@ -901,26 +920,25 @@ pub(crate) fn ingest_in(
     })
 }
 
-/// §5.6's tombstone against an open transaction and its commit row at `ts`:
-/// with `expires`, every live block is pooled first (the observed deletion),
+/// §5.6's tombstone against an open transaction at its commit's `ts`: with
+/// `expires`, every live block is pooled first (the observed deletion),
 /// each carrying its `created_at` (D6); without, nothing is (`docs_delete`,
 /// `spec/mutate` §6). Then the FTS rows go, the live blocks take `deleted_at
 /// = ts`, the doc row `deleted_at = ts, updated_at = ts` — liveness is a
 /// change of the document's own; the head is KEPT and no new one is minted
-/// (17.0, D11).
+/// (17.0, D11). A pool row carries `deleted_at = ts` (17.0, I6).
 pub(crate) fn tombstone_in(
     tx: &Connection,
     doc_id: &str,
-    commit_id: &str,
     ts: &str,
     expires: Option<&str>,
 ) -> Result<()> {
     if let Some(expires) = expires {
         tx.execute(
-            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+            "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
              SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?1, ?2
                FROM blocks WHERE doc_id = ?3 AND deleted_at IS NULL",
-            params![commit_id, expires, doc_id],
+            params![ts, expires, doc_id],
         )?;
     }
     fts_delete_doc(tx, doc_id)?;
@@ -1344,7 +1362,7 @@ impl Store {
                     ..NewCommit::observed(repo_id, ts)
                 },
             )?;
-            tombstone_in(&tx, doc_id, &commit_id, ts, Some(expires))?;
+            tombstone_in(&tx, doc_id, ts, Some(expires))?;
             commit_id
         };
         tx.commit()?;

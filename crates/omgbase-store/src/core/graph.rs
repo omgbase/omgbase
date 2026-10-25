@@ -149,7 +149,9 @@ fn edge_key(
 }
 
 /// The repo's `external_nodes` row for `uri`, **minting `x`** and inserting
-/// `(node_id, repo_id, uri, title = null)` when absent.
+/// `(node_id, repo_id, uri, title = null)` when absent. The claim for a
+/// minted `x` is written by [`maintain_edges`] with the edge that names it
+/// (the resolver runs inside the ingest's edge extraction, same transaction).
 pub fn resolve_external(
     conn: &Connection,
     minter: &mut Mint<'_>,
@@ -236,9 +238,15 @@ pub fn resolve_edges(
 /// `from_commit = commit_id`), then close (`to_commit = commit_id`) every open
 /// row whose key is not wanted or that duplicates an earlier kept row, in
 /// `rowid` order. Then rebuild the rollup (§3.4).
+///
+/// `spec/store` §2.1 (17.0): the `e` minted per newly opened edge and the `x`
+/// [`resolve_external`] minted for its external target are claimed here, in
+/// the commit transaction, `minted_at = ts` (an external node that already had
+/// its claim adds nothing — the claim is idempotent).
 // seam: current edges separate from transitions (Phase 3, M6 — open rows
 // only, `from_commit`/`to_commit` leave the core table; inventory-rust.md §2.4
 // `graph.rs:239-314`, §3.7).
+#[allow(clippy::too_many_arguments)]
 pub fn maintain_edges(
     conn: &Connection,
     minter: &mut Mint<'_>,
@@ -246,6 +254,7 @@ pub fn maintain_edges(
     src_doc: &str,
     commit_id: &str,
     edges: &[ResolvedEdge],
+    ts: &str,
 ) -> Result<()> {
     let open: Vec<(String, String)> = {
         let mut stmt = conn.prepare_cached(
@@ -287,8 +296,13 @@ pub fn maintain_edges(
             if open_keys.contains(key.as_str()) {
                 continue;
             }
+            let edge_id = minter.mint("e")?;
+            minter.claim("e", &edge_id, Some(repo_id), ts)?;
+            if e.dst_kind == DstKind::External {
+                minter.claim("x", &e.dst_node, Some(repo_id), ts)?;
+            }
             insert.execute(params![
-                minter.mint("e")?,
+                edge_id,
                 repo_id,
                 src_doc,
                 e.src_block,

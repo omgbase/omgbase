@@ -1,0 +1,1426 @@
+{
+  "engine": "rust",
+  "cli": "target/release/omgbase",
+  "versions": {
+    "cli": "0.27.3",
+    "node": "v24.14.1"
+  },
+  "seed": 1,
+  "docs": 201,
+  "edits": 50,
+  "sourceBytes": 218613,
+  "stamp": "2026-10-25T21-31-51",
+  "stages": [
+    {
+      "stage": "import",
+      "docs": 201,
+      "sourceBytes": 218613,
+      "file": {
+        "db": 6250496,
+        "wal": 0,
+        "grew": 6250496
+      },
+      "categories": {
+        "content": {
+          "bytes": 3178496,
+          "rows": 9612
+        },
+        "history": {
+          "bytes": 2711552,
+          "rows": 15629
+        },
+        "search": {
+          "bytes": 217088,
+          "rows": 4805
+        },
+        "sync": {
+          "bytes": 143360,
+          "rows": 298
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1855488,
+          "rows": 3404
+        },
+        "properties": {
+          "bytes": 438272,
+          "rows": 1603
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 200704,
+          "rows": 800
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 800
+        },
+        "docs": {
+          "bytes": 86016,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 860160,
+          "rows": 802
+        },
+        "id_claims": {
+          "bytes": 593920,
+          "rows": 4608
+        },
+        "blobs": {
+          "bytes": 573440,
+          "rows": 3009
+        },
+        "dispositions": {
+          "bytes": 311296,
+          "rows": 3404
+        },
+        "block_changes": {
+          "bytes": 270336,
+          "rows": 3404
+        },
+        "revisions": {
+          "bytes": 49152,
+          "rows": 201
+        },
+        "commits": {
+          "bytes": 28672,
+          "rows": 201
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 114688,
+          "rows": 2803
+        },
+        "nodes_fts": {
+          "bytes": 86016,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "checkpoints": {
+          "bytes": 24576,
+          "rows": 2
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 0
+    },
+    {
+      "stage": "frontmatter-hot",
+      "ops": 50,
+      "file": {
+        "db": 6348800,
+        "wal": 0,
+        "grew": 98304
+      },
+      "categories": {
+        "content": {
+          "bytes": 3182592,
+          "rows": 9612
+        },
+        "history": {
+          "bytes": 2777088,
+          "rows": 15829
+        },
+        "search": {
+          "bytes": 221184,
+          "rows": 4805
+        },
+        "sync": {
+          "bytes": 159744,
+          "rows": 352
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1859584,
+          "rows": 3404
+        },
+        "properties": {
+          "bytes": 438272,
+          "rows": 1603
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 200704,
+          "rows": 800
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 800
+        },
+        "docs": {
+          "bytes": 86016,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 860160,
+          "rows": 802
+        },
+        "id_claims": {
+          "bytes": 598016,
+          "rows": 4658
+        },
+        "blobs": {
+          "bytes": 577536,
+          "rows": 3059
+        },
+        "dispositions": {
+          "bytes": 311296,
+          "rows": 3404
+        },
+        "block_changes": {
+          "bytes": 270336,
+          "rows": 3404
+        },
+        "revisions": {
+          "bytes": 73728,
+          "rows": 251
+        },
+        "commits": {
+          "bytes": 61440,
+          "rows": 251
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 114688,
+          "rows": 2803
+        },
+        "nodes_fts": {
+          "bytes": 90112,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 40960,
+          "rows": 56
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 8192
+    },
+    {
+      "stage": "block-edit",
+      "ops": 50,
+      "file": {
+        "db": 6443008,
+        "wal": 0,
+        "grew": 94208
+      },
+      "categories": {
+        "content": {
+          "bytes": 3182592,
+          "rows": 9612
+        },
+        "history": {
+          "bytes": 2859008,
+          "rows": 16181
+        },
+        "search": {
+          "bytes": 221184,
+          "rows": 4805
+        },
+        "sync": {
+          "bytes": 172032,
+          "rows": 403
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1859584,
+          "rows": 3404
+        },
+        "properties": {
+          "bytes": 438272,
+          "rows": 1603
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 200704,
+          "rows": 800
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 800
+        },
+        "docs": {
+          "bytes": 86016,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 888832,
+          "rows": 852
+        },
+        "id_claims": {
+          "bytes": 606208,
+          "rows": 4708
+        },
+        "blobs": {
+          "bytes": 585728,
+          "rows": 3111
+        },
+        "dispositions": {
+          "bytes": 315392,
+          "rows": 3454
+        },
+        "block_changes": {
+          "bytes": 274432,
+          "rows": 3454
+        },
+        "commits": {
+          "bytes": 81920,
+          "rows": 301
+        },
+        "revisions": {
+          "bytes": 81920,
+          "rows": 301
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 118784,
+          "rows": 2803
+        },
+        "nodes_fts": {
+          "bytes": 86016,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 53248,
+          "rows": 107
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 8192
+    },
+    {
+      "stage": "journal-append",
+      "ops": 50,
+      "file": {
+        "db": 6619136,
+        "wal": 0,
+        "grew": 176128
+      },
+      "categories": {
+        "content": {
+          "bytes": 3198976,
+          "rows": 9662
+        },
+        "history": {
+          "bytes": 2994176,
+          "rows": 16782
+        },
+        "search": {
+          "bytes": 221184,
+          "rows": 4855
+        },
+        "sync": {
+          "bytes": 184320,
+          "rows": 454
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1875968,
+          "rows": 3454
+        },
+        "properties": {
+          "bytes": 438272,
+          "rows": 1603
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 200704,
+          "rows": 800
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 800
+        },
+        "docs": {
+          "bytes": 86016,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 925696,
+          "rows": 952
+        },
+        "blobs": {
+          "bytes": 634880,
+          "rows": 3212
+        },
+        "id_claims": {
+          "bytes": 618496,
+          "rows": 4808
+        },
+        "dispositions": {
+          "bytes": 319488,
+          "rows": 3554
+        },
+        "block_changes": {
+          "bytes": 282624,
+          "rows": 3554
+        },
+        "commits": {
+          "bytes": 98304,
+          "rows": 351
+        },
+        "revisions": {
+          "bytes": 90112,
+          "rows": 351
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 118784,
+          "rows": 2853
+        },
+        "nodes_fts": {
+          "bytes": 86016,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 65536,
+          "rows": 158
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 20480
+    },
+    {
+      "stage": "task-churn",
+      "ops": 50,
+      "file": {
+        "db": 6672384,
+        "wal": 0,
+        "grew": 53248
+      },
+      "categories": {
+        "content": {
+          "bytes": 3198976,
+          "rows": 9662
+        },
+        "history": {
+          "bytes": 3051520,
+          "rows": 17139
+        },
+        "search": {
+          "bytes": 225280,
+          "rows": 4855
+        },
+        "sync": {
+          "bytes": 196608,
+          "rows": 505
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1875968,
+          "rows": 3454
+        },
+        "properties": {
+          "bytes": 438272,
+          "rows": 1603
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 200704,
+          "rows": 800
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 800
+        },
+        "docs": {
+          "bytes": 86016,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 933888,
+          "rows": 957
+        },
+        "blobs": {
+          "bytes": 634880,
+          "rows": 3214
+        },
+        "id_claims": {
+          "bytes": 626688,
+          "rows": 4858
+        },
+        "dispositions": {
+          "bytes": 323584,
+          "rows": 3654
+        },
+        "block_changes": {
+          "bytes": 294912,
+          "rows": 3654
+        },
+        "commits": {
+          "bytes": 114688,
+          "rows": 401
+        },
+        "revisions": {
+          "bytes": 98304,
+          "rows": 401
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 122880,
+          "rows": 2853
+        },
+        "nodes_fts": {
+          "bytes": 86016,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 77824,
+          "rows": 209
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 0
+    },
+    {
+      "stage": "link-churn",
+      "ops": 50,
+      "file": {
+        "db": 6782976,
+        "wal": 0,
+        "grew": 110592
+      },
+      "categories": {
+        "content": {
+          "bytes": 3227648,
+          "rows": 9793
+        },
+        "history": {
+          "bytes": 3112960,
+          "rows": 17421
+        },
+        "search": {
+          "bytes": 229376,
+          "rows": 4855
+        },
+        "sync": {
+          "bytes": 212992,
+          "rows": 556
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1875968,
+          "rows": 3454
+        },
+        "properties": {
+          "bytes": 442368,
+          "rows": 1606
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 221184,
+          "rows": 925
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 803
+        },
+        "docs": {
+          "bytes": 90112,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 933888,
+          "rows": 960
+        },
+        "id_claims": {
+          "bytes": 651264,
+          "rows": 5033
+        },
+        "blobs": {
+          "bytes": 634880,
+          "rows": 3218
+        },
+        "dispositions": {
+          "bytes": 323584,
+          "rows": 3654
+        },
+        "block_changes": {
+          "bytes": 294912,
+          "rows": 3654
+        },
+        "commits": {
+          "bytes": 139264,
+          "rows": 451
+        },
+        "revisions": {
+          "bytes": 110592,
+          "rows": 451
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 122880,
+          "rows": 2853
+        },
+        "nodes_fts": {
+          "bytes": 90112,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 94208,
+          "rows": 260
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 0
+    },
+    {
+      "stage": "doc-churn",
+      "ops": 20,
+      "file": {
+        "db": 6897664,
+        "wal": 0,
+        "grew": 114688
+      },
+      "categories": {
+        "content": {
+          "bytes": 3235840,
+          "rows": 9823
+        },
+        "history": {
+          "bytes": 3215360,
+          "rows": 18041
+        },
+        "search": {
+          "bytes": 229376,
+          "rows": 4855
+        },
+        "sync": {
+          "bytes": 217088,
+          "rows": 577
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1880064,
+          "rows": 3454
+        },
+        "properties": {
+          "bytes": 442368,
+          "rows": 1606
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 225280,
+          "rows": 955
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 803
+        },
+        "docs": {
+          "bytes": 90112,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 974848,
+          "rows": 1000
+        },
+        "id_claims": {
+          "bytes": 671744,
+          "rows": 5243
+        },
+        "blobs": {
+          "bytes": 634880,
+          "rows": 3218
+        },
+        "dispositions": {
+          "bytes": 339968,
+          "rows": 3824
+        },
+        "block_changes": {
+          "bytes": 299008,
+          "rows": 3824
+        },
+        "commits": {
+          "bytes": 159744,
+          "rows": 471
+        },
+        "revisions": {
+          "bytes": 110592,
+          "rows": 461
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 122880,
+          "rows": 2853
+        },
+        "nodes_fts": {
+          "bytes": 90112,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 98304,
+          "rows": 281
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 0
+    },
+    {
+      "stage": "gc",
+      "file": {
+        "db": 6905856,
+        "wal": 0,
+        "grew": 8192
+      },
+      "categories": {
+        "content": {
+          "bytes": 3235840,
+          "rows": 9823
+        },
+        "history": {
+          "bytes": 3215360,
+          "rows": 18041
+        },
+        "search": {
+          "bytes": 229376,
+          "rows": 4855
+        },
+        "sync": {
+          "bytes": 225280,
+          "rows": 680
+        }
+      },
+      "tables": {
+        "blocks": {
+          "bytes": 1880064,
+          "rows": 3454
+        },
+        "properties": {
+          "bytes": 442368,
+          "rows": 1606
+        },
+        "nodes": {
+          "bytes": 397312,
+          "rows": 2002
+        },
+        "edges": {
+          "bytes": 225280,
+          "rows": 955
+        },
+        "doc_edges": {
+          "bytes": 110592,
+          "rows": 803
+        },
+        "docs": {
+          "bytes": 90112,
+          "rows": 201
+        },
+        "sections": {
+          "bytes": 61440,
+          "rows": 802
+        },
+        "external_nodes": {
+          "bytes": 12288,
+          "rows": 0
+        },
+        "collections": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "inferred_edges": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "tree_nodes": {
+          "bytes": 974848,
+          "rows": 1000
+        },
+        "id_claims": {
+          "bytes": 671744,
+          "rows": 5243
+        },
+        "blobs": {
+          "bytes": 634880,
+          "rows": 3218
+        },
+        "dispositions": {
+          "bytes": 339968,
+          "rows": 3824
+        },
+        "block_changes": {
+          "bytes": 299008,
+          "rows": 3824
+        },
+        "commits": {
+          "bytes": 159744,
+          "rows": 471
+        },
+        "revisions": {
+          "bytes": 110592,
+          "rows": 461
+        },
+        "archives": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "pending_materializations": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "resurrection_pool": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "blocks_fts": {
+          "bytes": 122880,
+          "rows": 2853
+        },
+        "nodes_fts": {
+          "bytes": 90112,
+          "rows": 2002
+        },
+        "doc_embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "embeddings": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "checkpoints": {
+          "bytes": 106496,
+          "rows": 384
+        },
+        "file_stats": {
+          "bytes": 40960,
+          "rows": 201
+        },
+        "sqlite_schema": {
+          "bytes": 24576,
+          "rows": 90
+        },
+        "repos": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "sources": {
+          "bytes": 12288,
+          "rows": 1
+        },
+        "adapters": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "attachments": {
+          "bytes": 8192,
+          "rows": 1
+        },
+        "sync_state": {
+          "bytes": 8192,
+          "rows": 0
+        },
+        "workspace_settings": {
+          "bytes": 4096,
+          "rows": 1
+        }
+      },
+      "same_dispositions": 0,
+      "reclaimable": 0
+    }
+  ],
+  "latency": {
+    "spawn-baseline": {
+      "n": 10,
+      "p50": 5.495625000000018,
+      "p95": 490.238167,
+      "max": 490.238167,
+      "total": 540.6496690000002
+    },
+    "init": {
+      "n": 1,
+      "p50": 12.580666999999949,
+      "p95": 12.580666999999949,
+      "max": 12.580666999999949,
+      "total": 12.580666999999949
+    },
+    "import": {
+      "n": 1,
+      "p50": 631.839,
+      "p95": 631.839,
+      "max": 631.839,
+      "total": 631.839
+    },
+    "frontmatter-hot": {
+      "n": 50,
+      "p50": 22.152166999999736,
+      "p95": 25.889666999999918,
+      "max": 29.95920799999999,
+      "total": 1123.841542
+    },
+    "block-edit": {
+      "n": 50,
+      "p50": 22.974416999999903,
+      "p95": 26.05975000000035,
+      "max": 26.274791999999707,
+      "total": 1144.693499999998
+    },
+    "journal-append": {
+      "n": 50,
+      "p50": 22.10912499999995,
+      "p95": 25.80016700000033,
+      "max": 26.172999999999774,
+      "total": 1107.9374169999974
+    },
+    "task-churn": {
+      "n": 50,
+      "p50": 22.10954099999981,
+      "p95": 25.944124999999985,
+      "max": 26.609167000000525,
+      "total": 1124.6675430000014
+    },
+    "link-churn": {
+      "n": 50,
+      "p50": 23.457250000000386,
+      "p95": 27.987082999999984,
+      "max": 29.092083999999886,
+      "total": 1169.6868739999973
+    },
+    "doc-churn": {
+      "n": 20,
+      "p50": 19.84991600000012,
+      "p95": 31.63537499999984,
+      "max": 31.63537499999984,
+      "total": 351.94987200000287
+    },
+    "query-docs": {
+      "n": 20,
+      "p50": 15.265290999999706,
+      "p95": 204.4026249999988,
+      "max": 204.4026249999988,
+      "total": 599.6658340000004
+    },
+    "query-blocks-filter": {
+      "n": 20,
+      "p50": 14.707875000000058,
+      "p95": 273.7271670000009,
+      "max": 273.7271670000009,
+      "total": 558.0335009999999
+    },
+    "query-text": {
+      "n": 20,
+      "p50": 98.79529100000036,
+      "p95": 351.3522499999999,
+      "max": 351.3522499999999,
+      "total": 2281.720292
+    },
+    "query-links": {
+      "n": 20,
+      "p50": 12.052750000000742,
+      "p95": 295.7725420000006,
+      "max": 295.7725420000006,
+      "total": 524.2208770000079
+    },
+    "outline": {
+      "n": 20,
+      "p50": 9.88866699999926,
+      "p95": 10.797833000000537,
+      "max": 10.797833000000537,
+      "total": 191.7797520000022
+    },
+    "gc": {
+      "n": 1,
+      "p50": 15.607707999999548,
+      "p95": 15.607707999999548,
+      "max": 15.607707999999548,
+      "total": 15.607707999999548
+    }
+  }
+}

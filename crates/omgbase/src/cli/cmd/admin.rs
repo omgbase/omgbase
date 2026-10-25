@@ -81,7 +81,12 @@ fn truthy(v: Option<&Json>) -> bool {
 /// `VACUUM` after the sweep — a dry run measures the free pages instead —
 /// and the result gains `vacuum: { reclaimable, applied }`. Since store 14.2
 /// (cli 4.5) the sweep also removes the `same` disposition rows a 14.1 store
-/// wrote, reported as the third count (`sameDispositionsSwept`).
+/// wrote, reported as the third count (`sameDispositionsSwept`); since store
+/// 17.0 the same run prunes the id claims older than
+/// `identity.claims_retain_days` that name no row (`spec/store` §7.3),
+/// reported as `claimsReleased` — the human line shows it only when
+/// non-zero (the line is pinned by shape without it, and the setting is off
+/// by default).
 pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "gc");
@@ -122,6 +127,7 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         "sameDispositionsSwept".to_owned(),
         json!(result.same_dispositions_swept),
     );
+    doc.insert("claimsReleased".to_owned(), json!(result.claims_released));
     if let Some((reclaimable, applied)) = vacuum {
         doc.insert(
             "vacuum".to_owned(),
@@ -132,8 +138,13 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if let Some(code) = machine_out(cli, &doc, None, None) {
         return code;
     }
+    let released = if result.claims_released > 0 {
+        format!(", {} id claims released", result.claims_released)
+    } else {
+        String::new()
+    };
     cli.io.err(&cli.style.dim(&format!(
-        "  swept {} blobs, {} tree nodes, {} same dispositions",
+        "  swept {} blobs, {} tree nodes, {} same dispositions{released}",
         result.blobs_swept, result.tree_nodes_swept, result.same_dispositions_swept
     )));
     match vacuum {
@@ -373,6 +384,13 @@ fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
                 report.archived.segments,
                 human_bytes(report.archived.bytes)
             ),
+        ],
+        // 17.0: the identity claims (`spec/store` §2.1) — one row per id ever
+        // minted and still held; `identity.claims_retain_days` lets `gc`
+        // release old ones (§7.3).
+        vec![
+            "id claims".to_owned(),
+            format!("{} ids claimed", report.id_claims),
         ],
     ];
     for line in columns(&file, &[Align::Left]) {
@@ -868,6 +886,7 @@ mod tests {
                 cat("sync", vec![table("sqlite_schema", 75_904, 85)]),
             ],
             same_dispositions: 0,
+            id_claims: 438,
             archived: omgbase_store::SizeArchived {
                 revisions: 2,
                 segments: 1,
@@ -899,6 +918,7 @@ mod tests {
                 "  pages        256 x 4096 bytes, 12 free",
                 "  reclaimable  48.0 KB",
                 "  archived     2 revisions in 1 segments, 12.0 KB on disk",
+                "  id claims    438 ids claimed",
                 "  advice: nothing to reclaim",
             ]
         );

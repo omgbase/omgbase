@@ -2,8 +2,12 @@
 //! the store hands out goes through [`Mint`], which draws candidates from the
 //! inner [`IdMinter`] and redraws while a candidate is **in use** — already
 //! issued by this store in this process, or claimed per the store's
-//! [`IdentityClaims`] oracle (today the union of the prefix's table(s),
-//! `core::claims`). 32⁷ candidates make a random collision certain by a few hundred
+//! [`IdentityClaims`] oracle (since 17.0 the `id_claims` table for every
+//! core-minted prefix, the prefix's own table for `c`/`cp`/`s` —
+//! `core::claims`). The claim itself is the writer's, written through
+//! [`Mint::claim`] in the row's transaction AFTER the mint, so a mint whose
+//! transaction rolls back leaves no claim and the fixture minter's sequence
+//! is untouched. 32⁷ candidates make a random collision certain by a few hundred
 //! thousand blocks (§10: a 3,000-document corpus failed at 360,338), so the
 //! check is what makes the production minter safe; the fixture minters never
 //! collide on a fresh database and pass through unchanged.
@@ -30,8 +34,8 @@ pub const MINT_GIVE_UP_AFTER: usize = 1_000;
 /// tables know it).
 pub(crate) struct IdSource {
     inner: Box<dyn IdMinter>,
-    /// The §2.1 oracle (`core::capabilities::IdentityClaims`): today the
-    /// table union, in Phase 3 the `id_claims` table.
+    /// The §2.1 oracle (`core::capabilities::IdentityClaims`): the
+    /// `id_claims` table (17.0).
     claims: Box<dyn IdentityClaims>,
     issued: HashSet<String>,
     /// The planner's view of the `b`/`d` mints (`spec/mutate` §11): `None`
@@ -73,6 +77,25 @@ impl IdSource {
         }
     }
 
+    /// The §2.1 oracle itself (the prune and the size line go through it).
+    pub(crate) fn claims(&self) -> &dyn IdentityClaims {
+        &*self.claims
+    }
+
+    /// The minter WITHOUT the oracle — the migration path's (`schema::migrate`):
+    /// the reference binds its mint oracle only after `migrate()` returns, so
+    /// a migration step's mint (v13's `src`) is checked against the issued
+    /// set alone; a pre-17 database has no `id_claims` to probe anyway.
+    pub(crate) fn at_unchecked<'a>(&'a mut self, conn: &'a Connection) -> Mint<'a> {
+        Mint {
+            conn,
+            inner: &mut *self.inner,
+            claims: &NoClaims,
+            issued: &mut self.issued,
+            capture: &mut self.capture,
+        }
+    }
+
     /// Install a capture mode; returns the previous one.
     pub(crate) fn set_capture(&mut self, capture: Option<Capture>) -> Option<Capture> {
         std::mem::replace(&mut self.capture, capture)
@@ -86,6 +109,33 @@ impl IdSource {
             Some(Capture::Record(ids)) => ids.iter().map(|(k, _)| *k).collect(),
             None => Vec::new(),
         }
+    }
+}
+
+/// The oracle of the migration path ([`IdSource::at_unchecked`]): nothing is
+/// claimed, nothing is written.
+struct NoClaims;
+
+impl IdentityClaims for NoClaims {
+    fn claim(&self, _: &Connection, _: &str, _: &str, _: Option<&str>, _: &str) -> Result<()> {
+        Ok(())
+    }
+    fn hold(&self, _: &Connection, _: &[&str]) -> Result<()> {
+        Ok(())
+    }
+    fn is_claimed(&self, _: &Connection, _: &str, _: &str) -> Result<bool> {
+        Ok(false)
+    }
+    fn prune(
+        &self,
+        _: &Connection,
+        _: &str,
+        _: &[crate::core::claims::ClaimScope],
+    ) -> Result<usize> {
+        Ok(0)
+    }
+    fn count(&self, _: &Connection) -> Result<u64> {
+        Ok(0)
     }
 }
 
@@ -128,7 +178,8 @@ impl Mint<'_> {
             {
                 continue;
             }
-            self.claims.claim(self.conn, prefix, &candidate)?;
+            // The claim (`IdentityClaims::claim`, §2.1) is the writer's, not
+            // this function's: a mint has no row and may never get one.
             self.issued.insert(candidate.clone());
             if let (Some(kind), Some(Capture::Record(ids))) = (kind, self.capture.as_mut()) {
                 ids.push((kind, candidate.clone()));
@@ -139,6 +190,21 @@ impl Mint<'_> {
             prefix: prefix.to_owned(),
             rejected: MINT_GIVE_UP_AFTER,
         })
+    }
+
+    /// §2.1 (17.0): the writer's claim of an id this minter issued — written
+    /// over the minter's connection (the commit transaction) AFTER the mint,
+    /// with the row that carries the id; `repo_id` `None` for a
+    /// workspace-scoped `src`, `minted_at` the commit's `ts` (the clock for
+    /// `rp`/`src`). Idempotent.
+    pub fn claim(
+        &self,
+        prefix: &str,
+        id: &str,
+        repo_id: Option<&str>,
+        minted_at: &str,
+    ) -> Result<()> {
+        self.claims.claim(self.conn, prefix, id, repo_id, minted_at)
     }
 
     /// A shorter-lived handle on the same minter.
@@ -209,22 +275,20 @@ impl omgbase_reconcile::Minter for Deferred<'_> {
 mod tests {
     use super::*;
     use crate::Store;
-    use crate::core::claims::ID_TABLES;
+    use crate::core::claims::{CLAIMED_PREFIXES, ID_TABLES};
     use crate::ids::{RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id};
     use rusqlite::params;
 
     #[test]
-    fn every_prefix_with_a_table_is_checked_and_the_rest_are_not() {
-        for p in ["d", "b", "c", "r", "x", "e", "cp", "rp", "src"] {
+    fn the_core_minted_prefixes_probe_id_claims_and_the_rest_their_tables() {
+        for p in CLAIMED_PREFIXES {
+            assert!(tables_for(p).is_empty(), "{p} is claimed in id_claims");
+        }
+        for p in ["c", "cp", "s"] {
             assert!(!tables_for(p).is_empty(), "{p}");
         }
         assert!(tables_for("col").is_empty());
         assert!(tables_for("v").is_empty());
-        assert_eq!(
-            tables_for("b").len(),
-            3,
-            "blocks, block_changes, resurrection_pool"
-        );
     }
 
     #[test]
@@ -233,13 +297,17 @@ mod tests {
         for (prefix, _) in ID_TABLES {
             assert!(!id_in_use(store.conn(), prefix, "zz_0000000").unwrap());
         }
+        let claims = crate::core::claims::IdClaims;
+        for p in CLAIMED_PREFIXES {
+            assert!(!claims.is_claimed(store.conn(), p, "zz_0000000").unwrap());
+        }
     }
 
     #[test]
-    fn a_row_in_the_table_rejects_the_candidate() {
+    fn a_claim_row_rejects_the_candidate_and_a_planted_row_alone_does_not() {
         let mut store =
             Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
-        // Planted directly, so the issued set has never seen it.
+        // Planted directly with its claim, so the issued set has never seen it.
         store
             .conn()
             .execute(
@@ -247,52 +315,94 @@ mod tests {
                 [],
             )
             .unwrap();
-        assert!(id_in_use(store.conn(), "rp", "rp_0").unwrap());
+        store
+            .conn()
+            .execute(
+                "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES ('rp_0', 'rp_0', 'rp', 't', 1)",
+                [],
+            )
+            .unwrap();
         assert_eq!(
             store.mint("rp").unwrap(),
             "rp_1",
-            "rp_0 is in use; the redraw is rp_1"
+            "rp_0 is claimed; the redraw is rp_1"
         );
         assert_eq!(store.mint("col").unwrap(), "col_0", "col has no table");
-    }
-
-    #[test]
-    fn a_block_id_in_history_stays_in_use_after_its_row_is_gone() {
-        let mut store =
-            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        // A `c` is still claimed by its `commits` row (§2.1).
         let repo = store.create_repo("r").unwrap();
         store
             .conn()
             .execute(
-                "INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_9', ?1, 'a.md', 't', 't')",
+                "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_0', ?1, 1, 't', 'observed')",
                 params![repo],
             )
             .unwrap();
-        let (commit, _) = store
-            .new_commit(&crate::NewCommit::observed(
-                &repo,
-                "2026-09-26T00:00:00.000Z",
-            ))
-            .unwrap();
+        assert!(id_in_use(store.conn(), "c", "c_0").unwrap());
+        assert_eq!(store.mint("c").unwrap(), "c_1");
+    }
+
+    #[test]
+    fn a_claimed_block_id_stays_in_use_after_every_row_is_gone() {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("r").unwrap();
+        // The claims of two ids whose rows no longer exist (a deleted block
+        // whose pool row expired, one the recorder alone still holds).
         store
             .conn()
             .execute(
-                "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_0', ?1, 'deleted')",
-                params![commit],
-            )
-            .unwrap();
-        store
-            .conn()
-            .execute(
-                "INSERT INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
-                 VALUES ('b_1', ?1, 'd_9', zeroblob(32), zeroblob(32), 'paragraph', '2026-09-26T00:00:00.000Z', ?2, '2026-10-26T00:00:00.000Z')",
-                params![repo, commit],
+                "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES ('b_0', ?1, 'b', 't', 1), ('b_1', ?1, 'b', 't', 2)",
+                params![repo],
             )
             .unwrap();
         assert_eq!(
             store.mint("b").unwrap(),
             "b_2",
-            "b_0 and b_1 live on in history"
+            "b_0 and b_1 live on as claims"
+        );
+    }
+
+    #[test]
+    fn a_mint_writes_no_claim_and_the_writers_claim_does() {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let id = store.mint("b").unwrap();
+        let count = |store: &Store| -> i64 {
+            store
+                .conn()
+                .query_row(
+                    "SELECT count(*) FROM id_claims WHERE prefix = 'b'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(count(&store), 0, "the mint alone claims nothing");
+        store
+            .minter()
+            .claim("b", &id, Some("rp_x"), "2026-10-25T00:00:00.000Z")
+            .unwrap();
+        store
+            .minter()
+            .claim("b", &id, Some("rp_x"), "2026-10-26T00:00:00.000Z")
+            .unwrap();
+        assert_eq!(count(&store), 1, "idempotent");
+        let row: (Option<String>, String, i64) = store
+            .conn()
+            .query_row(
+                "SELECT repo_id, minted_at, holders FROM id_claims WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                Some("rp_x".to_owned()),
+                "2026-10-25T00:00:00.000Z".to_owned(),
+                1
+            ),
+            "the first claim's minted_at stays"
         );
     }
 

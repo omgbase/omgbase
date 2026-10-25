@@ -18,20 +18,19 @@ use crate::core::codec::from_hex;
 use crate::error::Result;
 use crate::history::delta::{explicit_entries, parse_node_text};
 
-/// §7 rebuild: `block_changes` is the projection of `dispositions` — for
-/// every commit that still has dispositions. A wholly archived commit (§7.1,
-/// 15.0: every revision of it carries `archive`) has none; its surviving
-/// block_changes rows are each block's earliest, kept for the mint oracle,
-/// and are left exactly as they are. Runs in the caller's transaction.
-///
-/// seam: IdentityClaims (Phase 3, M3) retires the earliest-row exception —
-/// inventory-rust.md §2.3 `derived.rs:195-229 rebuild_index` (`:222`).
+/// §7 rebuild: `block_changes` is a pure projection of `dispositions` across
+/// commits (17.0) — delete and re-derive it verbatim from the dispositions
+/// table (which is durable). A wholly archived commit (§7.1, 15.0: every
+/// revision of it carries `archive`) has no dispositions and, since 17.0, no
+/// block_changes either — the earliest-row exception the 15.0–16.x rebuild
+/// preserved for the mint oracle is gone: the id's `id_claims` row holds it
+/// (§2.1). Runs in the caller's transaction.
 pub fn rebuild_block_changes(tx: &Connection) -> Result<()> {
-    tx.execute_batch(&format!(
-        "DELETE FROM block_changes WHERE commit_id NOT IN ({ARCHIVED_COMMITS_SQL});
+    tx.execute_batch(
+        "DELETE FROM block_changes;
          INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind)
-           SELECT block_id, commit_id, kind FROM dispositions;"
-    ))?;
+           SELECT block_id, commit_id, kind FROM dispositions;",
+    )?;
     Ok(())
 }
 
@@ -157,6 +156,7 @@ pub fn gc_dry_run(conn: &Connection) -> Result<GcResult> {
         blobs_swept: blobs.len(),
         tree_nodes_swept: trees.len(),
         same_dispositions_swept: count_same_dispositions(conn)?,
+        claims_released: 0,
     })
 }
 
@@ -184,23 +184,32 @@ pub fn sweep_unreachable(conn: &Connection) -> Result<(usize, usize)> {
 /// block of every commit, and nothing reads. A sweep, not a migration: a
 /// data-only change needs no `user_version`, and opening a database never
 /// bulk-deletes. Rebuild is unchanged (`block_changes` stays the projection
-/// of `dispositions` over the commits that are not wholly archived), so §8
-/// I8 holds before and after.
+/// of `dispositions`), so §8 I8 holds before and after. The claims prune of
+/// §7.3 (17.0) is the core's and runs after this in the same transaction
+/// (`Store::gc_at`); `claims_released` is 0 here.
 pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     if !enabled {
         return Ok(GcResult::default());
     }
     let tx = conn.unchecked_transaction()?;
-    let (blobs_swept, tree_nodes_swept) = sweep_unreachable(&tx)?;
-    let same_dispositions_swept = count_same_dispositions(&tx)?;
+    let result = run_gc_in(&tx)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+/// [`run_gc`]'s body inside the caller's transaction: the sweep and the
+/// `same` sweep, nothing committed here.
+pub fn run_gc_in(tx: &Connection) -> Result<GcResult> {
+    let (blobs_swept, tree_nodes_swept) = sweep_unreachable(tx)?;
+    let same_dispositions_swept = count_same_dispositions(tx)?;
     if same_dispositions_swept > 0 {
         tx.execute("DELETE FROM block_changes WHERE kind = 'same'", [])?;
         tx.execute("DELETE FROM dispositions WHERE kind = 'same'", [])?;
     }
-    tx.commit()?;
     Ok(GcResult {
         blobs_swept,
         tree_nodes_swept,
         same_dispositions_swept,
+        claims_released: 0,
     })
 }

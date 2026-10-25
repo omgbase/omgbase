@@ -5,6 +5,7 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::capabilities::HistoryRecorder;
+use crate::core::time::POOL_TTL_MS;
 use crate::error::{Error, Result};
 use crate::mint::{IdSource, Mint};
 
@@ -160,6 +161,16 @@ pub(crate) fn migrate(
         return Ok(());
     }
     if current == SCHEMA_VERSION {
+        // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b):
+        // a database a 3a build already moved to 17 has `docs` but no
+        // `id_claims` and the pool's `deleted_commit`. The identity half of
+        // the step is idempotent, so finish it here rather than spend a
+        // schema version on a dev-only state. (A 17 database with no `docs`
+        // table — the `already-current-is-untouched` fixture — is left
+        // exactly as it is.)
+        if table_exists(conn, "docs")? {
+            migrate_v17_claims(conn)?;
+        }
         return Ok(());
     }
     if current > SCHEMA_VERSION {
@@ -176,12 +187,18 @@ pub(crate) fn migrate(
             continue;
         }
         if v == 17 {
-            // Likewise: three rebuilds under `foreign_keys = OFF` (§3.4 step 17).
+            // Likewise: three rebuilds under `foreign_keys = OFF` (§3.4 step
+            // 17), then the identity half (3b): the pool's `deleted_at` and
+            // the `id_claims` backfill.
             migrate_v17(conn, history)?;
+            migrate_v17_claims(conn)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
-        migrate_step(&tx, v, &mut ids.at(&tx))?;
+        // The oracle is bound after the migration (the reference registers
+        // it after `migrate()`): a step's mint is checked against the issued
+        // set alone, and a pre-17 database has no `id_claims` to probe.
+        migrate_step(&tx, v, &mut ids.at_unchecked(&tx))?;
         tx.commit()?;
     }
     set_user_version(conn, SCHEMA_VERSION)?;
@@ -312,7 +329,8 @@ ALTER TABLE revisions_v15 RENAME TO revisions;",
 /// renamed), `frontmatter_raw`, `created_at`, `updated_at`, `deleted_at`
 /// (`deleted_commit` gone); `blocks` gains `raw`, `trivia`, `created_at`,
 /// `updated_at`, `deleted_at` (`created_commit`/`deleted_commit` gone);
-/// `resurrection_pool` gains `created_at`. SQLite cannot rename a column a
+/// `resurrection_pool` gains `created_at` and (3b) `deleted_at` in place of
+/// `deleted_commit`. SQLite cannot rename a column a
 /// partial index names or add a NOT NULL column without a default, so the
 /// three tables are rebuilt the documented way (as v15 did), with
 /// `foreign_keys = OFF` for the duration and `PRAGMA foreign_key_check` empty
@@ -324,7 +342,10 @@ ALTER TABLE revisions_v15 RENAME TO revisions;",
 /// and `block_changes`/`commits` joins the 16.x readers computed on every
 /// read, `deleted_at` from the tombstone commit's `ts`. `blocks` keeps its
 /// `rowid`s — `blocks_fts` is an external-content index keyed by them.
-/// Idempotent: a `docs` table that already carries `head` is left alone.
+/// Idempotent: a `docs` table that already carries `head` is left alone. The
+/// identity half of the step — the pool's `deleted_at` and the `id_claims`
+/// backfill (3b) — is [`migrate_v17_claims`], idempotent on its own so a 3a
+/// database at 17 can finish the step on open.
 fn migrate_v17(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> Result<()> {
     if has_column(conn, "docs", "head")? != Some(false) {
         return Ok(());
@@ -612,6 +633,28 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
     )?;
 
     // ---- resurrection_pool ----
+    rebuild_pool_v17(db, clock)?;
+    Ok(())
+}
+
+/// The pool rebuild of step 17 (§3.4 step 17 (3); runs inside
+/// [`migrate_v17`]'s transaction, or alone for a 3a database): `created_at` =
+/// MIN(commits.ts) over the block's `block_changes`, else `deleted_at`;
+/// `deleted_at` = the `ts` of `deleted_commit`'s commit, else `expires_ts −
+/// 30 days` (I6 made the two equal, so the fallback is exact);
+/// `deleted_commit` dropped; `rowid`s kept. Idempotent: a pool that already
+/// has `deleted_at` is left alone. A pre-state may lack `created_at` (a 16.x
+/// pool) or carry it (a 3a pool): the column is copied when present.
+fn rebuild_pool_v17(db: &Connection, clock: &str) -> Result<()> {
+    let cols = column_names(db, "resurrection_pool")?;
+    if cols.is_empty() || cols.iter().any(|c| c == "deleted_at") {
+        return Ok(());
+    }
+    let had_created_at = cols.iter().any(|c| c == "created_at");
+    let mut ts_of_commit = db.prepare("SELECT ts FROM commits WHERE commit_id = ?1")?;
+    let mut span = db.prepare(
+        "SELECT MIN(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
+    )?;
     db.execute_batch(
         "CREATE TABLE resurrection_pool_v17 (
   block_id       TEXT PRIMARY KEY,
@@ -621,7 +664,7 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
   norm_hash      BLOB NOT NULL,
   type           TEXT NOT NULL,
   created_at     TEXT NOT NULL,
-  deleted_commit TEXT NOT NULL,
+  deleted_at     TEXT NOT NULL,
   expires_ts     TEXT NOT NULL
 );",
     )?;
@@ -633,13 +676,19 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
         raw_hash: SqlValue,
         norm_hash: SqlValue,
         kind: SqlValue,
+        created_at: Option<String>,
         deleted_commit: String,
-        expires_ts: SqlValue,
+        expires_ts: String,
     }
     let pool: Vec<PoolRow> = {
-        let mut stmt = db.prepare(
-            "SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid",
-        )?;
+        let created = if had_created_at {
+            "created_at"
+        } else {
+            "NULL AS created_at"
+        };
+        let mut stmt = db.prepare(&format!(
+            "SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, {created}, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid"
+        ))?;
         let it = stmt.query_map([], |r| {
             Ok(PoolRow {
                 rowid: r.get(0)?,
@@ -649,24 +698,33 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
                 raw_hash: r.get(4)?,
                 norm_hash: r.get(5)?,
                 kind: r.get(6)?,
-                deleted_commit: r.get(7)?,
-                expires_ts: r.get(8)?,
+                created_at: r.get(7)?,
+                deleted_commit: r.get(8)?,
+                expires_ts: r.get(9)?,
             })
         })?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
     {
         let mut ins = db.prepare(
-            "INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+            "INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )?;
         for p in &pool {
-            let (lo, _): (Option<String>, Option<String>) =
-                span.query_row(params![p.block_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-            let created_at = match lo {
-                Some(lo) => lo,
-                None => commit_ts(Some(&p.deleted_commit))?.unwrap_or_else(|| clock.to_owned()),
+            let deleted_at = match ts_of_commit
+                .query_row(params![p.deleted_commit], |r| r.get::<_, String>(0))
+                .optional()?
+            {
+                Some(ts) => ts,
+                None => crate::core::time::plus_ms(&p.expires_ts, -POOL_TTL_MS)
+                    .unwrap_or_else(|_| clock.to_owned()),
             };
+            let lo: Option<String> = span.query_row(params![p.block_id], |r| r.get(0))?;
+            let created_at = p
+                .created_at
+                .clone()
+                .or(lo)
+                .unwrap_or_else(|| deleted_at.clone());
             ins.execute(params![
                 p.rowid,
                 p.block_id,
@@ -676,7 +734,7 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
                 p.norm_hash,
                 p.kind,
                 created_at,
-                p.deleted_commit,
+                deleted_at,
                 p.expires_ts,
             ])?;
         }
@@ -684,6 +742,161 @@ CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
     db.execute_batch(
         "DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;",
     )?;
+    Ok(())
+}
+
+/// The identity half of step 17 (§3.4 step 17 (3)–(4); modular-core Phase
+/// 3b — M3/D5): the pool's `deleted_at` ([`rebuild_pool_v17`]) and the
+/// `id_claims` table (§2.1) created and BACKFILLED with one row per id the
+/// current rows and the history still name — `d` from `docs` (`minted_at =
+/// created_at`), `b` from `blocks`, `resurrection_pool` (their `created_at`)
+/// and every `block_changes`/`dispositions` row (MIN of its commits' `ts`),
+/// `r` from `docs.head` (`updated_at`) and `revisions` (the commit's `ts`),
+/// `x` from `external_nodes` (the earliest edge's commit), `e` from `edges`
+/// (its `from_commit`), `rp` from `repos` (the repo's first commit), `src`
+/// from `sources` (the clock; workspace-scoped, `repo_id` NULL). `holders` =
+/// bit 0 when a core row names the id, plus bit 1 when a history row does —
+/// so a long-deleted block's `b` is `2`, a live block's `3`, an old
+/// revision's `r` `2`, a repo's `rp` `1`. The recorder's `c` and `s` get no
+/// claim (their own rows are their claims), nor does `cp`. Every statement
+/// upserts, ORing the holders in and keeping the earliest `minted_at`, in the
+/// reference's statement order (the table's `rowid` order is the fixture's
+/// row order). Idempotent: an existing `id_claims` table is left alone.
+fn migrate_v17_claims(conn: &Connection) -> Result<()> {
+    let clock = crate::core::time::now_ts();
+    let has_claims = table_exists(conn, "id_claims")?;
+    let pool_cols = column_names(conn, "resurrection_pool")?;
+    let pool_done = pool_cols.is_empty() || pool_cols.iter().any(|c| c == "deleted_at");
+    if has_claims && pool_done {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    if !pool_done {
+        rebuild_pool_v17(&tx, &clock)?;
+    }
+    if !has_claims {
+        tx.execute_batch(&ddl_for(&["id_claims"]))?;
+        // `WHERE true` disambiguates the upsert clause from a join constraint
+        // (sqlite.org/lang_upsert), as the reference spells it.
+        const UPSERT: &str = "ON CONFLICT(id) DO UPDATE SET holders = holders | excluded.holders, minted_at = min(minted_at, excluded.minted_at)";
+        // A migration fixture's pre-state is a PARTIAL old schema (§3.4: the
+        // tables the step touches), so every source is read only when its
+        // tables exist; a real database has them all.
+        let has = |tables: &[&str]| -> Result<bool> {
+            for t in tables {
+                if !table_exists(&tx, t)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        };
+        let has_commits = has(&["commits"])?;
+        let has_repos = has(&["repos"])?;
+        let commit_ts = if has_commits { "c.ts" } else { "NULL" };
+        let commit_repo = if has_commits { "c.repo_id" } else { "NULL" };
+        let commit_join = |on: &str| -> String {
+            if has_commits {
+                format!("LEFT JOIN commits c ON c.commit_id = {on}")
+            } else {
+                String::new()
+            }
+        };
+        let any_repo = if has_repos {
+            "(SELECT repo_id FROM repos ORDER BY rowid LIMIT 1)"
+        } else {
+            "NULL"
+        };
+        let ins = |tables: &[&str], select: &str| -> Result<()> {
+            if !has(tables)? {
+                return Ok(());
+            }
+            let sql = format!(
+                "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) {select} {UPSERT}"
+            );
+            if select.contains(":clock") {
+                tx.execute(&sql, rusqlite::named_params! { ":clock": clock })?;
+            } else {
+                tx.execute(&sql, [])?;
+            }
+            Ok(())
+        };
+        // d
+        ins(
+            &["docs"],
+            "SELECT doc_id, repo_id, 'd', created_at, 1 FROM docs WHERE true",
+        )?;
+        ins(
+            &["docs", "revisions"],
+            "SELECT DISTINCT r.doc_id, d.repo_id, 'd', d.created_at, 2 FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE true",
+        )?;
+        // b
+        ins(
+            &["blocks"],
+            "SELECT block_id, repo_id, 'b', created_at, 1 FROM blocks WHERE true",
+        )?;
+        ins(
+            &["resurrection_pool"],
+            "SELECT block_id, repo_id, 'b', created_at, 1 FROM resurrection_pool WHERE true",
+        )?;
+        ins(
+            &["block_changes"],
+            &format!(
+                "SELECT bc.block_id, COALESCE({commit_repo}, {any_repo}), 'b', COALESCE(MIN({commit_ts}), :clock), 2 FROM block_changes bc {} WHERE true GROUP BY bc.block_id",
+                commit_join("bc.commit_id")
+            ),
+        )?;
+        ins(
+            &["dispositions"],
+            &format!(
+                "SELECT x.block_id, COALESCE({commit_repo}, {any_repo}), 'b', COALESCE(MIN({commit_ts}), :clock), 2 FROM dispositions x {} WHERE x.block_id != 'DOC' GROUP BY x.block_id",
+                commit_join("x.commit_id")
+            ),
+        )?;
+        // r
+        ins(
+            &["docs"],
+            "SELECT head, repo_id, 'r', updated_at, 1 FROM docs WHERE head IS NOT NULL",
+        )?;
+        ins(
+            &["docs", "revisions"],
+            &format!(
+                "SELECT r.rev_id, d.repo_id, 'r', COALESCE({commit_ts}, :clock), 2 FROM revisions r JOIN docs d ON d.doc_id = r.doc_id {} WHERE true",
+                commit_join("r.commit_id")
+            ),
+        )?;
+        // x, e
+        ins(
+            &["external_nodes", "edges"],
+            &format!(
+                "SELECT n.node_id, n.repo_id, 'x', COALESCE(MIN({commit_ts}), :clock), 1 FROM external_nodes n LEFT JOIN edges e ON e.dst_node = n.node_id {} WHERE true GROUP BY n.node_id",
+                commit_join("e.from_commit")
+            ),
+        )?;
+        ins(
+            &["edges"],
+            &format!(
+                "SELECT e.edge_id, e.repo_id, 'e', COALESCE({commit_ts}, :clock), 1 FROM edges e {} WHERE true",
+                commit_join("e.from_commit")
+            ),
+        )?;
+        // rp, src
+        let first_commit = if has_commits {
+            "(SELECT MIN(ts) FROM commits WHERE repo_id = r.repo_id)"
+        } else {
+            "NULL"
+        };
+        ins(
+            &["repos"],
+            &format!(
+                "SELECT r.repo_id, r.repo_id, 'rp', COALESCE({first_commit}, :clock), 1 FROM repos r WHERE true"
+            ),
+        )?;
+        ins(
+            &["sources"],
+            "SELECT source_id, NULL, 'src', :clock, 1 FROM sources WHERE true",
+        )?;
+    }
+    tx.commit()?;
     Ok(())
 }
 

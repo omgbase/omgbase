@@ -83,6 +83,11 @@ pub struct NewSource<'a> {
 /// an unknown adapter fails (UNIQUE / FK). Returns the id.
 pub fn create_source(store: &mut Store, spec: &NewSource<'_>) -> Result<String> {
     let source_id = store.mint("src")?;
+    // `spec/store` §2.1 (17.0): a source is workspace-scoped, so its claim
+    // carries no repo; `minted_at` is the clock.
+    store
+        .minter()
+        .claim("src", &source_id, None, &omgbase_store::time::now_ts())?;
     let config = spec
         .config
         .map_or_else(|| "{}".to_owned(), |c| Value::Object(c.clone()).to_string());
@@ -261,6 +266,11 @@ pub fn register_fs_source(
         Some(id) => id,
         None => {
             let id = store.mint("src")?;
+            // A source is workspace-scoped (attached to repos through
+            // `attachments`): its claim carries no repo (`spec/store` §2.1).
+            store
+                .minter()
+                .claim("src", &id, None, &omgbase_store::time::now_ts())?;
             let config = serde_json::json!({ "root": root }).to_string();
             store.conn().execute(
                 "INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?1, ?2, ?3, ?4, '{}')",

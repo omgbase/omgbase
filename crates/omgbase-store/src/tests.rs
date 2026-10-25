@@ -359,8 +359,8 @@ fn migrates_v13_to_v14_with_the_pending_table() {
     );
     let tables = count(&store, "sqlite_master WHERE type = 'table'");
     assert_eq!(
-        tables, 3,
-        "repos + pending_materializations (14) + archives (15)"
+        tables, 4,
+        "repos + pending_materializations (14) + archives (15) + id_claims (17)"
     );
 }
 
@@ -1002,7 +1002,7 @@ fn deletion_pools_blocks_for_thirty_days_and_sweep_expires_them() {
     let pool: Vec<(String, String, String, String)> = {
         let mut stmt = store
             .conn()
-            .prepare("SELECT block_id, doc_id, deleted_commit, expires_ts FROM resurrection_pool")
+            .prepare("SELECT block_id, doc_id, deleted_at, expires_ts FROM resurrection_pool")
             .unwrap();
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .unwrap()
@@ -1014,7 +1014,8 @@ fn deletion_pools_blocks_for_thirty_days_and_sweep_expires_them() {
         [(
             "b_2".to_owned(),
             "d_0".to_owned(),
-            "c_1".to_owned(),
+            // 17.0: `deleted_at` is the deleting commit's ts (I6 anchored on the row).
+            "2026-09-26T10:01:00.000Z".to_owned(),
             "2026-10-26T10:01:00.000Z".to_owned()
         )]
     );
@@ -1558,6 +1559,7 @@ fn gc_is_off_by_default_and_finds_nothing_unreachable_when_on() {
             blobs_swept: 1,
             tree_nodes_swept: 1,
             same_dispositions_swept: 0,
+            claims_released: 0,
         }
     );
     assert_eq!(
@@ -1566,6 +1568,7 @@ fn gc_is_off_by_default_and_finds_nothing_unreachable_when_on() {
             blobs_swept: 1,
             tree_nodes_swept: 1,
             same_dispositions_swept: 0,
+            claims_released: 0,
         }
     );
     assert_eq!(

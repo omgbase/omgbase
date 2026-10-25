@@ -209,6 +209,56 @@ the p95s sit inside the 16.0 spread. The hot `docs_read`/`apply` paths now
 read the rows without a `blobs` join or a frontmatter resolve; at these sizes
 the saving is below the harness's resolution.
 
+### 17.0 (3b), Rust — identity claims, the twin (`rust-2026-10-25T21-31-51`)
+
+The Rust twin of 3b (`crates/omgbase-store` at schema 17 with `id_claims`,
+release build of the `omgbase` crate 0.27.3 + the working tree), the same
+seeded corpus; the TS 3b row above is the comparison, the Rust 3a row the
+cost of the slice.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | TS 3b (KB / op) | Rust 3a (KB / op) | `id_claims` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.25 | 6,250 | 31.1 / doc | 3.18 | 2.71 | 31.1 / doc (db 6.25) | 28.1 / doc (db 5.65) | 4,608 / 580 |
+| frontmatter hot update | 50 | 6.35 | 98 | 2.0 | 0 | +70 | 1.7 | 1.8 | +50 / +4 |
+| block edit | 50 | 6.44 | 94 | 1.9 | 0 | +80 | 1.8 | 1.7 | +50 / +8 |
+| rolling journal | 50 | 6.62 | 176 | 3.5 | +20 | +130 | 3.2 | 3.4 | +100 / +12 |
+| task churn | 50 | 6.67 | 53 | 1.1 | 0 | +60 | 0.9 | 1.1 | +50 / +8 |
+| link churn | 50 | 6.78 | 111 | 2.2 | +30 | +60 | 2.2 | 1.6 | +175 / +24 |
+| delete / recreate | 20 | 6.90 | 115 | 5.7 | +10 | +110 | 6.6 | 5.1 | +210 / +20 |
+| gc (default sweep) | | 6.91 | 8 | | 0 | 0 | 8 KB, nothing swept | 8 KB, nothing swept | 0 / 0 (no `identity.claims_retain_days`) |
+
+The two engines write the same database again: import **6.25 vs 6.25 MB
+(28.6× the source, both)**, the end **6.91 vs 6.88 MB (31.6× vs 31.5×)**,
+`content` 3.18 vs 3.17 MB and `history` 2.71 vs 2.71 MB — and the
+`id_claims` table is **byte-identical at every stage** (4,608 rows / 593,920 B
+after the import, 5,243 / 671,744 B at the end, the same +50 / +50 / +100 /
++50 / +175 / +210 rows per workload as the TS run: the twin claims exactly the
+ids the reference claims, at the same sites). Against the Rust 3a row the
+slice costs **+600 KB at import (+11 %) and +660 KB at the end (+11 %)**,
+which is the claims table to within page noise (580 / 656 KB) — ≈ 130 B per
+id ever minted, as measured on the reference; per operation the difference to
+3a is the ids an operation mints (a head +0.1–0.2 KB; link churn's edges and
+external nodes +0.6; a recreate's 17 blocks + head +0.6 here, where the TS run
+read +0.9 — allocation noise on a 20-op stage). Every other history table is
+row for row the Rust 3a run's — `blobs` 0.63 MB (3,218), `tree_nodes` 0.97 MB
+(1,000), `dispositions` 0.34 MB + `block_changes` 0.30 MB (3,824 each),
+`revisions` 0.11 MB (461), `commits` 0.16 MB (471) — the TS 3b run's 3,822 /
+1,001 being the seeded-churn noise its section notes; the sweep still reclaims
+nothing, and `doctor --size` prints the new line as `id claims  5243 ids
+claimed`.
+
+Latency (p50 / p95 ms, process start 5 / 490 included — the p95 is one cold
+spawn of ten): import 632; one write 20–23 / 26–32; `query` docs 15 / 204,
+blocks filter 15 / 274, `text("furnace")` 99 / 351, links 12 / 296; `outline`
+10 / 11; `gc` 16. Against the Rust 3a run (writes 21–24 / 26–30, docs 12 / 21,
+text 78 / 116, outline 8 / 10, gc 15) every p50 is within 1–3 ms — the claim
+writes are one cached `INSERT … ON CONFLICT` per minted id inside the commit
+transaction and the `hold` one `UPDATE` per captured id, neither of which
+registers at this size — while the read p95s are each a single outlier (at
+n = 20 the p95 IS the max, and max equals p95 in every read row), the day's
+machine state rather than the engine, as the 3a section found; the 20 ms
+write p50 at the end of the run is below the 3a run's.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

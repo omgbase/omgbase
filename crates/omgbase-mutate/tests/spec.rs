@@ -1862,7 +1862,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     dispositions.sort_by(by_commit_block_kind);
     let mut pool = query_rows(
         conn,
-        "SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
+        "SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
         &[&repo_id],
     );
     pool.sort_by(|a, b| {
@@ -2746,34 +2746,129 @@ fn check_invariants(
         .optional()
         .expect("query runs")
     };
+    // C6 (17.0; I6 restated over the row's own `deleted_at`).
     let pool: Vec<(String, String, String, String)> = all_rows(
         conn,
-        "SELECT block_id, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
+        "SELECT block_id, created_at, deleted_at, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
         &[&repo_id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     );
-    for (block_id, created_at, deleted_commit, expires_ts) in &pool {
-        match commit_by_id.get(deleted_commit.as_str()) {
-            None => problems.push(format!(
-                "I6: pool row {block_id} names a missing commit {deleted_commit}"
-            )),
-            Some((_, _, ts)) => {
-                let want = omgbase_store::time::pool_expiry(ts).unwrap_or_default();
-                if *expires_ts != want {
-                    problems.push(format!(
-                        "I6: pool row {block_id} expires_ts {expires_ts} != {ts} + 30 days"
-                    ));
-                }
-                if created_at > ts {
-                    problems.push(format!(
-                        "C6: pool row {block_id} created_at {created_at} > its deletion's ts {ts}"
-                    ));
-                }
-            }
+    for (block_id, created_at, deleted_at, expires_ts) in &pool {
+        if omgbase_store::time::parse_ms(deleted_at).is_err() {
+            problems.push(format!(
+                "C6: pool row {block_id} deleted_at {deleted_at} is not a §2.4 timestamp"
+            ));
+        }
+        let want = omgbase_store::time::pool_expiry(deleted_at).unwrap_or_default();
+        if *expires_ts != want {
+            problems.push(format!(
+                "C6: pool row {block_id} expires_ts {expires_ts} != deleted_at {deleted_at} + 30 days"
+            ));
+        }
+        if created_at > deleted_at {
+            problems.push(format!(
+                "C6: pool row {block_id} created_at {created_at} > deleted_at {deleted_at}"
+            ));
         }
         if live_doc_of(block_id).is_some() {
-            problems.push(format!("I6: pool row {block_id} has a live blocks row"));
+            problems.push(format!("C6: pool row {block_id} has a live blocks row"));
         }
+    }
+
+    // ---- C5 claims (17.0, §2.1) -------------------------------------------------------------
+    // Every id a core row of the repo carries names an `id_claims` row with the
+    // core's bit; a pool id is claimed; no claim has `holders = 0`; H6 — every
+    // id a history row names has the recorder's bit.
+    let claim_of = |id: &str| -> Option<i64> {
+        conn.query_row(
+            "SELECT holders FROM id_claims WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()
+        .expect("query runs")
+    };
+    let mut core_ids: Vec<(&str, String)> = Vec::new();
+    for d in &docs {
+        core_ids.push(("d", d.doc_id.clone()));
+        if let Some(head) = &d.head {
+            core_ids.push(("r", head.clone()));
+        }
+    }
+    for block_id in all_rows(
+        conn,
+        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        core_ids.push(("b", block_id));
+    }
+    for (block_id, ..) in &pool {
+        core_ids.push(("b", block_id.clone()));
+    }
+    for node_id in all_rows(
+        conn,
+        "SELECT node_id FROM external_nodes WHERE repo_id = ?1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        core_ids.push(("x", node_id));
+    }
+    for edge_id in all_rows(
+        conn,
+        "SELECT edge_id FROM edges WHERE repo_id = ?1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        core_ids.push(("e", edge_id));
+    }
+    core_ids.push(("rp", repo_id.to_owned()));
+    for (prefix, id) in &core_ids {
+        match claim_of(id) {
+            None => problems.push(format!(
+                "C5: {prefix} {id} names a core row but has no id_claims row"
+            )),
+            Some(holders) if holders & 1 == 0 => problems.push(format!(
+                "C5: claim {id} ({prefix}) lacks the core's bit (holders {holders})"
+            )),
+            Some(_) => {}
+        }
+    }
+    let claims: Vec<(String, String, i64, String)> = all_rows(
+        conn,
+        "SELECT id, prefix, holders, minted_at FROM id_claims WHERE repo_id = ?1",
+        &[&repo_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    );
+    for (id, prefix, holders, minted_at) in &claims {
+        if *holders == 0 {
+            problems.push(format!("C5: claim {id} has holders = 0"));
+        }
+        if !id.starts_with(&format!("{prefix}_")) {
+            problems.push(format!("C5: claim {id} is filed under prefix {prefix}"));
+        }
+        if !is_spec_ts(minted_at) {
+            problems.push(format!(
+                "C5: claim {id} minted_at {minted_at} is not a §2.4 timestamp"
+            ));
+        }
+    }
+    let unheld: Vec<String> = all_rows(
+        conn,
+        "SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1 AND bc.block_id != 'DOC'
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
+         UNION SELECT r.rev_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.rev_id AND (ic.holders & 2) != 0)
+         UNION SELECT DISTINCT r.doc_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
+         ORDER BY 1",
+        &[&repo_id],
+        |r| r.get(0),
+    );
+    for id in unheld {
+        problems.push(format!(
+            "H6: {id} is named by a history row but its claim lacks the recorder's bit"
+        ));
     }
 
     // I7
@@ -2839,15 +2934,19 @@ fn check_invariants(
             ));
         }
     }
+    // 17.0: qualified by H6 — a block whose commit was wholly archived has no
+    // row left; the recorder's hold on its claim is what remains.
     let unchanged: Vec<String> = all_rows(
         conn,
-        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id",
+        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id)
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = b.block_id AND (ic.holders & 2) != 0) ORDER BY b.block_id",
         &[&repo_id],
         |r| r.get(0),
     );
     for block_id in unchanged {
         problems.push(format!(
-            "I7: live block {block_id} has no block_changes row"
+            "I7: live block {block_id} has no block_changes row and no recorder hold on its claim"
         ));
     }
 

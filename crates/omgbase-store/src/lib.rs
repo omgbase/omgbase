@@ -122,7 +122,7 @@ pub use capabilities::{
     HistorySizeFigures, IdentityClaims, RecordedRevision, RevisionRead, RevisionTransition,
     SemanticProvider,
 };
-pub use claims::TableUnionClaims;
+pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
 pub use delta::{
     CHECKPOINT_EVERY, DeltaOp, Form, FrontmatterBlob, Node, ResolvedList, ResolvedTree,
@@ -400,14 +400,26 @@ impl Store {
         Ok(self.conn.unchecked_transaction()?)
     }
 
-    /// Create a repo with `slug` (**mints `rp`**); returns its id.
+    /// Create a repo with `slug` (**mints `rp`**); returns its id. The
+    /// repo's own claim (`spec/store` §2.1, 17.0) is written under itself at
+    /// the clock — no commit `ts` exists here.
     pub fn create_repo(&mut self, slug: &str) -> Result<String> {
         let repo_id = self.mint("rp")?;
+        self.minter()
+            .claim("rp", &repo_id, Some(&repo_id), &time::now_ts())?;
         self.conn.execute(
             "INSERT INTO repos (repo_id, slug) VALUES (?1, ?2)",
             params![repo_id, slug],
         )?;
         Ok(repo_id)
+    }
+
+    /// The §2.1 claims oracle this store opened with (the writers reach it
+    /// through [`Mint::claim`]; the composition layer's registry writers —
+    /// a source, `spec/store` §2.1 — through here).
+    #[must_use]
+    pub fn claims(&self) -> &dyn IdentityClaims {
+        self.ids.claims()
     }
 
     /// The repo id for `slug`, if any.
@@ -539,9 +551,61 @@ impl Store {
 
     /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
     /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows
-    /// ([`HistoryRecorder::gc`]).
+    /// ([`HistoryRecorder::gc`]), and since 17.0 the same run prunes
+    /// `id_claims` under `identity.claims_retain_days` at the wall clock
+    /// (§7.3, [`Store::gc_at`]).
     pub fn gc(&self, enabled: bool) -> Result<GcResult> {
-        self.recorder()?.gc(&self.conn, enabled)
+        self.gc_at(enabled, &time::now_ts())
+    }
+
+    /// [`Store::gc`] with the claims prune's clock pinned to `now` (the
+    /// fixture runner's `gc { ts }`, §9.4): one transaction — the recorder's
+    /// sweep, then the core's prune (§7.3) under every repository's effective
+    /// settings and the workspace's own, `claims_released` the holds released.
+    pub fn gc_at(&self, enabled: bool, now: &str) -> Result<GcResult> {
+        if !enabled {
+            return Ok(GcResult::default());
+        }
+        let recorder = self.recorder()?;
+        let tx = self.conn.unchecked_transaction()?;
+        let mut result = recorder.gc(&tx)?;
+        let scopes = self.claim_scopes(&tx)?;
+        result.claims_released = self.ids.claims().prune(&tx, now, &scopes)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    /// The settings layers the claims prune judges under (§7.3): every
+    /// repository's effective settings by `repo_id`, then the workspace's
+    /// own for the workspace-scoped claims (`repo_id` NULL).
+    fn claim_scopes(&self, conn: &Connection) -> Result<Vec<ClaimScope>> {
+        let repos: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY repo_id")?;
+            let it = stmt.query_map([], |r| r.get(0))?;
+            it.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let mut scopes = Vec::with_capacity(repos.len() + 1);
+        for repo_id in repos {
+            let settings = retention::effective_settings(conn, &repo_id)?;
+            scopes.push(ClaimScope {
+                repo_id: Some(repo_id),
+                settings,
+            });
+        }
+        let workspace: Option<String> = {
+            use rusqlite::OptionalExtension;
+            conn.query_row(
+                "SELECT settings FROM workspace_settings WHERE id = 0",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+        };
+        scopes.push(ClaimScope {
+            repo_id: None,
+            settings: retention::parse_settings_json(workspace.as_deref()),
+        });
+        Ok(scopes)
     }
 
     /// What [`Store::gc`] would sweep, without deleting (§8 I5) — the three
@@ -568,6 +632,7 @@ impl Store {
             &self.conn,
             self.history.as_deref(),
             self.semantic.as_deref(),
+            self.ids.claims(),
         )
     }
 
@@ -578,6 +643,7 @@ impl Store {
             &self.conn,
             self.history.as_deref(),
             self.semantic.as_deref(),
+            self.ids.claims(),
             now,
         )
     }
@@ -656,7 +722,7 @@ impl Store {
 impl Capabilities {
     /// What every store opens with today: the recorder over the store's own
     /// history tables ([`Recorder`]), the embedding caches ([`Provider`]) and
-    /// the §2.1 table-union oracle ([`TableUnionClaims`]). Assembled here, on
+    /// the §2.1 `id_claims` oracle ([`IdClaims`], 17.0). Assembled here, on
     /// the composition root — the one module that names the core and both
     /// extensions.
     #[must_use]
@@ -665,7 +731,7 @@ impl Capabilities {
             history: Some(Box::new(Recorder)),
             semantic: Some(Box::new(Provider)),
             semantic_fault: None,
-            claims: Box::new(TableUnionClaims),
+            claims: Box::new(IdClaims),
         }
     }
 

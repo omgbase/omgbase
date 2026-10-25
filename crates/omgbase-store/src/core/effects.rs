@@ -770,7 +770,7 @@ fn run_effect(
             tx, mint, history, doc_id, from, to, inbound, ts, commit_id, mints_head,
         )?)),
         Effect::Tombstone { doc_id, pool, .. } => {
-            tombstone_in(tx, doc_id, commit_id, ts, pool.then_some(expires))?;
+            tombstone_in(tx, doc_id, ts, pool.then_some(expires))?;
             Ok(EffectOutcome::Nothing)
         }
     }
@@ -861,18 +861,20 @@ fn move_path_in(
     commit_id: &str,
     mints_head: bool,
 ) -> Result<MoveOutcome> {
-    let doc: Option<(Option<Vec<u8>>, Option<String>)> = tx
+    let doc: Option<(String, Option<Vec<u8>>, Option<String>)> = tx
         .query_row(
-            "SELECT file_hash, frontmatter_raw FROM docs WHERE doc_id = ?1",
+            "SELECT repo_id, file_hash, frontmatter_raw FROM docs WHERE doc_id = ?1",
             params![doc_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
-    let (file_hash, frontmatter_raw) = doc.unwrap_or((None, None));
+    let (repo_id, file_hash, frontmatter_raw) = doc.unwrap_or((String::new(), None, None));
     let mut head: Option<String> = None;
     match (&file_hash, mints_head) {
         (Some(hash), true) => {
             let minted = mint.mint("r")?;
+            // §2.1 (17.0): the head's claim, with the row that carries it.
+            mint.claim("r", &minted, Some(&repo_id), ts)?;
             tx.execute(
                 "UPDATE docs SET path = ?1, head = ?2, updated_at = ?3 WHERE doc_id = ?4",
                 params![to, minted, ts, doc_id],

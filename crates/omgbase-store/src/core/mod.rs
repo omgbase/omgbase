@@ -45,4 +45,4 @@ pub use capabilities::{
     CAPABILITIES_ENV, Capabilities, CapabilityState, HistoryRecorder, IdentityClaims,
     SemanticProvider, require_history, require_semantic,
 };
-pub use claims::TableUnionClaims;
+pub use claims::{ClaimScope, IdClaims};
