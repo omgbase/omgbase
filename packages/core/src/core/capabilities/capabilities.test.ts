@@ -16,7 +16,7 @@ import { capabilityStates } from "../../sync/capability-state.js";
 import { writeRepoSettings, writeWorkspaceSettings } from "../../sync/settings.js";
 import { HistoryRecorderImpl } from "./history.js";
 import { SemanticProviderImpl } from "./semantic.js";
-import { TableUnionClaims } from "./claims.js";
+import { IdClaims } from "./claims.js";
 import { mintId } from "../ids.js";
 
 // The seams of modular-core Phase 1: a store opened without naming its
@@ -37,7 +37,7 @@ describe("capabilities", () => {
     const { store } = open();
     expect(store.capabilities.history).toBeInstanceOf(HistoryRecorderImpl);
     expect(store.capabilities.semantic).toBeInstanceOf(SemanticProviderImpl);
-    expect(store.capabilities.claims).toBeInstanceOf(TableUnionClaims);
+    expect(store.capabilities.claims).toBeInstanceOf(IdClaims);
     expect(capabilitiesOf(store.db)).toBe(store.capabilities);
     expect(requireHistory(store.db)).toBe(store.capabilities.history);
     store.close();

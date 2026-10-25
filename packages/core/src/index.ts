@@ -247,7 +247,7 @@ export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/f
 // The capability seams (modular-core Phase 1, docs/modular-core/README.md §5–§6): the interfaces the core calls,
 // the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
 export {
-  defaultCapabilities, coreCapabilities, envCapabilities, CAPABILITIES_ENV, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, TableUnionClaims,
+  defaultCapabilities, coreCapabilities, envCapabilities, CAPABILITIES_ENV, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage,
   type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
   type CapabilityName, type CapabilityState,

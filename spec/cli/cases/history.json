@@ -1303,7 +1303,7 @@
           "expect": {
             "exit": 0,
             "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
-            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 28 blobs, 5 tree nodes\n"
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 30 block changes; swept 28 blobs, 5 tree nodes\n"
           }
         },
         {
@@ -1398,7 +1398,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"segment\":{\"id\":\"s_0\",\"path\":\"<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\",\"seq_lo\":2,\"seq_hi\":21,\"created_at\":\"2026-09-27T00:00:00.000Z\",\"revision_count\":2,\"bytes\":\"<number>\",\"previous_segment\":null},\"reused\":false,\"squashed\":{\"revisions\":2,\"commits\":2,\"dispositions\":30,\"block_changes\":0,\"checkpointed\":1},\"gc\":{\"blobs\":28,\"tree_nodes\":5},\"totals\":{\"docs\":1,\"revisions\":22,\"keep\":20,\"archive\":2,\"bytes\":\"<number>\"}}\n"
+            "stdout": "{\"segment\":{\"id\":\"s_0\",\"path\":\"<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\",\"seq_lo\":2,\"seq_hi\":21,\"created_at\":\"2026-09-27T00:00:00.000Z\",\"revision_count\":2,\"bytes\":\"<number>\",\"previous_segment\":null},\"reused\":false,\"squashed\":{\"revisions\":2,\"commits\":2,\"dispositions\":30,\"block_changes\":30,\"checkpointed\":1},\"gc\":{\"blobs\":28,\"tree_nodes\":5},\"totals\":{\"docs\":1,\"revisions\":22,\"keep\":20,\"archive\":2,\"bytes\":\"<number>\"}}\n"
           }
         },
         {
@@ -1463,7 +1463,7 @@
           "expect": {
             "exit": 0,
             "stdout": "<workspace>/segments/rp_0-2-21-s_0.omgarchive.db\n",
-            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 28 blobs, 5 tree nodes\n"
+            "stderr": "  wrote segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 30 block changes; swept 28 blobs, 5 tree nodes\n"
           }
         },
         {
@@ -1539,7 +1539,7 @@
           "expect": {
             "exit": 0,
             "stdout": "<workspace>/.omgbase/archives/rp_0-2-21-s_0.omgarchive.db\n",
-            "stderr": "  finished the unrecorded segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 0 block changes; swept 28 blobs, 5 tree nodes\n"
+            "stderr": "  finished the unrecorded segment s_0: 2 revisions (commits #2–#21), <bytes>\n  squashed 2 revisions, 2 commits, 30 dispositions, 30 block changes; swept 28 blobs, 5 tree nodes\n"
           }
         },
         {

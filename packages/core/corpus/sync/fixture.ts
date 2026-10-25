@@ -305,7 +305,7 @@ export type CheckpointStep =
 
 export const CHECKPOINT_STEPS = ["disk", "rm", "sweep", "checkpoint", "drift", "recover", "rebuild_stats"] as const;
 
-export interface CheckpointProjection extends Omit<StoreProjection, "steps"> {
+export interface CheckpointProjection extends Omit<StoreProjection, "steps" | "id_claims"> {
   steps: Record<string, unknown>[];
   checkpoints: { id: string; ts: string; files: [string, string | null, string | null][]; git_head: string | null }[];
   file_stats: { path: string; mtime_ns: number; size: number; hash: string }[];

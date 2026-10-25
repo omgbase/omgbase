@@ -440,6 +440,62 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -2726,6 +2782,326 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_10",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_11",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_12",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_13",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_14",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_15",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_16",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_17",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_18",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_19",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_20",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_21",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_22",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_23",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_24",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_25",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_26",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_27",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_28",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_29",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_30",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_31",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_32",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_33",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_34",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_35",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_36",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_37",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_38",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_39",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_40",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_41",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_42",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_43",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_44",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_45",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_8",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_9",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -4833,7 +5209,7 @@
             "norm_hash": "3420e34ed983d07e6378be5eb48803681f3a98ceb25f09524b83a6ae796f0c4e",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-10-17T10:01:00.000Z",
             "expires_ts": "2026-11-16T10:01:00.000Z"
           },
           {
@@ -4843,7 +5219,7 @@
             "norm_hash": "55e96fe4b7ace5b966975138022f170d8f8165f5087718ea2dcc270a8d1ed00f",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-10-17T10:02:00.000Z",
             "expires_ts": "2026-11-16T10:02:00.000Z"
           },
           {
@@ -4853,7 +5229,7 @@
             "norm_hash": "5225ee8cfa984266be86a414459b884d3dedcb360725fd6ecfb0482234e637d7",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-10-17T10:03:00.000Z",
             "expires_ts": "2026-11-16T10:03:00.000Z"
           },
           {
@@ -4863,7 +5239,7 @@
             "norm_hash": "9d266b52fb75eb914c62075a6f6975bd67a4a82455e90979c8b5f3b54798a5b5",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_4",
+            "deleted_at": "2026-10-17T10:04:00.000Z",
             "expires_ts": "2026-11-16T10:04:00.000Z"
           },
           {
@@ -4873,7 +5249,7 @@
             "norm_hash": "beeb633b1c304b155c33c34773d185efa42c1ef9051019d40f7b19eac98a7e58",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_5",
+            "deleted_at": "2026-10-17T10:05:00.000Z",
             "expires_ts": "2026-11-16T10:05:00.000Z"
           },
           {
@@ -4883,7 +5259,7 @@
             "norm_hash": "39de22c09f7eedb180ca15208d915b2e4e9b24dce89a262b2d8cd49f36354cc0",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_6",
+            "deleted_at": "2026-10-17T10:06:00.000Z",
             "expires_ts": "2026-11-16T10:06:00.000Z"
           },
           {
@@ -4893,7 +5269,7 @@
             "norm_hash": "d3bbfdd8c9bb5a77474d7b8ef94cdb7960ffdf651feab654cc7c0bab22f74591",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_7",
+            "deleted_at": "2026-10-17T10:07:00.000Z",
             "expires_ts": "2026-11-16T10:07:00.000Z"
           },
           {
@@ -4903,7 +5279,7 @@
             "norm_hash": "f5600911c5615b1d4052d97023c27a96ef9433df1eac8e46fc3ac997aa1e494a",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_8",
+            "deleted_at": "2026-10-17T10:08:00.000Z",
             "expires_ts": "2026-11-16T10:08:00.000Z"
           },
           {
@@ -4913,7 +5289,7 @@
             "norm_hash": "03a477c798767fd6407f95200f5dcc0cb498de8295025aa4e2e6f2c36e51f63d",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_9",
+            "deleted_at": "2026-10-17T10:09:00.000Z",
             "expires_ts": "2026-11-16T10:09:00.000Z"
           },
           {
@@ -4923,8 +5299,268 @@
             "norm_hash": "2e37c012fcfb0e0586ea892b33edf25898e935e8efa6ba9031b3808208fe300b",
             "type": "paragraph",
             "created_at": "2026-10-17T10:00:00.000Z",
-            "deleted_commit": "c_10",
+            "deleted_at": "2026-10-17T10:10:00.000Z",
             "expires_ts": "2026-11-16T10:10:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_10",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_11",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_12",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_13",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_14",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_15",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_16",
+            "minted_at": "2026-10-17T10:06:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_17",
+            "minted_at": "2026-10-17T10:07:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_18",
+            "minted_at": "2026-10-17T10:08:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_19",
+            "minted_at": "2026-10-17T10:09:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_20",
+            "minted_at": "2026-10-17T10:10:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_8",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_9",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_10",
+            "minted_at": "2026-10-17T10:10:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_11",
+            "minted_at": "2026-10-17T10:11:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_12",
+            "minted_at": "2026-10-17T10:12:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_13",
+            "minted_at": "2026-10-17T10:13:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_14",
+            "minted_at": "2026-10-17T10:14:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_15",
+            "minted_at": "2026-10-17T10:15:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_16",
+            "minted_at": "2026-10-17T10:16:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_17",
+            "minted_at": "2026-10-17T10:17:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_18",
+            "minted_at": "2026-10-17T10:18:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_19",
+            "minted_at": "2026-10-17T10:19:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_20",
+            "minted_at": "2026-10-17T10:20:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_6",
+            "minted_at": "2026-10-17T10:06:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_7",
+            "minted_at": "2026-10-17T10:07:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_8",
+            "minted_at": "2026-10-17T10:08:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_9",
+            "minted_at": "2026-10-17T10:09:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -5253,7 +5889,7 @@
                 "revisions": 4,
                 "commits": 4,
                 "dispositions": 9,
-                "block_changes": 3,
+                "block_changes": 9,
                 "checkpointed": 1
               },
               "gc": {
@@ -5310,7 +5946,8 @@
             "gc": {
               "blobs": 0,
               "tree_nodes": 0,
-              "same_dispositions": 0
+              "same_dispositions": 0,
+              "claims_released": 0
             }
           }
         ],
@@ -5669,36 +6306,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_2",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_1",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_4",
-            "commit_id": "c_2",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_5",
-            "commit_id": "c_3",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_5",
             "commit_id": "c_4",
             "kind": "deleted"
@@ -5737,7 +6344,7 @@
             "norm_hash": "3420e34ed983d07e6378be5eb48803681f3a98ceb25f09524b83a6ae796f0c4e",
             "type": "paragraph",
             "created_at": "2026-09-01T00:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-02T00:00:00.000Z",
             "expires_ts": "2026-10-02T00:00:00.000Z"
           },
           {
@@ -5747,7 +6354,7 @@
             "norm_hash": "55e96fe4b7ace5b966975138022f170d8f8165f5087718ea2dcc270a8d1ed00f",
             "type": "paragraph",
             "created_at": "2026-09-02T00:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-09-03T00:00:00.000Z",
             "expires_ts": "2026-10-03T00:00:00.000Z"
           },
           {
@@ -5757,7 +6364,7 @@
             "norm_hash": "5225ee8cfa984266be86a414459b884d3dedcb360725fd6ecfb0482234e637d7",
             "type": "paragraph",
             "created_at": "2026-09-03T00:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-09-04T00:00:00.000Z",
             "expires_ts": "2026-10-04T00:00:00.000Z"
           },
           {
@@ -5767,7 +6374,7 @@
             "norm_hash": "9d266b52fb75eb914c62075a6f6975bd67a4a82455e90979c8b5f3b54798a5b5",
             "type": "paragraph",
             "created_at": "2026-09-04T00:00:00.000Z",
-            "deleted_commit": "c_4",
+            "deleted_at": "2026-09-05T00:00:00.000Z",
             "expires_ts": "2026-10-05T00:00:00.000Z"
           },
           {
@@ -5777,7 +6384,7 @@
             "norm_hash": "beeb633b1c304b155c33c34773d185efa42c1ef9051019d40f7b19eac98a7e58",
             "type": "paragraph",
             "created_at": "2026-09-05T00:00:00.000Z",
-            "deleted_commit": "c_5",
+            "deleted_at": "2026-09-06T00:00:00.000Z",
             "expires_ts": "2026-10-06T00:00:00.000Z"
           },
           {
@@ -5787,8 +6394,112 @@
             "norm_hash": "39de22c09f7eedb180ca15208d915b2e4e9b24dce89a262b2d8cd49f36354cc0",
             "type": "paragraph",
             "created_at": "2026-09-06T00:00:00.000Z",
-            "deleted_commit": "c_6",
+            "deleted_at": "2026-09-11T00:00:00.000Z",
             "expires_ts": "2026-10-11T00:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-09-02T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-09-03T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-09-04T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-09-05T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-09-06T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_8",
+            "minted_at": "2026-09-11T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-09-02T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-09-03T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-09-04T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-09-05T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-09-06T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_6",
+            "minted_at": "2026-09-11T00:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -6186,6 +6897,56 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",

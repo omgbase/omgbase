@@ -3,7 +3,7 @@ import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
 import { assignIds, type TreeInputBlock } from "./store/writers.js";
-import { requireHistory } from "./capabilities/registry.js";
+import { requireHistory, claimsOf } from "./capabilities/registry.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
@@ -295,7 +295,12 @@ export function ingestInto(
     | undefined;
   const docId = doc?.doc_id ?? mintId("d");
   const isNew = !doc;
+  // spec/store §2.1 (17.0): every id the core mints is claimed in the
+  // transaction that writes the row carrying it — the claim is the writer's,
+  // written after the minter yielded (`minted_at = ts`).
+  const claims = claimsOf(db);
   if (!doc) {
+    claims.claim("d", docId, repoId, ts);
     // `created_at` is the identity's birth (D6); `updated_at` moves with the head (step 12).
     db.prepare(
       "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -336,6 +341,7 @@ export function ingestInto(
   const history = requireHistory(db);
   const renderedHash = sha256(content);
   const head = mintId("r");
+  claims.claim("r", head, repoId, ts);
   history.captureRevision({
     docId,
     head,
@@ -367,13 +373,16 @@ export function ingestInto(
   // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
   // doc's rows (the ingest rebuilds current-state blocks wholesale). The pool
   // row carries the block's `created_at` so a resurrection restores it (D6).
+  // The deleted ids keep their claims (§2.1): nothing here releases one.
   if (resolved.deleted.length > 0) {
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     const pool = db.prepare(
-      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
        SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
     );
-    for (const id of resolved.deleted) pool.run(commitId, expires, id, docId);
+    // `deleted_at = ts` and `expires_ts = deleted_at + 30 days` (I6, 17.0): the
+    // pool row's expiry is anchored on its own timestamp, not on a commit.
+    for (const id of resolved.deleted) pool.run(ts, expires, id, docId);
   }
 
   // Ids arriving from ANOTHER document — a cross-document move whose source
@@ -424,6 +433,11 @@ export function ingestInto(
   );
   for (const r of rows) {
     insert.run({ ...r, repoId, docId, ...stamps(r.blockId) });
+    // spec/store §2.1 / §5.4 step 9 (17.0): a block id that was neither a
+    // live row of this doc, nor pooled, nor evicted from another doc was
+    // minted for this commit — claim it now, in this transaction. (Idempotent:
+    // an id that came from any of the three already has its claim.)
+    if (!previous.has(r.blockId) && !pooledBirth.has(r.blockId) && !foreignBirth.has(r.blockId)) claims.claim("b", r.blockId, repoId, ts);
   }
   ftsIndexDoc(db, docId);
   rebuildSections(db, docId);
@@ -506,7 +520,7 @@ export function ingestInto(
   // an extractor. Runs in this commit transaction.
   if (resolved.extractEdges) {
     const extracted = resolved.extractEdges(docId, metadata);
-    maintainEdges(db, repoId, docId, commitId, extracted);
+    maintainEdges(db, repoId, docId, commitId, extracted, ts);
   }
 
   // Persist dispositions + block-history projection. With a resolver, use the

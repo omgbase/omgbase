@@ -54,6 +54,13 @@
             "size",
             "hash"
           ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "nodes": [
             "node_id",
             "repo_id",
@@ -199,6 +206,13 @@
             "repo_id",
             "source_id"
           ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "pending_materializations": [
             "repo_id",
             "path",
@@ -295,6 +309,13 @@
             "repo_id",
             "source_id"
           ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "pending_materializations": [
             "repo_id",
             "path",
@@ -385,6 +406,13 @@
             "repo_id",
             "source_id"
           ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "pending_materializations": [
             "repo_id",
             "path",
@@ -465,6 +493,13 @@
             "created_at",
             "revision_count",
             "bytes"
+          ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
           ],
           "pending_materializations": [
             "repo_id",
@@ -558,7 +593,7 @@
     },
     {
       "name": "v16-to-v17-heads-inline-bytes-time",
-      "notes": "Step 17 (modular-core Phase 3a — M1, M2, D10, D6): `docs` rebuilt with `head` (= `current_rev`), `frontmatter_raw` (the live head's frontmatter RESOLVED through the 16.x delta chain once — r_2's blob is a `{\"f\":…}` delta over r_1's raw, so a.md comes out `layer: working`), `created_at` (the seq-1 revision's commit ts), `updated_at` (the head's commit ts), `deleted_at` (the tombstone commit's ts; gone.md was deleted by c_3); `blocks` rebuilt with `raw`/`trivia` copied from `blobs` by hash (b_3's NULL trivia_hash stays a NULL trivia), `created_at`/`updated_at` from MIN/MAX(commits.ts) over the block's `block_changes` (b_1: c_1; b_2: c_2) falling back to `created_commit`'s ts when it has none (b_3: c_1), `deleted_at` from `deleted_commit` (b_3: c_3); `created_commit`/`deleted_commit` gone and the two partial indexes re-created over `deleted_at`; `resurrection_pool` rebuilt with `created_at` = MIN over the block's `block_changes` (b_4: c_2), else the deleting commit's ts (b_3: c_3). The history tables (`revisions`, `blobs`, `tree_nodes`, `commits`, `block_changes`) are untouched — the recorder's, read once for the backfill. `rowid`s are kept (the FTS index is keyed by them).",
+      "notes": "Step 17 (modular-core Phase 3a — M1, M2, D10, D6): `docs` rebuilt with `head` (= `current_rev`), `frontmatter_raw` (the live head's frontmatter RESOLVED through the 16.x delta chain once — r_2's blob is a `{\"f\":…}` delta over r_1's raw, so a.md comes out `layer: working`), `created_at` (the seq-1 revision's commit ts), `updated_at` (the head's commit ts), `deleted_at` (the tombstone commit's ts; gone.md was deleted by c_3); `blocks` rebuilt with `raw`/`trivia` copied from `blobs` by hash (b_3's NULL trivia_hash stays a NULL trivia), `created_at`/`updated_at` from MIN/MAX(commits.ts) over the block's `block_changes` (b_1: c_1; b_2: c_2) falling back to `created_commit`'s ts when it has none (b_3: c_1), `deleted_at` from `deleted_commit` (b_3: c_3); `created_commit`/`deleted_commit` gone and the two partial indexes re-created over `deleted_at`; `resurrection_pool` rebuilt with `created_at` = MIN over the block's `block_changes` (b_4: c_2), else the deleting commit's ts (b_3: c_3). The history tables (`revisions`, `blobs`, `tree_nodes`, `commits`, `block_changes`) are untouched — the recorder's, read once for the backfill. `rowid`s are kept (the FTS index is keyed by them). (3b — M3/D5) `resurrection_pool.deleted_commit` → `deleted_at` (the deleting commit's ts: b_3 c_3, b_4 c_4; `expires_ts` is already `deleted_at + 30 days`). `id_claims` created and backfilled: `d_1`/`d_2` from `docs` (`minted_at = created_at`, bit 0) plus bit 1 from their `revisions` rows → 3; `b_1`/`b_2` from `blocks` (bit 0, `minted_at = created_at`) plus bit 1 from `block_changes` → 3; `b_3` from its tombstoned `blocks` row alone → 1 (no `block_changes` row names it); `b_4` from the pool row (bit 0) plus `block_changes` (bit 1) → 3, `minted_at` the earliest of the two sources (c_2); `r_2`/`r_3` as heads (bit 0, `minted_at = docs.updated_at`) plus `revisions` (bit 1) → 3; `r_1` from `revisions` alone → 2 (an old revision's id names no core row); `rp_1` → 1 at the repo's first commit's ts. The commits `c_1`…`c_4` get no claim (the recorder's own rows). Tables the pre-state lacks (`dispositions`, `edges`, `external_nodes`, `sources`, `pending_materializations`) contribute nothing.",
       "setup": [
         "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
         "CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT, UNIQUE (repo_id, path))",
@@ -608,6 +643,7 @@
         "docs",
         "blocks",
         "resurrection_pool",
+        "id_claims",
         "revisions",
         "blobs"
       ],
@@ -671,6 +707,13 @@
             "updated_at",
             "deleted_at"
           ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "repos": [
             "repo_id",
             "slug",
@@ -684,7 +727,7 @@
             "norm_hash",
             "type",
             "created_at",
-            "deleted_commit",
+            "deleted_at",
             "expires_ts"
           ],
           "revisions": [
@@ -810,7 +853,7 @@
               "norm_hash": "12",
               "type": "heading",
               "created_at": "2026-10-17T10:02:00.000Z",
-              "deleted_commit": "c_3",
+              "deleted_at": "2026-10-17T10:02:00.000Z",
               "expires_ts": "2026-11-16T10:02:00.000Z"
             },
             {
@@ -821,8 +864,80 @@
               "norm_hash": "11",
               "type": "paragraph",
               "created_at": "2026-10-17T10:01:00.000Z",
-              "deleted_commit": "c_4",
+              "deleted_at": "2026-10-17T10:03:00.000Z",
               "expires_ts": "2026-11-16T10:03:00.000Z"
+            }
+          ],
+          "id_claims": [
+            {
+              "id": "d_1",
+              "repo_id": "rp_1",
+              "prefix": "d",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "d_2",
+              "repo_id": "rp_1",
+              "prefix": "d",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "b_1",
+              "repo_id": "rp_1",
+              "prefix": "b",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "b_2",
+              "repo_id": "rp_1",
+              "prefix": "b",
+              "minted_at": "2026-10-17T10:01:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "b_3",
+              "repo_id": "rp_1",
+              "prefix": "b",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 1
+            },
+            {
+              "id": "b_4",
+              "repo_id": "rp_1",
+              "prefix": "b",
+              "minted_at": "2026-10-17T10:01:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "r_2",
+              "repo_id": "rp_1",
+              "prefix": "r",
+              "minted_at": "2026-10-17T10:01:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "r_3",
+              "repo_id": "rp_1",
+              "prefix": "r",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "r_1",
+              "repo_id": "rp_1",
+              "prefix": "r",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 2
+            },
+            {
+              "id": "rp_1",
+              "repo_id": "rp_1",
+              "prefix": "rp",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 1
             }
           ],
           "revisions": [
@@ -914,6 +1029,13 @@
       "expect": {
         "user_version": 17,
         "tables": {
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
           "only_this": [
             "x"
           ]

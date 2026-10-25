@@ -213,7 +213,7 @@ export const MIGRATIONS: Record<number, string> = {
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
-  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
+  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, and the `id_claims` table backfilled from every id the current rows and the history still name — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -363,6 +363,20 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   git_head TEXT
 );
 
+-- Identity claims (spec/store §2.1, 17.0 — M3/D5): one row per id the core
+-- has minted. holders is a bitmask — bit 0 the core (set at mint, released by
+-- the claims prune, §7.3), bit 1 the recorder (set when the capture first
+-- names the id). A row leaves only when no holder remains. repo_id is NULL for
+-- a workspace-scoped id (a source).
+CREATE TABLE IF NOT EXISTS id_claims (
+  id        TEXT PRIMARY KEY,
+  repo_id   TEXT,
+  prefix    TEXT NOT NULL,
+  minted_at TEXT NOT NULL,
+  holders   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_claims_repo_prefix ON id_claims(repo_id, prefix, minted_at);
+
 CREATE TABLE IF NOT EXISTS resurrection_pool (
   block_id       TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL,
@@ -371,8 +385,8 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   norm_hash      BLOB NOT NULL,
   type           TEXT NOT NULL,
   created_at     TEXT NOT NULL,            -- carried from the deleted row, restored on resurrection (D6)
-  deleted_commit TEXT NOT NULL,
-  expires_ts     TEXT NOT NULL
+  deleted_at     TEXT NOT NULL,            -- the deleting commit's ts (17.0; deleted_commit through 16.x)
+  expires_ts     TEXT NOT NULL             -- deleted_at + 30 days (I6)
 );
 ${PENDING_MATERIALIZATIONS_DDL}
 ${ARCHIVES_DDL}

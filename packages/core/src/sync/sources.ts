@@ -49,6 +49,8 @@ export function createSource(
   spec: { name: string; adapter: string; config?: Record<string, unknown>; env?: Record<string, string> },
 ): string {
   const sourceId = mintId("src");
+  // spec/store §2.1 (17.0): a source is workspace-scoped, so its claim carries no repo; `minted_at` is the clock.
+  store.capabilities.claims.claim("src", sourceId, null, new Date().toISOString());
   store.db
     .prepare("INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?, ?, ?, ?, ?)")
     .run(sourceId, spec.name, spec.adapter, JSON.stringify(spec.config ?? {}), JSON.stringify(spec.env ?? {}));

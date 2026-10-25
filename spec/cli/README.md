@@ -667,8 +667,8 @@ table through SQLite's `dbstat` virtual table (an index counts toward its
 table, an FTS5 table's shadow tables fold into it), groups the tables into
 the four categories the store spec assigns — `content` (the live state:
 docs, blocks, sections, nodes, edges, properties…), `history` (blobs,
-tree nodes, revisions, commits, dispositions, block changes, the pool,
-pending materializations), `search` (the FTS tables, embeddings) and `sync`
+tree nodes, revisions, commits, dispositions, block changes, the id claims,
+the pool, pending materializations), `search` (the FTS tables, embeddings) and `sync`
 (repos, sources, adapters, attachments, checkpoints, file stats, settings,
 and anything the spec does not name — `sqlite_schema` among them) — counts
 each table's rows, and derives the advice. Needs no repo (the database is
@@ -688,9 +688,11 @@ the file block — `file  <path>`, `size  <bytes> on disk, wal <bytes>` (the
 `-wal` file's, `0 B` when absent), `pages  <page_count> x <page_size>
 bytes, <freelist_count> free`, `reclaimable  <bytes>`
 (`freelist_count × page_size`: what a `VACUUM` returns to the filesystem),
-and (cli 4.6) `archived  <n> revisions in <s> segments, <bytes> on disk`
+(cli 4.6) `archived  <n> revisions in <s> segments, <bytes> on disk`
 (`spec/store` §7 "Size" `archived`: the history already moved to archive
-segments) — the keys padded to `reclaimable`; then one `  advice: <text>`
+segments), and (store 17.0) `id claims  <n> ids claimed` (`spec/store` §7.2
+`id_claims`: one row per id ever minted and still held, §2.1) — the keys
+padded to `reclaimable`; then one `  advice: <text>`
 line per advice. Without `dbstat` in the SQLite build the bytes and share cells are
 `—`, the tables order by rows, and a line `  dbstat unavailable: row counts
 only` follows the table (no fixture: both engines' builds have it).
@@ -720,11 +722,12 @@ applies.
 stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
 freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
 tables: [{ name, bytes, share, rows, indexes }] }], same_dispositions,
-archived: { revisions, segments, bytes }, advice: [string] }`
+id_claims, archived: { revisions, segments, bytes }, advice: [string] }`
 (+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
 `share` and `indexes` is `null`); `indexes` is the part of a table's
 `bytes` its indexes take; `share` is one decimal; `same_dispositions`
 (cli 4.5) is the `same` row count of `spec/store` §7, `0` on a 14.2 store;
+`id_claims` (store 17.0) the `id_claims` row count of `spec/store` §7.2;
 every other number is an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
 `doctor-size-json`, `doctor-size-jsonl`, `doctor-size-after-rm` — recorded
 by shape (§8): the sizes and shares are `<bytes>`/`<share>`/`<number>`,
@@ -811,9 +814,13 @@ unless `gc.enabled` is true in the effective settings:
 allowed regardless and deletes nothing — it counts all three sweeps. Human
 (stderr) `  swept <b> blobs, <t> tree nodes, <s> same dispositions` (cli
 4.5; through 4.4 the line stopped at the tree nodes); `--json`
-`{ blobsSwept, treeNodesSwept, sameDispositionsSwept }`. On a workspace
+`{ blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased }`
+(`claimsReleased` since store 17.0: the id claims whose core hold the prune
+released under `identity.claims_retain_days`, `spec/store` §7.3; the human
+line gains `, <n> id claims released` only when it is non-zero — the setting
+is off by default). On a workspace
 this spec's fixtures build every count is `0`: a fresh store has no `same`
-rows to sweep.
+rows to sweep and no claims policy.
 
 `--vacuum` (cli 4.3) runs `VACUUM` after the sweep (`spec/store` §7
 "Vacuum") — the sweep's freed pages are what it returns — under the same

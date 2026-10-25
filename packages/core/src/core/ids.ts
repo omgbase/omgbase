@@ -4,7 +4,12 @@ import { randomInt } from "node:crypto";
 // Crockford base32 from a CSPRNG. `s` (15.0) is an archive segment. Since store 13.5 a mint is collision-checked
 // here, at the seam: `mintId` never returns an id that is in use — one this
 // process has already issued, or one a registered oracle (the open stores)
-// reports as naming a row of the prefix's table.
+// reports as claimed: since 17.0 an `id_claims` row for every core-minted
+// prefix (`IdClaims`), the prefix's own table for the recorder's `c`/`s` and
+// for `cp`. The claim itself is written by the writer that lands the id in a
+// row, in that row's transaction, AFTER this function returned — so the
+// fixture minter's sequence is untouched and a mint whose transaction rolls
+// back leaves no claim.
 
 export type IdPrefix = "d" | "b" | "c" | "r" | "x" | "col" | "cp" | "e" | "rp" | "v" | "src" | "s";
 
@@ -162,7 +167,8 @@ export function mintId(prefix: IdPrefix): string {
   for (let rejected = 0; rejected < MINT_GIVE_UP_AFTER; rejected++) {
     const candidate = minter ? minter(prefix) : `${prefix}_${randomSuffix()}`;
     if (inUse(prefix, candidate, issued)) continue;
-    // seam: IdentityClaims.claim (Phase 3, M3/D5 — an `id_claims` row written here; today the row the id lands in is the claim; inventory-ts §2.3 row `mintId` 147–172, §3.5)
+    // The claim (`IdentityClaims.claim`, spec/store §2.1) is the writer's, not
+    // this function's: `mintId` has no store and no transaction in hand.
     issued.add(candidate);
     for (const observer of observers) observer(prefix, candidate);
     return candidate;

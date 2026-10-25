@@ -116,6 +116,56 @@ one write 245–293 / 265–328; `query` docs 236 / 267, blocks filter 228 /
 the rows without a `blobs` join or a frontmatter resolve, but node's start
 dominates every CLI round trip, so the harness cannot see it.
 
+### 17.0 (3b), TS — identity claims (`ts-2026-10-25T20-41-16`)
+
+The same harness over the Phase 3b reference (store 17.0 + `id_claims`: one
+row per id the core has minted, written with the row that carries it, the
+recorder's bit set by its capture; the pool's `deleted_at`; the squash
+without the earliest-`block_changes`-row rule — legacy capture still on),
+TS CLI, node 24; the 17.0 (3a) TS row above is the comparison.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | 3a TS (KB / op) | `id_claims` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.25 | 6,250 | 31.1 / doc | 3.17 | 2.71 | 28.0 / doc (db 5.62) | 4,608 / 580 |
+| frontmatter hot update | 50 | 6.34 | 86 | 1.7 | 0 | +70 | 1.7 | +50 / +4 |
+| block edit | 50 | 6.43 | 90 | 1.8 | 0 | +80 | 1.6 | +50 / +8 |
+| rolling journal | 50 | 6.59 | 160 | 3.2 | +20 | +130 | 3.2 | +100 / +12 |
+| task churn | 50 | 6.63 | 45 | 0.9 | 0 | +50 | 0.5 | +50 / +8 |
+| link churn | 50 | 6.74 | 111 | 2.2 | +30 | +60 | 1.6 | +175 / +24 |
+| delete / recreate | 20 | 6.87 | 131 | 6.6 | +20 | +120 | 5.7 | +210 / +20 |
+| gc (default sweep) | | 6.88 | 8 | | 0 | 0 | 8 KB, nothing swept | 0 / 0 (no `identity.claims_retain_days`) |
+
+The import costs **28.6× the source** (3a: 25.7×) and the database after
+every workload **31.5×** (28.3×): **+626 KB at import (+11 %) and +700 KB
+at the end (+11 %)**, all of it `id_claims` — 4,608 rows / 580 KB after the
+import, 5,243 / 656 KB at the end, which is **≈ 130 B per id ever minted**
+(the row itself is ~60 B; the primary-key b-tree and the `(repo_id, prefix,
+minted_at)` index the contracts name are the other half). `content` is
+unchanged (3.17 vs 3.15 MB); every other history table is row for row the
+3a run's (`blobs` 3,218, `tree_nodes` 1,001, `dispositions`/`block_changes`
+3,822 — two fewer than 3a's 3,824, noise in the seeded churn), and the
+sweep still reclaims nothing. Per operation the claims cost exactly the ids
+an operation mints: a frontmatter update or a block edit mints one head
+(+1 claim, ~0.1 KB — the block edit also re-mints nothing: carried ids are
+claimed already); a journal append two (the head and the new item); task
+churn one; link churn 3.5 (the head plus the edges and external nodes it
+opens — the one place the claims are a visible share, +0.6 KB/op); a
+recreate 10.5 (17 blocks + a head per `new`, nothing per `rm`, +1 KB/op).
+Nothing else changed shape. The number to watch is the one `doctor --size`
+now prints — `id claims  <n> ids claimed` — since the table is the one that
+never shrinks on its own: `identity.claims_retain_days` is the knob, and a
+repository with the recorder on keeps every row anyway (bit 1), so the
+realistic reduction is Phase 3e's `history purge` plus the prune, or a
+cheaper row (dropping the composite index would save a third; the prune can
+scan).
+
+Latency (p50 / p95 ms, process start ~163 / 224 included): import 997;
+one write 209–224 / 224–270; `query` docs 204 / 242, blocks filter 194 /
+228, `text("furnace")` 285 / 329, links 194 / 246; `outline` 207 / 223;
+`gc` 217 — every row at or below the 3a TS run's (writes 245–293 / 265–
+328): the claim writes are one `INSERT … ON CONFLICT` per minted id inside
+the commit transaction and do not register against node's start.
+
 ### 17.0 (3a), Rust — the twin, same harness (`rust-2026-10-25T19-55-20`)
 
 The Rust twin of 3a (`crates/omgbase-store` at schema 17, release build of

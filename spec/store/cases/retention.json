@@ -271,7 +271,7 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 4,
-                "block_changes": 1,
+                "block_changes": 4,
                 "checkpointed": 2
               },
               "gc": {
@@ -318,7 +318,8 @@
             "gc": {
               "blobs": 0,
               "tree_nodes": 0,
-              "same_dispositions": 0
+              "same_dispositions": 0,
+              "claims_released": 0
             }
           }
         ],
@@ -597,16 +598,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "deleted"
@@ -623,11 +614,6 @@
           },
           {
             "block_id": "b_4",
-            "commit_id": "c_3",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_4",
             "commit_id": "c_4",
             "kind": "edited"
           }
@@ -640,7 +626,7 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -650,8 +636,76 @@
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
             "created_at": "2026-01-02T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-03T09:00:00.000Z",
             "expires_ts": "2026-02-02T09:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-01-03T15:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -1104,8 +1158,58 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -1525,8 +1629,58 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -2117,7 +2271,7 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -2127,8 +2281,76 @@
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
             "created_at": "2026-01-02T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-03T09:00:00.000Z",
             "expires_ts": "2026-02-02T09:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-01-03T15:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -2355,7 +2577,7 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 3,
-                "block_changes": 1,
+                "block_changes": 3,
                 "checkpointed": 1
               },
               "gc": {
@@ -2625,16 +2847,6 @@
             "kind": "inserted"
           },
           {
-            "block_id": "b_2",
-            "commit_id": "c_1",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_3",
-            "commit_id": "c_2",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_3",
             "commit_id": "c_3",
             "kind": "deleted"
@@ -2653,7 +2865,7 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -2663,8 +2875,70 @@
             "norm_hash": "7a71adb482135493b921c07700a01366f5aea562d55dc773f2a9d9242468bc13",
             "type": "paragraph",
             "created_at": "2026-01-02T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-03T09:00:00.000Z",
             "expires_ts": "2026-02-02T09:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -3385,7 +3659,7 @@
             "norm_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -3395,7 +3669,7 @@
             "norm_hash": "a47a3851d31f80cb6c26d931d701ccf4ac14fe42344f21b75bd55b6ba8613dc5",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -3405,7 +3679,7 @@
             "norm_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "type": "paragraph",
             "created_at": "2026-01-01T12:00:00.000Z",
-            "deleted_commit": "c_4",
+            "deleted_at": "2026-01-02T10:00:00.000Z",
             "expires_ts": "2026-02-01T10:00:00.000Z"
           },
           {
@@ -3415,8 +3689,106 @@
             "norm_hash": "056f5f328c9e644f9f6e27488abfdcec180c1d2e253a22e9c8f9b9d10044a652",
             "type": "paragraph",
             "created_at": "2026-01-01T12:00:00.000Z",
-            "deleted_commit": "c_5",
+            "deleted_at": "2026-01-02T10:00:00.000Z",
             "expires_ts": "2026-02-01T10:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -3683,7 +4055,7 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 4,
-                "block_changes": 1,
+                "block_changes": 4,
                 "checkpointed": 1
               },
               "gc": {
@@ -4037,21 +4409,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_2",
-            "commit_id": "c_1",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_2",
             "kind": "deleted"
@@ -4090,7 +4447,7 @@
             "norm_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-02T10:00:00.000Z",
             "expires_ts": "2026-02-01T10:00:00.000Z"
           },
           {
@@ -4100,7 +4457,7 @@
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-04T10:00:00.000Z",
             "expires_ts": "2026-02-03T10:00:00.000Z"
           },
           {
@@ -4110,7 +4467,7 @@
             "norm_hash": "43c4d94ea2cd4fbece4f396e10852401108971f22e2f37707fbbb688ddc7fe3c",
             "type": "paragraph",
             "created_at": "2026-01-03T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-04T10:00:00.000Z",
             "expires_ts": "2026-02-03T10:00:00.000Z"
           },
           {
@@ -4120,8 +4477,88 @@
             "norm_hash": "70277bfc409b502132d7a48b2a3b386294264b31f7bf024a5fb0cafabb8ac122",
             "type": "paragraph",
             "created_at": "2026-01-04T10:00:00.000Z",
-            "deleted_commit": "c_5",
+            "deleted_at": "2026-01-05T10:00:00.000Z",
             "expires_ts": "2026-02-04T10:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-03T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-04T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-01-04T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-01-04T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-03T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-04T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-01-05T10:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -4668,7 +5105,7 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -4678,8 +5115,70 @@
             "norm_hash": "d22086156dd0181ceb243160174ed3e61a4d1fb3ea4c3acda9858e273e6fac93",
             "type": "paragraph",
             "created_at": "2026-01-03T09:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-03T15:00:00.000Z",
             "expires_ts": "2026-02-02T15:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-03T15:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-03T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-03T15:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -4856,7 +5355,7 @@
                 "revisions": 1,
                 "commits": 1,
                 "dispositions": 2,
-                "block_changes": 0,
+                "block_changes": 2,
                 "checkpointed": 1
               },
               "gc": {
@@ -4941,7 +5440,7 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 2,
-                "block_changes": 0,
+                "block_changes": 2,
                 "checkpointed": 2
               },
               "gc": {
@@ -5293,16 +5792,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "deleted"
@@ -5314,22 +5803,12 @@
           },
           {
             "block_id": "b_3",
-            "commit_id": "c_2",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_3",
             "commit_id": "c_3",
             "kind": "deleted"
           },
           {
             "block_id": "b_4",
             "commit_id": "c_3",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_5",
-            "commit_id": "c_4",
             "kind": "inserted"
           },
           {
@@ -5351,7 +5830,7 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
           },
           {
@@ -5361,7 +5840,7 @@
             "norm_hash": "8e89058a3b730c228282e6bbac4a8116dbae2772a82224c6958a9b5759894a42",
             "type": "paragraph",
             "created_at": "2026-01-11T09:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-01-11T15:00:00.000Z",
             "expires_ts": "2026-02-10T15:00:00.000Z"
           },
           {
@@ -5371,8 +5850,94 @@
             "norm_hash": "5e64f093cc72a4cdc5ae307fbd86fe36f7390a02884940bca0f67f7a96c46ffe",
             "type": "paragraph",
             "created_at": "2026-01-12T09:00:00.000Z",
-            "deleted_commit": "c_5",
+            "deleted_at": "2026-01-12T15:00:00.000Z",
             "expires_ts": "2026-02-11T15:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-11T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-01-11T15:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-01-12T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-01-12T15:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-11T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-01-11T15:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-01-12T09:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_5",
+            "minted_at": "2026-01-12T15:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -5556,7 +6121,7 @@
                 "revisions": 1,
                 "commits": 1,
                 "dispositions": 2,
-                "block_changes": 0,
+                "block_changes": 2,
                 "checkpointed": 1
               },
               "gc": {
@@ -5734,16 +6299,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "deleted"
@@ -5762,8 +6317,46 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -5920,7 +6513,7 @@
                 "revisions": 1,
                 "commits": 1,
                 "dispositions": 2,
-                "block_changes": 0,
+                "block_changes": 2,
                 "checkpointed": 1
               },
               "gc": {
@@ -6119,16 +6712,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_1",
             "commit_id": "c_1",
             "kind": "deleted"
@@ -6147,8 +6730,46 @@
             "norm_hash": "014de9fafe8e621cdff5286d57e736d4836ff5a9d49c57a9854565d500bfc77c",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-01-01T12:00:00.000Z",
             "expires_ts": "2026-01-31T12:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-01T12:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [
@@ -6351,7 +6972,7 @@
                 "revisions": 2,
                 "commits": 2,
                 "dispositions": 4,
-                "block_changes": 1,
+                "block_changes": 4,
                 "checkpointed": 1
               },
               "gc": {
@@ -6567,21 +7188,6 @@
         ],
         "block_changes": [
           {
-            "block_id": "b_0",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_1",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
-            "block_id": "b_2",
-            "commit_id": "c_0",
-            "kind": "inserted"
-          },
-          {
             "block_id": "b_2",
             "commit_id": "c_2",
             "kind": "deleted"
@@ -6600,8 +7206,58 @@
             "norm_hash": "9a3e56f6f111af8c3802567a374452f7cb5f04c241b5ae4ef6da89e8d83518f7",
             "type": "paragraph",
             "created_at": "2026-01-01T10:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-01-03T10:00:00.000Z",
             "expires_ts": "2026-02-02T10:00:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-01-03T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-01-01T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-01-02T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-01-03T10:00:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [

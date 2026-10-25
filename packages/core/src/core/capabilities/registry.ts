@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import type { Capabilities, HistoryRecorder, SemanticProvider } from "./types.js";
+import type { Capabilities, HistoryRecorder, IdentityClaims, SemanticProvider } from "./types.js";
 import { CapabilityUnavailable } from "./errors.js";
 
 // The connection → capabilities binding. `Store` binds the set it was opened
@@ -35,6 +35,11 @@ export function requireHistory(db: Database): HistoryRecorder {
   const h = capabilitiesOf(db).history;
   if (!h) throw new Error("the history capability is not enabled on this store");
   return h;
+}
+
+/** The identity claims (spec/store §2.1): every composition has them. */
+export function claimsOf(db: Database): IdentityClaims {
+  return capabilitiesOf(db).claims;
 }
 
 /** The semantic provider, or null when the store runs without the module (`coreCapabilities`). */

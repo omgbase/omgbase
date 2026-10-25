@@ -1163,6 +1163,51 @@
             ],
             "foreign_keys": []
           },
+          "id_claims": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "prefix",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "minted_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "holders",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
           "inferred_edges": {
             "columns": [
               {
@@ -1726,7 +1771,7 @@
               },
               {
                 "cid": 7,
-                "name": "deleted_commit",
+                "name": "deleted_at",
                 "type": "TEXT",
                 "notnull": 1,
                 "dflt_value": null,
@@ -2056,6 +2101,17 @@
               "type"
             ]
           },
+          "idx_claims_repo_prefix": {
+            "table": "id_claims",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "prefix",
+              "minted_at"
+            ]
+          },
           "idx_edges_dst": {
             "table": "edges",
             "unique": 0,
@@ -2366,6 +2422,15 @@
             "columns": [
               "repo_id",
               "path"
+            ]
+          },
+          "sqlite_autoindex_id_claims_1": {
+            "table": "id_claims",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "id"
             ]
           },
           "sqlite_autoindex_inferred_edges_1": {

@@ -37,13 +37,14 @@ export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void 
     }
 
     if (target === "block_changes" || target === "all") {
-      // block_changes is a projection of dispositions across commits: rebuild
-      // it verbatim from the dispositions table (which is durable) — for every
-      // commit that still has dispositions. A wholly archived commit (spec/store
-      // §7 "Retention", 15.0: every revision of it carries `archive`) has none;
-      // its surviving block_changes rows are each block's earliest, kept for the
-      // mint oracle, and are left exactly as they are.
-      db.exec(`DELETE FROM block_changes WHERE commit_id NOT IN (${ARCHIVED_COMMITS_SQL})`);
+      // block_changes is a pure projection of dispositions across commits
+      // (spec/store §7, 17.0): delete and re-derive it verbatim from the
+      // dispositions table (which is durable). A wholly archived commit
+      // (§7.1, 15.0: every revision of it carries `archive`) has no
+      // dispositions and, since 17.0, no block_changes either — the
+      // earliest-row exception the 15.0–16.x rebuild preserved for the mint
+      // oracle is gone: the id's `id_claims` row holds it (§2.1).
+      db.exec("DELETE FROM block_changes");
       db.exec(
         "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) SELECT block_id, commit_id, kind FROM dispositions",
       );

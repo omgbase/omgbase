@@ -69,7 +69,7 @@ function runGcCmd(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "gc",
-      summary: "Mark-and-sweep unreferenced blobs and tree nodes, and the `same` disposition rows a pre-14.2 store wrote (refuses unless gc.enabled is set in repo settings)",
+      summary: "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row (refuses unless gc.enabled is set in repo settings)",
       usage: "gc [--dry-run] [--vacuum]",
       options: [
         ["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"],
@@ -98,7 +98,11 @@ function runGcCmd(cli: Cli, args: string[]): number {
     : undefined;
   const result = vac ? { ...swept, vacuum: vac } : swept;
   if (cli.flags.mode !== "human") return emitMachine(cli, result);
-  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes, ${swept.sameDispositionsSwept} same dispositions`));
+  // spec/store §7.3 (17.0): the claims prune's count is shown only when it
+  // released something — the line is pinned by shape without it, and the
+  // setting is off by default.
+  const released = swept.claimsReleased > 0 ? `, ${swept.claimsReleased} id claims released` : "";
+  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes, ${swept.sameDispositionsSwept} same dispositions${released}`));
   if (vac) cli.io.err(cli.style.dim(vac.applied ? `  vacuumed, reclaimed ${humanBytes(vac.reclaimable)}` : `  would vacuum ${humanBytes(vac.reclaimable)}`));
   return EXIT_OK;
 }
@@ -114,7 +118,7 @@ function runDoctor(cli: Cli, args: string[]): number {
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
         ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice"],
-        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, archived, advice }`"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, advice }`"],
       ],
     });
   }
@@ -196,6 +200,8 @@ function runDoctorSize(cli: Cli, report: SizeReport): number {
     ["reclaimable", humanBytes(f.reclaimable)],
     // 15.0: the history that already moved to archive segments (spec/store §7 "Retention").
     ["archived", `${report.archived.revisions} revisions in ${report.archived.segments} segments, ${humanBytes(report.archived.bytes)} on disk`],
+    // 17.0: the identity claims (spec/store §2.1) — one row per id ever minted and still held; `identity.claims_retain_days` lets `gc` release old ones (§7.3).
+    ["id claims", `${report.id_claims} ids claimed`],
   ];
   for (const line of columns(file)) io.out(`  ${line}`);
   for (const a of report.advice) io.out(`  ${style.dim("advice:")} ${a}`);

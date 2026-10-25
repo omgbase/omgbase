@@ -185,6 +185,32 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -287,6 +313,20 @@
         "dispositions": [],
         "block_changes": [],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -427,6 +467,26 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -619,6 +679,32 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -867,6 +953,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -1110,6 +1228,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -1297,6 +1447,32 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",

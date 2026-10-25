@@ -84,7 +84,8 @@
             "gc": {
               "blobs": 0,
               "tree_nodes": 0,
-              "same_dispositions": 0
+              "same_dispositions": 0,
+              "claims_released": 0
             }
           },
           {
@@ -94,14 +95,16 @@
             "gc": {
               "blobs": 0,
               "tree_nodes": 0,
-              "same_dispositions": 3
+              "same_dispositions": 3,
+              "claims_released": 0
             }
           },
           {
             "gc": {
               "blobs": 0,
               "tree_nodes": 0,
-              "same_dispositions": 0
+              "same_dispositions": 0,
+              "claims_released": 0
             }
           }
         ],
@@ -373,6 +376,50 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-13T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-13T10:01:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",

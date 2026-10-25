@@ -207,18 +207,24 @@ export interface SemanticProvider {
 }
 
 /**
- * Identity claims (plan §3 "Identity allocation", M3/D5): the oracle `mintId`
- * asks before issuing an id. Today the claim IS the row the id lands in — a
- * `b` is claimed while a `blocks`, `block_changes` or `resurrection_pool` row
- * names it (spec/store §2.1) — so `claim` is a no-op and `isClaimed` is the
- * table union (`TableUnionClaims`); Phase 3 writes an explicit `id_claims`
- * row at mint and makes `isClaimed` one probe.
+ * Identity claims (spec/store §2.1, 17.0 — M3/D5): the `id_claims` table the
+ * core writes at every row-carrying mint and the oracle `mintId` asks before
+ * issuing an id. `holders` is a bitmask — bit 0 the core, bit 1 the recorder
+ * (`IdClaims`, `core/capabilities/claims.ts`). The core's writers call `claim`
+ * in the transaction that writes the row; the recorder calls `hold` when its
+ * capture first names an id; `gc` calls `prune` (spec/store §7.3).
  */
 export interface IdentityClaims {
-  /** Record that `id` was issued under `prefix` (no-op while the row is the claim). */
-  claim(prefix: IdPrefix, id: string): void;
-  /** Is `id` in use under `prefix` — spec/store §2.1 "Uniqueness at mint". */
+  /** Record that the core issued `id` under `prefix` for `repoId` (null = workspace-scoped) at `mintedAt` — idempotent. */
+  claim(prefix: IdPrefix, id: string, repoId: string | null, mintedAt: string): void;
+  /** Set the recorder's hold (bit 1) on every id named; an id with no claim row is left alone. */
+  hold(ids: Iterable<string>): void;
+  /** Is `id` in use under `prefix` — spec/store §2.1 "Uniqueness at mint": one probe on `id_claims` for a core-minted prefix, the table probe for `c`/`s`/`cp`. */
   isClaimed(prefix: IdPrefix, id: string): boolean;
+  /** The claims prune (spec/store §7.3) at the clock `now`; returns the holds released. */
+  prune(now: string): number;
+  /** `count(*)` of `id_claims` (the size report's `id_claims` line). */
+  count(): number;
 }
 
 /**

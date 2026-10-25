@@ -2,14 +2,14 @@ import type { Store } from "../store/store.js";
 import type { Capabilities, CapabilitiesFactory } from "./types.js";
 import { HistoryRecorderImpl } from "./history.js";
 import { SemanticProviderImpl } from "./semantic.js";
-import { TableUnionClaims } from "./claims.js";
+import { IdClaims } from "./claims.js";
 import { coreCapabilities } from "./core.js";
 
 /**
  * The full composition — what every store ran with before Phase 1: the
  * recorder over the store's own history tables, the semantic provider over its
- * vector tables (which also registers the `cosine` UDF), the table-union
- * claims. The composition layer (`Workspace`, the CLI, a library embedding)
+ * vector tables (which also registers the `cosine` UDF), the `id_claims`
+ * table (spec/store §2.1, 17.0). The composition layer (`Workspace`, the CLI, a library embedding)
  * names a factory on `StoreOptions.capabilities`; a `Store` opened without one
  * takes `envCapabilities()`, which is this set unless the environment selects
  * the core-only one.
@@ -18,7 +18,7 @@ export function defaultCapabilities(store: Store): Capabilities {
   return {
     history: new HistoryRecorderImpl(store),
     semantic: new SemanticProviderImpl(store),
-    claims: new TableUnionClaims(store.db),
+    claims: new IdClaims(store),
   };
 }
 

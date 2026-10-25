@@ -2,7 +2,7 @@ export type {
   Capabilities, CapabilitiesFactory, HistoryRecorder, SemanticProvider, SemanticScorer, SemanticBlockRow, SemanticDrainOptions, SemanticFreshness, IdentityClaims,
   RevisionTransition, CapturedRevision, SemanticVec, BlockContextInput, BlockContextResolver,
 } from "./types.js";
-export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, semanticOf } from "./registry.js";
+export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, semanticOf, claimsOf } from "./registry.js";
 export { defaultCapabilities, envCapabilities, CAPABILITIES_ENV } from "./default.js";
 export { coreCapabilities } from "./core.js";
 export {
@@ -11,4 +11,4 @@ export {
 } from "./errors.js";
 export { HistoryRecorderImpl } from "./history.js";
 export { SemanticProviderImpl } from "./semantic.js";
-export { TableUnionClaims, ID_TABLES } from "./claims.js";
+export { IdClaims, ID_TABLES, CLAIMED_PREFIXES, HOLDER_CORE, HOLDER_RECORDER, claimsRetainDays } from "./claims.js";

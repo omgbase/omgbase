@@ -17,6 +17,8 @@ export interface GcResult {
   treeNodesSwept: number;
   /** spec/store §7 (14.2): `same` rows a 14.1 store wrote into `dispositions`/`block_changes` — history nothing reads. */
   sameDispositionsSwept: number;
+  /** spec/store §7.3 (17.0): the core holds released from `id_claims` under `identity.claims_retain_days` (0 while the setting is null). */
+  claimsReleased: number;
 }
 
 /**
@@ -111,9 +113,13 @@ export function countSameDispositions(store: Store): number {
  * `blocks_history` are the block's own changes now). Not a migration: a
  * data-only change needs no `user_version`, and opening a database must never
  * bulk-delete. `dryRun` counts everything and deletes nothing.
+ *
+ * spec/store §7.3 (17.0): the same run prunes `id_claims` under the
+ * installation's `identity.claims_retain_days` (`IdentityClaims.prune` at
+ * `now`, the clock) — the one collection the core owns.
  */
-export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean } = {}): GcResult {
-  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0 };
+export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean; now?: string } = {}): GcResult {
+  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0 };
   return store.write((db): GcResult => {
     const dry = Boolean(opts.dryRun);
     const { blobsSwept, treeNodesSwept } = sweepUnreachable(store, dry);
@@ -124,7 +130,13 @@ export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean 
       db.prepare("DELETE FROM dispositions WHERE kind = 'same'").run();
     }
 
-    return { blobsSwept, treeNodesSwept, sameDispositionsSwept };
+    // spec/store §7.3 (17.0): the claims prune — the core's hold released on
+    // every claim older than `identity.claims_retain_days` that names no core
+    // row; nothing while the setting is null. A dry run releases nothing and
+    // counts nothing (the count is the release's own `changes`).
+    const claimsReleased = dry ? 0 : store.capabilities.claims.prune(opts.now ?? new Date().toISOString());
+
+    return { blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased };
   });
 }
 

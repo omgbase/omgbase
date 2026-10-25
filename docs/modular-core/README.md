@@ -250,7 +250,7 @@ recorder may derive the same values from its own tables. Resolves 2.5 row 3,
 `liveDocRows`/`live_doc_rows` correlated subquery go with it.
 
 **M3 — Identity claims.** A core-owned claims table (`id_claims(prefix, id)`
-or per-prefix exact set) written at mint time and never pruned replaces the
+or per-prefix exact set) written at mint time and prunable by installation policy (D5: a claim carries holder bits; the core's hold is released by `identity.claims_retain_days`, the row stays while the recorder holds it) replaces the
 `blocks ∪ block_changes ∪ resurrection_pool` oracle for `b`; `c`/`r`/`s`
 become the recorder's own claims, `cp` follows D4. The squash's keep-the-
 earliest-`block_changes`-row rule and `rebuild_index`'s mirror exception are

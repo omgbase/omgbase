@@ -384,6 +384,62 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -604,6 +660,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -824,6 +912,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -1050,6 +1170,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -2480,6 +2632,224 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_10",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_11",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_12",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_13",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_14",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_15",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_16",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_17",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_18",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_19",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_20",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_21",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_22",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_23",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_24",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_25",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_26",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_27",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_28",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_29",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_30",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_31",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_32",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_33",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_8",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_9",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -2960,8 +3330,76 @@
             "norm_hash": "d615576e022f9afe9ad9a5285eca01285464dcbefe66aefdc2cf0c343be1a022",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
           }
         ],
         "sections": [],
@@ -3230,6 +3668,50 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []
@@ -3615,6 +4097,62 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [
           {
             "doc_id": "d_0",
@@ -3867,6 +4405,38 @@
           }
         ],
         "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          }
+        ],
         "sections": [],
         "pending_materializations": [],
         "archives": []

@@ -1,5 +1,6 @@
 import type { Database } from "better-sqlite3";
 import { mintId } from "../ids.js";
+import { claimsOf } from "../capabilities/registry.js";
 
 // Edge interval maintenance + doc_edges rollup (05 §2, §1). Runs in the commit
 // transaction. Extraction happens upstream (graph/ module, invoked by sync/);
@@ -28,7 +29,12 @@ function edgeKey(e: { srcBlock: string | null; srcField: string | null; predicat
  * (from_commit = this), leave unchanged rows untouched. Then recompute the
  * doc_edges rollup for the doc. All within the caller's transaction.
  */
-export function maintainEdges(db: Database, repoId: string, srcDoc: string, commitId: string, edges: ResolvedEdge[]): void {
+export function maintainEdges(db: Database, repoId: string, srcDoc: string, commitId: string, edges: ResolvedEdge[], ts: string): void {
+  // spec/store §2.1 (17.0): the `e` minted per newly opened edge and the `x`
+  // `resolveExternal` minted for its external target are claimed here, in the
+  // commit transaction, `minted_at = ts` (an external node that already had
+  // its claim adds nothing — the claim is idempotent).
+  const claims = claimsOf(db);
   const openRows = db
     .prepare(
       `SELECT edge_id, src_block, src_field, predicate, dst_node, anchor FROM edges
@@ -54,7 +60,10 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
     if (wantKeys.has(key)) continue;
     wantKeys.add(key);
     if (!openKeys.has(key)) {
-      insert.run(mintId("e"), repoId, srcDoc, e.srcBlock, e.srcField, e.predicate, e.dstKind, e.dstNode, e.anchor, e.provenance, commitId);
+      const edgeId = mintId("e");
+      claims.claim("e", edgeId, repoId, ts);
+      if (e.dstKind === "external") claims.claim("x", e.dstNode, repoId, ts);
+      insert.run(edgeId, repoId, srcDoc, e.srcBlock, e.srcField, e.predicate, e.dstKind, e.dstNode, e.anchor, e.provenance, commitId);
     }
   }
   // Close every open row whose key is no longer wanted, and all but the first
@@ -102,7 +111,9 @@ export function rebuildDocEdges(db: Database, srcDoc: string): void {
   }
 }
 
-// Resolve/mint an external node id for a normalized URI.
+// Resolve/mint an external node id for a normalized URI. The claim for a
+// minted `x` is written by `maintainEdges` with the edge that names it (the
+// resolver runs inside the ingest's edge extraction, same transaction).
 export function resolveExternal(db: Database, repoId: string, uri: string): string {
   const existing = db.prepare("SELECT node_id FROM external_nodes WHERE repo_id = ? AND uri = ?").get(repoId, uri) as { node_id: string } | undefined;
   if (existing) return existing.node_id;

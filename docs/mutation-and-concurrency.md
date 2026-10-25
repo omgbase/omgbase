@@ -192,7 +192,7 @@ Crash safety: the file is written (step 5) before the commit is recorded (step 6
 
 ## 7. Deletion semantics
 
-- `remove` tombstones blocks (`deleted_commit`) and inserts into `resurrection_pool` (TTL 30d).
+- `remove` tombstones blocks (`deleted_at`) and inserts into `resurrection_pool` (`deleted_at`, TTL 30d from it).
 - Document delete = `docs_delete` (doc-level op): file is deleted on disk, document tombstoned, blocks pooled.
 - Observed file deletion: same, via checkpoint.
 - Nothing is hard-deleted by the engine in v1 except expired pool rows; GC of unreachable objects ships dark (data-model §7).

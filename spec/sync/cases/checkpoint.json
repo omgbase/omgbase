@@ -1481,7 +1481,7 @@
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
             "type": "heading",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -1491,7 +1491,7 @@
             "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_2",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
@@ -3585,7 +3585,7 @@
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_4",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -3595,7 +3595,7 @@
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_4",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],
@@ -4302,7 +4302,7 @@
             "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
             "type": "heading",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-09-26T10:02:00.000Z",
             "expires_ts": "2026-10-26T10:02:00.000Z"
           },
           {
@@ -4312,7 +4312,7 @@
             "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_3",
+            "deleted_at": "2026-09-26T10:02:00.000Z",
             "expires_ts": "2026-10-26T10:02:00.000Z"
           }
         ],
@@ -4820,7 +4820,7 @@
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
             "type": "heading",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],

@@ -105,8 +105,8 @@ export interface ObserveItem {
 export type Step =
   | { observe: { ts: string; items: ObserveItem[] } }
   | { sweep: { ts: string } }
-  /** README §9.4 (14.2): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions } }` */
-  | { gc: Record<string, never> }
+  /** README §9.4 (14.2, 17.0): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions, claims_released } }`; `ts` is the claims prune's clock (§7.3), the runner's clock without it */
+  | { gc: { ts?: string } }
   /** README §9.4 (14.2): authored SQL run verbatim — the device that puts a 14.1 store's rows into a case → `{ changes: n }` */
   | { exec: { sql: string[] } }
   /** README §9.4 (15.0): the retention plan at `ts` under the policy (a partial over the defaults) → `{ plan }` */
@@ -136,7 +136,7 @@ export interface GoneOutcome {
   doc: string | null;
 }
 export interface GcOutcome {
-  gc: { blobs: number; tree_nodes: number; same_dispositions: number };
+  gc: { blobs: number; tree_nodes: number; same_dispositions: number; claims_released: number };
 }
 export interface PlanOutcome {
   plan: RetentionPlan;
@@ -222,10 +222,10 @@ export function runHistoryStep(store: Store, repoId: string, step: HistoryStep, 
   }
 }
 
-/** README §9.4 (14.2): the `gc` step — `runGc` enabled, never a dry run; the counts in the fixture's spelling. */
-export function runGcStep(store: Store): GcOutcome {
-  const r = runGc(store, { enabled: true });
-  return { gc: { blobs: r.blobsSwept, tree_nodes: r.treeNodesSwept, same_dispositions: r.sameDispositionsSwept } };
+/** README §9.4 (14.2, 17.0): the `gc` step — `runGc` enabled, never a dry run, `ts` the claims prune's clock (§7.3); the counts in the fixture's spelling. */
+export function runGcStep(store: Store, ts?: string): GcOutcome {
+  const r = runGc(store, { enabled: true, ...(ts !== undefined ? { now: ts } : {}) });
+  return { gc: { blobs: r.blobsSwept, tree_nodes: r.treeNodesSwept, same_dispositions: r.sameDispositionsSwept, claims_released: r.claimsReleased } };
 }
 
 /** README §9.4 (14.2): the `exec` step — every statement run verbatim, in order, in one transaction; the rows changed summed. */
@@ -248,6 +248,8 @@ export interface Projection {
   dispositions: JsonRow[];
   block_changes: Row[];
   resurrection_pool: Row[];
+  /** README §9.4 (17.0): the §2.1 claims of the case's repo as `{ prefix, id, minted_at, holders }` by (`prefix`, `id` bytewise) — the repo's own `rp` claim omitted, like `repo_id`. */
+  id_claims: Row[];
   sections: Row[];
   /** README §9.4 (14.0): the api path's recorded file intent — always `[]` for an observation script. */
   pending_materializations: Row[];
@@ -257,7 +259,7 @@ export interface Projection {
 /** The projected tables, in the order the fixture emits them. */
 export const PROJECTED_TABLES = [
   "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks",
-  "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "archives",
+  "dispositions", "block_changes", "resurrection_pool", "id_claims", "sections", "pending_materializations", "archives",
 ] as const;
 
 /** README §9.4: which fixture minter a case installs — the sequential counter (default) or the repeating one (13.5). */
@@ -495,14 +497,18 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
         } else if ("sweep" in step) {
           steps.push({ swept: sweepResurrectionPool(store, step.sweep.ts) });
         } else if ("gc" in step) {
-          steps.push(runGcStep(store));
+          steps.push(runGcStep(store, step.gc.ts));
           for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
         } else {
           steps.push(runExecStep(store, step.exec.sql));
         }
       });
       for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`at end: ${p}`);
-      return { expect: { steps, ...projectStore(store.db, repoId) }, problems };
+      const tables = { ...projectStore(store.db, repoId), id_claims: projectClaims(store.db, repoId) };
+      // Emit the tables in PROJECTED_TABLES order (README §9.4), `id_claims` in its place.
+      const expect = { steps } as Projection;
+      for (const t of PROJECTED_TABLES) (expect as unknown as Record<string, unknown>)[t] = tables[t];
+      return { expect, problems };
     } finally {
       store.close();
       if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
@@ -583,7 +589,7 @@ function projectBlock(r: BlockRaw): JsonRow {
 }
 
 /** The §9.4 projection of the durable + pinned derived tables of one repo (`repo_id` omitted). */
-export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> {
+export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" | "id_claims"> {
   const docs = (db
     .prepare("SELECT doc_id, path, format, head, file_hash, conflicted, leading_trivia, frontmatter_raw, frontmatter_trivia, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ? ORDER BY path")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
@@ -634,7 +640,7 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
     .sort(byCommitBlockKind);
 
   const resurrection_pool = (db
-    .prepare("SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?")
+    .prepare("SELECT block_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts FROM resurrection_pool WHERE repo_id = ?")
     .all(repoId) as Record<string, unknown>[])
     .map(toRow)
     .sort((a, b) => cmp(a.expires_ts as string, b.expires_ts as string) || cmp(a.block_id as string, b.block_id as string));
@@ -657,6 +663,21 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps"> 
     .map((r) => toRow({ segment_id: r.segment_id, file: segmentBasename(r.path as string), seq_lo: r.seq_lo, seq_hi: r.seq_hi, created_at: r.created_at, revision_count: r.revision_count }));
 
   return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations, archives };
+}
+
+/**
+ * README §9.4 (17.0): the `id_claims` rows of the case's repo as `{ prefix, id,
+ * minted_at, holders }`, by (`prefix` bytewise, `id` bytewise). The repository's
+ * own `rp` claim is omitted like `repo_id` is from every row: the runner minted
+ * it before the first step, at its own clock. Projected by the store suite
+ * alone — the mutate/sync runners that share `projectStore` do not carry it.
+ */
+export function projectClaims(db: Db, repoId: string): Row[] {
+  return (db
+    .prepare("SELECT prefix, id, minted_at, holders FROM id_claims WHERE repo_id = ? AND prefix != 'rp'")
+    .all(repoId) as Record<string, unknown>[])
+    .map(toRow)
+    .sort((a, b) => cmp(a.prefix as string, b.prefix as string) || cmp(a.id as string, b.id as string));
 }
 
 // ---- invariants (README §8) --------------------------------------------------------------
@@ -942,18 +963,53 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const h of treeHashes) if (!markedTrees.has(h)) problems.push(`I5: tree_node ${h} is unreachable from every live revision`);
   for (const h of blobHashes) if (!markedBlobs.has(h)) problems.push(`I5: blob ${h} is unreachable from every live revision`);
 
-  // ---- I6 / C6 pool ----------------------------------------------------------------------
+  // ---- C6 pool (17.0; I6 restated over the row's own `deleted_at`) -----------------------
   const liveRowOf = db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_at IS NULL");
-  const pool = db.prepare("SELECT block_id, created_at, deleted_commit, expires_ts FROM resurrection_pool WHERE repo_id = ?").all(repoId) as { block_id: string; created_at: string; deleted_commit: string; expires_ts: string }[];
+  const pool = db.prepare("SELECT block_id, created_at, deleted_at, expires_ts FROM resurrection_pool WHERE repo_id = ?").all(repoId) as { block_id: string; created_at: string; deleted_at: string; expires_ts: string }[];
   for (const p of pool) {
-    const c = commitById.get(p.deleted_commit);
-    if (!c) problems.push(`I6: pool row ${p.block_id} names a missing commit ${p.deleted_commit}`);
-    else {
-      if (p.expires_ts !== expiresAfter(c.ts)) problems.push(`I6: pool row ${p.block_id} expires_ts ${p.expires_ts} != ${c.ts} + 30 days`);
-      if (p.created_at > c.ts) problems.push(`C6: pool row ${p.block_id} created_at ${p.created_at} > its deletion's ts ${c.ts}`);
-    }
-    if (liveRowOf.get(p.block_id)) problems.push(`I6: pool row ${p.block_id} has a live blocks row`);
+    if (!TS_RE.test(p.deleted_at)) problems.push(`C6: pool row ${p.block_id} deleted_at ${p.deleted_at} is not a §2.4 timestamp`);
+    if (p.expires_ts !== expiresAfter(p.deleted_at)) problems.push(`C6: pool row ${p.block_id} expires_ts ${p.expires_ts} != deleted_at ${p.deleted_at} + 30 days`);
+    if (p.created_at > p.deleted_at) problems.push(`C6: pool row ${p.block_id} created_at ${p.created_at} > deleted_at ${p.deleted_at}`);
+    if (liveRowOf.get(p.block_id)) problems.push(`C6: pool row ${p.block_id} has a live blocks row`);
   }
+
+  // ---- C5 claims (17.0, §2.1) -------------------------------------------------------------
+  // Every id a core row of the repo carries names an `id_claims` row with the
+  // core's bit; a pool id is claimed; no claim has `holders = 0`; H6 — every id
+  // a history row names has the recorder's bit.
+  const claimOf = db.prepare("SELECT holders FROM id_claims WHERE id = ?");
+  const coreIds: [string, string][] = [];
+  for (const d of docs) {
+    coreIds.push(["d", d.doc_id]);
+    if (d.head !== null) coreIds.push(["r", d.head]);
+  }
+  for (const r of db.prepare("SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?").all(repoId) as { block_id: string }[]) coreIds.push(["b", r.block_id]);
+  for (const p of pool) coreIds.push(["b", p.block_id]);
+  for (const r of db.prepare("SELECT node_id FROM external_nodes WHERE repo_id = ?").all(repoId) as { node_id: string }[]) coreIds.push(["x", r.node_id]);
+  for (const r of db.prepare("SELECT edge_id FROM edges WHERE repo_id = ?").all(repoId) as { edge_id: string }[]) coreIds.push(["e", r.edge_id]);
+  coreIds.push(["rp", repoId]);
+  for (const [prefix, id] of coreIds) {
+    const c = claimOf.get(id) as { holders: number } | undefined;
+    if (!c) problems.push(`C5: ${prefix} ${id} names a core row but has no id_claims row`);
+    else if ((c.holders & 1) === 0) problems.push(`C5: claim ${id} (${prefix}) lacks the core's bit (holders ${c.holders})`);
+  }
+  for (const r of db.prepare("SELECT id, prefix, holders, minted_at FROM id_claims WHERE repo_id = ?").all(repoId) as { id: string; prefix: string; holders: number; minted_at: string }[]) {
+    if (r.holders === 0) problems.push(`C5: claim ${r.id} has holders = 0`);
+    if (!r.id.startsWith(`${r.prefix}_`)) problems.push(`C5: claim ${r.id} is filed under prefix ${r.prefix}`);
+    if (!TS_RE.test(r.minted_at)) problems.push(`C5: claim ${r.id} minted_at ${r.minted_at} is not a §2.4 timestamp`);
+  }
+  const unheld = db
+    .prepare(
+      `SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ? AND bc.block_id != 'DOC'
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
+       UNION SELECT r.rev_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.rev_id AND (ic.holders & 2) != 0)
+       UNION SELECT DISTINCT r.doc_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
+       ORDER BY 1`,
+    )
+    .all(repoId, repoId, repoId) as { id: string }[];
+  for (const r of unheld) problems.push(`H6: ${r.id} is named by a history row but its claim lacks the recorder's bit`);
 
   // ---- I7 dispositions ----------------------------------------------------------------
   // Every disposition names an existing commit. For each commit that is the
@@ -989,12 +1045,19 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
   // 14.2: `same` is never persisted (§5.4 step 10; the §7 sweep removes a 14.1
   // store's), and a block's rows are its own history — so every live block has
-  // at least one (its `inserted`, lineage or resurrection row).
+  // at least one (its `inserted`, lineage or resurrection row) UNLESS the
+  // commit that wrote it is wholly archived (17.0: the squash empties a wholly
+  // archived commit's rows; the recorder's hold on the id's claim is what
+  // remains of them, H6).
   for (const x of dispositions) if (x.kind === "same") problems.push(`I7: disposition ${x.block_id} of ${x.commit_id} is a persisted \`same\``);
   const unchanged = db
-    .prepare("SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id) ORDER BY b.block_id")
+    .prepare(
+      `SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id)
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = b.block_id AND (ic.holders & 2) != 0) ORDER BY b.block_id`,
+    )
     .all(repoId) as { block_id: string }[];
-  for (const r of unchanged) problems.push(`I7: live block ${r.block_id} has no block_changes row`);
+  for (const r of unchanged) problems.push(`I7: live block ${r.block_id} has no block_changes row and no recorder hold on its claim`);
 
   // ---- I8 rebuild equivalence -------------------------------------------------------
   for (const d of docs) {
@@ -1019,23 +1082,18 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     const diff = deepEqualTol(have, want, 0);
     if (diff) problems.push(`I8: sections of ${d.doc_id} differ from a rebuild (${diff})`);
   }
-  // 15.0: over the commits that are not wholly archived, `block_changes` is the
-  // projection of `dispositions`; a wholly archived commit has no dispositions
-  // and keeps, of its block_changes, exactly each block's earliest row.
-  const bcHave = (db.prepare(`SELECT block_id, commit_id, kind FROM block_changes WHERE commit_id NOT IN (${ARCHIVED_COMMITS_SQL}) ORDER BY block_id, commit_id, kind`).all() as Row[]);
+  // 17.0: `block_changes` is exactly the projection of `dispositions` over
+  // every commit — a wholly archived commit has neither (the squash deletes
+  // both; 15.0–16.x kept each block's earliest row for the mint oracle, which
+  // the claims table replaced).
+  const bcHave = (db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY block_id, commit_id, kind").all() as Row[]);
   const bcWant = (db.prepare("SELECT DISTINCT block_id, commit_id, kind FROM dispositions ORDER BY block_id, commit_id, kind").all() as Row[]);
   const bcDiff = deepEqualTol(bcHave, bcWant, 0);
   if (bcDiff) problems.push(`I8: block_changes differ from a rebuild out of dispositions (${bcDiff})`);
   const archivedDisp = (db.prepare(`SELECT count(*) AS c FROM dispositions WHERE commit_id IN (${ARCHIVED_COMMITS_SQL})`).get() as { c: number }).c;
   if (archivedDisp > 0) problems.push(`I9: ${archivedDisp} disposition rows of wholly archived commits remain`);
-  const notEarliest = db
-    .prepare(
-      `SELECT bc.block_id, bc.commit_id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id
-       WHERE bc.commit_id IN (${ARCHIVED_COMMITS_SQL})
-         AND EXISTS (SELECT 1 FROM block_changes b2 JOIN commits c2 ON c2.commit_id = b2.commit_id WHERE b2.block_id = bc.block_id AND c2.seq < c.seq)`,
-    )
-    .all() as { block_id: string; commit_id: string }[];
-  for (const r of notEarliest) problems.push(`I9: block_changes row ${r.block_id}/${r.commit_id} of an archived commit is not the block's earliest`);
+  const archivedBc = (db.prepare(`SELECT count(*) AS c FROM block_changes WHERE commit_id IN (${ARCHIVED_COMMITS_SQL})`).get() as { c: number }).c;
+  if (archivedBc > 0) problems.push(`I9: ${archivedBc} block_changes rows of wholly archived commits remain`);
 
   return problems;
 }
@@ -1119,7 +1177,8 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
       return;
     }
     if (keys[0] === "gc") {
-      if (!isRecord(body) || Object.keys(body).length > 0) problems.push(`${here}: gc takes an empty object`);
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: gc takes only an optional \`ts\``);
+      else if (body.ts !== undefined && (typeof body.ts !== "string" || !TS_RE.test(body.ts))) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
       return;
     }
     if ((HISTORY_STEP_KINDS as readonly string[]).includes(keys[0]!)) {

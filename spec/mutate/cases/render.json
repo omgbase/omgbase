@@ -2780,7 +2780,7 @@
             "norm_hash": "08dba14446719fdab6b2cb77f4c597bed964087c72a88f8fcb673939d8840838",
             "type": "list_item",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -2790,7 +2790,7 @@
             "norm_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -2800,7 +2800,7 @@
             "norm_hash": "28fafd5ec80483f7de5f4df87e4433a04b2aeb7ec4038172616f3ef8dd5f5873",
             "type": "list",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -2810,7 +2810,7 @@
             "norm_hash": "ec8f713c4d1569c00e64ea80e3dd15eda6ee518149e146fff23142eeea848b51",
             "type": "list_item",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -2820,7 +2820,7 @@
             "norm_hash": "8f9ce0348b0abc38e06d60c810ee442208f01036618b1b37c33dec2e34a1a34c",
             "type": "list_item",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           },
           {
@@ -2830,7 +2830,7 @@
             "norm_hash": "7d10de8554ed5ca40f9d0f0e0f4375b5b338af3fb96d33c9b2f53b5289b8f4fe",
             "type": "list_item",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],

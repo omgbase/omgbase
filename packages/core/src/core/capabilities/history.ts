@@ -70,7 +70,7 @@ export class HistoryRecorderImpl implements HistoryRecorder {
       fmBlobHex = writeFrontmatterBlob(db, t.frontmatterRaw, baseRaw, checkpoint);
     }
 
-    return writeRevision(db, {
+    const written = writeRevision(db, {
       revId: t.head,
       docId: t.docId,
       rootTreeHex,
@@ -80,6 +80,11 @@ export class HistoryRecorderImpl implements HistoryRecorder {
       commitId: t.commitId,
       seq,
     });
+    // spec/store §2.1 (17.0): the recorder's hold (bit 1) on every id its
+    // `revisions` row names — the head and the document — so the claims prune
+    // never releases an id the history still refers to.
+    this.store.capabilities.claims.hold([t.head, t.docId]);
+    return written;
   }
 
   /**
@@ -88,8 +93,8 @@ export class HistoryRecorderImpl implements HistoryRecorder {
    * — the outcome counts them — but the table records what CHANGED, so a
    * block's `updated_at` (MAX commit ts over its `block_changes`) and its
    * `blocks_history` are the block's own changes, not its siblings'. Every
-   * other kind — the first revision's `inserted` rows the mint oracle (§2.1)
-   * depends on included — is written.
+   * other kind is written, and the block ids named gain the recorder's hold on
+   * their claims (§2.1, 17.0).
    */
   recordDispositions(commitId: string, dispositions: readonly DispositionRow[]): void {
     const db = this.store.db;
@@ -98,11 +103,17 @@ export class HistoryRecorderImpl implements HistoryRecorder {
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
+    const held = new Set<string>();
     for (const d of dispositions) {
       if (!persistsDisposition(d.kind)) continue;
       insDisp.run(commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
       bc.run(d.blockId, commitId, d.kind);
+      if (d.blockId !== "DOC") held.add(d.blockId);
     }
+    // spec/store §2.1 (17.0): the recorder's hold (bit 1) on every block id a
+    // `block_changes` row now names. This — not an earliest row the squash
+    // keeps — is what keeps an archived block's id reserved (§7.1 step 2).
+    this.store.capabilities.claims.hold(held);
   }
 
   // ---- current state through history (M4, Phase 3c retires these) ----

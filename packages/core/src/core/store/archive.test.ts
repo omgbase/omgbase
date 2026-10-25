@@ -92,7 +92,10 @@ describe("segment files", () => {
     expect(rev).toEqual({ root_tree: null, frontmatter_blob: null, archive: "s_0" });
     // 16.0: r_1 was a delta over r_0 and is re-written in checkpoint form
     // (`checkpointed: 1`); the sweep reclaims r_0's root and r_1's old delta root.
-    expect(r.squashed).toEqual({ revisions: 1, commits: 1, dispositions: 2, block_changes: 0, checkpointed: 1 });
+    // 17.0: every block_changes row of the wholly archived commit goes (the two
+    // `inserted` rows — through 16.x each block's earliest row stayed for the
+    // mint oracle; the id_claims rows hold the ids now).
+    expect(r.squashed).toEqual({ revisions: 1, commits: 1, dispositions: 2, block_changes: 2, checkpointed: 1 });
     expect(r.gc).toEqual({ blobs: 1, tree_nodes: 2 });
     expect(count("blobs")).toBe(before - 1);
     const r1 = store.db.prepare("SELECT t.entries FROM revisions r JOIN tree_nodes t ON t.hash = r.root_tree WHERE r.rev_id = 'r_1'").get() as { entries: string };
@@ -168,7 +171,7 @@ describe("the crash rule, gc and rebuild after a squash", () => {
   it("gc after the squash has nothing to collect; rebuild keeps the archived commits' mint rows", () => {
     threeRevisions();
     exportHistory(store, repoId, { dest, now: NOW, policy: POLICY, prune: true });
-    expect(runGc(store, { enabled: true })).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0 });
+    expect(runGc(store, { enabled: true })).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0 });
     const before = store.db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY 1, 2, 3").all();
     rebuildIndex(store, "block_changes");
     expect(store.db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY 1, 2, 3").all()).toEqual(before);

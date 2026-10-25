@@ -66,7 +66,16 @@ export class Store {
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
       return;
     }
-    if (current === SCHEMA_VERSION) return;
+    if (current === SCHEMA_VERSION) {
+      // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b): a
+      // database a 3a build already moved to 17 has `docs` but no `id_claims`
+      // and the pool's `deleted_commit`. The identity half of the step is
+      // idempotent, so finish it here rather than spend a schema version on a
+      // dev-only state. (A 17 database with no `docs` table — the
+      // `already-current-is-untouched` fixture — is left exactly as it is.)
+      if (this.tableExists("docs")) this.migrateV17Claims();
+      return;
+    }
     if (current > SCHEMA_VERSION) {
       throw new Error(
         `database schema (v${current}) is newer than this build (v${SCHEMA_VERSION}); upgrade omgbase`,
@@ -82,7 +91,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -94,6 +103,10 @@ export class Store {
       this.db.exec(ddl);
     }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  }
+
+  private tableExists(name: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
   }
 
   private migrateV3(): void {
@@ -236,7 +249,8 @@ ALTER TABLE revisions_v15 RENAME TO revisions;
   // (`current_rev` renamed), `frontmatter_raw`, `created_at`, `updated_at`,
   // `deleted_at` (`deleted_commit` gone); `blocks` gains `raw`, `trivia`,
   // `created_at`, `updated_at`, `deleted_at` (`created_commit`/`deleted_commit`
-  // gone); `resurrection_pool` gains `created_at`. SQLite cannot rename a
+  // gone); `resurrection_pool` gains `created_at` and (3b) `deleted_at` in
+  // place of `deleted_commit`. SQLite cannot rename a
   // column a partial index names or add a NOT NULL column without a default,
   // so the three tables are rebuilt the documented way (as v15 did), with
   // `foreign_keys = OFF` for the duration and `PRAGMA foreign_key_check`
@@ -248,7 +262,10 @@ ALTER TABLE revisions_v15 RENAME TO revisions;
   // `block_changes`/`commits` joins that the 16.x readers computed on every
   // read, `deleted_at` from the tombstone commit's `ts`. `blocks` keeps its
   // `rowid`s — `blocks_fts` is an external-content index keyed by them.
-  // Idempotent: a `docs` table that already carries `head` is left alone.
+  // Idempotent: a `docs` table that already carries `head` is left alone. The
+  // identity half of the step — the pool's `deleted_at` and the `id_claims`
+  // backfill (3b) — is `migrateV17Claims`, idempotent on its own so a 3a
+  // database at 17 can finish the step on open.
   private migrateV17(): void {
     const docCols = this.db.pragma("table_info(docs)") as { name: string }[];
     if (docCols.length === 0 || docCols.some((c) => c.name === "head")) return;
@@ -363,7 +380,31 @@ CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);`);
 
         // ---- resurrection_pool ----
-        db.exec(`
+        this.rebuildPoolV17();
+
+        const violations = this.db.pragma("foreign_key_check") as unknown[];
+        if (violations.length > 0) throw new Error(`migration v17: ${violations.length} foreign key violation(s) after rebuilding docs, blocks and resurrection_pool`);
+      })();
+    } finally {
+      this.db.pragma("foreign_keys = ON");
+    }
+  }
+
+  // The pool rebuild of step 17 (spec/store §3.4 step 17 (3); runs inside
+  // `migrateV17`'s transaction, or alone for a 3a database): `created_at` =
+  // MIN(commits.ts) over the block's `block_changes`, else `deleted_at`;
+  // `deleted_at` = the `ts` of `deleted_commit`'s commit, else `expires_ts −
+  // 30 days` (I6 made the two equal, so the fallback is exact); `deleted_commit`
+  // dropped; `rowid`s kept. Idempotent: a pool that already has `deleted_at`
+  // is left alone.
+  private rebuildPoolV17(): void {
+    const db = this.db;
+    const cols = db.pragma("table_info(resurrection_pool)") as { name: string }[];
+    if (cols.length === 0 || cols.some((c) => c.name === "deleted_at")) return;
+    const hadCreatedAt = cols.some((c) => c.name === "created_at");
+    const tsOfCommit = db.prepare("SELECT ts FROM commits WHERE commit_id = ?");
+    const span = db.prepare("SELECT MIN(c.ts) AS lo FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?");
+    db.exec(`
 CREATE TABLE resurrection_pool_v17 (
   block_id       TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL,
@@ -372,28 +413,96 @@ CREATE TABLE resurrection_pool_v17 (
   norm_hash      BLOB NOT NULL,
   type           TEXT NOT NULL,
   created_at     TEXT NOT NULL,
-  deleted_commit TEXT NOT NULL,
+  deleted_at     TEXT NOT NULL,
   expires_ts     TEXT NOT NULL
 );`);
-        const insPool = db.prepare(
-          `INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
-           VALUES (@rowid, @block_id, @repo_id, @doc_id, @raw_hash, @norm_hash, @type, @created_at, @deleted_commit, @expires_ts)`,
-        );
-        const pool = db.prepare("SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid").all() as {
-          rowid: number; block_id: string; repo_id: string; doc_id: string; raw_hash: Buffer; norm_hash: Buffer; type: string; deleted_commit: string; expires_ts: string;
-        }[];
-        for (const p of pool) {
-          const s = span.get(p.block_id) as { lo: string | null };
-          insPool.run({ ...p, created_at: s.lo ?? commitTs(p.deleted_commit) ?? clock });
-        }
-        db.exec("DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;");
-
-        const violations = this.db.pragma("foreign_key_check") as unknown[];
-        if (violations.length > 0) throw new Error(`migration v17: ${violations.length} foreign key violation(s) after rebuilding docs, blocks and resurrection_pool`);
-      })();
-    } finally {
-      this.db.pragma("foreign_keys = ON");
+    const insPool = db.prepare(
+      `INSERT INTO resurrection_pool_v17 (rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
+       VALUES (@rowid, @block_id, @repo_id, @doc_id, @raw_hash, @norm_hash, @type, @created_at, @deleted_at, @expires_ts)`,
+    );
+    const pool = db.prepare(`SELECT rowid, block_id, repo_id, doc_id, raw_hash, norm_hash, type, ${hadCreatedAt ? "created_at" : "NULL AS created_at"}, deleted_commit, expires_ts FROM resurrection_pool ORDER BY rowid`).all() as {
+      rowid: number; block_id: string; repo_id: string; doc_id: string; raw_hash: Buffer; norm_hash: Buffer; type: string; created_at: string | null; deleted_commit: string; expires_ts: string;
+    }[];
+    for (const p of pool) {
+      const deletedAt = (tsOfCommit.get(p.deleted_commit) as { ts: string } | undefined)?.ts ?? new Date(Date.parse(p.expires_ts) - 30 * 24 * 3600 * 1000).toISOString();
+      const s = span.get(p.block_id) as { lo: string | null };
+      insPool.run({
+        rowid: p.rowid, block_id: p.block_id, repo_id: p.repo_id, doc_id: p.doc_id, raw_hash: p.raw_hash, norm_hash: p.norm_hash, type: p.type,
+        created_at: p.created_at ?? s.lo ?? deletedAt, deleted_at: deletedAt, expires_ts: p.expires_ts,
+      });
     }
+    db.exec("DROP TABLE resurrection_pool; ALTER TABLE resurrection_pool_v17 RENAME TO resurrection_pool;");
+  }
+
+  // The identity half of step 17 (spec/store §3.4 step 17 (4)–(5); modular-core
+  // Phase 3b — M3/D5): the pool's `deleted_at` (above) and the `id_claims`
+  // table (§2.1) created and BACKFILLED with one row per id the current rows
+  // and the history still name — `d` from `docs` (`minted_at = created_at`),
+  // `b` from `blocks`, `resurrection_pool` (their `created_at`) and every
+  // `block_changes`/`dispositions` row (MIN of its commits' `ts`), `r` from
+  // `docs.head` (`updated_at`) and `revisions` (the commit's `ts`), `x` from
+  // `external_nodes` (the earliest edge's commit), `e` from `edges` (its
+  // `from_commit`), `rp` from `repos` (the repo's first commit), `src` from
+  // `sources` (the clock; workspace-scoped, `repo_id` NULL). `holders` = bit 0
+  // when a core row names the id, plus bit 1 when a history row does — so a
+  // long-deleted block's `b` is `2`, a live block's `3`, an old revision's `r`
+  // `2`, a repo's `rp` `1`. The recorder's `c` and `s` get no claim (their own
+  // rows are their claims), nor does `cp`. Idempotent: an existing `id_claims`
+  // table is left alone.
+  private migrateV17Claims(): void {
+    const db = this.db;
+    const clock = new Date().toISOString();
+    const hasClaims = this.tableExists("id_claims");
+    const poolCols = db.pragma("table_info(resurrection_pool)") as { name: string }[];
+    const poolDone = poolCols.length === 0 || poolCols.some((c) => c.name === "deleted_at");
+    if (hasClaims && poolDone) return;
+    db.transaction(() => {
+      if (!poolDone) this.rebuildPoolV17();
+      if (hasClaims) return;
+      db.exec(`
+CREATE TABLE IF NOT EXISTS id_claims (
+  id        TEXT PRIMARY KEY,
+  repo_id   TEXT,
+  prefix    TEXT NOT NULL,
+  minted_at TEXT NOT NULL,
+  holders   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_claims_repo_prefix ON id_claims(repo_id, prefix, minted_at);`);
+      // Every statement upserts: a second source of the same id ORs its holder
+      // bits in and keeps the earliest `minted_at`. The `WHERE true` disambiguates
+      // the upsert clause from a join constraint (sqlite.org/lang_upsert).
+      const upsert = "ON CONFLICT(id) DO UPDATE SET holders = holders | excluded.holders, minted_at = min(minted_at, excluded.minted_at)";
+      // A migration fixture's pre-state is a PARTIAL old schema (spec/store
+      // §3.4: the tables the step touches), so every source is read only when
+      // its tables exist; a real database has them all.
+      const has = (...tables: string[]): boolean => tables.every((t) => this.tableExists(t));
+      const ins = (tables: string[], select: string): void => {
+        if (!has(...tables)) return;
+        const stmt = db.prepare(`INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) ${select} ${upsert}`);
+        if (select.includes("@clock")) stmt.run({ clock });
+        else stmt.run();
+      };
+      const commitTs = has("commits") ? "c.ts" : "NULL";
+      const commitJoin = (on: string): string => (has("commits") ? `LEFT JOIN commits c ON c.commit_id = ${on}` : "");
+      const anyRepo = has("repos") ? "(SELECT repo_id FROM repos ORDER BY rowid LIMIT 1)" : "NULL";
+      // d
+      ins(["docs"], "SELECT doc_id, repo_id, 'd', created_at, 1 FROM docs WHERE true");
+      ins(["docs", "revisions"], "SELECT DISTINCT r.doc_id, d.repo_id, 'd', d.created_at, 2 FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE true");
+      // b
+      ins(["blocks"], "SELECT block_id, repo_id, 'b', created_at, 1 FROM blocks WHERE true");
+      ins(["resurrection_pool"], "SELECT block_id, repo_id, 'b', created_at, 1 FROM resurrection_pool WHERE true");
+      ins(["block_changes"], `SELECT bc.block_id, COALESCE(${has("commits") ? "c.repo_id" : "NULL"}, ${anyRepo}), 'b', COALESCE(MIN(${commitTs}), @clock), 2 FROM block_changes bc ${commitJoin("bc.commit_id")} WHERE true GROUP BY bc.block_id`);
+      ins(["dispositions"], `SELECT x.block_id, COALESCE(${has("commits") ? "c.repo_id" : "NULL"}, ${anyRepo}), 'b', COALESCE(MIN(${commitTs}), @clock), 2 FROM dispositions x ${commitJoin("x.commit_id")} WHERE x.block_id != 'DOC' GROUP BY x.block_id`);
+      // r
+      ins(["docs"], "SELECT head, repo_id, 'r', updated_at, 1 FROM docs WHERE head IS NOT NULL");
+      ins(["docs", "revisions"], `SELECT r.rev_id, d.repo_id, 'r', COALESCE(${commitTs}, @clock), 2 FROM revisions r JOIN docs d ON d.doc_id = r.doc_id ${commitJoin("r.commit_id")} WHERE true`);
+      // x, e
+      ins(["external_nodes", "edges"], `SELECT n.node_id, n.repo_id, 'x', COALESCE(MIN(${commitTs}), @clock), 1 FROM external_nodes n LEFT JOIN edges e ON e.dst_node = n.node_id ${commitJoin("e.from_commit")} WHERE true GROUP BY n.node_id`);
+      ins(["edges"], `SELECT e.edge_id, e.repo_id, 'e', COALESCE(${commitTs}, @clock), 1 FROM edges e ${commitJoin("e.from_commit")} WHERE true`);
+      // rp, src
+      ins(["repos"], `SELECT r.repo_id, r.repo_id, 'rp', COALESCE(${has("commits") ? "(SELECT MIN(ts) FROM commits WHERE repo_id = r.repo_id)" : "NULL"}, @clock), 1 FROM repos r WHERE true`);
+      ins(["sources"], "SELECT source_id, NULL, 'src', @clock, 1 FROM sources WHERE true");
+    })();
   }
 
   /**

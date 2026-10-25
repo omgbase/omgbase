@@ -3335,7 +3335,7 @@
             "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
             "type": "paragraph",
             "created_at": "2026-09-26T10:00:00.000Z",
-            "deleted_commit": "c_1",
+            "deleted_at": "2026-09-26T10:01:00.000Z",
             "expires_ts": "2026-10-26T10:01:00.000Z"
           }
         ],

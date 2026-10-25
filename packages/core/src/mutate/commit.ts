@@ -5,6 +5,7 @@ import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
 import { deletePending, insertPending, materializeRow, readPending, type PendingRow } from "./materialize.js";
 import { requireHistory } from "../core/capabilities/registry.js";
 import { mintId } from "../core/ids.js";
+import { claimsOf } from "../core/capabilities/registry.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
@@ -482,11 +483,12 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
 // ingests so each rewritten source's `maintainEdges` resolves `[x](new)` to the
 // document (adopted here), not to a phantom.
 function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>, ts: string, commitId: string, mintsHead: boolean): MoveOutcome {
-  const doc = db.prepare("SELECT file_hash, frontmatter_raw FROM docs WHERE doc_id = ?").get(e.docId) as { file_hash: Buffer | null; frontmatter_raw: string | null } | undefined;
+  const doc = db.prepare("SELECT repo_id, file_hash, frontmatter_raw FROM docs WHERE doc_id = ?").get(e.docId) as { repo_id: string; file_hash: Buffer | null; frontmatter_raw: string | null } | undefined;
   const fileHashHex = doc?.file_hash ? doc.file_hash.toString("hex") : null;
   let head: string | null = null;
   if (mintsHead && doc?.file_hash) {
     head = mintId("r");
+    claimsOf(db).claim("r", head, doc.repo_id, ts);
     db.prepare("UPDATE docs SET path = ?, head = ?, updated_at = ? WHERE doc_id = ?").run(e.to, head, ts, e.docId);
     requireHistory(db).captureRevision({
       docId: e.docId,
@@ -554,10 +556,10 @@ function tombstone(db: Database, commitId: string, ts: string, e: Extract<Effect
   if (e.pool) {
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     db.prepare(
-      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_commit, expires_ts)
+      `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
        SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?, ?
          FROM blocks WHERE doc_id = ? AND deleted_at IS NULL`,
-    ).run(commitId, expires, e.docId);
+    ).run(ts, expires, e.docId);
   }
   ftsDeleteDoc(db, e.docId);
   db.prepare("UPDATE blocks SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL").run(ts, e.docId);

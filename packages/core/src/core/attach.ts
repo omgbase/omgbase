@@ -18,6 +18,9 @@ export function ensureRepo(store: Store, slug: string, rootPath: string | null =
     | undefined;
   if (existing) return existing.repo_id;
   const repoId = mintId("rp");
+  // spec/store §2.1 (17.0): the repo's own claim, under itself, at the clock
+  // (no commit `ts` exists here).
+  store.capabilities.claims.claim("rp", repoId, repoId, new Date().toISOString());
   store.db.prepare("INSERT INTO repos (repo_id, slug) VALUES (?, ?)").run(repoId, slug);
   if (rootPath) registerFsSource(store, repoId, slug, rootPath);
   return repoId;
@@ -33,6 +36,8 @@ function registerFsSource(store: Store, repoId: string, slug: string, root: stri
   let source = db.prepare("SELECT source_id FROM sources WHERE name = ?").get(name) as { source_id: string } | undefined;
   if (!source) {
     const sourceId = mintId("src");
+    // A source is workspace-scoped (attached to repos through `attachments`): its claim carries no repo.
+    store.capabilities.claims.claim("src", sourceId, null, new Date().toISOString());
     db.prepare("INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?, ?, 'fs', ?, '{}')").run(sourceId, name, JSON.stringify({ root }));
     source = { source_id: sourceId };
   }

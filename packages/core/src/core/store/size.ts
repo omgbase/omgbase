@@ -34,6 +34,7 @@ export const TABLE_CATEGORY: Readonly<Record<string, SizeCategory>> = {
   commits: "history",
   dispositions: "history",
   block_changes: "history",
+  id_claims: "history",
   resurrection_pool: "history",
   pending_materializations: "history",
   archives: "history",
@@ -110,6 +111,8 @@ export interface SizeReport {
   categories: SizeCategoryReport[];
   /** spec/store §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store through 14.1 wrote and `omg gc` removes. */
   same_dispositions: number;
+  /** spec/store §7.2 (17.0): `id_claims` rows — one per id ever minted and still held (§2.1); `identity.claims_retain_days` lets `omg gc` release old ones (§7.3). */
+  id_claims: number;
   /** spec/store §7 "Retention" (15.0): archived revisions, recorded segments, and the segments' bytes on disk. */
   archived: SizeArchived;
   advice: string[];
@@ -295,6 +298,7 @@ export function sizeReport(store: Store, opts: { now?: string } = {}): SizeRepor
   });
 
   const same_dispositions = (db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
+  const id_claims = store.capabilities.claims.count();
   const history = requireHistory(store.db);
   const archived = history.archivedSummary();
   // The retention plan of every repository under its effective policy (the
@@ -307,7 +311,7 @@ export function sizeReport(store: Store, opts: { now?: string } = {}): SizeRepor
     retention.bytes += plan.totals.bytes;
   }
   const semantic = semanticOf(db);
-  const report: SizeReport = { file, categories, same_dispositions, archived, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
+  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }
