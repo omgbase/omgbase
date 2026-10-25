@@ -600,8 +600,10 @@ entry read, so the names stay bare under the 5.0 rule (§1.2):
   containing `name` or `_attrs.key == name`); `yaml_path` / `json_pointer` —
   for `yaml:`/`json:` blocks, `_attrs.key` equals the path or its leaf.
 - `has_edge(pred[, dst])` (docs and blocks): an open edge with that
-  predicate (and target) from the row; `has_anchor()` (blocks): an edge
-  from the block carrying an anchor; `child_count()`, `parent_type()`
+  predicate (and target) from the row; `has_anchor()` (blocks): an OPEN edge
+  from the block carrying an anchor — a link edited away closes its edge row
+  (`to_commit` set) and the block answers false (5.1 patch, 2026-10-25;
+  `reads::has-anchor-open-edges`); `child_count()`, `parent_type()`
   (blocks).
 
 **Dates and durations (4.8).** Two free functions and a set of methods give
@@ -2318,8 +2320,24 @@ both and runs both harnesses.
   commit (`moveLinks` over `inbound_links_to` + `plan_inbound_retarget`,
   pure, so equal to what the planner lowered); the Rust port mirrors it.
 
+- **Fixed (5.1 patch, 2026-10-25) — `has_anchor()` read closed edges.** Both
+  engines probed `edges` for `src_block = ? AND anchor IS NOT NULL` without the
+  `to_commit IS NULL` filter every other edges reader applies (`has_edge`, the
+  `links` target, `inbound_links_to`, link health), so a block whose anchored
+  link had been edited away — its edge row closed by the `apply` — still
+  answered true, and `blocks { where has_anchor() }` disagreed with the open
+  `links` rows of the same document. The alchemy corpus carries no anchored
+  link (`query-blocks::has-anchor` counts 0), so no fixture had ever reached
+  the row. Now `AND to_commit IS NULL`, byte for byte in both engines, pinned
+  by `reads::has-anchor-open-edges` (two anchored paragraphs, one rewritten
+  without its link; `has_anchor()` names the other alone). No field, tool or
+  result key changed: a patch.
+
 ## Decisions
 
+- 2026-10-25, surface 5.1 patch — `has_anchor()` is an open-edge probe (§1.3,
+  §9). The one edges reader without `to_commit IS NULL`; fixed in both engines
+  with the fixture that would have caught it. No version move.
 - 2026-10-21, surface 5.1 (the payload diet; Brendan's decisions, measured in
   the agent-bench run `results/2026-10-21T02-33-11Z` over the 348-document
   timeline corpus, where three payloads — each replayed as cached prefix on

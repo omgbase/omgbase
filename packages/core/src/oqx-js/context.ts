@@ -701,7 +701,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "semantic": return { handled: true, value: semanticScore(t, r, String(args[0] ?? "")) };
       case "has_anchor": {
         requireTarget(t, "blocks", "has_anchor");
-        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE src_block = ? AND anchor IS NOT NULL LIMIT 1`, r.block_id) };
+        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE src_block = ? AND anchor IS NOT NULL AND to_commit IS NULL LIMIT 1`, r.block_id) };
       }
       case "child_count": {
         requireTarget(t, "blocks", "child_count");

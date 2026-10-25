@@ -1563,7 +1563,7 @@ impl<'a> StoreContext<'a> {
             "semantic" => Some(self.semantic_score(t, row, &arg_or_empty(args, 0))),
             "has_anchor" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 Some(Self::sql_result(self.exists(
-                    "SELECT 1 FROM edges WHERE src_block = ?1 AND anchor IS NOT NULL LIMIT 1",
+                    "SELECT 1 FROM edges WHERE src_block = ?1 AND anchor IS NOT NULL AND to_commit IS NULL LIMIT 1",
                     &[to_sql(&c("block_id"))],
                 )))
             }),

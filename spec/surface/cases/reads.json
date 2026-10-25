@@ -16063,6 +16063,167 @@
           }
         ]
       }
+    },
+    {
+      "name": "has-anchor-open-edges",
+      "workspace": true,
+      "notes": "§1.3 `has_anchor()` (5.1 patch): true only while the block carries an OPEN anchored edge. Two paragraphs of anchors.md link into index.md with an anchor — alpha by `^scheme` (a block ref), beta by `#Summary` (a heading) — and gamma links plainly; `has_anchor()` names alpha and beta. An `apply` at 10:01 rewrites alpha without the link, which closes its edge row (`to_commit` set): `has_anchor()` now names beta alone, and the open `links` rows of the document agree. Through 5.1.3 both engines probed `edges` without `to_commit IS NULL` — the one edges reader that did — so alpha stayed true after its link was gone.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-13T10:00:00.000Z",
+            "items": [
+              {
+                "path": "anchors.md",
+                "source": "# Anchors\n\nAlpha cites the scheme by its ref: [[index#^scheme]] lays out the plan.\n\nBeta cites the summary by its heading: [[index#Summary]] has the gist.\n\nGamma cites the page plainly: [[index]] and nothing deeper.\n"
+              },
+              {
+                "path": "index.md",
+                "source": "# Index\n\n## Summary\n\nThe gist of the plan in one line.\n\nThe scheme, laid out. ^scheme\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select _id, _text from blocks where _path == \"/anchors.md\" && has_anchor() order by _ordinal"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "apply",
+            "ts": "2026-10-13T10:01:00.000Z",
+            "args": {
+              "effects": [
+                {
+                  "op": "set",
+                  "target": {
+                    "kind": "block",
+                    "_id": "b_1"
+                  },
+                  "field": "markdown",
+                  "value": "Alpha no longer cites anything; the scheme moved into the body."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select _id, _text from blocks where _path == \"/anchors.md\" && has_anchor() order by _ordinal"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "select _block_id, _anchor from links where _path == \"/anchors.md\" order by _block_id"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "anchors.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            },
+            {
+              "path": "index.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "_id": "b_1",
+                "_path": "/anchors.md",
+                "_text": "Alpha cites the scheme by its ref: [[index#^scheme]] lays out the plan."
+              },
+              {
+                "_id": "b_2",
+                "_path": "/anchors.md",
+                "_text": "Beta cites the summary by its heading: [[index#Summary]] has the gist."
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "plan_id": "5bad6b2002a8f5fa95a10efd1170fcfb354958bb1ef9da39eb11300b2dc4c269",
+            "commit": "c_2",
+            "revisions": [
+              {
+                "_id": "d_0",
+                "_path": "/anchors.md",
+                "_hash": "94db619f00ec6b1d21bf8634eed6c9302eff25261094f2e21dd6a62fff1883ea"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "b_8"
+            },
+            "committed": true,
+            "summary": [
+              "set markdown of paragraph b_1 in /anchors.md"
+            ]
+          },
+          {
+            "hits": [
+              {
+                "_id": "b_2",
+                "_path": "/anchors.md",
+                "_text": "Beta cites the summary by its heading: [[index#Summary]] has the gist."
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "_id": "e_1",
+                "_path": "/anchors.md",
+                "_block_id": "b_2",
+                "_anchor": "Summary"
+              },
+              {
+                "_id": "e_2",
+                "_path": "/anchors.md",
+                "_block_id": "b_3",
+                "_anchor": null
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          }
+        ]
+      }
     }
   ]
 }
