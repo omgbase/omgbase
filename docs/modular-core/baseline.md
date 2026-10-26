@@ -1189,6 +1189,41 @@ vs 5.04 MB and `history` 3.33 vs 3.29 MB on a corpus 0.01 MB larger. Import
 blocks + 43 documents 218–221 s on this machine (TS ≈ 270 s for 4,009) —
 the embedder's time, not the engine's.
 
+### Qualification of two local 16.x workspaces (2026-10-26, `scripts/qualify/migrate-copy.mjs`)
+
+Two real workspaces at store 16.0.3 were qualified from COPIES (database + WAL + the files; the originals were read and
+never written), migrated by the TypeScript 17.4 engine, with `--repair`, `--compositions` and the installed 0.27.3 Rust
+binary as `--before-bin`. Numbers only.
+
+| workspace | docs | before (16.0.3) | after, history on | legacy documents | repaired by the sweep | synced from newer files | unexpected diffs | old binary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 853 | 70.99 MB | 79.23 MB (76.52 vacuumed) | 0 | — | 0 | 0 | refused |
+| B | 116 | 2.92 MB | 4.12 MB (3.77 vacuumed) | 115 | 110 | 5 | 0 | refused |
+
+Workspace B's blocks all predate block-trivia storage (`trivia_hash` NULL throughout): the 16.x engine's own reads already
+lacked the newlines between blocks while the files and `file_hash` were right; the migration now names such documents
+(`legacy_bytes`) and the next `omg sync` repairs their trivia from the files with no new head (spec/store §5.11). Both
+copies: CAS stale-refused / fresh-accepted, recovery a no-op, FTS rows == live leaves, `doctor` ok, every composition's
+reads equal.
+
+The four compositions, each clone VACUUMed after its maintenance (`history disable` + `history purge`, `embed disable`
+— which keeps the vectors by design; `embed drain --prune` is the only vector drop):
+
+| workspace | composition | db MB | content | identity | recovery | history | search | sync |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A (853) | full | 76.52 | 14.81 | 1.67 | 0.01 | 36.52 | 22.29 | 1.23 |
+| A | history only | 76.52 | 14.81 | 1.67 | 0.01 | 36.52 | 22.29 | 1.23 |
+| A | semantic only | 39.83 | 14.81 | 1.51 | 0.01 | 0 | 22.29 | 1.22 |
+| A | core | 39.83 | 14.81 | 1.51 | 0.01 | 0 | 22.29 | 1.22 |
+| B (116) | full | 3.77 | 1.73 | 0.26 | 0.01 | 1.38 | 0.21 | 0.20 |
+| B | history only | 3.77 | 1.73 | 0.26 | 0.01 | 1.38 | 0.21 | 0.20 |
+| B | semantic only | 2.38 | 1.73 | 0.27 | 0.01 | 0 | 0.21 | 0.20 |
+| B | core | 2.38 | 1.73 | 0.27 | 0.01 | 0 | 0.21 | 0.20 |
+
+History off removes **48 %** of workspace A (76.52 → 39.83 MB) and 37 % of B. On A the remaining bytes are the vectors
+(22.3 MB, 56 % of the history-off database), the content (14.8) and the identity/sync bookkeeping (2.7); a `semantic`-off
+composition that also dropped the vectors would end near 17.5 MB, 4.4× the history-on-with-vectors file's 76.5.
+
 ## 4. What the baseline says for the plan
 
 - **History is half the bytes on a real corpus, and growth is per commit,
