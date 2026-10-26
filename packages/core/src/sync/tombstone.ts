@@ -1,5 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
+import { requireWriter } from "../core/store/manifest.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 
 // Observed-deletion tombstone (01 §6, 02 §3/§7). Shared by BOTH observed-change
@@ -44,6 +45,7 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
  */
 export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string, batchId: string | null = null): string {
   return store.write((db) => {
+    requireWriter(db, repoId, ts); // spec/store §5.4 step 0 (3e-ii)
     // spec/store §5.6 step 1 (17.0, 3d): the feed row and its one `deleted`
     // entry (no head, no hash — the path as the tombstone leaves it).
     const commit = appendFeedRow(db, { repoId, ts, origin: "observed", reason: "observed deletion", batchId });

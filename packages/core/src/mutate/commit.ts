@@ -4,6 +4,7 @@ import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
 import { deletePending, insertPending, materializeRow, readPending, supersede, type PendingRow } from "./materialize.js";
 import { requireHistory } from "../core/capabilities/registry.js";
+import { requireWriter } from "../core/store/manifest.js";
 import { mintId } from "../core/ids.js";
 import { claimsOf } from "../core/capabilities/registry.js";
 import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
@@ -235,6 +236,9 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   // `api` commit with no revision would read as a move or a deletion in the
   // change feed. `macros::links-repair-path-glob-no-hits` pins it.
   if (effects.length === 0) return { committed: { commitId: null, ingests: [], moves: [] } };
+  // spec/store §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer without the
+  // recorder refuses on a repository whose manifest requires capture.
+  requireWriter(store.db, repoId, ts);
 
   // Phase A — reads only. First the intent an earlier request may have left
   // at a path this one touches (its file is behind the database until some

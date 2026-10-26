@@ -17138,6 +17138,211 @@
           }
         ]
       }
+    },
+    {
+      "name": "alerts",
+      "notes": "§4 \"Alerts\" (6.0, store 17.0 3e-ii): the alert channel on the wire. A quiet repository's results carry no `alerts` member (step 2). The `exec` plants a `write` pending row for a.md dated an hour before the clock — the api path's recorded intent a crash left behind — and a read five minutes after it shows nothing (below `recovery.alert_after_minutes`, default 10); the read at the clock carries `alerts: [{ code: materialization_backlog, severity: warning, message, since, detail }]` as the LAST member of a `query` result and of a `docs_read` result alike, `since` the instant it was first raised; an error envelope (the missing document) never carries the member. `recover` replays the row (the file on disk IS the rendered bytes) and the member is gone.",
+      "workspace": true,
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nA paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs { select _path }"
+            },
+            "ts": "2026-09-27T00:00:00.000Z"
+          }
+        },
+        {
+          "exec": {
+            "sql": [
+              "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id, created_at) SELECT repo_id, path, 'write', NULL, doc_id, head, file_hash, file_hash, 'c_0', '2026-09-26T23:00:00.000Z' FROM docs WHERE path = 'a.md'"
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs { select _path }"
+            },
+            "ts": "2026-09-26T23:05:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs { select _path }"
+            },
+            "ts": "2026-09-27T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/a.md"
+            },
+            "ts": "2026-09-27T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "/missing.md"
+            },
+            "ts": "2026-09-27T00:00:00.000Z"
+          }
+        },
+        {
+          "recover": {
+            "ts": "2026-09-27T00:10:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "docs { select _path }"
+            },
+            "ts": "2026-09-27T00:10:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "_id": "d_0",
+                "_path": "/a.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "changes": 1
+          },
+          {
+            "hits": [
+              {
+                "_id": "d_0",
+                "_path": "/a.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "_id": "d_0",
+                "_path": "/a.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect",
+            "alerts": [
+              {
+                "code": "materialization_backlog",
+                "severity": "warning",
+                "message": "1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them",
+                "since": "2026-09-27T00:00:00.000Z",
+                "detail": {
+                  "oldest": "2026-09-26T23:00:00.000Z",
+                  "pending": 1,
+                  "threshold_minutes": 10
+                }
+              }
+            ]
+          },
+          {
+            "_id": "d_0",
+            "_path": "/a.md",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {},
+              "inline": {},
+              "computed": {
+                "_title": "A"
+              }
+            },
+            "_raw": "# A\n\nA paragraph.\n",
+            "alerts": [
+              {
+                "code": "materialization_backlog",
+                "severity": "warning",
+                "message": "1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them",
+                "since": "2026-09-27T00:00:00.000Z",
+                "detail": {
+                  "oldest": "2026-09-26T23:00:00.000Z",
+                  "pending": 1,
+                  "threshold_minutes": 10
+                }
+              }
+            ]
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false,
+            "message": "no document with _id or _path \"/missing.md\"",
+            "data": {
+              "_path": "/missing.md"
+            }
+          },
+          {
+            "recovered": {
+              "materialized": [
+                "a.md"
+              ],
+              "healed": [],
+              "missing": []
+            }
+          },
+          {
+            "hits": [
+              {
+                "_id": "d_0",
+                "_path": "/a.md"
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          }
+        ]
+      }
     }
   ]
 }

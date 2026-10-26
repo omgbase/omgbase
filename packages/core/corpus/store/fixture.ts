@@ -23,6 +23,8 @@ import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
+import { pinClock } from "../../src/core/clock.js";
+import { activeAlerts, MATERIALIZATION_BACKLOG_ALERT } from "../../src/core/store/alerts.js";
 import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/document.js";
 import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { attachArchive, detachArchive, exportHistory, RevisionArchived, segmentBasename, ARCHIVE_SUFFIX } from "../../src/core/store/archive.js";
@@ -442,12 +444,24 @@ export function runSchemaCase(): SchemaFingerprint {
 
 export type MigrationCaseInput = Omit<MigrationCase, "expect">;
 
+/** README §9.3 (17.0, 3e-ii): the clock a migration case runs under — what step 17 writes where it says "the migration's clock" (the manifest's `updated_at`, a coverage start with no commit to anchor on). */
+export const MIGRATION_CLOCK = "2026-09-27T00:00:00.000Z";
+
 /**
  * Run `setup` on an empty file database, pin `user_version`, close, then open it
- * with the reference (which migrates) under the fixture minter. Returns the
- * projection — or `{ error }` when the opener refused.
+ * with the reference (which migrates) under the fixture minter and the fixture
+ * clock. Returns the projection — or `{ error }` when the opener refused.
  */
 export function runMigrationCase(c: MigrationCaseInput): MigrationExpect | MigrationRefusal {
+  const restoreClock = pinClock(MIGRATION_CLOCK);
+  try {
+    return runMigrationCaseUnderClock(c);
+  } finally {
+    restoreClock();
+  }
+}
+
+function runMigrationCaseUnderClock(c: MigrationCaseInput): MigrationExpect | MigrationRefusal {
   const dir = mkdtempSync(join(tmpdir(), "omgbase-store-spec-"));
   const path = join(dir, "case.db");
   try {
@@ -811,6 +825,25 @@ export function projectClaims(db: Db, repoId: string): Row[] {
 export function checkInvariants(store: Store, repoId: string, lastSource: ReadonlyMap<string, string>): string[] {
   const db = store.db;
   const problems: string[] = [];
+
+  // ---- A1 alerts re-derive (17.0, 3e-ii) ------------------------------------------------
+  // An active alert names a condition the store can re-derive, or is advisory:
+  // after re-deriving the channel at the runner's clock (as every reader of it
+  // does — a superseded pending row leaves the backlog alert stale until then),
+  // a `materialization_backlog` alert's `detail.oldest` is the `created_at` of
+  // a pending row of the repository and `detail.pending` counts at least one;
+  // `materialization_failed` and `writer_refused` are advisory (a past event,
+  // cleared by the next success). Every alert has a §2.4 `since` and a known severity.
+  for (const a of activeAlerts(db, repoId)) {
+    if (!TS_RE.test(a.since)) problems.push(`A1: alert ${a.code} has a malformed since ${JSON.stringify(a.since)}`);
+    if (!["info", "warning", "error"].includes(a.severity)) problems.push(`A1: alert ${a.code} has severity ${JSON.stringify(a.severity)}`);
+    if (a.code === MATERIALIZATION_BACKLOG_ALERT) {
+      const d = a.detail ?? {};
+      const row = typeof d.oldest === "string" ? db.prepare("SELECT 1 FROM pending_materializations WHERE repo_id = ? AND created_at = ?").get(repoId, d.oldest) : undefined;
+      if (!row) problems.push(`A1: materialization_backlog names no pending row at ${JSON.stringify(d.oldest)}`);
+      if (typeof d.pending !== "number" || d.pending < 1) problems.push(`A1: materialization_backlog counts ${JSON.stringify(d.pending)} pending rows`);
+    }
+  }
 
   const blobRows = db.prepare("SELECT hash, bytes, size FROM blobs").all() as { hash: Buffer; bytes: Buffer; size: number }[];
   const blobHashes = new Set(blobRows.map((b) => b.hash.toString("hex")));

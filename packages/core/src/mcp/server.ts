@@ -7,6 +7,7 @@ import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "..
 import { requireHistory, semanticOf } from "../core/capabilities/registry.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
 import { capabilityStates, type SemanticHostReport } from "../sync/capability-state.js";
+import { activeAlerts } from "../core/store/alerts.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT } from "../core/read/reader.js";
 import { resolveRef } from "../core/read/refs.js";
@@ -317,7 +318,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   ): void {
     if (!inProfile(name)) return;
     const lockDir = ctx.omgbaseDir;
-    const run: typeof handler = WRITE_TOOLS.has(name) && lockDir !== undefined
+    const locked: typeof handler = WRITE_TOOLS.has(name) && lockDir !== undefined
       ? async (args) => {
           try {
             return await withWriterLockAsync(lockDir, () => handler(args), ctx.writerLock);
@@ -326,8 +327,31 @@ export function buildServer(ctx: ServerContext): McpServer {
           }
         }
       : handler;
+    // The alert channel (spec/surface §4 "Alerts", 6.0 — spec/store §3.1
+    // `alerts`): every successful result that is a JSON object gains a top-level
+    // `alerts` member holding the ACTIVE alerts of the call's repository (the
+    // `repo` argument's, else the default) — only when there are any, so a quiet
+    // repository's results are byte for byte what they were. An error envelope
+    // never carries it; a result that is a JSON array (`observe_many`) cannot.
+    const run: typeof handler = async (args) => withAlerts(await locked(args), (args as { repo?: unknown }).repo);
     server.registerTool(name, def, run as never);
     registry.set(name, { shape: def.inputSchema, handler: run as (args: Record<string, unknown>) => Promise<ToolResult> });
+  }
+
+  function withAlerts(result: ToolResult, repo: unknown): ToolResult {
+    if (result.isError) return result;
+    const text = result.content[0]?.text;
+    if (text === undefined || !text.startsWith("{")) return result;
+    let repoId = ctx.repoId;
+    if (typeof repo === "string") {
+      const row = store.db.prepare("SELECT repo_id FROM repos WHERE slug = ?").get(repo) as { repo_id: string } | undefined;
+      if (!row) return result;
+      repoId = row.repo_id;
+    }
+    const alerts = activeAlerts(store.db, repoId);
+    if (alerts.length === 0) return result;
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    return ok({ ...payload, alerts });
   }
 
   // Multi-repo (ADR-014): every tool accepts an optional `repo` slug. Resolve it

@@ -1,6 +1,7 @@
 import { Store } from "./store/store.js";
 import { mintId } from "./ids.js";
 import { mintEpoch } from "./store/feed.js";
+import { ensureManifest } from "./store/manifest.js";
 
 // Repo identity + fs-source registration (ADR-014). A repo owns identity +
 // history, NOT a filesystem: `ensureRepo` mints the repo row, and when given a
@@ -26,6 +27,10 @@ export function ensureRepo(store: Store, slug: string, rootPath: string | null =
   store.capabilities.claims.claim("rp", repoId, repoId, now);
   const epoch = mintEpoch(store.db, repoId, now);
   store.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES (?, ?, ?)").run(repoId, slug, epoch);
+  // spec/store §3.1 `capabilities` (17.0, 3e-ii): the manifest rows — history
+  // `enabled` with coverage from the repository's birth (`writer_requires` 1),
+  // semantic `enabled` iff `embedding.provider` resolves for it (resolution 1).
+  ensureManifest(store.db, repoId, now, now);
   if (rootPath) registerFsSource(store, repoId, slug, rootPath);
   return repoId;
 }

@@ -146,7 +146,7 @@ export function freshnessSweep(
   // behind the database is brought forward instead of being read back as a
   // human edit. The production recovery point (priming sweep at `omg mcp`
   // start, the pre-verb sweep of every CLI write).
-  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath));
+  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath), opts.ts);
   const cache = loadStatCache(store, repoId);
   const snapshot = snapshotOf(fs, rootPath);
   const plan = sweepPlan(cache, snapshot);

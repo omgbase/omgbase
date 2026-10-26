@@ -274,6 +274,59 @@ CREATE TABLE IF NOT EXISTS edge_transitions (
 CREATE INDEX IF NOT EXISTS idx_edge_transitions_temporal ON edge_transitions(from_commit, to_commit);
 `;
 
+// capabilities (spec/store §3.1 "capabilities", 17.0 — modular-core Phase 3e-ii;
+// phase-1-contracts §1.5): the per-repository CAPABILITY MANIFEST — one row per
+// (repository, capability) saying whether the history recorder / the semantic
+// provider is on for it, which interface and data version the bundle's rows
+// were produced under, the configuration they were produced under (semantic:
+// { model, dim }; history: {}) and its sha256 fingerprint, the COVERAGE
+// intervals capture was on (JSON [{ "from": ts, "to": ts | null }, …], the last
+// open iff enabled) and `writer_requires` (1: a writer without the module must
+// refuse writes on this repository — resolution 17). A table, not settings
+// keys: engine-written state that survives a settings rewrite, typed, projected
+// row for row, read by `doctor` without resolving settings. Written at
+// `ensure_repo`, by migration 17 and (Phase 4) by the `history`/`embed` verbs;
+// through 3e-ii the semantic row follows `embedding.provider` on every settings
+// write. A repository with no row for a capability is `disabled` with no coverage.
+export const CAPABILITIES_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS capabilities (
+  repo_id          TEXT NOT NULL REFERENCES repos(repo_id),
+  capability       TEXT NOT NULL CHECK (capability IN ('history','semantic')),
+  state            TEXT NOT NULL CHECK (state IN ('enabled','disabled')),
+  interface_v      INTEGER NOT NULL,            -- the capability interface the writer implements (history 1, semantic 1)
+  data_v           INTEGER NOT NULL,            -- the bundle's own schema version (history 1 = 16.0's tables + edge_transitions; semantic 1)
+  config           TEXT NOT NULL DEFAULT '{}',  -- the configuration the data was produced under (semantic: { model, dim }; history: {})
+  config_hash      BLOB NOT NULL,               -- sha256(canonical JSON of config) — the fingerprint; a change while enabled is a rebuild
+  coverage         TEXT NOT NULL DEFAULT '[]',  -- JSON [{ "from": ts, "to": ts | null }, …]: the intervals capture was on; the last open iff enabled
+  writer_requires  INTEGER NOT NULL DEFAULT 0,  -- 1: a writer without this module must refuse writes (resolution 17; history enable defaults to 1)
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (repo_id, capability)
+);
+`;
+
+// alerts (spec/store §3.1 "alerts", 17.0 — Phase 3e-ii; phase-1-contracts §7
+// "the alert channel"): one row per (repository, condition) the engine raised
+// because a human is needed — a materialization backlog, a replay that failed,
+// a writer refused by `writer_requires`, … — with its severity, message, the
+// instant it was first raised (`since`, kept across re-raises), a JSON `detail`
+// and `cleared_at` once the condition ended (NULL = active). Every MCP tool
+// response carries the active alerts in a top-level `alerts` member when there
+// are any, the CLI prints them to stderr, `doctor` lists them (spec/surface §4,
+// spec/cli §3.1). Raising is idempotent (message/detail refreshed, `since`
+// kept); a cleared row is re-raised in place with a new `since`.
+export const ALERTS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS alerts (
+  repo_id    TEXT NOT NULL REFERENCES repos(repo_id),
+  code       TEXT NOT NULL,                      -- the condition: materialization_backlog, materialization_failed, writer_refused, …
+  severity   TEXT NOT NULL CHECK (severity IN ('info','warning','error')),
+  message    TEXT NOT NULL,                      -- one line for a human, both engines byte for byte
+  since      TEXT NOT NULL,                      -- first raised (kept while the condition stands)
+  detail     TEXT NOT NULL DEFAULT '{}',         -- JSON: what the condition is about (counts, paths, timestamps)
+  cleared_at TEXT,                               -- NULL = active
+  PRIMARY KEY (repo_id, code)
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
@@ -294,7 +347,7 @@ export const MIGRATIONS: Record<number, string> = {
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
-  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints`, and (3e-i) the open-only `edges` (the closed rows and the interval columns moved to the history bundle's `edge_transitions`, `idx_edges_temporal` gone), `properties` without `created_commit`/`deleted_commit`, the dropped `collections`/`inferred_edges` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
+  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints`, and (3e-i) the open-only `edges` (the closed rows and the interval columns moved to the history bundle's `edge_transitions`, `idx_edges_temporal` gone), `properties` without `created_commit`/`deleted_commit`, the dropped `collections`/`inferred_edges`, and (3e-ii) the `capabilities` manifest (a `history` row `enabled` with coverage from the repo's first commit, a `semantic` row `enabled` iff a provider is configured) and the empty `alerts` table — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
 };
 
 // The CORE bundle (spec/store §3.1, 17.0 — `schema.sql`): the current state
@@ -412,7 +465,7 @@ CREATE TABLE IF NOT EXISTS external_nodes (
   title   TEXT,
   UNIQUE (repo_id, uri)
 );
-
+${CAPABILITIES_DDL}${ALERTS_DDL}
 -- ---- core bundle: derived tables (rebuildable) --------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,

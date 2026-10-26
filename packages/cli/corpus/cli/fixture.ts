@@ -52,6 +52,8 @@ export interface StepInput {
   env?: Record<string, string>;
   /** files written under <tmp> before the step (`null` deletes); `*.sh` are made executable */
   files?: Record<string, string | null>;
+  /** §8 (store 17.0): SQL run verbatim on `<tmp>/.omgbase/omgbase.db` before the step (after `files`), one transaction — the device that puts rows a verb never writes into the workspace (a stale pending row) */
+  sql?: string[];
   pin_stderr?: boolean;
   notes?: string;
   /** recorded by the reference; absent only before the first generation */
@@ -64,6 +66,7 @@ export interface CaseBase {
   workspace: WorkspaceKind;
   env?: Record<string, string>;
   files?: Record<string, string | null>;
+  sql?: string[];
 }
 
 /** A single invocation. */
@@ -85,8 +88,8 @@ export function isSequence(c: FixtureCase | Record<string, unknown>): c is Seque
   return Array.isArray((c as { steps?: unknown }).steps);
 }
 
-const CASE_KEYS = new Set(["name", "notes", "workspace", "env", "files", "stdin", "argv", "pin_stderr", "expect", "steps"]);
-const STEP_KEYS = new Set(["argv", "stdin", "env", "files", "pin_stderr", "notes", "expect"]);
+const CASE_KEYS = new Set(["name", "notes", "workspace", "env", "files", "sql", "stdin", "argv", "pin_stderr", "expect", "steps"]);
+const STEP_KEYS = new Set(["argv", "stdin", "env", "files", "sql", "pin_stderr", "notes", "expect"]);
 const EXPECT_KEYS = new Set(["exit", "stdout", "stderr"]);
 
 interface ValidateOptions {
@@ -112,6 +115,11 @@ function checkFiles(v: unknown, at: string, problems: string[]): void {
   else if (Object.keys(v).some((p) => p.startsWith("/") || p.split("/").includes(".."))) problems.push(`${at}: files paths must be relative to <tmp>`);
 }
 
+function checkSql(v: unknown, at: string, problems: string[]): void {
+  if (v === undefined) return;
+  if (!Array.isArray(v) || v.length === 0 || v.some((x) => typeof x !== "string" || x === "")) problems.push(`${at}: sql must be a non-empty array of statements`);
+}
+
 function checkExpect(v: unknown, at: string, problems: string[], required: boolean): void {
   if (v === undefined) {
     if (required) problems.push(`${at}: missing \`expect\` (run CLI_SPEC_UPDATE=1)`);
@@ -131,6 +139,7 @@ function checkStep(v: unknown, at: string, problems: string[], required: boolean
   if (v.stdin !== undefined && typeof v.stdin !== "string") problems.push(`${at}: stdin must be a string`);
   checkEnv(v.env, at, problems);
   checkFiles(v.files, at, problems);
+  checkSql(v.sql, at, problems);
   if (v.pin_stderr !== undefined && typeof v.pin_stderr !== "boolean") problems.push(`${at}: pin_stderr must be a boolean`);
   checkExpect(v.expect, at, problems, required);
 }
@@ -153,12 +162,13 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     if (c.workspace !== "alchemy" && c.workspace !== "none" && c.workspace !== "empty") problems.push(`${at}: workspace must be alchemy | none | empty`);
     checkEnv(c.env, at, problems);
     checkFiles(c.files, at, problems);
+    checkSql(c.sql, at, problems);
     if (isSequence(c)) {
       for (const k of ["argv", "stdin", "pin_stderr", "expect"]) if (k in c) problems.push(`${at}: a sequence case carries \`${k}\` on its steps, not itself`);
       if (c.steps.length === 0) problems.push(`${at}: steps must not be empty`);
       c.steps.forEach((s: unknown, j: number) => checkStep(s, `${at}.steps[${j}]`, problems, required));
     } else {
-      checkStep({ argv: c.argv, stdin: c.stdin, env: undefined, files: undefined, pin_stderr: c.pin_stderr, expect: c.expect }, at, problems, required);
+      checkStep({ argv: c.argv, stdin: c.stdin, env: undefined, files: undefined, sql: undefined, pin_stderr: c.pin_stderr, expect: c.expect }, at, problems, required);
     }
   });
   return problems;
@@ -455,6 +465,19 @@ function writeFiles(tmp: string, files: Record<string, string | null> | undefine
   }
 }
 
+/** §8 (store 17.0): run a case's or a step's `sql` on the workspace database in one transaction (`<workspace>` substituted), through the library. */
+function runSql(tmp: string, sql: string[] | undefined): void {
+  if (!sql || sql.length === 0) return;
+  const ws = Workspace.open(tmp);
+  try {
+    ws.store.write((db) => {
+      for (const statement of sql) db.prepare(substituteWorkspace(statement, tmp)).run();
+    });
+  } finally {
+    ws.close();
+  }
+}
+
 /** Re-record `file_stats` for every repo of the workspace at `tmp` (spec/sync §4.3; no id is minted). */
 function rewarmStatCache(tmp: string): void {
   const ws = Workspace.open(tmp);
@@ -559,11 +582,13 @@ export interface CaseRun {
 export function runCase(ws: Workspaces, c: CaseInput): CaseRun {
   const tmp = ws.prepare(c.workspace);
   writeFiles(tmp, c.files);
+  runSql(tmp, c.sql);
   const steps: StepInput[] = isSequence(c) ? c.steps : [c];
   const expects: Expect[] = [];
   const stderr: string[] = [];
   for (const s of steps) {
     writeFiles(tmp, s.files);
+    if (s !== c) runSql(tmp, s.sql);
     const env = { ...(c.env ?? {}), ...(s.env ?? {}) };
     const o = spawnOmg(tmp, s.argv, { ...(s.stdin !== undefined ? { stdin: s.stdin } : {}), env });
     expects.push(toExpect(o, Boolean(s.pin_stderr)));

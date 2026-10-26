@@ -98,7 +98,15 @@ merges recursively and anything else (scalars, arrays, null) replaces
 wholesale; `resolve(null)` is the workspace layer alone. Writers replace the
 whole blob (`INSERT … ON CONFLICT DO UPDATE` for the workspace row; `UPDATE
 repos SET settings` for a repo). Known keys are the consumers' business
-(`embedding.*` — `spec/search` §5).
+(`embedding.*` — `spec/search` §5; `feed.*` and `identity.claims_retain_days`
+— `spec/store` §7.3–§7.4; `recovery.alert_after_minutes` — `spec/store`
+§5.8, the age in minutes past which a pending materialization raises the
+`materialization_backlog` alert, default 10, a non-negative number, anything
+else the default). **Since store 17.0 (slice 3e-ii) a settings write
+re-derives the repository's `semantic` manifest row** (`spec/store` §3.1
+`capabilities`: `enabled` iff `embedding.provider` resolves) — the
+workspace layer's write every repository's, a repo's write its own, in the
+same transaction — until the Phase 4 `embed` verbs own the row.
 
 ## 4. Checkpoints and the filesystem fast path
 

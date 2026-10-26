@@ -34,6 +34,8 @@ function omg(args: string[], opts: { expectFail?: boolean } = {}): { stdout: str
 interface SizeJson {
   file: { path: string; bytes: number; wal_bytes: number; page_size: number; page_count: number; freelist_count: number; reclaimable: number };
   categories: { name: string; bytes: number; share: number; rows: number; tables: { name: string; bytes: number; share: number; rows: number; indexes: number }[] }[];
+  feed: { epoch: string; oldest: number; head: number; entries: number; retain_days: number; retain_entries: number; max_entries: number } | null;
+  capabilities: { capability: string; state: string; coverage_from: string | null; config: Record<string, unknown> }[] | null;
   advice: string[];
   detail?: string;
 }
@@ -85,6 +87,12 @@ describe("doctor --size", () => {
       expect(c.rows).toBe(c.tables.reduce((n, t) => n + t.rows, 0));
     }
     expect(r.categories[4]!.tables.map((t) => t.name).sort()).toEqual(["blocks_fts", "doc_embeddings", "embeddings", "nodes_fts"]);
+    // store 17.0 (3e-ii): the manifest of the same repository — history enabled from the repo's birth, semantic disabled (`--no-embedder`); both tables file under sync.
+    expect(r.capabilities).toEqual([
+      { capability: "history", state: "enabled", coverage_from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), config: {} },
+      { capability: "semantic", state: "disabled", coverage_from: null, config: {} },
+    ]);
+    expect(r.categories[5]!.tables.map((t) => t.name)).toEqual(expect.arrayContaining(["capabilities", "alerts"]));
     expect(r.advice).toEqual(["nothing to reclaim"]);
   });
 
@@ -94,14 +102,17 @@ describe("doctor --size", () => {
     // The name column is as wide as the widest name shown (`pending_materializations` since 17.0's six categories).
     expect(lines[0]).toMatch(/^ {2}category {2,}bytes {3}share {2}rows$/);
     expect(lines[1]).toMatch(/^ {2}content {2,} *\d+(\.\d)? [KMGT]?B {2} *\d+\.\d% {2} *\d+$/);
-    // Each category heads at most three indented tables.
-    const cats = lines.filter((l) => /^ {2}\S/.test(l) && !/^ {2}(category|file|size|pages|reclaimable|archived|id claims|feed|advice)/.test(l));
+    // Each category heads at most three indented tables. The table ends at the
+    // blank line; the file block after it has a `history` line of its own (the
+    // manifest, store 17.0 3e-ii), so the categories are read from the table alone.
+    const table = lines.slice(0, lines.indexOf(""));
+    const cats = table.filter((l) => /^ {2}\S/.test(l) && !/^ {2}category/.test(l));
     expect(cats.map((l) => l.trim().split(/\s+/)[0])).toEqual(["content", "identity", "recovery", "history", "search", "sync"]);
-    const tables = lines.filter((l) => /^ {4}\S/.test(l));
+    const tables = table.filter((l) => /^ {4}\S/.test(l));
     expect(tables.length).toBeLessThanOrEqual(18);
     expect(tables.length).toBeGreaterThanOrEqual(12);
     expect(lines).toContain("");
-    expect(stdout).toMatch(/\n {2}file {9}.*omgbase\.db\n {2}size {9}\d+(\.\d)? [KMGT]?B on disk, wal \d+(\.\d)? [KMGT]?B\n {2}pages {8}\d+ x \d+ bytes, \d+ free\n {2}reclaimable {2}\d+(\.\d)? [KMGT]?B\n {2}archived {5}0 revisions in 0 segments, 0 B on disk\n {2}id claims {4}\d+ ids claimed\n {2}feed {9}epoch ep_[0-9a-z]+, \d+ entries, seq \d+\.\.\d+\n {2}advice: nothing to reclaim\n$/);
+    expect(stdout).toMatch(/\n {2}file {9}.*omgbase\.db\n {2}size {9}\d+(\.\d)? [KMGT]?B on disk, wal \d+(\.\d)? [KMGT]?B\n {2}pages {8}\d+ x \d+ bytes, \d+ free\n {2}reclaimable {2}\d+(\.\d)? [KMGT]?B\n {2}archived {5}0 revisions in 0 segments, 0 B on disk\n {2}id claims {4}\d+ ids claimed\n {2}feed {9}epoch ep_[0-9a-z]+, \d+ entries, seq \d+\.\.\d+\n {2}history {6}enabled since \d{4}-\d{2}-\d{2}T\S+\n {2}semantic {5}disabled\n {2}advice: nothing to reclaim\n$/);
     // The checks still run without --size.
     // store 17.0 (3d): the `convergence` check left with `repos_status.unconverged` (identically true under I1).
     expect(omg(["doctor"]).stdout).not.toContain("convergence");

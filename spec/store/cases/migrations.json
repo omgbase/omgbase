@@ -25,6 +25,15 @@
             "command",
             "args"
           ],
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "archives": [
             "segment_id",
             "repo_id",
@@ -38,6 +47,18 @@
           "attachments": [
             "repo_id",
             "source_id"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "doc_embeddings": [
             "doc_id",
@@ -219,6 +240,15 @@
             "command",
             "args"
           ],
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "archives": [
             "segment_id",
             "repo_id",
@@ -232,6 +262,18 @@
           "attachments": [
             "repo_id",
             "source_id"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "feed": [
             "repo_id",
@@ -349,6 +391,15 @@
             "command",
             "args"
           ],
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "archives": [
             "segment_id",
             "repo_id",
@@ -362,6 +413,18 @@
           "attachments": [
             "repo_id",
             "source_id"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "feed": [
             "repo_id",
@@ -474,6 +537,15 @@
             "command",
             "args"
           ],
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "archives": [
             "segment_id",
             "repo_id",
@@ -487,6 +559,18 @@
           "attachments": [
             "repo_id",
             "source_id"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "feed": [
             "repo_id",
@@ -593,6 +677,15 @@
       "expect": {
         "user_version": 17,
         "tables": {
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "archives": [
             "segment_id",
             "repo_id",
@@ -602,6 +695,18 @@
             "created_at",
             "revision_count",
             "bytes"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "feed": [
             "repo_id",
@@ -814,11 +919,22 @@
         "sync_state",
         "edges",
         "edge_transitions",
-        "properties"
+        "properties",
+        "capabilities",
+        "alerts"
       ],
       "expect": {
         "user_version": 17,
         "tables": {
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
           "blobs": [
             "hash",
             "bytes",
@@ -849,6 +965,18 @@
             "created_at",
             "updated_at",
             "deleted_at"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
           ],
           "commits": [
             "commit_id",
@@ -1642,7 +1770,34 @@
               "val_json": null,
               "type": "string"
             }
-          ]
+          ],
+          "capabilities": [
+            {
+              "repo_id": "rp_1",
+              "capability": "history",
+              "state": "enabled",
+              "interface_v": 1,
+              "data_v": 1,
+              "config": "{}",
+              "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "coverage": "[{\"from\":\"2026-10-17T10:00:00.000Z\",\"to\":null}]",
+              "writer_requires": 1,
+              "updated_at": "2026-09-27T00:00:00.000Z"
+            },
+            {
+              "repo_id": "rp_1",
+              "capability": "semantic",
+              "state": "disabled",
+              "interface_v": 1,
+              "data_v": 1,
+              "config": "{}",
+              "config_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+              "coverage": "[]",
+              "writer_requires": 0,
+              "updated_at": "2026-09-27T00:00:00.000Z"
+            }
+          ],
+          "alerts": []
         }
       }
     },

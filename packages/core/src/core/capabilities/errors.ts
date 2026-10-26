@@ -62,4 +62,19 @@ export class CapabilityUnavailable extends Error {
   static semanticUnavailable(provider: string, reason: string): CapabilityUnavailable {
     return new CapabilityUnavailable("semantic", "unavailable", semanticUnavailableMessage(provider, reason), { provider, reason });
   }
+
+  /**
+   * A writer without the history module on a repository whose manifest requires
+   * capture (`writer_requires`, spec/store §5.4 step 0 — resolution 17):
+   * `{ capability: "history", state: "unavailable" }`, retriable — an engine
+   * carrying the module can. Unreachable through 17.0 (every composition
+   * carries the recorder); the shape Phase 4 wires.
+   */
+  static historyWriterRequired(): CapabilityUnavailable {
+    return new CapabilityUnavailable("history", "unavailable", HISTORY_WRITER_REQUIRED_MESSAGE);
+  }
 }
+
+/** The refusal's message (resolution 17), byte for byte what the Rust twin spells. */
+export const HISTORY_WRITER_REQUIRED_MESSAGE =
+  "history capture is required on this repository (writer_requires) and this engine runs without the history module — write through an engine that carries it, or run omg history disable";

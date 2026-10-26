@@ -609,6 +609,67 @@ extra tree node after it — while every edge figure matched; the re-run
 recorded here reproduces TS's 3,824 / 1,000 row for row, so the first run's
 gap was the harness's own (its spawn p95 was 525 ms), not the slice's.
 
+### 17.0 (3e-ii), TS — the capability manifest and the alert channel (`ts-2026-10-26T05-20-26`)
+
+The same harness over the Phase 3e-ii reference (store 17.0 with the two new
+core tables — the per-repository `capabilities` manifest and the `alerts`
+channel — the `writer_requires` check as step 0 of every write, the alert
+channel re-derived on every read of it), TS CLI, node 24; the 17.0 (3e-i) TS
+row above is the comparison. Nothing in the workload raises an alert and
+nothing flips the manifest, so the slice's whole footprint is two tables of
+one page each.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | 3e-i TS (db MB / KB / op / sync KB) | `capabilities` rows / KB | `alerts` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.47 | 6,468 | 32.2 / doc | 3.12 | 0.63 | 0.01 | 2.24 | 232 | 6.43 / 32.0 / 212 | 2 / 8 | 0 / 8 |
+| frontmatter hot update | 50 | 6.58 | 115 | 2.3 | 3.13 | 0.64 | 0.01 | 2.30 | 260 | 6.55 / 2.4 / 240 | 2 / 8 | 0 / 8 |
+| block edit | 50 | 6.70 | 119 | 2.4 | 3.13 | 0.66 | 0.01 | 2.37 | 288 | 6.68 / 2.5 / 268 | 2 / 8 | 0 / 8 |
+| rolling journal | 50 | 6.89 | 184 | 3.7 | 3.15 | 0.68 | 0.01 | 2.50 | 304 | 6.87 / 3.8 / 284 | 2 / 8 | 0 / 8 |
+| task churn | 50 | 6.97 | 82 | 1.6 | 3.15 | 0.69 | 0.01 | 2.55 | 328 | 6.94 / 1.5 / 308 | 2 / 8 | 0 / 8 |
+| link churn | 50 | 7.08 | 111 | 2.2 | 3.15 | 0.72 | 0.01 | 2.61 | 344 | 7.06 / 2.3 / 324 | 2 / 8 | 0 / 8 |
+| delete / recreate | 20 | 7.22 | 139 | 7.0 | 3.15 | 0.75 | 0.01 | 2.70 | 356 | 7.18 / 6.1 / 336 | 2 / 8 | 0 / 8 |
+| gc (default sweep) | | 7.22 | 0 | | 3.15 | 0.75 | 0.01 | 2.70 | 356 | 7.18 / 8 KB / 336 | 2 / 8 | 0 / 8 |
+
+**Two tiny tables, as expected.** `capabilities` holds its two rows (the
+repository's `history` row, `enabled` from the import's clock with
+`writer_requires = 1`, and its `semantic` row, `disabled` — `init
+--no-embedder`) in one 8,192 B page at every stage; `alerts` holds no row and
+its one page. The `sync` category is **+20 KB at every stage** (212 → 232 KB
+at import, 336 → 356 KB at the end): the two tables' 16 KB plus the schema
+page their DDL pushed `sqlite_schema` over. Every other category is the
+3e-i run's to within the seed's noise — `content` 3.12 → 3.15 MB (3e-i 3.10
+→ 3.15), `identity` 0.63 → 0.75 (0.63 → 0.74; `id_claims` 4,810 → 5,715
+rows, as before), `recovery` one page, `history` 2.24 → 2.70 (2.25 → 2.70;
+`blobs` 3,218, `tree_nodes` 1,000, `dispositions`/`block_changes` 3,824,
+`revisions` 461, `commits` 471, `edge_transitions` 955 — row for row the
+3e-i figures), `search` 0.23–0.24 MB; `edges` 800 → 803 rows, `feed` /
+`feed_entries` 471 each. The database is **6.47 vs 6.43 MB at import (29.6×
+the source vs 29.4×) and 7.22 vs 7.18 MB at the end (33.0× vs 32.8×)**:
++40 KB, the two pages and the schema page plus one page of noise. Per
+operation nothing moved (frontmatter 2.3 vs 2.4, block edit 2.4 vs 2.5,
+journal 3.7 vs 3.8, task churn 1.6 vs 1.5, link churn 2.2 vs 2.3, recreate
+7.0 vs 6.1 — the recreate stage is the noisiest in every run): the
+`writer_requires` check is one indexed read of the manifest and one no-op
+`UPDATE` of a channel with no active row per write, and the channel's
+re-derivation on a read is one aggregate over an empty
+`pending_materializations`.
+
+Latency (p50 / p95 ms, process start 165 / 203 included): import 1,069; one
+write 231–264 / 245–281 (frontmatter 231 / 245, block edit 259 / 273,
+journal 264 / 281, task churn 259 / 379, link churn 254 / 270, recreate 258
+/ 273); `query` docs 236 / 312, blocks filter 226 / 342, `text("furnace")`
+329 / 476, links 223 / 284; `outline` 219 / 268; `gc` 241. Against the
+3e-i run (writes 209–247 / 228–259, import 1,365, spawn 262 / 320) every
+write is 20–50 ms slower at p50 while the spawn is 100 ms faster — the two
+runs did not share a machine state (this one ran alongside a fixture
+regeneration's tail), and the engine's own share — a write minus the spawn
+— is 66–99 ms here against 3e-i's −53 to −15 ms by the same subtraction,
+which says the spawn-baseline, not the write, moved; the reads (docs 236 vs
+205, text 329 vs 282) show the same offset. Nothing in the slice touches a
+read path beyond the one aggregate per MCP result (the CLI's alert line
+reads the channel once after the verb). Re-measure the two side by side
+before reading anything into the 20–50 ms.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

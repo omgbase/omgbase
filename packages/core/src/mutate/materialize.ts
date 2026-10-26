@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3";
+import { MATERIALIZATION_FAILED_ALERT, clearAlert, materializationFailedMessage, raiseAlert, refreshBacklogAlert } from "../core/store/alerts.js";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { reconstructContent } from "../core/read/document.js";
@@ -244,10 +245,31 @@ export function materializeRow(store: Store, repoId: string, row: PendingRow, do
  * sweep (step 0) and of `recoverRepo`; the commit phase materializes its own
  * rows per effect instead, interleaved with the stat-cache refreshes.
  */
-export function materializePending(store: Store, repoId: string, docStore: DocStore): string[] {
+export function materializePending(store: Store, repoId: string, docStore: DocStore, now: string = new Date().toISOString()): string[] {
   const out: string[] = [];
-  for (const row of listPending(store.db, repoId)) {
-    if (materializeRow(store, repoId, row, docStore)) out.push(row.path);
+  try {
+    for (const row of listPending(store.db, repoId)) {
+      let done: boolean;
+      try {
+        done = materializeRow(store, repoId, row, docStore);
+      } catch (e) {
+        // spec/store §5.8 (17.0, 3e-ii — resolution 18): a replay that threw keeps
+        // its row and is retried by the next sweep; the stall is reported through
+        // the alert channel, not swallowed — the error still propagates.
+        raiseAlert(store.db, repoId, {
+          code: MATERIALIZATION_FAILED_ALERT,
+          severity: "error",
+          message: materializationFailedMessage(`/${row.path}`, e instanceof Error ? e.message : String(e)),
+          detail: { path: `/${row.path}`, kind: row.kind, reason: e instanceof Error ? e.message : String(e) },
+        }, now);
+        throw e;
+      }
+      if (done) out.push(row.path);
+    }
+    // A full pass with no failure ends the failure condition (the backlog is re-derived below).
+    clearAlert(store.db, repoId, MATERIALIZATION_FAILED_ALERT, now);
+  } finally {
+    refreshBacklogAlert(store.db, repoId, now);
   }
   return out;
 }

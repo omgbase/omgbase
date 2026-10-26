@@ -1,4 +1,4 @@
-import { freshnessSweep, watchLeaseLive, withWriterLock } from "@omgbase/core";
+import { activeAlerts, freshnessSweep, watchLeaseLive, withWriterLock, type Alert } from "@omgbase/core";
 import { NO_WORKSPACE_OK, SKIP_FRESHNESS, REMOTE_OK, asksForHelp, type Cli, type GlobalFlags } from "./context.js";
 import { CliUsageError, EngineErrorLike, renderError, usageFromParseArgs } from "./output.js";
 import { resolveCommand, unknownCommandError } from "./commands.js";
@@ -176,10 +176,34 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
         }
       }
     }
-    return await resolved.run(cli, args);
+    const code = await resolved.run(cli, args);
+    printAlerts(cli, resolved.name, help);
+    return code;
   } catch (err) {
     // A command's own `parseArgs` rejecting an option is a usage error (exit 2),
     // rendered here once for every verb rather than in each parser.
     return renderError(usageFromParseArgs(err, cli.prog, resolved.name), cli.io, cli.style, cli.flags.mode !== "human");
   }
 }
+
+// The alert channel on the CLI (spec/cli §3.1, store 17.0 — spec/store §3.1
+// `alerts`): after a verb that ran against a repository, every ACTIVE alert of
+// that repository is one stderr line, `alert[<severity>] <code>: <message>`,
+// so a stalled materialization or a refused writer is told where the user
+// works. Help, the workspace-less verbs, the servers (`mcp`, `shell` — whose
+// lines each run through here) and `--server` (no local store) print none; a
+// repository that does not resolve prints none either (the verb said so).
+function printAlerts(cli: Cli, name: string, help: boolean): void {
+  if (help || cli.flags.server !== undefined || NO_WORKSPACE_OK.has(name) || NO_ALERTS.has(name)) return;
+  let alerts: Alert[];
+  try {
+    const ws = cli.workspace();
+    alerts = activeAlerts(ws.store.db, cli.repo(ws).repoId);
+  } catch {
+    return;
+  }
+  for (const a of alerts) cli.io.err(`alert[${a.severity}] ${a.code}: ${a.message}`);
+}
+
+/** The verbs whose own run is a server or a session, not a command over the repository. */
+const NO_ALERTS = new Set(["mcp", "shell"]);

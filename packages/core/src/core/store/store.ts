@@ -1,7 +1,8 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { ALL_DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL, EDGE_TRANSITIONS_DDL } from "./schema.js";
+import { ALL_DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL, EDGE_TRANSITIONS_DDL, CAPABILITIES_DDL, ALERTS_DDL } from "./schema.js";
+import { ensureManifest, manifestTableExists } from "./manifest.js";
 import { mintId, registerIdOracle } from "../ids.js";
 import { FEED_DDL } from "./schema.js";
 import { pruneFeed, remintEpoch } from "./feed.js";
@@ -87,6 +88,7 @@ export class Store {
         this.migrateV17Pending();
         this.migrateV17Feed();
         this.migrateV17Edges();
+        this.migrateV17Manifest();
       }
       return;
     }
@@ -105,7 +107,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); this.migrateV17Manifest(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -829,6 +831,38 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
     } finally {
       db.pragma("foreign_keys = ON");
     }
+  }
+
+  // Step 17 (13)–(14) (3e-ii; spec/store §3.4): the `capabilities` manifest and
+  // the `alerts` table (both `schema.sql`'s text). Per repository without a
+  // manifest: the `history` row `enabled` with one open coverage interval from
+  // its first commit's `ts` (`commits` when the history bundle is here, else the
+  // feed's oldest row, else the migration's clock) and `writer_requires = 1` —
+  // existing repositories keep capturing; the `semantic` row `enabled` iff
+  // `embedding.provider` resolves for it, else `disabled` (resolution 1, no
+  // vectors consulted). `alerts` starts empty. Idempotent: a repository with its
+  // rows is left alone, so a 3a–3e-i database at 17 finishes the step on open.
+  private migrateV17Manifest(): void {
+    const db = this.db;
+    if (!this.tableExists("repos")) return;
+    const hadManifest = manifestTableExists(db);
+    db.transaction(() => {
+      db.exec(CAPABILITIES_DDL);
+      db.exec(ALERTS_DDL);
+      const clock = new Date().toISOString();
+      const repos = db.prepare("SELECT repo_id FROM repos ORDER BY rowid").all() as { repo_id: string }[];
+      const firstTs = this.tableExists("commits")
+        ? db.prepare("SELECT MIN(ts) AS ts FROM commits WHERE repo_id = ?")
+        : this.tableExists("feed") ? db.prepare("SELECT MIN(ts) AS ts FROM feed WHERE repo_id = ?") : null;
+      for (const r of repos) {
+        if (hadManifest && db.prepare("SELECT 1 FROM capabilities WHERE repo_id = ? AND capability = 'history'").get(r.repo_id)) {
+          ensureManifest(db, r.repo_id, clock, clock); // the semantic row alone may be missing
+          continue;
+        }
+        const from = (firstTs?.get(r.repo_id) as { ts: string | null } | undefined)?.ts ?? clock;
+        ensureManifest(db, r.repo_id, from, clock);
+      }
+    })();
   }
 
   /**

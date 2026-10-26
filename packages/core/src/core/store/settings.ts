@@ -30,7 +30,10 @@ export function effectiveSettings(store: Store, repoId: string): Record<string, 
 
 /** `effectiveSettings` over the bare connection (the writers hold only `db`). */
 export function effectiveSettingsOf(db: Database, repoId: string): Record<string, unknown> {
-  const ws = parseSettingsJson((db.prepare("SELECT settings FROM workspace_settings WHERE id = 0").get() as { settings: string } | undefined)?.settings);
+  // A migration's partial pre-state (spec/store §9.3) may lack the workspace
+  // layer's table; the layer then reads as `{}` (a real database always has it).
+  const hasWorkspace = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_settings'").get();
+  const ws = parseSettingsJson(hasWorkspace ? (db.prepare("SELECT settings FROM workspace_settings WHERE id = 0").get() as { settings: string } | undefined)?.settings : undefined);
   const own = parseSettingsJson((db.prepare("SELECT settings FROM repos WHERE repo_id = ?").get(repoId) as { settings: string } | undefined)?.settings);
   const merge = (base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = { ...base };

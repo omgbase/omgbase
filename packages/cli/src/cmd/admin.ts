@@ -14,6 +14,7 @@ import {
   ftsIndexedRowCount,
   liveLeafCount,
   sizeReport,
+  activeAlerts,
   vacuum,
   reclaimableBytes,
   humanBytes,
@@ -115,11 +116,11 @@ function runDoctor(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "doctor",
-      summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)",
+      summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, active alerts, SQLite integrity — exit 1 on any failure (CI-able)",
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
         ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice"],
-        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, advice }`"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice }`"],
       ],
     });
   }
@@ -131,7 +132,7 @@ function runDoctor(cli: Cli, args: string[]): number {
     const repoId = selectedRepoId(cli, ws);
     return runDoctorSize(cli, sizeReport(ws.store, repoId === undefined ? {} : { repoId }));
   }
-  cli.repo(ws); // the selected repo must resolve (`repo_not_found` otherwise); the checks are store-wide
+  const repo = cli.repo(ws); // the selected repo must resolve (`repo_not_found` otherwise); the checks are store-wide but the alerts are its
   const db = ws.store.db;
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
 
@@ -153,6 +154,12 @@ function runDoctor(cli: Cli, args: string[]): number {
   checks.push({ name: "head present", ok: headless === 0, detail: `${headless} without a head` });
   const uncaptured = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)").get() as { c: number }).c;
   checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `${uncaptured} heads without a revision` });
+
+  // Store 17.0 (3e-ii): the alert channel (spec/store §3.1 `alerts`) — the
+  // conditions the engine raised for a human on the selected repository; any
+  // active one fails the check and is named in its detail.
+  const alerts = activeAlerts(db, repo.repoId);
+  checks.push({ name: "alerts", ok: alerts.length === 0, detail: alerts.length === 0 ? "none active" : alerts.map((a) => `${a.code}[${a.severity}]: ${a.message}`).join("; ") });
 
   const integrity = db.pragma("integrity_check", { simple: true }) as string;
   checks.push({ name: "sqlite integrity", ok: integrity === "ok", detail: integrity });
@@ -223,10 +230,23 @@ function runDoctorSize(cli: Cli, report: SizeReport): number {
     ["id claims", `${report.id_claims} ids claimed`],
     // 17.0 (3e): the change feed's position (spec/store §7.2 `feed`, §7.4) — the report's repository's; none when the store has several and none was selected.
     ["feed", report.feed ? `epoch ${report.feed.epoch}, ${report.feed.entries} entries, seq ${report.feed.oldest}..${report.feed.head}` : "no repository selected"],
+    // 17.0 (3e-ii): the capability manifest of the same repository (spec/store §3.1 `capabilities`): `history  enabled since <ts> | disabled`, `semantic  enabled (<model>) | disabled`.
+    ["history", capabilityLine(report.capabilities, "history")],
+    ["semantic", capabilityLine(report.capabilities, "semantic")],
   ];
   for (const line of columns(file)) io.out(`  ${line}`);
   for (const a of report.advice) io.out(`  ${style.dim("advice:")} ${a}`);
   return EXIT_OK;
+}
+
+/** The manifest line of one capability: `enabled since <coverage_from>` for history, `enabled (<model>)` for semantic, `disabled`, or `no repository selected` like `feed`. */
+function capabilityLine(capabilities: SizeReport["capabilities"], name: "history" | "semantic"): string {
+  if (!capabilities) return "no repository selected";
+  const c = capabilities.find((x) => x.capability === name);
+  if (!c || c.state === "disabled") return "disabled";
+  if (name === "history") return c.coverage_from ? `enabled since ${c.coverage_from}` : "enabled";
+  const model = c.config.model;
+  return typeof model === "string" ? `enabled (${model})` : "enabled";
 }
 
 // ---- config -----------------------------------------------------------------

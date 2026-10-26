@@ -122,7 +122,18 @@ export { embeddingSettings, type EmbeddingSettings } from "./semantic/provider.j
 export { createExternalProvider, type ExternalProvider } from "./semantic/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./semantic/vector.js";
-export { capabilityStates, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
+export { capabilityStates, historyState, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
+// The capability manifest and the alert channel (spec/store §3.1 `capabilities` / `alerts`, 17.0 — modular-core Phase 3e-ii).
+export {
+  readCapability, readCapabilities, coverageFrom, ensureManifest, refreshSemanticManifest, refreshSemanticManifests, requireWriter, configHash, canonicalConfigJson,
+  HISTORY_INTERFACE_V, HISTORY_DATA_V, SEMANTIC_INTERFACE_V, SEMANTIC_DATA_V, WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE,
+  type ManifestRow, type ManifestState, type CoverageInterval,
+} from "./core/store/manifest.js";
+export {
+  activeAlerts, listActiveAlerts, raiseAlert, clearAlert, refreshBacklogAlert, alertAfterMinutes, materializationBacklogMessage, materializationFailedMessage,
+  MATERIALIZATION_BACKLOG_ALERT, MATERIALIZATION_FAILED_ALERT, RECOVERY_ALERT_AFTER_MINUTES_DEFAULT,
+  type Alert, type AlertInput, type AlertSeverity,
+} from "./core/store/alerts.js";
 export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, RevisionNotFound, type NodeChange, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
 // The change feed (spec/store §3.1 `feed`, 17.0 — the core's; spec/surface §3 `changes_since`).
 export {

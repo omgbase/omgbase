@@ -242,7 +242,17 @@ progress, the truncation footer, empty-result notes (`no hits`,
 `no repos attached`, `no sources registered`, `<slug> has no filesystem
 source — nothing to sync`), and errors. Every line ends in `\n`; a command
 that prints a string not ending in `\n` gets one appended. There are no
-exceptions: an empty result leaves stdout empty in every verb.
+exceptions: an empty result leaves stdout empty in every verb. **Alerts
+(store 17.0, slice 3e-ii).** After a verb has run against a repository, every
+ACTIVE alert of that repository (`spec/store` §3.1 `alerts`, §5.8) is one
+more stderr line, after the verb's own output, in every output mode:
+`alert[<severity>] <code>: <message>` — the same rows the MCP server
+carries in a result's `alerts` member (`spec/surface` §4), so a user at the
+terminal and an agent over MCP are told alike. The workspace-less verbs
+(`init`, `help`, `version`), the servers and sessions (`mcp`, `shell` — whose
+lines each print their own), `--server` (no local store) and a verb whose
+repository did not resolve print none. `admin::doctor-alert` pins the line
+(`find` with no hit: `  no matches`, then the alert).
 
 ### 3.1a Paths (cli 2.0)
 
@@ -647,8 +657,8 @@ block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 
 ### `doctor`
 
-`doctor [--json]` — four checks on the selected repo (through cli 5.x a
-fifth, `convergence` — `repos_status.unconverged === 0` — which store 17.0
+`doctor [--json]` — five checks on the selected repo (through cli 5.x a
+`convergence` check — `repos_status.unconverged === 0` — which store 17.0
 retired with the count: identically true under I1): `fts rows == live leaf blocks` (the rows the index
 holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
 `count(*)` on an external-content table answers from `blocks` — against the
@@ -657,11 +667,17 @@ live leaf blocks of `spec/search` §1.1: live rows no live row names as
 document has a `docs.head`; detail `<n> without a head`), `capture complete`
 (every live head has its `revisions` row — legacy capture agrees with the
 head, `spec/store` §8 H1; detail `<n> heads without a revision`; through
-store 16.x the one check `no dangling current_rev`), `sqlite integrity`. Human: `  ok <name>` per passing check,
+store 16.x the one check `no dangling current_rev`), `alerts` (store 17.0,
+slice 3e-ii: the selected repository's ACTIVE alerts, `spec/store` §3.1
+`alerts` / §5.8 — `ok` iff there is none; detail `none active`, else every
+active alert as `<code>[<severity>]: <message>` joined by `; `), `sqlite
+integrity`. Human: `  ok <name>` per passing check,
 `  x <name>  (<detail>)` per failing one; exit 1 when any fails. `--json`
 (and every non-human mode) `{ ok, checks: [{ name, ok, detail }] }`. The
 FTS check holds after a deletion (observed or `rm --doc`) and after
-`rebuild-index --fts`.
+`rebuild-index --fts`. `admin::doctor-alert` pins the failing `alerts` check
+in both modes over a stale pending row the fixture's `sql` device plants
+(§8): the backlog alert names the row's age and the replay to run.
 
 `doctor --size [--json]` (cli 4.3) — the **size report** instead of the
 checks: what the workspace database is made of, and what would reclaim
@@ -703,7 +719,12 @@ segments), (store 17.0) `id claims  <n> ids claimed` (`spec/store` §7.2
 17.0, slice 3e) `feed  epoch <ep>, <n> entries, seq <oldest>..<head>`
 (`spec/store` §7.2 `feed`: the change feed's epoch, retained rows and
 position for the report's repository; `feed  no repository selected` when
-the store has several and none resolved) — the keys padded to
+the store has several and none resolved), and (store 17.0, slice 3e-ii) the
+manifest's two lines for the same repository (`spec/store` §7.2
+`capabilities`) — `history  enabled since <coverage_from>` (`disabled` when
+the row says so or is absent; `no repository selected` like `feed`) and
+`semantic  enabled (<model>)` (`enabled` when no model is configured,
+`disabled` otherwise) — the keys padded to
 `reclaimable`; then one `  advice: <text>`
 line per advice. Without `dbstat` in the SQLite build the bytes and share cells are
 `—`, the tables order by rows, and a line `  dbstat unavailable: row counts
@@ -727,15 +748,18 @@ younger than the default `keep_days`);
 `embeddings are <share> of the
 database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg
 embed drain --prune\` after a model switch shrinks them` when the two
-embedding tables hold more than 25 %; `nothing to reclaim` when none
-applies.
+embedding tables hold more than 25 %; `identity claims are <share> of the
+database: set identity.claims_retain_days to release old ids` (store 17.0,
+slice 3e-ii) when `id_claims` holds more than 10 %; `nothing to reclaim`
+when none applies.
 
 `--json` (and every non-human mode — there is no list the machine modes
 stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
 freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
 tables: [{ name, bytes, share, rows, indexes }] }], same_dispositions,
 id_claims, archived: { revisions, segments, bytes }, feed: { epoch, oldest,
-head, entries, retain_days, retain_entries, max_entries } | null, advice:
+head, entries, retain_days, retain_entries, max_entries } | null,
+capabilities: [{ capability, state, coverage_from, config }] | null, advice:
 [string] }`
 (+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
 `share` and `indexes` is `null`); `indexes` is the part of a table's
@@ -744,6 +768,9 @@ head, entries, retain_days, retain_entries, max_entries } | null, advice:
 `id_claims` (store 17.0) the `id_claims` row count of `spec/store` §7.2;
 `feed` (store 17.0, slice 3e) the feed's position and effective policy
 (`spec/store` §7.2, §7.4 — `epoch` a string, the rest integers);
+`capabilities` (store 17.0, slice 3e-ii) the manifest of the same
+repository (`spec/store` §7.2 — `history` then `semantic`, `coverage_from`
+a timestamp or null, `config` the row's object), null like `feed`;
 every other number is an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
 `doctor-size-json`, `doctor-size-jsonl`, `doctor-size-after-rm` — recorded
 by shape (§8): the sizes and shares are `<bytes>`/`<share>`/`<number>`,
@@ -1525,10 +1552,11 @@ prompt the batch runner reads everything first.
   "cases": [
     { "name": "…", "notes": "…", "workspace": "alchemy" | "none" | "empty",
       "env": { "VAR": "value" }, "files": { "<path>": "<content>" | null },
+      "sql": ["<statement>", …],
       "stdin": "…", "argv": ["…"], "pin_stderr": true,
       "expect": { "exit": 0, "stdout": "…", "stderr": "…" } },
-    { "name": "…", "workspace": "…", "env": {…}, "files": {…},
-      "steps": [ { "argv": [...], "stdin": "…", "env": {…}, "files": {…}, "pin_stderr": true,
+    { "name": "…", "workspace": "…", "env": {…}, "files": {…}, "sql": […],
+      "steps": [ { "argv": [...], "stdin": "…", "env": {…}, "files": {…}, "sql": […], "pin_stderr": true,
                    "expect": {…} }, … ] }
   ] }
 ```
@@ -1572,7 +1600,14 @@ environment holding only: `PATH` (inherited), `NO_COLOR=1`,
 `OMGBASE_SPEC_CLOCK=2026-09-27T00:00:00.000Z`, then the case's `env` and the
 step's `env` (later wins). `files` (the case's before the first step, a
 step's before that step) are written under `<tmp>`, a `null` value deletes,
-a `*.sh` file is made executable. The token `<workspace>` in argv, env
+a `*.sh` file is made executable. `sql` (store 17.0, slice 3e-ii; the
+case's before the first step, a step's before that step, after its
+`files`) is run verbatim, in order, in one transaction on
+`<tmp>/.omgbase/omgbase.db` by the harness through its engine's library —
+the device that puts into the workspace rows no verb writes (a stale
+pending materialization, `admin::doctor-alert`), the CLI twin of
+`spec/store` §9.4's `exec`; a statement may not reference anything the
+fixture minter has not issued. The token `<workspace>` in argv, env
 values, stdin and file contents is replaced by `<tmp>` before use; in
 stdout and stderr every occurrence of `<tmp>` is replaced by `<workspace>`
 after, and every occurrence of the binary's own version string (what

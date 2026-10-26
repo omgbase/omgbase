@@ -17,7 +17,7 @@
 // interop gate. SURFACE_SPEC_UPDATE=1 regenerates `expect` from the ts→ts pair
 // (and re-embeds the corpus). A missing peer fails its pairs with the build
 // command; OMGBASE_INTEROP=skip turns that into a skip (§7.4).
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,8 +31,9 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
+import { coreCapabilities, envCapabilities } from "../../src/core/capabilities/index.js";
 import {
-  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, toRpcErrorOutcome, validateFixtureFile,
+  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, coreModeInteropExpect, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, toRpcErrorOutcome, validateFixtureFile,
   type InteropCall, type InteropCase, type InteropSuite, type ReadOutcome, type ToolResult,
 } from "./fixture.js";
 
@@ -46,6 +47,20 @@ const UPDATE = (() => {
   return v !== undefined && v !== "" && v !== "0";
 })();
 const SKIP_MISSING = process.env.OMGBASE_INTEROP === "skip";
+
+/**
+ * The core-only run (README §7.3; modular-core Phase 3e-ii, `OMGBASE_CAPABILITIES=core`):
+ * every peer this harness spawns inherits the variable, so the TypeScript peer
+ * serves the composition without the semantic module and `read-query`'s
+ * `semantic(…)` step answers `capability_unavailable { semantic, disabled }`
+ * where the fixture holds `provider_unavailable`. The runner maps the
+ * expectation (never the fixture), reports how many outcomes it mapped, and is
+ * never regenerated from this run. A peer that does not honor the variable
+ * fails its pairs here, as a divergence should.
+ */
+const CORE_MODE = envCapabilities() === coreCapabilities;
+if (CORE_MODE && UPDATE) throw new Error("SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
+const coreMapped: string[] = [];
 
 /** Nothing projected is floating point except search scores; compare within 1e-9. */
 const EPS = 1e-9;
@@ -413,11 +428,24 @@ describe("surface interop (spec/surface §7, cases/interop.json)", () => {
         }
         const run = await runCase(suite.corpus, c, PEERS[w], PEERS[r]);
         const context = (): string => `\n--- writer (${w}) stderr ---\n${clip(run.stderr.writer, 3000)}\n--- reader (${r}) stderr ---\n${clip(run.stderr.reader, 3000)}`;
-        const dw = deepEqualTol(run.writes, c.expect.writes, EPS);
-        if (dw !== null) expect(sortKeys(run.writes), `writes: ${dw}${context()}`).toEqual(sortKeys(c.expect.writes));
-        const dr = deepEqualTol(run.reads, c.expect.reads, EPS);
-        if (dr !== null) expect(sortKeys(run.reads), `reads: ${dr}${context()}`).toEqual(sortKeys(c.expect.reads));
+        let expected = c.expect;
+        if (CORE_MODE) {
+          const mapped = coreModeInteropExpect(c.expect);
+          if (mapped.mapped > 0) coreMapped.push(`${name} (${mapped.mapped} outcome${mapped.mapped === 1 ? "" : "s"})`);
+          expected = mapped.expect;
+        }
+        const dw = deepEqualTol(run.writes, expected.writes, EPS);
+        if (dw !== null) expect(sortKeys(run.writes), `writes: ${dw}${context()}`).toEqual(sortKeys(expected.writes));
+        const dr = deepEqualTol(run.reads, expected.reads, EPS);
+        if (dr !== null) expect(sortKeys(run.reads), `reads: ${dr}${context()}`).toEqual(sortKeys(expected.reads));
       }, TEST_MS);
     }
   }
+});
+
+// The core-only run's ledger (README §7.3): which outcomes answered
+// `capability_unavailable` instead of the fixture's full-composition one.
+afterAll(() => {
+  if (!CORE_MODE) return;
+  process.stderr.write(`[surface interop] OMGBASE_CAPABILITIES=core: ${coreMapped.length} pairing(s) mapped provider_unavailable to capability_unavailable { semantic, disabled }:\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n`);
 });

@@ -6,7 +6,7 @@ export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, sema
 export { defaultCapabilities, envCapabilities, CAPABILITIES_ENV } from "./default.js";
 export { coreCapabilities } from "./core.js";
 export {
-  CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage,
+  CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, HISTORY_WRITER_REQUIRED_MESSAGE, semanticUnavailableMessage,
   type CapabilityName, type CapabilityState,
 } from "./errors.js";
 export { HistoryRecorderImpl } from "./history.js";

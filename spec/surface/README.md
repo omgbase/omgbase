@@ -1599,7 +1599,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0; `docs_read_at` is `docs_read { at }`'s sugar since 4.7, §2) |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 (3.0; 6.0 with sync 4.0): `repos_status` names the repository `{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk }` (the root row's `_id`, §1.1; `slug` and the rest roles; `feed` replaces the `commits` count, `unconverged` — identically zero under I1 — is gone); `sync_status` is `{ epoch, oldest, head, lastBatch: { ts, batchId, files } \| null, convergent, diskChecked, disk, capabilities }` (`lastCommitSeq`/`lastCheckpoint` through 5.x; `convergent` = `diskChecked && no drift`; `capabilities` as `version` reports them) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
-| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2) `{ history: { state }, semantic: { state } }`; `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2; since 6.0 read from the store's `capabilities` manifest — §4 "Alerts") `{ history: { state }, semantic: { state } }`; `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 `plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -1657,6 +1657,35 @@ it as a data field wherever `data` is recorded; since 4.5 a
 fixes are pinned at the surface where a case reaches them as well as by
 `spec/mutate`'s fixtures). The bare-target locator refusal (`spec/mutate`
 §11.8 "Sugar") keeps its 3.2 prose `fix`.
+
+**Alerts (6.0; store 17.0 slice 3e-ii).** Every tool's **successful**
+result that is a JSON object may carry one more top-level member, **last**:
+`alerts: [{ code, severity, message, since, detail? }, …]` — the ACTIVE
+rows of the store's alert channel (`spec/store` §3.1 `alerts`, §5.8) for
+the call's repository (the `repo` argument's, else the server's default),
+listed by (`since`, `code`), `detail` present only when the row's is not
+`{}`. The member is present **only when there is at least one active
+alert** — a quiet repository's results are byte for byte what they were,
+and the §6 fixtures of every tool stay as recorded — and never on an error
+envelope (an error carries `error`/`message`/`data`/`retriable` and nothing
+else) nor on a result that is a JSON array (`observe_many`). It is the
+engine telling the user where they work that a condition needs them (a
+materialization backlog, a replay that failed, a writer refused by
+`writer_requires`), as a `query` result's `hints` tells them about their
+query; the codes, severities and messages are `spec/store` §5.8's, byte for
+byte in both engines. The channel's derivable conditions are re-derived on
+every read of it, so the member is current without a write when nothing
+changed. `version.capabilities` (5.1) is since 6.0 the **manifest's**
+rendering (`spec/store` §3.1 `capabilities`): `history.state` the row's
+state (`unavailable` when the composition lacks the recorder — no 17.0
+composition does), `semantic.state` the row's state overlaid with the host's
+report (`unavailable` when a configured provider failed to start; `disabled`
+when the store runs without the module); without a repository the
+composition and the workspace layer's setting answer as before. The wire
+shape is unchanged — `coverage_from` and `writer_requires` join it with
+Phase 4's verbs. `reads::alerts` pins the member end to end (a backlog
+raised, carried on `query` and `docs_read`, absent on an error, cleared by
+recovery); the Rust twin must spell the same bytes.
 
 ## 5. The CLI
 
@@ -1753,7 +1782,15 @@ necessary.
   may also carry `spec/store` §9.4's retention steps (4.9: `history_export`,
   `history_attach`, `history_detach`, …, run as the store runner runs them,
   the segments in a directory of the case's own) around the reads that show
-  `_archived` and `revision_archived` (`reads::archived`).
+  `_archived` and `revision_archived` (`reads::archived`), and (6.0) a
+  **`recover`** step — `{ "recover": { "ts": "<RFC 3339>" } }`, crash recovery
+  over the case's working tree at `ts` (`spec/sync` §4.3: the pending rows
+  replayed, the drift healed; needs `workspace: true`), whose outcome is `{
+  recovered: { materialized: [paths], healed: [paths], missing: [paths] } }`
+  (repo-relative paths, as the recovery result spells them). `reads::alerts`
+  plants a stale pending row with an `exec` step and shows the `alerts`
+  member raised on a read past the threshold, carried by `query` and
+  `docs_read`, absent on an error envelope, and gone after `recover`.
 - **`cursor.json`**: `{ name, parts | (cursor, arity), expect }` encode /
   decode cases (`{ cursor }`, `{ parts }` or `{ error: "filter_invalid" }`).
 
@@ -1950,7 +1987,21 @@ with `cardinality: 0`). The profiles (4.3) add `profile-minimal`: the reader spa
 `server_args: ["--tools", "minimal"]` lists exactly the ten tools, its
 `version` reports `profile: "minimal"` (by shape), a `blocks_insert` is the
 `-32602` `unknown tool blocks_insert`, and a `docs_read` answers as under
-`full`. `apply`'s file-CAS holds in the writing
+`full`. **The core composition (6.0, modular-core Phase 3e-ii).** Under
+`OMGBASE_CAPABILITIES=core` the harness's own peer serves the composition
+without the semantic module, and `read-query`'s `semantic(…)` step answers
+`capability_unavailable { capability: "semantic", state: "disabled", fix }`
+(`retriable: false`, no message recorded — its `data` names no argument)
+where the fixture holds `provider_unavailable`. The mapping lives in the
+**runner**, keyed on the composition it runs under, never in the fixture:
+every `provider_unavailable` outcome of a case's `expect.writes` and
+`expect.reads` is replaced by that envelope before the comparison, the
+runner reports which pairings it mapped, and the fixture is never
+regenerated from that run (the reference refuses `SURFACE_SPEC_UPDATE`
+under it). Every other outcome must hold unchanged. The Rust harness
+mirrors the rule for the composition its binary is built or run with; a
+peer that does not honor the variable fails its pairs, as a divergence
+should. `apply`'s file-CAS holds in the writing
 engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.

@@ -36,6 +36,73 @@
             ],
             "foreign_keys": []
           },
+          "alerts": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "code",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "severity",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "message",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "since",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "detail",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "cleared_at",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
           "archives": {
             "columns": [
               {
@@ -473,6 +540,97 @@
               }
             ],
             "foreign_keys": []
+          },
+          "capabilities": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "capability",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "state",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "interface_v",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "data_v",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "config",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "config_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "coverage",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'[]'",
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "writer_requires",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": "0",
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "updated_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
           },
           "commits": {
             "columns": [
@@ -2378,6 +2536,16 @@
               "name"
             ]
           },
+          "sqlite_autoindex_alerts_1": {
+            "table": "alerts",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "code"
+            ]
+          },
           "sqlite_autoindex_archives_1": {
             "table": "archives",
             "unique": 1,
@@ -2443,6 +2611,16 @@
             "columns": [
               "segid",
               "term"
+            ]
+          },
+          "sqlite_autoindex_capabilities_1": {
+            "table": "capabilities",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "capability"
             ]
           },
           "sqlite_autoindex_commits_1": {

@@ -627,7 +627,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  doctor — Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n         omg doctor --size [--json]\n  options:\n    --size      instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice\n    --json      `{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, advice }`\n    -h, --help  show this help\n"
+        "stdout": "  doctor — Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, active alerts, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n         omg doctor --size [--json]\n  options:\n    --size      instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice\n    --json      `{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice }`\n    -h, --help  show this help\n"
       }
     },
     {

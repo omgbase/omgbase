@@ -177,9 +177,10 @@ describe("store spec fixtures (spec/store/cases)", () => {
     expect(new Set(all).size).toBe(all.length);
     expect(names(ALL_DDL)).toEqual(all);
     // The single-file table set of 17.0 through slice 3d, minus the D9 drops
-    // (`collections`, `inferred_edges`), plus the history bundle's `edge_transitions`.
+    // (`collections`, `inferred_edges`), plus the history bundle's `edge_transitions`
+    // and (3e-ii) the core's `capabilities` manifest and `alerts`.
     expect([...all].sort()).toEqual([
-      "adapters", "archives", "attachments", "blobs", "block_changes", "blocks", "blocks_fts", "commits", "dispositions", "doc_edges", "doc_embeddings", "docs",
+      "adapters", "alerts", "archives", "attachments", "blobs", "block_changes", "blocks", "blocks_fts", "capabilities", "commits", "dispositions", "doc_edges", "doc_embeddings", "docs",
       "edge_transitions", "edges", "embeddings", "external_nodes", "feed", "feed_entries", "file_stats", "id_claims", "nodes", "nodes_fts",
       "pending_materializations", "properties", "repos", "resurrection_pool", "revisions", "sections", "sources", "sync_state", "tree_nodes", "workspace_settings",
     ]);

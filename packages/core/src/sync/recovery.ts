@@ -28,7 +28,8 @@ export interface RecoveryResult {
 
 export function recoverRepo(store: Store, repoId: string, rootPath: string, opts: { ts?: string; fs?: SyncFs; docStore?: DocStore } = {}): RecoveryResult {
   const fs = opts.fs ?? nodeFs;
-  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath));
+  const ts = opts.ts ?? new Date().toISOString();
+  const materialized = materializePending(store, repoId, opts.docStore ?? new FsDocStore(rootPath), ts);
   // 17.0 (M4): the convergence oracle is the document row's own `file_hash`
   // (I1/C1: the hash of the bytes its head renders to); no `revisions` read.
   const docs = store.db
@@ -37,7 +38,6 @@ export function recoverRepo(store: Store, repoId: string, rootPath: string, opts
 
   const healed: string[] = [];
   const missing: string[] = [];
-  const ts = opts.ts ?? new Date().toISOString();
 
   for (const doc of docs) {
     const bytes = fs.read(rootPath, doc.path);

@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { refreshSemanticManifest, refreshSemanticManifests } from "../core/store/manifest.js";
 
 // Settings scopes (config-scope). Config is ONE schema at TWO layers: the
 // workspace_settings singleton is the default layer; a repo's repos.settings
@@ -35,14 +36,24 @@ export function repoOwnSettings(store: Store, repoId: string): Settings {
   return parse(row?.settings);
 }
 
+// Every settings write re-derives the semantic manifest row (spec/store §3.1
+// `capabilities`, 17.0 3e-ii — resolution 1: `enabled` iff `embedding.provider`
+// resolves): the workspace layer touches every repository's row, a repo's own
+// layer that repository's. The Phase 4 `embed enable|disable` verbs take this
+// over; until then the manifest follows the setting, in the same transaction.
+
 export function writeWorkspaceSettings(store: Store, settings: Settings): void {
-  store.db
-    .prepare("INSERT INTO workspace_settings (id, settings) VALUES (0, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings")
-    .run(JSON.stringify(settings));
+  store.write((db) => {
+    db.prepare("INSERT INTO workspace_settings (id, settings) VALUES (0, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings").run(JSON.stringify(settings));
+    refreshSemanticManifests(db, new Date().toISOString());
+  });
 }
 
 export function writeRepoSettings(store: Store, repoId: string, settings: Settings): void {
-  store.db.prepare("UPDATE repos SET settings = ? WHERE repo_id = ?").run(JSON.stringify(settings), repoId);
+  store.write((db) => {
+    db.prepare("UPDATE repos SET settings = ? WHERE repo_id = ?").run(JSON.stringify(settings), repoId);
+    refreshSemanticManifest(db, repoId, new Date().toISOString());
+  });
 }
 
 /** Deep-merge: `over` wins at the leaf; nested plain objects merge recursively,

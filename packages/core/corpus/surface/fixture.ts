@@ -32,6 +32,7 @@ import { pinClock, withClock } from "../../src/core/clock.js";
 import { CursorInvalid, decodeCursor, encodeCursor } from "../../src/core/cursor.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
+import { recoverRepo } from "../../src/sync/recovery.js";
 import { oqxRun, type OqxResult } from "../../src/oqx-js/run.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
 import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX } from "../../src/core/capabilities/errors.js";
@@ -80,7 +81,11 @@ export interface QuerySuite {
 export interface ReadStep {
   read: { tool: string; args: Record<string, unknown>; ts?: string };
 }
-export type Step = StoreStep | ReadStep;
+/** A `recover` step (README §6, 6.0): crash recovery over the case's working tree (`spec/sync` §4.3 — the pending rows replayed, the drift healed) at `ts`; needs `workspace: true`. */
+export interface RecoverStep {
+  recover: { ts: string };
+}
+export type Step = StoreStep | ReadStep | RecoverStep;
 
 /** A tool error, as the fixture records it: the envelope minus its prose. */
 export interface ReadErrorOutcome {
@@ -409,6 +414,18 @@ export function coreModeQueryExpect(expect: OqxResult | QueryErrorExpect): { exp
   return { expect, mapped: false };
 }
 
+/**
+ * An interop case's expectation under the core-only run (README §7.3): every
+ * `provider_unavailable` outcome of `writes` and `reads` becomes the capability
+ * error — the mapping lives in the RUNNER, keyed on the composition it runs
+ * under, never in the fixture, exactly as `coreModeReadsExpect` does for `reads.json`.
+ */
+export function coreModeInteropExpect(expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }): { expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }; mapped: number } {
+  const w = coreModeReadsExpect({ steps: expect.writes });
+  const r = coreModeReadsExpect({ steps: expect.reads });
+  return { expect: { writes: w.expect.steps, reads: r.expect.steps }, mapped: w.mapped + r.mapped };
+}
+
 /** A reads case's expectation under the core-only run: every `provider_unavailable` step outcome becomes the capability error. */
 export function coreModeReadsExpect(expect: { steps: StepOutcome[] }): { expect: { steps: StepOutcome[] }; mapped: number } {
   let mapped = 0;
@@ -591,6 +608,17 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
           steps.push(runHistoryStep(store, repoId, step, history.ctx));
         } else if ("remint_epoch" in step) {
           throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
+        } else if ("recover" in step) {
+          // README §6 (6.0): recovery over the case's working tree under the step's
+          // clock — the pending rows replayed (the alert channel re-derived with
+          // them), the disk compared to the heads; the outcome is `recoverRepo`'s.
+          if (!dir) throw new Error("a recover step needs `workspace: true`");
+          const restore = pinClock(step.recover.ts);
+          try {
+            steps.push({ recovered: recoverRepo(store, repoId, dir, { ts: step.recover.ts }) });
+          } finally {
+            restore();
+          }
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;
@@ -646,6 +674,12 @@ const validateRead: ExtraStepValidator = (body, here, problems) => {
   if (typeof body.tool !== "string" || body.tool === "") problems.push(`${here}: \`tool\` must be a tool name`);
   if (!isRecord(body.args)) problems.push(`${here}: \`args\` must be an object`);
   if (body.ts !== undefined && (typeof body.ts !== "string" || !TS_RE.test(body.ts))) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
+};
+
+/** README §6 (6.0): a `recover` step takes exactly `ts`. */
+const validateRecover: ExtraStepValidator = (body, here, problems) => {
+  if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: recover takes only \`ts\``);
+  if (!isRecord(body) || typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
 };
 
 /** README §7: an interop call is exactly `{ tool, args }`. Returns the number of calls (or -1 when not an array). */
@@ -756,7 +790,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.bare !== undefined && typeof c.bare !== "boolean") problems.push(`${at}: \`bare\` must be a boolean`);
     } else if (kind === "reads" || kind === "examples") {
       if (c.workspace !== undefined && typeof c.workspace !== "boolean") problems.push(`${at}: \`workspace\` must be a boolean`);
-      stepCount = validateSteps(at, c.steps, problems, { read: validateRead });
+      stepCount = validateSteps(at, c.steps, problems, { read: validateRead, recover: validateRecover });
     } else {
       const has = ["parts", "cursor"].filter((k) => c[k] !== undefined);
       if (has.length !== 1) problems.push(`${at}: exactly one of \`parts\` / \`cursor\``);

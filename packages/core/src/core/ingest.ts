@@ -4,6 +4,7 @@ import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
 import { assignIds, type TreeInputBlock } from "./store/writers.js";
 import { requireHistory, claimsOf } from "./capabilities/registry.js";
+import { requireWriter } from "./store/manifest.js";
 import { appendFeedEntry, appendFeedRow, feedRowOf } from "./store/feed.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
@@ -353,6 +354,7 @@ export function ingestInto(
   // and writes its `revisions` row under this token, its tree and frontmatter
   // deltas against its OWN previous captured revision. Legacy capture stays
   // on for every repository through Phase 3, so `revisions.rev_id == head`.
+  requireWriter(db, repoId, ts); // spec/store §5.4 step 0 (3e-ii): a writer without the recorder refuses where the manifest requires it
   const history = requireHistory(db);
   const renderedHash = sha256(content);
   const head = mintId("r");

@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import type { Store } from "./store.js";
 import { requireHistory, semanticOf } from "../capabilities/registry.js";
 import { feedStatus, repoFeedPolicy } from "./feed.js";
+import { coverageFrom, readCapabilities } from "./manifest.js";
 
 // The size report (spec/store §7.2 "Size", 14.1; the six categories 17.0 —
 // D9): what the database is made of, table by table through SQLite's `dbstat`
@@ -45,6 +46,8 @@ export const TABLE_CATEGORY: Readonly<Record<string, SizeCategory>> = {
   embeddings: "search",
   doc_embeddings: "search",
   repos: "sync",
+  capabilities: "sync",
+  alerts: "sync",
   sources: "sync",
   adapters: "sync",
   attachments: "sync",
@@ -122,6 +125,15 @@ export interface SizeFeed {
   max_entries: number;
 }
 
+/** spec/store §7.2 (17.0, 3e-ii): one manifest row of the report's repository as the report carries it (`config` the row's — `{ model?, dim? }` for semantic, `{}` for history). */
+export interface SizeCapability {
+  capability: "history" | "semantic";
+  state: "enabled" | "disabled";
+  /** the first coverage interval's `from`; null when none */
+  coverage_from: string | null;
+  config: Record<string, unknown>;
+}
+
 export interface SizeReport {
   file: SizeFile;
   /** Always the six categories, in the fixed order content, identity, recovery, history, search, sync. */
@@ -134,6 +146,8 @@ export interface SizeReport {
   archived: SizeArchived;
   /** spec/store §7.2 (17.0): the feed of the report's repository — the one named, else the store's only one; null when the store has several and none was named. */
   feed: SizeFeed | null;
+  /** spec/store §7.2 (17.0, 3e-ii): the capability manifest of the report's repository (the same selection as `feed`), `history` then `semantic`; null like `feed`. */
+  capabilities: SizeCapability[] | null;
   advice: string[];
   /** Present only when the SQLite build lacks `dbstat` (row counts only). */
   detail?: "dbstat unavailable";
@@ -146,6 +160,8 @@ export const HISTORY_ADVICE_MIN_SHARE = 50;
 export const SAME_ADVICE_MIN_SHARE = 25;
 /** The retention advice fires when the plan's bytes exceed this share of the `history` category (15.0). */
 export const RETENTION_ADVICE_MIN_SHARE = 10;
+/** The claims advice fires when `id_claims` exceeds this share of the database (17.0, 3e-ii — phase-1-contracts §7.5). */
+export const CLAIMS_ADVICE_MIN_SHARE = 10;
 
 /**
  * `<n> B` under 1024, else one decimal of KB/MB/GB/TB (1024-based), the tenths
@@ -211,6 +227,17 @@ export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sam
     const total = categories.reduce((n, c) => n + (c.bytes ?? 0), 0);
     const embBytes = search.tables.filter((t) => t.name === "embeddings" || t.name === "doc_embeddings").reduce((n, t) => n + (t.bytes ?? 0), 0);
     advice.push(...vectorAdvice(embBytes, total));
+  }
+  // 17.0 (3e-ii, contracts §7.5): the identity's own growth — one `id_claims`
+  // row per id ever minted and still held; past a tenth of the database the
+  // claims prune (§7.3) is the knob (dbstat only: the comparison needs the pages).
+  const identity = categories.find((c) => c.name === "identity");
+  const claims = identity?.tables.find((t) => t.name === "id_claims");
+  if (claims && claims.bytes !== null && claims.share !== null) {
+    const total = categories.reduce((n, c) => n + (c.bytes ?? 0), 0);
+    if (claims.bytes * 100 > total * CLAIMS_ADVICE_MIN_SHARE) {
+      advice.push(`identity claims are ${formatShare(claims.share)} of the database: set identity.claims_retain_days to release old ids`);
+    }
   }
   if (advice.length === 0) advice.push("nothing to reclaim");
   return advice;
@@ -347,8 +374,17 @@ export function sizeReport(store: Store, opts: SizeReportOptions = {}): SizeRepo
     const entries = (db.prepare("SELECT count(*) AS c FROM feed WHERE repo_id = ? AND epoch = ?").get(feedRepo, status.epoch) as { c: number }).c;
     feed = { epoch: status.epoch, oldest: status.oldest, head: status.head, entries, retain_days: policy.retainDays, retain_entries: policy.retainEntries, max_entries: policy.maxEntries };
   }
+  // 17.0 (3e-ii): the manifest of the same repository (spec/store §3.1 `capabilities`), `history` then `semantic`.
+  let capabilities: SizeCapability[] | null = null;
+  if (feedRepo !== null) {
+    const rows = readCapabilities(db, feedRepo);
+    capabilities = (["history", "semantic"] as const).map((capability) => {
+      const row = rows[capability];
+      return { capability, state: row?.state ?? "disabled", coverage_from: coverageFrom(row), config: row?.config ?? {} };
+    });
+  }
   const semantic = semanticOf(db);
-  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, feed, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
+  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }
