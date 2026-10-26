@@ -44,13 +44,13 @@ static INLINE_FIELD: LazyLock<Regex> = LazyLock::new(|| {
 static WHOLE_WIKILINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\[\[([^\]]+)\]\]$").expect("valid"));
 
-/// What an edge points at (`edges.dst_kind`).
+/// What an edge points at (`edges.dst_kind`: `document | block | external`
+/// — `collection` left with the `collections` table in store 17.0, D9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DstKind {
     Document,
     Block,
     External,
-    Collection,
 }
 
 impl DstKind {
@@ -60,7 +60,6 @@ impl DstKind {
             DstKind::Document => "document",
             DstKind::Block => "block",
             DstKind::External => "external",
-            DstKind::Collection => "collection",
         }
     }
 
@@ -70,7 +69,6 @@ impl DstKind {
             "document" => Some(DstKind::Document),
             "block" => Some(DstKind::Block),
             "external" => Some(DstKind::External),
-            "collection" => Some(DstKind::Collection),
             _ => None,
         }
     }

@@ -31,26 +31,23 @@ pub fn doc_blocks(blocks: &[TreeInputBlock]) -> Vec<DocBlock<'_>> {
         .collect()
 }
 
-/// §6: replace the document's rows. `created_commit` is the commit;
-/// `deleted_commit` stays `NULL`. A NaN `val_num` binds as `NULL` (the row
-/// keeps `type = 'number'`, spec/properties §8). Returns how many rows were
-/// written.
-// seam: explicit creation metadata (Phase 3, M2 — `created_commit` → the
-// change token or dropped, `deleted_commit` dropped (D9); inventory-rust.md
-// §2.4 `properties.rs:38-71`).
+/// §6: replace the document's rows. The rows carry no commit column (store
+/// 17.0, D9): a property is live exactly while its document's rows are — this
+/// delete-and-rewrite per commit is what keeps that true. A NaN `val_num`
+/// binds as `NULL` (the row keeps `type = 'number'`, spec/properties §8).
+/// Returns how many rows were written.
 pub fn write_doc_properties(
     conn: &Connection,
     repo_id: &str,
     doc_id: &str,
-    commit_id: &str,
     rows: &[PropertyRow],
 ) -> Result<usize> {
     conn.execute("DELETE FROM properties WHERE doc_id = ?1", params![doc_id])?;
     let mut insert = conn.prepare_cached(
         "INSERT OR REPLACE INTO properties
            (prop_id, repo_id, doc_id, block_id, source, key, card, ord,
-            val_text, val_num, val_bool, val_json, type, created_commit)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            val_text, val_num, val_bool, val_json, type)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?;
     for r in rows {
         insert.execute(params![
@@ -67,7 +64,6 @@ pub fn write_doc_properties(
             r.val_bool.map(i64::from),
             r.val_json,
             r.ty.as_str(),
-            commit_id,
         ])?;
     }
     Ok(rows.len())
@@ -77,7 +73,7 @@ pub fn write_doc_properties(
 pub fn read_doc_properties(conn: &Connection, doc_id: &str) -> Result<Vec<PropertyRow>> {
     let mut stmt = conn.prepare_cached(
         "SELECT prop_id, block_id, source, key, card, ord, type, val_text, val_num, val_bool, val_json
-           FROM properties WHERE doc_id = ?1 AND deleted_commit IS NULL ORDER BY rowid",
+           FROM properties WHERE doc_id = ?1 ORDER BY rowid",
     )?;
     let rows = stmt.query_map(params![doc_id], |r| {
         let source: String = r.get(2)?;

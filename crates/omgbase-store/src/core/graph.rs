@@ -1,9 +1,13 @@
 //! The graph tables (`spec/graph`; `spec/store` §5.4 after the blocks,
 //! sections and properties): `nodes` + `nodes_fts` (§2), `external_nodes`
-//! and the edge resolution (§3.2), the `edges` intervals (§3.3), the
+//! and the edge resolution (§3.2), the OPEN edge set (§3.3, graph 3.0 — the
+//! core persists the asserted relations as the rows of `edges`, closing an
+//! edge deletes its row, and hands the recorder the transition's edge list
+//! so the history bundle keeps the interval record, `edge_transitions`), the
 //! `doc_edges` rollup (§3.4) and phantom adoption (§3.5). Extraction itself
 //! is `omgbase-graph`, pure; everything here reads or writes the database
-//! inside the commit transaction. Deletion (§3.6) touches none of it.
+//! inside the commit transaction. Deletion (§3.6) touches none of it. The
+//! core writes no `from_commit`/`to_commit`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,6 +17,7 @@ use omgbase_graph::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
+use crate::core::capabilities::HistoryRecorder;
 use crate::error::Result;
 use crate::mint::Mint;
 
@@ -117,6 +122,31 @@ pub struct ResolvedEdge {
     pub dst_node: String,
     pub anchor: Option<String>,
     pub provenance: Provenance,
+}
+
+/// An open edge as the core wrote it (every `edges` column): what the
+/// recorder receives per opened edge (`spec/store` §5.4 step 15, 17.0).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeRow {
+    pub edge_id: String,
+    pub repo_id: String,
+    pub src_doc: String,
+    pub src_block: Option<String>,
+    pub src_field: Option<String>,
+    pub predicate: String,
+    pub dst_kind: String,
+    pub dst_node: String,
+    pub anchor: Option<String>,
+    pub provenance: String,
+    pub via_node: Option<String>,
+}
+
+/// The transition's edge list (`spec/graph` §3.3, 17.0): the rows this
+/// commit opened and the ids it closed, in write order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EdgeTransitions {
+    pub opened: Vec<EdgeRow>,
+    pub closed: Vec<String>,
 }
 
 impl ResolvedEdge {
@@ -231,35 +261,37 @@ pub fn resolve_edges(
     Ok(out)
 }
 
-// ---- intervals (§3.3) and rollup (§3.4) -----------------------------------------------
+// ---- open edges (§3.3) and rollup (§3.4) -----------------------------------------------
 
-/// §3.3: reconcile the wanted edge set against the document's open rows —
-/// **mint `e`** and insert for each wanted key not open (wanted order,
-/// `from_commit = commit_id`), then close (`to_commit = commit_id`) every open
-/// row whose key is not wanted or that duplicates an earlier kept row, in
-/// `rowid` order. Then rebuild the rollup (§3.4).
+/// §3.3 (3.0): reconcile the wanted edge set against the document's open rows
+/// — **mint `e`** and insert a row for each wanted key not open (wanted
+/// order), then walk the open rows in `rowid` order and DELETE every one
+/// whose key is not wanted or that duplicates an earlier kept row; unchanged
+/// rows are untouched (they keep their `edge_id`). The transition's edge
+/// list — the rows opened, the ids closed — goes to the recorder
+/// ([`HistoryRecorder::record_edge_transitions`], `spec/store` §5.4 step 15)
+/// when it has anything in it. Then rebuild the rollup (§3.4). Returns the
+/// transitions.
 ///
 /// `spec/store` §2.1 (17.0): the `e` minted per newly opened edge and the `x`
 /// [`resolve_external`] minted for its external target are claimed here, in
 /// the commit transaction, `minted_at = ts` (an external node that already had
 /// its claim adds nothing — the claim is idempotent).
-// seam: current edges separate from transitions (Phase 3, M6 — open rows
-// only, `from_commit`/`to_commit` leave the core table; inventory-rust.md §2.4
-// `graph.rs:239-314`, §3.7).
 #[allow(clippy::too_many_arguments)]
 pub fn maintain_edges(
     conn: &Connection,
     minter: &mut Mint<'_>,
+    history: &dyn HistoryRecorder,
     repo_id: &str,
     src_doc: &str,
     commit_id: &str,
     edges: &[ResolvedEdge],
     ts: &str,
-) -> Result<()> {
+) -> Result<EdgeTransitions> {
     let open: Vec<(String, String)> = {
         let mut stmt = conn.prepare_cached(
             "SELECT edge_id, src_block, src_field, predicate, dst_node, anchor FROM edges
-              WHERE src_doc = ?1 AND to_commit IS NULL ORDER BY rowid",
+              WHERE src_doc = ?1 ORDER BY rowid",
         )?;
         let it = stmt.query_map(params![src_doc], |r| {
             let src_block: Option<String> = r.get(1)?;
@@ -283,10 +315,11 @@ pub fn maintain_edges(
     let open_keys: HashSet<&str> = open.iter().map(|(_, k)| k.as_str()).collect();
 
     let mut wanted: HashSet<String> = HashSet::new();
+    let mut opened: Vec<EdgeRow> = Vec::new();
     {
         let mut insert = conn.prepare_cached(
-            "INSERT INTO edges (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, from_commit, to_commit)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL)",
+            "INSERT INTO edges (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL)",
         )?;
         for e in edges {
             let key = e.key();
@@ -312,22 +345,88 @@ pub fn maintain_edges(
                 e.dst_node,
                 e.anchor,
                 e.provenance.as_str(),
-                commit_id,
             ])?;
+            opened.push(EdgeRow {
+                edge_id,
+                repo_id: repo_id.to_owned(),
+                src_doc: src_doc.to_owned(),
+                src_block: e.src_block.clone(),
+                src_field: e.src_field.clone(),
+                predicate: e.predicate.clone(),
+                dst_kind: e.dst_kind.as_str().to_owned(),
+                dst_node: e.dst_node.clone(),
+                anchor: e.anchor.clone(),
+                provenance: e.provenance.as_str().to_owned(),
+                via_node: None,
+            });
         }
     }
+    // Delete every open row whose key is no longer wanted, and all but the
+    // first open row of a wanted key.
+    let mut closed: Vec<String> = Vec::new();
     {
-        let mut close =
-            conn.prepare_cached("UPDATE edges SET to_commit = ?1 WHERE edge_id = ?2")?;
+        let mut del = conn.prepare_cached("DELETE FROM edges WHERE edge_id = ?1")?;
         let mut kept: HashSet<&str> = HashSet::new();
         for (edge_id, key) in &open {
             if wanted.contains(key) && kept.insert(key.as_str()) {
                 continue;
             }
-            close.execute(params![commit_id, edge_id])?;
+            del.execute(params![edge_id])?;
+            closed.push(edge_id.clone());
         }
     }
-    rebuild_doc_edges(conn, src_doc)
+    let transitions = EdgeTransitions { opened, closed };
+    // `spec/store` §5.4 step 15 (17.0): the recorder's half — the interval record.
+    if !transitions.opened.is_empty() || !transitions.closed.is_empty() {
+        history.record_edge_transitions(conn, commit_id, &transitions)?;
+    }
+    rebuild_doc_edges(conn, src_doc)?;
+    Ok(transitions)
+}
+
+/// Rewrite the destination of the open edges at `from_dst` to `to_dst` in
+/// place (§3.5 adoption; a move's re-phantoming, `effects::move_path_in`) —
+/// the rows keep their ids — and tell the recorder so the open transitions
+/// follow (`edge_transitions.dst_node` reads as 16.x's `edges` did). Returns
+/// the distinct source documents touched, in first-seen `rowid` order (their
+/// rollups are the caller's to rebuild). `where_` narrows the rows: an extra
+/// SQL predicate over `edges` spelled with unnumbered `?` placeholders, bound
+/// in order from `where_params` after the destination(s).
+pub fn retarget_open_edges(
+    conn: &Connection,
+    history: &dyn HistoryRecorder,
+    from_dst: &str,
+    to_dst: &str,
+    where_: &str,
+    where_params: &[&dyn rusqlite::ToSql],
+) -> Result<Vec<String>> {
+    let rows: Vec<(String, String)> = {
+        let mut all: Vec<&dyn rusqlite::ToSql> = vec![&from_dst];
+        all.extend_from_slice(where_params);
+        let mut stmt = conn.prepare(&format!(
+            "SELECT edge_id, src_doc FROM edges WHERE dst_node = ? {where_} ORDER BY rowid"
+        ))?;
+        let it = stmt.query_map(all.as_slice(), |r| Ok((r.get(0)?, r.get(1)?)))?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut upd: Vec<&dyn rusqlite::ToSql> = vec![&to_dst, &from_dst];
+    upd.extend_from_slice(where_params);
+    conn.execute(
+        &format!("UPDATE edges SET dst_node = ? WHERE dst_node = ? {where_}"),
+        upd.as_slice(),
+    )?;
+    let ids: Vec<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
+    history.retarget_edges(conn, &ids, to_dst)?;
+    let mut affected: Vec<String> = Vec::new();
+    for (_, src) in rows {
+        if !affected.contains(&src) {
+            affected.push(src);
+        }
+    }
+    Ok(affected)
 }
 
 /// §3.4: replace the document's `doc_edges` with one row per group of its
@@ -338,7 +437,7 @@ pub fn rebuild_doc_edges(conn: &Connection, src_doc: &str) -> Result<()> {
     let rows: Vec<(String, String, String, Option<String>)> = {
         let mut stmt = conn.prepare_cached(
             "SELECT predicate, dst_node, dst_kind, src_block FROM edges
-              WHERE src_doc = ?1 AND to_commit IS NULL ORDER BY rowid",
+              WHERE src_doc = ?1 ORDER BY rowid",
         )?;
         let it = stmt.query_map(params![src_doc], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
@@ -379,24 +478,18 @@ pub fn rebuild_doc_edges(conn: &Connection, src_doc: &str) -> Result<()> {
 // ---- phantom adoption (§3.5) ---------------------------------------------------------
 
 /// §3.5: when a document row is created at `path`, rewrite every open edge
-/// with `dst_node = "phantom:" + path` to `doc_id` in place and recompute
-/// the rollup of each affected source document.
-pub fn adopt_phantoms(conn: &Connection, path: &str, doc_id: &str) -> Result<()> {
+/// with `dst_node = "phantom:" + path` to `doc_id` in place
+/// ([`retarget_open_edges`]: the rows keep their ids, the recorder's open
+/// transitions follow) and recompute the rollup of each affected source
+/// document.
+pub fn adopt_phantoms(
+    conn: &Connection,
+    history: &dyn HistoryRecorder,
+    path: &str,
+    doc_id: &str,
+) -> Result<()> {
     let phantom = format!("phantom:{}", canonical_path(path));
-    let affected: Vec<String> = {
-        let mut stmt = conn.prepare_cached(
-            "SELECT DISTINCT src_doc FROM edges WHERE dst_node = ?1 AND to_commit IS NULL",
-        )?;
-        let it = stmt.query_map(params![phantom], |r| r.get(0))?;
-        it.collect::<std::result::Result<Vec<_>, _>>()?
-    };
-    if affected.is_empty() {
-        return Ok(());
-    }
-    conn.execute(
-        "UPDATE edges SET dst_node = ?1 WHERE dst_node = ?2 AND to_commit IS NULL",
-        params![doc_id, phantom],
-    )?;
+    let affected = retarget_open_edges(conn, history, &phantom, doc_id, "", &[])?;
     for src in &affected {
         rebuild_doc_edges(conn, src)?;
     }
@@ -546,14 +639,22 @@ mod tests {
         // one key; two spellings of the URI to one external node.
         let edges = rows(
             &store,
-            "SELECT edge_id, src_block, predicate, dst_kind, dst_node, provenance, from_commit, to_commit FROM edges ORDER BY rowid",
+            "SELECT edge_id, src_block, predicate, dst_kind, dst_node, provenance FROM edges ORDER BY rowid",
         );
         assert_eq!(edges.len(), 2);
         assert_eq!(edges[0][0], Sql::Text("e_0".into()));
         assert_eq!(edges[0][1], Sql::Text("b_0".into()));
         assert_eq!(edges[0][4], Sql::Text("phantom:b.md".into()));
-        assert_eq!(edges[0][6], Sql::Text("c_0".into()));
-        assert_eq!(edges[0][7], Sql::Null);
+        // 3.0: the interval is the recorder's — one open transition per edge,
+        // `from_commit` this commit.
+        let transitions = rows(
+            &store,
+            "SELECT edge_id, dst_node, from_commit, to_commit FROM edge_transitions ORDER BY rowid",
+        );
+        assert_eq!(transitions.len(), 2);
+        assert_eq!(transitions[0][0], Sql::Text("e_0".into()));
+        assert_eq!(transitions[0][2], Sql::Text("c_0".into()));
+        assert_eq!(transitions[0][3], Sql::Null);
         assert_eq!(edges[1][1], Sql::Text("b_1".into()));
         assert_eq!(edges[1][3], Sql::Text("external".into()));
         assert_eq!(edges[1][4], Sql::Text("x_0".into()));
@@ -570,15 +671,17 @@ mod tests {
         assert_eq!(roll[0][3], Sql::Integer(1));
         assert_eq!(roll[0][4], Sql::Text(r#"["b_0"]"#.into()));
 
-        // Creating b.md adopts the phantom in place (same edge id, same from_commit).
+        // Creating b.md adopts the phantom in place (same edge id); the open
+        // transition follows the rewrite and keeps its from_commit.
         let b = observe(&mut store, &repo, "b.md", "# B\n", T1);
         let adopted = rows(
             &store,
-            "SELECT edge_id, dst_node, from_commit, to_commit FROM edges WHERE edge_id = 'e_0'",
+            "SELECT e.edge_id, e.dst_node, t.dst_node, t.from_commit, t.to_commit FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.edge_id = 'e_0'",
         );
         assert_eq!(adopted[0][1], Sql::Text(b.clone()));
-        assert_eq!(adopted[0][2], Sql::Text("c_0".into()));
-        assert_eq!(adopted[0][3], Sql::Null);
+        assert_eq!(adopted[0][2], Sql::Text(b.clone()));
+        assert_eq!(adopted[0][3], Sql::Text("c_0".into()));
+        assert_eq!(adopted[0][4], Sql::Null);
         assert_eq!(
             texts(
                 &store,
@@ -588,10 +691,11 @@ mod tests {
         );
 
         // Editing a.md: the first paragraph is unchanged, so its edge to b stays
-        // open untouched; the URL paragraph is replaced (its edge closes) by a
-        // self-fragment link; a new paragraph carries an inline relation to the
-        // same URI (the external node is reused, and the URL value is also a
-        // bare URL — two edges, different keys).
+        // open untouched (same id); the URL paragraph is replaced (its edge's
+        // row is DELETED and its transition closed) by a self-fragment link; a
+        // new paragraph carries an inline relation to the same URI (the
+        // external node is reused, and the URL value is also a bare URL — two
+        // edges, different keys).
         observe(
             &mut store,
             &repo,
@@ -601,36 +705,46 @@ mod tests {
         );
         let edges = rows(
             &store,
-            "SELECT edge_id, src_block, src_field, predicate, dst_kind, dst_node, anchor, from_commit, to_commit FROM edges ORDER BY rowid",
+            "SELECT edge_id, src_block, src_field, predicate, dst_kind, dst_node, anchor FROM edges ORDER BY rowid",
         );
-        assert_eq!(edges.len(), 5);
+        assert_eq!(edges.len(), 4, "the closed edge's row is gone");
+        assert_eq!(edges[0][0], Sql::Text("e_0".into()));
+        assert_eq!(edges[1][0], Sql::Text("e_2".into()));
         assert_eq!(
-            (&edges[0][7], &edges[0][8]),
-            (&Sql::Text("c_0".into()), &Sql::Null)
-        );
-        assert_eq!(
-            edges[1][8],
-            Sql::Text("c_2".into()),
-            "the bare-URL edge closed"
-        );
-        assert_eq!(edges[2][0], Sql::Text("e_2".into()));
-        assert_eq!(
-            edges[2][5],
+            edges[1][5],
             Sql::Text(a.clone()),
             "a pure fragment targets the doc itself"
         );
-        assert_eq!(edges[2][6], Sql::Text("Top".into()));
-        assert_eq!(edges[2][7], Sql::Text("c_2".into()));
-        assert_eq!(edges[3][2], Sql::Text("rel".into()));
-        assert_eq!(edges[3][3], Sql::Text("rel".into()));
+        assert_eq!(edges[1][6], Sql::Text("Top".into()));
+        assert_eq!(edges[2][2], Sql::Text("rel".into()));
+        assert_eq!(edges[2][3], Sql::Text("rel".into()));
         assert_eq!(
-            edges[3][5],
+            edges[2][5],
             Sql::Text("x_0".into()),
             "external node reused, none minted"
         );
-        assert_eq!(edges[4][3], Sql::Text("references".into()));
-        assert_eq!(edges[4][5], Sql::Text("x_0".into()));
-        assert_eq!(edges[4][0], Sql::Text("e_4".into()));
+        assert_eq!(edges[3][3], Sql::Text("references".into()));
+        assert_eq!(edges[3][5], Sql::Text("x_0".into()));
+        assert_eq!(edges[3][0], Sql::Text("e_4".into()));
+        // The recorder's record: five transitions, e_1 closed at c_2, the
+        // three new ones opened at c_2, e_0 open since c_0.
+        let transitions = rows(
+            &store,
+            "SELECT edge_id, from_commit, to_commit FROM edge_transitions ORDER BY rowid",
+        );
+        assert_eq!(transitions.len(), 5);
+        assert_eq!(
+            (&transitions[0][1], &transitions[0][2]),
+            (&Sql::Text("c_0".into()), &Sql::Null)
+        );
+        assert_eq!(
+            transitions[1][2],
+            Sql::Text("c_2".into()),
+            "the bare-URL edge closed"
+        );
+        assert_eq!(transitions[2][0], Sql::Text("e_2".into()));
+        assert_eq!(transitions[2][1], Sql::Text("c_2".into()));
+        assert_eq!(transitions[2][2], Sql::Null);
         assert_eq!(texts(&store, "SELECT node_id FROM external_nodes"), ["x_0"]);
         let roll = rows(
             &store,
@@ -714,10 +828,7 @@ mod tests {
         );
         store.observe_delete(&repo, "b.md", T2).unwrap();
         assert_eq!(
-            texts(
-                &store,
-                "SELECT dst_node FROM edges WHERE to_commit IS NULL ORDER BY rowid"
-            ),
+            texts(&store, "SELECT dst_node FROM edges ORDER BY rowid"),
             ["d_1", "d_0"],
             "edges stay open and keep the tombstoned doc's id"
         );
@@ -755,9 +866,17 @@ mod tests {
         assert_eq!(
             texts(
                 &store,
-                "SELECT dst_node FROM edges WHERE to_commit IS NULL AND dst_node LIKE 'd_%' AND src_doc != 'd_1' ORDER BY src_doc"
+                "SELECT dst_node FROM edges WHERE dst_node LIKE 'd_%' AND src_doc != 'd_1' ORDER BY src_doc"
             ),
             ["d_1", "d_1"]
+        );
+        // The adopted edge's open transition followed the rewrite (M6).
+        assert_eq!(
+            texts(
+                &store,
+                "SELECT dst_node FROM edge_transitions WHERE src_doc = 'd_2' AND to_commit IS NULL"
+            ),
+            ["d_1"]
         );
         assert_eq!(
             texts(

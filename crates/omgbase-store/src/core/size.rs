@@ -1,13 +1,16 @@
-//! The size report (`spec/store/README.md` §7 "Size", 14.1): what the
-//! database is made of, table by table through SQLite's `dbstat` virtual
-//! table, grouped into the four categories a reader reasons about — the live
-//! state (`content`), the append-only record (`history`), the derived indexes
-//! (`search`) and the workspace bookkeeping (`sync`) — plus the file's page
-//! accounting, the deterministic advice `omg doctor --size` prints, and
-//! `VACUUM`. The categorization is the spec's: every table of `schema.sql`
-//! is assigned, an index counts toward its table, an FTS5 virtual table's
-//! shadow tables fold into it, and anything the spec does not name
-//! (`sqlite_schema`, `sqlite_stat1`, a table from a newer schema) is `sync`.
+//! The size report (`spec/store/README.md` §7.2 "Size", 14.1; the six
+//! categories 17.0 — D9): what the database is made of, table by table
+//! through SQLite's `dbstat` virtual table, grouped into the six categories a
+//! reader reasons about — the live state (`content`), the ids and the pool
+//! (`identity`), the recovery payloads (`recovery`), the recorder's capture
+//! (`history`), the derived search indexes (`search`) and the workspace
+//! bookkeeping with the change feed (`sync`) — plus the file's page
+//! accounting, the feed's position, the deterministic advice `omg doctor
+//! --size` prints, and `VACUUM`. The categorization is the spec's: every
+//! table of the three bundles is assigned, an index counts toward its table,
+//! an FTS5 virtual table's shadow tables fold into it, and anything the spec
+//! does not name (`sqlite_schema`, `sqlite_stat1`, a table from a newer
+//! schema) is `sync`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -16,16 +19,15 @@ use rusqlite::Connection;
 use serde_json::{Map, Value as Json, json};
 
 use crate::core::capabilities::{HistoryRecorder, IdentityClaims, SemanticProvider};
+use crate::core::feed::{feed_status, repo_feed_policy};
 use crate::error::Result;
 
-/// The four categories, in the report's fixed order.
-pub const SIZE_CATEGORIES: [&str; 4] = ["content", "history", "search", "sync"];
+/// The six categories, in the report's fixed order.
+pub const SIZE_CATEGORIES: [&str; 6] = [
+    "content", "identity", "recovery", "history", "search", "sync",
+];
 
-/// §7: the category of every table `schema.sql` creates.
-// seam: the categories recast as content / identity / recovery / history /
-// search / sync (Phase 3, D9 — `resurrection_pool` and
-// `pending_materializations` are core, not history; inventory-rust.md §2.6
-// `size.rs:24-57`, §6.9).
+/// §7.2: the category of every table the three bundles create.
 pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("docs", "content"),
     ("blocks", "content"),
@@ -33,19 +35,18 @@ pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("nodes", "content"),
     ("edges", "content"),
     ("doc_edges", "content"),
-    ("inferred_edges", "content"),
     ("external_nodes", "content"),
     ("properties", "content"),
-    ("collections", "content"),
+    ("id_claims", "identity"),
+    ("resurrection_pool", "identity"),
+    ("pending_materializations", "recovery"),
     ("blobs", "history"),
     ("tree_nodes", "history"),
     ("revisions", "history"),
     ("commits", "history"),
     ("dispositions", "history"),
     ("block_changes", "history"),
-    ("id_claims", "history"),
-    ("resurrection_pool", "history"),
-    ("pending_materializations", "history"),
+    ("edge_transitions", "history"),
     ("archives", "history"),
     ("blocks_fts", "search"),
     ("nodes_fts", "search"),
@@ -178,11 +179,43 @@ pub struct SizeRetention {
     pub bytes: u64,
 }
 
+/// §7.2 (17.0): the change feed's position and policy for the report's
+/// repository (§7.4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SizeFeed {
+    pub epoch: String,
+    /// The oldest retained `seq` (0 when the feed is empty).
+    pub oldest: i64,
+    /// The greatest `seq` (0 when empty).
+    pub head: i64,
+    /// The retained `feed` rows.
+    pub entries: u64,
+    pub retain_days: i64,
+    pub retain_entries: i64,
+    pub max_entries: i64,
+}
+
+impl SizeFeed {
+    /// `{ epoch, oldest, head, entries, retain_days, retain_entries, max_entries }`.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        json!({
+            "epoch": self.epoch,
+            "oldest": self.oldest,
+            "head": self.head,
+            "entries": self.entries,
+            "retain_days": self.retain_days,
+            "retain_entries": self.retain_entries,
+            "max_entries": self.max_entries,
+        })
+    }
+}
+
 /// The whole report.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SizeReport {
     pub file: SizeFile,
-    /// Always the four categories, in [`SIZE_CATEGORIES`] order.
+    /// Always the six categories, in [`SIZE_CATEGORIES`] order.
     pub categories: Vec<SizeCategory>,
     /// §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store
     /// through 14.1 wrote and `omg gc` removes; 0 on a fresh 14.2 store.
@@ -193,6 +226,10 @@ pub struct SizeReport {
     pub id_claims: u64,
     /// §7.2 (15.0): archived revisions, recorded segments, their bytes on disk.
     pub archived: SizeArchived,
+    /// §7.2 (17.0): the feed of the report's repository — the one named,
+    /// else the store's only one; `None` when the store has several and none
+    /// was named.
+    pub feed: Option<SizeFeed>,
     pub advice: Vec<String>,
     /// `Some("dbstat unavailable")` when the SQLite build lacks the virtual table.
     pub detail: Option<&'static str>,
@@ -249,6 +286,10 @@ impl SizeReport {
                 "segments": self.archived.segments,
                 "bytes": self.archived.bytes,
             }),
+        );
+        m.insert(
+            "feed".into(),
+            self.feed.as_ref().map_or(Json::Null, SizeFeed::to_json),
         );
         m.insert("advice".into(), json!(self.advice));
         if let Some(d) = self.detail {
@@ -377,14 +418,22 @@ fn file_bytes(path: &Path) -> u64 {
     std::fs::metadata(path).map_or(0, |m| m.len())
 }
 
-/// The size report of an open connection (§7 "Size") at the wall clock.
+/// The size report of an open connection (§7 "Size") at the wall clock, the
+/// `feed` member the store's only repository's (`None` with several).
 pub fn size_report(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
     semantic: Option<&dyn SemanticProvider>,
     claims: &dyn IdentityClaims,
 ) -> Result<SizeReport> {
-    size_report_at(conn, history, semantic, claims, &crate::time::now_ts())
+    size_report_at(
+        conn,
+        history,
+        semantic,
+        claims,
+        &crate::time::now_ts(),
+        None,
+    )
 }
 
 /// The size report (§7 "Size") with the retention plans (15.0) evaluated at
@@ -395,13 +444,16 @@ pub fn size_report(
 /// one reports them as zero. The embeddings advice names the semantic
 /// bundle's tables ([`SemanticProvider::tables`]); a store without the bundle
 /// gives none. The `id_claims` count (17.0) is the claims oracle's
-/// ([`IdentityClaims::count`]).
+/// ([`IdentityClaims::count`]). The `feed` member (17.0, 3e) is `repo_id`'s
+/// position and policy (§7.4); absent, the store's only repository's, else
+/// `None`.
 pub fn size_report_at(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
     semantic: Option<&dyn SemanticProvider>,
     claims: &dyn IdentityClaims,
     now: &str,
+    repo_id: Option<&str>,
 ) -> Result<SizeReport> {
     let path = match conn.path() {
         Some(p) if !p.is_empty() => p.to_owned(),
@@ -530,7 +582,7 @@ pub fn size_report_at(
         categories
             .iter_mut()
             .find(|c| c.name == cat)
-            .expect("the four categories")
+            .expect("the six categories")
             .tables
             .push(table);
     }
@@ -557,6 +609,40 @@ pub fn size_report_at(
     let id_claims = claims.count(conn)?;
     let archived = figures.archived;
     let retention = figures.retention;
+    // 17.0: the feed's position and policy — a repository's (§7.4); the
+    // report is store-wide, so it is the named repository's, else the only
+    // one's.
+    let repo_ids: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY rowid")?;
+        let it = stmt.query_map([], |r| r.get(0))?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let feed_repo: Option<&str> = match repo_id {
+        Some(r) => Some(r),
+        None if repo_ids.len() == 1 => Some(repo_ids[0].as_str()),
+        None => None,
+    };
+    let feed = match feed_repo {
+        Some(r) => {
+            let status = feed_status(conn, r)?;
+            let policy = repo_feed_policy(conn, r)?;
+            let entries: i64 = conn.query_row(
+                "SELECT count(*) FROM feed WHERE repo_id = ?1 AND epoch = ?2",
+                rusqlite::params![r, status.epoch],
+                |row| row.get(0),
+            )?;
+            Some(SizeFeed {
+                epoch: status.epoch,
+                oldest: status.oldest,
+                head: status.head,
+                entries: u64::try_from(entries).unwrap_or(0),
+                retain_days: policy.retain_days,
+                retain_entries: policy.retain_entries,
+                max_entries: policy.max_entries,
+            })
+        }
+        None => None,
+    };
     let semantic_tables: &[&str] = semantic.map_or(&[], |s| s.tables());
     let advice = size_advice(
         &file,
@@ -571,6 +657,7 @@ pub fn size_report_at(
         same_dispositions,
         id_claims,
         archived,
+        feed,
         advice,
         detail: stat.is_none().then_some("dbstat unavailable"),
     })
@@ -595,7 +682,8 @@ pub fn vacuum(conn: &Connection) -> Result<VacuumResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SCHEMA_SQL, SequentialMinter, Store};
+    use crate::schema::ALL_SQL_FILES;
+    use crate::{SequentialMinter, Store};
     use omgbase_reconcile::Config;
 
     /// The semantic bundle's tables, as `Provider::tables` names them.
@@ -623,8 +711,9 @@ mod tests {
 
     #[test]
     fn every_schema_table_is_categorized() {
-        let created: Vec<&str> = SCHEMA_SQL
-            .lines()
+        let created: Vec<&str> = ALL_SQL_FILES
+            .iter()
+            .flat_map(|sql| sql.lines())
             .filter_map(|l| {
                 l.strip_prefix("CREATE TABLE IF NOT EXISTS ")
                     .or_else(|| l.strip_prefix("CREATE VIRTUAL TABLE IF NOT EXISTS "))
@@ -647,6 +736,11 @@ mod tests {
         assert_eq!(category_of("blobs"), "history");
         assert_eq!(category_of("blocks_fts"), "search");
         assert_eq!(category_of("blocks"), "content");
+        assert_eq!(category_of("id_claims"), "identity");
+        assert_eq!(category_of("resurrection_pool"), "identity");
+        assert_eq!(category_of("pending_materializations"), "recovery");
+        assert_eq!(category_of("edge_transitions"), "history");
+        assert_eq!(category_of("feed"), "sync");
     }
 
     fn file_of(over: impl FnOnce(&mut SizeFile)) -> SizeFile {
@@ -1002,8 +1096,9 @@ mod tests {
         }
         assert_eq!(r.same_dispositions, 0, "a 14.2 store writes no `same` row");
         assert_eq!(r.advice, vec!["nothing to reclaim"]);
-        // The JSON shape the CLI prints: `same_dispositions` and `id_claims`
-        // (17.0) between the categories and the advice (spec/cli §6).
+        // The JSON shape the CLI prints: `same_dispositions`, `id_claims`
+        // (17.0), `archived` and `feed` (17.0, 3e) between the categories and
+        // the advice (spec/cli §6).
         let j = r.to_json();
         assert_eq!(j["file"]["page_size"], json!(r.file.page_size));
         assert_eq!(j["same_dispositions"], json!(0));
@@ -1017,7 +1112,27 @@ mod tests {
                 "same_dispositions",
                 "id_claims",
                 "archived",
+                "feed",
                 "advice"
+            ]
+        );
+        // The store's only repository: its feed — two commits, seq 1..2,
+        // the default policy.
+        assert_eq!(
+            j["feed"],
+            json!({ "epoch": "ep_0", "oldest": 1, "head": 2, "entries": 2, "retain_days": 10, "retain_entries": 10000, "max_entries": 100000 })
+        );
+        let feed_keys: Vec<&String> = j["feed"].as_object().unwrap().keys().collect();
+        assert_eq!(
+            feed_keys,
+            [
+                "epoch",
+                "oldest",
+                "head",
+                "entries",
+                "retain_days",
+                "retain_entries",
+                "max_entries"
             ]
         );
         assert_eq!(

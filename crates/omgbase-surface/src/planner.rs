@@ -89,7 +89,7 @@ pub(crate) fn guards(t: Target) -> &'static str {
         Target::Docs => "d.repo_id = ? AND d.deleted_at IS NULL",
         Target::Blocks => "b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL",
         Target::Nodes => "n.repo_id = ? AND d.deleted_at IS NULL",
-        Target::Links => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL",
+        Target::Links => "e.repo_id = ? AND d.deleted_at IS NULL",
         Target::Revisions => "d.repo_id = ?",
     }
 }
@@ -119,9 +119,7 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
             "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL"
         }
         Target::Nodes => "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_at IS NULL",
-        Target::Links => {
-            "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL"
-        }
+        Target::Links => "d.repo_id = ? AND +e.repo_id = ? AND d.deleted_at IS NULL",
     }
 }
 
@@ -481,7 +479,7 @@ mod tests {
         )
         .unwrap();
         assert!(e.sql.starts_with(
-            "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL AND ((e.predicate IS ?))"
+            "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc WHERE e.repo_id = ? AND d.deleted_at IS NULL AND ((e.predicate IS ?))"
         ));
         assert!(e.sql.ends_with("ORDER BY d.path, e.edge_id"));
     }

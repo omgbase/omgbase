@@ -34,7 +34,7 @@ fn totals(conn: &Connection, repo_id: &str, glob_sql: &str, params: &[Sql]) -> R
     let sql = format!(
         "SELECT count(*), COALESCE(sum(CASE WHEN e.dst_kind = 'external' THEN 1 ELSE 0 END), 0)
          FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL {glob_sql}"
+         WHERE e.repo_id = ? AND d.deleted_at IS NULL {glob_sql}"
     );
     let mut all: Vec<Sql> = vec![Sql::Text(repo_id.to_owned())];
     all.extend(params.iter().cloned());
@@ -116,7 +116,7 @@ pub fn links_stale(
     let sql = format!(
         "SELECT e.src_doc, d.path, e.src_block, e.predicate, e.provenance, e.dst_kind, e.dst_node, e.anchor
          FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL
+         WHERE e.repo_id = ? AND d.deleted_at IS NULL
            AND e.dst_node LIKE 'phantom:%' {glob_sql}
          ORDER BY d.path, e.dst_node, e.src_block
          LIMIT ?"
@@ -202,7 +202,7 @@ pub fn links_stale_summary(store: &Store, repo_id: &str, path_glob: Option<&str>
     let (total, external) = totals(conn, repo_id, &glob_sql, &glob_params)?;
     let base = format!(
         "FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL {glob_sql} AND e.dst_node LIKE 'phantom:%'"
+         WHERE e.repo_id = ? AND d.deleted_at IS NULL {glob_sql} AND e.dst_node LIKE 'phantom:%'"
     );
     let mut all: Vec<Sql> = vec![Sql::Text(repo_id.to_owned())];
     all.extend(glob_params.iter().cloned());

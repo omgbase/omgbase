@@ -189,9 +189,14 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let a = parse_args(args, &[Opt::flag("size")])?;
     cli.workspace()?;
     if a.flag("size") {
-        // The retention advice (15.0) is evaluated at the pinned clock.
+        // The retention advice (15.0) is evaluated at the pinned clock. The
+        // size report is store-wide; its `feed` line is a repository's
+        // (`spec/store` §7.2, 17.0) — the selected one when the selection
+        // resolves, else the store's only one (the report decides), never an
+        // error.
         let now = cli.now();
-        let report = cli.store()?.size_report_at(&now)?;
+        let repo_id = selected_repo_id(cli)?;
+        let report = cli.store()?.size_report_at(&now, repo_id.as_deref())?;
         return doctor_size(cli, &report);
     }
     // The selected repo must resolve (`repo_not_found` otherwise); the checks
@@ -277,6 +282,20 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         cli.io.out(&format!("  {mark} {}{detail}", c.name));
     }
     Ok(exit)
+}
+
+/// The selected repository's id when the selection resolves; `None` when it
+/// does not (an explicit `--repo <slug>` that fails is still the error).
+fn selected_repo_id(cli: &mut Cli) -> Result<Option<String>> {
+    match cli.repo() {
+        Ok(r) => Ok(Some(r.repo_id)),
+        Err(CliError::Engine { code, .. })
+            if code == "repo_not_found" && cli.flags.repo.is_none() =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// The tables shown under each category of the human size report.
@@ -397,6 +416,19 @@ fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
         vec![
             "id claims".to_owned(),
             format!("{} ids claimed", report.id_claims),
+        ],
+        // 17.0 (3e): the change feed's position (`spec/store` §7.2 `feed`,
+        // §7.4) — the report's repository's; none when the store has several
+        // and none was selected.
+        vec![
+            "feed".to_owned(),
+            match &report.feed {
+                Some(f) => format!(
+                    "epoch {}, {} entries, seq {}..{}",
+                    f.epoch, f.entries, f.oldest, f.head
+                ),
+                None => "no repository selected".to_owned(),
+            },
         ],
     ];
     for line in columns(&file, &[Align::Left]) {
@@ -898,6 +930,15 @@ mod tests {
                 segments: 1,
                 bytes: 12_288,
             },
+            feed: Some(omgbase_store::SizeFeed {
+                epoch: "ep_0".into(),
+                oldest: 1,
+                head: 20,
+                entries: 20,
+                retain_days: 10,
+                retain_entries: 10_000,
+                max_entries: 100_000,
+            }),
             advice: vec!["nothing to reclaim".to_owned()],
             detail: None,
         };
@@ -925,6 +966,7 @@ mod tests {
                 "  reclaimable  48.0 KB",
                 "  archived     2 revisions in 1 segments, 12.0 KB on disk",
                 "  id claims    438 ids claimed",
+                "  feed         epoch ep_0, 20 entries, seq 1..20",
                 "  advice: nothing to reclaim",
             ]
         );

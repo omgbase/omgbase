@@ -1,9 +1,10 @@
 //! The graph spec conformance runner: executes every fixture under
 //! `spec/graph/cases` — observation scripts exactly as `spec/store` §9.4 —
 //! against `omgbase-store` (which calls this crate inside its commit
-//! transaction), then projects `nodes`, `external_nodes`, `edges` and
-//! `doc_edges` per `spec/graph/README.md` §7 and checks them. The reference
-//! runner this mirrors is `packages/core/corpus/graph/spec.test.ts`.
+//! transaction), remembering the commit that opened each edge (§7, 3.0: the
+//! row no longer carries it), then projects `nodes`, `external_nodes`,
+//! `edges` and `doc_edges` per `spec/graph/README.md` §7 and checks them. The
+//! reference runner this mirrors is `packages/core/corpus/graph/spec.test.ts`.
 //!
 //! Allowlist (`tests/spec-passing.txt`, one `<file-stem>::<name>` per line):
 //! while the port is incomplete it names the cases that must pass. A listed
@@ -24,8 +25,8 @@ use std::path::{Path, PathBuf};
 use omgbase_graph::node_id;
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
-use rusqlite::Connection;
 use rusqlite::types::Value as Sql;
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Map as JsonMap, Value as Json, json};
 
 const SPEC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/graph");
@@ -140,14 +141,16 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             continue;
         };
         let keys: Vec<&String> = obj.keys().collect();
-        // `spec/store` §9.4 (15.0): the retention steps are accepted by shape
-        // and refused at run time (the graph fixtures carry none).
+        // `spec/store` §9.4 (15.0, 17.0): the retention and epoch steps are
+        // accepted by shape and refused at run time (the graph fixtures carry
+        // none).
         if keys.len() != 1
             || ![
                 "observe",
                 "sweep",
                 "gc",
                 "exec",
+                "remint_epoch",
                 "history_plan",
                 "history_export",
                 "history_attach",
@@ -157,7 +160,7 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             .contains(&keys[0].as_str())
         {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / the retention steps (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / `remint_epoch` / the retention steps (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -199,9 +202,9 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         let Some(body) = body.as_object() else {
             continue;
         };
-        if keys[0] == "sweep" {
+        if keys[0] == "sweep" || keys[0] == "remint_epoch" {
             if body.keys().any(|k| k != "ts") {
-                problems.push(format!("{here}: sweep takes only `ts`"));
+                problems.push(format!("{here}: {} takes only `ts`", keys[0]));
             }
             continue;
         }
@@ -532,15 +535,73 @@ struct Evaluation {
     problems: Vec<String>,
 }
 
+/// README §7 (3.0): the runner REMEMBERS the commit that opened each edge,
+/// since the row no longer carries it — after every observe step, each edge
+/// of a committing member's document not seen before was opened by that
+/// member's commit (a document commits once per batch; adoption keeps the
+/// id). The commit's `seq` is read from the core's feed.
+#[derive(Default)]
+struct EdgeOpenings {
+    seq_of_edge: HashMap<String, i64>,
+}
+
+impl EdgeOpenings {
+    /// Record the edges the step's outcomes opened: every edge of each
+    /// committing member's doc not remembered yet.
+    fn remember(&mut self, conn: &Connection, outcomes: &[BatchOutcome]) {
+        for o in outcomes {
+            let BatchOutcome::Observed(o) = o else {
+                continue;
+            };
+            let Some(commit_id) = &o.commit_id else {
+                continue;
+            };
+            let seq: Option<i64> = conn
+                .query_row(
+                    "SELECT seq FROM feed WHERE commit_id = ?1",
+                    [commit_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .expect("query runs");
+            let Some(seq) = seq else {
+                continue;
+            };
+            let mut stmt = conn
+                .prepare("SELECT edge_id FROM edges WHERE src_doc = ?1 ORDER BY rowid")
+                .expect("valid SQL");
+            let ids = stmt
+                .query_map([&o.doc_id], |r| r.get::<_, String>(0))
+                .expect("query runs")
+                .map(|r| r.expect("row reads"));
+            for id in ids {
+                self.seq_of_edge.entry(id).or_insert(seq);
+            }
+        }
+    }
+
+    /// The opening commit's `seq`, or the end of the order for an edge never
+    /// seen opening.
+    fn seq(&self, edge_id: &str) -> i64 {
+        self.seq_of_edge.get(edge_id).copied().unwrap_or(i64::MAX)
+    }
+}
+
 fn run_case_script(c: &Json) -> Result<Evaluation, String> {
     let config = config_from(c.get("config"))?;
-    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new()))
-        .map_err(|e| e.to_string())?;
+    // Phase 2's gate: `OMGBASE_CAPABILITIES=core` runs every observation
+    // script without the semantic bundle.
+    let mut store = Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;
     let mut steps = Vec::new();
     let mut problems = Vec::new();
+    let mut openings = EdgeOpenings::default();
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
         if let Some(observe) = step.get("observe") {
             let ts = observe["ts"].as_str().ok_or("observe.ts")?;
@@ -556,6 +617,7 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             let outcomes = store
                 .observe_batch(&repo_id, &items, ts, &config)
                 .map_err(|e| format!("step {i}: {e}"))?;
+            openings.remember(store.conn(), &outcomes);
             steps.push(Json::Array(outcomes.iter().map(outcome_json).collect()));
             for p in check_graph(store.conn(), &repo_id) {
                 problems.push(format!("after step {i}: {p}"));
@@ -582,12 +644,13 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             "history_attach",
             "history_detach",
             "read_at",
+            "remint_epoch",
         ]
         .iter()
         .any(|k| step.get(*k).is_some())
         {
             return Err(format!(
-                "step {i}: retention steps (spec/store §9.4, 15.0) are not run by the graph runner"
+                "step {i}: retention and epoch steps (spec/store §9.4) are not run by the graph runner"
             ));
         } else {
             return Err(format!("step {i}: none of observe, sweep, gc, exec"));
@@ -598,7 +661,7 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
     }
     let mut actual = JsonMap::new();
     actual.insert("steps".to_owned(), Json::Array(steps));
-    for (k, v) in project_graph(store.conn(), &repo_id) {
+    for (k, v) in project_graph(store.conn(), &repo_id, &openings) {
         actual.insert(k, v);
     }
     Ok(Evaluation { actual, problems })
@@ -607,8 +670,9 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
 // ---- projection (§7) ------------------------------------------------------------------
 
 /// The §7 projection of one repo's graph tables (`repo_id` omitted), in
-/// fixture order.
-fn project_graph(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
+/// fixture order; `edges` by (the opening commit's seq as remembered,
+/// `edge_id`).
+fn project_graph(conn: &Connection, repo_id: &str, openings: &EdgeOpenings) -> Vec<(String, Json)> {
     let docs = query_rows(
         conn,
         "SELECT doc_id FROM docs WHERE repo_id = ?1 ORDER BY path",
@@ -642,24 +706,19 @@ fn project_graph(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     );
     external.sort_by(|a, b| bytes_cmp(str_of(a, "uri"), str_of(b, "uri")));
 
-    let commit_seq: HashMap<String, i64> = query_rows(
-        conn,
-        "SELECT commit_id, seq FROM commits WHERE repo_id = ?1",
-        &[&repo_id],
-    )
-    .iter()
-    .map(|c| (str_of(c, "commit_id").to_owned(), int_of(c, "seq")))
-    .collect();
-    let seq_of = |id: &str| commit_seq.get(id).copied().unwrap_or(i64::MAX);
+    // 3.0: the table holds open rows only — every column but `repo_id`, no
+    // `from_commit`/`to_commit`; ordered by the opening commit's seq as the
+    // runner remembers it, then `edge_id` bytewise.
     let mut edges = query_rows(
         conn,
-        "SELECT edge_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit
+        "SELECT edge_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node
            FROM edges WHERE repo_id = ?1",
         &[&repo_id],
     );
     edges.sort_by(|a, b| {
-        seq_of(str_of(a, "from_commit"))
-            .cmp(&seq_of(str_of(b, "from_commit")))
+        openings
+            .seq(str_of(a, "edge_id"))
+            .cmp(&openings.seq(str_of(b, "edge_id")))
             .then_with(|| bytes_cmp(str_of(a, "edge_id"), str_of(b, "edge_id")))
     });
 
@@ -702,14 +761,6 @@ fn check_graph(conn: &Connection, repo_id: &str) -> Vec<String> {
         .filter(|d| d["deleted_at"].is_null())
         .map(|d| str_of(d, "path"))
         .collect();
-    let commits: HashSet<String> = query_rows(
-        conn,
-        "SELECT commit_id FROM commits WHERE repo_id = ?1",
-        &[&repo_id],
-    )
-    .iter()
-    .map(|c| str_of(c, "commit_id").to_owned())
-    .collect();
     let externals: HashSet<String> = query_rows(
         conn,
         "SELECT node_id FROM external_nodes WHERE repo_id = ?1",
@@ -751,25 +802,18 @@ fn check_graph(conn: &Connection, repo_id: &str) -> Vec<String> {
         }
     }
 
-    // Edge commits exist; open targets are a doc id (live or tombstoned —
+    // Every row is open (3.0): its target is a doc id (live or tombstoned —
     // §3.6 keeps a tombstoned target's id), an external node, or a phantom
-    // for a path with no live doc.
+    // for a path with no live doc. (The check that every
+    // `from_commit`/`to_commit` names a commit moved with the interval record
+    // to `spec/store` §9.5.)
     let edges = query_rows(
         conn,
-        "SELECT edge_id, dst_node, dst_kind, from_commit, to_commit FROM edges WHERE repo_id = ?1",
+        "SELECT edge_id, dst_node, dst_kind FROM edges WHERE repo_id = ?1",
         &[&repo_id],
     );
     for e in &edges {
         let id = str_of(e, "edge_id");
-        if !commits.contains(str_of(e, "from_commit")) {
-            problems.push(format!("edge {id}: from_commit is not a commit"));
-        }
-        if let Some(to) = e["to_commit"].as_str() {
-            if !commits.contains(to) {
-                problems.push(format!("edge {id}: to_commit {to} is not a commit"));
-            }
-            continue;
-        }
         let dst = str_of(e, "dst_node");
         let ok = if let Some(path) = dst.strip_prefix("phantom:") {
             !live_paths.contains(path)
@@ -786,7 +830,7 @@ fn check_graph(conn: &Connection, repo_id: &str) -> Vec<String> {
     // doc_edges equals the §3.4 rollup recomputed from the open edges.
     let open = query_rows(
         conn,
-        "SELECT src_doc, predicate, dst_node, dst_kind, src_block FROM edges WHERE repo_id = ?1 AND to_commit IS NULL ORDER BY rowid",
+        "SELECT src_doc, predicate, dst_node, dst_kind, src_block FROM edges WHERE repo_id = ?1 ORDER BY rowid",
         &[&repo_id],
     );
     /// `(src_doc, predicate, dst_node, dst_kind)` → `(count, samples)`.

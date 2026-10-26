@@ -542,6 +542,73 @@ links query (`_dst_path == …`) no longer carries the interval filter; the
 difference is within what two runs on one laptop show, and nothing got
 slower.
 
+### 17.0 (3e-i), Rust — open-only edges, the D9 drops, the six categories, the twin (`rust-2026-10-26T04-20-11`)
+
+The Rust twin of 3e-i (`crates/omgbase-store` with `edges` as the open set —
+a closed edge deletes its row and the recorder's `edge_transitions` keeps the
+interval — `properties` without its two commit columns, `collections` and
+`inferred_edges` dropped, the three DDL files executed on open, the six size
+categories; `omgbase-graph` 3.0), release build of the `omgbase` crate 0.27.3
++ the working tree, the same seeded corpus; the TS 3e-i row above is the
+comparison, the Rust 3d row the cost of the slice.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | TS 3e-i (db MB / KB / op) | Rust 3d (db MB / KB / op) | `edges` rows / KB | `edge_transitions` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.44 | 6,438 | 32.0 / doc | 3.11 | 0.63 | 0.01 | 2.24 | 212 | 6.43 / 32.0 | 6.35 / 31.6 | 800 / 164 | 800 / 132 |
+| frontmatter hot update | 50 | 6.55 | 106 | 2.1 | 3.11 | 0.65 | 0.01 | 2.30 | 240 | 6.55 / 2.4 | 6.44 / 1.7 | 800 / 164 | 800 / 132 |
+| block edit | 50 | 6.67 | 126 | 2.5 | 3.11 | 0.66 | 0.01 | 2.38 | 268 | 6.68 / 2.5 | 6.57 / 2.7 | 800 / 164 | 800 / 132 |
+| rolling journal | 50 | 6.84 | 167 | 3.4 | 3.13 | 0.68 | 0.01 | 2.50 | 284 | 6.87 / 3.8 | 6.76 / 3.7 | 800 / 164 | 800 / 132 |
+| task churn | 50 | 6.92 | 77 | 1.6 | 3.13 | 0.69 | 0.01 | 2.54 | 308 | 6.94 / 1.5 | 6.85 / 1.8 | 800 / 164 | 800 / 132 |
+| link churn | 50 | 7.03 | 114 | 2.3 | 3.13 | 0.72 | 0.01 | 2.60 | 324 | 7.06 / 2.3 | 6.96 / 2.2 | 803 / 164 | 925 / 152 |
+| delete / recreate | 20 | 7.18 | 147 | 7.4 | 3.14 | 0.75 | 0.01 | 2.71 | 336 | 7.18 / 6.1 | 7.09 / 6.6 | 803 / 164 | 955 / 156 |
+| gc (default sweep) | | 7.18 | 0 | | 3.14 | 0.75 | 0.01 | 2.71 | 336 | 7.18 / 0 | 7.09 / 0 | 803 / 164 | 955 / 156 |
+
+Import **6.44 vs 6.43 MB (29.5× the source vs 29.4×)**, the end **7.18 vs
+7.18 MB (32.8× in both)** — 7,180,288 B in both engines; against the TS 3e-i
+run the database is within 4–29 KB (one to seven pages) at every stage, the
+`sync` category identical at every stage (212 / 240 / 268 / 284 / 308 / 324
+/ 336 KB), `content` within 4–12 KB, `identity` within 4 KB, `history` within
+4–12 KB. **`edges` and `edge_transitions` are row for row the TS run's at
+every stage**: 800 / 800 rows after the import (167,936 / 135,168 B in both
+engines), 800 / 800 through the frontmatter, block, journal and task stages,
+803 / 925 after link churn (the 125 edges the churn closed are deleted from
+`edges` and kept as closed transitions), **803 / 955 at the end** (167,936 /
+159,744 B here, 172,032 / 159,744 B in TS — one page on `edges`); against
+Rust 3d's `edges` 196,608 B / 800 rows at import and 221,184 B / 955 rows at
+the end, the core table lost the two interval columns, `idx_edges_temporal`
+and the 152 closed rows. `properties` is 421,888 B / 1,606 rows in both
+engines (Rust 3d: 438,272 — the two commit columns and the four partial
+predicates); `collections` and `inferred_edges` are gone from the table list
+(Rust 3d: 8,192 B each). The history tables after gc are row for row the TS
+run's: `blobs` 3,218 (634,880 vs 630,784 B), `tree_nodes` 1,000 (974,848 vs
+978,944), `dispositions` 3,824 (348,160 vs 339,968), `block_changes` 3,824
+(299,008 vs 294,912), `revisions` 461 (110,592 both), `commits` 471 (172,032
+both), `edge_transitions` 955 (159,744 both); `id_claims` 5,715 (737,280 vs
+733,184 — one page) growing 4,810 → 4,910 → 5,010 → 5,160 → 5,260 → 5,485 →
+5,715 exactly as the TS run's; `feed` 471 / 139,264 B and `feed_entries` 471
+/ 86,016 B in both; `sync_state` 1 row. `content` 3.11 → 3.14 MB (3d: 3.17 →
+3.24), `history` 2.24 → 2.71 (3d: 2.73 → 3.28, with `id_claims`, the pool
+and the pending row now under `identity`/`recovery`) — the same shape the TS
+section above describes. Per operation nothing moved beyond the seed's noise
+(frontmatter 2.1 vs 3d's 1.7, block edit 2.5 vs 2.7, journal 3.4 vs 3.7,
+task churn 1.6 vs 1.8, link churn 2.3 vs 2.2, recreate 7.4 vs 6.6).
+
+Latency (p50 / p95 ms, process start 5 / 257 included — one slow spawn):
+import 979; one write 21–24 / 28–34 (frontmatter 24 / 31, block edit 24 /
+30, journal 23 / 28, task churn 23 / 30, link churn 23 / 31, recreate 21 /
+34); `query` docs 13 / 20, blocks filter 12 / 16, `text("furnace")` 70 / 92,
+links 10 / 12; `outline` 8 / 10; `gc` 16. Against the Rust 3d run (writes
+26–32 / 33–44, import 1,113, docs 18, text 88, links 14, outline 14, gc 28)
+every write is 2–9 ms faster at p50 and every read 4–18 ms — the edge
+indexes lost their partial predicates, the readers their `to_commit IS NULL`
+clause, the links query its interval filter — within what two runs on one
+laptop show, and nothing got slower. A first run of this harness
+(`rust-2026-10-26T04-14-51`, not recorded) came out with `dispositions`
+3,822 / `tree_nodes` 1,001 — two verdicts fewer at the task-churn stage, one
+extra tree node after it — while every edge figure matched; the re-run
+recorded here reproduces TS's 3,824 / 1,000 row for row, so the first run's
+gap was the harness's own (its spawn p95 was 525 ms), not the slice's.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

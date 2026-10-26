@@ -295,7 +295,7 @@ pub fn inbound_links_to(
         let mut stmt = conn.prepare(
             "SELECT DISTINCT e.src_doc, d.path, e.src_block, e.src_field
              FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-             WHERE e.repo_id = ?1 AND e.dst_node = ?2 AND e.to_commit IS NULL AND d.deleted_at IS NULL
+             WHERE e.repo_id = ?1 AND e.dst_node = ?2 AND d.deleted_at IS NULL
              ORDER BY d.path, e.src_block",
         )?;
         let it = stmt.query_map(params![repo_id, doc_id], |r| {

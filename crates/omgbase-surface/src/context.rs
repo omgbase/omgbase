@@ -820,7 +820,7 @@ impl<'a> StoreContext<'a> {
             }
             Target::Links => {
                 "SELECT e.*, d.path AS __path FROM docs d CROSS JOIN edges e ON e.src_doc = d.doc_id
-                 WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_at IS NULL
+                 WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND d.deleted_at IS NULL
                  ORDER BY d.path, e.edge_id"
             }
             // The history (4.7): its own statement, in the same `(path, id)`
@@ -867,11 +867,11 @@ impl<'a> StoreContext<'a> {
     fn doc_prop(&self, doc_id: &str, key: &str, source: Option<&str>) -> oqx::Result<Value> {
         let rows = match source {
             Some(s) => self.all(
-                "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 AND source = ?3 AND deleted_commit IS NULL ORDER BY ord",
+                "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 AND source = ?3 ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(key.to_owned()), SqlValue::Text(s.to_owned())],
             )?,
             None => self.all(
-                "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 AND deleted_commit IS NULL ORDER BY ord",
+                "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(key.to_owned())],
             )?,
         };
@@ -895,11 +895,11 @@ impl<'a> StoreContext<'a> {
         let like = SqlValue::Text(format!("{prefix}.%"));
         let rows = match source {
             Some(s) => self.all(
-                "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 AND source = ?3 AND deleted_commit IS NULL ORDER BY ord",
+                "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 AND source = ?3 ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), like, SqlValue::Text(s.to_owned())],
             )?,
             None => self.all(
-                "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 AND deleted_commit IS NULL ORDER BY ord",
+                "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), like],
             )?,
         };
@@ -924,11 +924,11 @@ impl<'a> StoreContext<'a> {
     fn doc_prop_bag(&self, doc_id: &str, source: Option<&str>) -> oqx::Result<Value> {
         let keys = match source {
             Some(s) => self.all(
-                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source = ?2 AND deleted_commit IS NULL ORDER BY key",
+                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source = ?2 ORDER BY key",
                 &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(s.to_owned())],
             )?,
             None => self.all(
-                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source IN ('frontmatter', 'inline') AND deleted_commit IS NULL ORDER BY key",
+                "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source IN ('frontmatter', 'inline') ORDER BY key",
                 &[SqlValue::Text(doc_id.to_owned())],
             )?,
         };
@@ -1108,7 +1108,7 @@ impl<'a> StoreContext<'a> {
             // collect distinct { from _doc }`.
             (Target::Docs, "_out_links") => Self::tag_all(
                 self.all(
-                    "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
+                    "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 ORDER BY e.predicate, e.edge_id",
                     &[doc_path(), doc_id()],
                 )?,
                 Target::Links,
@@ -1116,7 +1116,7 @@ impl<'a> StoreContext<'a> {
             (Target::Docs, "_in_links") => Self::tag_all(
                 self.all(
                     "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-                     WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id",
+                     WHERE e.dst_node = ?1 AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_id()],
                 )?,
                 Target::Links,
@@ -1137,7 +1137,7 @@ impl<'a> StoreContext<'a> {
             ),
             (Target::Blocks, "_out_links") => Self::tag_all(
                 self.all(
-                    "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_block = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
+                    "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_block = ?2 ORDER BY e.predicate, e.edge_id",
                     &[path(), block_id()],
                 )?,
                 Target::Links,
@@ -1557,7 +1557,7 @@ impl<'a> StoreContext<'a> {
             "semantic" => Some(self.semantic_score(t, row, &arg_or_empty(args, 0))),
             "has_anchor" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 Some(Self::sql_result(self.exists(
-                    "SELECT 1 FROM edges WHERE src_block = ?1 AND anchor IS NOT NULL AND to_commit IS NULL LIMIT 1",
+                    "SELECT 1 FROM edges WHERE src_block = ?1 AND anchor IS NOT NULL LIMIT 1",
                     &[to_sql(&c("block_id"))],
                 )))
             }),
@@ -1585,12 +1585,12 @@ impl<'a> StoreContext<'a> {
                 };
                 let r = if args.len() >= 2 {
                     self.exists(
-                        &format!("SELECT 1 FROM edges WHERE {src_col} = ?1 AND predicate = ?2 AND to_commit IS NULL AND dst_node = ?3 LIMIT 1"),
+                        &format!("SELECT 1 FROM edges WHERE {src_col} = ?1 AND predicate = ?2 AND dst_node = ?3 LIMIT 1"),
                         &[to_sql(&src_val), SqlValue::Text(pred), to_sql(&args[1])],
                     )
                 } else {
                     self.exists(
-                        &format!("SELECT 1 FROM edges WHERE {src_col} = ?1 AND predicate = ?2 AND to_commit IS NULL LIMIT 1"),
+                        &format!("SELECT 1 FROM edges WHERE {src_col} = ?1 AND predicate = ?2 LIMIT 1"),
                         &[to_sql(&src_val), SqlValue::Text(pred)],
                     )
                 };

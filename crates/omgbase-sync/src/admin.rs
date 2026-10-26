@@ -118,7 +118,7 @@ pub fn repos_status(
         docs: count("SELECT count(*) FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL")?,
         blocks: count("SELECT count(*) FROM blocks WHERE repo_id = ?1 AND deleted_at IS NULL")?,
         feed,
-        open_edges: count("SELECT count(*) FROM edges WHERE repo_id = ?1 AND to_commit IS NULL")?,
+        open_edges: count("SELECT count(*) FROM edges WHERE repo_id = ?1")?,
         disk,
     })
 }

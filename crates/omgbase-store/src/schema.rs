@@ -9,8 +9,26 @@ use crate::core::time::POOL_TTL_MS;
 use crate::error::{Error, Result};
 use crate::mint::{IdSource, Mint};
 
-/// `spec/store/schema.sql`, verbatim (§3.3). Executed on a fresh database.
+/// `spec/store/schema.sql`, verbatim (§3.3): the CORE bundle's DDL (17.0,
+/// §3.1) — the current state, the identity, the change feed, the derived
+/// indexes, the sync registry. Executed on a fresh database, followed by the
+/// two capability bundles ([`HISTORY_SQL`], [`SEMANTIC_SQL`]) — through Phase
+/// 3 unconditionally (Phase 4 makes them conditional on the manifest).
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
+
+/// `spec/store/schema-history.sql`, verbatim (§3.3, 17.0): the history
+/// bundle's DDL — `commits`, `revisions`, `blobs`, `tree_nodes`,
+/// `dispositions`, `block_changes`, `edge_transitions`, `archives` (the
+/// recorder's tables).
+pub const HISTORY_SQL: &str = include_str!("../schema-history.sql");
+
+/// `spec/store/schema-semantic.sql`, verbatim (§3.3, 17.0): the semantic
+/// bundle's DDL — `embeddings`, `doc_embeddings`.
+pub const SEMANTIC_SQL: &str = include_str!("../schema-semantic.sql");
+
+/// The three bundles in the order the opener executes them (the reference's
+/// `ALL_DDL`: core, history, semantic).
+pub const ALL_SQL_FILES: [&str; 3] = [SCHEMA_SQL, HISTORY_SQL, SEMANTIC_SQL];
 
 /// `spec/store/archive.sql`, verbatim (§3.3, 15.0): the DDL of an archive
 /// segment (§7.1), executed on every new segment file `history export` writes.
@@ -19,10 +37,18 @@ pub const ARCHIVE_SQL: &str = include_str!("../archive.sql");
 /// The `PRAGMA user_version` this crate writes: the spec major.
 pub const SCHEMA_VERSION: i64 = 17;
 
-/// Split the DDL into statements at every `;` outside a `--` comment or a
-/// string literal, keeping each statement's original text (comments included).
+/// Split the three DDL files into statements (core, then history, then
+/// semantic) at every `;` outside a `--` comment or a string literal, keeping
+/// each statement's original text (comments included).
 fn statements() -> Vec<&'static str> {
-    let sql = SCHEMA_SQL;
+    ALL_SQL_FILES
+        .iter()
+        .flat_map(|sql| statements_of(sql))
+        .collect()
+}
+
+/// [`statements`] over one file.
+fn statements_of(sql: &'static str) -> Vec<&'static str> {
     let bytes = sql.as_bytes();
     let mut out = Vec::new();
     let (mut start, mut i) = (0, 0);
@@ -142,11 +168,12 @@ pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Open per §1: `0` → `schema.sql`; equal → done; greater → refuse; less →
-/// migrate step by step, each in its own transaction. `history` is the
-/// recorder the store opens with: step 17 resolves every live head's
-/// frontmatter through it once (`frontmatter_at_revision`), never through
-/// the delta module directly.
+/// Open per §1: `0` → the three DDL files (§3.3: the core bundle, then the
+/// history and semantic bundles — every bundle on every fresh database
+/// through Phase 3); equal → done; greater → refuse; less → migrate step by
+/// step, each in its own transaction. `history` is the recorder the store
+/// opens with: step 17 resolves every live head's frontmatter through it
+/// once (`frontmatter_at_revision`), never through the delta module directly.
 pub(crate) fn migrate(
     conn: &Connection,
     ids: &mut IdSource,
@@ -155,25 +182,30 @@ pub(crate) fn migrate(
     let current = user_version(conn)?;
     if current == 0 {
         let tx = conn.unchecked_transaction()?;
-        tx.execute_batch(SCHEMA_SQL)?;
+        for sql in ALL_SQL_FILES {
+            tx.execute_batch(sql)?;
+        }
         set_user_version(&tx, SCHEMA_VERSION)?;
         tx.commit()?;
         return Ok(());
     }
     if current == SCHEMA_VERSION {
         // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b
-        // → 3c → 3d): a database a 3a build already moved to 17 has `docs`
-        // but no `id_claims` and the pool's `deleted_commit`; a 3a/3b build's
-        // still has `pending_materializations.rev_id`; a 3a–3c build's has no
-        // `feed`, a `checkpoints` table and `commits.checkpoint_id`. Each part
-        // of the step is idempotent, so finish it here rather than spend a
-        // schema version on a dev-only state. (A 17 database with no `docs`
-        // table — the `already-current-is-untouched` fixture — is left exactly
-        // as it is.)
+        // → 3c → 3d → 3e): a database a 3a build already moved to 17 has
+        // `docs` but no `id_claims` and the pool's `deleted_commit`; a 3a/3b
+        // build's still has `pending_materializations.rev_id`; a 3a–3c
+        // build's has no `feed`, a `checkpoints` table and
+        // `commits.checkpoint_id`; a 3a–3d build's has
+        // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
+        // `collections`/`inferred_edges` tables. Each part of the step is
+        // idempotent, so finish it here rather than spend a schema version on
+        // a dev-only state. (A 17 database with no `docs` table — the
+        // `already-current-is-untouched` fixture — is left exactly as it is.)
         if table_exists(conn, "docs")? {
             migrate_v17_claims(conn)?;
             migrate_v17_pending(conn)?;
             migrate_v17_feed(conn, ids)?;
+            migrate_v17_edges(conn)?;
         }
         return Ok(());
     }
@@ -196,11 +228,15 @@ pub(crate) fn migrate(
             // the `id_claims` backfill, then the recovery half (3c): the
             // self-contained `pending_materializations` row, then the feed
             // half (3d): the epoch, the feed backfill, the recorder's
-            // `commits` row, the status row, `checkpoints` dropped.
+            // `commits` row, the status row, `checkpoints` dropped, then the
+            // edges-and-drops half (3e-i): `edges` open-only with the
+            // intervals moved to `edge_transitions`, `properties` without its
+            // commit columns, `collections`/`inferred_edges` dropped.
             migrate_v17(conn, history)?;
             migrate_v17_claims(conn)?;
             migrate_v17_pending(conn)?;
             migrate_v17_feed(conn, ids)?;
+            migrate_v17_edges(conn)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -935,19 +971,25 @@ fn migrate_v17_claims(conn: &Connection) -> Result<()> {
                 commit_join("r.commit_id")
             ),
         )?;
-        // x, e
+        // x, e — `from_commit` is the 16.x column; an `edges` already open-only
+        // (3e-i ran before the claims half, which no slice order produces) has
+        // none and the clock stands in.
+        let edges_have_from = has_column(&tx, "edges", "from_commit")? == Some(true);
+        let (edge_ts, edge_join) = if edges_have_from {
+            (commit_ts, commit_join("e.from_commit"))
+        } else {
+            ("NULL", String::new())
+        };
         ins(
             &["external_nodes", "edges"],
             &format!(
-                "SELECT n.node_id, n.repo_id, 'x', COALESCE(MIN({commit_ts}), :clock), 1 FROM external_nodes n LEFT JOIN edges e ON e.dst_node = n.node_id {} WHERE true GROUP BY n.node_id",
-                commit_join("e.from_commit")
+                "SELECT n.node_id, n.repo_id, 'x', COALESCE(MIN({edge_ts}), :clock), 1 FROM external_nodes n LEFT JOIN edges e ON e.dst_node = n.node_id {edge_join} WHERE true GROUP BY n.node_id"
             ),
         )?;
         ins(
             &["edges"],
             &format!(
-                "SELECT e.edge_id, e.repo_id, 'e', COALESCE({commit_ts}, :clock), 1 FROM edges e {} WHERE true",
-                commit_join("e.from_commit")
+                "SELECT e.edge_id, e.repo_id, 'e', COALESCE({edge_ts}, :clock), 1 FROM edges e {edge_join} WHERE true"
             ),
         )?;
         // rp, src
@@ -1288,6 +1330,123 @@ ALTER TABLE sync_state ADD COLUMN last_batch_files INTEGER;",
     rebuilt
 }
 
+/// The edges-and-drops half of step 17 (§3.4 step 17 (10)–(12); modular-core
+/// Phase 3e-i — M6, D9). (10) `edges` becomes OPEN-ONLY: every row is first
+/// copied verbatim into the history bundle's `edge_transitions` (created here
+/// when the bundle is present — `commits` exists), then the table is rebuilt
+/// with the open rows (`to_commit IS NULL`) minus the two interval columns,
+/// `idx_edges_src`/`idx_edges_dst` without their `WHERE`, `idx_edges_temporal`
+/// gone, `rowid`s kept (the rollup's sample order); the `e` claims follow the
+/// rows — bit 1 for every id a transition names, bit 0 only for the ids an
+/// open row still carries (a closed edge's claim is the recorder's alone, as
+/// the backfill rule of step (4) has it), a claim with no holder left deleted.
+/// (11) `properties` rebuilt without `created_commit`/`deleted_commit` (never
+/// read non-NULL; D9) and its four indexes without their partial predicates,
+/// `rowid`s kept. (12) `collections` and `inferred_edges` dropped (created,
+/// never written; D9). One transaction, `foreign_keys = OFF` for its
+/// duration, `PRAGMA foreign_key_check` empty at its end. Idempotent on each
+/// part: an `edges` without `from_commit`, a `properties` without
+/// `created_commit` and a missing table are nothing to do.
+fn migrate_v17_edges(conn: &Connection) -> Result<()> {
+    let needs_edges = has_column(conn, "edges", "from_commit")? == Some(true);
+    let needs_props = has_column(conn, "properties", "created_commit")? == Some(true);
+    let has_collections = table_exists(conn, "collections")?;
+    let has_inferred = table_exists(conn, "inferred_edges")?;
+    if !needs_edges && !needs_props && !has_collections && !has_inferred {
+        return Ok(());
+    }
+    let has_history = table_exists(conn, "commits")?;
+    let has_claims = table_exists(conn, "id_claims")?;
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = (|| -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        if needs_edges {
+            if has_history {
+                tx.execute_batch(&ddl_for(&["edge_transitions"]))?;
+                tx.execute_batch(
+                    "INSERT OR IGNORE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+  SELECT edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit FROM edges ORDER BY rowid",
+                )?;
+            }
+            tx.execute_batch(
+                "CREATE TABLE edges_v17 (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external')),
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
+               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
+  via_node    TEXT
+);
+INSERT INTO edges_v17 (rowid, edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node)
+  SELECT rowid, edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node FROM edges WHERE to_commit IS NULL ORDER BY rowid;
+DROP TABLE edges;
+ALTER TABLE edges_v17 RENAME TO edges;
+CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src_doc, predicate);
+CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst_node, predicate);",
+            )?;
+            if has_claims {
+                if has_history {
+                    tx.execute_batch(
+                        "UPDATE id_claims SET holders = holders | 2 WHERE prefix = 'e' AND id IN (SELECT edge_id FROM edge_transitions)",
+                    )?;
+                }
+                tx.execute_batch(
+                    "UPDATE id_claims SET holders = holders & ~1 WHERE prefix = 'e' AND id NOT IN (SELECT edge_id FROM edges);
+DELETE FROM id_claims WHERE holders = 0;",
+                )?;
+            }
+        }
+        if needs_props {
+            tx.execute_batch(
+                "CREATE TABLE properties_v17 (
+  prop_id        TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  block_id       TEXT,
+  source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
+  key            TEXT NOT NULL,
+  card           TEXT NOT NULL CHECK (card IN ('scalar','list')),
+  ord            INTEGER NOT NULL DEFAULT 0,
+  val_text       TEXT,
+  val_num        REAL,
+  val_bool       INTEGER,
+  val_json       TEXT,
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json'))
+);
+INSERT INTO properties_v17 (rowid, prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, val_num, val_bool, val_json, type)
+  SELECT rowid, prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties ORDER BY rowid;
+DROP TABLE properties;
+ALTER TABLE properties_v17 RENAME TO properties;
+CREATE INDEX IF NOT EXISTS idx_props_doc      ON properties(doc_id);
+CREATE INDEX IF NOT EXISTS idx_props_key_text ON properties(repo_id, key, val_text);
+CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_num);
+CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key);",
+            )?;
+        }
+        tx.execute_batch("DROP TABLE IF EXISTS collections; DROP TABLE IF EXISTS inferred_edges;")?;
+        let violations: i64 = {
+            let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
+            let rows = stmt.query_map([], |_| Ok(()))?;
+            i64::try_from(rows.count()).unwrap_or(i64::MAX)
+        };
+        if violations > 0 {
+            return Err(Error::Other(format!(
+                "migration v17: {violations} foreign key violation(s) after the edges step"
+            )));
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    rebuilt
+}
+
 /// v13 (ADR-014): `repos.root_path` becomes an `fs` source + attachment.
 fn migrate_v13(conn: &Connection, minter: &mut Mint<'_>) -> Result<()> {
     if has_column(conn, "repos", "root_path")? != Some(true) {
@@ -1350,10 +1509,17 @@ mod tests {
         assert!(targets.iter().any(|t| t == "pending_materializations"));
         assert!(targets.iter().any(|t| t == "archives"));
         assert!(targets.iter().any(|t| t == "feed"));
+        assert!(targets.iter().any(|t| t == "edge_transitions"));
+        assert!(targets.iter().any(|t| t == "doc_embeddings"));
         assert_eq!(
             targets.iter().filter(|t| *t == "feed").count(),
             2,
             "table + idx_feed_ts"
+        );
+        assert_eq!(
+            targets.iter().filter(|t| *t == "edges").count(),
+            3,
+            "table + 2 indexes, no idx_edges_temporal (3.0)"
         );
         assert_eq!(
             targets.iter().filter(|t| *t == "blocks").count(),
@@ -1392,6 +1558,89 @@ mod tests {
         assert!(feed.contains("CREATE INDEX IF NOT EXISTS idx_feed_ts"));
         assert!(feed.contains("CREATE TABLE IF NOT EXISTS feed_entries"));
         assert!(ddl_for(&["nope"]).is_empty());
+    }
+
+    /// §3.3 (17.0): the three bundles PARTITION the table set — no table
+    /// lost or duplicated against 17.0's single file: the 3d set minus the D9
+    /// drops (`collections`, `inferred_edges`) plus the history bundle's
+    /// `edge_transitions`; 32 tables, the history bundle 8, the semantic 2.
+    #[test]
+    fn the_three_bundles_partition_the_table_set() {
+        let created = |sql: &'static str| -> Vec<String> {
+            statements_of(sql)
+                .into_iter()
+                .filter(|s| {
+                    let u = without_comments(s).trim_start().to_ascii_uppercase();
+                    u.starts_with("CREATE TABLE") || u.starts_with("CREATE VIRTUAL TABLE")
+                })
+                .filter_map(statement_target)
+                .collect()
+        };
+        let core = created(SCHEMA_SQL);
+        let mut history = created(HISTORY_SQL);
+        let mut semantic = created(SEMANTIC_SQL);
+        let mut all: Vec<String> = core
+            .iter()
+            .chain(&history)
+            .chain(&semantic)
+            .cloned()
+            .collect();
+        let distinct: std::collections::BTreeSet<&String> = all.iter().collect();
+        assert_eq!(distinct.len(), all.len(), "a table in two bundles: {all:?}");
+        all.sort();
+        assert_eq!(
+            all,
+            [
+                "adapters",
+                "archives",
+                "attachments",
+                "blobs",
+                "block_changes",
+                "blocks",
+                "blocks_fts",
+                "commits",
+                "dispositions",
+                "doc_edges",
+                "doc_embeddings",
+                "docs",
+                "edge_transitions",
+                "edges",
+                "embeddings",
+                "external_nodes",
+                "feed",
+                "feed_entries",
+                "file_stats",
+                "id_claims",
+                "nodes",
+                "nodes_fts",
+                "pending_materializations",
+                "properties",
+                "repos",
+                "resurrection_pool",
+                "revisions",
+                "sections",
+                "sources",
+                "sync_state",
+                "tree_nodes",
+                "workspace_settings",
+            ]
+        );
+        history.sort();
+        assert_eq!(
+            history,
+            [
+                "archives",
+                "blobs",
+                "block_changes",
+                "commits",
+                "dispositions",
+                "edge_transitions",
+                "revisions",
+                "tree_nodes"
+            ]
+        );
+        semantic.sort();
+        assert_eq!(semantic, ["doc_embeddings", "embeddings"]);
     }
 
     /// §3.3 (15.0): the embedded segment DDL creates the manifest and the six

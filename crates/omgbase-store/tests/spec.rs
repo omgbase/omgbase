@@ -29,9 +29,9 @@ use omgbase_store::delta::{
     parse_frontmatter_blob, parse_node_text,
 };
 use omgbase_store::{
-    ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, ExportOptions, IdMinter,
-    RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION, SequentialMinter, Store,
-    TreeEntry,
+    ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, ExportOptions, HISTORY_SQL,
+    IdMinter, RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION, SEMANTIC_SQL,
+    SequentialMinter, Store, TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -90,6 +90,22 @@ const HISTORY_STEP_KINDS: [&str; 5] = [
 ];
 /// README §9.4 (15.0): `<dest>` stands for the case's archive directory in a projected path.
 const DEST_TOKEN: &str = "<dest>";
+/// README §9.5 (17.0): an `edge_transitions` row as the recorder suite
+/// carries it — every column but `repo_id`.
+const EDGE_TRANSITION_FIELDS: [&str; 12] = [
+    "edge_id",
+    "src_doc",
+    "src_block",
+    "src_field",
+    "predicate",
+    "dst_kind",
+    "dst_node",
+    "anchor",
+    "provenance",
+    "via_node",
+    "from_commit",
+    "to_commit",
+];
 
 const PASSING_HEADER: &str = "\
 # Store spec cases (spec/store/cases) that the Rust port must pass, one
@@ -109,13 +125,18 @@ enum Kind {
     Schema,
     Migration,
     Observe,
+    /// README §9.5 (17.0): a recorder suite under `cases/history/` —
+    /// `edge-transitions`, the same scripts projecting `edge_transitions` alone.
+    Edges,
 }
 
-/// §9.1: the suite kinds, told apart by the file stem.
+/// §9.1: the suite kinds, told apart by the file stem (the base name: a
+/// recorder suite lives under `cases/history/`, §9.5).
 fn suite_kind(stem: &str) -> Kind {
     match stem {
         "schema" => Kind::Schema,
         "migrations" => Kind::Migration,
+        "edge-transitions" => Kind::Edges,
         _ => Kind::Observe,
     }
 }
@@ -125,7 +146,14 @@ fn case_keys(kind: Kind) -> &'static [&'static str] {
         Kind::Schema => &["name", "notes", "expect"],
         Kind::Migration => &["name", "notes", "setup", "user_version", "rows", "expect"],
         Kind::Observe => &["name", "notes", "config", "minter", "steps", "expect"],
+        Kind::Edges => &["name", "notes", "config", "steps", "expect"],
     }
+}
+
+/// The suite name of a case file: its base name without `.json`.
+fn stem_of(file: &str) -> &str {
+    let base = file.rsplit('/').next().unwrap_or(file);
+    base.trim_end_matches(".json")
 }
 
 struct SpecCase {
@@ -135,6 +163,8 @@ struct SpecCase {
 }
 
 struct SpecFile {
+    /// The path relative to `cases/` (`feed.json`, `history/edge-transitions.json`).
+    file: String,
     stem: String,
     cases: Vec<SpecCase>,
 }
@@ -188,11 +218,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         };
         let keys: Vec<&String> = obj.keys().collect();
         if keys.len() != 1
-            || !(["observe", "sweep", "gc", "exec"].contains(&keys[0].as_str())
+            || !(["observe", "sweep", "gc", "exec", "remint_epoch"].contains(&keys[0].as_str())
                 || HISTORY_STEP_KINDS.contains(&keys[0].as_str()))
         {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / the retention steps (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / `remint_epoch` / the retention steps (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -221,9 +251,9 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         let Some(body) = body.as_object() else {
             continue;
         };
-        if keys[0] == "sweep" {
+        if keys[0] == "sweep" || keys[0] == "remint_epoch" {
             if body.keys().any(|k| k != "ts") {
-                problems.push(format!("{here}: sweep takes only `ts`"));
+                problems.push(format!("{here}: {} takes only `ts`", keys[0]));
             }
             continue;
         }
@@ -299,6 +329,59 @@ fn validate_projection(at: &str, e: &Json, step_count: i64, problems: &mut Vec<S
     }
 }
 
+/// README §9.5 (17.0): `expect` is exactly `{ edge_transitions: [...] }`, each
+/// row the twelve fields with their types.
+fn validate_edge_transitions(at: &str, e: &Json, problems: &mut Vec<String>) {
+    let rows = e
+        .as_object()
+        .filter(|o| o.len() == 1)
+        .and_then(|o| o.get("edge_transitions"))
+        .and_then(Json::as_array);
+    let Some(rows) = rows else {
+        problems.push(format!(
+            "{at}: must be exactly {{ edge_transitions: [...] }}"
+        ));
+        return;
+    };
+    let mut want: Vec<&str> = EDGE_TRANSITION_FIELDS.to_vec();
+    want.sort_unstable();
+    for (i, r) in rows.iter().enumerate() {
+        let here = format!("{at}.edge_transitions[{i}]");
+        let Some(obj) = r.as_object() else {
+            problems.push(format!("{here}: not an object"));
+            continue;
+        };
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        if keys != want {
+            problems.push(format!(
+                "{here}: a row has exactly the fields {} (got {})",
+                EDGE_TRANSITION_FIELDS.join(", "),
+                keys.join(", ")
+            ));
+            continue;
+        }
+        for k in [
+            "edge_id",
+            "src_doc",
+            "predicate",
+            "dst_kind",
+            "dst_node",
+            "provenance",
+            "from_commit",
+        ] {
+            if !obj[k].is_string() {
+                problems.push(format!("{here}: {k} must be a string"));
+            }
+        }
+        for k in ["src_block", "src_field", "anchor", "via_node", "to_commit"] {
+            if !(obj[k].is_null() || obj[k].is_string()) {
+                problems.push(format!("{here}: {k} must be a string or null"));
+            }
+        }
+    }
+}
+
 fn validate_migration_expect(at: &str, e: &Json, rows: &[String], problems: &mut Vec<String>) {
     let Some(obj) = e.as_object() else {
         problems.push(format!("{at}: must be an object"));
@@ -358,7 +441,7 @@ fn validate_fingerprint(at: &str, e: &Json, problems: &mut Vec<String>) {
 
 /// Validate one fixture file as the reference's `validateFixtureFile` does.
 fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
-    let stem = file.trim_end_matches(".json");
+    let stem = stem_of(file);
     let kind = suite_kind(stem);
     let mut problems = Vec::new();
     let Some(obj) = doc.as_object() else {
@@ -445,7 +528,7 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
                     _ => problems.push(format!("{at}: `rows` must be an array of table names")),
                 }
             }
-            Kind::Observe => {
+            Kind::Observe | Kind::Edges => {
                 if let Some(config) = cobj.get("config") {
                     validate_config(&at, config, &mut problems);
                 }
@@ -462,6 +545,7 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
             Kind::Schema => validate_fingerprint(&e_at, expect, &mut problems),
             Kind::Migration => validate_migration_expect(&e_at, expect, &row_tables, &mut problems),
             Kind::Observe => validate_projection(&e_at, expect, step_count, &mut problems),
+            Kind::Edges => validate_edge_transitions(&e_at, expect, &mut problems),
         }
         out.push(SpecCase {
             id: format!("{stem}::{name}"),
@@ -494,20 +578,39 @@ fn spec_available() -> bool {
     false
 }
 
+/// `cases/*.json` and the recorder suites under `cases/history/*.json`
+/// (README §9.1, §9.5), as paths relative to `cases/`, each group sorted.
+fn case_file_names(dir: &Path) -> Vec<String> {
+    let list = |sub: Option<&str>| -> Vec<String> {
+        let d = sub.map_or_else(|| dir.to_path_buf(), |s| dir.join(s));
+        let Ok(entries) = fs::read_dir(&d) else {
+            if sub.is_none() {
+                panic!("cannot read {}", d.display());
+            }
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .map(|entry| {
+                entry
+                    .expect("readable directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| name.ends_with(".json"))
+            .map(|name| sub.map_or_else(|| name.clone(), |s| format!("{s}/{name}")))
+            .collect();
+        names.sort();
+        names
+    };
+    let mut out = list(None);
+    out.extend(list(Some("history")));
+    out
+}
+
 fn load() -> Loaded {
     let dir = Path::new(CASES_DIR);
-    let mut file_names: Vec<String> = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .map(|entry| {
-            entry
-                .expect("readable directory entry")
-                .file_name()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .filter(|name| name.ends_with(".json"))
-        .collect();
-    file_names.sort();
+    let file_names = case_file_names(dir);
     let mut files = Vec::new();
     let mut problems = Vec::new();
     for name in &file_names {
@@ -527,7 +630,8 @@ fn load() -> Loaded {
         };
         match validate(name, &doc) {
             Ok(cases) => files.push(SpecFile {
-                stem: name.trim_end_matches(".json").to_owned(),
+                file: name.clone(),
+                stem: stem_of(name).to_owned(),
                 cases,
             }),
             Err(found) => problems.extend(found),
@@ -762,11 +866,11 @@ struct ObserveEvaluation {
     problems: Vec<String>,
 }
 
-fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
-    let config = config_from(c.get("config"))?;
-    // §9.4: the sequential fixture minter, or the repeating one for
-    // `"minter": "repeat"` (13.5) — installed before the repo is created.
-    let minter: Box<dyn IdMinter> = match c.get("minter") {
+/// The fixture minter a case names (§9.4, 13.5): the sequential one, or the
+/// repeating one for `"minter": "repeat"` — installed before the repo is
+/// created.
+fn minter_of(c: &Json) -> Result<Box<dyn IdMinter>, String> {
+    Ok(match c.get("minter") {
         None => Box::new(SequentialMinter::new()),
         Some(Json::String(k)) if k == "sequential" => Box::new(SequentialMinter::new()),
         Some(Json::String(k)) if k == "repeat" => Box::new(RepeatingMinter::new()),
@@ -775,9 +879,12 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
                 "minter: expected \"sequential\" or \"repeat\", got {other}"
             ));
         }
-    };
-    // Phase 2's gate: `OMGBASE_CAPABILITIES=core` runs every observation
-    // script without the semantic bundle.
+    })
+}
+
+/// A fixture store: Phase 2's gate — `OMGBASE_CAPABILITIES=core` runs every
+/// observation script without the semantic bundle.
+fn fixture_store(minter: Box<dyn IdMinter>) -> Result<(Store, String), String> {
     let mut store = Store::open_in_memory_with_capabilities(
         minter,
         omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
@@ -786,6 +893,19 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;
+    Ok((store, repo_id))
+}
+
+/// The step loop every observation-script suite of this spec shares (§9.4,
+/// §9.5): each step through its production path, the §8 invariants after
+/// every observe / gc / export / re-mint step and at the end. Returns the
+/// outcomes and the problems found.
+fn run_steps(
+    store: &mut Store,
+    repo_id: &str,
+    c: &Json,
+    config: &Config,
+) -> Result<(Vec<Json>, Vec<String>), String> {
     let mut last_source: HashMap<String, String> = HashMap::new();
     let mut steps = Vec::new();
     let mut problems = Vec::new();
@@ -797,11 +917,11 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
             let dir =
                 dest.get_or_insert_with(|| ArchiveDir::new(c["name"].as_str().unwrap_or("case")));
             steps.push(
-                run_history_step(&mut store, &repo_id, kind, &step[*kind], &dir.0)
+                run_history_step(store, repo_id, kind, &step[*kind], &dir.0)
                     .map_err(|e| format!("step {i}: {e}"))?,
             );
             if *kind == "history_export" {
-                for p in check_invariants(&store, &repo_id, &last_source) {
+                for p in check_invariants(store, repo_id, &last_source) {
                     problems.push(format!("after step {i}: {p}"));
                 }
             }
@@ -817,7 +937,7 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
                 })
                 .collect();
             let outcomes = store
-                .observe_batch(&repo_id, &items, ts, &config)
+                .observe_batch(repo_id, &items, ts, config)
                 .map_err(|e| format!("step {i}: {e}"))?;
             for it in &items {
                 match &it.source {
@@ -830,7 +950,7 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
                 }
             }
             steps.push(Json::Array(outcomes.iter().map(outcome_json).collect()));
-            for p in check_invariants(&store, &repo_id, &last_source) {
+            for p in check_invariants(store, repo_id, &last_source) {
                 problems.push(format!("after step {i}: {p}"));
             }
         } else if let Some(sweep) = step.get("sweep") {
@@ -839,22 +959,41 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
             steps.push(json!({ "swept": swept }));
         } else if let Some(gc) = step.get("gc") {
             let ts = gc.get("ts").and_then(Json::as_str);
-            steps.push(run_gc_step(&store, ts).map_err(|e| format!("step {i}: {e}"))?);
-            for p in check_invariants(&store, &repo_id, &last_source) {
+            steps.push(run_gc_step(store, ts).map_err(|e| format!("step {i}: {e}"))?);
+            for p in check_invariants(store, repo_id, &last_source) {
+                problems.push(format!("after step {i}: {p}"));
+            }
+        } else if let Some(remint) = step.get("remint_epoch") {
+            // README §7.5 (17.0): the epoch re-mint — a new `ep`, the feed
+            // emptied; the invariants hold on the new epoch (C4 with an empty
+            // feed, F1 vacuous).
+            let ts = remint["ts"].as_str().ok_or("remint_epoch.ts")?;
+            let epoch = store
+                .remint_epoch(repo_id, ts)
+                .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "epoch": epoch }));
+            for p in check_invariants(store, repo_id, &last_source) {
                 problems.push(format!("after step {i}: {p}"));
             }
         } else if let Some(exec) = step.get("exec") {
             steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, history_*, read_at"
+                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at"
             ));
         }
     }
-    for p in check_invariants(&store, &repo_id, &last_source) {
+    for p in check_invariants(store, repo_id, &last_source) {
         problems.push(format!("at end: {p}"));
     }
     drop(dest);
+    Ok((steps, problems))
+}
+
+fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
+    let config = config_from(c.get("config"))?;
+    let (mut store, repo_id) = fixture_store(minter_of(c)?)?;
+    let (steps, problems) = run_steps(&mut store, &repo_id, c, &config)?;
     let mut expect = JsonMap::new();
     expect.insert("steps".to_owned(), Json::Array(steps));
     for (k, v) in project_store(store.conn(), &repo_id) {
@@ -862,6 +1001,65 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
     }
     Ok(ObserveEvaluation {
         expect: Json::Object(expect),
+        problems,
+    })
+}
+
+/// README §9.5 (17.0): the recorder's edge suite — the same observation
+/// scripts as `spec/graph`'s, projecting `edge_transitions` alone: every
+/// column but `repo_id`, by (`from_commit`'s rank in the `commits` order —
+/// `(ts, seq)` — then `edge_id` bytewise), `to_commit` as the commit id or
+/// null. Runner checks beyond §8: every `from_commit`/`to_commit` is a
+/// `commits` row (the check that moved here from `spec/graph` 2.x); every
+/// open transition has an `edges` row of the same id and destination, and
+/// every `edges` row an open transition (§8 H6, in `check_invariants`).
+fn run_edge_transitions_case(c: &Json) -> Result<ObserveEvaluation, String> {
+    let config = config_from(c.get("config"))?;
+    let (mut store, repo_id) = fixture_store(Box::new(SequentialMinter::new()))?;
+    let (_, mut problems) = run_steps(&mut store, &repo_id, c, &config)?;
+    let conn = store.conn();
+    let commit_rank: HashMap<String, usize> = all_rows(
+        conn,
+        "SELECT commit_id FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    )
+    .into_iter()
+    .enumerate()
+    .map(|(i, id)| (id, i))
+    .collect();
+    let rank_of = |id: &str| commit_rank.get(id).copied().unwrap_or(usize::MAX);
+    let mut rows = query_rows(
+        conn,
+        &format!(
+            "SELECT {} FROM edge_transitions WHERE repo_id = ?1",
+            EDGE_TRANSITION_FIELDS.join(", ")
+        ),
+        &[&repo_id],
+    );
+    rows.sort_by(|a, b| {
+        rank_of(str_of(a, "from_commit"))
+            .cmp(&rank_of(str_of(b, "from_commit")))
+            .then_with(|| {
+                str_of(a, "edge_id")
+                    .as_bytes()
+                    .cmp(str_of(b, "edge_id").as_bytes())
+            })
+    });
+    for t in &rows {
+        let id = str_of(t, "edge_id");
+        let from = str_of(t, "from_commit");
+        if !commit_rank.contains_key(from) {
+            problems.push(format!("edge {id}: from_commit {from} is not a commit"));
+        }
+        if let Some(to) = t["to_commit"].as_str()
+            && !commit_rank.contains_key(to)
+        {
+            problems.push(format!("edge {id}: to_commit {to} is not a commit"));
+        }
+    }
+    Ok(ObserveEvaluation {
+        expect: json!({ "edge_transitions": rows }),
         problems,
     })
 }
@@ -1216,14 +1414,19 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .map(|d| str_of(d, "doc_id").to_owned())
         .collect();
 
+    // `commits` by (`ts`, `seq`) — the same order as by `seq` while one epoch
+    // exists (I4), and the chronological one across an epoch re-mint (§7.5),
+    // whose commits restart at `seq = 1`; the rank in this list orders the
+    // dispositions and block_changes by commit.
     let commits = query_rows(
         conn,
-        "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY seq",
+        "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
         &[&repo_id],
     );
     let commit_seq: HashMap<String, i64> = commits
         .iter()
-        .map(|c| (str_of(c, "commit_id").to_owned(), int_of(c, "seq")))
+        .enumerate()
+        .map(|(i, c)| (str_of(c, "commit_id").to_owned(), i as i64))
         .collect();
     let seq_of = |id: &str| commit_seq.get(id).copied().unwrap_or(i64::MAX);
 
@@ -2055,10 +2258,11 @@ fn check_invariants(
         }
         last_kind_of_doc.insert(doc_id.as_str(), kind.as_str());
     }
-    // F1: every head still within retention has its entry. When nothing was
-    // pruned (oldest ≤ 1) every live doc's head and every tombstone's deletion
-    // appear; after a prune only the documents whose last change is younger
-    // than the oldest retained row are checked.
+    // F1: every head still within the retained feed has its entry: every live
+    // doc's head and every tombstone's deletion whose last change is not older
+    // than the oldest retained row (a prune takes rows from the front; an epoch
+    // re-mint, §7.5, empties the feed — the documents committed before it have
+    // no entry and none is owed).
     let oldest_ts: Option<&str> = feed_by_seq.first().map(|r| r.3.as_str());
     let heads_in_feed: HashSet<&str> = entries.iter().filter_map(|e| e.4.as_deref()).collect();
     let deleted_in_feed: HashSet<&str> = entries
@@ -2067,7 +2271,7 @@ fn check_invariants(
         .map(|e| e.2.as_str())
         .collect();
     for d in &docs {
-        let within = oldest <= 1 || oldest_ts.is_some_and(|t| d.updated_at.as_str() > t);
+        let within = oldest_ts.is_some_and(|t| d.updated_at.as_str() >= t);
         if !within {
             continue;
         }
@@ -2124,9 +2328,24 @@ fn check_invariants(
             Some(_) => {}
         }
     }
+    // A commit of an earlier epoch is a re-mint's (§7.5): its epoch must still
+    // be a claimed `ep` of the repository.
+    let epoch_claimed = |ep: &str| -> bool {
+        conn.query_row(
+            "SELECT 1 FROM id_claims WHERE id = ?1 AND prefix = 'ep' AND repo_id = ?2",
+            params![ep, repo_id],
+            |_| Ok(()),
+        )
+        .optional()
+        .expect("query runs")
+        .is_some()
+    };
     for c in &commit_rows {
-        if c.1 != epoch {
-            problems.push(format!("H4: commit {} carries epoch {}", c.0, c.1));
+        if c.1 != epoch && !epoch_claimed(&c.1) {
+            problems.push(format!(
+                "H4: commit {} carries epoch {}, which is neither the repository's nor a claimed earlier one",
+                c.0, c.1
+            ));
         }
     }
 
@@ -2457,13 +2676,29 @@ fn check_invariants(
         );
     }
 
-    // ---- I4 dense sequences ------------------------------------------------------------
-    for (i, (commit_id, seq, _)) in commits.iter().enumerate() {
-        if *seq != i as i64 + 1 {
-            problems.push(format!(
-                "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order",
-                i + 1
-            ));
+    // ---- I4 dense sequences (per epoch since 17.0: a re-mint restarts the seq) ------------
+    type EpochCommit = (String, i64, String);
+    let commits_by_epoch: Vec<EpochCommit> = all_rows(
+        conn,
+        "SELECT commit_id, seq, epoch FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+        &[&repo_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    );
+    let mut per_epoch: Vec<(String, Vec<&EpochCommit>)> = Vec::new();
+    for c in &commits_by_epoch {
+        match per_epoch.iter_mut().find(|(ep, _)| *ep == c.2) {
+            Some((_, list)) => list.push(c),
+            None => per_epoch.push((c.2.clone(), vec![c])),
+        }
+    }
+    for (ep, list) in &per_epoch {
+        for (i, (commit_id, seq, _)) in list.iter().enumerate() {
+            if *seq != i as i64 + 1 {
+                problems.push(format!(
+                    "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order of epoch {ep}",
+                    i + 1
+                ));
+            }
         }
     }
     for d in &docs {
@@ -2687,6 +2922,8 @@ fn check_invariants(
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
          UNION SELECT c.commit_id FROM commits c WHERE c.repo_id = ?1
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = c.commit_id AND (ic.holders & 2) != 0)
+         UNION SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = t.edge_id AND (ic.holders & 2) != 0)
          ORDER BY 1",
         &[&repo_id],
         |r| r.get(0),
@@ -2694,6 +2931,34 @@ fn check_invariants(
     for id in unheld {
         problems.push(format!(
             "H6: {id} is named by a history row but its claim lacks the recorder's bit"
+        ));
+    }
+    // H6 (17.0, M6): the open transitions and the edges agree — same ids,
+    // same destination.
+    for id in all_rows(
+        conn,
+        "SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1 AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        problems.push(format!("H6: open transition {id} has no edges row"));
+    }
+    for id in all_rows(
+        conn,
+        "SELECT e.edge_id FROM edges e WHERE e.repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        problems.push(format!("H6: edge {id} has no open transition"));
+    }
+    for id in all_rows(
+        conn,
+        "SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ?1 AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1",
+        &[&repo_id],
+        |r| r.get::<_, String>(0),
+    ) {
+        problems.push(format!(
+            "H6: edge {id} and its open transition disagree on dst_node"
         ));
     }
 
@@ -2937,8 +3202,12 @@ fn check(c: &SpecCase) -> Result<(), String> {
     let actual = match c.kind {
         Kind::Schema => run_schema_case(),
         Kind::Migration => run_migration_case(&c.case),
-        Kind::Observe => {
-            let ev = run_observe_case(&c.case)?;
+        Kind::Observe | Kind::Edges => {
+            let ev = if c.kind == Kind::Edges {
+                run_edge_transitions_case(&c.case)?
+            } else {
+                run_observe_case(&c.case)?
+            };
             if !ev.problems.is_empty() {
                 return Err(clip(format!("invariants: {}", ev.problems.join("; "))));
             }
@@ -3188,12 +3457,15 @@ fn fixture_files_are_well_formed_and_every_case_file_was_loaded() {
         "found only {} case files under {CASES_DIR}",
         loaded.file_names.len()
     );
-    let loaded_names: Vec<String> = loaded
-        .files
-        .iter()
-        .map(|f| format!("{}.json", f.stem))
-        .collect();
+    let loaded_names: Vec<String> = loaded.files.iter().map(|f| f.file.clone()).collect();
     assert_eq!(loaded_names, loaded.file_names, "every case file must load");
+    assert!(
+        loaded
+            .file_names
+            .iter()
+            .any(|f| f == "history/edge-transitions.json"),
+        "the recorder suite under cases/history/ (README §9.5) is loaded"
+    );
     for f in &loaded.files {
         assert!(!f.cases.is_empty(), "{}.json has no cases", f.stem);
     }
@@ -3213,8 +3485,10 @@ fn case_names_are_unique_per_file() {
     }
 }
 
-/// §3.3: the embedded DDL is `spec/store/schema.sql`, byte for byte; the
-/// spec `VERSION`'s major is the schema version.
+/// §3.3: the embedded DDL is `spec/store/schema.sql`, byte for byte — and
+/// since 17.0 the two bundle files `schema-history.sql` /
+/// `schema-semantic.sql` the same way; the spec `VERSION`'s major is the
+/// schema version.
 #[test]
 fn schema_sql_and_version_agree_with_the_spec() {
     if !spec_available() {
@@ -3224,6 +3498,18 @@ fn schema_sql_and_version_agree_with_the_spec() {
     assert_eq!(
         sql, SCHEMA_SQL,
         "spec/store/schema.sql != the embedded schema.sql"
+    );
+    let history =
+        fs::read_to_string(Path::new(SPEC_DIR).join("schema-history.sql")).expect("history");
+    assert_eq!(
+        history, HISTORY_SQL,
+        "spec/store/schema-history.sql != the embedded schema-history.sql"
+    );
+    let semantic =
+        fs::read_to_string(Path::new(SPEC_DIR).join("schema-semantic.sql")).expect("semantic");
+    assert_eq!(
+        semantic, SEMANTIC_SQL,
+        "spec/store/schema-semantic.sql != the embedded schema-semantic.sql"
     );
     // §3.3 (15.0): the second DDL artifact, the archive segment's, the same way.
     let archive = fs::read_to_string(Path::new(SPEC_DIR).join("archive.sql")).expect("archive.sql");
@@ -3240,6 +3526,97 @@ fn schema_sql_and_version_agree_with_the_spec() {
         .expect("VERSION is <major>.<minor>");
     assert_eq!(major, SCHEMA_VERSION);
     assert_eq!(omgbase_store::SPEC_VERSION, version.trim());
+}
+
+/// §3.3 (17.0): the three bundles partition the table set — no table lost or
+/// duplicated against 17.0's single file: the 3d set minus the D9 drops
+/// (`collections`, `inferred_edges`) plus the history bundle's
+/// `edge_transitions`; 32 tables, the history bundle 8, the semantic 2.
+#[test]
+fn the_three_bundles_partition_the_table_set() {
+    fn names(ddl: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in ddl.lines() {
+            let rest = line
+                .strip_prefix("CREATE TABLE IF NOT EXISTS ")
+                .or_else(|| line.strip_prefix("CREATE VIRTUAL TABLE IF NOT EXISTS "));
+            if let Some(rest) = rest {
+                let name = rest.split_whitespace().next().unwrap_or("");
+                out.push(name.trim_end_matches('(').to_owned());
+            }
+        }
+        out
+    }
+    let core = names(SCHEMA_SQL);
+    let mut history = names(HISTORY_SQL);
+    let mut semantic = names(SEMANTIC_SQL);
+    let mut all: Vec<String> = core
+        .iter()
+        .chain(&history)
+        .chain(&semantic)
+        .cloned()
+        .collect();
+    let distinct: BTreeSet<&String> = all.iter().collect();
+    assert_eq!(distinct.len(), all.len(), "a table in two bundles: {all:?}");
+    all.sort();
+    assert_eq!(
+        all,
+        [
+            "adapters",
+            "archives",
+            "attachments",
+            "blobs",
+            "block_changes",
+            "blocks",
+            "blocks_fts",
+            "commits",
+            "dispositions",
+            "doc_edges",
+            "doc_embeddings",
+            "docs",
+            "edge_transitions",
+            "edges",
+            "embeddings",
+            "external_nodes",
+            "feed",
+            "feed_entries",
+            "file_stats",
+            "id_claims",
+            "nodes",
+            "nodes_fts",
+            "pending_materializations",
+            "properties",
+            "repos",
+            "resurrection_pool",
+            "revisions",
+            "sections",
+            "sources",
+            "sync_state",
+            "tree_nodes",
+            "workspace_settings",
+        ]
+    );
+    history.sort();
+    assert_eq!(
+        history,
+        [
+            "archives",
+            "blobs",
+            "block_changes",
+            "commits",
+            "dispositions",
+            "edge_transitions",
+            "revisions",
+            "tree_nodes"
+        ]
+    );
+    semantic.sort();
+    assert_eq!(semantic, ["doc_embeddings", "embeddings"]);
+    // And a fresh store has exactly them.
+    let store = Store::open_in_memory().expect("fresh store opens");
+    let mut have = table_names(store.conn());
+    have.retain(|t| !t.starts_with("blocks_fts_") && !t.starts_with("nodes_fts_"));
+    assert_eq!(have, all);
 }
 
 /// The schema fingerprint carries the schema version.
@@ -3272,8 +3649,17 @@ fn every_observe_case_satisfies_the_invariants() {
     let mut problems = Vec::new();
     let mut checked = 0usize;
     for f in &loaded.files {
-        for c in f.cases.iter().filter(|c| c.kind == Kind::Observe) {
-            match run_observe_case(&c.case) {
+        for c in f
+            .cases
+            .iter()
+            .filter(|c| matches!(c.kind, Kind::Observe | Kind::Edges))
+        {
+            let ev = if c.kind == Kind::Edges {
+                run_edge_transitions_case(&c.case)
+            } else {
+                run_observe_case(&c.case)
+            };
+            match ev {
                 Ok(ev) => {
                     for p in ev.problems {
                         problems.push(format!("{}: {p}", c.id));

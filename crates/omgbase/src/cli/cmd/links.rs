@@ -58,7 +58,7 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
         if q.blocks {
             let mut stmt = conn.prepare(
                 "SELECT predicate, dst_node, dst_kind, src_block FROM edges
-                 WHERE src_doc = ?1 AND to_commit IS NULL ORDER BY predicate, dst_node, src_block",
+                 WHERE src_doc = ?1 ORDER BY predicate, dst_node, src_block",
             )?;
             let rows = stmt.query_map(params![doc_id], |r| {
                 Ok((
@@ -109,7 +109,7 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
         if q.blocks {
             let mut stmt = conn.prepare(
                 "SELECT predicate, src_doc, src_block FROM edges
-                 WHERE dst_node = ?1 AND to_commit IS NULL ORDER BY predicate, src_doc, src_block",
+                 WHERE dst_node = ?1 ORDER BY predicate, src_doc, src_block",
             )?;
             let rows = stmt.query_map(params![doc_id], |r| {
                 Ok((
@@ -130,7 +130,7 @@ pub fn doc_links(conn: &Connection, doc_id: &str, q: &LinksQuery) -> Result<Json
         } else {
             let mut stmt = conn.prepare(
                 "SELECT predicate, src_doc, count(*) AS cnt FROM edges
-                 WHERE dst_node = ?1 AND to_commit IS NULL
+                 WHERE dst_node = ?1
                  GROUP BY predicate, src_doc ORDER BY predicate, src_doc",
             )?;
             let rows = stmt.query_map(params![doc_id], |r| {

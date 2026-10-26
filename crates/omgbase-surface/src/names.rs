@@ -182,7 +182,7 @@ fn head_seq(store: &Store, repo_id: &str) -> Result<i64> {
 /// (`$title`, `$tags`) are the attributes `_title`/`_tags`, not authored keys.
 fn authored_keys(store: &Store, repo_id: &str, target: Target) -> Result<Vec<String>> {
     let sql = match target {
-        Target::Docs => "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND deleted_commit IS NULL AND source IN ('frontmatter', 'inline') ORDER BY key".to_owned(),
+        Target::Docs => "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND source IN ('frontmatter', 'inline') ORDER BY key".to_owned(),
         Target::Blocks | Target::Nodes => {
             let alias = if target == Target::Blocks { "b" } else { "n" };
             format!(

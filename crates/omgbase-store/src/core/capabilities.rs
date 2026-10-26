@@ -38,6 +38,7 @@ use rusqlite::Connection;
 use serde_json::Value as Json;
 
 use crate::core::claims::ClaimScope;
+use crate::core::graph::EdgeTransitions;
 use crate::core::history_shapes::{
     ArchiveListing, AttachResult, ExportOptions, ExportResult, RetentionOptions, RetentionPlan,
     RetentionPolicy,
@@ -215,6 +216,22 @@ pub trait HistoryRecorder {
         commit_id: &str,
         rows: &[DispositionRow],
     ) -> Result<()>;
+
+    /// §5.4 step 15 (17.0, 3e — M6; `spec/graph` §3.3): the transition's edge
+    /// list — one `edge_transitions` row per opened edge (`from_commit` = this
+    /// commit, `to_commit` NULL), `to_commit` = this commit on every closed
+    /// one; sets the recorder's hold on the opened ids (§2.1).
+    fn record_edge_transitions(
+        &self,
+        tx: &Connection,
+        commit_id: &str,
+        transitions: &EdgeTransitions,
+    ) -> Result<()>;
+
+    /// The core rewrote these open edges' destination in place (`spec/graph`
+    /// §3.5 adoption, a move's re-phantoming): the open transition rows
+    /// follow, so the interval record reads as 16.x's `edges` did.
+    fn retarget_edges(&self, tx: &Connection, edge_ids: &[&str], dst_node: &str) -> Result<()>;
 
     // ---- the reads the store exposes ------------------------------------------------
 

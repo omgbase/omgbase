@@ -933,11 +933,11 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             opts(&[
                 (
                     "--size",
-                    "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync — the change feed under sync) and table, the file's pages, what VACUUM would reclaim, advice",
+                    "instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice",
                 ),
                 (
                     "--json",
-                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, advice }`",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, advice }`",
                 ),
             ]),
             vec![],

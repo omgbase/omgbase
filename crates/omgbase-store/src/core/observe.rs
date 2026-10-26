@@ -654,7 +654,7 @@ pub(crate) fn ingest_in(
             // tombstoned re-point to it.
             if deleted_at.is_some() {
                 revived = true;
-                adopt_phantoms(tx, plan.path, &id)?;
+                adopt_phantoms(tx, history, plan.path, &id)?;
             }
             id
         }
@@ -673,7 +673,7 @@ pub(crate) fn ingest_in(
             // spec/graph §3.5: a new row at this path adopts the open
             // phantom edges that pointed at it (the reference runs this
             // right after the INSERT; nothing is minted).
-            adopt_phantoms(tx, plan.path, &id)?;
+            adopt_phantoms(tx, history, plan.path, &id)?;
             id
         }
     };
@@ -897,15 +897,17 @@ pub(crate) fn ingest_in(
     //     whole-document mapping alone for `yaml`/`json` (§3.4, 1.2) —
     //     deleted then written.
     let property_rows = document_properties(&doc_id, format, source, fm_block, &body);
-    write_doc_properties(tx, repo_id, &doc_id, commit_id, &property_rows)?;
+    write_doc_properties(tx, repo_id, &doc_id, &property_rows)?;
 
-    // 9c. Edges (spec/graph §3): descriptors from the blocks in pre-order
-    //     then the frontmatter mapping (the same parse the properties step
-    //     uses; none when it fails), resolved in order (**mints `x`** per
-    //     new external URI), then the intervals (**mints `e`** per new
-    //     edge) and the rollup. For a `yaml`/`json` document the mapping is
-    //     the whole document's (§3.4) and its blocks, not being Markdown, are
-    //     not scanned for links: the frontmatter relations are its edges.
+    // 9c. Edges (spec/graph §3; open-only 17.0, M6): descriptors from the
+    //     blocks in pre-order then the frontmatter mapping (the same parse
+    //     the properties step uses; none when it fails), resolved in order
+    //     (**mints `x`** per new external URI), then the open set (**mints
+    //     `e`** per new edge; the transition's edge list goes to the recorder
+    //     inside `maintain_edges` — step 15's edge half) and the rollup. For
+    //     a `yaml`/`json` document the mapping is the whole document's (§3.4)
+    //     and its blocks, not being Markdown, are not scanned for links: the
+    //     frontmatter relations are its edges.
     let mapping = if markdown {
         fm_block.and_then(|b| parse_frontmatter(frontmatter_yaml(&b.raw)))
     } else {
@@ -917,7 +919,9 @@ pub(crate) fn ingest_in(
         extract_doc_edges(&[], mapping.as_ref())
     };
     let resolved = resolve_edges(tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
-    maintain_edges(tx, minter, repo_id, &doc_id, commit_id, &resolved, ts)?;
+    maintain_edges(
+        tx, minter, history, repo_id, &doc_id, commit_id, &resolved, ts,
+    )?;
 
     // 15. Dispositions and block_changes — the recorder's (14.2: every
     //     verdict but `same`).

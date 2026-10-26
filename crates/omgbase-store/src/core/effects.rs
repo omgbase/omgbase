@@ -49,7 +49,7 @@ use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
 use crate::error::Result;
-use crate::graph::{adopt_phantoms, rebuild_doc_edges};
+use crate::graph::{adopt_phantoms, rebuild_doc_edges, retarget_open_edges};
 use crate::links::InboundLink;
 use crate::materialize::{
     PendingKind, PendingRow, delete_pending, insert_pending, pending_at, supersede,
@@ -1019,23 +1019,20 @@ fn move_path_in(
             )?;
         }
     }
+    // The re-phantoming (spec/graph §3.5 in reverse; M6): the open edges of
+    // OTHER documents that pointed at this one re-point to the old path's
+    // phantom in place — the rows keep their ids, the recorder's open
+    // transitions follow — and so does a self-link's edge the inbound list
+    // names; the affected rollups are rebuilt; links already written against
+    // the NEW path adopt this document.
     let phantom = format!("phantom:{from}");
-    let mut affected: Vec<String> = Vec::new();
-    {
-        let mut stmt = tx.prepare(
-            "SELECT DISTINCT src_doc FROM edges WHERE dst_node = ?1 AND to_commit IS NULL AND src_doc != ?1",
-        )?;
-        let it = stmt.query_map(params![doc_id], |r| r.get::<_, String>(0))?;
-        for src in it {
-            let src = src?;
-            if !affected.contains(&src) {
-                affected.push(src);
-            }
-        }
-    }
-    tx.execute(
-        "UPDATE edges SET dst_node = ?1 WHERE dst_node = ?2 AND to_commit IS NULL AND src_doc != ?2",
-        params![phantom, doc_id],
+    let mut affected: Vec<String> = retarget_open_edges(
+        tx,
+        history,
+        doc_id,
+        &phantom,
+        "AND src_doc != ?",
+        &[&doc_id],
     )?;
     for l in inbound {
         let Some(block) = &l.block else {
@@ -1044,18 +1041,23 @@ fn move_path_in(
         if l.doc != doc_id {
             continue;
         }
-        tx.execute(
-            "UPDATE edges SET dst_node = ?1 WHERE dst_node = ?2 AND to_commit IS NULL AND src_doc = ?2 AND src_block = ?3 AND anchor IS ?4",
-            params![phantom, doc_id, block, l.anchor],
-        )?;
-        if !affected.iter().any(|d| d == doc_id) {
-            affected.push(doc_id.to_owned());
+        for src in retarget_open_edges(
+            tx,
+            history,
+            doc_id,
+            &phantom,
+            "AND src_doc = ? AND src_block = ? AND anchor IS ?",
+            &[&doc_id, block, &l.anchor],
+        )? {
+            if !affected.contains(&src) {
+                affected.push(src);
+            }
         }
     }
     for d in &affected {
         rebuild_doc_edges(tx, d)?;
     }
-    adopt_phantoms(tx, to, doc_id)?;
+    adopt_phantoms(tx, history, to, doc_id)?;
     Ok(MoveOutcome {
         doc_id: doc_id.to_owned(),
         head,

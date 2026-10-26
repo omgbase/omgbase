@@ -102,15 +102,14 @@ fn creates_every_table() {
         "commits",
         "dispositions",
         "edges",
+        "edge_transitions",
         "external_nodes",
-        "collections",
         "feed",
         "feed_entries",
         "resurrection_pool",
         "sections",
         "doc_edges",
         "block_changes",
-        "inferred_edges",
         "embeddings",
         "doc_embeddings",
         "blocks_fts",
@@ -1792,7 +1791,6 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
         T0,
     );
     let doc = o.doc_id.clone();
-    let commit = o.commit_id.clone().unwrap();
     let rows = store.properties(&doc).unwrap();
     // Write order: inline, frontmatter, computed.
     let order: Vec<(Source, &str, u32)> = rows
@@ -1868,16 +1866,22 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
         )
         .unwrap();
     assert_eq!(stored, ("number".to_owned(), None));
-    // Every row carries the repo, the commit, and no deleted_commit.
+    // Every row carries the repo; the rows carry no commit column (17.0, D9).
     let meta: (i64, i64) = store
         .conn()
         .query_row(
-            "SELECT count(*), sum(repo_id = ?1 AND created_commit = ?2 AND deleted_commit IS NULL) FROM properties WHERE doc_id = ?3",
-            params![repo, commit, doc],
+            "SELECT count(*), sum(repo_id = ?1) FROM properties WHERE doc_id = ?2",
+            params![repo, doc],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
     assert_eq!(meta, (8, 8));
+    assert!(
+        !crate::schema::column_names(store.conn(), "properties")
+            .unwrap()
+            .iter()
+            .any(|c| c == "created_commit" || c == "deleted_commit")
+    );
     assert_eq!(
         store.properties_merged(&doc).unwrap(),
         serde_json::json!({
@@ -1891,7 +1895,7 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
     );
 
     // Re-ingest replaces the rows: new keys appear, old ones are gone, the
-    // surviving key carries the new commit and its new value.
+    // surviving key carries its new value.
     let o2 = observe(
         &mut store,
         &repo,
@@ -1907,15 +1911,6 @@ fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
         [(Source::Frontmatter, "layer"), (Source::Computed, "$title")]
     );
     assert_eq!(rows[0].val_text.as_deref(), Some("draft"));
-    let commits: Vec<String> = store
-        .conn()
-        .prepare("SELECT DISTINCT created_commit FROM properties WHERE doc_id = ?1")
-        .unwrap()
-        .query_map(params![doc], |r| r.get(0))
-        .unwrap()
-        .collect::<std::result::Result<_, _>>()
-        .unwrap();
-    assert_eq!(commits, [o2.commit_id.clone().unwrap()]);
     assert_eq!(count(&store, "properties"), 2);
 
     // An echo writes nothing.
@@ -2583,7 +2578,7 @@ fn seeded(files: &[(&str, &str)]) -> (Store, String, MemDocStore) {
 
 /// `spec/mutate` §4 step 5 (2.1): a changeset over N documents is one
 /// `commits` row with N `revisions`; every block the request wrote carries
-/// that row as `created_commit`, and `changes_since` shows one digest with
+/// that row's `ts` as `updated_at`, and `changes_since` shows one digest with
 /// the N revisions. Ids mint `c` once, then `r` per document in load order.
 #[test]
 fn a_changeset_is_one_commit_with_n_revisions() {
@@ -2836,7 +2831,7 @@ fn docs_move_with_retarget_is_one_commit() {
     let dst: String = store
         .conn()
         .query_row(
-            "SELECT dst_node FROM edges WHERE src_doc = 'd_1' AND to_commit IS NULL",
+            "SELECT dst_node FROM edges WHERE src_doc = 'd_1'",
             [],
             |r| r.get(0),
         )

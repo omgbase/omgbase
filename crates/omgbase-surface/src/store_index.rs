@@ -270,8 +270,8 @@ impl StoreIndex<'_, '_> {
         let src2 = source.map_or("", |_| " AND p2.source = ?");
         let sql = format!(
             "SELECT d.* FROM properties p CROSS JOIN docs d ON d.doc_id = p.doc_id
-             WHERE p.repo_id = ? AND p.key = ? AND {typed} AND p.card = 'scalar' AND p.deleted_commit IS NULL{src}
-               AND {} AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = ? AND p2.deleted_commit IS NULL{src2}) = 1
+             WHERE p.repo_id = ? AND p.key = ? AND {typed} AND p.card = 'scalar'{src}
+               AND {} AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = ?{src2}) = 1
              ORDER BY {}",
             guards(Target::Docs),
             order_clause(Target::Docs)

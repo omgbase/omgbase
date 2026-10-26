@@ -73,7 +73,7 @@ impl BlockContexts {
             let sql = format!(
                 "SELECT p.doc_id, p.val_text FROM properties p
                  WHERE {} AND p.source = 'frontmatter' AND p.key = 'title'
-                   AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL
+                   AND p.card = 'scalar' AND p.type = 'string'
                  ORDER BY p.rowid",
                 if by_repo {
                     "p.repo_id = ?1"

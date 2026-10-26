@@ -58,7 +58,7 @@ pub use path::{canonical_path, doc_dir, resolve_relative};
 pub use uri::normalize_uri;
 
 /// The `spec/graph/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "2.0";
+pub const SPEC_VERSION: &str = "3.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

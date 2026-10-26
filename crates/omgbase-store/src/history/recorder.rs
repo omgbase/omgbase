@@ -17,6 +17,7 @@ use crate::core::capabilities::{
     RevisionTransition,
 };
 use crate::core::claims;
+use crate::core::graph::EdgeTransitions;
 use crate::core::history_shapes::{
     ArchiveListing, AttachResult, ExportOptions, ExportResult, RetentionOptions, RetentionPlan,
     RetentionPolicy,
@@ -35,7 +36,7 @@ use crate::history::{archive, gc, read, retention};
 
 /// The recorder over the store's own history tables (`revisions`,
 /// `tree_nodes`, `blobs`, `commits`, `dispositions`, `block_changes`,
-/// `archives`).
+/// `edge_transitions`, `archives`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Recorder;
 
@@ -166,6 +167,60 @@ impl HistoryRecorder for Recorder {
             }
         }
         claims::hold(tx, &held)?;
+        Ok(())
+    }
+
+    /// `spec/graph` §3.3 (17.0, M6): the interval record. One
+    /// `edge_transitions` row per opened edge — 16.x's `edges` row verbatim,
+    /// `from_commit` this commit, `to_commit` NULL — and `to_commit = this
+    /// commit` on every row the core deleted; the opened ids gain the
+    /// recorder's hold (§2.1).
+    fn record_edge_transitions(
+        &self,
+        tx: &Connection,
+        commit_id: &str,
+        t: &EdgeTransitions,
+    ) -> Result<()> {
+        let mut open = tx.prepare_cached(
+            "INSERT OR REPLACE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL)",
+        )?;
+        for e in &t.opened {
+            open.execute(params![
+                e.edge_id,
+                e.repo_id,
+                e.src_doc,
+                e.src_block,
+                e.src_field,
+                e.predicate,
+                e.dst_kind,
+                e.dst_node,
+                e.anchor,
+                e.provenance,
+                e.via_node,
+                commit_id,
+            ])?;
+        }
+        let mut close = tx.prepare_cached(
+            "UPDATE edge_transitions SET to_commit = ?1 WHERE edge_id = ?2 AND to_commit IS NULL",
+        )?;
+        for id in &t.closed {
+            close.execute(params![commit_id, id])?;
+        }
+        let held: Vec<&str> = t.opened.iter().map(|e| e.edge_id.as_str()).collect();
+        claims::hold(tx, &held)
+    }
+
+    fn retarget_edges(&self, tx: &Connection, edge_ids: &[&str], dst_node: &str) -> Result<()> {
+        if edge_ids.is_empty() {
+            return Ok(());
+        }
+        let mut stmt = tx.prepare_cached(
+            "UPDATE edge_transitions SET dst_node = ?1 WHERE edge_id = ?2 AND to_commit IS NULL",
+        )?;
+        for id in edge_ids {
+            stmt.execute(params![dst_node, id])?;
+        }
         Ok(())
     }
 

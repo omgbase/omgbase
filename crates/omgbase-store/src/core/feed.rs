@@ -46,6 +46,33 @@ pub fn mint_epoch(mint: &mut Mint<'_>, repo_id: &str, minted_at: &str) -> Result
     Ok(epoch)
 }
 
+/// `spec/store` §7.5 (17.0): the epoch re-mint of a restore or a
+/// rebuild-from-files. Mint and claim a new `ep` at `ts`, write it on the
+/// `repos` row, and delete the repository's `feed`/`feed_entries` rows of
+/// EVERY epoch — the old epoch is unreachable by any cursor (an
+/// `expired_cursor` by construction) and the feed starts over at `seq = 1`
+/// with the next commit. The recorder's `commits` keep their old `epoch`.
+/// Runs in the caller's transaction; an unknown repository is an error.
+pub fn remint_epoch(
+    conn: &Connection,
+    mint: &mut Mint<'_>,
+    repo_id: &str,
+    ts: &str,
+) -> Result<String> {
+    repo_epoch(conn, repo_id)?;
+    let epoch = mint_epoch(mint, repo_id, ts)?;
+    conn.execute(
+        "DELETE FROM feed_entries WHERE repo_id = ?1",
+        params![repo_id],
+    )?;
+    conn.execute("DELETE FROM feed WHERE repo_id = ?1", params![repo_id])?;
+    conn.execute(
+        "UPDATE repos SET epoch = ?1 WHERE repo_id = ?2",
+        params![epoch, repo_id],
+    )?;
+    Ok(epoch)
+}
+
 /// What a feed row records besides its minted id and sequence number
 /// (§5.4 step 5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

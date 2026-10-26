@@ -352,8 +352,8 @@ fn prop_row(doc_id: &str, key: &str, select: &str, source: Option<&str>) -> Opti
     let src2 = source.map_or(String::new(), |s| format!(" AND p2.source = '{s}'"));
     Some(format!(
         "(SELECT {select} FROM properties p \
-         WHERE p.doc_id = {doc_id} AND p.key = '{key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL{src} \
-         AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = {doc_id} AND p2.key = '{key}' AND p2.deleted_commit IS NULL{src2}) = 1 \
+         WHERE p.doc_id = {doc_id} AND p.key = '{key}' AND p.card = 'scalar'{src} \
+         AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = {doc_id} AND p2.key = '{key}'{src2}) = 1 \
          LIMIT 1)"
     ))
 }
@@ -1499,7 +1499,7 @@ mod tests {
 
     /// The properties subquery's scope: the same single-scalar-row conditions
     /// as the scalar read, so a list-valued or nested key yields NULL.
-    const PROP_SCOPE: &str = "FROM properties p WHERE p.doc_id = d.doc_id AND p.key = 'K' AND p.card = 'scalar' AND p.deleted_commit IS NULL AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'K' AND p2.deleted_commit IS NULL) = 1 LIMIT 1";
+    const PROP_SCOPE: &str = "FROM properties p WHERE p.doc_id = d.doc_id AND p.key = 'K' AND p.card = 'scalar' AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'K') = 1 LIMIT 1";
 
     fn prop_sql(key: &str, select: &str, wrap: &str) -> String {
         format!(
@@ -1991,8 +1991,8 @@ mod tests {
         assert_eq!(
             fm.sql,
             "((SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p \
-              WHERE p.doc_id = d.doc_id AND p.key = 'layer' AND p.card = 'scalar' AND p.deleted_commit IS NULL AND p.source = 'frontmatter' \
-              AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'layer' AND p2.deleted_commit IS NULL AND p2.source = 'frontmatter') = 1 \
+              WHERE p.doc_id = d.doc_id AND p.key = 'layer' AND p.card = 'scalar' AND p.source = 'frontmatter' \
+              AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'layer' AND p2.source = 'frontmatter') = 1 \
               LIMIT 1) IS ?)"
         );
         let inl = translate_predicate(&pred("_doc._inline.element == \"fire\""), &BLOCKS).unwrap();

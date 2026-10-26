@@ -6,8 +6,10 @@
 //! the store adds stable block ids, an append-only history of revisions and
 //! commits, the dispositions the matcher recorded, and the derived indexes
 //! the query surfaces read. The contract is `spec/store/README.md` in the
-//! omgbase repository — `schema.sql` (embedded verbatim as [`SCHEMA_SQL`]) is
-//! the DDL, `spec/store/cases/*.json` the executable fixtures — and this
+//! omgbase repository — `schema.sql`, `schema-history.sql` and
+//! `schema-semantic.sql` (embedded verbatim as [`SCHEMA_SQL`], [`HISTORY_SQL`],
+//! [`SEMANTIC_SQL`]: the core, history and semantic bundles' DDL) are the
+//! schema, `spec/store/cases/*.json` the executable fixtures — and this
 //! crate opens the same databases the TypeScript reference writes.
 //!
 //! ```
@@ -139,10 +141,10 @@ pub use error::{Error, Result};
 pub use feed::{
     ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor, FeedEntryKind,
     FeedPolicy, FeedRow, FeedStatus, NewFeedRow, feed_policy, feed_status, prune_feed,
-    render_summary, repo_epoch, repo_feed_policy,
+    remint_epoch, render_summary, repo_epoch, repo_feed_policy,
 };
 pub use gc::ARCHIVED_COMMITS_SQL;
-pub use graph::ResolvedEdge;
+pub use graph::{EdgeRow, EdgeTransitions, ResolvedEdge};
 pub use history::Recorder;
 pub use history_shapes::{
     ArchiveListing, ArchiveState, AttachResult, AttachedSegment, ExportOptions, ExportResult,
@@ -172,7 +174,7 @@ pub use omgbase_search::{
     Boosts, DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EmbedTask, EmbeddingProvider, Evidence,
 };
 pub use retention::{evaluate_retention, merge_retention_policy, retention_policy};
-pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
+pub use schema::{ALL_SQL_FILES, HISTORY_SQL, SCHEMA_SQL, SCHEMA_VERSION, SEMANTIC_SQL};
 pub use search::{BlockContexts, ContextScope, DocVectorRow, block_vector};
 pub use semantic_shapes::{
     CHUNKING_VERSION, DocVectorHit, DrainMode, DrainOutcome, DrainStats, HybridHit, HybridQuery,
@@ -180,8 +182,9 @@ pub use semantic_shapes::{
     VectorHit,
 };
 pub use size::{
-    SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFile, SizeReport, SizeRetention, SizeTable,
-    TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of, size_advice,
+    SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFeed, SizeFile, SizeReport, SizeRetention,
+    SizeTable, TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of,
+    size_advice,
 };
 pub use sugar::Sugar;
 pub use text_search::{TextHit, TextSearchResult};
@@ -520,6 +523,24 @@ impl Store {
         feed::feed_status(&self.conn, repo_id)
     }
 
+    /// `spec/store` §7.5 (17.0): re-mint the repository's epoch — a
+    /// **restore** or a **rebuild-from-files** starts the feed over. Mints
+    /// and claims a new `ep` at `ts`, writes it on the `repos` row, deletes
+    /// the repository's `feed` and `feed_entries` rows of every epoch (a
+    /// cursor of the old epoch is expired by construction; the rows are
+    /// unreachable); the next commit is `seq = 1` of the new epoch. The
+    /// recorder's `commits` keep their old `epoch`. Returns the new epoch. No
+    /// production path calls it yet (neither restore nor rebuild-from-files
+    /// exists); it is the rule, pinned by the store fixtures' `remint_epoch`
+    /// step. One transaction.
+    pub fn remint_epoch(&mut self, repo_id: &str, ts: &str) -> Result<String> {
+        let Store { conn, ids, .. } = self;
+        let tx = conn.unchecked_transaction()?;
+        let epoch = feed::remint_epoch(&tx, &mut ids.at(&tx), repo_id, ts)?;
+        tx.commit()?;
+        Ok(epoch)
+    }
+
     /// §5.2: the matcher's old side for a doc, from the live `blocks` rows.
     pub fn load_old_match_blocks(&self, doc_id: &str) -> Result<Vec<MatchBlock>> {
         read::load_old_match_blocks(&self.conn, doc_id)
@@ -650,7 +671,8 @@ impl Store {
     }
 
     /// §7 "Size" (14.1): what the database is made of — bytes per table
-    /// through `dbstat`, grouped into categories, the file's pages, advice
+    /// through `dbstat`, grouped into the six categories (17.0), the file's
+    /// pages, the feed's position (the store's only repository's), advice
     /// (the retention advice of 15.0 evaluated at the wall clock).
     pub fn size_report(&self) -> Result<SizeReport> {
         size::size_report(
@@ -662,14 +684,17 @@ impl Store {
     }
 
     /// [`Store::size_report`] with the retention plans evaluated at `now`
-    /// (the CLI's pinned clock under `OMGBASE_SPEC_CLOCK`).
-    pub fn size_report_at(&self, now: &str) -> Result<SizeReport> {
+    /// (the CLI's pinned clock under `OMGBASE_SPEC_CLOCK`) and the `feed`
+    /// member `repo_id`'s when given (`spec/store` §7.2, 17.0: the selected
+    /// repository's, else the store's only one's, else `None`).
+    pub fn size_report_at(&self, now: &str, repo_id: Option<&str>) -> Result<SizeReport> {
         size::size_report_at(
             &self.conn,
             self.history.as_deref(),
             self.semantic.as_deref(),
             self.ids.claims(),
             now,
+            repo_id,
         )
     }
 
