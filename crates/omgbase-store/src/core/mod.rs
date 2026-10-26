@@ -10,7 +10,7 @@
 //! [`sugar`], [`plan`]), recovery ([`materialize`]) and the size report
 //! ([`size`]) — and the seams it reaches its extensions through
 //! ([`capabilities`], with the vocabulary of [`history_shapes`] and
-//! [`semantic_shapes`]). Nothing here names `crate::history` or
+//! [`semantic_shapes`]) and the test-only fault hook ([`fault`], 17.3). Nothing here names `crate::history` or
 //! `crate::semantic`, and no SQL here names a vector table: `tests/boundaries.rs` checks every `crate::` path of
 //! this directory against the extensions' module stems, with
 //! `boundary-allowlist.txt` listing what Phase 3 still has to remove.
@@ -24,6 +24,7 @@ pub mod doc_store;
 pub mod docs_ops;
 pub(crate) mod effects;
 pub mod effects_plan;
+pub mod fault;
 pub mod feed;
 pub mod graph;
 pub mod history_shapes;
@@ -49,7 +50,11 @@ pub mod writers;
 pub mod yaml_emit;
 
 pub use capabilities::{
-    CAPABILITIES_ENV, Capabilities, CapabilityState, HistoryRecorder, IdentityClaims,
-    SemanticProvider, require_history, require_semantic,
+    CAPABILITIES_ENV, COMPOSITIONS, Capabilities, CapabilityState, Composition, HistoryRecorder,
+    IdentityClaims, SemanticProvider, require_history, require_semantic,
 };
 pub use claims::{ClaimScope, IdClaims};
+pub use fault::{
+    ArmedFault, FAULT_ENV, FAULT_SITES, FaultSite, armed_fault, fault_passes, fault_point,
+    injected_fault_message, parse_fault, reset_faults,
+};

@@ -721,15 +721,98 @@ impl std::fmt::Debug for Capabilities {
 }
 
 /// The environment variable the fixture runners and the binary honour
-/// (`docs/modular-core/README.md`, Phase 2's gate; Phase 4a): `core` opens
-/// every store as a CORE-ONLY BUILD — no history module, no semantic module
-/// ([`Capabilities::core_only`]) — so the reads and mutations run with both
-/// extensions' code and data absent; unset or `standard` is
+/// (`docs/modular-core/README.md`, Phase 2's gate; Phase 4a; Phase 5a — the
+/// plan's four compositions, `spec/store` §9.6): `core` opens every store as
+/// a CORE-ONLY BUILD — no history module, no semantic module
+/// ([`Capabilities::core_only`]); `history` without the semantic module
+/// ([`Capabilities::without_semantic`]); `semantic` without the history
+/// module ([`Capabilities::without_history`]); unset, empty or `full` is
 /// [`Capabilities::standard`](crate::Capabilities::standard). A TEST-ONLY
 /// override, not a production switch: in production the composition is the
 /// build's, and whether a repository's commits are captured is its manifest
 /// row (`history enable|disable`, `spec/store` §5.9).
 pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
+
+/// The four compositions of the modular-core plan (§5): what
+/// [`CAPABILITIES_ENV`] accepts. `full` is the default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Composition {
+    Core,
+    History,
+    Semantic,
+    Full,
+}
+
+/// Every composition, in the reference's order (`COMPOSITIONS`).
+pub const COMPOSITIONS: [Composition; 4] = [
+    Composition::Core,
+    Composition::History,
+    Composition::Semantic,
+    Composition::Full,
+];
+
+impl Composition {
+    /// The composition's name on the wire (the environment value, the
+    /// runners' ledger line).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Composition::Core => "core",
+            Composition::History => "history",
+            Composition::Semantic => "semantic",
+            Composition::Full => "full",
+        }
+    }
+
+    /// The composition a name denotes, if any.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        COMPOSITIONS.into_iter().find(|c| c.as_str() == s)
+    }
+
+    /// Does the composition carry the history module (`full`, `history`)?
+    #[must_use]
+    pub const fn has_history(self) -> bool {
+        matches!(self, Composition::Full | Composition::History)
+    }
+
+    /// Does the composition carry the semantic module (`full`, `semantic`)?
+    #[must_use]
+    pub const fn has_semantic(self) -> bool {
+        matches!(self, Composition::Full | Composition::Semantic)
+    }
+
+    /// The composition a value of [`CAPABILITIES_ENV`] names: unset or empty
+    /// → `full`; anything outside [`COMPOSITIONS`] is a configuration error
+    /// (the reference's `envComposition`, the message alike).
+    pub fn from_env_value(value: Option<&str>) -> Result<Self> {
+        let v = value.unwrap_or("").trim();
+        if v.is_empty() {
+            return Ok(Composition::Full);
+        }
+        Self::parse(v).ok_or_else(|| {
+            Error::Other(format!(
+                "{CAPABILITIES_ENV}={v:?} is not a composition; use one of {} (the default is \"full\")",
+                COMPOSITIONS
+                    .iter()
+                    .map(|c| format!("\"{}\"", c.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })
+    }
+
+    /// The composition this process runs under ([`CAPABILITIES_ENV`]).
+    pub fn from_env() -> Result<Self> {
+        Self::from_env_value(std::env::var(CAPABILITIES_ENV).ok().as_deref())
+    }
+}
+
+impl std::fmt::Display for Composition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
 
 impl Capabilities {
     /// The core alone (modular-core Phase 4a): no recorder, no provider, the
@@ -761,6 +844,19 @@ impl Capabilities {
         self
     }
 
+    /// This set without the history module (modular-core Phase 5a; the
+    /// plan's §5 third composition, `OMGBASE_CAPABILITIES=semantic`): a
+    /// repository it creates is born `disabled`, an enabled repository's
+    /// writes are refused under `writer_requires`, every history tool answers
+    /// `capability_unavailable { history, unavailable }`, the `revisions` root
+    /// lists nothing; the semantic bundle's DDL follows the composition as on
+    /// the full one.
+    #[must_use]
+    pub fn without_history(mut self) -> Self {
+        self.history = None;
+        self
+    }
+
     /// This set with the semantic bundle marked `unavailable`: a provider is
     /// configured but could not start (`reason`).
     #[must_use]
@@ -770,18 +866,25 @@ impl Capabilities {
         self
     }
 
-    /// [`CAPABILITIES_ENV`] applied to `standard`: unset / empty / `standard`
-    /// → `standard`; `core` → [`Capabilities::core_only`] — a core-only build
-    /// (Phase 4a: no recorder, no semantic module). Any other value is an
-    /// error naming the two.
+    /// [`CAPABILITIES_ENV`] applied to `standard` (the plan's four
+    /// compositions, Phase 5a — `spec/store` §9.6): unset / empty / `full` →
+    /// `standard`; `history` → `standard` without the semantic module;
+    /// `semantic` → `standard` without the history module; `core` →
+    /// [`Capabilities::core_only`] — a core-only build (Phase 4a: no
+    /// recorder, no semantic module). Any other value is a configuration
+    /// error naming the four.
     pub fn from_env(standard: impl FnOnce() -> Self) -> Result<Self> {
-        match std::env::var(CAPABILITIES_ENV) {
-            Err(_) => Ok(standard()),
-            Ok(v) if v.is_empty() || v == "standard" => Ok(standard()),
-            Ok(v) if v == "core" => Ok(Self::core_only()),
-            Ok(v) => Err(Error::Other(format!(
-                "{CAPABILITIES_ENV}={v:?}: the values are \"standard\" and \"core\""
-            ))),
+        Ok(Self::for_composition(Composition::from_env()?, standard))
+    }
+
+    /// The named composition over `standard` (the reference's
+    /// `compositionCapabilities`).
+    pub fn for_composition(composition: Composition, standard: impl FnOnce() -> Self) -> Self {
+        match composition {
+            Composition::Full => standard(),
+            Composition::History => standard().without_semantic(),
+            Composition::Semantic => standard().without_history(),
+            Composition::Core => Self::core_only(),
         }
     }
 }

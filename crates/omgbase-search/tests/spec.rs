@@ -31,7 +31,8 @@ use omgbase_search::{
 };
 use omgbase_store::search::{build_doc_embed_tasks, build_embed_tasks};
 use omgbase_store::{
-    BatchItem, BatchOutcome, HybridQuery, QueryVector, RebuildTarget, SequentialMinter, Store,
+    BatchItem, BatchOutcome, Composition, HybridQuery, QueryVector, RebuildTarget,
+    SequentialMinter, Store,
 };
 use rusqlite::Connection;
 use rusqlite::types::Value as Sql;
@@ -767,8 +768,14 @@ struct Evaluation {
 
 fn run_case_script(c: &Json) -> Result<Evaluation, String> {
     let config = config_from(c.get("config"))?;
-    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new()))
-        .map_err(|e| e.to_string())?;
+    // Under the composition `OMGBASE_CAPABILITIES` names (README §7, Phase
+    // 5a): without the semantic module no vector table exists and the four
+    // semantic projections are empty.
+    let mut store = Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;
@@ -857,7 +864,7 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             }
             return Err(format!("step {i}: unknown step"));
         }
-        for p in check_search(store.conn(), &repo_id) {
+        for p in check_search(store.conn(), store.semantic().is_some()) {
             problems.push(format!("after step {i}: {p}"));
         }
     }
@@ -875,6 +882,15 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
 /// `method_if_embedded` under the fixture embedder's budget), `embeddings` by
 /// (`content_hash`, `ctx_hash`), `doc_embeddings` by `doc_id`.
 fn project_search(store: &Store, repo_id: &str) -> omgbase_store::Result<Vec<(String, Json)>> {
+    // A composition without the semantic module (README §7, Phase 5a): no
+    // vector table exists and the task builders read them — the four
+    // projections are empty.
+    if store.semantic().is_none() {
+        return Ok(PROJECTED_KEYS
+            .iter()
+            .map(|k| ((*k).to_owned(), Json::Array(Vec::new())))
+            .collect());
+    }
     let embed_tasks: Vec<Json> = build_embed_tasks(store.conn(), repo_id)?
         .iter()
         .map(|t| json!({ "block_id": t.block_id, "content_hash": t.content_hash, "ctx": t.ctx }))
@@ -923,7 +939,7 @@ fn project_search(store: &Store, repo_id: &str) -> omgbase_store::Result<Vec<(St
 
 /// Cache rows are well-formed: `dim × 4` bytes of vector, a known `method`,
 /// and (the fixture embedder being the only provider) the fixture model.
-fn check_search(conn: &Connection, _repo_id: &str) -> Vec<String> {
+fn check_search(conn: &Connection, has_semantic: bool) -> Vec<String> {
     let mut problems = Vec::new();
     // README §1.1: the index holds exactly the live leaf rows (the indexed
     // rowids are read off the `blocks_fts_docsize` shadow table).
@@ -943,6 +959,11 @@ fn check_search(conn: &Connection, _repo_id: &str) -> Vec<String> {
         problems.push(format!(
             "blocks_fts indexes rowids {indexed:?} but the live leaves are {leaves:?}"
         ));
+    }
+    // Without the semantic module there is no vector table to check (the
+    // reference's `checkSearch` walks the empty projections).
+    if !has_semantic {
+        return problems;
     }
     for row in query_rows(
         conn,
@@ -1073,7 +1094,123 @@ fn f32s(v: &Json) -> Vec<f32> {
         .unwrap_or_default()
 }
 
-fn check(c: &SpecCase) -> Result<(), String> {
+// ---- the composition ledger (`spec/search` §7, `spec/store` §9.6; modular-core Phase 5a) --------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
+}
+
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    fn skip(&mut self, id: &str, reason: &str) {
+        self.skipped.push(format!("{id} — {reason}"));
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
+/// README §7 "The four compositions": does the observation script need the
+/// semantic provider — a `drain`, a `resolve` or a `search` carrying `semantic`?
+fn needs_semantic(c: &SpecCase) -> bool {
+    c.case["steps"].as_array().is_some_and(|steps| {
+        steps.iter().any(|s| {
+            s.get("drain").is_some()
+                || s.get("resolve").is_some()
+                || s.get("search").is_some_and(|b| b.get("semantic").is_some())
+        })
+    })
+}
+
+/// README §7: the expectation a run without the semantic module compares a
+/// text-only script with — the four semantic projections emptied.
+fn without_semantic_projections(expect: &Json) -> Json {
+    let mut out = expect.clone();
+    if let Some(o) = out.as_object_mut() {
+        for k in PROJECTED_KEYS {
+            if o.contains_key(k) {
+                o.insert(k.to_owned(), Json::Array(Vec::new()));
+            }
+        }
+    }
+    out
+}
+
+fn check(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
+    let strip_semantic = c.kind == Kind::Observe && !ledger.composition.has_semantic();
+    ledger.record(
+        &c.id,
+        strip_semantic.then_some("semantic projections emptied"),
+    );
     match c.kind {
         Kind::Sanitize => {
             let input = c.case["input"].as_str().ok_or("input")?;
@@ -1102,13 +1239,18 @@ fn check(c: &SpecCase) -> Result<(), String> {
                 return Err(clip(format!("checks: {}", ev.problems.join("; "))));
             }
             // Compare exactly the keys the fixture carries.
-            let expect = c.case["expect"].as_object().ok_or("expect")?;
+            let expected = if strip_semantic {
+                without_semantic_projections(&c.case["expect"])
+            } else {
+                c.case["expect"].clone()
+            };
+            let expect = expected.as_object().ok_or("expect")?;
             let actual: JsonMap<String, Json> = ev
                 .actual
                 .into_iter()
                 .filter(|(k, _)| expect.contains_key(k))
                 .collect();
-            match deep_eq(&Json::Object(actual), &c.case["expect"], "expect") {
+            match deep_eq(&Json::Object(actual), &expected, "expect") {
                 None => Ok(()),
                 Some(diff) => Err(clip(diff)),
             }
@@ -1130,9 +1272,9 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase) -> Result<(), String> {
+fn run_case(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
-    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c)));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, ledger)));
     IN_CASE.with(|f| f.set(false));
     match outcome {
         Ok(r) => r,
@@ -1219,13 +1361,28 @@ fn spec() {
         }
     }));
 
+    // README §7 "The four compositions": the history module plays no part
+    // here; without the semantic module the pure cases run unchanged, a
+    // script with a `drain`, a `resolve` or a `semantic` search is skipped, and
+    // the text-only scripts compare with the semantic projections emptied. The
+    // ledger line is what `pnpm conformance` reads; the fixtures are never
+    // regenerated from a reduced composition.
+    let mut ledger = Ledger::new("search");
+    ledger.refuse_update(update_requested(), "SEARCH_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
-            match run_case(c) {
+            if c.kind == Kind::Observe && !ledger.composition.has_semantic() && needs_semantic(c) {
+                // A skipped case counts as passing for the allowlist's
+                // bookkeeping, as the reference's skipped test does.
+                ledger.skip(&c.id, "needs the semantic module");
+                passing.insert(c.id.clone());
+                continue;
+            }
+            match run_case(c, &mut ledger) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
                 }
@@ -1234,6 +1391,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    ledger.report();
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);
@@ -1401,8 +1559,15 @@ fn every_case_satisfies_the_runner_checks() {
     let loaded = load();
     let mut problems = Vec::new();
     let mut checked = 0usize;
+    // README §7: a run without the semantic module checks the scripts it runs.
+    let lacks_semantic = !composition().has_semantic();
     for f in &loaded.files {
-        for c in f.cases.iter().filter(|c| c.kind == Kind::Observe) {
+        for c in f
+            .cases
+            .iter()
+            .filter(|c| c.kind == Kind::Observe)
+            .filter(|c| !(lacks_semantic && needs_semantic(c)))
+        {
             match run_case_script(&c.case) {
                 Ok(ev) => {
                     for p in ev.problems {

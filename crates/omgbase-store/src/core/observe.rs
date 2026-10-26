@@ -749,8 +749,7 @@ pub(crate) fn ingest_in(
         },
     )?;
     if let Some(history) = history {
-        capture(
-            Some(plan.path),
+        capture(Some(plan.path), || {
             history.record_revision(
                 tx,
                 &RevisionTransition {
@@ -762,8 +761,8 @@ pub(crate) fn ingest_in(
                     rendered_hash,
                     commit_id,
                 },
-            ),
-        )?;
+            )
+        })?;
     }
     let assigned = &plan.assigned;
 
@@ -964,10 +963,9 @@ pub(crate) fn ingest_in(
     //     verdict but `same`). A capture that lands ends the path's failure
     //     condition (§5.8).
     if let Some(history) = history {
-        capture(
-            Some(plan.path),
-            history.record_dispositions(tx, commit_id, &plan.dispositions),
-        )?;
+        capture(Some(plan.path), || {
+            history.record_dispositions(tx, commit_id, &plan.dispositions)
+        })?;
         clear_capture_failed(tx, repo_id, plan.path, ts)?;
     }
 
@@ -1013,10 +1011,13 @@ pub(crate) fn ingest_in(
 /// path as the tombstone leaves it); then, with `expires`, every live block
 /// is pooled (the observed deletion), each carrying its `created_at` (D6) —
 /// without, nothing is (`docs_delete`, `spec/mutate` §6). Then the FTS rows
-/// go, the live blocks take `deleted_at = ts`, the doc row `deleted_at = ts,
-/// updated_at = ts` — liveness is a change of the document's own; the head is
-/// KEPT and no new one is minted (17.0, D11). A pool row carries `deleted_at =
-/// ts` (17.0, I6).
+/// go, the doc's `blocks` rows are DELETED (17.3, D2 step two: deleted content
+/// is history — the recorder's last captured revision of the head holds it,
+/// the pool rows hold what revival needs, the claims stay; 17.0–17.2
+/// tombstoned the rows in place with `deleted_at = ts`), the doc row takes
+/// `deleted_at = ts, updated_at = ts` — liveness is a change of the document's
+/// own; the head is KEPT and no new one is minted (17.0, D11). A pool row
+/// carries `deleted_at = ts` (17.0, I6).
 pub(crate) fn tombstone_in(
     tx: &Connection,
     repo_id: &str,
@@ -1057,10 +1058,7 @@ pub(crate) fn tombstone_in(
         )?;
     }
     fts_delete_doc(tx, doc_id)?;
-    tx.execute(
-        "UPDATE blocks SET deleted_at = ?1 WHERE doc_id = ?2 AND deleted_at IS NULL",
-        params![ts, doc_id],
-    )?;
+    tx.execute("DELETE FROM blocks WHERE doc_id = ?1", params![doc_id])?;
     tx.execute(
         "UPDATE docs SET deleted_at = ?1, updated_at = ?1 WHERE doc_id = ?2",
         params![ts, doc_id],

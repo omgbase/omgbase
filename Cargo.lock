@@ -587,6 +587,7 @@ dependencies = [
  "omgbase-surface",
  "omgbase-sync",
  "oqx",
+ "regex",
  "rusqlite",
  "serde_json",
 ]

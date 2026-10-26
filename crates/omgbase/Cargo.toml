@@ -41,5 +41,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # (unix only, like omgbase-sync's lock liveness probe).
 libc = "0.2"
 
+[dev-dependencies]
+# The CLI spec runner's composition classifier (`spec/cli` §8): the history
+# and semantic wire words as the reference spells them, one regex each.
+regex = "1"
+
 [lints]
 workspace = true

@@ -50,6 +50,7 @@ use crate::core::alerts::{
 };
 use crate::core::capabilities::{HistoryRecorder, PurgedCounts};
 use crate::core::codec::canonical_json;
+use crate::core::fault::{FaultSite, fault_point};
 use crate::core::feed::{
     FeedEntryKind, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
@@ -584,8 +585,12 @@ pub fn writer_for<'a>(
 /// resolution 18): a failure becomes [`Error::CaptureFailed`] for the
 /// transaction's owner to roll back on, name the member and raise the alert
 /// after. `path` is the member when the caller knows it (`None` for the
-/// batch's commit row).
-pub fn capture<T>(path: Option<&str>, result: Result<T>) -> Result<T> {
+/// batch's commit row). `body` is the call itself, run inside the wrapper so
+/// the `recorder.capture` fault site (§9.7) sits before the recorder.
+pub fn capture<T>(path: Option<&str>, body: impl FnOnce() -> Result<T>) -> Result<T> {
+    // OMGBASE_FAULT (Phase 5a, `spec/store` §9.7): a fault here is a recorder
+    // throw — raised before the recorder runs, wrapped like any other.
+    let result = fault_point(FaultSite::RecorderCapture).and_then(|()| body());
     match result {
         Ok(v) => Ok(v),
         Err(e @ Error::CaptureFailed { .. }) => Err(e),

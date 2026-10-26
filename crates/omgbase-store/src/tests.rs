@@ -47,6 +47,17 @@ fn count(store: &Store, table: &str) -> i64 {
         .unwrap()
 }
 
+fn count_where(store: &Store, table: &str, predicate: &str) -> i64 {
+    store
+        .conn()
+        .query_row(
+            &format!("SELECT count(*) FROM {table} WHERE {predicate}"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
 fn observe(store: &mut Store, repo: &str, path: &str, source: &str, ts: &str) -> ObserveOutcome {
     store
         .observe_one(repo, path, source, ts, &Config::default())
@@ -2521,7 +2532,7 @@ fn observe_delete_tombstones_in_one_transaction() {
     let tomb = tx_of(&log, "UPDATE docs SET deleted_at");
     assert!(tomb.is_some(), "{log:#?}");
     assert_eq!(tomb, tx_of(&log, "INSERT INTO commits"));
-    assert_eq!(tomb, tx_of(&log, "UPDATE blocks SET deleted_at"));
+    assert_eq!(tomb, tx_of(&log, "DELETE FROM blocks WHERE doc_id"));
     assert_eq!(
         tomb,
         tx_of(&log, "INSERT OR REPLACE INTO resurrection_pool")
@@ -3007,7 +3018,11 @@ fn docs_delete_is_one_commit_without_pooling() {
     let tx = tx_of(&log, "INSERT INTO commits");
     assert!(tx.is_some());
     assert_eq!(tx, tx_of(&log, "UPDATE docs SET deleted_at"), "{log:#?}");
-    assert_eq!(tx, tx_of(&log, "UPDATE blocks SET deleted_at"), "{log:#?}");
+    assert_eq!(
+        tx,
+        tx_of(&log, "DELETE FROM blocks WHERE doc_id"),
+        "{log:#?}"
+    );
     assert!(
         !log.iter().any(|s| s.contains("INTO resurrection_pool")),
         "{log:#?}"
@@ -5678,4 +5693,98 @@ fn frontmatter_effects_are_refused_on_yaml_and_json_documents() {
         json!({ "focused_intent": "/notes/other.md", "since": "2026-10-18" })
     );
     assert_eq!(doc_format(&store, &yaml.doc_id), "yaml");
+}
+
+/// `spec/store` §3.4 step 17 (15) (17.3, D2 step two): a 17.0–17.2 database's
+/// tombstoned `blocks` rows leave on the first open — their FTS entries first
+/// (an external-content index whose `'delete'` needs the row present), then
+/// the rows — while the claim (`holders = 1`) and the pool row of each stay.
+/// Simulated here the 17.0 way: the rows stamped `deleted_at` in place with
+/// their FTS entries left behind, as a pre-17.3 `rebuild-index` or tombstone
+/// could leave them.
+#[test]
+fn a_reopened_17x_database_loses_its_tombstoned_block_rows_and_their_fts_entries() {
+    let dir = std::env::temp_dir().join(format!("omgbase-store-tomb-{}", ids::random_suffix()));
+    let path = dir.join("omgbase.db");
+    let fts_rows = |store: &Store| -> i64 {
+        store
+            .conn()
+            .query_row("SELECT count(*) FROM blocks_fts_docsize", [], |r| r.get(0))
+            .unwrap()
+    };
+    let live_leaves = |store: &Store| -> i64 {
+        store
+            .conn()
+            .query_row(
+                &format!("SELECT count(*) FROM blocks b WHERE {LIVE_LEAF_SQL}"),
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    {
+        let mut store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        observe(&mut store, &repo, "keep.md", "# Keep\n\nStays.\n", T0);
+        observe(&mut store, &repo, "gone.md", "# Gone\n\nOne.\n\nTwo.\n", T0);
+        assert_eq!(fts_rows(&store), live_leaves(&store));
+        // The 17.0–17.2 tombstone, with the FTS rows NOT purged (the orphan case).
+        let gone: String = store
+            .conn()
+            .query_row("SELECT doc_id FROM docs WHERE path = 'gone.md'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
+                 SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, ?1, ?2 FROM blocks WHERE doc_id = ?3",
+                params![T1, "2026-10-26T10:01:00.000Z", gone],
+            )
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE blocks SET deleted_at = ?1 WHERE doc_id = ?2",
+                params![T1, gone],
+            )
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE docs SET deleted_at = ?1, updated_at = ?1 WHERE doc_id = ?2",
+                params![T1, gone],
+            )
+            .unwrap();
+        assert_eq!(count(&store, "blocks"), 5);
+        assert_eq!(
+            fts_rows(&store),
+            5,
+            "gone.md's three leaves are still indexed"
+        );
+        assert_eq!(live_leaves(&store), 2);
+        assert_eq!(count_where(&store, "id_claims", "prefix = 'b'"), 5);
+        store.close().unwrap();
+    }
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    assert_eq!(count(&store, "blocks"), 2, "gone.md's rows left on open");
+    assert_eq!(count_where(&store, "blocks", "deleted_at IS NOT NULL"), 0);
+    assert_eq!(
+        fts_rows(&store),
+        live_leaves(&store),
+        "the FTS index holds the live leaves alone"
+    );
+    assert_eq!(fts_rows(&store), 2);
+    // The identities stay claimed (the claims backfill ran before, §3.4 step
+    // 17 (4)/(15)), the pool rows stay.
+    assert_eq!(count(&store, "resurrection_pool"), 3);
+    assert_eq!(count_where(&store, "id_claims", "prefix = 'b'"), 5);
+    // Idempotent: a second open deletes nothing more.
+    store.close().unwrap();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    assert_eq!(count(&store, "blocks"), 2);
+    assert_eq!(fts_rows(&store), 2);
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }

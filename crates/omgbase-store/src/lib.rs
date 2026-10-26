@@ -103,10 +103,10 @@ pub mod semantic;
 // place that names both the core and its extensions.
 pub(crate) use self::core::effects;
 pub use self::core::{
-    alerts, capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, feed, graph,
-    history_shapes, ids, links, macros, manifest, materialize, mint, mutate, observe, order_key,
-    plan, properties, read, semantic_shapes, settings, size, sugar, text_search, time, writers,
-    yaml_emit,
+    alerts, capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, fault, feed,
+    graph, history_shapes, ids, links, macros, manifest, materialize, mint, mutate, observe,
+    order_key, plan, properties, read, semantic_shapes, settings, size, sugar, text_search, time,
+    writers, yaml_emit,
 };
 pub use self::history::{archive, delta, edit_script, gc, retention, tree};
 pub use self::semantic::search;
@@ -130,10 +130,10 @@ pub use archive::{
     read_manifest, segment_basename, segment_file_name,
 };
 pub use capabilities::{
-    CAPABILITIES_ENV, Capabilities, CapabilityState, DispositionRow, DocEmbedStats, EmbedStats,
-    ForeignVectors, GcResult, HistoryPurgeOutcome, HistoryRecorder, HistorySizeFigures,
-    IdentityClaims, PurgedCounts, RecordedRevision, RevisionQueryRow, RevisionRead,
-    RevisionTransition, SemanticProvider,
+    CAPABILITIES_ENV, COMPOSITIONS, Capabilities, CapabilityState, Composition, DispositionRow,
+    DocEmbedStats, EmbedStats, ForeignVectors, GcResult, HistoryPurgeOutcome, HistoryRecorder,
+    HistorySizeFigures, IdentityClaims, PurgedCounts, RecordedRevision, RevisionQueryRow,
+    RevisionRead, RevisionTransition, SemanticProvider,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -147,6 +147,10 @@ pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use edit_script::{EditOp, myers_script};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
+pub use fault::{
+    ArmedFault, FAULT_ENV, FAULT_SITES, FaultSite, armed_fault, fault_passes, fault_point,
+    injected_fault_message, parse_fault, reset_faults,
+};
 pub use feed::{
     ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor,
     FEED_CAPPED_ALERT, FeedEntryKind, FeedPolicy, FeedRow, FeedStatus, NewFeedRow,
@@ -218,7 +222,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.2";
+pub const SPEC_VERSION: &str = "17.3";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -1018,9 +1022,9 @@ impl Capabilities {
     }
 
     /// [`Capabilities::from_env`] over [`Capabilities::standard`]: what every
-    /// fixture runner and the binary open with, so `OMGBASE_CAPABILITIES=core`
-    /// runs the suites as a core-only build (no history module, no semantic
-    /// module — Phase 4a).
+    /// fixture runner and the binary open with, so `OMGBASE_CAPABILITIES=
+    /// core|history|semantic|full` runs the suites as that composition
+    /// (Phase 4a's core-only build; Phase 5a's four — `spec/store` §9.6).
     pub fn standard_from_env() -> Result<Self> {
         Self::from_env(Self::standard)
     }

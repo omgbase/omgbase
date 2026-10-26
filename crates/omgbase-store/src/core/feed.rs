@@ -22,6 +22,7 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::core::alerts::{AlertInput, AlertSeverity, clear_alert, raise_alert};
 use crate::core::capabilities::HistoryRecorder;
+use crate::core::fault::{FaultSite, fault_point};
 use crate::core::manifest::capture;
 use crate::core::mint::Mint;
 use crate::core::settings::effective_settings;
@@ -139,6 +140,8 @@ pub fn append_feed_row(
     history: Option<&dyn HistoryRecorder>,
     input: &NewFeedRow<'_>,
 ) -> Result<FeedRow> {
+    // OMGBASE_FAULT (Phase 5a): inside the caller's transaction — everything rolls back.
+    fault_point(FaultSite::FeedAppend)?;
     let epoch = repo_epoch(conn, input.repo_id)?;
     let commit_id = mint.mint("c")?;
     mint.claim("c", &commit_id, Some(input.repo_id), input.ts)?;
@@ -165,8 +168,7 @@ pub fn append_feed_row(
         ],
     )?;
     if let Some(history) = history {
-        capture(
-            None,
+        capture(None, || {
             history.record_commit(
                 conn,
                 &CommitRecord {
@@ -181,8 +183,8 @@ pub fn append_feed_row(
                     batch_id: &batch_id,
                     ops: input.ops,
                 },
-            ),
-        )?;
+            )
+        })?;
     }
     enforce_feed_cap(conn, input.repo_id, &epoch, input.ts)?;
     Ok(FeedRow {

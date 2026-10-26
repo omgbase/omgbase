@@ -383,10 +383,9 @@ pub fn maintain_edges(
     if let Some(history) = history
         && (!transitions.opened.is_empty() || !transitions.closed.is_empty())
     {
-        capture(
-            None,
-            history.record_edge_transitions(conn, commit_id, &transitions),
-        )?;
+        capture(None, || {
+            history.record_edge_transitions(conn, commit_id, &transitions)
+        })?;
     }
     rebuild_doc_edges(conn, src_doc)?;
     Ok(transitions)
@@ -429,7 +428,7 @@ pub fn retarget_open_edges(
     )?;
     if let Some(history) = history {
         let ids: Vec<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
-        capture(None, history.retarget_edges(conn, &ids, to_dst))?;
+        capture(None, || history.retarget_edges(conn, &ids, to_dst))?;
     }
     let mut affected: Vec<String> = Vec::new();
     for (_, src) in rows {

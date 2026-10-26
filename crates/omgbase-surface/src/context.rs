@@ -39,6 +39,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::error::SurfaceError;
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
 use omgbase_store::{HistoryRecorder, RevisionQueryRow, SemanticProvider};
@@ -333,6 +334,13 @@ pub struct StoreContext<'a> {
     /// A store failure inside [`DataContext::root`], the one read the
     /// engine's seam cannot fail through (see the module doc).
     root_failure: RefCell<Option<OqxError>>,
+    /// A capability refusal `semantic(…)` raised (`phase-1-contracts.md`
+    /// §2.1 — the module absent, or the row switched off by `omg embed
+    /// disable`): the engine's error channel carries a message alone, so the
+    /// typed envelope (`capability_unavailable { semantic, disabled, fix }`)
+    /// is kept here for the runner to report in the message's place — as the
+    /// reference's context throws `CapabilityUnavailable` through the engine.
+    capability_failure: RefCell<Option<SurfaceError>>,
     /// The rows a tier-3 plan produced, served as [`oqx::ROWS_ROOT`].
     rows_root: Option<RowsRoot>,
     /// `matches()` patterns compiled during this run, by `(String(pattern),
@@ -562,6 +570,7 @@ impl<'a> StoreContext<'a> {
             provider: None,
             history: None,
             root_failure: RefCell::new(None),
+            capability_failure: RefCell::new(None),
             rows_root: None,
             regexes: RefCell::new(HashMap::new()),
             scans: RefCell::new(HashMap::new()),
@@ -801,6 +810,23 @@ impl<'a> StoreContext<'a> {
     /// failure here for the runner to report.
     pub fn take_root_failure(&self) -> Option<OqxError> {
         self.root_failure.borrow_mut().take()
+    }
+
+    /// The capability refusal a `semantic(…)` call raised during the run, if
+    /// any — the typed envelope the runner reports instead of the engine's
+    /// message-only error.
+    pub fn take_capability_failure(&self) -> Option<SurfaceError> {
+        self.capability_failure.borrow_mut().take()
+    }
+
+    /// Keep a capability refusal (the first one) and hand the engine its message.
+    fn refuse_capability(&self, e: SurfaceError) -> OqxError {
+        let message = e.message.clone();
+        let mut slot = self.capability_failure.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(e);
+        }
+        OqxError::eval(message)
     }
 
     // ---- SQL helpers ------------------------------------------------------------------
@@ -1816,11 +1842,39 @@ impl<'a> StoreContext<'a> {
         Some(Ok(Value::Bool(memo[&key].is_match(&subject))))
     }
 
+    /// The reference's `semanticScore`, check for check and in its order: the
+    /// target (`semantic()` on nodes/links/revisions is `filter_invalid` on
+    /// every composition), then the MODULE (a store without it answers
+    /// `capability_unavailable { semantic, disabled }` — `phase-1-contracts.md`
+    /// §2.1, the `OMGBASE_CAPABILITIES=core|history` runs), then the row
+    /// switched off by `omg embed disable` (`spec/store` §5.10), then the
+    /// phrase's vector (`filter_invalid` "needs an embedding provider" when
+    /// no provider embedded it).
     fn semantic_score(&self, t: Target, row: &Value, phrase: &str) -> oqx::Result<Value> {
         if matches!(t, Target::Nodes | Target::Links | Target::Revisions) {
             return Err(OqxError::eval(
                 "semantic(...) is available on the docs and blocks targets",
             ));
+        }
+        let Some(provider) = self.provider else {
+            return Err(self.refuse_capability(SurfaceError::with_data(
+                "capability_unavailable",
+                crate::catalog::SEMANTIC_DISABLED_MESSAGE,
+                serde_json::json!({
+                    "capability": "semantic",
+                    "state": "disabled",
+                    "fix": crate::catalog::SEMANTIC_DISABLED_FIX,
+                }),
+            )));
+        };
+        // `spec/store` §5.10 (Phase 4b): the row switched off by `omg embed
+        // disable` with a provider configured refuses before anything scores
+        // (the catalog's gate answers with the typed envelope first; this is
+        // the binding's own guard, typed the same way).
+        if omgbase_store::semantic_switched_off(self.conn, true, &self.repo_id)
+            .map_err(|e| OqxError::eval(e.to_string()))?
+        {
+            return Err(self.refuse_capability(omgbase_store::Error::SemanticSwitchedOff.into()));
         }
         let Some(resolved) = self.semantic.get(phrase) else {
             return Err(OqxError::eval(format!(
@@ -1828,20 +1882,6 @@ impl<'a> StoreContext<'a> {
                 serde_json::Value::String(phrase.to_owned())
             )));
         };
-        let Some(provider) = self.provider else {
-            return Err(OqxError::eval(
-                "semantic(...) cannot score: this store has no semantic capability",
-            ));
-        };
-        // `spec/store` §5.10 (Phase 4b): the row switched off by `omg embed
-        // disable` with a provider configured refuses before anything scores
-        // (the catalog's gate answers with the typed envelope first; this is
-        // the binding's own guard).
-        if omgbase_store::semantic_switched_off(self.conn, true, &self.repo_id)
-            .map_err(|e| OqxError::eval(e.to_string()))?
-        {
-            return Err(OqxError::eval(omgbase_store::SEMANTIC_SWITCHED_OFF_MESSAGE));
-        }
         // Through the capability (`SemanticProvider`), never the tables: the
         // document's vector under the model, or — for a block — the row for
         // its current `(raw_hash, ctx_hash)` only (`spec/search` §3, 1.1): a

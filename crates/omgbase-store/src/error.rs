@@ -137,6 +137,16 @@ pub enum Error {
         path: Option<String>,
         reason: String,
     },
+    /// `OMGBASE_FAULT` armed `site` for this `pass` (`spec/store` §9.7,
+    /// modular-core Phase 5a): the test-only fault the engine raises at a
+    /// named site — caught by nothing the engine owns except
+    /// [`capture`](crate::core::manifest::capture), where it becomes
+    /// [`Error::CaptureFailed`]. Message pinned: `injected fault at <site>
+    /// (pass <n>)`.
+    InjectedFault {
+        site: crate::core::fault::FaultSite,
+        pass: usize,
+    },
     /// Anything else, with a message.
     Other(String),
 }
@@ -219,6 +229,9 @@ impl fmt::Display for Error {
             Error::CaptureFailed { path, reason } => f.write_str(
                 &crate::core::manifest::capture_failed_message(path.as_deref(), reason),
             ),
+            Error::InjectedFault { site, pass } => {
+                f.write_str(&crate::core::fault::injected_fault_message(*site, *pass))
+            }
             Error::Other(msg) => f.write_str(msg),
         }
     }

@@ -31,10 +31,10 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use omgbase_reconcile::Config;
+use omgbase_store::Composition;
 use omgbase_store::{
     BatchItem, BatchOutcome, Capabilities, ExportOptions, RetentionOptions, SequentialMinter, Store,
 };
@@ -371,9 +371,126 @@ fn fresh_store() -> Store {
     .expect("in-memory store")
 }
 
-/// Is this a core-only run (`OMGBASE_CAPABILITIES=core`)?
-fn core_only() -> bool {
-    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+// ---- the composition ledger (README §7.3, `spec/store` §9.6; modular-core Phase 5a) --------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
+}
+
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    fn skip(&mut self, id: &str, reason: &str) {
+        self.skipped.push(format!("{id} — {reason}"));
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
+/// What the composition carries — the key of every mapping below (the
+/// reference's `CompositionFlags`): the mappings are keyed on the MODULE the
+/// composition lacks, never on its name.
+#[derive(Clone, Copy, Debug)]
+struct Flags {
+    history: bool,
+    semantic: bool,
+}
+
+impl Flags {
+    fn of(c: Composition) -> Self {
+        Self {
+            history: c.has_history(),
+            semantic: c.has_semantic(),
+        }
+    }
+}
+
+/// README §7.3: a query case's expectation on a composition without the
+/// semantic module — the runner-level "needs an embedding provider"
+/// (`filter_invalid`) becomes the capability error (the reference's
+/// `compositionQueryExpect`). Returns the case with its `expect` mapped and
+/// whether it was.
+fn composition_query_case(case: &Json, flags: Flags) -> (Json, bool) {
+    let expect = &case["expect"];
+    let needle = expect.get("message_includes").and_then(Json::as_str);
+    if !flags.semantic
+        && expect.get("error").and_then(Json::as_str) == Some("filter_invalid")
+        && needle.is_some_and(|m| m.contains("embedding provider"))
+    {
+        let mut out = case.clone();
+        out["expect"] = json!({ "error": "capability_unavailable", "message_includes": needle });
+        return (out, true);
+    }
+    (case.clone(), false)
 }
 
 /// `spec/store` §9.4 (17.1): the instant every fixture repository is born —
@@ -396,12 +513,12 @@ const LIFECYCLE_STEP_KINDS: [&str; 4] = [
 /// `ts`; `embed_disable { ts }` runs `embed disable`. Outcome `{ semantic: {
 /// state, coverage, provider, changed } }` or `{ error: "provider_unavailable",
 /// message }` for an enable with no provider. Need the semantic module:
-/// skipped on the core-only run.
+/// skipped without it (README §7.3).
 const EMBED_STEP_KINDS: [&str; 2] = ["embed_enable", "embed_disable"];
 
-/// The history capability's `version`/`sync_status` answer on the core-only
-/// composition (Phase 4a): no module, so `unavailable`; a repository it
-/// created has no coverage and requires nothing.
+/// The history capability's `version`/`sync_status` answer on a composition
+/// without the history module (Phase 4a): no module, so `unavailable`; a
+/// repository it created has no coverage and requires nothing.
 fn core_history_state() -> Json {
     json!({ "state": "unavailable", "coverage_from": null, "writer_requires": false })
 }
@@ -424,8 +541,8 @@ fn touches_revisions(query: &str) -> bool {
     false
 }
 
-/// Is the outcome a history read refused by the core-only composition
-/// (`capability_unavailable { history, unavailable }`)?
+/// Is the outcome a history read refused by a composition without the
+/// history module (`capability_unavailable { history, unavailable }`)?
 fn is_history_unavailable(o: &Json) -> bool {
     o.get("error").and_then(Json::as_str) == Some("capability_unavailable")
         && o.get("data").is_some_and(|d| {
@@ -434,33 +551,42 @@ fn is_history_unavailable(o: &Json) -> bool {
         })
 }
 
-/// Phase 2 → 4a (README §7.3): a reads case's expectation under the core-only
-/// run, step by step against what the run answered — every
-/// `provider_unavailable { provider: null }` outcome becomes the semantic
-/// capability error (`capability_unavailable { semantic, disabled }`, byte
-/// for byte); and (Phase 4a — the composition has no recorder) a step the
-/// run answered `capability_unavailable { history, unavailable }` is
-/// accepted as such, a `sync_status` reads the core history state, a
-/// `version` shape reads `coverage_from` as `<null>`, and a `query` that
-/// reaches `revisions` is accepted when the run returned rows (the root
-/// lists what the recorder holds — nothing here). The mapping lives in the
-/// RUNNER, keyed on the composition it runs under, never in the fixture;
-/// the steps rewritten are counted ([`CORE_REWRITES`]).
-fn core_only_expectation(expect: &Json, steps: &[Json], actual: &[Json]) -> Json {
+/// README §7.3 (Phase 2 → 4a → 5a): a reads case's expectation under a
+/// reduced composition, step by step against what the run answered — the
+/// reference's `compositionReadsExpect`, keyed on `flags`. WITHOUT the
+/// semantic module: every `provider_unavailable { provider: null }` outcome
+/// becomes the semantic capability error (`capability_unavailable { semantic,
+/// disabled }`, byte for byte). WITHOUT the history module (the composition
+/// has no recorder): a step the run answered `capability_unavailable {
+/// history, unavailable }` is accepted as such, a `sync_status` reads the
+/// core history state, a `version` shape reads `coverage_from` as `<null>`,
+/// and a `query` that reaches `revisions` is accepted when the run returned
+/// rows (the root lists what the recorder holds — nothing here). The mapping
+/// lives in the RUNNER, keyed on the composition it runs under, never in the
+/// fixture. Returns the expectation and how many step outcomes were rewritten.
+fn composition_expectation(
+    expect: &Json,
+    steps: &[Json],
+    actual: &[Json],
+    flags: Flags,
+) -> (Json, usize) {
     let mut out = expect.clone();
+    let mut mapped = 0usize;
     if let Some(items) = out.get_mut("steps").and_then(Json::as_array_mut) {
         for (i, o) in items.iter_mut().enumerate() {
             let read = steps.get(i).and_then(|s| s.get("read"));
             let got = actual.get(i);
-            if let (Some(read), Some(got)) = (read, got) {
+            if !flags.history
+                && let (Some(read), Some(got)) = (read, got)
+            {
                 let tool = read.get("tool").and_then(Json::as_str).unwrap_or("");
                 if is_history_unavailable(got) {
-                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    mapped += 1;
                     *o = got.clone();
                     continue;
                 }
                 if tool == "sync_status" && o.get("capabilities").is_some() {
-                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    mapped += 1;
                     o["capabilities"]["history"] = core_history_state();
                     continue;
                 }
@@ -469,7 +595,7 @@ fn core_only_expectation(expect: &Json, steps: &[Json], actual: &[Json]) -> Json
                         .and_then(|c| c.get("history"))
                         .is_some()
                 {
-                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    mapped += 1;
                     o["capabilities"]["history"]["coverage_from"] = json!("<null>");
                     continue;
                 }
@@ -481,28 +607,28 @@ fn core_only_expectation(expect: &Json, steps: &[Json], actual: &[Json]) -> Json
                         .is_some_and(touches_revisions)
                     && got.get("hits").is_some_and(Json::is_array)
                 {
-                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    mapped += 1;
                     *o = got.clone();
                     continue;
                 }
             }
-            rewrite_semantic_pins(o);
+            if !flags.semantic {
+                rewrite_semantic_pins(o, &mut mapped);
+            }
         }
     }
-    out
+    (out, mapped)
 }
 
-static CORE_REWRITES: AtomicUsize = AtomicUsize::new(0);
-static CORE_MAPPED_CASES: AtomicUsize = AtomicUsize::new(0);
-static CORE_SKIPPED: AtomicUsize = AtomicUsize::new(0);
-
-fn rewrite_semantic_pins(v: &mut Json) {
+/// Every `provider_unavailable { provider: null }` under `v` becomes the
+/// semantic capability error (counted in `mapped`).
+fn rewrite_semantic_pins(v: &mut Json, mapped: &mut usize) {
     match v {
         Json::Object(o) => {
             if o.get("error").and_then(Json::as_str) == Some("provider_unavailable")
                 && o.get("data") == Some(&json!({ "provider": null }))
             {
-                CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                *mapped += 1;
                 *o = json!({
                     "error": "capability_unavailable",
                     "retriable": false,
@@ -518,12 +644,12 @@ fn rewrite_semantic_pins(v: &mut Json) {
                 return;
             }
             for x in o.values_mut() {
-                rewrite_semantic_pins(x);
+                rewrite_semantic_pins(x, mapped);
             }
         }
         Json::Array(a) => {
             for x in a {
-                rewrite_semantic_pins(x);
+                rewrite_semantic_pins(x, mapped);
             }
         }
         _ => {}
@@ -728,12 +854,16 @@ fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
                 )));
             }
             // (4.11) the corrected call, recorded verbatim — equal on both
-            // sides, absent on both sides.
+            // sides, absent on both sides. The reference records `fix` for a
+            // `filter_invalid` alone (a capability refusal's `data.fix` is the
+            // envelope's, not the corrected call), so only that code compares it.
             let expected_fix = expect.get("fix").and_then(Json::as_str);
-            if error_fix(&e) != expected_fix {
+            let actual_fix = (e.code == "filter_invalid")
+                .then(|| error_fix(&e))
+                .flatten();
+            if actual_fix != expected_fix {
                 return Err(clip(format!(
-                    "fix {:?} (expected {expected_fix:?})",
-                    error_fix(&e)
+                    "fix {actual_fix:?} (expected {expected_fix:?})"
                 )));
             }
             Ok(())
@@ -1339,51 +1469,52 @@ fn run_profile_case(c: &Json) -> Result<(), String> {
     Ok(())
 }
 
-fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
+fn check(c: &SpecCase, suite: &SuiteState<'_>, ledger: &mut Ledger) -> Result<(), String> {
+    let flags = Flags::of(ledger.composition);
     match c.kind {
         Kind::Query => {
             // Phase 4a: a query that reaches `revisions` reads the recorder's
-            // rows — nothing on the core-only composition; skipped and counted.
-            if core_only() && c.case["query"].as_str().is_some_and(touches_revisions) {
-                CORE_SKIPPED.fetch_add(1, Ordering::SeqCst);
+            // rows — nothing without the history module; skipped and counted.
+            if !flags.history && c.case["query"].as_str().is_some_and(touches_revisions) {
+                ledger.skip(&c.id, "reaches the revisions root");
                 return Ok(());
             }
+            let (case, mapped) = composition_query_case(&c.case, flags);
+            ledger.record(&c.id, mapped.then_some("semantic → capability_unavailable"));
             let (store, repo) = suite.store.as_ref().ok_or("suite store")?;
-            run_query_case(store, repo, &c.case)
+            run_query_case(store, repo, &case)
         }
+        // The cursor and profile cases are outside the ledger: the reference's
+        // records its query and reads cases alone (they reach no store), so the
+        // cell counts the same cases in both engines.
         Kind::Cursor => {
             let actual = run_cursor_case(&c.case)?;
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Reads | Kind::Examples => {
             // Phase 4a: a retention or lifecycle step needs the history
-            // module; skipped and counted on the core-only run.
+            // module; the embed steps the semantic one. Skipped and counted.
             let steps = c.case["steps"].as_array().cloned().unwrap_or_default();
-            if core_only()
-                && steps.iter().any(|s| {
-                    HISTORY_STEP_KINDS
-                        .iter()
-                        .chain(LIFECYCLE_STEP_KINDS.iter())
-                        .chain(EMBED_STEP_KINDS.iter())
-                        .any(|k| s.get(*k).is_some())
-                })
+            let has_step = |kinds: &[&str]| {
+                steps
+                    .iter()
+                    .any(|s| kinds.iter().any(|k| s.get(*k).is_some()))
+            };
+            if !flags.history && (has_step(&HISTORY_STEP_KINDS) || has_step(&LIFECYCLE_STEP_KINDS))
             {
-                CORE_SKIPPED.fetch_add(1, Ordering::SeqCst);
+                ledger.skip(&c.id, "needs the history module");
+                return Ok(());
+            }
+            if !flags.semantic && has_step(&EMBED_STEP_KINDS) {
+                ledger.skip(&c.id, "needs the semantic module");
                 return Ok(());
             }
             let corpus = (c.kind == Kind::Examples).then_some(suite.corpus);
             let actual = run_reads_case(&c.case, corpus)?;
-            let expect = if core_only() {
-                let got = actual["steps"].as_array().cloned().unwrap_or_default();
-                let before = CORE_REWRITES.load(Ordering::SeqCst);
-                let mapped = core_only_expectation(&c.case["expect"], &steps, &got);
-                if CORE_REWRITES.load(Ordering::SeqCst) > before {
-                    CORE_MAPPED_CASES.fetch_add(1, Ordering::SeqCst);
-                }
-                mapped
-            } else {
-                c.case["expect"].clone()
-            };
+            let got = actual["steps"].as_array().cloned().unwrap_or_default();
+            let (expect, n) = composition_expectation(&c.case["expect"], &steps, &got, flags);
+            let note = format!("{n} step outcome{}", if n == 1 { "" } else { "s" });
+            ledger.record(&c.id, (n > 0).then_some(note.as_str()));
             deep_eq_tol(&actual, &expect, "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Profiles => run_profile_case(&c.case),
@@ -1405,9 +1536,9 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
+fn run_case(c: &SpecCase, suite: &SuiteState<'_>, ledger: &mut Ledger) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
-    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, suite)));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, suite, ledger)));
     IN_CASE.with(|f| f.set(false));
     match outcome {
         Ok(r) => r,
@@ -1494,6 +1625,11 @@ fn spec() {
         }
     }));
 
+    // README §7.3: the two mappings keyed on the absent module, the skipped
+    // cases counted, one ledger line for `pnpm conformance`; the fixtures are
+    // never regenerated from a reduced composition.
+    let mut ledger = Ledger::new("surface");
+    ledger.refuse_update(update_requested(), "SURFACE_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
@@ -1517,7 +1653,7 @@ fn spec() {
         };
         for c in &file.cases {
             all_ids.insert(c.id.clone());
-            match run_case(c, &suite) {
+            match run_case(c, &suite, &mut ledger) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
                 }
@@ -1526,6 +1662,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    ledger.report();
     QUERY_TIME.with(|t| {
         let (planned, memory) = *t.borrow();
         eprintln!(
@@ -1547,20 +1684,6 @@ fn spec() {
             ""
         }
     );
-    if core_only() {
-        assert!(
-            !update_requested(),
-            "SURFACE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
-            omgbase_store::CAPABILITIES_ENV
-        );
-        eprintln!(
-            "spec: {}=core — a core-only build (no history module, no semantic bundle); {} case(s) mapped ({} step outcomes: semantic → capability_unavailable {{ semantic, disabled }}; history reads → {{ history, unavailable }}, the core history state), {} case(s) skipped (the revisions root, retention and lifecycle steps)",
-            omgbase_store::CAPABILITIES_ENV,
-            CORE_MAPPED_CASES.load(Ordering::SeqCst),
-            CORE_REWRITES.load(Ordering::SeqCst),
-            CORE_SKIPPED.load(Ordering::SeqCst)
-        );
-    }
     assert!(
         all_ids.len() == passing.len() + failing.len(),
         "case ids are unique across files"

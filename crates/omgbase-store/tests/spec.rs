@@ -29,9 +29,9 @@ use omgbase_store::delta::{
     parse_frontmatter_blob, parse_node_text,
 };
 use omgbase_store::{
-    ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, ExportOptions, HISTORY_SQL,
-    IdMinter, RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION, SEMANTIC_SQL,
-    SequentialMinter, Store, TreeEntry,
+    ARCHIVE_SQL, ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, Composition, ExportOptions,
+    HISTORY_SQL, IdMinter, RepeatingMinter, RetentionOptions, SCHEMA_SQL, SCHEMA_VERSION,
+    SEMANTIC_SQL, SequentialMinter, Store, TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -848,10 +848,13 @@ fn run_migration_case(c: &Json) -> Json {
     let uv = c["user_version"].as_i64().expect("user_version");
     conn.pragma_update(None, "user_version", uv)
         .expect("user_version set");
+    // Under the composition `OMGBASE_CAPABILITIES` names (README §9.6: the
+    // `history` composition upgrades a 16.x database but executes no semantic
+    // DDL — the bundle's tables are then stripped from BOTH sides).
     let store = match Store::from_connection_at(
         conn,
         Box::new(SequentialMinter::new()),
-        omgbase_store::Capabilities::standard(),
+        omgbase_store::Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
         MIGRATION_CLOCK,
     ) {
         Ok(s) => s,
@@ -986,13 +989,93 @@ fn case_history(c: &Json) -> bool {
         .unwrap_or(true)
 }
 
-/// Is this process the core-only run (README §9.6, `OMGBASE_CAPABILITIES=core`)?
-fn core_mode() -> bool {
-    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+// ---- the composition ledger (README §9.6, Phase 5a) --------------------------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
 }
 
-/// README §9.6 rule (1): does the case run under the core-only composition —
-/// only `observe` / `sweep` / `remint_epoch` steps?
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    fn skip(&mut self, id: &str, reason: &str) {
+        self.skipped.push(format!("{id} — {reason}"));
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
+/// README §9.6 rule (1): does the case run WITHOUT the history module
+/// (`core`, `semantic`) — only `observe` / `sweep` / `remint_epoch` steps?
 fn runs_under_core(c: &Json) -> bool {
     c["steps"].as_array().is_some_and(|steps| {
         steps.iter().all(|s| {
@@ -1004,10 +1087,10 @@ fn runs_under_core(c: &Json) -> bool {
     })
 }
 
-/// README §9.6 rule (3): a projection reduced to what the core-only run
-/// compares — the core tables, `id_claims` with bit 1 masked (a claim the
-/// recorder alone held — `holders = 2` — drops out, since the core-only
-/// store never wrote it), and the history tables emptied.
+/// README §9.6 rule (3): a projection reduced to what a run WITHOUT the
+/// history module compares — the core tables, `id_claims` with bit 1 masked
+/// (a claim the recorder alone held — `holders = 2` — drops out, since a
+/// recorder-less store never wrote it), and the history tables emptied.
 fn core_mode_projection(expect: &Json) -> Json {
     let mut out = expect.clone();
     let Some(obj) = out.as_object_mut() else {
@@ -1035,8 +1118,8 @@ fn core_mode_projection(expect: &Json) -> Json {
     out
 }
 
-/// README §9.6 rule (5): the schema fingerprint without the semantic
-/// bundle's tables and indexes (the bundle follows the composition).
+/// README §9.6 "Without the semantic module": the fingerprint without the
+/// semantic bundle (its tables and indexes) — applied to BOTH sides.
 fn without_semantic_tables(f: &Json) -> Json {
     let mut out = f.clone();
     if let Some(tables) = out.get_mut("tables").and_then(Json::as_object_mut) {
@@ -1056,6 +1139,21 @@ fn without_semantic_tables(f: &Json) -> Json {
             .collect();
         for k in gone {
             indexes.remove(&k);
+        }
+    }
+    out
+}
+
+/// README §9.6 "Without the semantic module": a migration's expectation
+/// without the semantic bundle's tables (the `history` composition upgrades a
+/// 16.x database but executes no semantic DDL, so a 16.x `doc_embeddings`
+/// stays) — applied to BOTH sides, the `tables` and the `rows` maps.
+fn without_semantic_migration_tables(e: &Json) -> Json {
+    let mut out = e.clone();
+    for key in ["tables", "rows"] {
+        if let Some(m) = out.get_mut(key).and_then(Json::as_object_mut) {
+            m.remove("embeddings");
+            m.remove("doc_embeddings");
         }
     }
     out
@@ -3918,11 +4016,11 @@ fn clip(s: impl Into<String>) -> String {
     format!("{cut}…")
 }
 
-/// README §9.6 rules (1) and (4): does the core-only run skip this case —
-/// `migrations.json`, the recorder's edge suite, `cases/history/` wholesale,
-/// and an observation script with a step beyond `observe` / `sweep` /
-/// `remint_epoch`?
-fn core_skips(c: &SpecCase) -> bool {
+/// README §9.6 rules (1) and (4): does a run WITHOUT the history module
+/// (`core`, `semantic`) skip this case — `migrations.json`, the recorder's
+/// edge suite, `cases/history/` wholesale, and an observation script with a
+/// step beyond `observe` / `sweep` / `remint_epoch`?
+fn lacks_history_skips(c: &SpecCase) -> bool {
     match c.kind {
         Kind::Migration | Kind::Edges => true,
         Kind::Schema => false,
@@ -3930,19 +4028,42 @@ fn core_skips(c: &SpecCase) -> bool {
     }
 }
 
-fn check(c: &SpecCase) -> Result<(), String> {
-    let core = core_mode();
+fn check(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
+    let composition = ledger.composition;
     let mut expected = c.case["expect"].clone();
+    // README §9.6 "Without the semantic module": the bundle's tables are not
+    // compared on EITHER side of a schema fingerprint or a migration's table
+    // list — a fresh database has none, a migrated one keeps whatever the
+    // older schema carried (§3.1: the bundle follows the composition).
+    let strip_semantic = !composition.has_semantic()
+        && (c.kind == Kind::Schema
+            || (c.kind == Kind::Migration && c.case["expect"].get("error").is_none()));
+    let mapped: Option<&str> = match c.kind {
+        Kind::Schema if strip_semantic => Some("fingerprint without the semantic bundle"),
+        Kind::Migration if strip_semantic => Some("table list without the semantic bundle"),
+        Kind::Observe if !composition.has_history() => Some("core tables, holders bit 1 masked"),
+        _ => None,
+    };
+    ledger.record(&c.id, mapped);
     let actual = match c.kind {
         Kind::Schema => {
-            // README §9.6 rule (5): the fingerprint without the semantic
-            // bundle (its tables and indexes) on the core-only run.
-            if core {
+            let actual = run_schema_case();
+            if strip_semantic {
                 expected = without_semantic_tables(&expected);
+                without_semantic_tables(&actual)
+            } else {
+                actual
             }
-            run_schema_case()
         }
-        Kind::Migration => run_migration_case(&c.case),
+        Kind::Migration => {
+            let actual = run_migration_case(&c.case);
+            if strip_semantic {
+                expected = without_semantic_migration_tables(&expected);
+                without_semantic_migration_tables(&actual)
+            } else {
+                actual
+            }
+        }
         Kind::Observe | Kind::Edges => {
             let ev = if c.kind == Kind::Edges {
                 run_edge_transitions_case(&c.case)?
@@ -3953,7 +4074,7 @@ fn check(c: &SpecCase) -> Result<(), String> {
                 return Err(clip(format!("invariants: {}", ev.problems.join("; "))));
             }
             // README §9.6 rule (3): the core tables alone, the recorder's bit masked.
-            if core && c.kind == Kind::Observe {
+            if c.kind == Kind::Observe && !composition.has_history() {
                 expected = core_mode_projection(&expected);
             }
             ev.expect
@@ -3979,9 +4100,9 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase) -> Result<(), String> {
+fn run_case(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
-    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c)));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, ledger)));
     IN_CASE.with(|f| f.set(false));
     match outcome {
         Ok(r) => r,
@@ -4068,34 +4189,28 @@ fn spec() {
         }
     }));
 
-    // README §9.6: the core-only run compares the core tables and skips what
-    // needs the module (reported below); the fixtures are never regenerated
-    // from it.
-    let core = core_mode();
-    assert!(
-        !(core && update_requested()),
-        "STORE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
-        omgbase_store::CAPABILITIES_ENV
-    );
-    let mut core_skipped: Vec<String> = Vec::new();
-    let mut core_compared = 0usize;
+    // README §9.6: the four compositions — without the history module the
+    // observation scripts are compared on the core tables and the cases that
+    // need the module are skipped; without the semantic module the schema and
+    // migration comparisons strip the bundle's tables from both sides. The
+    // ledger line is what `pnpm conformance` reads; the fixtures are never
+    // regenerated from a reduced composition.
+    let mut ledger = Ledger::new("store");
+    ledger.refuse_update(update_requested(), "STORE_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
-            if core && core_skips(c) {
+            if !ledger.composition.has_history() && lacks_history_skips(c) {
                 // A skipped case counts as passing for the allowlist's
                 // bookkeeping, as the reference's skipped test does.
-                core_skipped.push(c.id.clone());
+                ledger.skip(&c.id, "needs the history module");
                 passing.insert(c.id.clone());
                 continue;
             }
-            if core {
-                core_compared += 1;
-            }
-            match run_case(c) {
+            match run_case(c, &mut ledger) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
                 }
@@ -4104,18 +4219,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
-    if core {
-        eprintln!(
-            "spec: {}=core: {core_compared} case(s) compared on the core tables, {} skipped (need the history module):\n{}",
-            omgbase_store::CAPABILITIES_ENV,
-            core_skipped.len(),
-            core_skipped
-                .iter()
-                .map(|c| format!("  skip {c}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
+    ledger.report();
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);
@@ -4447,14 +4551,14 @@ fn every_observe_case_satisfies_the_invariants() {
     let loaded = load();
     let mut problems = Vec::new();
     let mut checked = 0usize;
-    // README §9.6: the core-only run checks the cases it runs (C*, F*, A1).
-    let core = core_mode();
+    // README §9.6: a run without the history module checks the cases it runs (C*, F*, A1).
+    let lacks_history = !composition().has_history();
     for f in &loaded.files {
         for c in f
             .cases
             .iter()
             .filter(|c| matches!(c.kind, Kind::Observe | Kind::Edges))
-            .filter(|c| !(core && core_skips(c)))
+            .filter(|c| !(lacks_history && lacks_history_skips(c)))
         {
             let ev = if c.kind == Kind::Edges {
                 run_edge_transitions_case(&c.case)

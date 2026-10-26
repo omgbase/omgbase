@@ -214,6 +214,7 @@ pub(crate) fn migrate(
             migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
             migrate_v17_manifest(conn, history.is_some(), now)?;
+            migrate_v17_tombstones(conn)?;
         }
         return Ok(());
     }
@@ -248,6 +249,7 @@ pub(crate) fn migrate(
             migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
             migrate_v17_manifest(conn, history.is_some(), now)?;
+            migrate_v17_tombstones(conn)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -1345,6 +1347,53 @@ ALTER TABLE sync_state ADD COLUMN last_batch_files INTEGER;",
     })();
     conn.pragma_update(None, "foreign_keys", "ON")?;
     rebuilt
+}
+
+/// `spec/store` §3.4 step 17 (15) / §5.6 (17.3, modular-core Phase 5a — D2
+/// step two): a tombstoned document keeps no `blocks` row. A 17.0–17.2 engine
+/// tombstoned them in place (`deleted_at = ts`); every reader already filtered
+/// them out, the pool carries what revival needs and the claims (backfilled
+/// by [`migrate_v17_claims`] from the rows BEFORE this runs, so a tombstoned
+/// block's identity stays claimed) are untouched. Before the rows go, their
+/// FTS entries do: `blocks_fts` is an external-content index, whose `'delete'`
+/// needs the row's values present — so a tombstoned row that is still indexed
+/// (the `_docsize` shadow table holds one row per indexed rowid; a row the
+/// live path already un-indexed is not re-deleted, which would skew the
+/// index's statistics) is removed from the index first, then every tombstoned
+/// row is deleted. Runs after the claims step at both entry points;
+/// idempotent (nothing to delete on a 17.3 database); a `blocks` table without
+/// the column (pre-17) is left to step 17.
+fn migrate_v17_tombstones(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "blocks")? {
+        return Ok(());
+    }
+    let has_column = conn
+        .prepare("SELECT 1 FROM pragma_table_info('blocks') WHERE name = 'deleted_at'")?
+        .exists([])?;
+    if !has_column {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    if table_exists(&tx, "blocks_fts_docsize")? {
+        let indexed: Vec<(i64, String)> = {
+            let mut stmt = tx.prepare(
+                "SELECT b.rowid, b.text FROM blocks b
+                  WHERE b.deleted_at IS NOT NULL
+                    AND b.rowid IN (SELECT id FROM blocks_fts_docsize)
+                  ORDER BY b.rowid",
+            )?;
+            let it = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            it.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let mut del =
+            tx.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?1, ?2)")?;
+        for (rowid, text) in indexed {
+            del.execute(params![rowid, text])?;
+        }
+    }
+    tx.execute("DELETE FROM blocks WHERE deleted_at IS NOT NULL", [])?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// The edges-and-drops half of step 17 (§3.4 step 17 (10)–(12); modular-core

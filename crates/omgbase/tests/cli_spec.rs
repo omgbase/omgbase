@@ -30,7 +30,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use omgbase_store::{Config, SequentialMinter};
+use omgbase_store::{Composition, Config, SequentialMinter};
 use omgbase_sync::{
     RealFileSystem, Workspace, ensure_repo_at, freshness_sweep, rebuild_file_stats,
 };
@@ -493,6 +493,12 @@ fn spawn_omg(
     cmd.env("TMPDIR", tmp.join("tmp"));
     cmd.env("OMGBASE_SPEC_MINTER", "sequential");
     cmd.env("OMGBASE_SPEC_CLOCK", SPEC_CLOCK);
+    // spec/cli §8 "The four compositions" (modular-core Phase 5a): the runner's
+    // own `OMGBASE_CAPABILITIES` reaches every spawned binary, so the SAME
+    // cases run against the composition named; a case's own `env` still wins.
+    if let Some(v) = std::env::var_os(omgbase_store::CAPABILITIES_ENV) {
+        cmd.env(omgbase_store::CAPABILITIES_ENV, v);
+    }
     for (k, v) in env {
         cmd.env(k, subst(v));
     }
@@ -1130,6 +1136,83 @@ fn report(title: &str, lines: &[String]) {
     }
 }
 
+// ---- the four compositions (spec/cli §8 "The four compositions"; modular-core Phase 5a) ----
+//
+// `OMGBASE_CAPABILITIES=core|history|semantic|full` reaches every spawned
+// binary (`spawn_omg`), so the SAME cases run against the composition named.
+// The fixtures are the full composition's record; under a reduced one a case
+// whose inputs or recorded outputs carry an OBSERVABLE of the absent module is
+// skipped and counted (a verb of the module, or a word of its wire — the
+// recorder's table names and disposition summary, the embed queue and the
+// vector tables, the capability states), and every other case must pass
+// UNCHANGED. The classifier is deliberately textual and conservative: it reads
+// the case, never the run — word for word the reference's
+// (`packages/cli/corpus/cli/spec.test.ts`), with JavaScript's ASCII `\b` and
+// `\d`.
+
+/// The verbs that reach the history module (the capture verbs, the log/history readers, `show --history`, `cat --at`).
+const HISTORY_VERBS: [&str; 4] = ["log", "hist", "diff", "history"];
+const HISTORY_FLAGS: [&str; 2] = ["--history", "--at"];
+/// The verbs that reach the semantic module.
+const SEMANTIC_VERBS: [&str; 2] = ["embed", "find"];
+/// Words of the history module's wire: its tables in a size report, the recorder's disposition summary, its capability state and the doctor's capture check.
+const HISTORY_TEXT: &str = r#"(?-u:\b)(commits|revisions|dispositions|block_changes|tree_nodes|blobs|edge_transitions|archives)(?-u:\b)|"history":\{"state":"enabled|history\s+enabled|"coverage_from":"([0-9]|<string>)|"writer_requires":true|capture complete| — [0-9]+ (inserted|edited|deleted|moved|resurrected|same|split|merged)|history unavailable|writer_refused|capability_unavailable|revision"#;
+/// Words of the semantic module's wire: the embed queue, the vector tables, its capability state, the provider.
+const SEMANTIC_TEXT: &str = r#"(?-u:\b)queued(?-u:\b)|"embedQueue":[1-9]|(?-u:\b)doc_embeddings(?-u:\b)|(?-u:\b)embeddings(?-u:\b)|"semantic":\{"state":"enabled|embedding|provider_unavailable|capability_unavailable|semantic\("#;
+
+/// The case's argv (every step's) and its text: each step's stdin and recorded
+/// stdout/stderr, then the case's `files` contents and its `sql` (the reference's `caseText`).
+fn case_text(c: &Case) -> (Vec<&str>, String) {
+    let argv: Vec<&str> = c
+        .steps
+        .iter()
+        .flat_map(|s| s.argv.iter().map(String::as_str))
+        .collect();
+    let mut text = c
+        .steps
+        .iter()
+        .map(|s| {
+            format!(
+                "{}\n{}\n{}",
+                s.stdin.as_deref().unwrap_or(""),
+                s.expect.stdout,
+                s.expect.stderr.as_deref().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut values: Vec<String> = c
+        .files
+        .iter()
+        .map(|(_, content)| content.clone().unwrap_or_default())
+        .collect();
+    values.push(c.sql.join("\n"));
+    text.push_str(&values.join("\n"));
+    (argv, text)
+}
+
+/// Why the case is skipped under this composition, or `None` when it must pass as recorded.
+fn skip_reason(c: &Case, composition: Composition) -> Option<&'static str> {
+    let (argv, text) = case_text(c);
+    if !composition.has_history() {
+        let history_text = regex::Regex::new(HISTORY_TEXT).expect("history wire regex");
+        if argv
+            .iter()
+            .any(|a| HISTORY_VERBS.contains(a) || HISTORY_FLAGS.contains(a))
+            || history_text.is_match(&text)
+        {
+            return Some("needs the history module");
+        }
+    }
+    if !composition.has_semantic() {
+        let semantic_text = regex::Regex::new(SEMANTIC_TEXT).expect("semantic wire regex");
+        if argv.iter().any(|a| SEMANTIC_VERBS.contains(a)) || semantic_text.is_match(&text) {
+            return Some("needs the semantic module");
+        }
+    }
+    None
+}
+
 // ---- the test --------------------------------------------------------------------------
 
 #[test]
@@ -1144,12 +1227,32 @@ fn cli_spec() {
     let mut ws = Workspaces::new();
     let bin = omg_link(&bin, ws.root.path());
 
+    // spec/cli §8 "The four compositions": the composition the binary runs
+    // with; a case carrying an observable of the absent module is skipped and
+    // counted, every other case must pass unchanged; the ledger line is what
+    // `pnpm conformance` reads; `CLI_SPEC_UPDATE` is refused under a reduced one.
+    let composition = Composition::from_env().expect("OMGBASE_CAPABILITIES");
+    assert!(
+        !(update_requested() && composition != Composition::Full),
+        "CLI_SPEC_UPDATE under OMGBASE_CAPABILITIES={composition} would record that composition's answers; run it on the full one"
+    );
+    let mut compared: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, String)> = Vec::new();
     for (_suite, cases) in &suites {
         for c in cases {
             all_ids.insert(c.id.clone());
+            if let Some(reason) = skip_reason(c, composition) {
+                // A skipped case counts as passing for the allowlist's
+                // bookkeeping, as the reference's skipped test does.
+                skipped.push(format!("{} — {reason}", c.id));
+                passing.insert(c.id.clone());
+                continue;
+            }
+            compared.push(c.id.clone());
             match run_case(&mut ws, &bin, c) {
                 Ok(None) => {
                     passing.insert(c.id.clone());
@@ -1161,6 +1264,17 @@ fn cli_spec() {
     }
     let total = all_ids.len();
     eprintln!("spec/cli: {} of {total} cases pass", passing.len());
+    let mut ledger = format!(
+        "[cli spec] composition={composition}: compared={} mapped=0 skipped={}\n",
+        compared.len(),
+        skipped.len()
+    );
+    if composition != Composition::Full {
+        for s in &skipped {
+            ledger.push_str(&format!("  skip {s}\n"));
+        }
+    }
+    eprint!("{ledger}");
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);

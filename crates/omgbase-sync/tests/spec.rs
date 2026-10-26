@@ -33,6 +33,7 @@ use std::time::{Duration, Instant};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
+use omgbase_store::Composition;
 use omgbase_store::delta::{
     Form, Node, ResolvedList, ResolvedTree, TreeResolver, encode_body_delta,
     encode_frontmatter_delta, entry_text, explicit_entries, full_node_text, is_checkpoint_seq,
@@ -976,13 +977,90 @@ fn fresh_store() -> Store {
     .expect("in-memory store")
 }
 
-/// Is this the core-only run (`spec/sync` §8; `spec/store` §9.6)?
-fn core_only() -> bool {
-    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+// ---- the composition ledger (`spec/sync` §8, `spec/store` §9.6; modular-core Phase 5a) --------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
 }
 
-/// `spec/sync` §8 "The core-only run" (4.2): the history tables a checkpoint
-/// case's expectation is compared with EMPTIED under `OMGBASE_CAPABILITIES=core`.
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
+/// `spec/sync` §8 "The runs without the history module" (4.2, generalised 4.3):
+/// the history tables a checkpoint case's expectation is compared with EMPTIED
+/// under `OMGBASE_CAPABILITIES=core|semantic`.
 const CORE_EMPTIED_TABLES: [&str; 7] = [
     "commits",
     "revisions",
@@ -992,9 +1070,6 @@ const CORE_EMPTIED_TABLES: [&str; 7] = [
     "block_changes",
     "archives",
 ];
-
-/// The checkpoint cases compared with the history tables emptied (the ledger).
-static CORE_MAPPED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn core_mode_checkpoint_expect(expect: &Json) -> Json {
     let mut out = expect.clone();
@@ -2037,7 +2112,18 @@ fn run_coordinator_case(c: &Json) -> Result<Json, String> {
 
 // ---- running a case ----------------------------------------------------------------------
 
-fn check(c: &SpecCase) -> Result<(), String> {
+fn check(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
+    // `spec/sync` §8 (4.2, 4.3; `spec/store` §9.6): without the history module a
+    // checkpoint case's expectation is compared with its history tables
+    // emptied — nothing is skipped; the step outcomes, the core tables,
+    // `sync_state` and `file_stats` compare as recorded. The coordinator cases
+    // are `@omgbase/sync`'s runner's in the reference (they read the feed,
+    // never a history table) and stay out of this ledger so the cell counts the
+    // suite the reference's cell counts.
+    let maps_checkpoint = c.kind == Kind::Checkpoint && !ledger.composition.has_history();
+    if c.kind != Kind::Coordinator {
+        ledger.record(&c.id, maps_checkpoint.then_some("history tables emptied"));
+    }
     let (actual, problems) = match c.kind {
         Kind::Pure => (run_pure(&c.case)?, Vec::new()),
         Kind::Registry => (run_registry_case(&c.case)?, Vec::new()),
@@ -2080,12 +2166,7 @@ fn check(c: &SpecCase) -> Result<(), String> {
     if !problems.is_empty() {
         return Err(clip(format!("problems: {}", problems.join("; "))));
     }
-    // `spec/sync` §8 (4.2; `spec/store` §9.6): under the core-only run a
-    // checkpoint case's expectation is compared with its history tables
-    // emptied — nothing is skipped; the step outcomes, the core tables,
-    // `sync_state` and `file_stats` compare as recorded.
-    let expected = if core_only() && c.kind == Kind::Checkpoint {
-        CORE_MAPPED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let expected = if maps_checkpoint {
         core_mode_checkpoint_expect(&c.case["expect"])
     } else {
         c.case["expect"].clone()
@@ -2110,9 +2191,9 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase) -> Result<(), String> {
+fn run_case(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
-    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c)));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, ledger)));
     IN_CASE.with(|f| f.set(false));
     match outcome {
         Ok(r) => r,
@@ -2199,13 +2280,17 @@ fn spec() {
         }
     }));
 
+    // `spec/sync` §8: the ledger line `pnpm conformance` reads; the fixtures
+    // are never regenerated from a reduced composition.
+    let mut ledger = Ledger::new("sync");
+    ledger.refuse_update(update_requested(), "SYNC_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
-            match run_case(c) {
+            match run_case(c, &mut ledger) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
                 }
@@ -2214,6 +2299,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    ledger.report();
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);
@@ -2229,20 +2315,6 @@ fn spec() {
             ""
         }
     );
-    if core_only() {
-        assert!(
-            !update_requested(),
-            "SYNC_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
-            omgbase_store::CAPABILITIES_ENV
-        );
-        // The core-only run's ledger (`spec/sync` §8): which cases were
-        // compared with the history tables emptied.
-        eprintln!(
-            "spec: {}=core: {} checkpoint case(s) compared with the history tables emptied",
-            omgbase_store::CAPABILITIES_ENV,
-            CORE_MAPPED.load(std::sync::atomic::Ordering::SeqCst)
-        );
-    }
     assert!(
         all_ids.len() == passing.len() + failing.len(),
         "case ids are unique across files"

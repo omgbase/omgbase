@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use omgbase_graph::node_id;
 use omgbase_reconcile::Config;
+use omgbase_store::Composition;
 use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension};
@@ -1020,6 +1021,87 @@ fn write_allowlist(path: &Path, ids: &BTreeSet<String>) {
     fs::write(path, text).unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
 }
 
+// ---- the composition ledger (`spec/graph` §7, `spec/store` §9.6; modular-core Phase 5a) --------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
+}
+
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
 fn update_requested() -> bool {
     std::env::var("GRAPH_SPEC_UPDATE").is_ok_and(|v| !v.is_empty() && v != "0")
 }
@@ -1077,12 +1159,18 @@ fn spec() {
         }
     }));
 
+    // `spec/graph` §7 (Phase 5a): nothing in this suite reaches a history or a
+    // vector table, so every case is compared AS RECORDED under every
+    // composition; the ledger line says so for `pnpm conformance`.
+    let mut ledger = Ledger::new("graph");
+    ledger.refuse_update(update_requested(), "GRAPH_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
+            ledger.record(&c.id, None);
             match run_case(c) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
@@ -1092,6 +1180,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    ledger.report();
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);

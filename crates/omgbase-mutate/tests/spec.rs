@@ -43,6 +43,7 @@ use omgbase_format::hash::{hex, sha256};
 use omgbase_mutate::effects::{Admission, canonical_json, digest};
 use omgbase_mutate::{At, Effect, MutationError, Op, Opset, Plan, Target};
 use omgbase_reconcile::Config;
+use omgbase_store::Composition;
 use omgbase_store::delta::{
     Form, Node, ResolvedList, ResolvedTree, TreeResolver, encode_body_delta,
     encode_frontmatter_delta, entry_text, explicit_entries, full_node_text, is_checkpoint_seq,
@@ -3607,14 +3608,94 @@ fn clip(s: impl Into<String>) -> String {
     format!("{cut}…")
 }
 
-/// Is this process the core-only run (`spec/store` README §9.6, `OMGBASE_CAPABILITIES=core`)?
-fn core_mode() -> bool {
-    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+// ---- the composition ledger (`spec/mutate` §9, `spec/store` §9.6; modular-core Phase 5a) --------------------
+//
+// `OMGBASE_CAPABILITIES` names one of the plan's four compositions — `core`,
+// `history`, `semantic`, `full` (the default) — and this runner opens its stores
+// through `Capabilities::standard_from_env()`, so the SAME scripts run on the
+// composition named and the runner decides, per case, whether it is compared
+// as recorded, compared through a MAPPING keyed on the module the composition
+// lacks (the mapping lives here, never in a fixture), or SKIPPED because the
+// case needs the absent module. One machine-readable line at the end —
+// `[<suite> spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>` —
+// is what `pnpm conformance` (`scripts/conformance.mjs`) collects into the
+// suite × composition matrix; the reference's `corpus/composition.ts`.
+
+/// The composition this process runs under (`OMGBASE_CAPABILITIES`, default `full`).
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
 }
 
-/// README §9.6: does the core-only run skip this case — a retention or
-/// lifecycle step needs the history module?
-fn core_skips(c: &SpecCase) -> bool {
+/// One runner's ledger: `compared` = cases compared exactly as recorded,
+/// `mapped` = cases compared through a composition mapping (with a note of
+/// what moved), `skipped` = cases not run because they need an absent module
+/// (with the reason).
+struct Ledger {
+    suite: &'static str,
+    composition: Composition,
+    compared: Vec<String>,
+    mapped: Vec<String>,
+    skipped: Vec<String>,
+}
+
+impl Ledger {
+    fn new(suite: &'static str) -> Self {
+        Self {
+            suite,
+            composition: composition(),
+            compared: Vec::new(),
+            mapped: Vec::new(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A case compared: `mapped` names what the mapping changed (`None` = compared as recorded).
+    fn record(&mut self, id: &str, mapped: Option<&str>) {
+        match mapped {
+            Some(m) => self.mapped.push(format!("{id} ({m})")),
+            None => self.compared.push(id.to_owned()),
+        }
+    }
+
+    fn skip(&mut self, id: &str, reason: &str) {
+        self.skipped.push(format!("{id} — {reason}"));
+    }
+
+    /// A `<X>_SPEC_UPDATE` under a reduced composition would record that composition's answers: refused.
+    fn refuse_update(&self, update: bool, env_var: &str) {
+        assert!(
+            !(update && self.composition != Composition::Full),
+            "{env_var} under OMGBASE_CAPABILITIES={} would record the {} composition's answers; run it on the full one",
+            self.composition,
+            self.composition
+        );
+    }
+
+    /// The line (+ the mapped and skipped lists under a reduced composition), to stderr.
+    fn report(&self) {
+        let mut text = format!(
+            "[{} spec] composition={}: compared={} mapped={} skipped={}\n",
+            self.suite,
+            self.composition,
+            self.compared.len(),
+            self.mapped.len(),
+            self.skipped.len()
+        );
+        if self.composition != Composition::Full {
+            for m in &self.mapped {
+                text.push_str(&format!("  mapped {m}\n"));
+            }
+            for s in &self.skipped {
+                text.push_str(&format!("  skip {s}\n"));
+            }
+        }
+        eprint!("{text}");
+    }
+}
+
+/// `spec/store` README §9.6: does a run WITHOUT the history module (`core`,
+/// `semantic`) skip this case — a retention or lifecycle step needs the module?
+fn lacks_history_skips(c: &SpecCase) -> bool {
     c.case["steps"].as_array().is_some_and(|steps| {
         steps.iter().any(|s| {
             s.as_object().is_some_and(|o| {
@@ -3636,8 +3717,8 @@ fn core_skips(c: &SpecCase) -> bool {
     })
 }
 
-/// README §9.6: the projection the core-only run compares — the history
-/// tables (`commits`, `revisions`, `dispositions`) emptied on both sides.
+/// README §9.6: the projection a run without the history module compares —
+/// the history tables (`commits`, `revisions`, `dispositions`) emptied on both sides.
 fn core_mode_projection(expect: &Json) -> Json {
     let mut out = expect.clone();
     if let Some(o) = out.as_object_mut() {
@@ -3648,12 +3729,14 @@ fn core_mode_projection(expect: &Json) -> Json {
     out
 }
 
-fn check(c: &SpecCase) -> Result<(), String> {
+fn check(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
+    let lacks_history = !ledger.composition.has_history();
+    ledger.record(&c.id, lacks_history.then_some("history tables emptied"));
     let ev = run_case_script(&c.case)?;
     if !ev.problems.is_empty() {
         return Err(clip(format!("invariants: {}", ev.problems.join("; "))));
     }
-    let expected = if core_mode() {
+    let expected = if lacks_history {
         core_mode_projection(&c.case["expect"])
     } else {
         c.case["expect"].clone()
@@ -3689,9 +3772,9 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn run_case(c: &SpecCase) -> Result<(), String> {
+fn run_case(c: &SpecCase, ledger: &mut Ledger) -> Result<(), String> {
     IN_CASE.with(|f| f.set(true));
-    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c)));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| check(c, ledger)));
     IN_CASE.with(|f| f.set(false));
     match outcome {
         Ok(r) => r,
@@ -3778,27 +3861,25 @@ fn spec() {
         }
     }));
 
-    // README §9.6: the core-only run compares the core tables and skips what
-    // needs the module (reported); the fixtures are never regenerated from it.
-    let core = core_mode();
-    assert!(
-        !(core && update_requested()),
-        "MUTATE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
-        omgbase_store::CAPABILITIES_ENV
-    );
-    let mut core_skipped: Vec<String> = Vec::new();
+    // `spec/mutate` §9 / `spec/store` §9.6: without the history module the
+    // projection is compared on the core tables and a case with a retention or
+    // lifecycle step is skipped (the semantic module plays no part here —
+    // `history` compares as `full`); the ledger line is what `pnpm conformance`
+    // reads; the fixtures are never regenerated from a reduced composition.
+    let mut ledger = Ledger::new("mutate");
+    ledger.refuse_update(update_requested(), "MUTATE_SPEC_UPDATE");
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
-            if core && core_skips(c) {
-                core_skipped.push(c.id.clone());
+            if !ledger.composition.has_history() && lacks_history_skips(c) {
+                ledger.skip(&c.id, "needs the history module");
                 passing.insert(c.id.clone());
                 continue;
             }
-            match run_case(c) {
+            match run_case(c, &mut ledger) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
                 }
@@ -3807,18 +3888,7 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
-    if core {
-        eprintln!(
-            "spec: {}=core: compared on the core tables; {} skipped (need the history module):\n{}",
-            omgbase_store::CAPABILITIES_ENV,
-            core_skipped.len(),
-            core_skipped
-                .iter()
-                .map(|c| format!("  skip {c}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
+    ledger.report();
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);

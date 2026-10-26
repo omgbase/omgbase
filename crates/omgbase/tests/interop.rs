@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use omgbase_store::SequentialMinter;
+use omgbase_store::{Composition, SequentialMinter};
 use omgbase_sync::Workspace;
 use serde_json::{Map as JsonMap, Value as Json, json};
 
@@ -821,27 +821,36 @@ fn run_step(peer: &mut Peer, step: &Step, w: &str) -> Result<Json, String> {
     }
 }
 
-// ---- the core-only run (§7.3) ---------------------------------------------------------------------
+// ---- the four compositions (§7.3; modular-core Phase 3e-ii → 4a → 5a) ------------------------
 
-/// Is this a core-only run (`OMGBASE_CAPABILITIES=core`)? Every peer this
-/// harness spawns inherits the variable, so both engines serve the
-/// composition without the semantic module.
-fn core_only() -> bool {
-    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+/// The composition this harness runs under (`OMGBASE_CAPABILITIES`, default
+/// `full`). Every peer it spawns inherits the variable, so both engines serve
+/// the composition named — a peer that does not honor it fails its pairs here.
+fn composition() -> Composition {
+    Composition::from_env().expect("OMGBASE_CAPABILITIES")
 }
 
-/// README §7.3 (modular-core Phase 3e-ii → 4a): a case's expectation under
-/// the core-only run, step by step against what the run answered — every
+/// What the composition carries — the key of the mapping below (the
+/// reference's `CompositionFlags`): keyed on the MODULE the composition lacks,
+/// never on its name.
+#[derive(Clone, Copy, Debug)]
+struct Flags {
+    history: bool,
+    semantic: bool,
+}
+
+/// README §7.3: a case's expectation under a reduced composition, step by
+/// step against what the run answered (the reference's
+/// `compositionInteropExpect`). WITHOUT the semantic module every
 /// `provider_unavailable` outcome of `writes` and `reads` becomes
-/// `capability_unavailable { semantic, disabled, fix }`; and (Phase 4a — the
-/// composition has no recorder) a step the run answered
+/// `capability_unavailable { semantic, disabled, fix }`; WITHOUT the history
+/// module (the composition has no recorder) a step the run answered
 /// `capability_unavailable { history, unavailable }` is accepted as such, a
 /// `sync_status` reads the core history state, a `version` shape reads
 /// `coverage_from` as `<null>`, and a `query` that reaches `revisions` is
-/// accepted when the run returned rows (the reference's
-/// `coreModeInteropExpect`). The mapping is the RUNNER's, keyed on the
-/// composition it runs under, never in the fixture. Returns the outcomes mapped.
-fn core_mode_expect(expect: &Json, case: &Case, rec: &Recorded) -> (Json, usize) {
+/// accepted when the run returned rows. The mapping is the RUNNER's, keyed on
+/// the composition it runs under, never in the fixture. Returns the outcomes mapped.
+fn composition_expect(expect: &Json, case: &Case, rec: &Recorded, flags: Flags) -> (Json, usize) {
     fn semantic(v: &mut Json, mapped: &mut usize) {
         match v {
             Json::Object(o) => {
@@ -891,7 +900,13 @@ fn core_mode_expect(expect: &Json, case: &Case, rec: &Recorded) -> (Json, usize)
         }
         false
     }
-    fn map_steps(expect: &mut Json, steps: &[Step], actual: &[Json], mapped: &mut usize) {
+    fn map_steps(
+        expect: &mut Json,
+        steps: &[Step],
+        actual: &[Json],
+        flags: Flags,
+        mapped: &mut usize,
+    ) {
         let Some(items) = expect.as_array_mut() else {
             return;
         };
@@ -900,7 +915,9 @@ fn core_mode_expect(expect: &Json, case: &Case, rec: &Recorded) -> (Json, usize)
                 Some(Step::Call { tool, args }) => (tool.as_str(), args.clone()),
                 _ => ("", json!({})),
             };
-            if let Some(got) = actual.get(i) {
+            if !flags.history
+                && let Some(got) = actual.get(i)
+            {
                 if history_unavailable(got) {
                     *mapped += 1;
                     *o = got.clone();
@@ -932,18 +949,48 @@ fn core_mode_expect(expect: &Json, case: &Case, rec: &Recorded) -> (Json, usize)
                     continue;
                 }
             }
-            semantic(o, mapped);
+            if !flags.semantic {
+                semantic(o, mapped);
+            }
         }
     }
     let mut out = expect.clone();
     let mut mapped = 0;
     if let Some(w) = out.get_mut("writes") {
-        map_steps(w, &case.writes, &rec.writes, &mut mapped);
+        map_steps(w, &case.writes, &rec.writes, flags, &mut mapped);
     }
     if let Some(r) = out.get_mut("reads") {
-        map_steps(r, &case.reads, &rec.reads, &mut mapped);
+        map_steps(r, &case.reads, &rec.reads, flags, &mut mapped);
     }
     (out, mapped)
+}
+
+/// The pairing's composition ledger (README §7.3): compared / mapped pairings
+/// and the pairings skipped for a missing peer — one line per pairing in the
+/// form `pnpm conformance` reads (`[interop spec] composition=<name>:
+/// compared=<n> mapped=<n> skipped=<n>`), the pairing named after it.
+fn report_ledger(
+    pair: &str,
+    composition: Composition,
+    compared: &[String],
+    mapped: &[String],
+    skipped: &[String],
+) {
+    let mut text = format!(
+        "[interop spec] composition={composition}: compared={} mapped={} skipped={} ({pair})\n",
+        compared.len(),
+        mapped.len(),
+        skipped.len()
+    );
+    if composition != Composition::Full {
+        for m in mapped {
+            text.push_str(&format!("  mapped {m}\n"));
+        }
+        for s in skipped {
+            text.push_str(&format!("  skip {s}\n"));
+        }
+    }
+    eprint!("{text}");
 }
 
 // ---- comparison ------------------------------------------------------------------------------------
@@ -1030,7 +1077,7 @@ fn compare_step(
 }
 
 /// Every mismatch of one recorded run against `expect` (the case's, or its
-/// core-only mapping).
+/// composition mapping).
 fn mismatches(case: &Case, rec: &Recorded, expect: &Json) -> Vec<String> {
     let mut out = Vec::new();
     let exp_writes = expect
@@ -1109,20 +1156,42 @@ fn dump(case: &Case, writer: Engine, reader: Engine, rec: &Recorded) {
 /// any failure.
 fn run_pairing(writer: Engine, reader: Engine) {
     let pair = format!("{} → {}", writer.name(), reader.name());
+    let composition = composition();
+    assert!(
+        !(std::env::var("SURFACE_SPEC_UPDATE").is_ok_and(|v| !v.is_empty() && v != "0")
+            && composition != Composition::Full),
+        "SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES={composition} would record that composition's answers; run it on the full one"
+    );
+    let flags = Flags {
+        history: composition.has_history(),
+        semantic: composition.has_semantic(),
+    };
+    let suite = load_suite().unwrap_or_else(|e| panic!("interop [{pair}]: {e}"));
     for engine in [writer, reader] {
         if let Err(missing) = peer_command(engine) {
             if std::env::var("OMGBASE_INTEROP").is_ok_and(|v| v == "skip") {
                 eprintln!("interop [{pair}] SKIPPED (OMGBASE_INTEROP=skip): {missing}");
+                let skipped: Vec<String> = suite
+                    .cases
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "{} [{pair}] — {} peer not built [OMGBASE_INTEROP=skip]",
+                            c.name,
+                            engine.name()
+                        )
+                    })
+                    .collect();
+                report_ledger(&pair, composition, &[], &[], &skipped);
                 return;
             }
             panic!("interop [{pair}]: {missing}");
         }
     }
-    let suite = load_suite().unwrap_or_else(|e| panic!("interop [{pair}]: {e}"));
     let mut report: Vec<String> = Vec::new();
     let mut failed = 0usize;
-    let core = core_only();
-    let mut core_mapped: Vec<String> = Vec::new();
+    let mut compared: Vec<String> = Vec::new();
+    let mut mapped_cases: Vec<String> = Vec::new();
     for case in &suite.cases {
         match run_pair(&suite, case, writer, reader) {
             Err(e) => {
@@ -1131,19 +1200,16 @@ fn run_pairing(writer: Engine, reader: Engine) {
             }
             Ok(rec) => {
                 dump(case, writer, reader, &rec);
-                let expect = if core {
-                    let (mapped, n) = core_mode_expect(&case.expect, case, &rec);
-                    if n > 0 {
-                        core_mapped.push(format!(
-                            "{} ({n} outcome{})",
-                            case.name,
-                            if n == 1 { "" } else { "s" }
-                        ));
-                    }
-                    mapped
+                let (expect, n) = composition_expect(&case.expect, case, &rec, flags);
+                if n > 0 {
+                    mapped_cases.push(format!(
+                        "{} [{pair}] ({n} outcome{})",
+                        case.name,
+                        if n == 1 { "" } else { "s" }
+                    ));
                 } else {
-                    case.expect.clone()
-                };
+                    compared.push(format!("{} [{pair}]", case.name));
+                }
                 let bad = mismatches(case, &rec, &expect);
                 if !bad.is_empty() {
                     failed += 1;
@@ -1162,16 +1228,7 @@ fn run_pairing(writer: Engine, reader: Engine) {
         "interop [{pair}]: {} of {total} case(s) passed",
         total - failed
     );
-    if core {
-        // The core-only run's ledger (§7.3): which outcomes answered
-        // `capability_unavailable` instead of the fixture's full-composition one.
-        eprintln!(
-            "interop [{pair}] {}=core: {} case(s) mapped (semantic → capability_unavailable {{ semantic, disabled }}; history reads → {{ history, unavailable }}, the core history state): {}",
-            omgbase_store::CAPABILITIES_ENV,
-            core_mapped.len(),
-            core_mapped.join(", ")
-        );
-    }
+    report_ledger(&pair, composition, &compared, &mapped_cases, &[]);
     if failed > 0 {
         let mut lines: Vec<String> = report
             .iter()

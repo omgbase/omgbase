@@ -45,6 +45,7 @@ use std::collections::HashSet;
 use crate::Store;
 use crate::core::capabilities::{HistoryRecorder, RevisionTransition};
 use crate::core::codec::attrs_from_json;
+use crate::core::fault::{FaultSite, fault_point};
 use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
@@ -369,6 +370,10 @@ impl Store {
             Err(e) => return Err(e),
         };
         tx.commit()?;
+        // OMGBASE_FAULT (Phase 5a): the transaction is durable, no file is
+        // written yet — the pending rows owe the files; `recover_repo` / the
+        // next sweep replays them.
+        fault_point(FaultSite::CommitAfterCommit)?;
         let (ingests, moves) = committed;
         Ok((Outcome::Committed { ingests, moves }, Some(commit_id)))
     }
@@ -1045,8 +1050,7 @@ fn move_path_in(
             }
             // Captured while the repository's manifest says `enabled` (Phase 4a).
             if let Some(history) = history {
-                capture(
-                    Some(to),
+                capture(Some(to), || {
                     history.record_revision(
                         tx,
                         &RevisionTransition {
@@ -1058,8 +1062,8 @@ fn move_path_in(
                             rendered_hash,
                             commit_id: &commit.commit_id,
                         },
-                    ),
-                )?;
+                    )
+                })?;
             }
             head = Some(minted);
         }

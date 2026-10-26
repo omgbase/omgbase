@@ -67,7 +67,7 @@ pub use summary::{
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.0";
+pub const SPEC_VERSION: &str = "4.1";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

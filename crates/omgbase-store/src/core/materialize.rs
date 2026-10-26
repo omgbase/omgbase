@@ -57,6 +57,7 @@ use crate::core::alerts::{
     AlertInput, AlertSeverity, MATERIALIZATION_FAILED_ALERT, clear_alert,
     materialization_failed_message, raise_alert, refresh_backlog_alert,
 };
+use crate::core::fault::{FaultSite, fault_point};
 use crate::doc_store::DocStore;
 use crate::error::Result;
 use crate::read::reconstruct;
@@ -273,6 +274,23 @@ fn own(row: &PendingRow, bytes: &str) -> bool {
 /// that refuses a write propagates its error with the row intact (the row
 /// is the durable record either way); so do database errors.
 fn materialize_row(
+    conn: &Connection,
+    row: &PendingRow,
+    doc_store: &mut dyn DocStore,
+) -> Result<bool> {
+    // OMGBASE_FAULT (Phase 5a): a fault before any write leaves the row and
+    // the disk as they were; one after the write leaves the file in place and
+    // the row owed — the next replay finds the bytes as recorded and clears it.
+    fault_point(FaultSite::MaterializeBeforeWrite)?;
+    let done = materialize_row_inner(conn, row, doc_store)?;
+    if done {
+        fault_point(FaultSite::MaterializeAfterWrite)?;
+    }
+    Ok(done)
+}
+
+/// [`materialize_row`]'s table, without the fault sites.
+fn materialize_row_inner(
     conn: &Connection,
     row: &PendingRow,
     doc_store: &mut dyn DocStore,

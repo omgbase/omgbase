@@ -1190,6 +1190,12 @@ impl Runner<'_> {
         if let Some(failed) = engine.context().take_root_failure() {
             return Err(failed.into());
         }
+        // A `semantic(…)` refused by the capability (the module absent, the
+        // row switched off) failed the run with its message; the typed
+        // envelope the context kept is what the caller gets.
+        if let Some(refused) = engine.context().take_capability_failure() {
+            return Err(refused);
+        }
         // A root scan projected as a VALUE (`select all: ^docs`) was
         // materialized into its rows by the engine (`DataContext::materialize`).
         Ok(out?)

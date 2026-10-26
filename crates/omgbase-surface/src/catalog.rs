@@ -2895,15 +2895,11 @@ impl Surface {
                     ));
                 }
                 let include_deleted = arg_bool(args, "include_deleted")?.unwrap_or(false);
-                // Resolution 11 (Phase 4b): `docs_history` is never `disabled`
-                // — a repository nothing was captured in lists every head
-                // unretained; only a build without the module refuses
-                // (`unavailable`).
-                if self.store.history().is_none() {
-                    return Err(omgbase_store::Error::HistoryUnavailable.into());
-                }
                 // A live document resolves through the locator; with
-                // include_deleted a tombstoned one is looked up by the same attribute.
+                // include_deleted a tombstoned one is looked up by the same
+                // attribute — BEFORE the capability is consulted, as the
+                // reference does: a document nobody has is `doc_missing` on
+                // every composition.
                 let doc: Option<String> = if id.is_some() || path.is_some() {
                     let tomb: Option<String> = if include_deleted {
                         match (id, path) {
@@ -2937,6 +2933,13 @@ impl Surface {
                 } else {
                     None
                 };
+                // Resolution 11 (Phase 4b): `docs_history` is never `disabled`
+                // — a repository nothing was captured in lists every head
+                // unretained; only a build without the module refuses
+                // (`unavailable`).
+                if self.store.history().is_none() {
+                    return Err(omgbase_store::Error::HistoryUnavailable.into());
+                }
                 history::docs_history(
                     &self.store,
                     &repo,
