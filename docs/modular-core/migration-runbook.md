@@ -91,7 +91,13 @@ The script does this. What it does, so the report reads right:
   With `--repair` the script runs it on the copy (the files must be there:
   a root inside the workspace is copied with it, an outside root needs
   `--with-files`) and reports `repair: { legacy_bytes_before, repaired,
-  remaining }`; `remaining > 0` means documents whose files are gone (they
+  remaining, synced_from_disk }` — `synced_from_disk` counts the documents
+  the sweep ingested because their files were NEWER than the database
+  (ordinary sync activity on the copy, not a migration effect); the
+  differences those documents cause, and the `bytes` entries of repaired
+  legacy documents (the old engine misread them, AFTER reproduces
+  `file_hash`), are set aside in the report's `informational` member, so
+  `diff` holds only the unexpected and alone decides `ok`. `remaining > 0` means documents whose files are gone (they
   stay listed — `doctor` keeps showing the count — until the file comes
   back or the document is deleted) or whose parse no longer matches their
   rows. **On the real workspace, run `omg sync` once right after the
@@ -117,7 +123,7 @@ The script does this. What it does, so the report reads right:
 | `claims` | fewer id claims after than before |
 | `pending_lost` | a pre-migration pending row neither present nor materialized |
 | `bytes_hash` | AFTER's rendered bytes do not hash to the document's `file_hash` (the hash-level byte check, always on). A legacy document (§2 c′) is exactly this diff until `--repair` / `omg sync` repairs it; the migration names them (`after.ts.legacy_bytes`) |
-| `bytes`, `bytes_unreadable` | AFTER's bytes differ from the old engine's (`--before-bin`), or a document could not be rendered |
+| `bytes`, `bytes_unreadable` | AFTER's bytes differ from the old engine's (`--before-bin`), or a document could not be rendered. A `bytes` entry on a document whose hash did not move and whose AFTER bytes hash to `file_hash` is the legacy repair improving on the old engine's read — reported under `informational.legacy_bytes_repaired`, not here |
 
 Beside the diff: **CAS** — on the copy a block is updated with a stale
 `expect.content_hash` (refused `stale_expectation`) and then with the fresh

@@ -349,8 +349,10 @@ function readsThrough(cli, ws) {
 // ---- (d) the diff ----------------------------------------------------------------------------
 
 /** The §7 step-4 invariants between two snapshots; each entry `{ kind, ...where }`. */
-export function diffSnapshots(before, after) {
+export function diffSnapshots(before, after, expected = {}) {
   const diff = [];
+  const syncedIds = expected.syncedIds ?? new Set();
+  const syncedPaths = expected.syncedPaths ?? new Set();
   const byId = (rows) => new Map(rows.map((r) => [r._id, r]));
   const bd = byId(before.docs);
   const ad = byId(after.docs);
@@ -401,6 +403,19 @@ export function diffSnapshots(before, after) {
       if (sha256hex(raw) !== d._hash) diff.push({ kind: "bytes_hash", id: d._id, path: d._path });
       const b = bd.get(d._id);
       if (before.bytes && b && before.bytes[b._path] !== undefined && before.bytes[b._path] !== raw) diff.push({ kind: "bytes", id: d._id, path: d._path });
+    }
+  }
+  // Classify what is expected rather than wrong: (1) a document the `--repair` sweep ingested from a NEWER file on
+  // disk (ordinary sync activity on the copy — its hash/head/blocks/properties/links legitimately moved); (2) a `bytes`
+  // difference where BEFORE was read through an old engine that could not reproduce the file (legacy trivia) and AFTER
+  // reproduces `file_hash` exactly — the fidelity improvement §5.11 promises. `report.diff` keeps only the unexpected.
+  const ab2 = byId(after.blocks);
+  for (const d of diff) {
+    const docOf = d.id && ab2.has(d.id) ? ab2.get(d.id).doc : d.doc;
+    if (syncedIds.has(d.id) || syncedIds.has(docOf) || syncedPaths.has(d.path) || (d.row && syncedPaths.has(d.row.path))) d.expected = "synced_from_disk";
+    else if (d.kind === "bytes") {
+      const a = ad.get(d.id); const b = bd.get(d.id);
+      if (a && b && a._hash === b._hash && sha256hex(after.bytes[a._path]) === a._hash) d.expected = "legacy_bytes_repaired";
     }
   }
   return diff;
@@ -513,15 +528,24 @@ export async function qualify(opts, log = (s) => process.stderr.write(`${s}\n`))
     const legacyBefore = snapshotRows(dbPath).legacy_bytes;
     log(`migrated: doctor ${doctor.json?.ok ? "ok" : "NOT ok"}, legacy_bytes ${legacyBefore}`);
     // `--repair`: the sweep repairs the legacy documents from the copied files (spec/store §5.11, spec/sync §4.3 step 5), then `doctor` again.
+    let syncedFromDisk = { ids: new Set(), paths: new Set() };
     if (opts.repair) {
       if (!filesAvailable) {
         report.repair = { legacy_bytes_before: legacyBefore, repaired: 0, remaining: legacyBefore, error: "no files to repair from (pass --with-files)" };
         log("--repair: the copy has no files to repair from (pass --with-files)");
       } else {
+        const preRepair = snapshotRows(dbPath);
         const sync = run(tsCli, copy, ["sync"], { json: true, must: false });
         doctor = run(tsCli, copy, ["doctor"], { json: true, must: false });
-        const remaining = snapshotRows(dbPath).legacy_bytes;
-        report.repair = { legacy_bytes_before: legacyBefore, repaired: Array.isArray(sync.json?.repaired) ? sync.json.repaired.length : legacyBefore - remaining, remaining, sync_exit: sync.exit };
+        const postRepair = snapshotRows(dbPath);
+        const remaining = postRepair.legacy_bytes;
+        // A document whose hash moved across the sweep was ingested from a newer file on disk (the legacy repair never changes a hash).
+        const preHash = new Map(preRepair.docs.map((d) => [d._id, d._hash]));
+        const synced = postRepair.docs.filter((d) => preHash.has(d._id) && preHash.get(d._id) !== d._hash);
+        for (const d of preRepair.docs) if (!postRepair.docs.some((x) => x._id === d._id)) synced.push(d);
+        for (const d of postRepair.docs) if (!preHash.has(d._id)) synced.push(d);
+        syncedFromDisk = { ids: new Set(synced.map((d) => d._id)), paths: new Set(synced.map((d) => d._path)) };
+        report.repair = { legacy_bytes_before: legacyBefore, repaired: Array.isArray(sync.json?.repaired) ? sync.json.repaired.length : legacyBefore - remaining, remaining, sync_exit: sync.exit, synced_from_disk: { docs: synced.length, sample: synced.slice(0, 20).map((d) => d._id) } };
         log(`repaired: ${report.repair.repaired} of ${legacyBefore} legacy document(s), ${remaining} remaining; doctor ${doctor.json?.ok ? "ok" : "NOT ok"}`);
       }
     }
@@ -554,7 +578,14 @@ export async function qualify(opts, log = (s) => process.stderr.write(`${s}\n`))
       })
       : [];
     // (d)
-    report.diff = diffSnapshots(before, after);
+    const allDiff = diffSnapshots(before, after, { syncedIds: syncedFromDisk.ids, syncedPaths: syncedFromDisk.paths });
+    report.diff = allDiff.filter((d) => !d.expected);
+    const tally = (xs) => { const m = {}; for (const d of xs) m[d.kind] = (m[d.kind] ?? 0) + 1; return m; };
+    report.informational = {
+      synced_from_disk: tally(allDiff.filter((d) => d.expected === "synced_from_disk")),
+      legacy_bytes_repaired: allDiff.filter((d) => d.expected === "legacy_bytes_repaired").length,
+    };
+    if (allDiff.length !== report.diff.length) log(`expected differences set aside: ${allDiff.length - report.diff.length} (synced from newer files: ${Object.values(report.informational.synced_from_disk).reduce((a, b) => a + b, 0)}; legacy bytes now reproducing the file: ${report.informational.legacy_bytes_repaired})`);
     const checks = await libraryChecks(copy, { filesAvailable });
     report.cas = checks.cas;
     report.recovery = checks.recovery;
@@ -570,10 +601,13 @@ export async function qualify(opts, log = (s) => process.stderr.write(`${s}\n`))
     }
     if (opts.beforeBin) {
       const old = cliOf(opts.beforeBin);
+      // `version` never opens the database, so the refusal must be probed with a read that does;
+      // `version` only supplies the old build's schema for the same-major case.
       const v = run(old, copy, ["version"], { json: true, must: false });
-      const refusal = refusalOf(v.exit, `${v.stderr}\n${v.stdout}`);
-      report.compatible_open.before_bin = { ...refusal, opened_same_major: !refusal.refused && v.exit === 0 && v.json?.schema === after.version };
-      log(`compatible-open (before-bin): ${refusal.refused ? `refused the migrated copy (newer schema; exit ${v.exit})` : v.exit === 0 ? "opened it (same schema major)" : `exit ${v.exit}`}`);
+      const q = run(old, copy, ["query", "docs count"], { json: true, must: false });
+      const refusal = refusalOf(q.exit, `${q.stderr}\n${q.stdout}`);
+      report.compatible_open.before_bin = { ...refusal, opened_same_major: !refusal.refused && q.exit === 0 && q.json !== null && v.json?.schema === after.version };
+      log(`compatible-open (before-bin): ${refusal.refused ? `refused the migrated copy (newer schema; exit ${q.exit})` : q.exit === 0 && q.json !== null ? "opened it (same schema major)" : `exit ${q.exit}`}`);
     }
     // (f) sizes
     report.sizes = { before: before.sizes, after: after.sizes };

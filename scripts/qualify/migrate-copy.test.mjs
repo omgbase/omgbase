@@ -304,7 +304,7 @@ test("a legacy document in a 17.x workspace: the open names it, --repair restore
 
     // With `--repair` (and the files): the sweep repairs the rows, doctor is green, no diff.
     const green = await qualify({ workspace: dbonly, compositions: true, withFiles: true, repair: true, keep: false, rustBin: RUST_BIN }, quiet);
-    assert.deepEqual(green.repair, { legacy_bytes_before: 1, repaired: 1, remaining: 0, sync_exit: 0 });
+    assert.deepEqual(green.repair, { legacy_bytes_before: 1, repaired: 1, remaining: 0, sync_exit: 0, synced_from_disk: { docs: 0, sample: [] } });
     assert.equal(green.after.ts.legacy_bytes, 0);
     assert.equal(green.after.ts.doctor.ok, true);
     assert.deepEqual(green.diff, []);
