@@ -6,6 +6,7 @@ import { capture, captureFor, historyReader } from "./manifest.js";
 import { referencePath } from "../paths.js";
 import { effectiveSettingsOf } from "./settings.js";
 import { clearAlert, raiseAlert } from "./alerts.js";
+import { faultPoint } from "../fault.js";
 
 // The change feed (spec/store §3.1 `feed`/`feed_entries`, §5.4 step 5, §7.4;
 // spec/surface §3 `changes_since`; modular-core Phase 3d — D7/M5, D4). The
@@ -90,6 +91,7 @@ export interface FeedRow {
  * transaction on `db`.
  */
 export function appendFeedRow(db: Database, input: NewFeedRowInput): FeedRow {
+  faultPoint("feed.append"); // OMGBASE_FAULT (Phase 5a): inside the caller's transaction — everything rolls back
   const epoch = repoEpoch(db, input.repoId);
   const commitId = mintId("c");
   claimsOf(db).claim("c", commitId, input.repoId, input.ts);

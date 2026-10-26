@@ -406,7 +406,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   trivia_hash    BLOB,                        -- sha256(trivia) (NULL = none)
   created_at     TEXT NOT NULL,               -- the identity's birth, carried (D6)
   updated_at     TEXT NOT NULL,               -- the block's own last change (14.2 rule)
-  deleted_at     TEXT                         -- tombstone (NULL = live); Phase 4 stops writing tombstoned rows (D2)
+  deleted_at     TEXT                         -- always NULL since 17.3: a tombstone DELETES the rows (D2 step two); the column stays for the 17.x partial indexes
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;

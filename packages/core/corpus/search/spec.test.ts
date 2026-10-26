@@ -9,7 +9,7 @@
 // SEARCH_SPEC_UPDATE=1 rewrites each case's `expect` in place from its inputs
 // (inputs, notes and case order untouched) before running; the diff is
 // reviewed like code, because a changed `expect` *is* a search change.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ import {
   EPS, compareExpect, runCosineCase, runObserveCase, runSanitizeCase, suiteKind, validateFixtureFile,
 } from "./fixture.js";
 import type { CosineCase, FixtureCase, FixtureFile, ObserveCase, SanitizeCase } from "./fixture.js";
+import { HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/search → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/search/", import.meta.url));
@@ -134,7 +135,32 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
+/**
+ * The four compositions (README §7; modular-core Phase 5a). The history module
+ * plays no part in this suite (no step reaches a history table; `history`
+ * compares as `full`). WITHOUT the semantic module (`core`, `history`): the
+ * pure cases (`sanitize`, `cosine`) run unchanged; an observation script with a
+ * `drain`, a `resolve` or a `search` carrying `semantic` needs the provider and
+ * is skipped; the text-only scripts run and are compared with the four semantic
+ * projections (`embed_tasks`, `doc_tasks`, `embeddings`, `doc_embeddings`)
+ * emptied — the runner computes none of them without the module. The fixtures
+ * are never regenerated from a reduced composition.
+ */
+refuseUpdate(UPDATE, "SEARCH_SPEC_UPDATE");
+const ledger = new Ledger("search");
+
+function needsSemantic(c: ObserveCase): boolean {
+  return c.steps.some((s) => "drain" in s || "resolve" in s || ("search" in s && s.search.semantic !== undefined));
+}
+
 async function runCase(suite: string, c: FixtureCase): Promise<void> {
+  const id = `${suite}::${c.name}`;
+  if (!HAS_SEMANTIC && suiteKind(suite) === "observe") {
+    if (needsSemantic(c as ObserveCase)) { ledger.skip(id, "needs the semantic module"); return; }
+    ledger.record(id, "semantic projections emptied");
+  } else {
+    ledger.record(id);
+  }
   const { expect: actual, problems: checkProblems } = await evaluate(suite, c);
   expect(checkProblems).toEqual([]);
   switch (suiteKind(suite)) {
@@ -145,10 +171,11 @@ async function runCase(suite: string, c: FixtureCase): Promise<void> {
       expect(Math.abs((actual as number) - (c.expect as number)), `${actual} vs ${c.expect}`).toBeLessThanOrEqual(EPS);
       return;
     case "observe": {
-      const diff = compareExpect(actual as ObserveCase["expect"], c.expect);
+      const expected = HAS_SEMANTIC ? c.expect : { ...(c.expect as ObserveCase["expect"]), embed_tasks: [], doc_tasks: [], embeddings: [], doc_embeddings: [] };
+      const diff = compareExpect(actual as ObserveCase["expect"], expected);
       if (diff !== null) {
         // Beyond tolerance: let vitest print the structural diff (key order sorted).
-        expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+        expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
       }
     }
   }
@@ -188,3 +215,6 @@ describe("search spec fixtures (spec/search/cases)", () => {
     });
   }
 });
+
+// The composition ledger (README §7): one line `pnpm conformance` reads.
+afterAll(() => ledger.report());

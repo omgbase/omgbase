@@ -4,6 +4,7 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { reconstructContent } from "../core/read/document.js";
 import type { DocStore } from "./doc-store.js";
+import { faultPoint } from "../core/fault.js";
 
 // Materialization (spec/store §5.7, store 14.0; the self-contained row 17.0 —
 // modular-core Phase 3c, M4). The api path commits DB-first: the transaction
@@ -151,6 +152,10 @@ function renderedBytes(store: Store, row: PendingRow): string | null {
  */
 export function materializeRow(store: Store, repoId: string, row: PendingRow, docStore: DocStore): boolean {
   const db = store.db;
+  // OMGBASE_FAULT (Phase 5a): a fault before any write leaves the row and the
+  // disk as they were; one after the write leaves the file in place and the row
+  // owed — the next replay finds the bytes as recorded and clears it.
+  faultPoint("materialize.before-write");
   const own = (bytes: string): boolean => {
     const h = sha256(bytes);
     return h.equals(row.renderedHash) || (row.priorHash !== null && h.equals(row.priorHash));
@@ -234,6 +239,7 @@ export function materializeRow(store: Store, repoId: string, row: PendingRow, do
       break;
     }
   }
+  if (done) faultPoint("materialize.after-write");
   if (done) deletePending(db, repoId, row.path);
   return done;
 }

@@ -10,8 +10,9 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { compositionHasHistory, compositionHasSemantic, envComposition } from "@omgbase/core";
 import {
-  BIN, CASES_DIR, Workspaces, assignExpects, describeChange, diffExpect, expectsOf, runCase, validateFixtureFile,
+  BIN, CASES_DIR, Workspaces, assignExpects, describeChange, diffExpect, expectsOf, isSequence, runCase, validateFixtureFile,
   type CaseInput, type FixtureCase, type FixtureFile,
 } from "./fixture.js";
 
@@ -33,6 +34,53 @@ if (!existsSync(BIN)) {
 
 const ws = new Workspaces();
 afterAll(() => ws.cleanup());
+
+// ---- the four compositions (spec/cli §8 "The four compositions"; modular-core Phase 5a) ----
+//
+// `OMGBASE_CAPABILITIES=core|history|semantic|full` reaches every spawned binary
+// (`baseEnv`), so the SAME cases run against the composition named. The fixtures
+// are the full composition's record; under a reduced one a case whose inputs or
+// recorded outputs carry an OBSERVABLE of the absent module is skipped and
+// counted (a verb of the module, or a word of its wire — the recorder's table
+// names and disposition summary, the embed queue and the vector tables, the
+// capability states), and every other case must pass UNCHANGED. The classifier
+// is deliberately textual and conservative: it reads the case, never the run.
+const COMPOSITION = envComposition();
+const HAS_HISTORY = compositionHasHistory(COMPOSITION);
+const HAS_SEMANTIC = compositionHasSemantic(COMPOSITION);
+if (UPDATE && COMPOSITION !== "full") throw new Error(`CLI_SPEC_UPDATE under OMGBASE_CAPABILITIES=${COMPOSITION} would record that composition's answers; run it on the full one`);
+const ledger = { compared: [] as string[], skipped: [] as string[] };
+
+/** The verbs that reach the history module (the capture verbs, the log/history readers, `show --history`, `cat --at`). */
+const HISTORY_VERBS = new Set(["log", "hist", "diff", "history"]);
+const HISTORY_FLAGS = new Set(["--history", "--at"]);
+/** The verbs that reach the semantic module. */
+const SEMANTIC_VERBS = new Set(["embed", "find"]);
+/** Words of the history module's wire: its tables in a size report, the recorder's disposition summary, its capability state and the doctor's capture check. */
+const HISTORY_TEXT = /\b(commits|revisions|dispositions|block_changes|tree_nodes|blobs|edge_transitions|archives)\b|"history":\{"state":"enabled|history\s+enabled|"coverage_from":"(\d|<string>)|"writer_requires":true|capture complete| — \d+ (inserted|edited|deleted|moved|resurrected|same|split|merged)|history unavailable|writer_refused|capability_unavailable|revision/;
+/** Words of the semantic module's wire: the embed queue, the vector tables, its capability state, the provider. */
+const SEMANTIC_TEXT = /\bqueued\b|"embedQueue":[1-9]|\bdoc_embeddings\b|\bembeddings\b|"semantic":\{"state":"enabled|embedding|provider_unavailable|capability_unavailable|semantic\(/;
+
+function caseText(c: FixtureCase): { argv: string[]; text: string } {
+  const steps = isSequence(c) ? c.steps : [c];
+  const argv = steps.flatMap((s) => s.argv);
+  const text = steps.map((s) => `${s.stdin ?? ""}\n${s.expect?.stdout ?? ""}\n${s.expect?.stderr ?? ""}`).join("\n") + Object.values({ ...(c.files ?? {}), ...(c.sql ? { sql: c.sql.join("\n") } : {}) }).join("\n");
+  return { argv, text };
+}
+
+/** Why the case is skipped under this composition, or null when it must pass as recorded. */
+function skipReason(c: FixtureCase): string | null {
+  const { argv, text } = caseText(c);
+  if (!HAS_HISTORY && (argv.some((a) => HISTORY_VERBS.has(a) || HISTORY_FLAGS.has(a)) || HISTORY_TEXT.test(text))) return "needs the history module";
+  if (!HAS_SEMANTIC && (argv.some((a) => SEMANTIC_VERBS.has(a)) || SEMANTIC_TEXT.test(text))) return "needs the semantic module";
+  return null;
+}
+
+afterAll(() => {
+  let out = `[cli spec] composition=${COMPOSITION}: compared=${ledger.compared.length} mapped=0 skipped=${ledger.skipped.length}\n`;
+  if (COMPOSITION !== "full") for (const s of ledger.skipped) out += `  skip ${s}\n`;
+  process.stderr.write(out);
+});
 
 // ---- regeneration ------------------------------------------------------------
 
@@ -108,7 +156,14 @@ describe("cli spec (spec/cli/cases)", () => {
   for (const [, doc] of loaded) {
     describe(doc.suite, () => {
       for (const c of doc.cases) {
+        const reason = skipReason(c);
+        if (reason !== null) {
+          ledger.skipped.push(`${doc.suite}::${c.name} — ${reason}`);
+          it.skip(`${doc.suite}::${c.name} — skipped: ${reason} [OMGBASE_CAPABILITIES=${COMPOSITION}]`, () => {});
+          continue;
+        }
         it(`${doc.suite}::${c.name}`, () => {
+          ledger.compared.push(`${doc.suite}::${c.name}`);
           const run = runCase(ws, c as CaseInput);
           const want = expectsOf(c as CaseInput);
           run.expects.forEach((got, i) => {

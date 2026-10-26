@@ -37,8 +37,7 @@ import {
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
 import { disableHistory, enableHistory, historyBundlePresent, historyReader, purgeHistory, readCapability, type CoverageInterval } from "../../src/core/store/manifest.js";
 import { bindCapabilities } from "../../src/core/capabilities/registry.js";
-import { envCapabilities } from "../../src/core/capabilities/default.js";
-import { coreCapabilities } from "../../src/core/capabilities/core.js";
+import { HAS_HISTORY } from "../composition.js";
 import type { Capabilities, HistoryRecorder } from "../../src/core/capabilities/types.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
@@ -698,9 +697,9 @@ function setRecorderFault(store: Store, fail: boolean): boolean {
   return fail && original !== null;
 }
 
-// ---- the core-only run (README §9.6, Phase 4a — `OMGBASE_CAPABILITIES=core`) -------------
+// ---- the runs without the history module (README §9.6, Phase 4a/5a — `OMGBASE_CAPABILITIES=core|semantic`) -------------
 //
-// Under the core-only composition the runner opens stores with no recorder: a
+// Under a composition without the recorder the runner opens stores with none: a
 // case's repository starts with history `disabled`, no history table exists
 // and no history row is written. The SAME observation scripts run, the core
 // invariants (C*, F*, A1) are checked, and the projection is compared on the
@@ -713,9 +712,9 @@ function setRecorderFault(store: Store, fail: boolean): boolean {
 // reported; `cases/history/` and `migrations.json` are skipped wholesale (a
 // core-only build neither captures nor upgrades a 16.x database).
 
-/** Is this process the core-only run? */
-export function coreMode(): boolean {
-  return envCapabilities() === coreCapabilities;
+/** Is this process a run WITHOUT the history module (`OMGBASE_CAPABILITIES=core|semantic`; README §9.6)? The mutate runner shares the rule. */
+export function lacksHistory(): boolean {
+  return !HAS_HISTORY;
 }
 
 /** The tables whose projection the core-only run compares. */
@@ -811,7 +810,7 @@ interface BlockRaw {
 
 const BLOCK_COLUMNS = "block_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw, raw_hash, norm_hash, trivia, trivia_hash, created_at, updated_at, deleted_at";
 
-/** A doc's `blocks` rows in pre-order (children by `parent_block`, `ordinal` order); tombstoned rows included. */
+/** A doc's `blocks` rows in pre-order (children by `parent_block`, `ordinal` order); since 17.3 no tombstoned row exists (D2 step two). */
 function docBlocksPreorder(db: Db, docId: string, liveOnly: boolean): BlockRaw[] {
   const rows = db
     .prepare(`SELECT ${BLOCK_COLUMNS} FROM blocks WHERE doc_id = ? ${liveOnly ? "AND deleted_at IS NULL" : ""} ORDER BY ordinal, block_id`)
@@ -1147,8 +1146,9 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const b of allBlocks) {
     const d = docById.get(b.doc_id);
     if (!d) continue;
-    if (d.deleted_at === null && b.deleted_at !== null) problems.push(`C7: live doc ${d.doc_id} has a tombstoned block ${b.block_id}`);
-    if (d.deleted_at !== null && b.deleted_at === null) problems.push(`C7: tombstoned doc ${d.doc_id} has a live block ${b.block_id}`);
+    // 17.3 (D2 step two): a tombstone deletes the rows — no `blocks` row is tombstoned and a tombstoned doc has none.
+    if (b.deleted_at !== null) problems.push(`C7: block ${b.block_id} is tombstoned (deleted_at ${b.deleted_at}) — a tombstone deletes the rows since 17.3`);
+    if (d.deleted_at !== null) problems.push(`C7: tombstoned doc ${d.doc_id} has a block row ${b.block_id}`);
     if (b.updated_at > d.updated_at) problems.push(`C7: block ${b.block_id} updated_at ${b.updated_at} > its document's ${d.updated_at}`);
   }
 

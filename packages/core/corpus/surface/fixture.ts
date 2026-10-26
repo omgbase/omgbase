@@ -396,15 +396,21 @@ export function diffQueryExpect(actual: OqxResult | QueryErrorExpect, expect: Oq
   return deepEqualTol(actual, expect, 1e-9);
 }
 
-// ---- the core-only run (modular-core Phase 2 gate) -------------------------------------
+// ---- the reduced compositions (modular-core Phase 2 gate → Phase 5a) --------------------------
 //
-// Under `OMGBASE_CAPABILITIES=core` every store the runner opens has no semantic
-// module. Every non-semantic case must pass UNCHANGED; a semantic case on the
-// provider-less store reports `capability_unavailable { capability: "semantic",
-// state: "disabled" }` instead of what the fixture on disk pins for the full
-// composition (`filter_invalid` "needs an embedding provider" at the runner,
-// `provider_unavailable` at the `query` tool). The fixtures are NOT rewritten:
-// the runner maps the expectation and reports how many it mapped.
+// Under `OMGBASE_CAPABILITIES=core|history` every store the runner opens has no
+// semantic module; under `core|semantic` none has the history module (README
+// §7.3). Every case the absent module plays no part in must pass UNCHANGED; a
+// semantic case on the provider-less store reports `capability_unavailable {
+// capability: "semantic", state: "disabled" }` instead of what the fixture on
+// disk pins for the full composition (`filter_invalid` "needs an embedding
+// provider" at the runner, `provider_unavailable` at the `query` tool); a
+// history read on the recorder-less store answers `{ history, unavailable }`.
+// The fixtures are NOT rewritten: the runner maps the expectation, keyed on the
+// `CompositionFlags` of the run, and reports how many it mapped.
+
+/** What the composition carries — the key of every mapping below. */
+export interface CompositionFlags { history: boolean; semantic: boolean }
 
 /** The envelope the core-only store answers a semantic call with, as the reads runner records it (`toReadOutcome`). */
 export const CORE_SEMANTIC_OUTCOME: ReadErrorOutcome = {
@@ -413,9 +419,9 @@ export const CORE_SEMANTIC_OUTCOME: ReadErrorOutcome = {
   data: { capability: "semantic", state: "disabled", fix: SEMANTIC_DISABLED_FIX },
 };
 
-/** A query case's expectation under the core-only run: the runner-level "needs an embedding provider" becomes the capability error. */
-export function coreModeQueryExpect(expect: OqxResult | QueryErrorExpect): { expect: OqxResult | QueryErrorExpect; mapped: boolean } {
-  if ("error" in expect && expect.error === "filter_invalid" && /embedding provider/.test(expect.message_includes)) {
+/** A query case's expectation on a composition without the semantic module: the runner-level "needs an embedding provider" becomes the capability error. */
+export function compositionQueryExpect(expect: OqxResult | QueryErrorExpect, flags: CompositionFlags): { expect: OqxResult | QueryErrorExpect; mapped: boolean } {
+  if (!flags.semantic && "error" in expect && expect.error === "filter_invalid" && /embedding provider/.test(expect.message_includes)) {
     // The runner records the authored substring while the message still contains it (`runQueryCase`), and the
     // disabled message does say "embedding provider"; the full message is pinned byte for byte by the unit tests.
     return { expect: { error: "capability_unavailable", message_includes: expect.message_includes }, mapped: true };
@@ -424,14 +430,15 @@ export function coreModeQueryExpect(expect: OqxResult | QueryErrorExpect): { exp
 }
 
 /**
- * An interop case's expectation under the core-only run (README §7.3): every
+ * An interop case's expectation under a reduced composition (README §7.3): every
  * `provider_unavailable` outcome of `writes` and `reads` becomes the capability
- * error — the mapping lives in the RUNNER, keyed on the composition it runs
- * under, never in the fixture, exactly as `coreModeReadsExpect` does for `reads.json`.
+ * error without the semantic module, the history reads are mapped without the
+ * history module — the mapping lives in the RUNNER, keyed on the composition it
+ * runs under, never in the fixture, exactly as `compositionReadsExpect` does for `reads.json`.
  */
-export function coreModeInteropExpect(expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }, steps: { writes: Step[]; reads: Step[] } = { writes: [], reads: [] }, actual: { writes: ReadOutcome[]; reads: ReadOutcome[] } = { writes: [], reads: [] }): { expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }; mapped: number } {
-  const w = coreModeReadsExpect({ steps: expect.writes }, steps.writes, actual.writes);
-  const r = coreModeReadsExpect({ steps: expect.reads }, steps.reads, actual.reads);
+export function compositionInteropExpect(expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }, flags: CompositionFlags, steps: { writes: Step[]; reads: Step[] } = { writes: [], reads: [] }, actual: { writes: ReadOutcome[]; reads: ReadOutcome[] } = { writes: [], reads: [] }): { expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }; mapped: number } {
+  const w = compositionReadsExpect({ steps: expect.writes }, flags, steps.writes, actual.writes);
+  const r = compositionReadsExpect({ steps: expect.reads }, flags, steps.reads, actual.reads);
   return { expect: { writes: w.expect.steps, reads: r.expect.steps }, mapped: w.mapped + r.mapped };
 }
 
@@ -449,19 +456,21 @@ function isHistoryUnavailable(o: unknown): boolean {
 }
 
 /**
- * A reads case's expectation under the core-only run, step by step against
- * what the run answered: every `provider_unavailable` outcome becomes the
- * semantic capability error (Phase 2); and (Phase 4a — the composition has no
- * recorder) a step the run answered `capability_unavailable { history,
- * unavailable }` is accepted as such, a `sync_status` reads the core history
- * state, a `version` shape reads `coverage_from` as `<null>`, and a `query`
- * that reaches `revisions` is accepted when the run returned no rows (the
- * root lists what the recorder holds — nothing here). `steps` is the case's
- * step list (to know each read's tool), `actual` the run's outcomes.
+ * A reads case's expectation under a reduced composition, step by step against
+ * what the run answered. WITHOUT the semantic module (Phase 2): every
+ * `provider_unavailable` outcome becomes the semantic capability error. WITHOUT
+ * the history module (Phase 4a — the composition has no recorder): a step the
+ * run answered `capability_unavailable { history, unavailable }` is accepted as
+ * such, a `sync_status` reads the core history state, a `version` shape reads
+ * `coverage_from` as `<null>`, and a `query` that reaches `revisions` is
+ * accepted when the run returned no rows (the root lists what the recorder
+ * holds — nothing here). `steps` is the case's step list (to know each read's
+ * tool), `actual` the run's outcomes.
  */
-export function coreModeReadsExpect(expect: { steps: StepOutcome[] }, steps: Step[] = [], actual: StepOutcome[] = []): { expect: { steps: StepOutcome[] }; mapped: number } {
+export function compositionReadsExpect(expect: { steps: StepOutcome[] }, flags: CompositionFlags, steps: Step[] = [], actual: StepOutcome[] = []): { expect: { steps: StepOutcome[] }; mapped: number } {
   let mapped = 0;
   const map = (o: unknown): unknown => {
+    if (flags.semantic) return o;
     if (Array.isArray(o)) return o.map(map);
     if (isRecord(o) && o.error === "provider_unavailable") { mapped++; return CORE_SEMANTIC_OUTCOME; }
     return o;
@@ -470,6 +479,7 @@ export function coreModeReadsExpect(expect: { steps: StepOutcome[] }, steps: Ste
     const step = steps[i];
     const got = actual[i];
     const read = step !== undefined && isRecord(step) && "read" in step ? (step as ReadStep).read : null;
+    if (flags.history) return map(o);
     if (read && isHistoryUnavailable(got)) { mapped++; return got; }
     if (read?.tool === "sync_status" && isRecord(o) && isRecord(o.capabilities)) { mapped++; return { ...o, capabilities: { ...o.capabilities, history: CORE_HISTORY_STATE } }; }
     if (read?.tool === "version" && isRecord(o) && isRecord(o.capabilities) && isRecord(o.capabilities.history)) {

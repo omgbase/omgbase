@@ -492,9 +492,10 @@ roles they are.
   { blocks, docs }` (empty lists when only frontmatter relations linked in;
   `null` when it was opted out or nothing linked in).
 - **`docs_delete { doc }`**: `doc_missing`; one transaction: `api` commit
-  (`reason: "delete <path>"`), FTS rows dropped, live blocks and the doc
-  tombstoned — **nothing pooled** (an intentional delete, unlike `spec/store`
-  §5.6) — and a `remove` row naming the deleted revision's rendered hash
+  (`reason: "delete <path>"`), FTS rows dropped, the doc's `blocks` rows
+  DELETED and the doc tombstoned (`spec/store` §5.6 step 3 — 17.3, D2 step
+  two; through 17.2 the rows were tombstoned in place) — **nothing pooled**
+  (an intentional delete, unlike `spec/store` §5.6) — and a `remove` row naming the deleted revision's rendered hash
   (2.2); (c) unlinks the file **iff** it still holds those bytes (a file a
   human rewrote meanwhile stays, untracked) and clears its stat row. Through
   2.1 the unlink ran unconditionally after the transaction, and a crash
@@ -845,6 +846,16 @@ with a pending row, is compared against the store's own reconstruction
 instead; then the projection deep-equals `expect`. **Generation**: `packages/core/corpus/mutate/spec.test.ts`,
 `MUTATE_SPEC_UPDATE=1`. **Allowlist (Rust)**:
 `crates/omgbase-mutate/tests/spec-passing.txt`, `MUTATE_SPEC_UPDATE=1`.
+
+**The four compositions** (`spec/store` §9.6; modular-core Phase 4a/5a).
+Without the history module (`OMGBASE_CAPABILITIES=core|semantic`) the
+reference runs the same scripts on a store with no recorder — every api
+commit lands uncaptured — compares the projection with `commits`,
+`revisions` and `dispositions` emptied on both sides, and skips (reporting) a
+case with a retention or lifecycle step; the semantic module plays no part
+here (`history` compares as `full`). The runner prints `[mutate spec]
+composition=<name>: compared=<n> mapped=<n> skipped=<n>` for
+`pnpm conformance` and refuses `MUTATE_SPEC_UPDATE` under a reduced composition.
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
@@ -1787,6 +1798,15 @@ key-less part; the new key goes before the closing fence and the body's
 bytes stay), `::unset-fm-keeps-comments-and-fences`.
 
 ## Decisions
+
+- 2026-10-26, mutate 4.1 (store 17.3, Phase 5a of `docs/modular-core/`): **a
+  `docs_delete` leaves no `blocks` row** (D2 step two — the store's §5.6
+  procedure, which §6 `docs_delete` shares: the rows are deleted where
+  17.0–17.2 tombstoned them in place). The kernel is unchanged; the
+  projection moved by removal alone in `docs::delete-pools-nothing`,
+  `effects::remove-document-effect` and four `materialize::` cases. The
+  runner's composition rules are written down (§9) and it prints the ledger
+  line `pnpm conformance` reads.
 
 - 2026-10-20, mutate 4.0 (`spec/surface` 5.0 "underscore = engine"; with
   `spec/sync` 3.0, `spec/search` 3.0, `spec/graph` 2.0, `spec/cli` 5.0): the

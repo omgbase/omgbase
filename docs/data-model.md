@@ -93,7 +93,7 @@ CREATE TABLE blocks (
   trivia_hash   BLOB,                      -- sha256(trivia) (NULL = no trivia)
   created_at    TEXT NOT NULL,             -- the identity's birth, CARRIED across edits, resurrection (the pool row keeps it) and cross-doc moves (v17, D6)
   updated_at    TEXT NOT NULL,             -- the block's own last change: the commit's ts unless its verdict was `same` (14.2's rule)
-  deleted_at    TEXT                       -- tombstone; NULL = live (a tombstoned doc keeps its rows through Phase 3 — D2 step one)
+  deleted_at    TEXT                       -- always NULL since store 17.3: a tombstone DELETES the doc's rows (D2 step two); the column stays for the partial indexes
 );
 CREATE INDEX idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_at IS NULL;
 CREATE INDEX idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;

@@ -18,7 +18,7 @@ import {
   coreModeCheckpointExpect, deepEqualTol, runPure, runRegistryCase, runCheckpointCase, runAdapterCase, suiteKind, validateFixtureFile,
   type AdapterCase, type CheckpointCase, type CheckpointProjection, type FixtureCase, type FixtureFile, type PureCase, type RegistryCase,
 } from "./fixture.js";
-import { coreCapabilities, envCapabilities } from "../../src/core/capabilities/index.js";
+import { HAS_HISTORY, Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/sync → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/sync/", import.meta.url));
@@ -31,15 +31,15 @@ const UPDATE = (() => {
 })();
 
 /**
- * The core-only run (spec/sync §8, 4.2; spec/store §9.6 — `OMGBASE_CAPABILITIES=core`,
- * modular-core Phase 4b): the stores this runner opens have no recorder, so a
+ * The runs without the history module (spec/sync §8, 4.2; spec/store §9.6 —
+ * `OMGBASE_CAPABILITIES=core|semantic`, modular-core Phase 4b/5a): the stores
+ * this runner opens have no recorder, so a
  * checkpoint case's expectation is compared with its history tables emptied
  * (`coreModeCheckpointExpect`); every other suite runs unchanged. The fixtures
  * are the full composition's: `SYNC_SPEC_UPDATE` is refused under the override.
  */
-const CORE_MODE = envCapabilities() === coreCapabilities;
-if (CORE_MODE && UPDATE) throw new Error("SYNC_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
-const coreMapped: string[] = [];
+refuseUpdate(UPDATE, "SYNC_SPEC_UPDATE");
+const ledger = new Ledger("sync");
 
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
 const EPS = 1e-9;
@@ -178,9 +178,12 @@ async function run(suite: string, c: FixtureCase): Promise<void> {
   const { expect: actual, problems: found } = await evaluate(suite, c);
   expect(found).toEqual([]);
   let expected: unknown = c.expect;
-  if (CORE_MODE && suiteKind(suite) === "checkpoint") {
+  if (!HAS_HISTORY && suiteKind(suite) === "checkpoint") {
+    // spec/sync §8 "The core-only run": a composition without the history module compares the checkpoint cases with the history tables emptied.
     expected = coreModeCheckpointExpect(c.expect as CheckpointProjection);
-    coreMapped.push(`${suite}::${c.name}`);
+    ledger.record(`${suite}::${c.name}`, "history tables emptied");
+  } else {
+    ledger.record(`${suite}::${c.name}`);
   }
   const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) {
@@ -224,9 +227,6 @@ describe("sync spec fixtures (spec/sync/cases)", () => {
     });
   }
 
-  // The core-only run's ledger (spec/sync §8): which cases were compared with the history tables emptied.
-  afterAll(() => {
-    if (!CORE_MODE) return;
-    process.stderr.write(`[sync spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} checkpoint case(s) compared with the history tables emptied\n`);
-  });
+  // The composition ledger (spec/sync §8): one line `pnpm conformance` reads.
+  afterAll(() => ledger.report());
 });

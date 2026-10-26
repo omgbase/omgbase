@@ -13,9 +13,10 @@ import { fileURLToPath } from "node:url";
 import { ALL_DDL, DDL, HISTORY_DDL, SCHEMA_VERSION, SEMANTIC_DDL } from "../../src/core/store/schema.js";
 import { ARCHIVE_DDL } from "../../src/core/store/archive.js";
 import {
-  coreMode, coreModeProjection, deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, runsUnderCore, suiteKind, validateFixtureFile,
+  coreModeProjection, deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, runsUnderCore, suiteKind, validateFixtureFile,
 } from "./fixture.js";
-import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, ObserveCase, Projection, SchemaCase, SchemaFingerprint } from "./fixture.js";
+import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, MigrationExpect, ObserveCase, Projection, SchemaCase, SchemaFingerprint } from "./fixture.js";
+import { FULL, HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/store → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/store/", import.meta.url));
@@ -27,23 +28,33 @@ const UPDATE = (() => {
 })();
 
 /**
- * The core-only run (README §9.6; modular-core Phase 4a, `OMGBASE_CAPABILITIES=core`):
- * the stores have no recorder and no semantic module. The observation scripts
- * run unchanged and are compared on the core tables (`coreModeProjection`);
- * a case that needs the module is skipped and counted; `migrations.json` and
- * `cases/history/` are skipped wholesale; the schema fingerprint is compared
- * without the semantic bundle's tables. The fixtures are never regenerated from it.
+ * The four compositions (README §9.6; modular-core Phase 4a/5a, `OMGBASE_CAPABILITIES=
+ * core|history|semantic|full`). WITHOUT the history module (`core`, `semantic`):
+ * the observation scripts run unchanged and are compared on the core tables
+ * (`coreModeProjection`); a case that needs the module is skipped and counted;
+ * `migrations.json` and `cases/history/` are skipped wholesale. WITHOUT the
+ * semantic module (`core`, `history`): the schema fingerprint and a migration's
+ * table list are compared without the semantic bundle's tables (the bundle
+ * follows the composition, §3.1). The fixtures are never regenerated from a
+ * reduced composition; the ledger line feeds `pnpm conformance`.
  */
-const CORE_MODE = coreMode();
-if (CORE_MODE && UPDATE) throw new Error("STORE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
-const coreSkipped: string[] = [];
-const coreCompared: string[] = [];
+refuseUpdate(UPDATE, "STORE_SPEC_UPDATE");
+const ledger = new Ledger("store");
 
-/** The fingerprint without the semantic bundle (its tables and indexes), for the core-only run. */
+const SEMANTIC_TABLES = new Set(["embeddings", "doc_embeddings"]);
+
+/** The fingerprint without the semantic bundle (its tables and indexes), for a run without the semantic module. */
 function withoutSemanticTables(f: SchemaFingerprint): SchemaFingerprint {
-  const tables = Object.fromEntries(Object.entries(f.tables).filter(([name]) => name !== "embeddings" && name !== "doc_embeddings"));
-  const indexes = Object.fromEntries(Object.entries(f.indexes).filter(([, ix]) => ix.table !== "embeddings" && ix.table !== "doc_embeddings"));
+  const tables = Object.fromEntries(Object.entries(f.tables).filter(([name]) => !SEMANTIC_TABLES.has(name)));
+  const indexes = Object.fromEntries(Object.entries(f.indexes).filter(([, ix]) => !SEMANTIC_TABLES.has(ix.table)));
   return { ...f, tables, indexes };
+}
+
+/** A migration's expectation without the semantic bundle's tables (the `history` composition upgrades a 16.x database but executes no semantic DDL). */
+function withoutSemanticMigrationTables(e: MigrationExpect): MigrationExpect {
+  const tables = Object.fromEntries(Object.entries(e.tables).filter(([name]) => !SEMANTIC_TABLES.has(name)));
+  const rows = Object.fromEntries(Object.entries(e.rows).filter(([name]) => !SEMANTIC_TABLES.has(name)));
+  return { ...e, tables, rows };
 }
 
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
@@ -168,18 +179,25 @@ function sortKeys(v: unknown): unknown {
 
 function runCase(suite: string, c: FixtureCase, file: string): void {
   const kind = suiteKind(suite);
+  const id = `${suite}::${c.name}`;
   let expected: unknown = c.expect;
-  if (CORE_MODE) {
-    const id = `${suite}::${c.name}`;
-    if (kind === "migration" || kind === "edges" || file.startsWith("history/") || (kind === "observe" && !runsUnderCore(c as ObserveCase))) {
-      coreSkipped.push(id);
-      return;
-    }
-    if (kind === "schema") expected = withoutSemanticTables(c.expect as SchemaFingerprint);
-    if (kind === "observe") expected = coreModeProjection(c.expect as Projection);
-    coreCompared.push(id);
+  let mapped: string | false = false;
+  if (!HAS_HISTORY && (kind === "migration" || kind === "edges" || file.startsWith("history/") || (kind === "observe" && !runsUnderCore(c as ObserveCase)))) {
+    ledger.skip(id, "needs the history module");
+    return;
   }
-  const { expect: actual, problems: invariantProblems } = evaluate(suite, c);
+  // Without the semantic module the bundle's tables are not compared on EITHER
+  // side: a fresh database has none, a migrated one keeps whatever the older
+  // schema carried (a 16.x `doc_embeddings` stays — the bundle follows the
+  // composition, its tables are harmless when present, §3.1).
+  const stripSemantic = !HAS_SEMANTIC && (kind === "schema" || (kind === "migration" && !("error" in (c.expect as object))));
+  if (stripSemantic && kind === "schema") { expected = withoutSemanticTables(c.expect as SchemaFingerprint); mapped = "fingerprint without the semantic bundle"; }
+  if (stripSemantic && kind === "migration") { expected = withoutSemanticMigrationTables(c.expect as MigrationExpect); mapped = "table list without the semantic bundle"; }
+  if (!HAS_HISTORY && kind === "observe") { expected = coreModeProjection(c.expect as Projection); mapped = "core tables, holders bit 1 masked"; }
+  ledger.record(id, mapped);
+  const evaluated = evaluate(suite, c);
+  const actual = stripSemantic ? (kind === "schema" ? withoutSemanticTables(evaluated.expect as SchemaFingerprint) : withoutSemanticMigrationTables(evaluated.expect as MigrationExpect)) : evaluated.expect;
+  const invariantProblems = evaluated.problems;
   expect(invariantProblems).toEqual([]);
   const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) {
@@ -264,8 +282,6 @@ describe("store spec fixtures (spec/store/cases)", () => {
   }
 });
 
-// The core-only run's ledger (README §9.6): what ran against the core projection and what needed the module.
-afterAll(() => {
-  if (!CORE_MODE) return;
-  process.stderr.write(`[store spec] OMGBASE_CAPABILITIES=core: ${coreCompared.length} case(s) compared on the core tables, ${coreSkipped.length} skipped (need the history module):\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
-});
+// The composition ledger (README §9.6): compared as recorded / mapped / skipped — one line `pnpm conformance` reads.
+afterAll(() => ledger.report());
+if (FULL && UPDATE) process.stderr.write("[store spec] regenerated on the full composition\n");

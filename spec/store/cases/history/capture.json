@@ -381,48 +381,6 @@
             "created_at": "2026-10-20T10:02:00.000Z",
             "updated_at": "2026-10-20T10:02:00.000Z",
             "deleted_at": null
-          },
-          {
-            "block_id": "b_3",
-            "doc_id": "d_1",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "heading",
-            "attrs": {
-              "level": 1
-            },
-            "text": "B",
-            "raw": "# B",
-            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
-            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-10-20T10:03:00.000Z",
-            "updated_at": "2026-10-20T10:03:00.000Z",
-            "deleted_at": "2026-10-20T10:04:00.000Z"
-          },
-          {
-            "block_id": "b_4",
-            "doc_id": "d_1",
-            "parent_block": null,
-            "order_key": "W",
-            "ordinal": 1,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Only paragraph.",
-            "raw": "Only paragraph.",
-            "raw_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
-            "norm_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
-            "trivia": "\n",
-            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_at": "2026-10-20T10:03:00.000Z",
-            "updated_at": "2026-10-20T10:03:00.000Z",
-            "deleted_at": "2026-10-20T10:04:00.000Z"
           }
         ],
         "dispositions": [

@@ -8,12 +8,13 @@
 // GRAPH_SPEC_UPDATE=1 rewrites each case's `expect` in place from its steps
 // (inputs, notes and case order untouched) before running; the diff is
 // reviewed like code, because a changed `expect` *is* a graph change.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deepEqualTol, runCase as evaluateCase, validateFixtureFile } from "./fixture.js";
 import type { FixtureCase, FixtureFile } from "./fixture.js";
+import { Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/graph → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/graph/", import.meta.url));
@@ -26,6 +27,15 @@ const UPDATE = (() => {
 
 /** Nothing projected is floating point; compare exactly. */
 const EPS = 0;
+
+/**
+ * The four compositions (spec/graph §7; modular-core Phase 5a): nothing in this
+ * suite reaches a history or a vector table — the interval record left for the
+ * recorder's suite in 3.0 — so every case is compared AS RECORDED under every
+ * composition; the ledger line says so for `pnpm conformance`.
+ */
+refuseUpdate(UPDATE, "GRAPH_SPEC_UPDATE");
+const ledger = new Ledger("graph");
 
 function fileNames(): string[] {
   return existsSync(CASES_DIR) ? readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort() : [];
@@ -116,7 +126,8 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
-function runCase(c: FixtureCase): void {
+function runCase(c: FixtureCase, suite: string): void {
+  ledger.record(`${suite}::${c.name}`);
   const { expect: actual, problems: checkProblems } = evaluateCase(c);
   expect(checkProblems).toEqual([]);
   const diff = deepEqualTol(actual, c.expect, EPS);
@@ -155,8 +166,11 @@ describe("graph spec fixtures (spec/graph/cases)", () => {
     const stem = file.replace(/\.json$/, "");
     describe(stem, () => {
       for (const c of fixture.cases) {
-        it(`${stem}::${c.name}`, () => runCase(c));
+        it(`${stem}::${c.name}`, () => runCase(c, stem));
       }
     });
   }
 });
+
+// The composition ledger (spec/graph §7): one line `pnpm conformance` reads.
+afterAll(() => ledger.report());

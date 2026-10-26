@@ -5,7 +5,7 @@ import { ingestFile } from "../ingest.js";
 import { ensureRepo } from "../attach.js";
 import { readDocumentAtRevision, docsRead, currentFrontmatterRaw } from "../read/document.js";
 import { capabilitiesOf, requireHistory, requireSemantic, semanticOf } from "./registry.js";
-import { defaultCapabilities, envCapabilities } from "./default.js";
+import { defaultCapabilities, envCapabilities, envComposition, historyCapabilities, semanticCapabilities } from "./default.js";
 import { coreCapabilities } from "./core.js";
 import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX, SEMANTIC_DISABLED_MESSAGE } from "./errors.js";
 import { errorBody } from "../../mcp/errors.js";
@@ -126,7 +126,11 @@ describe("the core-only composition (OMGBASE_CAPABILITIES=core)", () => {
     expect(envCapabilities({ OMGBASE_CAPABILITIES: "" })).toBe(defaultCapabilities);
     expect(envCapabilities({ OMGBASE_CAPABILITIES: "full" })).toBe(defaultCapabilities);
     expect(envCapabilities({ OMGBASE_CAPABILITIES: "core" })).toBe(coreCapabilities);
-    expect(() => envCapabilities({ OMGBASE_CAPABILITIES: "history" })).toThrow(/not a composition/);
+    expect(envCapabilities({ OMGBASE_CAPABILITIES: "history" })).toBe(historyCapabilities);
+    expect(envCapabilities({ OMGBASE_CAPABILITIES: "semantic" })).toBe(semanticCapabilities);
+    expect(() => envCapabilities({ OMGBASE_CAPABILITIES: "none" })).toThrow(/not a composition/);
+    expect(envComposition({})).toBe("full");
+    expect(envComposition({ OMGBASE_CAPABILITIES: "core" })).toBe("core");
   });
 
   it("boots without either module: no provider, no cosine UDF, no recorder; a repository it creates runs with history disabled and reads/writes work (Phase 4a)", () => {

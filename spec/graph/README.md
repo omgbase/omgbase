@@ -315,6 +315,13 @@ from the `edges` rows; then deep-equal to `expect`. (The check that every
 `from_commit`/`to_commit` names a commit moved with the suite to
 `spec/store` §9.5.)
 
+**The four compositions** (`spec/store` §9.6; modular-core Phase 5a):
+nothing in this suite reaches a history or a vector table — the interval
+record left for the recorder's suite in 3.0 — so every case is compared AS
+RECORDED under `OMGBASE_CAPABILITIES=core|history|semantic|full`; the runner
+prints `[graph spec] composition=<name>: compared=<n> mapped=0 skipped=0` for
+`pnpm conformance` and refuses `GRAPH_SPEC_UPDATE` under a reduced composition.
+
 **Generation.** `packages/core/corpus/graph/spec.test.ts`,
 `GRAPH_SPEC_UPDATE=1`. **Allowlist (Rust).**
 `crates/omgbase-graph/tests/spec-passing.txt`, `GRAPH_SPEC_UPDATE=1`; the

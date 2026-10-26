@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "gone-path-tombstones-and-pools",
-      "notes": "README §5.6: a tombstone commit (reason 'observed deletion'), every live block pooled, blocks and doc get deleted_commit; no revision, no dispositions. Note the doc's `sections` rows survive the tombstone.",
+      "notes": "README §5.6: a tombstone commit (reason 'observed deletion'), every live block pooled, the doc's block rows DELETED (17.3, D2 step two — through 17.2 they stayed with `deleted_at`) and the doc row tombstoned (`deleted_at`); no revision, no dispositions. Note the doc's `sections` rows survive the tombstone.",
       "steps": [
         {
           "observe": {
@@ -184,70 +184,7 @@
             "entries": "[[\"b_0\",\"39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           }
         ],
-        "blocks": [
-          {
-            "block_id": "b_0",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "heading",
-            "attrs": {
-              "level": 1
-            },
-            "text": "H",
-            "raw": "# H",
-            "raw_hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
-            "norm_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_1",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "W",
-            "ordinal": 1,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Alpha paragraph about apples and orchards.",
-            "raw": "Alpha paragraph about apples and orchards.",
-            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_2",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "X",
-            "ordinal": 2,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Beta paragraph about bees and honey.",
-            "raw": "Beta paragraph about bees and honey.",
-            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "trivia": "\n",
-            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          }
-        ],
+        "blocks": [],
         "dispositions": [
           {
             "commit_id": "c_0",
@@ -837,48 +774,7 @@
             "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           }
         ],
-        "blocks": [
-          {
-            "block_id": "b_0",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Alpha paragraph about apples and orchards.",
-            "raw": "Alpha paragraph about apples and orchards.",
-            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_1",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "W",
-            "ordinal": 1,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Beta paragraph about bees and honey.",
-            "raw": "Beta paragraph about bees and honey.",
-            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "trivia": "\n",
-            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          }
-        ],
+        "blocks": [],
         "dispositions": [
           {
             "commit_id": "c_0",

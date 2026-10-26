@@ -10,7 +10,7 @@ import { tombstoneObservedDeletion } from "./tombstone.js";
 
 // Transaction hygiene in the observe path. Three groups of statements that
 // belong together run as one transaction: the observed-deletion tombstone
-// (commit row + pool snapshot + FTS deletes + tombstone UPDATEs, spec/store
+// (commit row + pool snapshot + FTS deletes + the block DELETE + the tombstone UPDATE, spec/store
 // §5.6), the `conflicted` flag with the revision pointers inside the ingest
 // commit (spec/store §5.4 step 14), and the checkpoint row with its pool sweep
 // (spec/sync §4.1). Each is checked two ways: `db.inTransaction` recorded at the
@@ -67,11 +67,12 @@ describe("the observed-deletion tombstone is one transaction (spec/store §5.6)"
     const { docId } = observeFile(store, repoId, "a.md", "# A\n\nbody\n");
     spyPrepare();
     observeDelete(store, repoId, "a.md");
-    const steps = ran.filter((r) => /INSERT INTO commits|INSERT OR REPLACE INTO resurrection_pool|blocks_fts\(blocks_fts, rowid, text\) VALUES\('delete'|UPDATE blocks SET deleted_at|UPDATE docs SET deleted_at/.test(r.sql));
+    const steps = ran.filter((r) => /INSERT INTO commits|INSERT OR REPLACE INTO resurrection_pool|blocks_fts\(blocks_fts, rowid, text\) VALUES\('delete'|DELETE FROM blocks WHERE doc_id|UPDATE docs SET deleted_at/.test(r.sql));
     expect(steps.length).toBeGreaterThanOrEqual(5);
     for (const s of steps) expect(s, s.sql).toMatchObject({ inTransaction: true });
-    const order = steps.map((s) => s.sql.match(/INSERT INTO commits|resurrection_pool|blocks_fts|UPDATE blocks|UPDATE docs/)![0]);
-    expect([...new Set(order)]).toEqual(["INSERT INTO commits", "resurrection_pool", "blocks_fts", "UPDATE blocks", "UPDATE docs"]);
+    const order = steps.map((s) => s.sql.match(/INSERT INTO commits|resurrection_pool|blocks_fts|DELETE FROM blocks|UPDATE docs/)![0]);
+    // 17.3 (D2 step two): the block rows are DELETED, not tombstoned.
+    expect([...new Set(order)]).toEqual(["INSERT INTO commits", "resurrection_pool", "blocks_fts", "DELETE FROM blocks", "UPDATE docs"]);
     // The sweep that follows is its own statement, outside the tombstone's transaction.
     const sweep = ranMatching("DELETE FROM resurrection_pool WHERE expires_ts");
     expect(sweep).toHaveLength(1);

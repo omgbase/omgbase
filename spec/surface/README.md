@@ -2167,6 +2167,25 @@ engine's working tree, so a write through one engine and a later read of
 `repos_status`/`sync_status` through the other exercises the sync tables
 (`file_stats`, checkpoints) both engines must maintain alike.
 
+**The four compositions (6.3, modular-core Phase 5a; `spec/store` §9.6).**
+`OMGBASE_CAPABILITIES` names `core | history | semantic | full` and the two
+mappings above are keyed on the MODULE the composition lacks, not on the
+name: without the semantic module (`core`, `history`) the
+`provider_unavailable` → `capability_unavailable { semantic, disabled }`
+mapping applies and a `reads.json` case with an `embed_enable`/`embed_disable`
+step is skipped; without the history module (`core`, `semantic`) the history
+mapping applies — `{ history, unavailable }` accepted, the core history state
+in `sync_status`, `coverage_from` `"<null>"` in the `version` shape, a
+`revisions` query accepted as answered — and a case with a retention or
+lifecycle step or a query reaching `revisions` is skipped. `history`
+compares every history case as `full` does; `semantic` every semantic one.
+Each runner (`spec.test.ts`, `interop.test.ts`) prints one ledger line
+`[surface spec] composition=<name>: compared=<n> mapped=<n> skipped=<n>`
+(`[interop spec] …`, where a pairing skipped for a missing peer counts as
+skipped) that `pnpm conformance` collects; the reference's matrix is in
+`docs/modular-core/README.md` §6a. The Rust harness mirrors the rule for the
+composition its binary runs with.
+
 ### 7.4 Peers
 
 The TypeScript harness finds the port at `$OMGBASE_RUST_BIN`, else
@@ -2596,6 +2615,12 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-26, surface 6.3 (store 17.3, Phase 5a of `docs/modular-core/`):
+  **the four compositions in the runners.** No surface change: §7.3's two
+  mappings are keyed on the absent module so `OMGBASE_CAPABILITIES=history|
+  semantic` run the same fixtures (`history`: 2 mapped / 1 skipped;
+  `semantic`: 11 mapped / 45 skipped; `core`: 11 / 46), each runner prints
+  the ledger line `pnpm conformance` reads. No fixture moved.
 - 2026-10-26, surface 6.2 (store 17.2, Phase 4b of `docs/modular-core/`;
   the contracts `phase-1-contracts.md` §2.1, §2.2, §7 resolution 11):
   **the read-state decision table, `docs_history`'s retained head, the

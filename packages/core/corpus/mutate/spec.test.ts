@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deepEqualTol, runCase, validateFixtureFile } from "./fixture.js";
 import type { FixtureCase, FixtureFile, Projection } from "./fixture.js";
-import { coreMode, isHistoryStep, isLifecycleStep } from "../store/fixture.js";
+import { isHistoryStep, isLifecycleStep } from "../store/fixture.js";
+import { HAS_HISTORY, Ledger, refuseUpdate } from "../composition.js";
 
 // packages/core/corpus/mutate → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/mutate/", import.meta.url));
@@ -26,18 +27,19 @@ const UPDATE = (() => {
 })();
 
 /**
- * The core-only run (spec/store README §9.6; modular-core Phase 4a,
- * `OMGBASE_CAPABILITIES=core`): the stores have no recorder, so every api
- * commit lands uncaptured. The same scripts run; the projection is compared on
- * the core tables (`commits`, `revisions`, `dispositions` are `[]` on both
- * sides); a case with a retention or lifecycle step is skipped and counted.
- * The fixtures are never regenerated from it.
+ * The runs without the history module (spec/store README §9.6; modular-core
+ * Phase 4a/5a, `OMGBASE_CAPABILITIES=core|semantic`): the stores have no
+ * recorder, so every api commit lands uncaptured. The same scripts run; the
+ * projection is compared on the core tables (`commits`, `revisions`,
+ * `dispositions` are `[]` on both sides); a case with a retention or lifecycle
+ * step is skipped and counted. The semantic module plays no part in this suite
+ * (`history` compares as `full`). The fixtures are never regenerated from a
+ * reduced composition.
  */
-const CORE_MODE = coreMode();
-if (CORE_MODE && UPDATE) throw new Error("MUTATE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
-const coreSkipped: string[] = [];
+refuseUpdate(UPDATE, "MUTATE_SPEC_UPDATE");
+const ledger = new Ledger("mutate");
 
-/** The projection the core-only run compares: the history tables emptied. */
+/** The projection a run without the history module compares: the history tables emptied. */
 function coreModeProjection(p: Projection): Projection {
   return { ...p, commits: [], revisions: [], dispositions: [] };
 }
@@ -136,9 +138,13 @@ function sortKeys(v: unknown): unknown {
 
 function run(c: FixtureCase, suite: string): void {
   let expected: Projection = c.expect;
-  if (CORE_MODE) {
-    if (c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
+  const id = `${suite}::${c.name}`;
+  if (!HAS_HISTORY) {
+    if (c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { ledger.skip(id, "needs the history module"); return; }
     expected = coreModeProjection(c.expect);
+    ledger.record(id, "history tables emptied");
+  } else {
+    ledger.record(id);
   }
   const { expect: actual, problems: invariantProblems } = runCase(c);
   expect(invariantProblems).toEqual([]);
@@ -184,8 +190,5 @@ describe("mutate spec fixtures (spec/mutate/cases)", () => {
   }
 });
 
-// The core-only run's ledger (spec/store README §9.6): what needed the history module.
-afterAll(() => {
-  if (!CORE_MODE) return;
-  process.stderr.write(`[mutate spec] OMGBASE_CAPABILITIES=core: compared on the core tables; ${coreSkipped.length} skipped (need the history module):\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
-});
+// The composition ledger (spec/store README §9.6): one line `pnpm conformance` reads.
+afterAll(() => ledger.report());

@@ -91,6 +91,7 @@ export class Store {
         this.migrateV17Feed();
         this.migrateV17Edges();
         this.migrateV17Manifest();
+        this.migrateV17Tombstones();
       }
       return;
     }
@@ -109,7 +110,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); this.migrateV17Manifest(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); this.migrateV17Manifest(); this.migrateV17Tombstones(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -869,6 +870,22 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
   // `embedding.provider` resolves for it, else `disabled` (resolution 1, no
   // vectors consulted). `alerts` starts empty. Idempotent: a repository with its
   // rows is left alone, so a 3a–3e-i database at 17 finishes the step on open.
+  /**
+   * spec/store §3.4 step 17 (15) / §5.6 (17.3, modular-core Phase 5a — D2 step
+   * two): a tombstoned document keeps no `blocks` row. A 17.0–17.2 engine
+   * tombstoned them in place (`deleted_at = ts`); every reader already
+   * filtered them out, the pool carries what revival needs and the claims
+   * (backfilled by `migrateV17Claims` from the rows BEFORE this runs, so a
+   * tombstoned block's identity stays claimed) are untouched. Runs after the
+   * claims step at both entry points; idempotent (nothing to delete on a 17.3
+   * database); a `blocks` table without the column (pre-17) is left to step 17.
+   */
+  private migrateV17Tombstones(): void {
+    const cols = this.db.pragma("table_info(blocks)") as { name: string }[];
+    if (!cols.some((c) => c.name === "deleted_at")) return;
+    this.db.prepare("DELETE FROM blocks WHERE deleted_at IS NOT NULL").run();
+  }
+
   private migrateV17Manifest(): void {
     const db = this.db;
     if (!this.tableExists("repos")) return;

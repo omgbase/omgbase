@@ -1688,6 +1688,33 @@ OMGBASE_CAPABILITIES: "core" }` driving the core-only override),
 `mutate.json`, `docs.json`, `shell.json`, `sync.json`, `admin.json` (`init`,
 `source`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`).
 
+**The four compositions (5.3, modular-core Phase 5a; `spec/store` §9.6).**
+The runner's own `OMGBASE_CAPABILITIES` (`core | history | semantic | full`)
+reaches every binary it spawns — added to the base environment below, before
+the case's own `env`, which still wins — so the SAME cases run against the
+composition named. The fixtures are the full composition's record; under a
+reduced one a case is **skipped** (and counted) when its inputs or its
+recorded outputs carry an OBSERVABLE of the absent module, and every other
+case must pass unchanged. The classifier reads the case, never the run, and
+is textual and conservative: without the history module a case is skipped
+when any step's argv names a verb of `log`, `hist`, `diff`, `history` or a
+flag of `--history`, `--at`, or when its stdin, `files`, `sql` or recorded
+`stdout`/`stderr` match the history wire — a recorder table name (`commits`,
+`revisions`, `dispositions`, `block_changes`, `tree_nodes`, `blobs`,
+`edge_transitions`, `archives`), the recorder's disposition summary (` — <n>
+inserted|edited|…`), `"history":{"state":"enabled`, `history enabled`, a
+non-null `coverage_from`, `"writer_requires":true`, `capture complete`,
+`history unavailable`, `writer_refused`, `capability_unavailable`,
+`revision`; without the semantic module when argv names `embed` or `find`, or
+the text matches the semantic wire — `queued`, a non-zero `embedQueue`,
+`embeddings`/`doc_embeddings`, `"semantic":{"state":"enabled`, `embedding`,
+`provider_unavailable`, `capability_unavailable`, `semantic(`. The runner
+prints one ledger line `[cli spec] composition=<name>: compared=<n> mapped=0
+skipped=<n>` that `pnpm conformance` collects (the reference: `core` 381 /
+182, `history` 508 / 55, `semantic` 414 / 149 of 563 cases); `CLI_SPEC_UPDATE`
+is refused under a reduced composition. The Rust runner mirrors the
+classifier word for word for the composition its binary runs with.
+
 **The workspace.** A case runs in a fresh directory `<tmp>` (the harness's
 scratch path, canonicalized — macOS's temp dir is a symlink):
 
@@ -2102,6 +2129,13 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.3 (store 17.3 Phase 5a, surface 6.3, sync 4.3): **the four
+  compositions in the runner** (§8) — the textual classifier that skips a
+  case carrying an observable of the absent module, the ledger line, the
+  composition passed through the base environment. No verb changed; one
+  fixture moved by the store's D2 step two alone (`admin::doctor-size-after-
+  rm`: the size table counts 315 `blocks` rows after the `rm`, not 327 — a
+  tombstoned document keeps no block row, `spec/store` §5.6).
 - 2026-10-26, cli 5.2 (store 17.2 Phase 4b, surface 6.2, sync 4.2): `history`
   gains `purge [--before <ts>]`, `embed` gains `enable [--provider <p>]` /
   `disable` (§6), `doctor --size` gains the feed-cap advice line read from

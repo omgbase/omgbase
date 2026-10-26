@@ -12,7 +12,7 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
 // live, queryable, FTS-indexed ghost.
 //
 // This mirrors the DB effects of the API delete path (mutate/docs.ts::docsDelete)
-// — mint a commit, drop FTS rows, tombstone the doc's live blocks + the doc row —
+// — mint a commit, drop FTS rows, delete the doc's block rows + tombstone the doc row —
 // with two deliberate differences:
 //   1. origin is "observed", not "api": the engine witnessed the disk change; it
 //      did not author it (`appendFeedRow`'s origin; ingestFile defaults to
@@ -27,8 +27,8 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
 //      consumes the pool to resurrect ids when the file reappears). Pooling with the
 //      standard ~30-day expiry keeps sweepResurrectionPool semantics intact.
 //
-// Transaction: the commit row, the pool snapshot, the FTS deletes and the two
-// tombstone UPDATEs are ONE `store.write` transaction (spec/store §5.6) — a
+// Transaction: the commit row, the pool snapshot, the FTS deletes, the block
+// DELETE and the tombstone UPDATE are ONE `store.write` transaction (spec/store §5.6) — a
 // failure midway leaves the doc live with no commit minted, never a doc whose
 // blocks are pooled but still indexed, or tombstoned under a commit that is
 // not there. better-sqlite3 nests an inner `transaction` as a savepoint, so this
@@ -39,9 +39,9 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
 /**
  * Tombstone a doc the engine observed as gone from its source (deleted on disk /
  * left the scope). Pools the doc's live blocks for later resurrection, then drops
- * FTS rows and tombstones the blocks + the doc with an "observed"-origin commit.
- * Returns the minted commit id. Idempotent-safe: if the doc has no live blocks the
- * UPDATEs simply affect zero rows.
+ * FTS rows, deletes the block rows (D2 step two, 17.3) and tombstones the doc with
+ * an "observed"-origin commit. Returns the minted commit id. Idempotent-safe: if
+ * the doc has no live blocks the DELETE and the UPDATE simply affect zero rows.
  */
 export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string, batchId: string | null = null): string {
   return store.write((db) => {
@@ -65,11 +65,15 @@ export function tombstoneObservedDeletion(store: Store, repoId: string, docId: s
     ).run(ts, expires, docId);
 
     // Drop FTS index rows (external-content: delete with the original text before the
-    // blocks change), then tombstone the live blocks and the doc row (spec/store
-    // §5.6, 17.0: `deleted_at = ts`, `updated_at = ts` — liveness is a change of
-    // the document's own; the head is KEPT and no new one is minted, D11).
+    // blocks change), then DELETE the doc's block rows and tombstone the doc row
+    // (spec/store §5.6, 17.3 — D2 step two: deleted content is history; the
+    // recorder already holds the last captured revision of the head, the pool
+    // holds what revival needs, the claims stay — the core keeps no tombstoned
+    // `blocks` row; 17.0–17.2 kept them with `deleted_at = ts`). The doc row:
+    // `deleted_at = ts`, `updated_at = ts` — liveness is a change of the
+    // document's own; the head is KEPT and no new one is minted (D11).
     ftsDeleteDoc(db, docId);
-    db.prepare("UPDATE blocks SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL").run(ts, docId);
+    db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
     db.prepare("UPDATE docs SET deleted_at = ?, updated_at = ? WHERE doc_id = ?").run(ts, ts, docId);
 
     return commit.commitId;

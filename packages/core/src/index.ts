@@ -267,10 +267,12 @@ export {
   type SizeReport, type SizeCategory, type SizeCategoryReport, type SizeTable, type SizeFile, type SizeArchived, type SizeRetention, type VacuumResult,
 } from "./core/store/size.js";
 export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/fts.js";
+// Fault injection outside the fixture runners (modular-core Phase 5a): `OMGBASE_FAULT=<site>[:<nth>]`.
+export { FAULT_ENV, FAULT_SITES, InjectedFault, armedFault, faultPoint, resetFaults, faultPasses, type FaultSite } from "./core/fault.js";
 // The capability seams (modular-core Phase 1, docs/modular-core/README.md §5–§6): the interfaces the core calls,
 // the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
 export {
-  defaultCapabilities, coreCapabilities, envCapabilities, CAPABILITIES_ENV, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
+  defaultCapabilities, coreCapabilities, historyCapabilities, semanticCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, CAPABILITIES_ENV, COMPOSITIONS, type Composition, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE,
   CaptureFailed, captureFailedMessage,
   type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,

@@ -3191,7 +3191,7 @@
     },
     {
       "name": "delete-pools-nothing",
-      "notes": "§6 + §10 Pinned: one api commit `delete <path>`, blocks and doc tombstoned with it, the file removed — and NO resurrection_pool rows.",
+      "notes": "§6 + §10 Pinned: one api commit `delete <path>`, the doc tombstoned and its block rows deleted with it (17.3, D2 step two), the file removed — and NO resurrection_pool rows.",
       "steps": [
         {
           "observe": {
@@ -3252,70 +3252,7 @@
             "deleted_at": "2026-09-26T10:01:00.000Z"
           }
         ],
-        "blocks": [
-          {
-            "block_id": "b_0",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "heading",
-            "attrs": {
-              "level": 1
-            },
-            "text": "Title",
-            "raw": "# Title",
-            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
-            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_1",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "W",
-            "ordinal": 1,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "First paragraph.",
-            "raw": "First paragraph.",
-            "raw_hash": "98ea01bc109a52fdf7145c10c648e8b27b8ebc877aaa79405f20b044ecfcacaa",
-            "norm_hash": "98ea01bc109a52fdf7145c10c648e8b27b8ebc877aaa79405f20b044ecfcacaa",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_2",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "X",
-            "ordinal": 2,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Second paragraph.",
-            "raw": "Second paragraph.",
-            "raw_hash": "3fc3deaa2b3609eb7d096478e4e522fc071348be1b8e116ce204cff63c08af80",
-            "norm_hash": "3fc3deaa2b3609eb7d096478e4e522fc071348be1b8e116ce204cff63c08af80",
-            "trivia": "\n",
-            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          }
-        ],
+        "blocks": [],
         "commits": [
           {
             "commit_id": "c_0",

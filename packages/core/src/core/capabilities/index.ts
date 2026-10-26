@@ -3,7 +3,7 @@ export type {
   RevisionTransition, CapturedRevision, RevisionQueryRow, SemanticVec, BlockContextInput, BlockContextResolver,
 } from "./types.js";
 export { bindCapabilities, capabilitiesOf, requireHistory, requireSemantic, semanticOf, claimsOf } from "./registry.js";
-export { defaultCapabilities, envCapabilities, CAPABILITIES_ENV } from "./default.js";
+export { defaultCapabilities, historyCapabilities, semanticCapabilities, envCapabilities, envComposition, compositionCapabilities, compositionHasHistory, compositionHasSemantic, CAPABILITIES_ENV, COMPOSITIONS, type Composition } from "./default.js";
 export { coreCapabilities } from "./core.js";
 export {
   CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, HISTORY_WRITER_REQUIRED_MESSAGE, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE, semanticUnavailableMessage,

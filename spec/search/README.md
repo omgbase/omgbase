@@ -335,6 +335,19 @@ revisions, ctx invalidation on heading rename, whole vs pooled by budget,
 pooling math, foreign-model isolation), `rank.json` (vector ordering and
 ties, hybrid fusion, each boost, resolve locators).
 
+**The four compositions** (`spec/store` §9.6; modular-core Phase 5a). The
+history module plays no part in this suite (no step reaches a history table;
+`history` compares as `full`). WITHOUT the semantic module
+(`OMGBASE_CAPABILITIES=core|history`): the pure cases (`sanitize`, `cosine`)
+run unchanged; an observation script with a `drain`, a `resolve` or a `search`
+carrying `semantic` needs the provider and is skipped (36 of the reference's
+51 scripts); the text-only scripts run and are compared with the four
+semantic projections — `embed_tasks`, `doc_tasks`, `embeddings`,
+`doc_embeddings` — EMPTIED on both sides (no vector table exists; the runner
+computes none of them). The runner prints `[search spec] composition=<name>:
+compared=<n> mapped=<n> skipped=<n>` for `pnpm conformance` and refuses
+`SEARCH_SPEC_UPDATE` under a reduced composition.
+
 **Generation.** `packages/core/corpus/search/spec.test.ts`,
 `SEARCH_SPEC_UPDATE=1`; the reference installs the fixture embedder as its
 provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`

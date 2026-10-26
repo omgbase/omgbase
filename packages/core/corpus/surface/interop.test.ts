@@ -31,9 +31,9 @@ import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { Store } from "../../src/core/store/store.js";
 import { createFixtureRepo } from "../store/fixture.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
-import { coreCapabilities, envCapabilities } from "../../src/core/capabilities/index.js";
+import { COMPOSITION, HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 import {
-  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, coreModeInteropExpect, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, toRpcErrorOutcome, validateFixtureFile,
+  CORPUS_TS, FIXTURE_REPO_SLUG, cmpBytes, compositionInteropExpect, deepEqualTol, describeChange, readCorpusFromDisk, sortKeys, toReadOutcome, toRpcErrorOutcome, validateFixtureFile,
   type InteropCall, type InteropCase, type InteropSuite, type ReadOutcome, type ToolResult,
 } from "./fixture.js";
 
@@ -49,18 +49,20 @@ const UPDATE = (() => {
 const SKIP_MISSING = process.env.OMGBASE_INTEROP === "skip";
 
 /**
- * The core-only run (README §7.3; modular-core Phase 3e-ii, `OMGBASE_CAPABILITIES=core`):
- * every peer this harness spawns inherits the variable, so the TypeScript peer
- * serves the composition without the semantic module and `read-query`'s
- * `semantic(…)` step answers `capability_unavailable { semantic, disabled }`
- * where the fixture holds `provider_unavailable`. The runner maps the
- * expectation (never the fixture), reports how many outcomes it mapped, and is
- * never regenerated from this run. A peer that does not honor the variable
- * fails its pairs here, as a divergence should.
+ * The reduced compositions (README §7.3; modular-core Phase 3e-ii → 5a,
+ * `OMGBASE_CAPABILITIES=core|history|semantic`): every peer this harness spawns
+ * inherits the variable, so the TypeScript peer serves the composition named —
+ * without the semantic module `read-query`'s `semantic(…)` step answers
+ * `capability_unavailable { semantic, disabled }` where the fixture holds
+ * `provider_unavailable`; without the history module the history tools answer
+ * `{ history, unavailable }`. The runner maps the expectation
+ * (`compositionInteropExpect`, never the fixture), reports how many outcomes it
+ * mapped, and is never regenerated from a reduced run. A peer that does not
+ * honor the variable fails its pairs here, as a divergence should.
  */
-const CORE_MODE = envCapabilities() === coreCapabilities;
-if (CORE_MODE && UPDATE) throw new Error("SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
-const coreMapped: string[] = [];
+refuseUpdate(UPDATE, "SURFACE_SPEC_UPDATE");
+const FLAGS = { history: HAS_HISTORY, semantic: HAS_SEMANTIC };
+const ledger = new Ledger("interop");
 
 /** Nothing projected is floating point except search scores; compare within 1e-9. */
 const EPS = 1e-9;
@@ -420,6 +422,7 @@ describe("surface interop (spec/surface §7, cases/interop.json)", () => {
       const name = `interop::${c.name} [${w}→${r}]`;
       const missing = [...new Set([w, r])].filter((e) => !PEERS[e].available);
       if (missing.length > 0 && SKIP_MISSING) {
+        ledger.skip(name, `${missing.join("/")} peer not built [OMGBASE_INTEROP=skip]`);
         it.skip(`${name} — skipped: ${missing.map((e) => `${e} peer not built (${PEERS[e].build})`).join("; ")} [OMGBASE_INTEROP=skip]`, () => {});
         continue;
       }
@@ -429,13 +432,10 @@ describe("surface interop (spec/surface §7, cases/interop.json)", () => {
         }
         const run = await runCase(suite.corpus, c, PEERS[w], PEERS[r]);
         const context = (): string => `\n--- writer (${w}) stderr ---\n${clip(run.stderr.writer, 3000)}\n--- reader (${r}) stderr ---\n${clip(run.stderr.reader, 3000)}`;
-        let expected = c.expect;
-        if (CORE_MODE) {
-          const asSteps = (calls: InteropCall[] | undefined) => (calls ?? []).map((k) => ("tool" in k ? { read: { tool: k.tool, args: k.args } } : { read: { tool: k.method, args: {} } }));
-          const mapped = coreModeInteropExpect(c.expect, { writes: asSteps(c.writes), reads: asSteps(c.reads) }, { writes: run.writes, reads: run.reads });
-          if (mapped.mapped > 0) coreMapped.push(`${name} (${mapped.mapped} outcome${mapped.mapped === 1 ? "" : "s"})`);
-          expected = mapped.expect;
-        }
+        const asSteps = (calls: InteropCall[] | undefined) => (calls ?? []).map((k) => ("tool" in k ? { read: { tool: k.tool, args: k.args } } : { read: { tool: k.method, args: {} } }));
+        const mapped = compositionInteropExpect(c.expect, FLAGS, { writes: asSteps(c.writes), reads: asSteps(c.reads) }, { writes: run.writes, reads: run.reads });
+        ledger.record(name, mapped.mapped > 0 ? `${mapped.mapped} outcome${mapped.mapped === 1 ? "" : "s"}` : false);
+        const expected = mapped.expect;
         const dw = deepEqualTol(run.writes, expected.writes, EPS);
         if (dw !== null) expect(sortKeys(run.writes), `writes: ${dw}${context()}`).toEqual(sortKeys(expected.writes));
         const dr = deepEqualTol(run.reads, expected.reads, EPS);
@@ -445,9 +445,6 @@ describe("surface interop (spec/surface §7, cases/interop.json)", () => {
   }
 });
 
-// The core-only run's ledger (README §7.3): which outcomes answered
-// `capability_unavailable` instead of the fixture's full-composition one.
-afterAll(() => {
-  if (!CORE_MODE) return;
-  process.stderr.write(`[surface interop] OMGBASE_CAPABILITIES=core: ${coreMapped.length} pairing(s) mapped provider_unavailable to capability_unavailable { semantic, disabled }:\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n`);
-});
+// The composition ledger (README §7.3): compared / mapped pairings, and the pairings skipped for a missing peer — one line `pnpm conformance` reads.
+afterAll(() => ledger.report());
+void COMPOSITION;

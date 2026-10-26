@@ -3,6 +3,7 @@ import { sha256 } from "../hash.js";
 import { effectiveSettingsOf } from "./settings.js";
 import { capabilitiesOf } from "../capabilities/registry.js";
 import { CapabilityUnavailable, CaptureFailed, captureFailedMessage, type CapabilityName } from "../capabilities/errors.js";
+import { faultPoint } from "../fault.js";
 import type { CommitRecord, HistoryPurgeOutcome, HistoryRecorder } from "../capabilities/types.js";
 import { clearAlert, raiseAlert } from "./alerts.js";
 import { HISTORY_DDL } from "./schema.js";
@@ -318,6 +319,7 @@ export function historyReader(db: Database): HistoryRecorder | null {
  */
 export function capture<T>(path: string | null, body: () => T): T {
   try {
+    faultPoint("recorder.capture"); // OMGBASE_FAULT (Phase 5a): a fault here is a recorder throw
     return body();
   } catch (e) {
     if (e instanceof CaptureFailed) throw e;

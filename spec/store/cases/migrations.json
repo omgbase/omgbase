@@ -1475,27 +1475,6 @@
               "created_at": "2026-10-17T10:01:00.000Z",
               "updated_at": "2026-10-17T10:01:00.000Z",
               "deleted_at": null
-            },
-            {
-              "block_id": "b_3",
-              "repo_id": "rp_1",
-              "doc_id": "d_2",
-              "parent_block": null,
-              "order_key": "V",
-              "ordinal": 0,
-              "depth": 0,
-              "ancestor_path": "/",
-              "type": "heading",
-              "attrs": "{\"level\":1}",
-              "text": "Gone",
-              "raw": "# Gone",
-              "raw_hash": "ff",
-              "norm_hash": "12",
-              "trivia": null,
-              "trivia_hash": null,
-              "created_at": "2026-10-17T10:00:00.000Z",
-              "updated_at": "2026-10-17T10:00:00.000Z",
-              "deleted_at": "2026-10-17T10:02:00.000Z"
             }
           ],
           "resurrection_pool": [

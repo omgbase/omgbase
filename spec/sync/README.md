@@ -494,10 +494,12 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   pruned feed (the deletion the pruned rows carried reaches the source only
   through the rescan).
 
-**The core-only run (4.2; `spec/store` §9.6 — `OMGBASE_CAPABILITIES=core`,
-modular-core Phase 4b).** The checkpoint runner must be able to run the SAME
-scripts on a composition without the history module and compare them. The
-rule, mirrored by both runners: (1) nothing is skipped — every step of
+**The runs without the history module (4.2; generalised 4.3 — `spec/store`
+§9.6, `OMGBASE_CAPABILITIES=core|semantic`; modular-core Phase 4b/5a).** The
+checkpoint runner must be able to run the SAME scripts on a composition
+without the history module and compare them; the semantic module plays no
+part in this spec, so `history` compares as `full`. The rule, mirrored by
+both runners: (1) nothing is skipped — every step of
 `checkpoint.json` (`disk`, `rm`, `sweep`, `checkpoint`, `drift`, `recover`,
 `rebuild_stats`) is the core's, and `pure.json`, `registry.json` and the
 `adapter` cases of `protocol.json` touch no history table, so they run
@@ -511,7 +513,9 @@ compared as recorded (a repository born `disabled` writes the same feed,
 heads and claims; the projection carries no `id_claims`); (3) the store's
 invariants are the core's alone (`spec/store` §9.6); (4) the runner reports
 how many cases it compared this way; (5) `SYNC_SPEC_UPDATE` is refused under
-the override — the fixtures are the full composition's. The reference:
+the override — the fixtures are the full composition's; (6) the runner prints
+one ledger line `[sync spec] composition=<name>: compared=<n> mapped=<n>
+skipped=<n>` (4.3) that `pnpm conformance` collects. The reference:
 `packages/core/corpus/sync/spec.test.ts` (`coreModeCheckpointExpect`); the
 coordinator cases of `@omgbase/sync`'s runner read the feed, never a history
 table, and need no mapping.
@@ -623,6 +627,13 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.3 (store 17.3 Phase 5a of `docs/modular-core/`): **the
+  four compositions.** The §8 rule is keyed on the absent history module
+  (`core`, `semantic`: 19 checkpoint cases mapped; `history`: as `full`) and
+  the runner prints the ledger line. Three checkpoint fixtures moved by the
+  store's D2 step two alone (`checkpoint::delete-tombstones-and-pools`,
+  `drift-counts`, `recover-heals-diverged-and-lists-missing`: a tombstoned
+  document's `blocks` rows are gone — `spec/store` §5.6).
 - 2026-10-26, sync 4.2 (store 17.2 Phase 4b of `docs/modular-core/`): **the
   core-only run** (§8) — the checkpoint cases compare with the history tables
   emptied under `OMGBASE_CAPABILITIES=core`; no case or outcome moved (the

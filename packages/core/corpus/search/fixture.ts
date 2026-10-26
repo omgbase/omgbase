@@ -20,6 +20,7 @@
 // never wired into a product path.
 import { createHash } from "node:crypto";
 import { Store } from "../../src/core/store/store.js";
+import { semanticOf } from "../../src/core/capabilities/registry.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
@@ -365,6 +366,9 @@ async function runResolve(store: Store, repoId: string, provider: EmbeddingProvi
 
 /** The §7 projection after the last step. */
 export function projectSearch(store: Store, repoId: string, provider: EmbeddingProvider): Omit<Projection, "steps"> {
+  // A composition without the semantic module (README §7, Phase 5a): no vector
+  // table exists and the task builders read them — the four projections are empty.
+  if (semanticOf(store.db) === null) return { embed_tasks: [], doc_tasks: [], embeddings: [], doc_embeddings: [] };
   // `(path, ordinal)` is the reference's order; nested blocks share ordinals
   // with top-level ones, so ties are broken by block_id (bytewise) to make the
   // projection deterministic. Only equal-ordinal neighbours ever move.

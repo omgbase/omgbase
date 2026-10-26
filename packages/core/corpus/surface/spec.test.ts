@@ -14,13 +14,12 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
-import { envCapabilities } from "../../src/core/capabilities/default.js";
 import { isHistoryStep, isLifecycleStep } from "../store/fixture.js";
-import { coreCapabilities } from "../../src/core/capabilities/core.js";
+import { HAS_HISTORY, HAS_SEMANTIC, Ledger, refuseUpdate } from "../composition.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { buildServer, toolDescriptions, toolNames, TOOLS_PROFILES, type ToolsProfile } from "../../src/mcp/server.js";
 import {
-  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, isEmbedStep, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
+  carriesCorpus, compositionQueryExpect, compositionReadsExpect, deepEqualTol, describeChange, diffQueryExpect, isEmbedStep, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
   type CursorCase, type CursorSuite, type ExamplesSuite, type FixtureFile, type LoadedCorpus, type ProfilesSuite, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
 } from "./fixture.js";
 
@@ -65,15 +64,17 @@ const UPDATE = (() => {
 })();
 
 /**
- * The core-only run (modular-core Phase 2 gate, `OMGBASE_CAPABILITIES=core`):
- * the stores have no semantic module, the semantic cases' expectations are
- * mapped to `capability_unavailable { semantic, disabled }` (fixture.ts), the
- * count is reported, and the fixtures are never regenerated from it.
+ * The four compositions (README §7.3; modular-core Phase 2 → 5a,
+ * `OMGBASE_CAPABILITIES=core|history|semantic|full`): without the semantic
+ * module the semantic cases' expectations are mapped to `capability_unavailable
+ * { semantic, disabled }` and the `embed_*` steps' cases skipped; without the
+ * history module the history reads are mapped (`compositionReadsExpect`) and a
+ * case with a retention/lifecycle step or a query reaching `revisions` skipped.
+ * The ledger is reported; the fixtures are never regenerated from a reduced run.
  */
-const CORE_MODE = envCapabilities() === coreCapabilities;
-if (CORE_MODE && UPDATE) throw new Error("SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
-const coreMapped: string[] = [];
-const coreSkipped: string[] = [];
+refuseUpdate(UPDATE, "SURFACE_SPEC_UPDATE");
+const FLAGS = { history: HAS_HISTORY, semantic: HAS_SEMANTIC };
+const ledger = new Ledger("surface");
 
 /** Nothing projected is floating point except search scores; compare within 1e-9. */
 const EPS = 1e-9;
@@ -198,31 +199,28 @@ for (const file of files) {
 // ---- per-case ------------------------------------------------------------------
 
 function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
-  // Phase 4a: a query that reaches `revisions` reads the recorder's rows — nothing on the core-only composition; skipped and counted.
-  if (CORE_MODE && touchesRevisions(c.query)) { coreSkipped.push(`${suite}::${c.name}`); return; }
+  const id = `${suite}::${c.name}`;
+  // Phase 4a: a query that reaches `revisions` reads the recorder's rows — nothing without the history module; skipped and counted.
+  if (!HAS_HISTORY && touchesRevisions(c.query)) { ledger.skip(id, "reaches the revisions root"); return; }
   const { expect: actual, problems: runnerProblems } = runQueryCase(corpus, c);
   expect(runnerProblems, "planned and in-memory engines must agree").toEqual([]);
-  let expected = c.expect;
-  if (CORE_MODE) {
-    const m = coreModeQueryExpect(c.expect);
-    if (m.mapped) coreMapped.push(`${suite}::${c.name}`);
-    expected = m.expect;
-  }
+  const m = compositionQueryExpect(c.expect, FLAGS);
+  ledger.record(id, m.mapped ? "semantic → capability_unavailable" : false);
+  const expected = m.expect;
   const diff = diffQueryExpect(actual, expected);
   if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
 }
 
 async function runReads(c: ReadsCase, suite: string, corpus?: Record<string, string>): Promise<void> {
-  // Phase 4a: a retention step (export, attach, plan, read_at) needs the history module; skipped and counted.
-  if (CORE_MODE && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s) || isEmbedStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
+  const id = `${suite}::${c.name}`;
+  // Phase 4a: a retention step (export, attach, plan, read_at) or a lifecycle step needs the history module; the embed steps the semantic one. Skipped and counted.
+  if (!HAS_HISTORY && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { ledger.skip(id, "needs the history module"); return; }
+  if (!HAS_SEMANTIC && c.steps.some((s) => isEmbedStep(s))) { ledger.skip(id, "needs the semantic module"); return; }
   const { expect: actual, problems: runnerProblems } = await runReadsCase(c, corpus);
   expect(runnerProblems).toEqual([]);
-  let expected = c.expect;
-  if (CORE_MODE) {
-    const m = coreModeReadsExpect(c.expect, c.steps, actual.steps);
-    if (m.mapped > 0) coreMapped.push(`${suite}::${c.name} (${m.mapped} step outcome${m.mapped === 1 ? "" : "s"})`);
-    expected = m.expect;
-  }
+  const m = compositionReadsExpect(c.expect, FLAGS, c.steps, actual.steps);
+  ledger.record(id, m.mapped > 0 ? `${m.mapped} step outcome${m.mapped === 1 ? "" : "s"}` : false);
+  const expected = m.expect;
   const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
 }
@@ -320,9 +318,5 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
   }
 });
 
-// The core-only run's ledger: which semantic cases answered `capability_unavailable`
-// instead of the fixture's full-composition outcome (none on the full run).
-afterAll(() => {
-  if (!CORE_MODE) return;
-  process.stderr.write(`[surface spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} case(s) mapped (semantic → capability_unavailable { semantic, disabled }; history reads → { history, unavailable }, the core history state), ${coreSkipped.length} skipped (the revisions root, retention steps):\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
-});
+// The composition ledger (README §7.3): compared / mapped / skipped — one line `pnpm conformance` reads.
+afterAll(() => ledger.report());

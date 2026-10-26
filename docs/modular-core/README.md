@@ -466,7 +466,7 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
-## 6a. Status (2026-10-26) — Phases 1–3 complete; Phase 4 complete in the reference, 4b's Rust twin and Phase 5 open
+## 6a. Status (2026-10-26) — Phases 1–4 complete in both engines; Phase 5 open (5a, the qualification tooling, in the reference)
 
 **Phases 1–3 are complete in both engines** (store 17.0, released as
 `a91354b`): the seams (Phase 1), the semantic bundle behind
@@ -475,8 +475,8 @@ inline bytes, identity claims, self-contained recovery, the slim feed,
 open-only edges and the D9 drops, the manifest and the alert channel) —
 every current read is off the history tables, the DDL is three bundles.
 
-**Phase 4 makes capture optional**, in two slices (4a complete in both
-engines; 4b in the TypeScript reference, its Rust twin next):
+**Phase 4 makes capture optional**, in two slices (both complete in both
+engines — `02d310c` is 4b's Rust twin, `fce6810` the stacked 17.2 release):
 
 - **4a (this slice; TypeScript reference + spec, `spec/store` 17.1,
   `spec/surface` 6.1, `spec/sync` 4.1, `spec/cli` 5.1):** the composition —
@@ -527,12 +527,84 @@ engines; 4b in the TypeScript reference, its Rust twin next):
   **real-corpus measurement** (`scripts/baseline/real-corpus.mjs`,
   `baseline.md` §3): on this repository's `docs/` the database is **10.4×
   the Markdown with history on and 6.7× with it off** (−36 %), 16.5× / 12.8×
-  with the embedder. Not done here (Phase 5 inherits): **D2 step two** — the
-  core still writes a tombstoned document's `blocks` rows (their deletion
-  from the core is the last write the recorder should own); the migration of
-  real repositories under the four compositions and fault injection; the
-  Rust twin of this slice follows as its own task, the fixtures of this slice
-  are its contract.
+  with the embedder. Phase 5 inherited **D2 step two**, the migration of
+  real repositories under the four compositions and fault injection.
+
+**Phase 5 qualifies the migration** — "migrate copies of real repositories,
+preserve history and identities, test restart/rollback procedures, run
+mixed-engine clients and profile benchmarks; gate: four-profile conformance,
+fault injection, compatible-open behaviour and measured amplification all
+pass" — in two slices: 5a builds the tooling and the remaining code (this
+slice; TypeScript reference + spec, `spec/store` 17.3, `spec/surface` 6.3,
+`spec/sync` 4.3, `spec/cli` 5.3, `spec/mutate` 4.1; no real repository is
+touched), 5b runs it on copies of Brendan's workspaces.
+
+- **5a (this slice).** (1) **D2 step two's write side**: both tombstone paths
+  — the observed deletion (`sync/tombstone.ts`) and `docs_delete`
+  (`mutate/commit.ts`) — now `DELETE FROM blocks WHERE doc_id = ?` where
+  17.0–17.2 tombstoned the rows in place; the recorder needed no new seam
+  (the head's last captured revision IS the deleted content, and §5.6 step 4
+  already hands it the `deleted` transition), the pool row already carried
+  `created_at` (D6) so revival works with history off unchanged, and the only
+  reader of a tombstoned row — the primary-key eviction on resurrection —
+  finds nothing to evict. A 17.0–17.2 database's tombstoned rows leave on its
+  first open as a 17.x finish step after the claims backfill (`spec/store`
+  §3.4 step 17 (15)), not as a `gc` count. 18 fixtures moved by removal
+  alone (store 8, mutate 6, sync 3, cli 1 — the size table after an `rm`);
+  C7 restated. No on-disk change —
+  `blocks.deleted_at` stays, always NULL. (2) **The four compositions**:
+  `OMGBASE_CAPABILITIES=core | history | semantic | full`
+  (`historyCapabilities`, `semanticCapabilities`, `envComposition`); every
+  fixture runner — store, mutate, surface, graph, sync, search, cli, interop —
+  runs under all four with compare/map/skip rules keyed on the ABSENT module
+  and prints one ledger line; **`pnpm conformance`** (`scripts/conformance.mjs`)
+  runs the eight suites under the four compositions sequentially and prints
+  the matrix below. (3) **Fault injection outside the runners**:
+  `OMGBASE_FAULT=<site>[:<nth>]` at five sites both engines spell alike —
+  `recorder.capture`, `feed.append`, `commit.after-commit`,
+  `materialize.before-write`, `materialize.after-write` (`core/fault.ts`,
+  `spec/store` §9.7); `src/fault-injection.test.ts` drives a write through
+  each and pins the acceptance-matrix outcome (rolled back / recoverable /
+  alert raised / retried). (4) **The qualification script**
+  `scripts/qualify/migrate-copy.mjs` — copy (the original never opened),
+  BEFORE/AFTER snapshots, the migration through the current engine, the §7
+  step-4 diff (bytes per document, id/parent/order maps, property and link
+  rows, pending rows, claims), CAS and recovery on the copy, compatible-open
+  through the Rust binary and an older `--before-bin`, the six-category size
+  table, and `--compositions` for the measured amplification; its test
+  (`node --test scripts/qualify/migrate-copy.test.mjs`) runs it on the spec's
+  16.x pre-state and on a harness-built 17.x workspace. (5) **The runbook**
+  `docs/modular-core/migration-runbook.md`: the §7 steps as an operator
+  procedure, the rollback rule, the engine × schema compatibility matrix,
+  the one-line invocation 5b runs. **The Rust twin** mirrors the tombstone
+  DELETE and the finish step, the four compositions in its runners (the
+  cells below are its contract), the five fault sites, and may be pointed at
+  the same script as `--rust-bin`.
+
+  The conformance matrix of the reference (`pnpm conformance`, Rust pairings
+  skipped — compared / mapped / skipped per cell; see each spec's runner
+  section for what "mapped" means there):
+
+  | suite | core | history | semantic | full |
+  | --- | --- | --- | --- | --- |
+  | store | 0/66/61 | 119/8/0 | 1/65/61 | 127/0/0 |
+  | mutate | 0/284/0 | 284/0/0 | 0/284/0 | 284/0/0 |
+  | surface | 511/11/46 | 565/2/1 | 512/11/45 | 568/0/0 |
+  | graph | 146/0/0 | 146/0/0 | 146/0/0 | 146/0/0 |
+  | sync | 61/19/0 | 80/0/0 | 61/19/0 | 80/0/0 |
+  | search | 32/15/36 | 32/15/36 | 83/0/0 | 83/0/0 |
+  | cli | 380/0/183 | 508/0/55 | 413/0/150 | 563/0/0 |
+  | interop (ts→ts; 87 Rust pairings skipped) | 14/15/87 | 28/1/87 | 15/14/87 | 29/0/87 |
+
+  32 cells green (`conformance: 32 cells green`, 2026-10-26, ≈ 20 minutes
+  wall-clock — the CLI suite is 4–5 of them per composition).
+
+- **5b (next).** Run `node scripts/qualify/migrate-copy.mjs --workspace <dir>
+  --rust-bin target/release/omgbase --compositions` on copies of the real
+  workspaces (with `--before-bin` where the writing `omg` is still
+  installed), record the size tables (numbers only) in `baseline.md`, cut
+  over per the runbook, and run `OMGBASE_FAULT` drives against a copy under
+  each engine.
 
 ## 7. Index
 
@@ -540,6 +612,9 @@ engines; 4b in the TypeScript reference, its Rust twin next):
   (`packages/core/src`).
 - `docs/modular-core/inventory-rust.md` — the Rust engine, 195 rows (the ten
   crates), with the TS/Rust comparison in its §5.
+- `docs/modular-core/migration-runbook.md` — the plan's §7 migration and
+  rollback procedure as an operator runbook over
+  `scripts/qualify/migrate-copy.mjs`, with the compatibility matrix.
 - `docs/modular-core/baseline.md` — the measurements; the harness is
   `scripts/baseline/modular-core-baseline.mjs` (`--engine rust|ts --docs 200
   --edits 50`), the recorded runs `docs/modular-core/baseline/

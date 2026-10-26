@@ -218,6 +218,10 @@ export function baseEnv(tmp: string): NodeJS.ProcessEnv {
   env.TMPDIR = join(tmp, "tmp");
   env.OMGBASE_SPEC_MINTER = "sequential";
   env.OMGBASE_SPEC_CLOCK = SPEC_CLOCK;
+  // spec/cli §8 "The four compositions" (modular-core Phase 5a): the runner's own
+  // `OMGBASE_CAPABILITIES` reaches every spawned binary, so the SAME cases run
+  // against the composition named; a case's own `env` (below) still wins.
+  if (process.env.OMGBASE_CAPABILITIES) env.OMGBASE_CAPABILITIES = process.env.OMGBASE_CAPABILITIES;
   return env;
 }
 

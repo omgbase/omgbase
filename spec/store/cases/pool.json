@@ -2214,7 +2214,7 @@
     },
     {
       "name": "resurrect-into-another-doc-evicts-tombstoned-row",
-      "notes": "README §5.4 step 8: a pooled id resurrected into the existing doc b.md evicts a.md's (tombstoned) blocks row for it; a.md keeps its other tombstoned row and the pool keeps the other id.",
+      "notes": "README §5.4 step 8: a pooled id resurrected into the existing doc b.md re-homes the id; since 17.3 (D2 step two) a.md's tombstone left no `blocks` row to evict, so the eviction finds nothing and `created_at` comes from the pool row; the pool keeps the other id. (The case name records the 17.0–17.2 behaviour it was written against.)",
       "steps": [
         {
           "observe": {
@@ -2546,26 +2546,6 @@
           }
         ],
         "blocks": [
-          {
-            "block_id": "b_0",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Alpha paragraph about apples and orchards.",
-            "raw": "Alpha paragraph about apples and orchards.",
-            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
           {
             "block_id": "b_2",
             "doc_id": "d_1",
@@ -3033,46 +3013,6 @@
           }
         ],
         "blocks": [
-          {
-            "block_id": "b_0",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "V",
-            "ordinal": 0,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Alpha paragraph about apples and orchards.",
-            "raw": "Alpha paragraph about apples and orchards.",
-            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
-            "trivia": "\n\n",
-            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
-          {
-            "block_id": "b_1",
-            "doc_id": "d_0",
-            "parent_block": null,
-            "order_key": "W",
-            "ordinal": 1,
-            "depth": 0,
-            "ancestor_path": "/",
-            "type": "paragraph",
-            "attrs": {},
-            "text": "Beta paragraph about bees and honey.",
-            "raw": "Beta paragraph about bees and honey.",
-            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
-            "trivia": "\n",
-            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
-            "created_at": "2026-09-26T10:00:00.000Z",
-            "updated_at": "2026-09-26T10:00:00.000Z",
-            "deleted_at": "2026-09-26T10:01:00.000Z"
-          },
           {
             "block_id": "b_2",
             "doc_id": "d_1",

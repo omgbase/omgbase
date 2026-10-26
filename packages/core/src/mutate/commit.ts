@@ -16,6 +16,7 @@ import type { InboundLink } from "../graph/inbound-links.js";
 import { makeKnownIdResolver } from "./known-ids.js";
 import type { DocStore } from "./doc-store.js";
 import { MutationError, type MutDoc } from "./tree.js";
+import { faultPoint } from "../core/fault.js";
 
 // The commit of a request (spec/mutate §4 step 5, 2.2; spec/store §5.4 "The
 // api path", §5.7 "Materialization", 14.0): ONE SQLite transaction, ONE
@@ -126,7 +127,7 @@ export type Effect =
    *  `from` with `currentRev` (else `stale_plan`; gone → `doc_missing`) and no
    *  live document is at `to` (else `path_taken`). */
   | { kind: "move_path"; docId: string; from: string; to: string; currentRev: string | null; inbound: InboundLink[]; bytes: string }
-  /** Tombstone the document and its live blocks under the commit. `pool: false`
+  /** Tombstone the document and delete its block rows under the commit. `pool: false`
    *  is `docs_delete` (an intentional removal pools nothing, spec/mutate §10);
    *  `pool: true` is the observed deletion's snapshot (spec/store §5.6 — the
    *  observe path still commits through `sync/tombstone.ts`; the flag is here
@@ -376,6 +377,10 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
     throw err;
   }
 
+  // OMGBASE_FAULT (Phase 5a): the transaction is durable, no file is written yet —
+  // the pending rows owe the files; `recoverRepo` / the next sweep replays them.
+  faultPoint("commit.after-commit");
+
   // Phase B' — the file half, in effect order, each row deleted as its file
   // lands; the row itself says which bytes may be overwritten (`prior_hash`).
   // The stat cache follows only a file that landed: a path whose row was kept
@@ -584,12 +589,14 @@ export function currentTreeInput(db: Database, docId: string): TreeInputBlock[] 
   return build(null);
 }
 
-// Tombstone the document and its live blocks (spec/store §5.6, 17.0: `deleted_at
-// = ts` on the blocks and the doc, `updated_at = ts` on the doc — liveness is
-// a change of the document's own; the head is KEPT and no new one is minted,
-// D11); FTS rows drop with the blocks. `pool` snapshots the live blocks first,
-// each carrying its `created_at` (D6). The feed entry is `deleted` (no head,
-// no hash; spec/mutate §6 `docs_delete`).
+// Tombstone the document and DELETE its block rows (spec/store §5.6, 17.3 — D2
+// step two: deleted content is history, the recorder already holds the last
+// captured revision, the pool and the claims carry what revival and identity
+// need; 17.0–17.2 kept the rows with `deleted_at = ts`). The doc row gets
+// `deleted_at = ts`, `updated_at = ts` — liveness is a change of the document's
+// own; the head is KEPT and no new one is minted (D11); FTS rows drop with the
+// blocks. `pool` snapshots the live blocks first, each carrying its `created_at`
+// (D6). The feed entry is `deleted` (no head, no hash; spec/mutate §6 `docs_delete`).
 function tombstone(db: Database, repoId: string, commit: { epoch: string; seq: number }, ts: string, e: Extract<Effect, { kind: "tombstone" }>): void {
   appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: e.docId, path: e.path, head: null, hash: null, kind: "deleted" });
   if (e.pool) {
@@ -601,6 +608,6 @@ function tombstone(db: Database, repoId: string, commit: { epoch: string; seq: n
     ).run(ts, expires, e.docId);
   }
   ftsDeleteDoc(db, e.docId);
-  db.prepare("UPDATE blocks SET deleted_at = ? WHERE doc_id = ? AND deleted_at IS NULL").run(ts, e.docId);
+  db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(e.docId);
   db.prepare("UPDATE docs SET deleted_at = ?, updated_at = ? WHERE doc_id = ?").run(ts, ts, e.docId);
 }
