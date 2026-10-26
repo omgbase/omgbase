@@ -99,6 +99,7 @@ pub enum Consumer {
 }
 
 impl Consumer {
+    #[cfg_attr(not(feature = "json"), allow(dead_code))]
     const WORDS: &'static [&'static str] =
         &["collect", "exists", "none", "count", "first", "single"];
 
@@ -141,6 +142,7 @@ pub enum RelOp {
 }
 
 impl RelOp {
+    #[cfg_attr(not(feature = "json"), allow(dead_code))]
     const WORDS: &'static [&'static str] = &["==", "!=", "<", "<=", ">", ">="];
 
     /// The TS spelling: `"==" | "!=" | "<" | "<=" | ">" | ">="`.
@@ -200,6 +202,7 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
+    #[cfg_attr(not(feature = "json"), allow(dead_code))]
     const WORDS: &'static [&'static str] = &[
         "==", "!=", "<", "<=", ">", ">=", "is", "is not", "~", "~*", "!~", "!~*", "+", "-", "*",
         "/", "%",
@@ -293,6 +296,7 @@ pub enum UnaryOp {
 }
 
 impl UnaryOp {
+    #[cfg_attr(not(feature = "json"), allow(dead_code))]
     const WORDS: &'static [&'static str] = &["!", "-"];
 
     pub fn as_str(self) -> &'static str {
@@ -320,6 +324,7 @@ pub enum LogicalOp {
 }
 
 impl LogicalOp {
+    #[cfg_attr(not(feature = "json"), allow(dead_code))]
     const WORDS: &'static [&'static str] = &["&&", "||"];
 
     pub fn as_str(self) -> &'static str {
