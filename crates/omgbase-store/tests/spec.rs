@@ -37,6 +37,8 @@ use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map as JsonMap, Value as Json, json};
 
+use omgbase_store::manifest::{history_bundle_present, read_capability};
+
 const SPEC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/store");
 const CASES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/store/cases");
 const PASSING_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/spec-passing.txt");
@@ -90,6 +92,32 @@ const HISTORY_STEP_KINDS: [&str; 5] = [
 ];
 /// README §9.4 (15.0): `<dest>` stands for the case's archive directory in a projected path.
 const DEST_TOKEN: &str = "<dest>";
+
+/// README §9.4 (17.1, Phase 4a): the lifecycle steps and the fault device.
+const LIFECYCLE_STEP_KINDS: [&str; 3] = ["history_enable", "history_disable", "recorder_fault"];
+
+/// README §9.4 (17.1): the instant every fixture repository is born — the
+/// runner creates it under this clock, before any authored `ts`, so the
+/// manifest's coverage (`[{ from: <birth>, to: null }]`) covers the whole
+/// script and the history invariants apply to every captured document; it is
+/// also what `sync_status.capabilities.coverage_from` reads on the wire
+/// (`spec/surface` §6).
+const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
+
+/// README §9.6: the tables whose projection the core-only run compares.
+const CORE_PROJECTED_TABLES: [&str; 8] = [
+    "docs",
+    "feed",
+    "feed_entries",
+    "blocks",
+    "resurrection_pool",
+    "id_claims",
+    "sections",
+    "pending_materializations",
+];
+
+/// The fault's message, verbatim in the member's `error` (after `history capture of <path> failed: `).
+const RECORDER_FAULT_REASON: &str = "recorder fault (fixture device)";
 /// README §9.5 (17.0): an `edge_transitions` row as the recorder suite
 /// carries it — every column but `repo_id`.
 const EDGE_TRANSITION_FIELDS: [&str; 12] = [
@@ -145,7 +173,15 @@ fn case_keys(kind: Kind) -> &'static [&'static str] {
     match kind {
         Kind::Schema => &["name", "notes", "expect"],
         Kind::Migration => &["name", "notes", "setup", "user_version", "rows", "expect"],
-        Kind::Observe => &["name", "notes", "config", "minter", "steps", "expect"],
+        Kind::Observe => &[
+            "name",
+            "notes",
+            "config",
+            "minter",
+            "capabilities",
+            "steps",
+            "expect",
+        ],
         Kind::Edges => &["name", "notes", "config", "steps", "expect"],
     }
 }
@@ -159,6 +195,8 @@ fn stem_of(file: &str) -> &str {
 struct SpecCase {
     id: String,
     kind: Kind,
+    /// The path relative to `cases/` (`cases/history/` is skipped wholesale by the core-only run, README §9.6).
+    file: String,
     case: Json,
 }
 
@@ -219,10 +257,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         let keys: Vec<&String> = obj.keys().collect();
         if keys.len() != 1
             || !(["observe", "sweep", "gc", "exec", "remint_epoch"].contains(&keys[0].as_str())
-                || HISTORY_STEP_KINDS.contains(&keys[0].as_str()))
+                || HISTORY_STEP_KINDS.contains(&keys[0].as_str())
+                || LIFECYCLE_STEP_KINDS.contains(&keys[0].as_str()))
         {
             problems.push(format!(
-                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / `remint_epoch` / the retention steps (got {})",
+                "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / `remint_epoch` / the retention steps / the lifecycle steps (got {})",
                 keys.iter()
                     .map(|k| k.as_str())
                     .collect::<Vec<_>>()
@@ -237,6 +276,10 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         }
         if HISTORY_STEP_KINDS.contains(&keys[0].as_str()) {
             validate_history_body(&here, keys[0], body, problems);
+            continue;
+        }
+        if LIFECYCLE_STEP_KINDS.contains(&keys[0].as_str()) {
+            validate_lifecycle_body(&here, keys[0], body, problems);
             continue;
         }
         let ts_ok = body
@@ -532,6 +575,16 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
                 if let Some(config) = cobj.get("config") {
                     validate_config(&at, config, &mut problems);
                 }
+                if kind == Kind::Observe
+                    && let Some(caps) = cobj.get("capabilities")
+                    && !caps.as_object().is_some_and(|o| {
+                        o.len() == 1 && o.get("history").is_some_and(Json::is_boolean)
+                    })
+                {
+                    problems.push(format!(
+                        "{at}: `capabilities` is exactly {{ history: boolean }} (README §9.4, Phase 4a)"
+                    ));
+                }
                 step_count = validate_steps(&at, cobj.get("steps"), &mut problems);
             }
             Kind::Schema => {}
@@ -550,6 +603,7 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
         out.push(SpecCase {
             id: format!("{stem}::{name}"),
             kind,
+            file: file.to_owned(),
             case: c.clone(),
         });
     }
@@ -763,7 +817,13 @@ fn schema_fingerprint(conn: &Connection) -> Json {
 }
 
 fn run_schema_case() -> Json {
-    let store = Store::open_in_memory().expect("fresh store opens");
+    // Under the composition `OMGBASE_CAPABILITIES` names (README §9.6 rule
+    // (5): the core-only run's fresh database has no semantic bundle).
+    let store = Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
+    )
+    .expect("fresh store opens");
     schema_fingerprint(store.conn())
 }
 
@@ -862,6 +922,10 @@ fn outcome_json(o: &BatchOutcome) -> Json {
         BatchOutcome::Deleted(d) => {
             json!({ "path": d.path, "deleted": d.doc_id.is_some(), "doc": d.doc_id })
         }
+        // README §9.4 (Phase 4a): a member rolled back because its capture failed.
+        BatchOutcome::Failed(f) => {
+            json!({ "path": f.path, "failed": true, "doc": f.doc_id, "error": f.error })
+        }
         BatchOutcome::Observed(o) => json!({
             "path": o.path, "echo": o.echo, "doc": o.doc_id, "commit": o.commit_id, "rev": o.rev,
             "converged": o.converged, "conflicted": o.conflicted,
@@ -892,18 +956,400 @@ fn minter_of(c: &Json) -> Result<Box<dyn IdMinter>, String> {
     })
 }
 
-/// A fixture store: Phase 2's gate — `OMGBASE_CAPABILITIES=core` runs every
-/// observation script without the semantic bundle.
-fn fixture_store(minter: Box<dyn IdMinter>) -> Result<(Store, String), String> {
+/// A fixture store under the composition `OMGBASE_CAPABILITIES` names (README
+/// §9.6: `core` runs every observation script as a core-only build) and the
+/// case's repository under the fixture birth clock (README §9.4, 17.1) with
+/// the capture the case's `capabilities` key asks for (`{ history: false }` →
+/// born `disabled`; absent → on).
+fn fixture_store(minter: Box<dyn IdMinter>, history: bool) -> Result<(Store, String), String> {
     let mut store = Store::open_in_memory_with_capabilities(
         minter,
         omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
     let repo_id = store
-        .create_repo(FIXTURE_REPO_SLUG)
+        .create_repo_with(FIXTURE_REPO_SLUG, FIXTURE_BIRTH, history)
         .map_err(|e| e.to_string())?;
     Ok((store, repo_id))
+}
+
+/// The case's `capabilities.history` (README §9.4): on unless `{ history: false }`.
+fn case_history(c: &Json) -> bool {
+    c.get("capabilities")
+        .and_then(|caps| caps.get("history"))
+        .and_then(Json::as_bool)
+        .unwrap_or(true)
+}
+
+/// Is this process the core-only run (README §9.6, `OMGBASE_CAPABILITIES=core`)?
+fn core_mode() -> bool {
+    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+}
+
+/// README §9.6 rule (1): does the case run under the core-only composition —
+/// only `observe` / `sweep` / `remint_epoch` steps?
+fn runs_under_core(c: &Json) -> bool {
+    c["steps"].as_array().is_some_and(|steps| {
+        steps.iter().all(|s| {
+            s.as_object().is_some_and(|o| {
+                o.keys()
+                    .all(|k| k == "observe" || k == "sweep" || k == "remint_epoch")
+            })
+        })
+    })
+}
+
+/// README §9.6 rule (3): a projection reduced to what the core-only run
+/// compares — the core tables, `id_claims` with bit 1 masked (a claim the
+/// recorder alone held — `holders = 2` — drops out, since the core-only
+/// store never wrote it), and the history tables emptied.
+fn core_mode_projection(expect: &Json) -> Json {
+    let mut out = expect.clone();
+    let Some(obj) = out.as_object_mut() else {
+        return out;
+    };
+    for t in PROJECTED_TABLES {
+        if !CORE_PROJECTED_TABLES.contains(&t) {
+            obj.insert(t.to_owned(), Json::Array(Vec::new()));
+        }
+    }
+    if let Some(Json::Array(claims)) = obj.get("id_claims").cloned() {
+        let masked: Vec<Json> = claims
+            .into_iter()
+            .filter_map(|mut r| {
+                let holders = r.get("holders").and_then(Json::as_i64).unwrap_or(0) & 1;
+                if holders == 0 {
+                    return None;
+                }
+                r["holders"] = json!(holders);
+                Some(r)
+            })
+            .collect();
+        obj.insert("id_claims".to_owned(), Json::Array(masked));
+    }
+    out
+}
+
+/// README §9.6 rule (5): the schema fingerprint without the semantic
+/// bundle's tables and indexes (the bundle follows the composition).
+fn without_semantic_tables(f: &Json) -> Json {
+    let mut out = f.clone();
+    if let Some(tables) = out.get_mut("tables").and_then(Json::as_object_mut) {
+        tables.remove("embeddings");
+        tables.remove("doc_embeddings");
+    }
+    if let Some(indexes) = out.get_mut("indexes").and_then(Json::as_object_mut) {
+        let gone: Vec<String> = indexes
+            .iter()
+            .filter(|(_, ix)| {
+                matches!(
+                    ix.get("table").and_then(Json::as_str),
+                    Some("embeddings" | "doc_embeddings")
+                )
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in gone {
+            indexes.remove(&k);
+        }
+    }
+    out
+}
+
+// ---- the recorder fault device (README §9.4, Phase 4a) ------------------------------------
+//
+// `{ recorder_fault: { fail: true } }` wraps the store's recorder so that
+// every capture call (`record_commit`, `record_revision`,
+// `record_dispositions`, `record_edge_transitions`, `retarget_edges`) fails;
+// the next `observe` step then pins resolution 18 — the member is rolled back
+// (`{ path, failed: true, doc, error }`), the feed and every table stay as
+// they were, the next observe after `{ fail: false }` lands it. Test seam
+// only: the composition is swapped on the store (`Store::set_history`).
+
+/// The store's recorder behind a switch: with `fail` set every capture call
+/// fails with [`RECORDER_FAULT_REASON`]; the reads and the maintenance pass
+/// through. Installed once by the first `recorder_fault` step of a case and
+/// toggled after (the runner holds the switch).
+struct FaultyRecorder {
+    inner: Box<dyn omgbase_store::HistoryRecorder>,
+    fail: Rc<Cell<bool>>,
+}
+
+impl FaultyRecorder {
+    fn capture<T>(
+        &self,
+        body: impl FnOnce() -> omgbase_store::Result<T>,
+    ) -> omgbase_store::Result<T> {
+        if self.fail.get() {
+            return Err(omgbase_store::Error::Other(
+                RECORDER_FAULT_REASON.to_owned(),
+            ));
+        }
+        body()
+    }
+}
+
+impl omgbase_store::HistoryRecorder for FaultyRecorder {
+    fn record_commit(
+        &self,
+        tx: &Connection,
+        commit: &omgbase_store::CommitRecord<'_>,
+    ) -> omgbase_store::Result<()> {
+        self.capture(|| self.inner.record_commit(tx, commit))
+    }
+    fn record_revision(
+        &self,
+        tx: &Connection,
+        transition: &omgbase_store::RevisionTransition<'_>,
+    ) -> omgbase_store::Result<omgbase_store::RecordedRevision> {
+        self.capture(|| self.inner.record_revision(tx, transition))
+    }
+    fn record_dispositions(
+        &self,
+        tx: &Connection,
+        commit_id: &str,
+        rows: &[omgbase_store::DispositionRow],
+    ) -> omgbase_store::Result<()> {
+        self.capture(|| self.inner.record_dispositions(tx, commit_id, rows))
+    }
+    fn record_edge_transitions(
+        &self,
+        tx: &Connection,
+        commit_id: &str,
+        transitions: &omgbase_store::EdgeTransitions,
+    ) -> omgbase_store::Result<()> {
+        self.capture(|| {
+            self.inner
+                .record_edge_transitions(tx, commit_id, transitions)
+        })
+    }
+    fn retarget_edges(
+        &self,
+        tx: &Connection,
+        edge_ids: &[&str],
+        dst_node: &str,
+    ) -> omgbase_store::Result<()> {
+        self.capture(|| self.inner.retarget_edges(tx, edge_ids, dst_node))
+    }
+    fn read_at_revision(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+        rev_id: &str,
+    ) -> omgbase_store::Result<Option<omgbase_store::RevisionRead>> {
+        self.inner.read_at_revision(conn, doc_id, rev_id)
+    }
+    fn frontmatter_at_revision(
+        &self,
+        conn: &Connection,
+        rev_id: &str,
+    ) -> omgbase_store::Result<Option<String>> {
+        self.inner.frontmatter_at_revision(conn, rev_id)
+    }
+    fn disposition_counts(
+        &self,
+        conn: &Connection,
+        commit_id: &str,
+    ) -> omgbase_store::Result<Option<Vec<(String, i64)>>> {
+        self.inner.disposition_counts(conn, commit_id)
+    }
+    fn revision_rows(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+    ) -> omgbase_store::Result<Vec<omgbase_store::RevisionQueryRow>> {
+        self.inner.revision_rows(conn, repo_id)
+    }
+    fn doc_revision_rows(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+    ) -> omgbase_store::Result<Vec<omgbase_store::RevisionQueryRow>> {
+        self.inner.doc_revision_rows(conn, doc_id)
+    }
+    fn has_revision(&self, conn: &Connection, rev_id: &str) -> omgbase_store::Result<bool> {
+        self.inner.has_revision(conn, rev_id)
+    }
+    fn uncaptured_heads(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        since: &str,
+    ) -> omgbase_store::Result<i64> {
+        self.inner.uncaptured_heads(conn, repo_id, since)
+    }
+    fn baseline(
+        &self,
+        tx: &Connection,
+        commit: &omgbase_store::CommitRecord<'_>,
+    ) -> omgbase_store::Result<usize> {
+        self.inner.baseline(tx, commit)
+    }
+    fn rebuild_projection(&self, tx: &Connection) -> omgbase_store::Result<()> {
+        self.inner.rebuild_projection(tx)
+    }
+    fn gc(&self, tx: &Connection) -> omgbase_store::Result<omgbase_store::GcResult> {
+        self.inner.gc(tx)
+    }
+    fn gc_dry_run(&self, conn: &Connection) -> omgbase_store::Result<omgbase_store::GcResult> {
+        self.inner.gc_dry_run(conn)
+    }
+    fn count_same_dispositions(&self, conn: &Connection) -> omgbase_store::Result<usize> {
+        self.inner.count_same_dispositions(conn)
+    }
+    fn size_figures(
+        &self,
+        conn: &Connection,
+        now: &str,
+    ) -> omgbase_store::Result<omgbase_store::HistorySizeFigures> {
+        self.inner.size_figures(conn, now)
+    }
+    fn retention_policy(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        override_: Option<&Json>,
+    ) -> omgbase_store::Result<omgbase_store::RetentionPolicy> {
+        self.inner.retention_policy(conn, repo_id, override_)
+    }
+    fn retention_plan(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        opts: &RetentionOptions,
+    ) -> omgbase_store::Result<omgbase_store::RetentionPlan> {
+        self.inner.retention_plan(conn, repo_id, opts)
+    }
+    fn export_history(
+        &self,
+        conn: &Connection,
+        mint: &mut omgbase_store::Mint<'_>,
+        repo_id: &str,
+        opts: &ExportOptions,
+    ) -> omgbase_store::Result<omgbase_store::ExportResult> {
+        self.inner.export_history(conn, mint, repo_id, opts)
+    }
+    fn attach_archive(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        target: &Path,
+    ) -> omgbase_store::Result<omgbase_store::AttachResult> {
+        self.inner.attach_archive(conn, repo_id, target)
+    }
+    fn detach_archive(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        r: &str,
+    ) -> omgbase_store::Result<Option<String>> {
+        self.inner.detach_archive(conn, repo_id, r)
+    }
+    fn list_archives(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        dest: Option<&Path>,
+    ) -> omgbase_store::Result<Vec<omgbase_store::ArchiveListing>> {
+        self.inner.list_archives(conn, repo_id, dest)
+    }
+}
+
+/// `{ recorder_fault: { fail } }`: install the switch on the first call,
+/// then flip it; returns whether a fault is now in force (`false` when the
+/// store has no recorder to fault).
+fn set_recorder_fault(store: &mut Store, fail: bool, switch: &mut Option<Rc<Cell<bool>>>) -> bool {
+    if switch.is_none() {
+        let Some(inner) = store.set_history(None) else {
+            return false;
+        };
+        let flag = Rc::new(Cell::new(false));
+        store.set_history(Some(Box::new(FaultyRecorder {
+            inner,
+            fail: Rc::clone(&flag),
+        })));
+        *switch = Some(flag);
+    }
+    let flag = switch.as_ref().expect("installed above");
+    flag.set(fail);
+    fail
+}
+
+/// README §9.4 (Phase 4a; §5.9): `history_enable` / `history_disable` through
+/// the production verbs, the fault device through the test seam.
+fn run_lifecycle_step(
+    store: &mut Store,
+    repo_id: &str,
+    kind: &str,
+    body: &Json,
+    fault: &mut Option<Rc<Cell<bool>>>,
+) -> Result<Json, String> {
+    match kind {
+        "history_enable" => {
+            let ts = body["ts"].as_str().ok_or("history_enable.ts")?;
+            let writer_requires = body
+                .get("writer_requires")
+                .and_then(Json::as_bool)
+                .unwrap_or(true);
+            let r = store
+                .enable_history(repo_id, ts, writer_requires)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "history": r.to_json() }))
+        }
+        "history_disable" => {
+            let ts = body["ts"].as_str().ok_or("history_disable.ts")?;
+            let r = store
+                .disable_history(repo_id, ts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "history": r.to_json() }))
+        }
+        _ => {
+            let fail = body["fail"].as_bool().ok_or("recorder_fault.fail")?;
+            Ok(json!({ "fault": set_recorder_fault(store, fail, fault) }))
+        }
+    }
+}
+
+/// README §9.4 (Phase 4a): the lifecycle steps' bodies — `history_enable {
+/// ts, writer_requires? }`, `history_disable { ts }`, `recorder_fault { fail }`.
+fn validate_lifecycle_body(here: &str, kind: &str, body: &Json, problems: &mut Vec<String>) {
+    let Some(b) = body.as_object() else {
+        problems.push(format!("{here}: {kind} must be an object"));
+        return;
+    };
+    match kind {
+        "history_enable" => {
+            if b.keys().any(|k| k != "ts" && k != "writer_requires") {
+                problems.push(format!(
+                    "{here}: history_enable takes `ts` and an optional `writer_requires`"
+                ));
+            }
+            if !b.get("ts").and_then(Json::as_str).is_some_and(is_spec_ts) {
+                problems.push(format!(
+                    "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                ));
+            }
+            if b.get("writer_requires").is_some_and(|w| !w.is_boolean()) {
+                problems.push(format!("{here}: `writer_requires` must be a boolean"));
+            }
+        }
+        "history_disable" => {
+            if b.keys().any(|k| k != "ts") {
+                problems.push(format!("{here}: history_disable takes only `ts`"));
+            } else if !b.get("ts").and_then(Json::as_str).is_some_and(is_spec_ts) {
+                problems.push(format!(
+                    "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                ));
+            }
+        }
+        _ => {
+            if b.keys().any(|k| k != "fail") || !b.get("fail").is_some_and(Json::is_boolean) {
+                problems.push(format!(
+                    "{here}: recorder_fault takes only a boolean `fail`"
+                ));
+            }
+        }
+    }
 }
 
 /// The step loop every observation-script suite of this spec shares (§9.4,
@@ -922,8 +1368,27 @@ fn run_steps(
     // The case's archive directory (README §9.4, 15.0): created on the first
     // retention step, removed with the store.
     let mut dest: Option<ArchiveDir> = None;
+    // The recorder fault device's switch (README §9.4, Phase 4a), installed
+    // by the first `recorder_fault` step.
+    let mut fault: Option<Rc<Cell<bool>>> = None;
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
-        if let Some(kind) = HISTORY_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
+        if let Some(kind) = LIFECYCLE_STEP_KINDS
+            .iter()
+            .find(|k| step.get(**k).is_some())
+        {
+            // README §5.9 (Phase 4a): `history enable` (the baseline commit
+            // and the open interval; every invariant holds after it),
+            // `history disable`, the fault device (no check after it).
+            steps.push(
+                run_lifecycle_step(store, repo_id, kind, &step[*kind], &mut fault)
+                    .map_err(|e| format!("step {i}: {e}"))?,
+            );
+            if *kind != "recorder_fault" {
+                for p in check_invariants(store, repo_id, &last_source) {
+                    problems.push(format!("after step {i}: {p}"));
+                }
+            }
+        } else if let Some(kind) = HISTORY_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
             let dir =
                 dest.get_or_insert_with(|| ArchiveDir::new(c["name"].as_str().unwrap_or("case")));
             steps.push(
@@ -949,7 +1414,16 @@ fn run_steps(
             let outcomes = store
                 .observe_batch(repo_id, &items, ts, config)
                 .map_err(|e| format!("step {i}: {e}"))?;
+            // A member rolled back by a capture failure (Phase 4a) left the
+            // store as it was: its source is not what the rows hold.
+            let failed: HashSet<&str> = outcomes
+                .iter()
+                .filter_map(|o| o.as_failed().map(|f| f.path.as_str()))
+                .collect();
             for it in &items {
+                if failed.contains(it.path.as_str()) {
+                    continue;
+                }
                 match &it.source {
                     None => {
                         last_source.remove(&it.path);
@@ -989,7 +1463,7 @@ fn run_steps(
             steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at"
+                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at, history_enable, history_disable, recorder_fault"
             ));
         }
     }
@@ -1002,7 +1476,7 @@ fn run_steps(
 
 fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
     let config = config_from(c.get("config"))?;
-    let (mut store, repo_id) = fixture_store(minter_of(c)?)?;
+    let (mut store, repo_id) = fixture_store(minter_of(c)?, case_history(c))?;
     let (steps, problems) = run_steps(&mut store, &repo_id, c, &config)?;
     let mut expect = JsonMap::new();
     expect.insert("steps".to_owned(), Json::Array(steps));
@@ -1025,7 +1499,7 @@ fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
 /// every `edges` row an open transition (§8 H6, in `check_invariants`).
 fn run_edge_transitions_case(c: &Json) -> Result<ObserveEvaluation, String> {
     let config = config_from(c.get("config"))?;
-    let (mut store, repo_id) = fixture_store(Box::new(SequentialMinter::new()))?;
+    let (mut store, repo_id) = fixture_store(Box::new(SequentialMinter::new()), true)?;
     let (_, mut problems) = run_steps(&mut store, &repo_id, c, &config)?;
     let conn = store.conn();
     let commit_rank: HashMap<String, usize> = all_rows(
@@ -1424,12 +1898,22 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .map(|d| str_of(d, "doc_id").to_owned())
         .collect();
 
+    // Phase 4a: a database no repository of which ever enabled capture has no
+    // history table — every history projection is `[]` then.
+    let history = history_bundle_present(conn).expect("sqlite_master reads");
+    let rows = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Vec<Json> {
+        if history {
+            query_rows(conn, sql, params)
+        } else {
+            Vec::new()
+        }
+    };
+
     // `commits` by (`ts`, `seq`) — the same order as by `seq` while one epoch
     // exists (I4), and the chronological one across an epoch re-mint (§7.5),
     // whose commits restart at `seq = 1`; the rank in this list orders the
     // dispositions and block_changes by commit.
-    let commits = query_rows(
-        conn,
+    let commits = rows(
         "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
         &[&repo_id],
     );
@@ -1454,8 +1938,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         &[&repo_id],
     );
 
-    let mut revisions = query_rows(
-        conn,
+    let mut revisions = rows(
         "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
@@ -1467,7 +1950,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
             .then(int_of(a, "seq").cmp(&int_of(b, "seq")))
     });
 
-    let mut blobs: Vec<Json> = {
+    let mut blobs: Vec<Json> = if history {
         let mut stmt = conn
             .prepare("SELECT hash, size, bytes FROM blobs")
             .expect("valid SQL");
@@ -1480,9 +1963,11 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .expect("query runs")
         .map(|r| r.expect("row reads"))
         .collect()
+    } else {
+        Vec::new()
     };
     blobs.sort_by(|a, b| str_of(a, "hash").cmp(str_of(b, "hash")));
-    let mut tree_nodes = query_rows(conn, "SELECT hash, entries FROM tree_nodes", &[]);
+    let mut tree_nodes = rows("SELECT hash, entries FROM tree_nodes", &[]);
     tree_nodes.sort_by(|a, b| str_of(a, "hash").cmp(str_of(b, "hash")));
 
     let mut blocks = Vec::new();
@@ -1506,8 +1991,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
                     .cmp(str_of(b, "kind").as_bytes()),
             )
     };
-    let mut dispositions: Vec<Json> = query_rows(
-        conn,
+    let mut dispositions: Vec<Json> = rows(
         "SELECT x.commit_id, x.block_id, x.kind, x.confidence, x.reason, x.matcher_v, x.detail
          FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?1",
         &[&repo_id],
@@ -1516,8 +2000,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     .map(|r| with_json_column(r, "detail"))
     .collect();
     dispositions.sort_by(by_commit_block_kind);
-    let mut block_changes = query_rows(
-        conn,
+    let mut block_changes = rows(
         "SELECT bc.block_id, bc.commit_id, bc.kind FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1",
         &[&repo_id],
     );
@@ -1569,8 +2052,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     );
     // 15.0: the recorded segments, `path` reduced to its file name (the
     // directory is the run's) and `bytes` omitted (a page layout, not a behavior).
-    let archives: Vec<Json> = query_rows(
-        conn,
+    let archives: Vec<Json> = rows(
         "SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ?1 ORDER BY seq_lo, segment_id",
         &[&repo_id],
     )
@@ -1718,19 +2200,57 @@ fn check_invariants(
         }
     }
 
-    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> =
+    // ---- the composition and the coverage (README §8, Phase 4a) -------------------------------
+    // The history invariants are checked when the store carries the module
+    // and the bundle's tables exist (`reader`); within them, what capture
+    // promised is bounded by the repository's COVERAGE intervals (§3.1
+    // `capabilities.coverage`): a document whose head was minted outside
+    // coverage owes no revision (H1/H3 skip it unless the baseline captured
+    // it), a feed row outside coverage owes no `commits` row (H4),
+    // `commits.seq` is dense only when capture was never off (I4), and the
+    // edge record agrees with the open edges only while capture is on (H6).
+    // A core-only run checks C*, F* and A1 alone.
+    let reader = store.history_reader().ok().flatten().is_some();
+    let manifest = read_capability(conn, repo_id, "history").ok().flatten();
+    let coverage: Vec<(String, Option<String>)> = manifest
+        .as_ref()
+        .map(|m| {
+            m.coverage
+                .iter()
+                .map(|i| (i.from.clone(), i.to.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let capture_on = manifest
+        .as_ref()
+        .is_some_and(|m| m.state == omgbase_store::ManifestState::Enabled);
+    let in_coverage = |ts: &str| -> bool {
+        coverage
+            .iter()
+            .any(|(from, to)| from.as_str() <= ts && to.as_deref().is_none_or(|t| ts < t))
+    };
+    let never_off =
+        coverage.len() == 1 && coverage[0].1.is_none() && coverage[0].0.as_str() <= FIXTURE_BIRTH;
+
+    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> = if reader {
         all_rows(conn, "SELECT hash, bytes, size FROM blobs", &[], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let blob_hashes: HashSet<String> = blob_rows.iter().map(|b| hex(&b.0)).collect();
     let blob_text: HashMap<String, String> = blob_rows
         .iter()
         .map(|b| (hex(&b.0), String::from_utf8_lossy(&b.1).into_owned()))
         .collect();
-    let tree_rows: Vec<(Vec<u8>, String)> =
+    let tree_rows: Vec<(Vec<u8>, String)> = if reader {
         all_rows(conn, "SELECT hash, entries FROM tree_nodes", &[], |r| {
             Ok((r.get(0)?, r.get(1)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let tree_hashes: HashSet<String> = tree_rows.iter().map(|t| hex(&t.0)).collect();
     let node_texts: HashMap<String, &str> = tree_rows
         .iter()
@@ -1738,12 +2258,16 @@ fn check_invariants(
         .collect();
     // 16.0: a node is a `[`-form list or a `{"d":…}` delta (§4.1 "Delta nodes").
     let mut nodes: HashMap<String, Node> = HashMap::new();
-    let commits: Vec<(String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    );
+    let commits: Vec<(String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    } else {
+        Vec::new()
+    };
     let commit_by_id: HashMap<&str, &(String, i64, String)> =
         commits.iter().map(|c| (c.0.as_str(), c)).collect();
     let docs: Vec<Doc> = all_rows(
@@ -1763,25 +2287,29 @@ fn check_invariants(
             })
         },
     );
-    let revisions: Vec<Rev> = all_rows(
-        conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
-         FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
-        &[&repo_id],
-        |r| {
-            Ok(Rev {
-                rev_id: r.get(0)?,
-                doc_id: r.get(1)?,
-                seq: r.get(2)?,
-                root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
-                frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
-                rendered_hash: r.get(5)?,
-                path: r.get(6)?,
-                commit_id: r.get(7)?,
-                archive: r.get(8)?,
-            })
-        },
-    );
+    let revisions: Vec<Rev> = if reader {
+        all_rows(
+            conn,
+            "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
+             FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
+            &[&repo_id],
+            |r| {
+                Ok(Rev {
+                    rev_id: r.get(0)?,
+                    doc_id: r.get(1)?,
+                    seq: r.get(2)?,
+                    root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
+                    frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
+                    rendered_hash: r.get(5)?,
+                    path: r.get(6)?,
+                    commit_id: r.get(7)?,
+                    archive: r.get(8)?,
+                })
+            },
+        )
+    } else {
+        Vec::new()
+    };
     let rev_by_id: HashMap<&str, &Rev> = revisions.iter().map(|r| (r.rev_id.as_str(), r)).collect();
 
     // ---- I9 archived revisions (15.0) ----------------------------------------------------
@@ -2379,26 +2907,49 @@ fn check_invariants(
             ));
         }
     }
-    // H4: the recorder's `commits` agree with the feed on every retained seq.
-    let commit_rows: Vec<(String, String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    );
-    let commit_by_seq: HashMap<i64, &(String, String, i64, String)> =
-        commit_rows.iter().map(|c| (c.2, c)).collect();
+    // H4: the recorder's `commits` agree with the feed on every retained seq
+    // WITHIN COVERAGE (Phase 4a: a feed row written while capture was off has
+    // no log row), and every log row of the current epoch at or after the
+    // oldest retained row IS a feed row (the log is a subsequence of the feed).
+    let commit_rows: Vec<(String, String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+    } else {
+        Vec::new()
+    };
+    let commit_by_seq: HashMap<i64, &(String, String, i64, String)> = commit_rows
+        .iter()
+        .filter(|c| c.1 == epoch)
+        .map(|c| (c.2, c))
+        .collect();
     for r in &feed_by_seq {
         match commit_by_seq.get(&r.1) {
-            None => problems.push(format!(
-                "H4: feed row {} (seq {}) has no commits row",
-                r.2, r.1
-            )),
+            None => {
+                if reader && in_coverage(&r.3) {
+                    problems.push(format!(
+                        "H4: feed row {} (seq {}) has no commits row",
+                        r.2, r.1
+                    ));
+                }
+            }
             Some(c) if c.0 != r.2 || c.1 != r.0 || c.3 != r.5 => problems.push(format!(
                 "H4: commits row at seq {} ({}, {}, {}) disagrees with the feed ({}, {}, {})",
                 r.1, c.0, c.1, c.3, r.2, r.0, r.5
             )),
             Some(_) => {}
+        }
+    }
+    let feed_commits: HashSet<&str> = feed_by_seq.iter().map(|r| r.2.as_str()).collect();
+    for c in &commit_rows {
+        if c.1 == epoch && c.2 >= oldest && !feed_commits.contains(c.0.as_str()) {
+            problems.push(format!(
+                "H4: commits row {} (seq {}) is within the retained feed but has no feed row",
+                c.0, c.2
+            ));
         }
     }
     // A commit of an earlier epoch is a re-mint's (§7.5): its epoch must still
@@ -2545,13 +3096,19 @@ fn check_invariants(
                 }
             }
         }
-        // H1: with legacy capture on, the head IS a captured revision — same
-        // path, same bytes, the same commit instant as `updated_at` — and
-        // reconstruct at it reproduces the source.
+        // H1: with capture on, the head IS a captured revision — same path,
+        // same bytes, the same commit instant as `updated_at` — and
+        // reconstruct at it reproduces the source. Phase 4a: owed only for a
+        // head minted within coverage (a head minted while capture was off
+        // has a row only when the baseline of a later `history enable` wrote
+        // one — then the row's commit is the baseline's, not the head's, so
+        // the instant is not compared); without the module nothing is owed.
         let Some(rev) = rev_by_id.get(head.as_str()) else {
-            problems.push(format!(
-                "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
-            ));
+            if reader && in_coverage(&d.updated_at) {
+                problems.push(format!(
+                    "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
+                ));
+            }
             continue;
         };
         let Some(root_tree) = rev.root_tree.as_deref() else {
@@ -2572,6 +3129,7 @@ fn check_invariants(
             ));
         }
         if let Some((_, _, ts)) = commit_by_id.get(rev.commit_id.as_str())
+            && in_coverage(&d.updated_at)
             && *ts != d.updated_at
         {
             problems.push(format!(
@@ -2749,14 +3307,21 @@ fn check_invariants(
         );
     }
 
-    // ---- I4 dense sequences (per epoch since 17.0: a re-mint restarts the seq) ------------
+    // ---- I4 sequences (per epoch since 17.0: a re-mint restarts the seq) -----------------
+    // `commits.seq` is strictly increasing in (ts, seq) order per epoch, and
+    // dense `1..n` when capture was never off (Phase 4a: a disabled interval
+    // leaves the feed's seqs of that span out of the log).
     type EpochCommit = (String, i64, String);
-    let commits_by_epoch: Vec<EpochCommit> = all_rows(
-        conn,
-        "SELECT commit_id, seq, epoch FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    );
+    let commits_by_epoch: Vec<EpochCommit> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, seq, epoch FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    } else {
+        Vec::new()
+    };
     let mut per_epoch: Vec<(String, Vec<&EpochCommit>)> = Vec::new();
     for c in &commits_by_epoch {
         match per_epoch.iter_mut().find(|(ep, _)| *ep == c.2) {
@@ -2766,10 +3331,16 @@ fn check_invariants(
     }
     for (ep, list) in &per_epoch {
         for (i, (commit_id, seq, _)) in list.iter().enumerate() {
-            if *seq != i as i64 + 1 {
+            if never_off && *seq != i as i64 + 1 {
                 problems.push(format!(
                     "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order of epoch {ep}",
                     i + 1
+                ));
+            }
+            if i > 0 && *seq <= list[i - 1].1 {
+                problems.push(format!(
+                    "I4: commit {commit_id} has seq {seq} after seq {} in (ts, seq) order of epoch {ep}",
+                    list[i - 1].1
                 ));
             }
         }
@@ -2788,14 +3359,20 @@ fn check_invariants(
                 ));
             }
         }
+        // Phase 4a: a head minted while capture was off is newer than every
+        // captured revision (until a baseline captures it).
         match revs.last() {
-            Some(last) if d.head.as_deref() != Some(last.rev_id.as_str()) => {
+            Some(last)
+                if d.deleted_at.is_none()
+                    && in_coverage(&d.updated_at)
+                    && d.head.as_deref() != Some(last.rev_id.as_str()) =>
+            {
                 problems.push(format!(
                     "I4: doc {} head {:?} is not its greatest-seq revision",
                     d.doc_id, d.head
                 ));
             }
-            None if d.head.is_some() => {
+            None if d.head.is_some() && reader && in_coverage(&d.updated_at) => {
                 problems.push(format!("I4: doc {} has head but no revisions", d.doc_id));
             }
             _ => {}
@@ -2985,7 +3562,10 @@ fn check_invariants(
             ));
         }
     }
-    let unheld: Vec<String> = all_rows(
+    let unheld: Vec<String> = if !reader {
+        Vec::new()
+    } else {
+        all_rows(
         conn,
         "SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1 AND bc.block_id != 'DOC'
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
@@ -3000,39 +3580,48 @@ fn check_invariants(
          ORDER BY 1",
         &[&repo_id],
         |r| r.get(0),
-    );
+    )
+    };
     for id in unheld {
         problems.push(format!(
             "H6: {id} is named by a history row but its claim lacks the recorder's bit"
         ));
     }
+    // Without the module nothing below applies: the dispositions, the
+    // projection and the archive rule are the recorder's.
+    if !reader {
+        return problems;
+    }
     // H6 (17.0, M6): the open transitions and the edges agree — same ids,
-    // same destination.
-    for id in all_rows(
-        conn,
-        "SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1 AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1",
-        &[&repo_id],
-        |r| r.get::<_, String>(0),
-    ) {
-        problems.push(format!("H6: open transition {id} has no edges row"));
-    }
-    for id in all_rows(
-        conn,
-        "SELECT e.edge_id FROM edges e WHERE e.repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1",
-        &[&repo_id],
-        |r| r.get::<_, String>(0),
-    ) {
-        problems.push(format!("H6: edge {id} has no open transition"));
-    }
-    for id in all_rows(
-        conn,
-        "SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ?1 AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1",
-        &[&repo_id],
-        |r| r.get::<_, String>(0),
-    ) {
-        problems.push(format!(
-            "H6: edge {id} and its open transition disagree on dst_node"
-        ));
+    // same destination — while capture is on (Phase 4a: the edges move freely
+    // while it is off; the baseline of the next `history enable` reconciles them).
+    if capture_on {
+        for id in all_rows(
+            conn,
+            "SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1 AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!("H6: open transition {id} has no edges row"));
+        }
+        for id in all_rows(
+            conn,
+            "SELECT e.edge_id FROM edges e WHERE e.repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!("H6: edge {id} has no open transition"));
+        }
+        for id in all_rows(
+            conn,
+            "SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ?1 AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!(
+                "H6: edge {id} and its open transition disagree on dst_node"
+            ));
+        }
     }
 
     // ---- I7 dispositions ------------------------------------------------------------------
@@ -3106,18 +3695,21 @@ fn check_invariants(
             ));
         }
     }
-    let unchanged: Vec<String> = all_rows(
+    let unchanged: Vec<(String, String)> = all_rows(
         conn,
-        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL
+        "SELECT b.block_id, b.created_at FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id)
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = b.block_id AND (ic.holders & 2) != 0) ORDER BY b.block_id",
         &[&repo_id],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     );
-    for block_id in unchanged {
-        problems.push(format!(
-            "I7: live block {block_id} has no block_changes row and no recorder hold on its claim"
-        ));
+    // Phase 4a: a block born while capture was off has neither until a baseline holds it.
+    for (block_id, created_at) in unchanged {
+        if in_coverage(&created_at) {
+            problems.push(format!(
+                "I7: live block {block_id} has no block_changes row and no recorder hold on its claim"
+            ));
+        }
     }
 
     // ---- I8 rebuild equivalence -----------------------------------------------------------
@@ -3271,9 +3863,30 @@ fn clip(s: impl Into<String>) -> String {
     format!("{cut}…")
 }
 
+/// README §9.6 rules (1) and (4): does the core-only run skip this case —
+/// `migrations.json`, the recorder's edge suite, `cases/history/` wholesale,
+/// and an observation script with a step beyond `observe` / `sweep` /
+/// `remint_epoch`?
+fn core_skips(c: &SpecCase) -> bool {
+    match c.kind {
+        Kind::Migration | Kind::Edges => true,
+        Kind::Schema => false,
+        Kind::Observe => c.file.starts_with("history/") || !runs_under_core(&c.case),
+    }
+}
+
 fn check(c: &SpecCase) -> Result<(), String> {
+    let core = core_mode();
+    let mut expected = c.case["expect"].clone();
     let actual = match c.kind {
-        Kind::Schema => run_schema_case(),
+        Kind::Schema => {
+            // README §9.6 rule (5): the fingerprint without the semantic
+            // bundle (its tables and indexes) on the core-only run.
+            if core {
+                expected = without_semantic_tables(&expected);
+            }
+            run_schema_case()
+        }
         Kind::Migration => run_migration_case(&c.case),
         Kind::Observe | Kind::Edges => {
             let ev = if c.kind == Kind::Edges {
@@ -3284,10 +3897,14 @@ fn check(c: &SpecCase) -> Result<(), String> {
             if !ev.problems.is_empty() {
                 return Err(clip(format!("invariants: {}", ev.problems.join("; "))));
             }
+            // README §9.6 rule (3): the core tables alone, the recorder's bit masked.
+            if core && c.kind == Kind::Observe {
+                expected = core_mode_projection(&expected);
+            }
             ev.expect
         }
     };
-    match deep_eq_tol(&actual, &c.case["expect"], "expect", EPS) {
+    match deep_eq_tol(&actual, &expected, "expect", EPS) {
         None => Ok(()),
         Some(diff) => Err(clip(diff)),
     }
@@ -3396,12 +4013,33 @@ fn spec() {
         }
     }));
 
+    // README §9.6: the core-only run compares the core tables and skips what
+    // needs the module (reported below); the fixtures are never regenerated
+    // from it.
+    let core = core_mode();
+    assert!(
+        !(core && update_requested()),
+        "STORE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
+        omgbase_store::CAPABILITIES_ENV
+    );
+    let mut core_skipped: Vec<String> = Vec::new();
+    let mut core_compared = 0usize;
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
+            if core && core_skips(c) {
+                // A skipped case counts as passing for the allowlist's
+                // bookkeeping, as the reference's skipped test does.
+                core_skipped.push(c.id.clone());
+                passing.insert(c.id.clone());
+                continue;
+            }
+            if core {
+                core_compared += 1;
+            }
             match run_case(c) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
@@ -3411,6 +4049,18 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    if core {
+        eprintln!(
+            "spec: {}=core: {core_compared} case(s) compared on the core tables, {} skipped (need the history module):\n{}",
+            omgbase_store::CAPABILITIES_ENV,
+            core_skipped.len(),
+            core_skipped
+                .iter()
+                .map(|c| format!("  skip {c}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);
@@ -3695,8 +4345,19 @@ fn the_three_bundles_partition_the_table_set() {
     );
     semantic.sort();
     assert_eq!(semantic, ["doc_embeddings", "embeddings"]);
-    // And a fresh store has exactly them.
-    let store = Store::open_in_memory().expect("fresh store opens");
+    // A fresh store (17.1, Phase 4a) holds the core and semantic bundles —
+    // the history bundle follows the manifest — and exactly all three once a
+    // repository's history is enabled.
+    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new()))
+        .expect("fresh store opens");
+    let mut have = table_names(store.conn());
+    have.retain(|t| !t.starts_with("blocks_fts_") && !t.starts_with("nodes_fts_"));
+    let mut core_and_semantic: Vec<String> = core.iter().chain(&semantic).cloned().collect();
+    core_and_semantic.sort();
+    assert_eq!(have, core_and_semantic);
+    store
+        .create_repo_at(FIXTURE_REPO_SLUG, FIXTURE_BIRTH)
+        .expect("a repository with capture on");
     let mut have = table_names(store.conn());
     have.retain(|t| !t.starts_with("blocks_fts_") && !t.starts_with("nodes_fts_"));
     assert_eq!(have, all);
@@ -3731,11 +4392,14 @@ fn every_observe_case_satisfies_the_invariants() {
     let loaded = load();
     let mut problems = Vec::new();
     let mut checked = 0usize;
+    // README §9.6: the core-only run checks the cases it runs (C*, F*, A1).
+    let core = core_mode();
     for f in &loaded.files {
         for c in f
             .cases
             .iter()
             .filter(|c| matches!(c.kind, Kind::Observe | Kind::Edges))
+            .filter(|c| !(core && core_skips(c)))
         {
             let ev = if c.kind == Kind::Edges {
                 run_edge_transitions_case(&c.case)

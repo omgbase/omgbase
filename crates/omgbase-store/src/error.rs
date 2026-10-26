@@ -81,6 +81,32 @@ pub enum Error {
     /// `capability_unavailable { capability: "history", state: "unavailable"
     /// }`, retriable; the message is the reference's, byte for byte.
     HistoryWriterRequired,
+    /// A history read on a composition without the history module
+    /// (`phase-1-contracts.md` §2.1 `unavailable`, 17.1 Phase 4a): `docs_read
+    /// { at }`, `docs_diff*`, `docs_history`, `blocks_history`, `history
+    /// enable`. The surface's `capability_unavailable { capability:
+    /// "history", state: "unavailable" }`, retriable; the message pinned.
+    HistoryUnavailable,
+    /// A history read on a repository whose capture is `disabled` whose
+    /// target was never captured (§2.1 `disabled`; Phase 4a reads what WAS
+    /// captured — a revision that has a row is served). `rev` names the
+    /// revision asked for, when one was. The surface's `capability_unavailable
+    /// { capability: "history", state: "disabled", rev? }`, not retriable.
+    HistoryDisabled {
+        /// The revision asked for.
+        rev: Option<String>,
+    },
+    /// `spec/store` §5.4 step 15 (17.1, Phase 4a — resolution 18): the
+    /// recorder failed inside a commit, so the member's transaction was
+    /// rolled back — nothing is written without its capture — and the
+    /// `capture_failed` alert is raised by the transaction's owner once the
+    /// rollback is done. `path` is the member's (`None` until the owner names
+    /// it — the commit row of a batch), `reason` the recorder's error. The
+    /// surface's `capture_failed { path?, reason }`, retriable.
+    CaptureFailed {
+        path: Option<String>,
+        reason: String,
+    },
     /// Anything else, with a message.
     Other(String),
 }
@@ -133,6 +159,15 @@ impl fmt::Display for Error {
             Error::HistoryWriterRequired => {
                 f.write_str(crate::core::manifest::HISTORY_WRITER_REQUIRED_MESSAGE)
             }
+            Error::HistoryUnavailable => {
+                f.write_str(crate::core::manifest::HISTORY_UNAVAILABLE_MESSAGE)
+            }
+            Error::HistoryDisabled { .. } => {
+                f.write_str(crate::core::manifest::HISTORY_DISABLED_MESSAGE)
+            }
+            Error::CaptureFailed { path, reason } => f.write_str(
+                &crate::core::manifest::capture_failed_message(path.as_deref(), reason),
+            ),
             Error::Other(msg) => f.write_str(msg),
         }
     }
@@ -175,6 +210,20 @@ impl From<omgbase_mutate::MutationError> for Error {
 }
 
 impl Error {
+    /// [`Error::CaptureFailed`] with `path` filled in when the failing call
+    /// did not know it (the transaction's owner names the member); any other
+    /// error is returned as it is.
+    #[must_use]
+    pub fn at_path(self, path: &str) -> Self {
+        match self {
+            Error::CaptureFailed { path: None, reason } => Error::CaptureFailed {
+                path: Some(path.to_owned()),
+                reason,
+            },
+            other => other,
+        }
+    }
+
     /// The mutation error inside, if this is one.
     #[must_use]
     pub fn as_mutation(&self) -> Option<&omgbase_mutate::MutationError> {

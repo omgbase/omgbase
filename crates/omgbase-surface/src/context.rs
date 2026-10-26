@@ -41,7 +41,7 @@ use std::rc::Rc;
 
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
-use omgbase_store::SemanticProvider;
+use omgbase_store::{HistoryRecorder, RevisionQueryRow, SemanticProvider};
 use oqx::semantics::{builtin_function, builtin_method_with, make_range, string_form};
 use oqx::{
     CompiledRegex, DataContext, Object, OqxError, RegexDialect, RowIndex, Value, compile_regex,
@@ -234,16 +234,14 @@ pub fn attributes(t: Target) -> &'static [&'static str] {
     }
 }
 
-/// The revisions scan (`spec/surface` §1.1, 4.7): every revision of every
-/// document of the repository — tombstoned documents included, history is
-/// history — with its commit. The `revisions` table carries no `repo_id`, so
-/// the repository guard joins `docs`. `is_current` is `docs_history`'s
-/// `isCurrent`: the revision is the document's `head`. The planner's
-/// clauses for the kind ([`crate::planner::columns`], `from_clause`) are
-/// these same strings.
-// seam: HistoryRecorder (Phase 3, D3 — the `revisions` root returns the rows
-// that exist plus a `hints` line on a capture-off store; inventory-rust.md
-// §2.7 `context.rs:243-245`, `:806-828`, `:1517-1530`).
+/// The revisions scan's columns (`spec/surface` §1.1, 4.7): every revision
+/// of every document of the repository — tombstoned documents included,
+/// history is history — with its commit; `is_current` is `docs_history`'s
+/// `isCurrent`: the revision is the document's `head`. Since Phase 4a the
+/// rows come from the recorder ([`HistoryRecorder::revision_rows`] — the
+/// context runs no SQL on a history table); the planner names these strings
+/// for the kind ([`crate::planner::columns`], `from_clause`) and never plans
+/// a revisions scan.
 pub(crate) const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
 pub(crate) const REVISION_FROM: &str =
     "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
@@ -326,6 +324,12 @@ pub struct StoreContext<'a> {
     /// runner installed none — then a resolved phrase has nothing to score
     /// against.
     provider: Option<&'a dyn SemanticProvider>,
+    /// The store's history READER ([`Store::history_reader`]: the module when
+    /// the bundle's tables exist — Phase 4a), the one way the `revisions`
+    /// root and the `_revisions` relation reach a row; `None` lists nothing
+    /// (a store without the module, or a database nothing was ever captured
+    /// in — `spec/surface` §1.1: never an error).
+    history: Option<&'a dyn HistoryRecorder>,
     /// A store failure inside [`DataContext::root`], the one read the
     /// engine's seam cannot fail through (see the module doc).
     root_failure: RefCell<Option<OqxError>>,
@@ -556,6 +560,7 @@ impl<'a> StoreContext<'a> {
             repo_id: repo_id.to_owned(),
             semantic,
             provider: None,
+            history: None,
             root_failure: RefCell::new(None),
             rows_root: None,
             regexes: RefCell::new(HashMap::new()),
@@ -575,6 +580,61 @@ impl<'a> StoreContext<'a> {
     pub fn with_semantic_provider(mut self, provider: Option<&'a dyn SemanticProvider>) -> Self {
         self.provider = provider;
         self
+    }
+
+    /// The history reader the `revisions` root and `_revisions` relation read
+    /// through (Phase 4a): the runner installs the store's
+    /// ([`Store::history_reader`]); without one they list nothing.
+    #[must_use]
+    pub fn with_history_reader(mut self, history: Option<&'a dyn HistoryRecorder>) -> Self {
+        self.history = history;
+        self
+    }
+
+    /// A recorder's revision row as the context's row object: the
+    /// `revisions` × `commits` columns under their SQL names, with the
+    /// `rendered_hash` blob as hex and the two booleans as 0/1 — exactly
+    /// what [`fetch_rows`] produced from the SQL this replaced, so every
+    /// attribute (`_hash`, `_is_current`, …) reads unchanged.
+    fn revision_row(r: &RevisionQueryRow) -> Object {
+        let mut o = Object::with_capacity(13);
+        o.insert("rev_id", Value::Str(r.rev_id.clone()));
+        o.insert("doc_id", Value::Str(r.doc_id.clone()));
+        o.insert("seq", Value::Number(r.seq as f64));
+        o.insert(
+            "rendered_hash",
+            Value::Str(omgbase_format::hash::hex(&r.rendered_hash)),
+        );
+        o.insert("path", Value::Str(r.path.clone()));
+        o.insert("commit_id", Value::Str(r.commit_id.clone()));
+        o.insert("ts", Value::Str(r.ts.clone()));
+        o.insert("origin", Value::Str(r.origin.clone()));
+        o.insert("actor", r.actor.clone().map_or(Value::Null, Value::Str));
+        o.insert("reason", r.reason.clone().map_or(Value::Null, Value::Str));
+        o.insert(
+            "is_current",
+            Value::Number(f64::from(u8::from(r.is_current))),
+        );
+        o.insert("archived", Value::Number(f64::from(u8::from(r.archived))));
+        o
+    }
+
+    /// The recorder's rows ([`HistoryRecorder::revision_rows`] /
+    /// [`HistoryRecorder::doc_revision_rows`]) tagged as revisions; empty
+    /// without a reader.
+    fn revision_rows(
+        &self,
+        read: impl FnOnce(&dyn HistoryRecorder) -> omgbase_store::Result<Vec<RevisionQueryRow>>,
+    ) -> oqx::Result<Value> {
+        let Some(history) = self.history else {
+            return Ok(Value::Array(Vec::new()));
+        };
+        self.statements_run.set(self.statements_run.get() + 1);
+        let rows = read(history).map_err(|e| OqxError::eval(format!("sqlite: {e}")))?;
+        Ok(Self::tag_all(
+            rows.iter().map(Self::revision_row).collect(),
+            Target::Revisions,
+        ))
     }
 
     /// Resolve the named points of `date()` (`today`, `now`, `sow`…) at
@@ -823,28 +883,23 @@ impl<'a> StoreContext<'a> {
                  WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND d.deleted_at IS NULL
                  ORDER BY d.path, e.edge_id"
             }
-            // The history (4.7): its own statement, in the same `(path, id)`
-            // keyset order as every target — `(path as of the revision, rev_id)`.
+            // The history (4.7): the recorder's rows ([`HistoryRecorder::
+            // revision_rows`], Phase 4a — no SQL here names a history table),
+            // in the same `(path, id)` keyset order as every target — `(path
+            // as of the revision, rev_id)`; nothing without a reader.
             Target::Revisions => {
-                let sql = format!(
-                    "SELECT {REVISION_COLS} FROM {REVISION_FROM} WHERE d.repo_id = ?1 ORDER BY r.path, r.rev_id"
-                );
-                return Ok(Self::tag_all(self.all(&sql, &repo)?, t));
+                let repo_id = self.repo_id.clone();
+                return self.revision_rows(|h| h.revision_rows(self.conn, &repo_id));
             }
         };
         Ok(Self::tag_all(self.all(sql, &repo)?, t))
     }
 
     /// A document's revisions (the `_revisions` relation of a docs row, §1.2,
-    /// 4.7): oldest first, as `docs_history` lists them.
+    /// 4.7): oldest first, as `docs_history` lists them — the recorder's rows
+    /// ([`HistoryRecorder::doc_revision_rows`], Phase 4a).
     fn doc_revisions(&self, doc_id: &str) -> oqx::Result<Value> {
-        let sql = format!(
-            "SELECT {REVISION_COLS} FROM {REVISION_FROM} WHERE r.doc_id = ?1 ORDER BY r.seq"
-        );
-        Ok(Self::tag_all(
-            self.all(&sql, &[SqlValue::Text(doc_id.to_owned())])?,
-            Target::Revisions,
-        ))
+        self.revision_rows(|h| h.doc_revision_rows(self.conn, doc_id))
     }
 
     // ---- properties ---------------------------------------------------------------------

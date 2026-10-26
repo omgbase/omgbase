@@ -913,6 +913,107 @@ vs 339); OFF and ON are within each other's noise — the recorder's share of
 a small write was never the latency's bulk. Reproduce: `node
 scripts/baseline/modular-core-baseline.mjs --engine ts --history off`.
 
+### 17.1 (Phase 4a), Rust — history on, the twin (`rust-2026-10-26T10-46-00`)
+
+The Rust twin of Phase 4a (`crates/omgbase-store` 17.1: the history bundle
+follows the manifest, `capture_for` hands the recorder its rows only while
+the repository's `history` row is `enabled`), release build of the `omgbase`
+crate 0.28.0 + the working tree, the same seeded corpus (0.22 MB of Markdown,
+201 documents), capture on from the first commit. The TS 4a ON row
+(`ts-2026-10-26T09-07-08`) is the comparison; the Rust 17.0 release-prep row
+(`rust-2026-10-26T07-21-00`, 6.21 / 6.90 MB) the cost of making capture
+conditional.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | search | sync | TS 4a ON (db MB / KB / op / history MB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.20 | 6,201 | 30.9 / doc | 3.11 | 0.38 | 0.01 | 2.24 | 0.23 | 0.24 | 6.20 / 30.8 / 2.24 |
+| frontmatter hot update | 50 | 6.30 | 102 | 2.0 | 3.11 | 0.39 | 0.01 | 2.29 | 0.24 | 0.27 | 6.30 / 2.1 / 2.29 |
+| block edit | 50 | 6.42 | 115 | 2.3 | 3.11 | 0.40 | 0.01 | 2.37 | 0.23 | 0.29 | 6.43 / 2.6 / 2.38 |
+| rolling journal | 50 | 6.61 | 188 | 3.8 | 3.13 | 0.41 | 0.01 | 2.51 | 0.24 | 0.31 | 6.60 / 3.4 / 2.49 |
+| task churn | 50 | 6.68 | 74 | 1.5 | 3.13 | 0.41 | 0.01 | 2.55 | 0.23 | 0.34 | 6.68 / 1.6 / 2.54 |
+| link churn | 50 | 6.77 | 94 | 1.9 | 3.14 | 0.43 | 0.01 | 2.61 | 0.23 | 0.35 | 6.78 / 2.0 / 2.60 |
+| delete / recreate | 20 | 6.92 | 143 | 7.2 | 3.15 | 0.45 | 0.01 | 2.71 | 0.23 | 0.36 | 6.89 / 5.7 / 2.70 |
+| gc (default sweep) | | 6.92 | 0 | | 3.15 | 0.45 | 0.01 | 2.71 | 0.23 | 0.36 | 6.89 / 0 / 2.70 |
+
+**Row for row the TS run.** Every category holds the same row count as the
+TS 4a ON run at every stage (`content` 9,612 → 9,671, `identity` 4,810 →
+5,715, `history` 11,821 → 13,753, `search` 4,805 → 4,855, `sync` 706 →
+1,246), and so does every table after gc — `blobs` 3,218, `tree_nodes`
+1,000, `dispositions` / `block_changes` 3,824, `revisions` 461, `commits`
+471, `edge_transitions` 955, `edges` 803, `id_claims` 5,715, `feed` /
+`feed_entries` 471 — the bytes a page apart here and there (`blobs` 634,880
+vs 630,784, `dispositions` 339,968 vs 348,160, `block_changes` 303,104 vs
+290,816, `edge_transitions` 163,840 vs 159,744, `id_claims` 438,272 vs
+434,176; `tree_nodes` 974,848, `revisions` 110,592, `commits` 172,032,
+`blocks` 1,871,872, `feed` 139,264 / `feed_entries` 86,016 byte-identical).
+The database is **6.20 MB at import (28.4× the source) and 6.92 MB at the
+end (31.6×)** against the TS run's 6.20 / 6.89 (+4 KB / +24 KB, five pages
+of index layout) and the Rust 17.0 release-prep run's 6.21 / 6.90: making
+capture conditional cost nothing when it is on — `capture_for` is one
+manifest read per commit. Per operation: frontmatter 2.0 (TS 2.1), block
+edit 2.3 (2.6), journal 3.8 (3.4), task churn 1.5 (1.6), link churn 1.9
+(2.0), recreate 7.2 (5.7 — the page split fell on the Rust side this time;
+the release-prep rows were 6.0 / 6.2).
+
+Latency (p50 / p95 ms, the process start 5 / 265 included — the p95 the one
+cold first spawn of ten): import 803; one write 24 / 27–34 (frontmatter 24 /
+29, block edit 24 / 28, journal 24 / 27, task churn 24 / 29, link churn 24 /
+28, recreate 24 / 34); `query` docs 14 / 16, blocks filter 13 / 17,
+`text("furnace")` 69 / 94, links 11 / 15; `outline` 10 / 12; `gc` 17 —
+within the Rust release-prep run's noise (writes 22–31 / 25–41).
+
+### 17.1 (Phase 4a), Rust — history off, the twin (`rust-history-off-2026-10-26T10-46-11`)
+
+The same binary and corpus with `--history off` (`source add <dir> --repo
+bench -y --no-history`: the repository is born `disabled`, the import itself
+is uncaptured, no history table is ever created). The TS 4a OFF row
+(`ts-history-off-2026-10-26T09-08-54`) is the comparison, the Rust ON row
+above the cost of capture.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | search | sync | TS 4a OFF (db MB / KB / op) | Rust ON (db MB / KB / op) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 3.94 | 3,940 | 19.6 / doc | 3.10 | 0.37 | 0.01 | 0 | 0.23 | 0.23 | 3.95 / 19.7 | 6.20 / 30.9 |
+| frontmatter hot update | 50 | 4.01 | 66 | 1.3 | 3.10 | 0.39 | 0.01 | 0 | 0.23 | 0.26 | 4.01 / 1.1 | 6.30 / 2.0 |
+| block edit | 50 | 4.04 | 33 | 0.7 | 3.10 | 0.39 | 0.01 | 0 | 0.24 | 0.29 | 4.05 / 0.7 | 6.42 / 2.3 |
+| rolling journal | 50 | 4.09 | 53 | 1.1 | 3.12 | 0.40 | 0.01 | 0 | 0.23 | 0.31 | 4.11 / 1.2 | 6.61 / 3.8 |
+| task churn | 50 | 4.12 | 25 | 0.5 | 3.12 | 0.41 | 0.01 | 0 | 0.23 | 0.33 | 4.14 / 0.7 | 6.68 / 1.5 |
+| link churn | 50 | 4.15 | 33 | 0.7 | 3.13 | 0.43 | 0.01 | 0 | 0.24 | 0.35 | 4.17 / 0.6 | 6.77 / 1.9 |
+| delete / recreate | 20 | 4.18 | 29 | 1.4 | 3.13 | 0.44 | 0.01 | 0 | 0.24 | 0.36 | 4.20 / 1.6 | 6.92 / 7.2 |
+| gc (default sweep) | | 4.18 | 0 | | 3.13 | 0.44 | 0.01 | 0 | 0.24 | 0.36 | 4.20 / 0 | 6.92 / 0 |
+
+**The number, in the second engine: 4.18 MB at the end against 6.92 MB with
+capture on — 19.1× the source against 31.6×, −2.74 MB (−40 %); the TS pair
+is 4.20 vs 6.89 (−39 %).** The import is 3.94 MB (18.0×) against 6.20
+(28.4×). The `history` category reads 0 B / 0 rows at every stage — no
+`commits`, `revisions`, `blobs`, `tree_nodes`, `dispositions`,
+`block_changes`, `edge_transitions` or `archives` table exists in the
+database (the core bundle, the semantic bundle's two empty tables, and
+`sqlite_schema` are its whole table set; `doctor --size` lists the `history`
+category empty). Every other category is the TS OFF run's row for row at
+every stage (`content` 9,612 → 9,671, `identity` 4,810 → 5,715, `search`
+4,805 → 4,855, `sync` 687 → 1,227) and `sync` is byte-identical to it at
+every stage (233,472 → 360,448 B: the feed's 471 rows + 471 entries, the
+status row); the database is 12–24 KB under the TS run throughout (`blocks`
+1,867,776 vs 1,880,064 B at the end, three pages; `id_claims` 434,176 vs
+438,272, one). Against the Rust ON run the core's own tables are the same
+rows and within a page (`id_claims` 434,176 vs 438,272 B for the same 5,715
+claims — every id is minted and claimed with capture off too, with bit 0
+alone; `blocks` 1,867,776 vs 1,871,872; `feed` / `feed_entries` / `edges`
+byte-identical). Per operation the small edits cost a third to a quarter of
+the ON row: frontmatter 2.0 → 1.3 KB, block edit 2.3 → 0.7, journal 3.8 →
+1.1, task churn 1.5 → 0.5, link churn 1.9 → 0.7, recreate 7.2 → 1.4 (TS:
+2.1 → 1.1, 2.6 → 0.7, 3.4 → 1.2, 1.6 → 0.7, 2.0 → 0.6, 5.7 → 1.6).
+
+Latency (p50 / p95 ms, the process start 5 / 6): import 563 — 240 ms under
+the ON run's 803, the recorder's share of a 201-document import (TS 1,088 vs
+1,209); one write 21–25 / 26–33 (frontmatter 25 / 29, block edit 25 / 30,
+journal 23 / 26, task churn 22 / 26, link churn 23 / 26, recreate 21 / 27);
+`query` docs 13 / 19, blocks filter 13 / 17, `text("furnace")` 82 / 124,
+links 12 / 13; `outline` 9 / 11; `gc` 10 — the writes within the ON run's
+noise, as in TS: the recorder's share of a small write was never the
+latency's bulk. Reproduce: `node scripts/baseline/modular-core-baseline.mjs
+--engine rust --bin target/release/omgbase --history off`.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

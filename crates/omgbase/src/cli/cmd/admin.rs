@@ -7,7 +7,7 @@
 use omgbase_search::{EmbeddingProvider, create_external_provider};
 use omgbase_store::{
     LIVE_LEAF_SQL, ManifestState, RebuildTarget, SizeCapability, SizeReport, active_alerts,
-    format_share, human_bytes,
+    format_share, human_bytes, open_coverage_from, read_capability,
 };
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings_at,
@@ -226,9 +226,12 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     });
 
     // Store 17.0 (D1): every live document has a head token, and while
-    // legacy capture is on the recorder's `revisions` row agrees with it
+    // capture is on the recorder's `revisions` row agrees with it
     // (`spec/store` §8 H1 — the check `doctor` used to call "no dangling
-    // current_rev").
+    // current_rev"). Phase 4a: the check reads the repository's manifest — a
+    // head minted within the open coverage interval owes a revision; a
+    // repository whose capture is off (or a build without the module) owes
+    // none and the check says so in its detail.
     let headless: i64 = conn.query_row(
         "SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NULL",
         [],
@@ -239,16 +242,40 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         ok: headless == 0,
         detail: format!("{headless} without a head"),
     });
-    let uncaptured: i64 = conn.query_row(
-        "SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)",
-        [],
-        |r| r.get(0),
-    )?;
-    checks.push(Check {
-        name: "capture complete",
-        ok: uncaptured == 0,
-        detail: format!("{uncaptured} heads without a revision"),
-    });
+    let manifest = read_capability(conn, &repo.repo_id, "history")?;
+    let since = open_coverage_from(manifest.as_ref());
+    let recorder = store.capture_for(Some(&repo.repo_id))?;
+    match (recorder, since) {
+        (Some(recorder), Some(since)) => {
+            let uncaptured = recorder.uncaptured_heads(conn, &repo.repo_id, since)?;
+            checks.push(Check {
+                name: "capture complete",
+                ok: uncaptured == 0,
+                detail: format!("{uncaptured} heads without a revision"),
+            });
+        }
+        _ => {
+            let detail = match &manifest {
+                Some(m) if m.state == ManifestState::Enabled => {
+                    "history unavailable in this build".to_owned()
+                }
+                Some(m) if !m.coverage.is_empty() => format!(
+                    "history disabled (captured {})",
+                    m.coverage
+                        .iter()
+                        .map(|i| format!("{}..{}", i.from, i.to.as_deref().unwrap_or("now")))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                _ => "history disabled".to_owned(),
+            };
+            checks.push(Check {
+                name: "capture complete",
+                ok: true,
+                detail,
+            });
+        }
+    }
 
     // Store 17.0 (3e-ii): the alert channel (`spec/store` §3.1 `alerts`) —
     // the conditions the engine raised for a human on the selected

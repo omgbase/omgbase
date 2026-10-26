@@ -18,6 +18,7 @@ use omgbase_graph::{
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::capabilities::HistoryRecorder;
+use crate::core::manifest::capture;
 use crate::error::Result;
 use crate::mint::Mint;
 
@@ -270,8 +271,9 @@ pub fn resolve_edges(
 /// rows are untouched (they keep their `edge_id`). The transition's edge
 /// list — the rows opened, the ids closed — goes to the recorder
 /// ([`HistoryRecorder::record_edge_transitions`], `spec/store` §5.4 step 15)
-/// when it has anything in it. Then rebuild the rollup (§3.4). Returns the
-/// transitions.
+/// when it has anything in it and `history` is `Some` — the commit's
+/// `capture_for`: the module while the repository's manifest says `enabled`
+/// (Phase 4a). Then rebuild the rollup (§3.4). Returns the transitions.
 ///
 /// `spec/store` §2.1 (17.0): the `e` minted per newly opened edge and the `x`
 /// [`resolve_external`] minted for its external target are claimed here, in
@@ -281,7 +283,7 @@ pub fn resolve_edges(
 pub fn maintain_edges(
     conn: &Connection,
     minter: &mut Mint<'_>,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     repo_id: &str,
     src_doc: &str,
     commit_id: &str,
@@ -376,9 +378,15 @@ pub fn maintain_edges(
         }
     }
     let transitions = EdgeTransitions { opened, closed };
-    // `spec/store` §5.4 step 15 (17.0): the recorder's half — the interval record.
-    if !transitions.opened.is_empty() || !transitions.closed.is_empty() {
-        history.record_edge_transitions(conn, commit_id, &transitions)?;
+    // `spec/store` §5.4 step 15 (17.0): the recorder's half — the interval
+    // record, while the repository's manifest says `enabled` (Phase 4a).
+    if let Some(history) = history
+        && (!transitions.opened.is_empty() || !transitions.closed.is_empty())
+    {
+        capture(
+            None,
+            history.record_edge_transitions(conn, commit_id, &transitions),
+        )?;
     }
     rebuild_doc_edges(conn, src_doc)?;
     Ok(transitions)
@@ -386,15 +394,16 @@ pub fn maintain_edges(
 
 /// Rewrite the destination of the open edges at `from_dst` to `to_dst` in
 /// place (§3.5 adoption; a move's re-phantoming, `effects::move_path_in`) —
-/// the rows keep their ids — and tell the recorder so the open transitions
-/// follow (`edge_transitions.dst_node` reads as 16.x's `edges` did). Returns
+/// the rows keep their ids — and tell the recorder (when the repository's
+/// capture is on, Phase 4a) so the open transitions follow
+/// (`edge_transitions.dst_node` reads as 16.x's `edges` did). Returns
 /// the distinct source documents touched, in first-seen `rowid` order (their
 /// rollups are the caller's to rebuild). `where_` narrows the rows: an extra
 /// SQL predicate over `edges` spelled with unnumbered `?` placeholders, bound
 /// in order from `where_params` after the destination(s).
 pub fn retarget_open_edges(
     conn: &Connection,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     from_dst: &str,
     to_dst: &str,
     where_: &str,
@@ -418,8 +427,10 @@ pub fn retarget_open_edges(
         &format!("UPDATE edges SET dst_node = ? WHERE dst_node = ? {where_}"),
         upd.as_slice(),
     )?;
-    let ids: Vec<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
-    history.retarget_edges(conn, &ids, to_dst)?;
+    if let Some(history) = history {
+        let ids: Vec<&str> = rows.iter().map(|(id, _)| id.as_str()).collect();
+        capture(None, history.retarget_edges(conn, &ids, to_dst))?;
+    }
     let mut affected: Vec<String> = Vec::new();
     for (_, src) in rows {
         if !affected.contains(&src) {
@@ -484,7 +495,7 @@ pub fn rebuild_doc_edges(conn: &Connection, src_doc: &str) -> Result<()> {
 /// document.
 pub fn adopt_phantoms(
     conn: &Connection,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     path: &str,
     doc_id: &str,
 ) -> Result<()> {

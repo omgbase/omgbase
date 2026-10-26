@@ -48,7 +48,14 @@ fn confirm(slug: &str) -> bool {
 }
 
 fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
-    let a = parse_args(args, &[Opt::value("name"), Opt::flag_short("yes", 'y')])?;
+    let a = parse_args(
+        args,
+        &[
+            Opt::value("name"),
+            Opt::flag_short("yes", 'y'),
+            Opt::flag("no-history"),
+        ],
+    )?;
     let Some(dir) = a.pos(0) else {
         return Err(CliError::usage("source add requires a <dir>"));
     };
@@ -102,7 +109,11 @@ fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let lock = cli.seams.lock_options();
     let (repo_id, ingested) = {
         let store = cli.store_mut()?;
-        let repo_id = omgbase_sync::ensure_repo_at(store, &slug, None, &now)?;
+        // `--no-history` (store 17.1 Phase 4a, `spec/store` §3.1): the
+        // repository starts with capture off, so the import itself writes no
+        // history row.
+        let repo_id =
+            omgbase_sync::ensure_repo_with(store, &slug, None, &now, !a.flag("no-history"))?;
         omgbase_sync::ensure_adapter(store, FS_ADAPTER, FS_ADAPTER_COMMAND, &[])?;
         let mut config = serde_json::Map::new();
         config.insert("root".to_owned(), json!(abs_str));

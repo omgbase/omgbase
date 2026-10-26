@@ -1880,7 +1880,8 @@ mod tests {
                 &Config::default(),
             )
             .expect("observe");
-        let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
+        let ctx = StoreContext::new(store.conn(), &repo, HashMap::new())
+            .with_history_reader(store.history_reader().expect("reader"));
 
         let mut universe: Vec<&str> = crate::context::ALL_TARGETS
             .into_iter()

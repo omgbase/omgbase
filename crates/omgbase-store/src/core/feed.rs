@@ -21,6 +21,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
 use crate::core::capabilities::HistoryRecorder;
+use crate::core::manifest::capture;
 use crate::core::mint::Mint;
 use crate::core::settings::effective_settings;
 use crate::core::time::plus_ms;
@@ -125,9 +126,12 @@ pub struct FeedRow {
 /// the repo's feed rows of the current epoch, insert the row with `batch_id`
 /// (the given batch's id, else this commit's own), then hand the recorder its
 /// `commits` row ([`HistoryRecorder::record_commit`] — the same id, epoch and
-/// seq; skipped when the store runs without the recorder) and enforce the cap
-/// (`feed.max_entries`, §7.4) inside the same transaction. Runs in the
-/// caller's transaction on `conn`.
+/// seq; `history` is `None` when the store runs without the recorder or the
+/// repository's manifest has capture off — the caller's `capture_for`, Phase
+/// 4a; a failure is [`Error::CaptureFailed`] for the owner of the transaction,
+/// the member's path its to name) and enforce the cap (`feed.max_entries`,
+/// §7.4) inside the same transaction. Runs in the caller's transaction on
+/// `conn`.
 pub fn append_feed_row(
     conn: &Connection,
     mint: &mut Mint<'_>,
@@ -160,20 +164,23 @@ pub fn append_feed_row(
         ],
     )?;
     if let Some(history) = history {
-        history.record_commit(
-            conn,
-            &CommitRecord {
-                commit_id: &commit_id,
-                repo_id: input.repo_id,
-                epoch: &epoch,
-                seq,
-                ts: input.ts,
-                origin: input.origin,
-                actor: input.actor,
-                reason: input.reason,
-                batch_id: &batch_id,
-                ops: input.ops,
-            },
+        capture(
+            None,
+            history.record_commit(
+                conn,
+                &CommitRecord {
+                    commit_id: &commit_id,
+                    repo_id: input.repo_id,
+                    epoch: &epoch,
+                    seq,
+                    ts: input.ts,
+                    origin: input.origin,
+                    actor: input.actor,
+                    reason: input.reason,
+                    batch_id: &batch_id,
+                    ops: input.ops,
+                },
+            ),
         )?;
     }
     enforce_feed_cap(conn, input.repo_id, &epoch)?;

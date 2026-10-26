@@ -43,13 +43,13 @@ use serde_json::json;
 use std::collections::HashSet;
 
 use crate::Store;
-use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
+use crate::core::capabilities::{HistoryRecorder, RevisionTransition};
 use crate::core::codec::attrs_from_json;
 use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
-use crate::core::manifest::require_writer;
-use crate::error::Result;
+use crate::core::manifest::{capture, capture_for, raise_capture_failed, require_writer};
+use crate::error::{Error, Result};
 use crate::graph::{adopt_phantoms, rebuild_doc_edges, retarget_open_edges};
 use crate::links::InboundLink;
 use crate::materialize::{
@@ -337,9 +337,11 @@ impl Store {
         } = self;
         // `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer
         // without the recorder refuses on a repository whose manifest
-        // requires capture.
+        // requires capture — OUTSIDE the transaction, so the alert survives;
+        // then step 15's recorder: the module while the repository's manifest
+        // says `enabled` (Phase 4a).
         require_writer(conn, history.is_some(), repo_id, ts)?;
-        let history = require_history(history.as_deref())?;
+        let history = capture_for(conn, history.as_deref(), Some(repo_id))?;
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
         #[cfg(test)]
         if let Some(hook) = self.after_begin.as_mut() {
@@ -349,12 +351,54 @@ impl Store {
             drop(tx);
             return Ok((Outcome::Conflict(conflict), None));
         }
-        let (committed, commit_id) = {
-            let mut mint = ids.at(&tx);
+        let committed = run_effects_in(&tx, ids, history, repo_id, head, effects, ts, &expires);
+        let (committed, commit_id) = match committed {
+            Ok(v) => v,
+            // §5.4 step 15 (resolution 18): the recorder failed inside the
+            // transaction — it is rolled back (no member of the request
+            // landed), the `capture_failed` alert is raised now that the
+            // rollback is done, and the request fails with the envelope; the
+            // client retries once the recorder is fixed.
+            Err(Error::CaptureFailed { path, reason }) => {
+                drop(tx);
+                let first = touched_paths(effects).into_iter().next();
+                let path = path.or(first);
+                raise_capture_failed(conn, repo_id, path.as_deref(), &reason, ts)?;
+                return Err(Error::CaptureFailed { path, reason });
+            }
+            Err(e) => return Err(e),
+        };
+        tx.commit()?;
+        let (ingests, moves) = committed;
+        Ok((Outcome::Committed { ingests, moves }, Some(commit_id)))
+    }
+}
+
+/// What a request's transaction produced: `(ingests, moves)` and the commit id.
+type EffectsCommitted = ((Vec<Committed>, Vec<MoveOutcome>), String);
+
+/// The body of [`Store::commit_effects_with_id`] inside its transaction: the
+/// feed row, every effect in order, the recorded intent, the pending rows
+/// cleared. Returns `((ingests, moves), commit_id)`; an error leaves the
+/// transaction to the caller to roll back.
+#[allow(clippy::too_many_arguments)]
+fn run_effects_in(
+    tx: &Connection,
+    ids: &mut crate::mint::IdSource,
+    history: Option<&dyn HistoryRecorder>,
+    repo_id: &str,
+    head: &CommitHead<'_>,
+    effects: &[Effect],
+    ts: &str,
+    expires: &str,
+) -> Result<EffectsCommitted> {
+    {
+        {
+            let mut mint = ids.at(tx);
             let commit = append_feed_row(
-                &tx,
+                tx,
                 &mut mint,
-                Some(history),
+                history,
                 &NewFeedRow {
                     repo_id,
                     ts,
@@ -383,18 +427,17 @@ impl Store {
                     _ => false,
                 };
                 outcomes.push(run_effect(
-                    &tx, &mut mint, history, repo_id, head, effect, ts, &expires, &commit,
-                    mints_head,
+                    tx, &mut mint, history, repo_id, head, effect, ts, expires, &commit, mints_head,
                 )?);
             }
             // 14.0: the files this request owes the working tree, recorded
             // before COMMIT so a crash loses nothing (`spec/store` §5.7).
             if head.origin == Origin::Api {
-                record_intent(&tx, repo_id, effects, &outcomes, &commit.commit_id, ts)?;
+                record_intent(tx, repo_id, effects, &outcomes, &commit.commit_id, ts)?;
             }
             if head.clear_pending {
                 for path in touched_paths(effects) {
-                    delete_pending(&tx, repo_id, &path)?;
+                    delete_pending(tx, repo_id, &path)?;
                 }
             }
             let mut ingests = Vec::new();
@@ -406,11 +449,8 @@ impl Store {
                     EffectOutcome::Nothing => {}
                 }
             }
-            ((ingests, moves), commit.commit_id)
-        };
-        tx.commit()?;
-        let (ingests, moves) = committed;
-        Ok((Outcome::Committed { ingests, moves }, Some(commit_id)))
+            Ok(((ingests, moves), commit.commit_id))
+        }
     }
 }
 
@@ -803,7 +843,7 @@ fn validate(tx: &Connection, repo_id: &str, effects: &[Effect]) -> Result<Option
 fn run_effect(
     tx: &Connection,
     mint: &mut Mint<'_>,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     repo_id: &str,
     head: &CommitHead<'_>,
     effect: &Effect,
@@ -953,7 +993,7 @@ pub(crate) fn current_tree_input(conn: &Connection, doc_id: &str) -> Result<Vec<
 fn move_path_in(
     tx: &Connection,
     mint: &mut Mint<'_>,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     doc_id: &str,
     from: &str,
     to: &str,
@@ -1003,18 +1043,24 @@ fn move_path_in(
                     "move_path: docs.file_hash of {doc_id} is not a 32-byte hash"
                 )));
             }
-            history.record_revision(
-                tx,
-                &RevisionTransition {
-                    doc_id,
-                    head: &minted,
-                    path: to,
-                    frontmatter_raw: frontmatter_raw.as_deref(),
-                    body: &body,
-                    rendered_hash,
-                    commit_id: &commit.commit_id,
-                },
-            )?;
+            // Captured while the repository's manifest says `enabled` (Phase 4a).
+            if let Some(history) = history {
+                capture(
+                    Some(to),
+                    history.record_revision(
+                        tx,
+                        &RevisionTransition {
+                            doc_id,
+                            head: &minted,
+                            path: to,
+                            frontmatter_raw: frontmatter_raw.as_deref(),
+                            body: &body,
+                            rendered_hash,
+                            commit_id: &commit.commit_id,
+                        },
+                    ),
+                )?;
+            }
             head = Some(minted);
         }
         _ => {

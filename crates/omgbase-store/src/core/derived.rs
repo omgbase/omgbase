@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::core::capabilities::{HistoryRecorder, require_history};
+use crate::core::capabilities::HistoryRecorder;
 use crate::error::Result;
 
 // ---- sections (§4.5) ------------------------------------------------------------
@@ -218,7 +218,13 @@ pub fn rebuild_index(
         fts_rebuild(&tx)?;
     }
     if matches!(target, RebuildTarget::BlockChanges | RebuildTarget::All) {
-        require_history(history)?.rebuild_projection(&tx)?;
+        // The recorder's projection (`HistoryRecorder::rebuild_projection`:
+        // `block_changes` re-derived from `dispositions`, §7) — `history` is
+        // the caller's `capture_for(None)`: the module when the bundle's
+        // tables exist (Phase 4a).
+        if let Some(history) = history {
+            history.rebuild_projection(&tx)?;
+        }
     }
     tx.commit()?;
     Ok(())

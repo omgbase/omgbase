@@ -223,8 +223,8 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             vec![s("source <add|list|attach|detach|rm> …")],
             opts(&[
                 (
-                    "add <dir> [--repo <slug>] [--name <n>] [-y]",
-                    "point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt)",
+                    "add <dir> [--repo <slug>] [--name <n>] [-y] [--no-history]",
+                    "point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt; --no-history creates it with history capture off — omg history enable turns it on later)",
                 ),
                 ("list", "list sources and which repos they feed"),
                 (
@@ -470,9 +470,11 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "history" => spec(
             s(
-                "History retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+                "History capture (enable/disable per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
             ),
             vec![
+                s("history enable [--best-effort]"),
+                s("history disable"),
                 s("history plan [--before <ts>] [--policy <json|@file>]"),
                 s(
                     "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
@@ -482,6 +484,18 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 s("history list"),
             ],
             opts(&[
+                (
+                    "enable",
+                    "turn capture on for the repository: one baseline commit (origin import) records every live document's current head, a coverage interval opens, every later write is captured; idempotent",
+                ),
+                (
+                    "disable",
+                    "turn capture off: the coverage interval closes, later writes record no history (the feed still does); what was captured stays readable; idempotent",
+                ),
+                (
+                    "--best-effort",
+                    "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)",
+                ),
                 (
                     "plan",
                     "per document: revisions kept / to archive and the bytes only they reach; the policy in effect",

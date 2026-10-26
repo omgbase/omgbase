@@ -10,29 +10,46 @@
 //! Who writes it. [`Store::create_repo`](crate::Store::create_repo) writes
 //! both rows for a new repository — history `enabled` with coverage from the
 //! repository's birth and `writer_requires = 1` (resolution 17: a writer
-//! without the recorder refuses), semantic `enabled` iff
-//! `embedding.provider` resolves for the repository (resolution 1: vectors
-//! are never consulted) — and migration 17 step (13) does the same for every
-//! existing repository (coverage from its first commit). Until the Phase 4
-//! verbs (`history enable|disable|purge`, `embed enable|disable`) exist, the
-//! semantic row FOLLOWS the setting: every settings write re-derives it
-//! ([`refresh_semantic_manifest`], called by `omgbase-sync`'s settings
-//! writers), opening or closing a coverage interval when the state flips.
-//! The history row is flipped by nothing in 17.0 (3e-ii): every composition
-//! carries the recorder.
+//! without the recorder refuses) WHEN the composition carries the recorder
+//! and the caller did not opt out, `disabled` with no coverage otherwise (a
+//! core-only build creates repositories it can write; `omg source add
+//! --no-history`; Phase 4a), semantic `enabled` iff `embedding.provider`
+//! resolves for the repository (resolution 1: vectors are never consulted) —
+//! and migration 17 step (13) does the same for every existing repository
+//! (coverage from its first commit). Until the `embed` verbs (Phase 4b)
+//! exist, the semantic row FOLLOWS the setting: every settings write
+//! re-derives it ([`refresh_semantic_manifest`], called by `omgbase-sync`'s
+//! settings writers), opening or closing a coverage interval when the state
+//! flips. The history row is flipped by [`enable_history`] /
+//! [`disable_history`] (Phase 4a; `spec/store` §5.9).
 //!
 //! Who reads it. `version.capabilities` and `capability_unavailable`'s state
 //! (`omgbase-sync`'s `capability_state`), `doctor --size`'s `capabilities`
-//! member and the `history`/`semantic` file lines ([`crate::size`]), and
-//! every writer through [`require_writer`].
+//! member and the `history`/`semantic` file lines ([`crate::size`]), every
+//! writer through [`require_writer`] / [`writer_for`] — and, since Phase 4a,
+//! every commit: [`capture_for`] is the recorder iff the composition carries
+//! the module AND the repository's row is `enabled`; otherwise the commit
+//! writes no history row. The history bundle's DDL follows the manifest: it
+//! is executed when a repository's row becomes `enabled` (`create_repo`,
+//! `history enable`, the opener for a database some repository of which is
+//! enabled), so a database no repository of which ever enabled capture has
+//! no history table (`spec/store` §3.1 "Which bundles a database holds").
 
 use omgbase_format::hash::sha256;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
-use crate::core::alerts::{AlertInput, AlertSeverity, clear_alert, raise_alert};
+use crate::core::alerts::{
+    AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, clear_alert, raise_alert,
+};
+use crate::core::capabilities::HistoryRecorder;
 use crate::core::codec::canonical_json;
+use crate::core::feed::{
+    FeedEntryKind, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
+};
+use crate::core::mint::Mint;
 use crate::core::settings::effective_settings;
+use crate::core::writers::{CommitRecord, Origin};
 use crate::error::{Error, Result};
 
 /// The history capability's interface version (phase-1-contracts §1.5: history 1).
@@ -252,39 +269,514 @@ fn read_written(conn: &Connection, repo_id: &str, capability: &str) -> Result<Ma
     })
 }
 
-/// The history row a repository gets when capture starts (`create_repo`,
-/// migration 17): `enabled`, interface/data 1, `config {}`, one open coverage
-/// interval from `from`, `writer_requires` per `writer_requires` (resolution
-/// 17: 1). Idempotent: an existing row is left alone (the manifest is engine
-/// state, never re-derived from elsewhere).
+/// The history row a repository gets at `create_repo` / migration 17: with
+/// `enable` (the composition carries the recorder and the caller did not ask
+/// for history off — `omg source add --no-history`, a fixture's
+/// `capabilities: { history: false }`) `enabled`, interface/data 1, `config
+/// {}`, one open coverage interval from `from`, `writer_requires` per
+/// `writer_requires` (default 1 — resolution 17), and the history bundle's
+/// DDL executed; otherwise (a core-only build, Phase 4a, or the explicit
+/// opt-out) `disabled` with no coverage and `writer_requires = 0` — a build
+/// that cannot capture does not require what it cannot do, and `history
+/// enable` through a full build turns it on later. Idempotent: an existing
+/// row is left alone (the manifest is engine state, never re-derived from
+/// elsewhere).
 pub fn ensure_history_manifest(
     conn: &Connection,
     repo_id: &str,
     from: &str,
     now: &str,
+    enable: bool,
     writer_requires: bool,
 ) -> Result<ManifestRow> {
     if let Some(existing) = read_capability(conn, repo_id, "history")? {
         return Ok(existing);
+    }
+    if enable {
+        apply_history_bundle(conn)?;
+    }
+    let open = [CoverageInterval {
+        from: from.to_owned(),
+        to: None,
+    }];
+    write_row(
+        conn,
+        repo_id,
+        &WriteInput {
+            capability: "history",
+            state: if enable {
+                ManifestState::Enabled
+            } else {
+                ManifestState::Disabled
+            },
+            interface_v: HISTORY_INTERFACE_V,
+            data_v: HISTORY_DATA_V,
+            config: &Map::new(),
+            coverage: if enable { &open } else { &[] },
+            writer_requires: enable && writer_requires,
+            now,
+        },
+    )?;
+    read_written(conn, repo_id, "history")
+}
+
+// ---- the history bundle's presence (`spec/store` §3.1 "Which bundles a database holds", Phase 4a) ----
+
+/// Do the history bundle's tables exist on this connection? (Probed on
+/// `sqlite_master`; [`apply_history_bundle`] is the only way they appear.)
+pub fn history_bundle_present(conn: &Connection) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'commits'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// Execute the history bundle's DDL (`schema-history.sql`; every statement
+/// `IF NOT EXISTS`) — `history enable`, `create_repo` with the recorder, the
+/// opener.
+pub fn apply_history_bundle(conn: &Connection) -> Result<()> {
+    if history_bundle_present(conn)? {
+        return Ok(());
+    }
+    conn.execute_batch(crate::schema::HISTORY_SQL)?;
+    Ok(())
+}
+
+/// Is any repository's history row `enabled` (the opener's rule for executing
+/// the bundle's DDL: one database holds every repository)?
+pub fn any_history_enabled(conn: &Connection) -> Result<bool> {
+    if !manifest_table_exists(conn)? {
+        return Ok(false);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// The recorder a commit on `repo_id` captures through (`spec/store` §5.4
+/// step 15, Phase 4a): the composition's module (`history`) when the
+/// repository's manifest row is `enabled`, else `None` — the capture is
+/// simply skipped and no history row is written. With `repo_id` `None` (a
+/// store-wide maintenance path — `gc`, `rebuild-index`, the size report): the
+/// module when the bundle's tables exist.
+pub fn capture_for<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    repo_id: Option<&str>,
+) -> Result<Option<&'a dyn HistoryRecorder>> {
+    let Some(history) = history else {
+        return Ok(None);
+    };
+    let Some(repo_id) = repo_id else {
+        return Ok(history_bundle_present(conn)?.then_some(history));
+    };
+    let row = read_capability(conn, repo_id, "history")?;
+    Ok(row
+        .is_some_and(|r| r.state == ManifestState::Enabled)
+        .then_some(history))
+}
+
+/// The recorder a READ goes through (`docs_read { at }`, `docs_diff*`,
+/// `docs_history`, `blocks_history`, the `revisions` query root): the module
+/// when the bundle's tables exist — what was captured is readable whatever the
+/// repository's current state (`spec/surface` §2.1: a disabled repository
+/// reads what it captured earlier) — else `None` (nothing was ever captured
+/// in this database, or the build has no module).
+pub fn history_reader<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+) -> Result<Option<&'a dyn HistoryRecorder>> {
+    match history {
+        Some(h) if history_bundle_present(conn)? => Ok(Some(h)),
+        _ => Ok(None),
+    }
+}
+
+/// The recorder a history TOOL reads through, or the refusal (`spec/surface`
+/// §2.1; Phase 4a): [`Error::HistoryUnavailable`] (`capability_unavailable {
+/// history, unavailable }`) on a composition without the module,
+/// [`Error::HistoryDisabled`] (`{ history, disabled }`) when nothing was ever
+/// captured in this database (no bundle) — the reads of a repository whose
+/// capture is off but whose rows exist go through (what was captured stays
+/// readable).
+pub fn require_history_reader<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+) -> Result<&'a dyn HistoryRecorder> {
+    let Some(history) = history else {
+        return Err(Error::HistoryUnavailable);
+    };
+    if !history_bundle_present(conn)? {
+        return Err(Error::HistoryDisabled { rev: None });
+    }
+    Ok(history)
+}
+
+/// Step 0 then step 15's recorder: the refusal check ([`require_writer`]),
+/// then the recorder a commit on `repo_id` captures through
+/// ([`capture_for`]; `None` = uncaptured).
+pub fn writer_for<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    repo_id: &str,
+    now: &str,
+) -> Result<Option<&'a dyn HistoryRecorder>> {
+    require_writer(conn, history.is_some(), repo_id, now)?;
+    capture_for(conn, history, Some(repo_id))
+}
+
+/// Run one of the recorder's capture calls (`spec/store` §5.4 step 15,
+/// resolution 18): a failure becomes [`Error::CaptureFailed`] for the
+/// transaction's owner to roll back on, name the member and raise the alert
+/// after. `path` is the member when the caller knows it (`None` for the
+/// batch's commit row).
+pub fn capture<T>(path: Option<&str>, result: Result<T>) -> Result<T> {
+    match result {
+        Ok(v) => Ok(v),
+        Err(e @ Error::CaptureFailed { .. }) => Err(e),
+        Err(e) => Err(Error::CaptureFailed {
+            path: path.map(str::to_owned),
+            reason: e.to_string(),
+        }),
+    }
+}
+
+// ---- the capture lifecycle: `history enable` / `history disable` (`spec/store` §5.9, Phase 4a) ----
+
+/// The feed row's `reason` on the baseline commit, byte for byte in both engines.
+pub const HISTORY_ENABLED_REASON: &str = "history enabled";
+
+/// `phase-1-contracts.md` §2.1, byte for byte in both engines: a history read on a build without the module.
+pub const HISTORY_UNAVAILABLE_MESSAGE: &str =
+    "history is unavailable in this build — run an engine with the history module to read it";
+
+/// `phase-1-contracts.md` §2.1, byte for byte in both engines: a history read on a repository whose capture is off.
+pub const HISTORY_DISABLED_MESSAGE: &str = "history is disabled for this repository — enable it with `omg history enable` (reads of what was captured earlier still work)";
+
+/// What `history enable` / `history disable` return: the row as it now is,
+/// whether anything changed, and — on an `enable` that changed something —
+/// the baseline commit's id and the revisions it wrote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryLifecycleResult {
+    pub row: ManifestRow,
+    /// `false`: the verb was a no-op — already in that state.
+    pub changed: bool,
+    /// `enable`: `(commit id, revisions written)` of the baseline; `None` when nothing changed.
+    pub baseline: Option<(String, usize)>,
+}
+
+impl HistoryLifecycleResult {
+    /// The `--json` shape `{ state, coverage, writer_requires, changed,
+    /// baseline?: { commit, revisions } }` (`spec/cli` §6; the fixture
+    /// runners' `history` outcome), in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        let mut m = Map::new();
+        m.insert(
+            "state".to_owned(),
+            Json::String(self.row.state.as_str().to_owned()),
+        );
+        m.insert(
+            "coverage".to_owned(),
+            Json::Array(
+                self.row
+                    .coverage
+                    .iter()
+                    .map(CoverageInterval::to_json)
+                    .collect(),
+            ),
+        );
+        m.insert(
+            "writer_requires".to_owned(),
+            Json::Bool(self.row.writer_requires),
+        );
+        m.insert("changed".to_owned(), Json::Bool(self.changed));
+        if let Some((commit, revisions)) = &self.baseline {
+            m.insert(
+                "baseline".to_owned(),
+                json!({ "commit": commit, "revisions": revisions }),
+            );
+        }
+        Json::Object(m)
+    }
+}
+
+/// `history enable` (`spec/store` §5.9; `phase-1-contracts.md` §1.14): in one
+/// transaction — the bundle's DDL when absent; the BASELINE: one feed row
+/// (`origin = 'import'`, `reason = 'history enabled'`, its own batch) with
+/// one `changed` entry per live document under its EXISTING head (no head is
+/// minted, so every `_rev` a client holds stays valid), handed to the recorder
+/// as [`HistoryRecorder::baseline`] — the `commits` row, a checkpoint revision
+/// for every live document whose head has none, the recorder's holds, the
+/// edge record reconciled; then the manifest row: `state = 'enabled'`,
+/// `coverage += { from: now, to: null }`, `writer_requires` per the flag
+/// (default 1, resolution 17). Idempotent: an `enabled` row is returned
+/// unchanged (even when `writer_requires` differs — the flag is the enable's,
+/// not a setting). Refuses on a composition without the recorder
+/// ([`Error::HistoryUnavailable`]: nothing can capture here). The caller
+/// holds the writer lock and no transaction (the baseline is one of its own).
+pub fn enable_history(
+    conn: &Connection,
+    mint: &mut Mint<'_>,
+    history: Option<&dyn HistoryRecorder>,
+    repo_id: &str,
+    now: &str,
+    writer_requires: bool,
+) -> Result<HistoryLifecycleResult> {
+    let Some(history) = history else {
+        return Err(Error::HistoryUnavailable);
+    };
+    let existing = read_capability(conn, repo_id, "history")?;
+    if let Some(row) = existing
+        .as_ref()
+        .filter(|r| r.state == ManifestState::Enabled)
+    {
+        return Ok(HistoryLifecycleResult {
+            row: row.clone(),
+            changed: false,
+            baseline: None,
+        });
+    }
+    let tx = conn.unchecked_transaction()?;
+    apply_history_bundle(&tx)?;
+    // The feed row is the core's; the row is still `disabled` here, so no
+    // recorder is handed to it — the `commits` row is the baseline's own.
+    let commit = append_feed_row(
+        &tx,
+        mint,
+        None,
+        &NewFeedRow {
+            repo_id,
+            ts: now,
+            origin: Origin::Import,
+            actor: None,
+            reason: Some(HISTORY_ENABLED_REASON),
+            batch_id: None,
+            plan_id: None,
+            ops: None,
+        },
+    )?;
+    let live: Vec<(String, String, String, Vec<u8>)> = {
+        let mut stmt = tx.prepare(
+            "SELECT doc_id, path, head, file_hash FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map(params![repo_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
+    for (doc_id, path, head, hash) in &live {
+        append_feed_entry(
+            &tx,
+            &NewFeedEntry {
+                repo_id,
+                epoch: &commit.epoch,
+                seq: commit.seq,
+                doc_id,
+                path,
+                head: Some(head),
+                hash: Some(hash),
+                kind: FeedEntryKind::Changed,
+                from_path: None,
+            },
+        )?;
+    }
+    let revisions = history.baseline(
+        &tx,
+        &CommitRecord {
+            commit_id: &commit.commit_id,
+            repo_id,
+            epoch: &commit.epoch,
+            seq: commit.seq,
+            ts: now,
+            origin: Origin::Import,
+            actor: None,
+            reason: Some(HISTORY_ENABLED_REASON),
+            batch_id: &commit.batch_id,
+            ops: None,
+        },
+    )?;
+    let mut coverage = existing
+        .as_ref()
+        .map(|e| e.coverage.clone())
+        .unwrap_or_default();
+    coverage.push(CoverageInterval {
+        from: now.to_owned(),
+        to: None,
+    });
+    let empty = Map::new();
+    write_row(
+        &tx,
+        repo_id,
+        &WriteInput {
+            capability: "history",
+            state: ManifestState::Enabled,
+            interface_v: existing
+                .as_ref()
+                .map_or(HISTORY_INTERFACE_V, |e| e.interface_v),
+            data_v: existing.as_ref().map_or(HISTORY_DATA_V, |e| e.data_v),
+            config: existing.as_ref().map_or(&empty, |e| &e.config),
+            coverage: &coverage,
+            writer_requires,
+            now,
+        },
+    )?;
+    let row = read_written(&tx, repo_id, "history")?;
+    tx.commit()?;
+    Ok(HistoryLifecycleResult {
+        row,
+        changed: true,
+        baseline: Some((commit.commit_id, revisions)),
+    })
+}
+
+/// `history disable` (`spec/store` §5.9): the open coverage interval closes
+/// (`to = now`), `state = 'disabled'`, `writer_requires = 0`. The rows stay
+/// (`history purge`, Phase 4b, is what removes them); reads of what was
+/// captured keep working; step 15 stops for this repository from the next
+/// commit on, in this process and every other (every commit reads the row).
+/// Idempotent: a `disabled` or absent row is a no-op (an absent one is written
+/// `disabled` with no coverage — rule 1 made explicit). Needs no recorder: a
+/// core-only build may switch capture off on a repository it cannot write.
+pub fn disable_history(
+    conn: &Connection,
+    repo_id: &str,
+    now: &str,
+) -> Result<HistoryLifecycleResult> {
+    let existing = read_capability(conn, repo_id, "history")?;
+    let Some(existing) = existing.filter(|e| e.state == ManifestState::Enabled) else {
+        let row = match read_capability(conn, repo_id, "history")? {
+            Some(row) => row,
+            None => {
+                write_row(
+                    conn,
+                    repo_id,
+                    &WriteInput {
+                        capability: "history",
+                        state: ManifestState::Disabled,
+                        interface_v: HISTORY_INTERFACE_V,
+                        data_v: HISTORY_DATA_V,
+                        config: &Map::new(),
+                        coverage: &[],
+                        writer_requires: false,
+                        now,
+                    },
+                )?;
+                read_written(conn, repo_id, "history")?
+            }
+        };
+        return Ok(HistoryLifecycleResult {
+            row,
+            changed: false,
+            baseline: None,
+        });
+    };
+    let mut coverage = existing.coverage.clone();
+    if let Some(last) = coverage.last_mut()
+        && last.to.is_none()
+    {
+        last.to = Some(now.to_owned());
     }
     write_row(
         conn,
         repo_id,
         &WriteInput {
             capability: "history",
-            state: ManifestState::Enabled,
-            interface_v: HISTORY_INTERFACE_V,
-            data_v: HISTORY_DATA_V,
-            config: &Map::new(),
-            coverage: &[CoverageInterval {
-                from: from.to_owned(),
-                to: None,
-            }],
-            writer_requires,
+            state: ManifestState::Disabled,
+            interface_v: existing.interface_v,
+            data_v: existing.data_v,
+            config: &existing.config,
+            coverage: &coverage,
+            writer_requires: false,
             now,
         },
     )?;
-    read_written(conn, repo_id, "history")
+    Ok(HistoryLifecycleResult {
+        row: read_written(conn, repo_id, "history")?,
+        changed: true,
+        baseline: None,
+    })
+}
+
+/// The open coverage interval's `from` (the current capture's start), or
+/// `None` when capture is off.
+#[must_use]
+pub fn open_coverage_from(row: Option<&ManifestRow>) -> Option<&str> {
+    let last = row?.coverage.last()?;
+    last.to.is_none().then_some(last.from.as_str())
+}
+
+// ---- the `capture_failed` alert (`spec/store` §5.8; resolution 18) --------------------------
+
+/// The `capture_failed` message (the alert's and the envelope's), byte for
+/// byte in both engines: `path` the member (`None` → "a commit").
+#[must_use]
+pub fn capture_failed_message(path: Option<&str>, reason: &str) -> String {
+    let where_ = path.unwrap_or("a commit");
+    format!(
+        "history capture of {where_} failed: {reason} — the write was rolled back and is retried by the next sweep; fix the recorder or run omg history disable"
+    )
+}
+
+/// An alert names a path in the reference form (`/a.md`), as the
+/// materialization alerts do.
+fn alert_path(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// Raise `capture_failed` for the member whose capture failed (after the
+/// rollback — the transaction's owner calls this): `error`, detail `{ path,
+/// reason }` (`path` omitted when unknown). The row is retried by the next
+/// sweep; a later capture of the same path clears it
+/// ([`clear_capture_failed`]).
+pub fn raise_capture_failed(
+    conn: &Connection,
+    repo_id: &str,
+    path: Option<&str>,
+    reason: &str,
+    now: &str,
+) -> Result<()> {
+    let path = path.map(alert_path);
+    let mut detail = Map::new();
+    if let Some(p) = &path {
+        detail.insert("path".to_owned(), Json::String(p.clone()));
+    }
+    detail.insert("reason".to_owned(), Json::String(reason.to_owned()));
+    raise_alert(
+        conn,
+        repo_id,
+        &AlertInput {
+            code: CAPTURE_FAILED_ALERT,
+            severity: AlertSeverity::Error,
+            message: &capture_failed_message(path.as_deref(), reason),
+            detail: Some(&detail),
+        },
+        now,
+    )
+}
+
+/// A successful capture of `path` ends its failure condition: the active
+/// `capture_failed` alert about this path is cleared. Runs in the commit's
+/// transaction.
+pub fn clear_capture_failed(conn: &Connection, repo_id: &str, path: &str, now: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE alerts SET cleared_at = ?1 WHERE repo_id = ?2 AND code = ?3 AND cleared_at IS NULL AND json_extract(detail, '$.path') = ?4",
+        params![now, repo_id, CAPTURE_FAILED_ALERT, alert_path(path)],
+    )?;
+    Ok(())
 }
 
 /// Is `embedding.provider` configured for the repository (the workspace layer
@@ -403,9 +895,17 @@ pub fn refresh_semantic_manifest(
 
 /// Both rows for a repository that has none yet: the history row with
 /// coverage from `from` (its birth at `create_repo`; its first commit's `ts`
-/// on migration) and the semantic row from the settings. Idempotent.
-pub fn ensure_manifest(conn: &Connection, repo_id: &str, from: &str, now: &str) -> Result<()> {
-    ensure_history_manifest(conn, repo_id, from, now, true)?;
+/// on migration) when `enable_history` (the composition carries the recorder
+/// and the caller did not opt out), else `disabled`; the semantic row from the
+/// settings. Idempotent.
+pub fn ensure_manifest(
+    conn: &Connection,
+    repo_id: &str,
+    from: &str,
+    now: &str,
+    enable_history: bool,
+) -> Result<()> {
+    ensure_history_manifest(conn, repo_id, from, now, enable_history, true)?;
     refresh_semantic_manifest(conn, repo_id, now)?;
     Ok(())
 }
@@ -437,17 +937,19 @@ pub const WRITER_REFUSED_MESSAGE: &str = "a writer without the history module wa
 /// spells (`HISTORY_WRITER_REQUIRED_MESSAGE`).
 pub const HISTORY_WRITER_REQUIRED_MESSAGE: &str = "history capture is required on this repository (writer_requires) and this engine runs without the history module — write through an engine that carries it, or run omg history disable";
 
-/// `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer without
-/// the history module must refuse to write on a repository whose manifest
-/// says `history` is `enabled` with `writer_requires = 1`. The refusal is
-/// [`Error::HistoryWriterRequired`] (the surface's `capability_unavailable {
-/// capability: "history", state: "unavailable" }`, retriable: the right
-/// engine can) and raises the `writer_refused` alert so the stall is visible
-/// where the user works; a write that passes clears it. `history_present` is
-/// whether this store runs with the recorder. Through 17.0 every composition
-/// carries it, so the refusal is unreachable in production — the check and
-/// its shape are pinned here for Phase 4, when the core-only composition
-/// drops the recorder.
+/// `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17; reachable since
+/// Phase 4a): a writer without the history module must refuse to write on a
+/// repository whose manifest says `history` is `enabled` with
+/// `writer_requires = 1`. The refusal is [`Error::HistoryWriterRequired`]
+/// (the surface's `capability_unavailable { capability: "history", state:
+/// "unavailable" }`, retriable: the right engine can) and raises the
+/// `writer_refused` alert so the stall is visible where the user works; a
+/// write that passes clears it (through an engine with the module, or
+/// because capture was switched off). A repository whose row is `disabled`
+/// writes freely and captures nothing. `history_present` is whether this
+/// store runs with the recorder. Call it OUTSIDE the write transaction (the
+/// alert must survive the refusal): `commit_ingest`, `observe_batch` and
+/// `commit_effects` do.
 pub fn require_writer(
     conn: &Connection,
     history_present: bool,
@@ -472,9 +974,9 @@ pub fn require_writer(
         )?;
         return Err(Error::HistoryWriterRequired);
     }
-    if history_present {
-        clear_alert(conn, repo_id, WRITER_REFUSED_ALERT, now)?;
-    }
+    // A write that passes ends the condition — through an engine with the
+    // module, or because capture was turned off.
+    clear_alert(conn, repo_id, WRITER_REFUSED_ALERT, now)?;
     Ok(())
 }
 
@@ -548,7 +1050,7 @@ mod tests {
         assert_eq!(coverage_from(Some(&history)), Some(T0));
         assert_eq!(coverage_from(Some(&semantic)), None);
         // Idempotent: a second ensure leaves the rows alone.
-        ensure_manifest(store.conn(), &repo, T1, T1).unwrap();
+        ensure_manifest(store.conn(), &repo, T1, T1, true).unwrap();
         assert_eq!(
             read_capability(store.conn(), &repo, "history")
                 .unwrap()
@@ -620,20 +1122,43 @@ mod tests {
 
     #[test]
     fn a_recorder_less_writer_is_refused_where_the_manifest_requires_capture() {
-        // A composition without the recorder — what Phase 4's core-only
-        // composition becomes. Fresh database: no migration needs it.
-        let mut bare = Store::open_in_memory_with_capabilities(
+        // A repository born under a full composition (history `enabled`,
+        // `writer_requires` 1), then opened by a core-only build (Phase 4a):
+        // the refusal, the alert, `history disable` from the bare build, the
+        // write that then lands and clears the alert.
+        let dir = std::env::temp_dir().join(format!(
+            "omgbase-manifest-refusal-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("db.sqlite");
+        let items = [crate::BatchItem::observed("a.md", "# A\n")];
+        let repo = {
+            let mut full =
+                Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+            let repo = full.create_repo_at("fixture", T0).unwrap();
+            assert!(
+                read_capability(full.conn(), &repo, "history")
+                    .unwrap()
+                    .unwrap()
+                    .writer_requires
+            );
+            require_writer(full.conn(), true, &repo, T1).unwrap();
+            full.observe_batch(&repo, &items, T1, &crate::Config::default())
+                .unwrap();
+            assert!(list_active_alerts(full.conn(), &repo).unwrap().is_empty());
+            full.close().unwrap();
+            repo
+        };
+        let mut bare = Store::open_with(
+            &path,
             Box::new(SequentialMinter::new()),
             Capabilities::core_only(),
         )
         .unwrap();
-        let repo = bare.create_repo_at("fixture", T0).unwrap();
-        assert!(
-            read_capability(bare.conn(), &repo, "history")
-                .unwrap()
-                .unwrap()
-                .writer_requires
-        );
         let err = require_writer(bare.conn(), false, &repo, T1).unwrap_err();
         assert!(matches!(err, Error::HistoryWriterRequired));
         assert_eq!(err.to_string(), HISTORY_WRITER_REQUIRED_MESSAGE);
@@ -650,32 +1175,154 @@ mod tests {
             })
         );
         // An observation through the recorder-less store is the same refusal.
-        let items = [crate::BatchItem::observed("a.md", "# A\n")];
+        let edited = [crate::BatchItem::observed("a.md", "# A\n\nedited\n")];
         let refused = bare
-            .observe_batch(&repo, &items, T1, &crate::Config::default())
+            .observe_batch(&repo, &edited, T2, &crate::Config::default())
             .unwrap_err();
         assert!(matches!(refused, Error::HistoryWriterRequired));
         // The same repository written through an engine that carries the
         // recorder passes and clears the alert.
         require_writer(bare.conn(), true, &repo, T2).unwrap();
         assert!(list_active_alerts(bare.conn(), &repo).unwrap().is_empty());
-        // A repository whose manifest does not require capture lets a
-        // recorder-less writer through.
-        bare.conn()
-            .execute(
-                "UPDATE capabilities SET writer_requires = 0 WHERE repo_id = ?1 AND capability = 'history'",
-                params![repo],
+        // `history disable` needs no module: capture off, the interval
+        // closed, and the recorder-less writer goes through — writing the
+        // feed and the head, no history row.
+        let err = require_writer(bare.conn(), false, &repo, T2).unwrap_err();
+        assert!(matches!(err, Error::HistoryWriterRequired));
+        let r = bare.disable_history(&repo, T2).unwrap();
+        assert!(r.changed);
+        assert_eq!(r.row.state, ManifestState::Disabled);
+        assert_eq!(
+            r.row.coverage,
+            [CoverageInterval {
+                from: T0.into(),
+                to: Some(T2.into())
+            }]
+        );
+        assert!(!r.row.writer_requires);
+        let out = bare
+            .observe_batch(&repo, &edited, T2, &crate::Config::default())
+            .unwrap();
+        assert!(!out[0].as_observed().unwrap().echo);
+        assert!(list_active_alerts(bare.conn(), &repo).unwrap().is_empty());
+        let revisions: i64 = bare
+            .conn()
+            .query_row("SELECT count(*) FROM revisions", [], |r| r.get(0))
+            .unwrap();
+        let feed: i64 = bare
+            .conn()
+            .query_row("SELECT count(*) FROM feed", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((revisions, feed), (1, 2), "the feed grew, the log did not");
+        // A repository a core-only build creates starts `disabled` with no
+        // coverage and requires nothing; `history enable` is refused there.
+        let born = bare.create_repo_at("born-bare", T2).unwrap();
+        let row = read_capability(bare.conn(), &born, "history")
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.state, ManifestState::Disabled);
+        assert!(row.coverage.is_empty());
+        assert!(!row.writer_requires);
+        assert!(matches!(
+            bare.enable_history(&born, T2, true).unwrap_err(),
+            Error::HistoryUnavailable
+        ));
+        bare.close().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn enable_writes_the_baseline_and_disable_closes_the_interval() {
+        // `spec/store` §5.9 on an in-memory store: born disabled, two
+        // documents written uncaptured (no history table), `enable` executes
+        // the bundle and writes the baseline, `disable` closes the interval.
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo_with("fixture", T0, false).unwrap();
+        assert!(!history_bundle_present(store.conn()).unwrap());
+        let cfg = crate::Config::default();
+        store
+            .observe_batch(
+                &repo,
+                &[
+                    crate::BatchItem::observed("a.md", "# A\n\nOne.\n"),
+                    crate::BatchItem::observed("b.md", "# B\n\nTwo [a](a.md).\n"),
+                ],
+                T1,
+                &cfg,
             )
             .unwrap();
-        require_writer(bare.conn(), false, &repo, T2).unwrap();
-        // Every 17.0 composition carries the recorder: the check passes.
-        let mut full =
-            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
-        let repo = full.create_repo("fixture").unwrap();
-        require_writer(full.conn(), true, &repo, T1).unwrap();
-        full.observe_batch(&repo, &items, T1, &crate::Config::default())
+        assert!(!history_bundle_present(store.conn()).unwrap());
+        assert!(store.read_at_revision("d_0", "r_0").unwrap().is_none());
+        let r = store.enable_history(&repo, T2, true).unwrap();
+        assert!(r.changed);
+        assert_eq!(r.baseline.as_ref().map(|b| b.1), Some(2));
+        assert_eq!(r.row.state, ManifestState::Enabled);
+        assert_eq!(
+            r.row.coverage,
+            [CoverageInterval {
+                from: T2.into(),
+                to: None
+            }]
+        );
+        assert!(r.row.writer_requires);
+        let (commit, _) = r.baseline.unwrap();
+        let (reason, origin): (String, String) = store
+            .conn()
+            .query_row(
+                "SELECT reason, origin FROM commits WHERE commit_id = ?1",
+                params![commit],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
-        assert!(list_active_alerts(full.conn(), &repo).unwrap().is_empty());
+        assert_eq!(
+            (reason.as_str(), origin.as_str()),
+            (HISTORY_ENABLED_REASON, "import")
+        );
+        let entries: i64 = store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM feed_entries fe JOIN feed f ON f.repo_id = fe.repo_id AND f.epoch = fe.epoch AND f.seq = fe.seq WHERE f.commit_id = ?1 AND fe.kind = 'changed'",
+                params![commit],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(entries, 2);
+        let read = store.read_at_revision("d_0", "r_0").unwrap().unwrap();
+        assert_eq!(read.content, "# A\n\nOne.\n");
+        assert!(read.rendered_hash_match);
+        // The edge opened while capture was off has an open transition from the baseline.
+        let open: i64 = store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM edge_transitions WHERE to_commit IS NULL AND from_commit = ?1",
+                params![commit],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(open, 1);
+        // Idempotent.
+        let again = store
+            .enable_history(&repo, "2026-09-26T13:00:00.000Z", false)
+            .unwrap();
+        assert!(!again.changed && again.baseline.is_none());
+        assert!(again.row.writer_requires, "the flag is the enable's");
+        let off = store
+            .disable_history(&repo, "2026-09-26T14:00:00.000Z")
+            .unwrap();
+        assert!(off.changed);
+        assert_eq!(
+            off.row.coverage[0].to.as_deref(),
+            Some("2026-09-26T14:00:00.000Z")
+        );
+        assert!(!off.row.writer_requires);
+        assert!(
+            !store
+                .disable_history(&repo, "2026-09-26T15:00:00.000Z")
+                .unwrap()
+                .changed
+        );
+        assert_eq!(open_coverage_from(Some(&off.row)), None);
     }
 
     #[test]

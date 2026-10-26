@@ -165,15 +165,11 @@ impl std::fmt::Debug for VocabularyCache {
     }
 }
 
-// seam: feed sequence separate from archive retention (Phase 3, M5/D7 — the
-// cache keys on the feed's `(epoch, seq)`; inventory-rust.md §2.7
-// `names.rs:168-174`, §3.6).
+/// The feed's head as the vocabulary cache's clock (`spec/store` §3.1 `feed`,
+/// 17.0 — M5/D7; Phase 4a: the core's own sequence, read from `feed`, never
+/// the recorder's `commits` — the reference's `headSeq`).
 fn head_seq(store: &Store, repo_id: &str) -> Result<i64> {
-    Ok(store.conn().query_row(
-        "SELECT COALESCE(MAX(seq), 0) AS seq FROM commits WHERE repo_id = ?",
-        params![repo_id],
-        |r| r.get::<_, i64>(0),
-    )?)
+    Ok(omgbase_store::feed_status(store.conn(), repo_id)?.head)
 }
 
 /// The authored vocabulary of a kind: docs — every live frontmatter or inline

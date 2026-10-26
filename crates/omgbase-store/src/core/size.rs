@@ -508,8 +508,10 @@ pub fn size_report(
 /// `now` — the report is store-wide, the policy a repository's, so every
 /// repository's plan under its effective policy is summed at one clock. The
 /// history figures (the `same` rows, the archived summary, the plans) come
-/// from the recorder ([`HistoryRecorder::size_figures`]); a store without
-/// one reports them as zero. The embeddings advice names the semantic
+/// from the recorder ([`HistoryRecorder::size_figures`] — the caller's
+/// `capture_for(None)`: the module when the bundle's tables exist, Phase 4a);
+/// a store without one, or a database no repository of which ever captured,
+/// reports them as zero. The embeddings advice names the semantic
 /// bundle's tables ([`SemanticProvider::tables`]); a store without the bundle
 /// gives none. The `id_claims` count (17.0) is the claims oracle's
 /// ([`IdentityClaims::count`]). The `feed` member (17.0, 3e) is `repo_id`'s

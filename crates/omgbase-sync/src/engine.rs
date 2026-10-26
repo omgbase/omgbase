@@ -159,6 +159,16 @@ impl EngineClient for InProcessEngineClient<'_> {
                         d.path
                     )));
                 }
+                // Phase 4a (resolution 18): a member rolled back by a capture
+                // failure is, like a deletion, not an observation this call
+                // returns (the reference's `observeMany` throws the same plain
+                // error; the alert is raised, the next sweep retries).
+                BatchOutcome::Failed(f) => {
+                    return Err(Error::Other(format!(
+                        "observe_many: unexpected outcome for {}",
+                        f.path
+                    )));
+                }
             }
         }
         self.store.sweep_pool(&ts)?;

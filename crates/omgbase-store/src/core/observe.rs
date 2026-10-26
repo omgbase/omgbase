@@ -39,12 +39,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Store;
 pub use crate::core::capabilities::DispositionRow;
-use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
+use crate::core::capabilities::{HistoryRecorder, RevisionTransition};
 use crate::core::codec::canonical_attrs;
 use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
-use crate::core::manifest::require_writer;
+use crate::core::manifest::{
+    capture, capture_for, clear_capture_failed, raise_capture_failed, require_writer,
+};
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
@@ -136,6 +138,22 @@ impl DeleteOutcome {
 pub enum BatchOutcome {
     Observed(ObserveOutcome),
     Deleted(DeleteOutcome),
+    /// `spec/store` §5.4 step 15 (17.1, Phase 4a — resolution 18): the
+    /// recorder failed inside the member's transaction — nothing of the
+    /// member landed, the `capture_failed` alert is raised, the next sweep
+    /// retries it.
+    Failed(FailedOutcome),
+}
+
+/// A member rolled back because its history capture failed (Phase 4a): the
+/// fixture runners' `{ path, failed: true, doc, error }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailedOutcome {
+    pub path: String,
+    /// The live doc at the path before the attempt, or `None` for a new path.
+    pub doc_id: Option<String>,
+    /// The `capture_failed` message naming the member.
+    pub error: String,
 }
 
 impl BatchOutcome {
@@ -144,6 +162,7 @@ impl BatchOutcome {
         match self {
             BatchOutcome::Observed(o) => &o.path,
             BatchOutcome::Deleted(d) => &d.path,
+            BatchOutcome::Failed(f) => &f.path,
         }
     }
 
@@ -151,7 +170,7 @@ impl BatchOutcome {
     pub fn as_observed(&self) -> Option<&ObserveOutcome> {
         match self {
             BatchOutcome::Observed(o) => Some(o),
-            BatchOutcome::Deleted(_) => None,
+            BatchOutcome::Deleted(_) | BatchOutcome::Failed(_) => None,
         }
     }
 
@@ -159,7 +178,15 @@ impl BatchOutcome {
     pub fn as_deleted(&self) -> Option<&DeleteOutcome> {
         match self {
             BatchOutcome::Deleted(d) => Some(d),
-            BatchOutcome::Observed(_) => None,
+            BatchOutcome::Observed(_) | BatchOutcome::Failed(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_failed(&self) -> Option<&FailedOutcome> {
+        match self {
+            BatchOutcome::Failed(f) => Some(f),
+            BatchOutcome::Observed(_) | BatchOutcome::Deleted(_) => None,
         }
     }
 }
@@ -600,16 +627,21 @@ fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
 ///
 /// The history half — step 15: the captured revision and its bodies
 /// ([`HistoryRecorder::record_revision`]) and the verdicts
-/// ([`HistoryRecorder::record_dispositions`]) — goes through `history`, in
-/// the same place in the statement order; the current-state half (the doc
-/// row with its frontmatter raw, the head and its feed entry, the pool, the
-/// `blocks` refresh with every row's own bytes and timestamps, nodes,
-/// properties, edges, the pointers) is the core's own.
+/// ([`HistoryRecorder::record_dispositions`]) — goes through `history` when
+/// it is `Some` (the caller's `capture_for`: the module while the
+/// repository's manifest says `enabled`, Phase 4a; with capture off the head
+/// is minted and the feed written exactly the same and no history row
+/// appears), in the same place in the statement order, each call under
+/// [`capture`] so a failure rolls the member back ([`Error::CaptureFailed`],
+/// resolution 18); the current-state half (the doc row with its frontmatter
+/// raw, the head and its feed entry, the pool, the `blocks` refresh with
+/// every row's own bytes and timestamps, nodes, properties, edges, the
+/// pointers) is the core's own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ingest_in(
     tx: &Connection,
     mint: &mut Mint<'_>,
-    history: &dyn HistoryRecorder,
+    history: Option<&dyn HistoryRecorder>,
     repo_id: &str,
     plan: &IngestPlan<'_>,
     ts: &str,
@@ -685,9 +717,8 @@ pub(crate) fn ingest_in(
     //    hold. The core numbers and hashes nothing against a previous
     //    revision (M1): the recorder is handed the accepted transition (step
     //    15) and writes its `revisions` row under this token, its tree and
-    //    frontmatter deltas against its OWN previous captured revision.
-    //    Legacy capture stays on for every repository through Phase 3, so
-    //    `revisions.rev_id == head`.
+    //    frontmatter deltas against its OWN previous captured revision —
+    //    only while the repository's manifest says `enabled` (Phase 4a).
     let rendered_hash = sha256(source.as_bytes());
     let head = minter.mint("r")?;
     minter.claim("r", &head, Some(repo_id), ts)?;
@@ -717,18 +748,23 @@ pub(crate) fn ingest_in(
             },
         },
     )?;
-    history.record_revision(
-        tx,
-        &RevisionTransition {
-            doc_id: &doc_id,
-            head: &head,
-            path: plan.path,
-            frontmatter_raw: fm_raw,
-            body: &plan.assigned,
-            rendered_hash,
-            commit_id,
-        },
-    )?;
+    if let Some(history) = history {
+        capture(
+            Some(plan.path),
+            history.record_revision(
+                tx,
+                &RevisionTransition {
+                    doc_id: &doc_id,
+                    head: &head,
+                    path: plan.path,
+                    frontmatter_raw: fm_raw,
+                    body: &plan.assigned,
+                    rendered_hash,
+                    commit_id,
+                },
+            ),
+        )?;
+    }
     let assigned = &plan.assigned;
 
     // The timestamps the new rows carry forward (D6, step 9): the doc's
@@ -925,8 +961,15 @@ pub(crate) fn ingest_in(
     )?;
 
     // 15. Dispositions and block_changes — the recorder's (14.2: every
-    //     verdict but `same`).
-    history.record_dispositions(tx, commit_id, &plan.dispositions)?;
+    //     verdict but `same`). A capture that lands ends the path's failure
+    //     condition (§5.8).
+    if let Some(history) = history {
+        capture(
+            Some(plan.path),
+            history.record_dispositions(tx, commit_id, &plan.dispositions),
+        )?;
+        clear_capture_failed(tx, repo_id, plan.path, ts)?;
+    }
 
     // 11. Consume the pool.
     for id in &plan.consumed_pool {
@@ -1159,6 +1202,14 @@ impl Store {
         // The batch id (§5.4 step 5, D4): the first committing member's
         // commit id; every later member's feed row carries it. An echo
         // commits nothing and names none.
+        // §5.4 step 0 (resolution 17), once for the batch and OUTSIDE any
+        // transaction, so the `writer_refused` alert survives the refusal: a
+        // writer without the history module on a repository that requires
+        // capture commits nothing (the echoes wrote nothing either — pass 1
+        // only reads).
+        if pending.iter().any(|p| !matches!(p, Pending::Echo(_))) {
+            require_writer(&self.conn, self.history.is_some(), repo_id, ts)?;
+        }
         let mut out = Vec::with_capacity(pending.len());
         let mut batch_id: Option<String> = None;
         for p in pending {
@@ -1171,13 +1222,27 @@ impl Store {
                     ..
                 } => {
                     let commit_id = match &doc_id {
-                        Some(id) => Some(self.tombstone_observed_deletion(
+                        Some(id) => match self.tombstone_observed_deletion(
                             repo_id,
                             id,
                             ts,
                             &expires,
                             batch_id.as_deref(),
-                        )?),
+                        ) {
+                            Ok(c) => Some(c),
+                            Err(Error::CaptureFailed { path: at, reason }) => {
+                                out.push(self.member_failed(
+                                    repo_id,
+                                    &path,
+                                    doc_id.clone(),
+                                    at.as_deref(),
+                                    &reason,
+                                    ts,
+                                )?);
+                                continue;
+                            }
+                            Err(e) => return Err(e),
+                        },
                         None => None,
                     };
                     if batch_id.is_none() {
@@ -1199,7 +1264,7 @@ impl Store {
                     // The flag rides the commit's transaction (step 12), not
                     // an autocommit after it; so does the pending row's end.
                     let conflicted = has_conflict_markers(&prepared.source);
-                    let c = self.commit_prepared(
+                    let c = match self.commit_prepared(
                         repo_id,
                         &prepared,
                         ts,
@@ -1207,7 +1272,34 @@ impl Store {
                         conflicted,
                         clear_pending,
                         batch_id.as_deref(),
-                    )?;
+                    ) {
+                        Ok(c) => c,
+                        // A member whose capture failed (step 15, resolution
+                        // 18): its transaction rolled back with the error, so
+                        // nothing of it landed; the alert is raised here, after
+                        // the rollback, and the batch goes on — the member
+                        // stays a candidate for the next sweep.
+                        Err(Error::CaptureFailed { path: at, reason }) => {
+                            let doc_id: Option<String> = self
+                                .conn
+                                .query_row(
+                                    "SELECT doc_id FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_at IS NULL",
+                                    params![repo_id, prepared.path],
+                                    |r| r.get(0),
+                                )
+                                .optional()?;
+                            out.push(self.member_failed(
+                                repo_id,
+                                &prepared.path,
+                                doc_id,
+                                at.as_deref(),
+                                &reason,
+                                ts,
+                            )?);
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    };
                     if batch_id.is_none() {
                         batch_id = Some(c.commit_id.clone());
                     }
@@ -1234,6 +1326,28 @@ impl Store {
             }
         }
         Ok(out)
+    }
+
+    /// A member whose capture failed (§5.4 step 15, resolution 18), once its
+    /// transaction has rolled back: the `capture_failed` alert named after the
+    /// member (`at` when the failing call knew the path, else `path`), and the
+    /// `failed` outcome carrying the same message.
+    fn member_failed(
+        &self,
+        repo_id: &str,
+        path: &str,
+        doc_id: Option<String>,
+        at: Option<&str>,
+        reason: &str,
+        ts: &str,
+    ) -> Result<BatchOutcome> {
+        let path_named = at.unwrap_or(path);
+        raise_capture_failed(&self.conn, repo_id, Some(path_named), reason, ts)?;
+        Ok(BatchOutcome::Failed(FailedOutcome {
+            path: path.to_owned(),
+            doc_id,
+            error: crate::core::manifest::capture_failed_message(Some(path_named), reason),
+        }))
     }
 
     /// §5.4 steps 1–13 for a prepared (reconciled) member: an `observed`
@@ -1437,9 +1551,11 @@ impl Store {
         batch_id: Option<&str>,
     ) -> Result<Committed> {
         // §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer without the
-        // recorder refuses where the manifest requires capture.
+        // recorder refuses where the manifest requires capture — OUTSIDE the
+        // transaction, so the alert survives; then step 15's recorder: the
+        // module while the repository's manifest says `enabled` (Phase 4a).
         require_writer(&self.conn, self.history.is_some(), repo_id, ts)?;
-        let history = require_history(self.history.as_deref())?;
+        let history = capture_for(&self.conn, self.history.as_deref(), Some(repo_id))?;
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
             let mut mint = self.ids.at(&tx);
@@ -1447,7 +1563,7 @@ impl Store {
             let commit = append_feed_row(
                 &tx,
                 &mut mint,
-                Some(history),
+                history,
                 &NewFeedRow {
                     repo_id,
                     ts,
@@ -1485,14 +1601,14 @@ impl Store {
         batch_id: Option<&str>,
     ) -> Result<String> {
         require_writer(&self.conn, self.history.is_some(), repo_id, ts)?; // §5.4 step 0 (3e-ii)
-        let history = require_history(self.history.as_deref())?;
+        let history = capture_for(&self.conn, self.history.as_deref(), Some(repo_id))?;
         let tx = self.conn.unchecked_transaction()?;
         let commit_id = {
             let mut mint = self.ids.at(&tx);
             let commit = append_feed_row(
                 &tx,
                 &mut mint,
-                Some(history),
+                history,
                 &NewFeedRow {
                     reason: Some("observed deletion"),
                     batch_id,

@@ -48,6 +48,7 @@ use omgbase_store::delta::{
     encode_frontmatter_delta, entry_text, explicit_entries, full_node_text, is_checkpoint_seq,
     parse_frontmatter_blob, parse_node_text,
 };
+use omgbase_store::manifest::history_bundle_present;
 use omgbase_store::{
     ApplyOrigin, ApplyRequest, BatchItem, BatchOutcome, DocOpContext, DocStore, EffectsOutcome,
     LinkRepair, MemDocStore, PlanContext, SequentialMinter, Store, TreeEntry,
@@ -831,6 +832,10 @@ fn outcome_json(o: &BatchOutcome) -> Json {
     match o {
         BatchOutcome::Deleted(d) => {
             json!({ "path": d.path, "deleted": d.doc_id.is_some(), "doc": d.doc_id })
+        }
+        // `spec/store` §9.4 (Phase 4a): a member rolled back because its capture failed.
+        BatchOutcome::Failed(f) => {
+            json!({ "path": f.path, "failed": true, "doc": f.doc_id, "error": f.error })
         }
         BatchOutcome::Observed(o) => json!({
             "path": o.path, "echo": o.echo, "doc": o.doc_id, "commit": o.commit_id, "rev": o.rev,
@@ -1676,6 +1681,33 @@ fn run_step(r: &mut Runner, step: &Json) -> Result<Json, String> {
         "history_plan" | "history_export" | "history_attach" | "history_detach" | "read_at" => Err(
             "retention steps (spec/store §9.4, 15.0) are not run by the mutate runner".to_owned(),
         ),
+        // `spec/store` §9.4 (Phase 4a): `history_enable` / `history_disable`
+        // through the production verbs; the fault device is the store
+        // runner's.
+        "history_enable" => {
+            let ts = body["ts"].as_str().ok_or("history_enable.ts")?;
+            let writer_requires = body
+                .get("writer_requires")
+                .and_then(Json::as_bool)
+                .unwrap_or(true);
+            let out = r
+                .store
+                .enable_history(&r.repo_id, ts, writer_requires)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "history": out.to_json() }))
+        }
+        "history_disable" => {
+            let ts = body["ts"].as_str().ok_or("history_disable.ts")?;
+            let out = r
+                .store
+                .disable_history(&r.repo_id, ts)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "history": out.to_json() }))
+        }
+        "recorder_fault" => Err(
+            "the recorder fault device (spec/store §9.4) is run by the store runner only"
+                .to_owned(),
+        ),
         "materialize" => {
             let done = r
                 .store
@@ -1719,8 +1751,10 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
         omgbase_store::Capabilities::standard_from_env().map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+    // The fixture birth clock (`spec/store` §9.4, 17.1): the repository is
+    // born before every authored `ts`, with capture on.
     let repo_id = store
-        .create_repo(FIXTURE_REPO_SLUG)
+        .create_repo_at(FIXTURE_REPO_SLUG, "2000-01-01T00:00:00.000Z")
         .map_err(|e| e.to_string())?;
     let mut r = Runner {
         store,
@@ -1810,8 +1844,17 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .iter()
         .map(|d| str_of(d, "doc_id").to_owned())
         .collect();
-    let commits = query_rows(
-        conn,
+    // Phase 4a: a database no repository of which ever enabled capture has no
+    // history table — the history projections are `[]` then.
+    let history = history_bundle_present(conn).expect("sqlite_master reads");
+    let rows = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Vec<Json> {
+        if history {
+            query_rows(conn, sql, params)
+        } else {
+            Vec::new()
+        }
+    };
+    let commits = rows(
         "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY seq",
         &[&repo_id],
     );
@@ -1833,8 +1876,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         "SELECT epoch, seq, doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ?1 ORDER BY seq, rowid",
         &[&repo_id],
     );
-    let mut revisions = query_rows(
-        conn,
+    let mut revisions = rows(
         "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
@@ -1865,8 +1907,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
                     .cmp(str_of(b, "kind").as_bytes()),
             )
     };
-    let mut dispositions: Vec<Json> = query_rows(
-        conn,
+    let mut dispositions: Vec<Json> = rows(
         "SELECT x.commit_id, x.block_id, x.kind, x.confidence, x.reason, x.matcher_v, x.detail
          FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?1",
         &[&repo_id],
@@ -2083,19 +2124,31 @@ fn check_invariants(
         }
     }
 
-    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> =
+    // The composition (`spec/store` §8, §9.6 — Phase 4a): the history
+    // invariants are checked when the store carries the module and the
+    // bundle's tables exist (`reader`); a core-only run checks C*, F* and A1
+    // alone. (The mutate fixtures never toggle capture, so the store runner's
+    // coverage bounds reduce to this flag here.)
+    let reader = store.history_reader().ok().flatten().is_some();
+    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> = if reader {
         all_rows(conn, "SELECT hash, bytes, size FROM blobs", &[], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let blob_hashes: HashSet<String> = blob_rows.iter().map(|b| hex(&b.0)).collect();
     let blob_text: HashMap<String, String> = blob_rows
         .iter()
         .map(|b| (hex(&b.0), String::from_utf8_lossy(&b.1).into_owned()))
         .collect();
-    let tree_rows: Vec<(Vec<u8>, String)> =
+    let tree_rows: Vec<(Vec<u8>, String)> = if reader {
         all_rows(conn, "SELECT hash, entries FROM tree_nodes", &[], |r| {
             Ok((r.get(0)?, r.get(1)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let tree_hashes: HashSet<String> = tree_rows.iter().map(|t| hex(&t.0)).collect();
     let node_texts: HashMap<String, &str> = tree_rows
         .iter()
@@ -2103,12 +2156,16 @@ fn check_invariants(
         .collect();
     // 16.0: a node is a `[`-form list or a `{"d":…}` delta (§4.1 "Delta nodes").
     let mut nodes: HashMap<String, Node> = HashMap::new();
-    let commits: Vec<(String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    );
+    let commits: Vec<(String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    } else {
+        Vec::new()
+    };
     let commit_by_id: HashMap<&str, &(String, i64, String)> =
         commits.iter().map(|c| (c.0.as_str(), c)).collect();
     let docs: Vec<Doc> = all_rows(
@@ -2128,25 +2185,29 @@ fn check_invariants(
             })
         },
     );
-    let revisions: Vec<Rev> = all_rows(
-        conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
-         FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
-        &[&repo_id],
-        |r| {
-            Ok(Rev {
-                rev_id: r.get(0)?,
-                doc_id: r.get(1)?,
-                seq: r.get(2)?,
-                root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
-                frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
-                rendered_hash: r.get(5)?,
-                path: r.get(6)?,
-                commit_id: r.get(7)?,
-                archive: r.get(8)?,
-            })
-        },
-    );
+    let revisions: Vec<Rev> = if reader {
+        all_rows(
+            conn,
+            "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
+             FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
+            &[&repo_id],
+            |r| {
+                Ok(Rev {
+                    rev_id: r.get(0)?,
+                    doc_id: r.get(1)?,
+                    seq: r.get(2)?,
+                    root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
+                    frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
+                    rendered_hash: r.get(5)?,
+                    path: r.get(6)?,
+                    commit_id: r.get(7)?,
+                    archive: r.get(8)?,
+                })
+            },
+        )
+    } else {
+        Vec::new()
+    };
     // I9 (`spec/store` 15.0): `archive IS NOT NULL` ⇔ `root_tree IS NULL`.
     for r in &revisions {
         if r.archive.is_some() != r.root_tree.is_none() {
@@ -2736,21 +2797,30 @@ fn check_invariants(
             ));
         }
     }
-    // H4: the recorder's `commits` agree with the feed on every retained seq.
-    let commit_rows: Vec<(String, String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    );
+    // H4: the recorder's `commits` agree with the feed on every retained seq
+    // (with the module; Phase 4a).
+    let commit_rows: Vec<(String, String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+    } else {
+        Vec::new()
+    };
     let commit_by_seq: HashMap<i64, &(String, String, i64, String)> =
         commit_rows.iter().map(|c| (c.2, c)).collect();
     for r in &feed_by_seq {
         match commit_by_seq.get(&r.1) {
-            None => problems.push(format!(
-                "H4: feed row {} (seq {}) has no commits row",
-                r.2, r.1
-            )),
+            None => {
+                if reader {
+                    problems.push(format!(
+                        "H4: feed row {} (seq {}) has no commits row",
+                        r.2, r.1
+                    ));
+                }
+            }
             Some(c) if c.0 != r.2 || c.1 != r.0 || c.3 != r.5 => problems.push(format!(
                 "H4: commits row at seq {} ({}, {}, {}) disagrees with the feed ({}, {}, {})",
                 r.1, c.0, c.1, c.3, r.2, r.0, r.5
@@ -2887,13 +2957,16 @@ fn check_invariants(
                 }
             }
         }
-        // H1: with legacy capture on, the head IS a captured revision — same
-        // path, same bytes, the same commit instant as `updated_at` — and
-        // reconstruct at it reproduces the source.
+        // H1: with capture on, the head IS a captured revision — same path,
+        // same bytes, the same commit instant as `updated_at` — and
+        // reconstruct at it reproduces the source; without the module nothing
+        // is owed (Phase 4a).
         let Some(rev) = rev_by_id.get(head.as_str()) else {
-            problems.push(format!(
-                "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
-            ));
+            if reader {
+                problems.push(format!(
+                    "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
+                ));
+            }
             continue;
         };
         let Some(root_tree) = rev.root_tree.as_deref() else {
@@ -3121,7 +3194,7 @@ fn check_invariants(
                     d.doc_id, d.head
                 ));
             }
-            None if d.head.is_some() => {
+            None if d.head.is_some() && reader => {
                 problems.push(format!("I4: doc {} has head but no revisions", d.doc_id));
             }
             _ => {}
@@ -3309,7 +3382,10 @@ fn check_invariants(
             ));
         }
     }
-    let unheld: Vec<String> = all_rows(
+    let unheld: Vec<String> = if !reader {
+        Vec::new()
+    } else {
+        all_rows(
         conn,
         "SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1 AND bc.block_id != 'DOC'
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
@@ -3322,11 +3398,17 @@ fn check_invariants(
          ORDER BY 1",
         &[&repo_id],
         |r| r.get(0),
-    );
+    )
+    };
     for id in unheld {
         problems.push(format!(
             "H6: {id} is named by a history row but its claim lacks the recorder's bit"
         ));
+    }
+    // Without the module nothing below applies (README §9.6): the
+    // dispositions and the projection rules are the recorder's.
+    if !reader {
+        return problems;
     }
 
     // I7
@@ -3525,12 +3607,58 @@ fn clip(s: impl Into<String>) -> String {
     format!("{cut}…")
 }
 
+/// Is this process the core-only run (`spec/store` README §9.6, `OMGBASE_CAPABILITIES=core`)?
+fn core_mode() -> bool {
+    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+}
+
+/// README §9.6: does the core-only run skip this case — a retention or
+/// lifecycle step needs the history module?
+fn core_skips(c: &SpecCase) -> bool {
+    c.case["steps"].as_array().is_some_and(|steps| {
+        steps.iter().any(|s| {
+            s.as_object().is_some_and(|o| {
+                o.keys().any(|k| {
+                    matches!(
+                        k.as_str(),
+                        "history_plan"
+                            | "history_export"
+                            | "history_attach"
+                            | "history_detach"
+                            | "read_at"
+                            | "history_enable"
+                            | "history_disable"
+                            | "recorder_fault"
+                    )
+                })
+            })
+        })
+    })
+}
+
+/// README §9.6: the projection the core-only run compares — the history
+/// tables (`commits`, `revisions`, `dispositions`) emptied on both sides.
+fn core_mode_projection(expect: &Json) -> Json {
+    let mut out = expect.clone();
+    if let Some(o) = out.as_object_mut() {
+        for t in ["commits", "revisions", "dispositions"] {
+            o.insert(t.to_owned(), Json::Array(Vec::new()));
+        }
+    }
+    out
+}
+
 fn check(c: &SpecCase) -> Result<(), String> {
     let ev = run_case_script(&c.case)?;
     if !ev.problems.is_empty() {
         return Err(clip(format!("invariants: {}", ev.problems.join("; "))));
     }
-    match deep_eq_tol(&ev.actual, &c.case["expect"], "expect", EPS) {
+    let expected = if core_mode() {
+        core_mode_projection(&c.case["expect"])
+    } else {
+        c.case["expect"].clone()
+    };
+    match deep_eq_tol(&ev.actual, &expected, "expect", EPS) {
         None => Ok(()),
         Some(diff) => {
             // `MUTATE_SPEC_DEBUG=1`: the whole actual projection of a failing
@@ -3650,12 +3778,26 @@ fn spec() {
         }
     }));
 
+    // README §9.6: the core-only run compares the core tables and skips what
+    // needs the module (reported); the fixtures are never regenerated from it.
+    let core = core_mode();
+    assert!(
+        !(core && update_requested()),
+        "MUTATE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
+        omgbase_store::CAPABILITIES_ENV
+    );
+    let mut core_skipped: Vec<String> = Vec::new();
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();
     let mut failing: Vec<(String, Option<String>)> = Vec::new();
     for file in &loaded.files {
         for c in &file.cases {
             all_ids.insert(c.id.clone());
+            if core && core_skips(c) {
+                core_skipped.push(c.id.clone());
+                passing.insert(c.id.clone());
+                continue;
+            }
             match run_case(c) {
                 Ok(()) => {
                     passing.insert(c.id.clone());
@@ -3665,6 +3807,18 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    if core {
+        eprintln!(
+            "spec: {}=core: compared on the core tables; {} skipped (need the history module):\n{}",
+            omgbase_store::CAPABILITIES_ENV,
+            core_skipped.len(),
+            core_skipped
+                .iter()
+                .map(|c| format!("  skip {c}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);

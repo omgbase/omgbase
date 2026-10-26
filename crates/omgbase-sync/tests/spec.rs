@@ -1252,15 +1252,29 @@ struct Evaluation {
     problems: Vec<String>,
 }
 
+/// README §4.1's outcome shape as the fixtures record it (the reference's
+/// `checkpointOutcome`): the five buckets — `failed` (4.1, Phase 4a) is the
+/// wire's, not the fixture's.
 fn checkpoint_outcome(r: &omgbase_sync::BatchResult) -> Json {
-    r.to_json()
+    json!({
+        "batch_id": r.batch_id,
+        "ingested": r.ingested,
+        "suppressed": r.suppressed,
+        "deleted": r.deleted,
+        "conflicted": r.conflicted,
+    })
 }
+
+/// `spec/store` §9.4 (17.1): the instant every fixture repository is born —
+/// before every authored `ts`, so the manifest's coverage covers the script
+/// and the §8 history invariants apply to every captured document.
+const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
 
 fn run_checkpoint_case(c: &Json) -> Result<Evaluation, String> {
     let config = Config::default();
     let mut store = fresh_store();
-    let repo_id =
-        registry::ensure_repo(&mut store, FIXTURE_REPO_SLUG, None).map_err(|e| e.to_string())?;
+    let repo_id = registry::ensure_repo_at(&mut store, FIXTURE_REPO_SLUG, None, FIXTURE_BIRTH)
+        .map_err(|e| e.to_string())?;
     let mut fs = MemFileSystem::new();
     let root = Path::new(FIXTURE_ROOT);
     // The bytes the store is supposed to hold per live path (I1): refreshed
@@ -1301,7 +1315,11 @@ fn run_checkpoint_case(c: &Json) -> Result<Evaluation, String> {
                 touched.extend(r.batch.conflicted.iter().cloned());
                 touched.extend(r.batch.deleted.iter().cloned());
                 ingesting = true;
-                r.to_json()
+                let mut v = checkpoint_outcome(&r.batch);
+                v["scanned"] = Json::from(r.scanned);
+                v["candidates"] = Json::from(r.candidates);
+                v["changed"] = Json::from(r.changed);
+                v
             }
             "checkpoint" => {
                 let paths = strings_of(body.get("paths"));
@@ -1871,6 +1889,9 @@ fn run_engine_step(
             }
             BatchOutcome::Deleted(d) => {
                 json!({ "path": d.path, "echo": false, "commit": Json::Null })
+            }
+            BatchOutcome::Failed(f) => {
+                json!({ "path": f.path, "echo": false, "commit": Json::Null, "failed": true })
             }
         })
         .collect();

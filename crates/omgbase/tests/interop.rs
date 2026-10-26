@@ -56,6 +56,8 @@ const TS_PEER_DEFAULT: &str = "packages/cli/dist/src/main.js";
 const DEFAULT_TS: &str = "2026-09-27T00:00:00.000Z";
 /// §7.2: the repo slug the harness bootstraps.
 const FIXTURE_SLUG: &str = "fixture";
+/// `spec/store` §9.4 (17.1): the instant the fixture repository is born.
+const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
 const EPS: f64 = 1e-9;
 /// Reads over stdio wait this long for one reply (the TypeScript peer's
 /// first call includes its startup).
@@ -140,8 +142,11 @@ fn prepare_workspace(w: &TempDir, corpus: &BTreeMap<String, String>) -> Result<(
     let mut ws = Workspace::open_with_minter(&w.0, Box::new(SequentialMinter::new()))
         .map_err(|e| format!("open workspace: {e}"))?;
     let root = w.path_str();
-    let repo = omgbase_sync::ensure_repo(ws.store_mut(), FIXTURE_SLUG, Some(&root))
-        .map_err(|e| format!("ensure_repo: {e}"))?;
+    // Under the fixture birth clock (`spec/store` §9.4; `spec/surface` §7.2):
+    // `sync_status.capabilities.coverage_from` is recorded literally.
+    let repo =
+        omgbase_sync::ensure_repo_at(ws.store_mut(), FIXTURE_SLUG, Some(&root), FIXTURE_BIRTH)
+            .map_err(|e| format!("ensure_repo: {e}"))?;
     if repo != "rp_0" {
         return Err(format!("bootstrap minted repo {repo}, expected rp_0"));
     }
@@ -431,16 +436,8 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
             let composed = o.get("data").and_then(Json::as_object).is_some_and(|d| {
                 d.get("hint").and_then(Json::as_str) == Some("arguments")
                     || [
-                        "_id",
-                        "_path",
-                        "_doc_id",
-                        "doc_path",
-                        "ref",
-                        "section",
-                        "provider",
-                        "plan_id",
-                        "capability",
-                        "epoch",
+                        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider",
+                        "plan_id", "epoch",
                     ]
                     .iter()
                     .any(|k| d.contains_key(*k))
@@ -833,15 +830,19 @@ fn core_only() -> bool {
     std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
 }
 
-/// README §7.3 (modular-core Phase 3e-ii): a case's expectation under the
-/// core-only run — every `provider_unavailable` outcome of `writes` and
-/// `reads` becomes `capability_unavailable { semantic, disabled, fix }` (the
-/// reference's `coreModeInteropExpect`), the mapping in the RUNNER, keyed on
-/// the composition it runs under, never in the fixture. The message rides
-/// along because [`record`] keeps the message of an error whose `data` names
-/// `capability` (the surface runner's rule). Returns the outcomes mapped.
-fn core_mode_expect(expect: &Json) -> (Json, usize) {
-    fn map(v: &mut Json, mapped: &mut usize) {
+/// README §7.3 (modular-core Phase 3e-ii → 4a): a case's expectation under
+/// the core-only run, step by step against what the run answered — every
+/// `provider_unavailable` outcome of `writes` and `reads` becomes
+/// `capability_unavailable { semantic, disabled, fix }`; and (Phase 4a — the
+/// composition has no recorder) a step the run answered
+/// `capability_unavailable { history, unavailable }` is accepted as such, a
+/// `sync_status` reads the core history state, a `version` shape reads
+/// `coverage_from` as `<null>`, and a `query` that reaches `revisions` is
+/// accepted when the run returned rows (the reference's
+/// `coreModeInteropExpect`). The mapping is the RUNNER's, keyed on the
+/// composition it runs under, never in the fixture. Returns the outcomes mapped.
+fn core_mode_expect(expect: &Json, case: &Case, rec: &Recorded) -> (Json, usize) {
+    fn semantic(v: &mut Json, mapped: &mut usize) {
         match v {
             Json::Object(o) => {
                 if o.get("error").and_then(Json::as_str) == Some("provider_unavailable") {
@@ -849,7 +850,6 @@ fn core_mode_expect(expect: &Json) -> (Json, usize) {
                     *v = json!({
                         "error": "capability_unavailable",
                         "retriable": false,
-                        "message": omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
                         "data": {
                             "capability": "semantic",
                             "state": "disabled",
@@ -859,20 +859,90 @@ fn core_mode_expect(expect: &Json) -> (Json, usize) {
                     return;
                 }
                 for x in o.values_mut() {
-                    map(x, mapped);
+                    semantic(x, mapped);
                 }
             }
             Json::Array(a) => {
                 for x in a {
-                    map(x, mapped);
+                    semantic(x, mapped);
                 }
             }
             _ => {}
         }
     }
+    fn history_unavailable(o: &Json) -> bool {
+        o.get("error").and_then(Json::as_str) == Some("capability_unavailable")
+            && o.get("data").is_some_and(|d| {
+                d.get("capability") == Some(&json!("history"))
+                    && d.get("state") == Some(&json!("unavailable"))
+            })
+    }
+    fn touches_revisions(q: &str) -> bool {
+        let b = q.as_bytes();
+        let mut from = 0;
+        while let Some(pos) = q[from..].find("revisions") {
+            let end = from + pos + "revisions".len();
+            if b.get(end)
+                .is_none_or(|c| !(c.is_ascii_alphanumeric() || *c == b'_'))
+            {
+                return true;
+            }
+            from = end;
+        }
+        false
+    }
+    fn map_steps(expect: &mut Json, steps: &[Step], actual: &[Json], mapped: &mut usize) {
+        let Some(items) = expect.as_array_mut() else {
+            return;
+        };
+        for (i, o) in items.iter_mut().enumerate() {
+            let (tool, args) = match steps.get(i) {
+                Some(Step::Call { tool, args }) => (tool.as_str(), args.clone()),
+                _ => ("", json!({})),
+            };
+            if let Some(got) = actual.get(i) {
+                if history_unavailable(got) {
+                    *mapped += 1;
+                    *o = got.clone();
+                    continue;
+                }
+                if tool == "sync_status" && o.get("capabilities").is_some() {
+                    *mapped += 1;
+                    o["capabilities"]["history"] = json!({ "state": "unavailable", "coverage_from": null, "writer_requires": false });
+                    continue;
+                }
+                if tool == "version"
+                    && o.get("capabilities")
+                        .and_then(|c| c.get("history"))
+                        .is_some()
+                {
+                    *mapped += 1;
+                    o["capabilities"]["history"]["coverage_from"] = json!("<null>");
+                    continue;
+                }
+                if tool == "query"
+                    && args
+                        .get("query")
+                        .and_then(Json::as_str)
+                        .is_some_and(touches_revisions)
+                    && got.get("hits").is_some_and(Json::is_array)
+                {
+                    *mapped += 1;
+                    *o = got.clone();
+                    continue;
+                }
+            }
+            semantic(o, mapped);
+        }
+    }
     let mut out = expect.clone();
     let mut mapped = 0;
-    map(&mut out, &mut mapped);
+    if let Some(w) = out.get_mut("writes") {
+        map_steps(w, &case.writes, &rec.writes, &mut mapped);
+    }
+    if let Some(r) = out.get_mut("reads") {
+        map_steps(r, &case.reads, &rec.reads, &mut mapped);
+    }
     (out, mapped)
 }
 
@@ -1062,7 +1132,7 @@ fn run_pairing(writer: Engine, reader: Engine) {
             Ok(rec) => {
                 dump(case, writer, reader, &rec);
                 let expect = if core {
-                    let (mapped, n) = core_mode_expect(&case.expect);
+                    let (mapped, n) = core_mode_expect(&case.expect, case, &rec);
                     if n > 0 {
                         core_mapped.push(format!(
                             "{} ({n} outcome{})",
@@ -1096,7 +1166,7 @@ fn run_pairing(writer: Engine, reader: Engine) {
         // The core-only run's ledger (§7.3): which outcomes answered
         // `capability_unavailable` instead of the fixture's full-composition one.
         eprintln!(
-            "interop [{pair}] {}=core: {} case(s) mapped provider_unavailable to capability_unavailable {{ semantic, disabled }}: {}",
+            "interop [{pair}] {}=core: {} case(s) mapped (semantic → capability_unavailable {{ semantic, disabled }}; history reads → {{ history, unavailable }}, the core history state): {}",
             omgbase_store::CAPABILITIES_ENV,
             core_mapped.len(),
             core_mapped.join(", ")

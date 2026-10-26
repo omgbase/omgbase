@@ -137,6 +137,50 @@ impl From<omgbase_store::Error> for SurfaceError {
                 e.retriable = true;
                 e
             }
+            // `spec/surface` §2.1 (6.1, Phase 4a; `phase-1-contracts.md`
+            // §2.1): a history read on a composition without the module —
+            // `capability_unavailable { history, unavailable }`, retriable.
+            omgbase_store::Error::HistoryUnavailable => {
+                let mut e = Self::with_data(
+                    "capability_unavailable",
+                    omgbase_store::HISTORY_UNAVAILABLE_MESSAGE,
+                    json!({ "capability": "history", "state": "unavailable" }),
+                );
+                e.retriable = true;
+                e
+            }
+            // … on a repository whose capture is off, of a revision the
+            // recorder lacks — `{ history, disabled, rev? }`, not retriable.
+            omgbase_store::Error::HistoryDisabled { rev } => {
+                let mut data = Map::new();
+                data.insert("capability".to_owned(), json!("history"));
+                data.insert("state".to_owned(), json!("disabled"));
+                if let Some(r) = rev {
+                    data.insert("rev".to_owned(), Value::String(r));
+                }
+                Self::with_data(
+                    "capability_unavailable",
+                    omgbase_store::HISTORY_DISABLED_MESSAGE,
+                    Value::Object(data),
+                )
+            }
+            // `spec/store` §5.4 step 15 (resolution 18; Phase 4a): the recorder
+            // failed, the write was rolled back and is retried —
+            // `capture_failed { path?, reason }`, retriable.
+            e @ omgbase_store::Error::CaptureFailed { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::CaptureFailed { path, reason } = e else {
+                    unreachable!("matched above");
+                };
+                let mut data = Map::new();
+                if let Some(p) = path {
+                    data.insert("path".to_owned(), Value::String(p));
+                }
+                data.insert("reason".to_owned(), Value::String(reason));
+                let mut e = Self::with_data("capture_failed", message, Value::Object(data));
+                e.retriable = true;
+                e
+            }
             e @ omgbase_store::Error::RevisionArchived { .. } => {
                 let message = e.to_string();
                 let omgbase_store::Error::RevisionArchived { rev, archive, path } = e else {

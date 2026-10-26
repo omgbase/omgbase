@@ -82,7 +82,16 @@ fn applies_pragmas_and_user_version() {
 
 #[test]
 fn creates_every_table() {
+    // Phase 4a: a fresh database holds the core and semantic bundles; the
+    // history bundle follows the manifest (`apply_history_bundle`).
     let store = Store::open_in_memory().unwrap();
+    for t in ["revisions", "commits", "blobs", "tree_nodes", "archives"] {
+        assert!(
+            !crate::schema::table_exists(store.conn(), t).unwrap(),
+            "{t} exists on a fresh database"
+        );
+    }
+    crate::manifest::apply_history_bundle(store.conn()).unwrap();
     let mut stmt = store
         .conn()
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -749,6 +758,7 @@ fn cosine_udf_matches_the_reference() {
 #[test]
 fn dedups_identical_blobs_and_tree_nodes() {
     let store = Store::open_in_memory().unwrap();
+    crate::manifest::apply_history_bundle(store.conn()).unwrap();
     let h1 = store.put_blob("same text").unwrap();
     let h2 = store.put_blob("same text").unwrap();
     assert_eq!(h1, h2);
@@ -788,6 +798,7 @@ fn dedups_identical_blobs_and_tree_nodes() {
 #[test]
 fn structural_sharing_editing_one_of_500_blocks_adds_one_node_and_one_blob() {
     let store = Store::open_in_memory().unwrap();
+    crate::manifest::apply_history_bundle(store.conn()).unwrap();
     let mut blocks: Vec<TreeInputBlock> = (0..500)
         .map(|i| TreeInputBlock {
             block_id: format!("b_{i:05}"),
@@ -819,6 +830,7 @@ fn structural_sharing_editing_one_of_500_blocks_adds_one_node_and_one_blob() {
 #[test]
 fn rewriting_an_unchanged_tree_adds_zero_rows() {
     let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+    crate::manifest::apply_history_bundle(store.conn()).unwrap();
     let tree = parse_markdown("# A\n\n- x\n  - y\n\nC\n");
     let blocks = assign_fresh_ids(&tree.children, &mut store.minter()).unwrap();
     assert_eq!(
@@ -2930,7 +2942,19 @@ fn a_failure_in_the_commit_phase_rolls_back_and_touches_no_file() {
             T1,
         )
         .unwrap_err();
-    assert!(matches!(err, Error::Sqlite(_)), "{err}");
+    // Phase 4a (resolution 18): the recorder's failure is `CaptureFailed`,
+    // named after the first touched path, and the `capture_failed` alert
+    // stands once the rollback is done.
+    assert!(
+        matches!(&err, Error::CaptureFailed { path: Some(p), .. } if p == "a.md"),
+        "{err}"
+    );
+    assert!(
+        crate::alerts::list_active_alerts(store.conn(), &repo)
+            .unwrap()
+            .iter()
+            .any(|a| a.code == crate::alerts::CAPTURE_FAILED_ALERT)
+    );
     let log = traced();
     assert!(
         log.iter().any(|s| s.starts_with("ROLLBACK")),
@@ -4495,7 +4519,7 @@ fn an_execute_that_fails_mid_transaction_commits_nothing() {
     let err = store
         .execute_plan(&ctx(&repo, T1), &plan, &api_origin(), &mut ds)
         .unwrap_err();
-    assert!(matches!(err, Error::Sqlite(_)), "{err}");
+    assert!(matches!(err, Error::CaptureFailed { .. }), "{err}");
     let log = traced();
     assert!(log.iter().any(|s| s.starts_with("ROLLBACK")), "{log:#?}");
     assert!(

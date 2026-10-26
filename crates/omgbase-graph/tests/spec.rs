@@ -520,6 +520,10 @@ fn outcome_json(o: &BatchOutcome) -> Json {
         BatchOutcome::Deleted(d) => {
             json!({ "path": d.path, "deleted": d.doc_id.is_some(), "doc": d.doc_id })
         }
+        // `spec/store` §9.4 (Phase 4a): a member rolled back because its capture failed.
+        BatchOutcome::Failed(f) => {
+            json!({ "path": f.path, "failed": true, "doc": f.doc_id, "error": f.error })
+        }
         BatchOutcome::Observed(o) => json!({
             "path": o.path, "echo": o.echo, "doc": o.doc_id, "commit": o.commit_id, "rev": o.rev,
             "converged": o.converged, "conflicted": o.conflicted,

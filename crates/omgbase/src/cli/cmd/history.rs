@@ -1,16 +1,22 @@
-//! `history <plan|export|attach|detach|list>` (`spec/cli` §6 `history`, cli
-//! 4.6): the operator surface of history retention (`spec/store` §7.1,
-//! 15.0). `plan` evaluates the policy and prints what would move; `export`
-//! writes one archive segment (and with `--prune` squashes the store);
-//! `attach` / `detach` / `list` manage the segment registry. No MCP tool: the
-//! catalog's only trace is the `revisions.archived` attribute and
-//! `revision_archived`. Port of `packages/cli/src/cmd/history.ts`.
+//! `history <enable|disable|plan|export|attach|detach|list>` (`spec/cli` §6
+//! `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1 Phase 4a): the
+//! operator surface of history CAPTURE (`spec/store` §5.9: `enable` turns the
+//! repository's capture on with a baseline commit and opens a coverage
+//! interval, `disable` closes it — the rows stay, reads of what was captured
+//! keep working) and of history RETENTION (`spec/store` §7.1, 15.0: `plan`
+//! evaluates the policy and prints what would move; `export` writes one
+//! archive segment and with `--prune` squashes the store; `attach` / `detach`
+//! / `list` manage the segment registry). No MCP tool: the catalog's traces
+//! are `version.capabilities.history`, the `revisions.archived` attribute,
+//! `capability_unavailable` and `revision_archived`. Port of
+//! `packages/cli/src/cmd/history.ts`.
 
 use std::path::{Path, PathBuf};
 
 use omgbase_store::{
-    ARCHIVE_DIR, ArchiveListing, Error as StoreError, ExportOptions, ExportResult,
-    RetentionOptions, RetentionPlan, RetentionPolicy, SegmentInfo, human_bytes,
+    ARCHIVE_DIR, ArchiveListing, CoverageInterval, Error as StoreError, ExportOptions,
+    ExportResult, HistoryLifecycleResult, RetentionOptions, RetentionPlan, RetentionPolicy,
+    SegmentInfo, human_bytes, open_coverage_from,
 };
 use omgbase_sync::with_writer_lock;
 use serde_json::{Value as Json, json};
@@ -24,7 +30,9 @@ use crate::cli::seams::canonical_instant;
 
 use super::machine_out;
 
-const SUBCOMMANDS: [&str; 5] = ["plan", "export", "attach", "detach", "list"];
+const SUBCOMMANDS: [&str; 7] = [
+    "enable", "disable", "plan", "export", "attach", "detach", "list",
+];
 
 pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let sub = args.first().map(String::as_str);
@@ -45,6 +53,8 @@ pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
         ));
     }
     match sub {
+        "enable" => enable(cli, rest),
+        "disable" => disable(cli, rest),
         "plan" => plan(cli, rest),
         "export" => export(cli, rest),
         "attach" => attach(cli, rest),
@@ -100,6 +110,100 @@ fn policy_of(cli: &mut Cli, repo_id: &str, raw: Option<&str>) -> Result<Retentio
         Err(StoreError::RetentionPolicy(msg)) => Err(CliError::usage(format!("--policy: {msg}"))),
         Err(e) => Err(e.into()),
     }
+}
+
+/// A coverage interval's `from..to` as the human lines print it.
+fn interval(i: &CoverageInterval) -> String {
+    format!("{}..{}", i.from, i.to.as_deref().unwrap_or("now"))
+}
+
+/// The `enable`/`disable` rendering: `--json` the manifest row's capture
+/// state `{ state, coverage, writer_requires, changed, baseline? }`
+/// (`baseline` the commit and the revisions it wrote, on an `enable` that
+/// changed something); human one stderr line — `  history enabled since
+/// <ts>` / `  history already enabled since <ts>` / `  history disabled
+/// (captured <from>..<to>[, …])` / `  history already disabled`.
+fn render_lifecycle(cli: &mut Cli, verb: &str, r: &HistoryLifecycleResult) -> Result<i32> {
+    let doc = r.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let style = cli.style;
+    let row = &r.row;
+    let line = if verb == "enable" {
+        let state = if r.changed {
+            "enabled"
+        } else {
+            "already enabled"
+        };
+        let since =
+            open_coverage_from(Some(row)).map_or_else(String::new, |s| format!(" since {s}"));
+        let baseline = r
+            .baseline
+            .as_ref()
+            .map_or_else(String::new, |(commit, revisions)| {
+                format!(" (baseline {commit}: {})", plural_s(*revisions, "revision"))
+            });
+        format!("  history {state}{since}{baseline}")
+    } else if r.changed || !row.coverage.is_empty() {
+        format!(
+            "  history {} (captured {})",
+            if r.changed {
+                "disabled"
+            } else {
+                "already disabled"
+            },
+            row.coverage
+                .iter()
+                .map(interval)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        "  history already disabled".to_owned()
+    };
+    cli.io.err(&style.dim(&line));
+    Ok(EXIT_OK)
+}
+
+/// `history enable [--best-effort]` (`spec/store` §5.9): a write (the
+/// baseline commit) under the workspace writer lock like every other.
+fn enable(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[Opt::flag("best-effort")])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let now = cli.now();
+    let writer_requires = !a.flag("best-effort");
+    let lock = cli.seams.lock_options();
+    let store = cli.store_mut()?;
+    let result = with_writer_lock(&ws.omgbase_dir, lock, || {
+        store
+            .enable_history(&repo.repo_id, &now, writer_requires)
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    render_lifecycle(cli, "enable", &result)
+}
+
+/// `history disable` (`spec/store` §5.9): needs no module.
+fn disable(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    let result = with_writer_lock(&ws.omgbase_dir, lock, || {
+        store
+            .disable_history(&repo.repo_id, &now)
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    render_lifecycle(cli, "disable", &result)
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {

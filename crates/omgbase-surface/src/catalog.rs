@@ -1268,20 +1268,102 @@ impl Surface {
     }
 
     /// `docs_read { at }` and its sugar `docs_read_at` (`spec/surface` §2,
-    /// 4.7): the document AS OF a revision, `spec/store` §6.2 reconstruct; a
-    /// revision that is not the document's — unknown, or another document's —
-    /// is `target_missing { doc, rev }`. The reference's `docsReadAt`.
-    fn docs_read_at(&self, doc_id: &str, rev: &str) -> Result<Json> {
-        read::docs_read_at(&self.store, doc_id, rev)?.ok_or_else(|| {
-            SurfaceError::with_data(
-                "target_missing",
-                format!(
-                    "no revision {} for document {doc_id}",
-                    Json::String(rev.to_owned())
-                ),
-                json!({ "doc": doc_id, "rev": rev }),
+    /// 4.7): the document AS OF a revision, `spec/store` §6.2 reconstruct.
+    /// Resolution 11 (6.1, Phase 4a): the CURRENT head is served from the
+    /// current rows whatever the capture state — `{ _id, _path, rev, _raw,
+    /// renderedHashMatch: true }`, the same bytes `docs_read` returns; a
+    /// captured revision reads through the recorder; a revision that is
+    /// neither is `capability_unavailable { history, disabled | unavailable
+    /// }` when the repository's capture is off or the build has no module
+    /// (`outside_coverage`/`pruned` arrive with 4b), else `target_missing {
+    /// doc, rev }` as before. The reference's `docsReadAt`.
+    fn docs_read_at(&self, repo_id: &str, doc_id: &str, rev: &str) -> Result<Json> {
+        if let Some(captured) = read::docs_read_at(&self.store, doc_id, rev)? {
+            return Ok(captured);
+        }
+        let doc: Option<(String, Option<String>, Option<String>)> = self
+            .store
+            .conn()
+            .query_row(
+                "SELECT path, head, deleted_at FROM docs WHERE doc_id = ?1",
+                params![doc_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-        })
+            .optional()?;
+        if let Some((path, Some(head), None)) = &doc
+            && head == rev
+            && let Some(raw) = self.store.reconstruct(doc_id)?
+        {
+            return Ok(json!({
+                "_id": doc_id,
+                "_path": reference_path(path),
+                "rev": rev,
+                "_raw": raw,
+                "renderedHashMatch": true,
+            }));
+        }
+        if self.store.history().is_none() {
+            return Err(omgbase_store::Error::HistoryUnavailable.into());
+        }
+        if !self.history_enabled(repo_id)? {
+            return Err(omgbase_store::Error::HistoryDisabled {
+                rev: Some(rev.to_owned()),
+            }
+            .into());
+        }
+        Err(SurfaceError::with_data(
+            "target_missing",
+            format!(
+                "no revision {} for document {doc_id}",
+                Json::String(rev.to_owned())
+            ),
+            json!({ "doc": doc_id, "rev": rev }),
+        ))
+    }
+
+    /// Is the repository's manifest row `enabled` (`spec/store` §3.1)?
+    fn history_enabled(&self, repo_id: &str) -> Result<bool> {
+        Ok(
+            omgbase_store::read_capability(self.store.conn(), repo_id, "history")?
+                .is_some_and(|r| r.state == omgbase_store::ManifestState::Enabled),
+        )
+    }
+
+    /// The history tools reach the store's history capability through the
+    /// seam (modular-core Phase 4a; `phase-1-contracts.md` §2.1 — D3): the
+    /// recorder when the composition carries the module and something was
+    /// ever captured in this database, else the refusal —
+    /// `capability_unavailable { history, unavailable }` (no module,
+    /// retriable) or `{ history, disabled }` (nothing captured). A repository
+    /// whose capture is off but whose rows exist reads what it captured
+    /// (`spec/store` §5.9 "disable").
+    fn history_tools(&self) -> Result<&dyn omgbase_store::HistoryRecorder> {
+        Ok(self.store.require_history_reader()?)
+    }
+
+    /// A revision the recorder does not hold, asked of a repository whose
+    /// capture is off (`docs_diff`, `docs_diff_unified`): `capability_unavailable
+    /// { history, disabled, rev }` rather than `target_missing` — the token
+    /// may well be a head minted while capture was off (`spec/surface` §2.1;
+    /// Phase 4a).
+    fn unless_disabled<T>(&self, repo_id: &str, body: impl FnOnce() -> Result<T>) -> Result<T> {
+        match body() {
+            Err(e) if e.code == "target_missing" => {
+                let rev = e
+                    .data
+                    .as_ref()
+                    .and_then(|d| d.get("rev"))
+                    .and_then(Json::as_str)
+                    .map(str::to_owned);
+                match rev {
+                    Some(rev) if !self.history_enabled(repo_id)? => {
+                        Err(omgbase_store::Error::HistoryDisabled { rev: Some(rev) }.into())
+                    }
+                    _ => Err(e),
+                }
+            }
+            other => other,
+        }
     }
 
     fn locate_doc(&self, repo_id: &str, tool: &str, args: &Json) -> Result<String> {
@@ -1823,7 +1905,7 @@ impl Surface {
                             &tool_spec(name).expect("a catalog tool").input_schema,
                         ));
                     }
-                    return self.docs_read_at(&doc_id, rev);
+                    return self.docs_read_at(&repo, &doc_id, rev);
                 }
                 read::docs_read(
                     &self.store,
@@ -2729,20 +2811,23 @@ impl Surface {
                     json!({ "_id": out.doc_id, "_path": reference_path(&out.path), "deleted": out.deleted() }),
                 )
             }
-            "blocks_history" => history::blocks_history(
-                &self.store,
-                &arg_string(args, "_id")?,
-                arg_i64(args, "limit")?,
-            ),
+            "blocks_history" => {
+                self.history_tools()?;
+                history::blocks_history(
+                    &self.store,
+                    &arg_string(args, "_id")?,
+                    arg_i64(args, "limit")?,
+                )
+            }
             "docs_diff" => {
                 let (repo, _) = self.scope(args)?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
-                history::diff_blocks(
-                    &self.store,
-                    &doc_id,
-                    &arg_string(args, "from_rev")?,
-                    &arg_string(args, "to_rev")?,
-                )
+                self.history_tools()?;
+                let from_rev = arg_string(args, "from_rev")?;
+                let to_rev = arg_string(args, "to_rev")?;
+                self.unless_disabled(&repo, || {
+                    history::diff_blocks(&self.store, &doc_id, &from_rev, &to_rev)
+                })
             }
             "docs_diff_unified" => {
                 let (repo, _) = self.scope(args)?;
@@ -2751,6 +2836,7 @@ impl Surface {
                     .unwrap_or_default()
                     .to_owned();
                 let doc_id = self.locate_doc(&repo, name, args)?;
+                self.history_tools()?;
                 let revs = history::recent_revs(self.store.conn(), &doc_id)?;
                 let to_rev = arg_str(args, "to_rev")
                     .map(str::to_owned)
@@ -2774,7 +2860,9 @@ impl Surface {
                         |r| r.get(0),
                     )
                     .optional()?;
-                let diff = history::diff_unified_text(&self.store, &doc_id, &from, &to)?;
+                let diff = self.unless_disabled(&repo, || {
+                    history::diff_unified_text(&self.store, &doc_id, &from, &to)
+                })?;
                 Ok(
                     json!({ "_id": doc_id, "_path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
                 )
@@ -2785,7 +2873,7 @@ impl Surface {
                 let (repo, _) = self.scope(args)?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
                 let rev = arg_string(args, "rev")?;
-                self.docs_read_at(&doc_id, &rev)
+                self.docs_read_at(&repo, &doc_id, &rev)
             }
             "docs_history" => {
                 let (repo, _) = self.scope(args)?;
@@ -2799,6 +2887,7 @@ impl Surface {
                     ));
                 }
                 let include_deleted = arg_bool(args, "include_deleted")?.unwrap_or(false);
+                self.history_tools()?;
                 // A live document resolves through the locator; with
                 // include_deleted a tombstoned one is looked up by the same attribute.
                 let doc: Option<String> = if id.is_some() || path.is_some() {

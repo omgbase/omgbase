@@ -13,8 +13,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
 use crate::core::capabilities::{
-    DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision, RevisionRead,
-    RevisionTransition,
+    DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision,
+    RevisionQueryRow, RevisionRead, RevisionTransition,
 };
 use crate::core::claims;
 use crate::core::graph::EdgeTransitions;
@@ -33,6 +33,43 @@ use crate::history::writers::{
     write_block_tree_in, write_frontmatter_blob, write_revision,
 };
 use crate::history::{archive, gc, read, retention};
+
+/// The `revisions` × `commits` columns the query binding reads
+/// (`spec/surface` §1.1/§1.2): `is_current` is `docs_history`'s `isCurrent`
+/// (the revision is its document's `head`); the `revisions` table carries no
+/// `repo_id`, so the repository guard joins `docs`.
+const REVISION_COLS: &str = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
+const REVISION_FROM: &str =
+    "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
+
+fn revision_rows_where(
+    conn: &Connection,
+    where_order: &str,
+    param: &str,
+) -> Result<Vec<RevisionQueryRow>> {
+    let mut stmt = conn.prepare_cached(&format!(
+        "SELECT {REVISION_COLS} FROM {REVISION_FROM} {where_order}"
+    ))?;
+    let rows = stmt.query_map(params![param], |r| {
+        let is_current: Option<i64> = r.get(10)?;
+        let archived: i64 = r.get(11)?;
+        Ok(RevisionQueryRow {
+            rev_id: r.get(0)?,
+            doc_id: r.get(1)?,
+            seq: r.get(2)?,
+            rendered_hash: r.get(3)?,
+            path: r.get(4)?,
+            commit_id: r.get(5)?,
+            ts: r.get(6)?,
+            origin: r.get(7)?,
+            actor: r.get(8)?,
+            reason: r.get(9)?,
+            is_current: is_current == Some(1),
+            archived: archived == 1,
+        })
+    })?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
 
 /// The recorder over the store's own history tables (`revisions`,
 /// `tree_nodes`, `blobs`, `commits`, `dispositions`, `block_changes`,
@@ -281,6 +318,186 @@ impl HistoryRecorder for Recorder {
         )?;
         let rows = stmt.query_map(params![commit_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(Some(rows.collect::<std::result::Result<Vec<_>, _>>()?))
+    }
+
+    fn revision_rows(&self, conn: &Connection, repo_id: &str) -> Result<Vec<RevisionQueryRow>> {
+        revision_rows_where(
+            conn,
+            "WHERE d.repo_id = ?1 ORDER BY r.path, r.rev_id",
+            repo_id,
+        )
+    }
+
+    fn doc_revision_rows(&self, conn: &Connection, doc_id: &str) -> Result<Vec<RevisionQueryRow>> {
+        revision_rows_where(conn, "WHERE r.doc_id = ?1 ORDER BY r.seq", doc_id)
+    }
+
+    fn has_revision(&self, conn: &Connection, rev_id: &str) -> Result<bool> {
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM revisions WHERE rev_id = ?1",
+                params![rev_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    fn uncaptured_heads(&self, conn: &Connection, repo_id: &str, since: &str) -> Result<i64> {
+        Ok(conn.query_row(
+            "SELECT count(*) FROM docs d WHERE d.repo_id = ?1 AND d.deleted_at IS NULL AND d.head IS NOT NULL AND d.updated_at >= ?2 AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)",
+            params![repo_id, since],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// `spec/store` §5.9 (Phase 4a; `phase-1-contracts.md` §1.14): the
+    /// baseline `history enable` writes under the feed row the core appended.
+    /// The `commits` row; then, per live document whose head has no
+    /// `revisions` row (one changed while capture was off, or never
+    /// captured), a CHECKPOINT revision under the existing head — the current
+    /// tree and frontmatter raw from the rows, `seq` = 1 + the document's
+    /// greatest captured seq — so `docs_read { at: head }` reads through the
+    /// recorder and H1/H3 hold for every live document; the recorder's hold
+    /// on every live doc, head and block id (I7's rule: a live block has a
+    /// `block_changes` row or a hold); and the edge interval record
+    /// reconciled with the open edges (H6): every open transition whose edge
+    /// is gone is closed at this commit, every open edge without a transition
+    /// is opened at it, a dangling open transition whose `dst` was rewritten
+    /// while capture was off follows the edge. No dispositions (nothing was
+    /// reconciled).
+    fn baseline(&self, tx: &Connection, commit: &CommitRecord<'_>) -> Result<usize> {
+        self.record_commit(tx, commit)?;
+        type Live = (String, String, String, Vec<u8>, Option<String>);
+        let live: Vec<Live> = {
+            let mut stmt = tx.prepare(
+                "SELECT doc_id, head, path, file_hash, frontmatter_raw FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid",
+            )?;
+            let rows = stmt.query_map(params![commit.repo_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        let mut revisions = 0usize;
+        let mut held: Vec<String> = Vec::new();
+        for (doc_id, head, path, file_hash, frontmatter_raw) in &live {
+            held.push(doc_id.clone());
+            held.push(head.clone());
+            let mut blocks = tx.prepare_cached(
+                "SELECT block_id FROM blocks WHERE doc_id = ?1 AND deleted_at IS NULL",
+            )?;
+            for b in blocks.query_map(params![doc_id], |r| r.get::<_, String>(0))? {
+                held.push(b?);
+            }
+            if self.has_revision(tx, head)? {
+                continue;
+            }
+            let previous = previous_revision(tx, doc_id)?;
+            let seq = previous.as_ref().map_or(1, |p| p.seq + 1);
+            let body = crate::core::effects::current_tree_input(tx, doc_id)?;
+            let root_tree_hex = write_block_tree_in(tx, &body, &TreeWriteContext::checkpoint())?;
+            let fm_blob_hex = match frontmatter_raw {
+                Some(raw) => Some(write_frontmatter_blob(tx, raw, None, true)?),
+                None => None,
+            };
+            let mut rendered_hash = [0u8; 32];
+            if file_hash.len() == 32 {
+                rendered_hash.copy_from_slice(file_hash);
+            } else {
+                return Err(crate::error::Error::Other(format!(
+                    "baseline: docs.file_hash of {doc_id} is not a 32-byte hash"
+                )));
+            }
+            write_revision(
+                tx,
+                &NewRevision {
+                    rev_id: head,
+                    doc_id,
+                    root_tree_hex: &root_tree_hex,
+                    frontmatter_blob_hex: fm_blob_hex.as_deref(),
+                    rendered_hash,
+                    path,
+                    commit_id: commit.commit_id,
+                    seq: Some(seq),
+                },
+            )?;
+            revisions += 1;
+        }
+        let held_refs: Vec<&str> = held.iter().map(String::as_str).collect();
+        claims::hold(tx, &held_refs)?;
+        // The edge record (`spec/graph` §3.3; H6): close what is gone, open
+        // what is missing.
+        tx.execute(
+            "UPDATE edge_transitions SET to_commit = ?1 WHERE repo_id = ?2 AND to_commit IS NULL AND edge_id NOT IN (SELECT edge_id FROM edges)",
+            params![commit.commit_id, commit.repo_id],
+        )?;
+        type Missing = (
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+        );
+        let missing: Vec<Missing> = {
+            let mut stmt = tx.prepare(
+                "SELECT edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node FROM edges e
+                 WHERE e.repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY rowid",
+            )?;
+            let rows = stmt.query_map(params![commit.repo_id], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                    r.get(9)?,
+                    r.get(10)?,
+                ))
+            })?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        {
+            let mut open = tx.prepare_cached(
+                "INSERT OR REPLACE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL)",
+            )?;
+            for e in &missing {
+                open.execute(params![
+                    e.0,
+                    e.1,
+                    e.2,
+                    e.3,
+                    e.4,
+                    e.5,
+                    e.6,
+                    e.7,
+                    e.8,
+                    e.9,
+                    e.10,
+                    commit.commit_id,
+                ])?;
+            }
+        }
+        let opened: Vec<&str> = missing.iter().map(|e| e.0.as_str()).collect();
+        claims::hold(tx, &opened)?;
+        // A dangling open transition whose dst was rewritten while capture
+        // was off follows the edge now.
+        tx.execute(
+            "UPDATE edge_transitions SET dst_node = (SELECT e.dst_node FROM edges e WHERE e.edge_id = edge_transitions.edge_id)
+             WHERE repo_id = ?1 AND to_commit IS NULL AND dst_node != (SELECT e.dst_node FROM edges e WHERE e.edge_id = edge_transitions.edge_id)",
+            params![commit.repo_id],
+        )?;
+        Ok(revisions)
     }
 
     fn rebuild_projection(&self, tx: &Connection) -> Result<()> {

@@ -132,7 +132,7 @@ pub use archive::{
 pub use capabilities::{
     CAPABILITIES_ENV, Capabilities, CapabilityState, DispositionRow, DocEmbedStats, EmbedStats,
     ForeignVectors, GcResult, HistoryRecorder, HistorySizeFigures, IdentityClaims,
-    RecordedRevision, RevisionRead, RevisionTransition, SemanticProvider,
+    RecordedRevision, RevisionQueryRow, RevisionRead, RevisionTransition, SemanticProvider,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -163,11 +163,15 @@ pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_vali
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
 pub use manifest::{
-    CoverageInterval, HISTORY_DATA_V, HISTORY_INTERFACE_V, HISTORY_WRITER_REQUIRED_MESSAGE,
-    ManifestRow, ManifestState, SEMANTIC_DATA_V, SEMANTIC_INTERFACE_V, WRITER_REFUSED_ALERT,
-    WRITER_REFUSED_MESSAGE, canonical_config_json, config_hash, coverage_from, ensure_manifest,
+    CoverageInterval, HISTORY_DATA_V, HISTORY_DISABLED_MESSAGE, HISTORY_ENABLED_REASON,
+    HISTORY_INTERFACE_V, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_WRITER_REQUIRED_MESSAGE,
+    HistoryLifecycleResult, ManifestRow, ManifestState, SEMANTIC_DATA_V, SEMANTIC_INTERFACE_V,
+    WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE, any_history_enabled, apply_history_bundle,
+    canonical_config_json, capture, capture_failed_message, capture_for, clear_capture_failed,
+    config_hash, coverage_from, disable_history, enable_history, ensure_manifest,
+    history_bundle_present, history_reader, open_coverage_from, raise_capture_failed,
     read_capabilities, read_capability, refresh_semantic_manifest, refresh_semantic_manifests,
-    require_writer,
+    require_history_reader, require_writer, writer_for,
 };
 pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
@@ -208,7 +212,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.0";
+pub const SPEC_VERSION: &str = "17.1";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -340,6 +344,7 @@ impl Store {
         // The recorder is bound BEFORE the migration (17.0): step 17's
         // backfill resolves every live head's frontmatter through it.
         schema::migrate(&conn, &mut ids, history.as_deref(), now)?;
+        Self::apply_bundles(&conn, history.is_some(), semantic.is_some())?;
         Ok(Self {
             conn,
             ids,
@@ -351,10 +356,100 @@ impl Store {
         })
     }
 
-    /// The history capability this store opened with, if any.
+    /// The capability bundles (`spec/store` §3.1 "Which bundles a database
+    /// holds", 17.1 Phase 4a), after the migration, on every open: the
+    /// SEMANTIC bundle's DDL whenever the composition carries the semantic
+    /// module — its reads (`queue` for `omg status`, the `available` gate, the
+    /// vector cache) probe the tables without consulting the manifest, so the
+    /// module's tables exist iff the module is loaded; the HISTORY bundle's
+    /// DDL when any repository of the database has history `enabled` (one
+    /// database holds every repository; the tables are harmless when present
+    /// and unused) — `history enable` and `create_repo` execute it at the
+    /// moment a row becomes `enabled`, so this is the safety net for a
+    /// database written by another engine. Every statement is `CREATE … IF
+    /// NOT EXISTS`. A database with no `docs` table (the
+    /// `already-current-is-untouched` fixture) is left exactly as it is, as
+    /// the 17-finishing step leaves it.
+    fn apply_bundles(conn: &Connection, history: bool, semantic: bool) -> Result<()> {
+        if !schema::table_exists(conn, "docs")? {
+            return Ok(());
+        }
+        if semantic {
+            conn.execute_batch(SEMANTIC_SQL)?;
+        }
+        if history && manifest::any_history_enabled(conn)? {
+            manifest::apply_history_bundle(conn)?;
+        }
+        Ok(())
+    }
+
+    /// The history MODULE this store opened with, if any (the composition's;
+    /// whether a repository's commits are captured is its manifest row —
+    /// [`Store::capture_for`]).
     #[must_use]
     pub fn history(&self) -> Option<&dyn HistoryRecorder> {
         self.history.as_deref()
+    }
+
+    /// The recorder a commit on `repo_id` captures through
+    /// ([`manifest::capture_for`]): the module iff the repository's manifest
+    /// row is `enabled`; with `None`, the module iff the bundle's tables exist.
+    pub fn capture_for(&self, repo_id: Option<&str>) -> Result<Option<&dyn HistoryRecorder>> {
+        manifest::capture_for(&self.conn, self.history.as_deref(), repo_id)
+    }
+
+    /// The recorder a history READ goes through ([`manifest::history_reader`]):
+    /// the module when the bundle's tables exist, else `None`.
+    pub fn history_reader(&self) -> Result<Option<&dyn HistoryRecorder>> {
+        manifest::history_reader(&self.conn, self.history.as_deref())
+    }
+
+    /// The recorder a history TOOL reads through, or the refusal
+    /// ([`manifest::require_history_reader`]: [`Error::HistoryUnavailable`]
+    /// without the module, [`Error::HistoryDisabled`] when nothing was ever
+    /// captured in this database).
+    pub fn require_history_reader(&self) -> Result<&dyn HistoryRecorder> {
+        manifest::require_history_reader(&self.conn, self.history.as_deref())
+    }
+
+    /// TEST SEAM (the fixture runners' `recorder_fault` device, `spec/store`
+    /// §9.4): replace the history module this store runs with — a wrapper
+    /// whose capture calls fail stands in for the recorder, then the original
+    /// comes back. Returns the module replaced. Not a production path: the
+    /// composition is fixed at open.
+    pub fn set_history(
+        &mut self,
+        history: Option<Box<dyn HistoryRecorder>>,
+    ) -> Option<Box<dyn HistoryRecorder>> {
+        std::mem::replace(&mut self.history, history)
+    }
+
+    /// `spec/store` §5.9 `history enable` ([`manifest::enable_history`]) at
+    /// `now`: the baseline commit and the open coverage interval;
+    /// `writer_requires` the flag (`--best-effort` passes false). The caller
+    /// holds the writer lock.
+    pub fn enable_history(
+        &mut self,
+        repo_id: &str,
+        now: &str,
+        writer_requires: bool,
+    ) -> Result<HistoryLifecycleResult> {
+        let Store {
+            conn, ids, history, ..
+        } = self;
+        manifest::enable_history(
+            conn,
+            &mut ids.at(conn),
+            history.as_deref(),
+            repo_id,
+            now,
+            writer_requires,
+        )
+    }
+
+    /// `spec/store` §5.9 `history disable` ([`manifest::disable_history`]) at `now`.
+    pub fn disable_history(&self, repo_id: &str, now: &str) -> Result<HistoryLifecycleResult> {
+        manifest::disable_history(&self.conn, repo_id, now)
     }
 
     /// The semantic capability this store opened with, if any — the one way
@@ -371,15 +466,16 @@ impl Store {
     }
 
     /// The history capability's state as the COMPOSITION knows it: `enabled`
-    /// with a recorder, else `disabled` — the store runs without the module.
-    /// Per repository the manifest row answers (`spec/store` §3.1
-    /// `capabilities`, 3e-ii; `omgbase-sync`'s `capability_states`).
+    /// with a recorder, else `unavailable` — the store runs without the module
+    /// (a core-only build, Phase 4a). Per repository the manifest row answers
+    /// (`spec/store` §3.1 `capabilities`, 3e-ii; `omgbase-sync`'s
+    /// `capability_states`).
     #[must_use]
     pub fn history_state(&self) -> CapabilityState {
         if self.history.is_some() {
             CapabilityState::Enabled
         } else {
-            CapabilityState::Disabled
+            CapabilityState::Unavailable
         }
     }
 
@@ -453,10 +549,21 @@ impl Store {
 
     /// [`Store::create_repo`] at `now`: the `rp`/`ep` claims, and the
     /// manifest rows — history `enabled` with coverage from the repository's
-    /// birth (`writer_requires` 1), semantic `enabled` iff
+    /// birth (`writer_requires` 1) when the composition carries the recorder
+    /// (else `disabled`, Phase 4a), semantic `enabled` iff
     /// `embedding.provider` resolves for it (resolution 1) — all stamped
     /// `now` (the reference's `ensureRepo` under its pinned `Date`).
     pub fn create_repo_at(&mut self, slug: &str, now: &str) -> Result<String> {
+        self.create_repo_with(slug, now, true)
+    }
+
+    /// [`Store::create_repo_at`] with the new repository's history capture
+    /// chosen (`spec/store` §3.1, Phase 4a): `history: false` creates it
+    /// `disabled` with no coverage (`omg source add --no-history`; a
+    /// fixture's `capabilities: { history: false }`); `true` is the default —
+    /// `enabled` when the composition carries the recorder. A composition
+    /// without the recorder always creates a disabled repository.
+    pub fn create_repo_with(&mut self, slug: &str, now: &str, history: bool) -> Result<String> {
         let repo_id = self.mint("rp")?;
         self.minter().claim("rp", &repo_id, Some(&repo_id), now)?;
         let epoch = feed::mint_epoch(&mut self.minter(), &repo_id, now)?;
@@ -464,7 +571,8 @@ impl Store {
             "INSERT INTO repos (repo_id, slug, epoch) VALUES (?1, ?2, ?3)",
             params![repo_id, slug, epoch],
         )?;
-        manifest::ensure_manifest(&self.conn, &repo_id, now, now)?;
+        let enable = history && self.history.is_some();
+        manifest::ensure_manifest(&self.conn, &repo_id, now, now, enable)?;
         Ok(repo_id)
     }
 
@@ -540,10 +648,14 @@ impl Store {
     }
 
     /// §6.2: the bytes at a revision, from its Merkle root
-    /// ([`HistoryRecorder::read_at_revision`]).
+    /// ([`HistoryRecorder::read_at_revision`]) — through the history reader
+    /// (Phase 4a): `None` when the composition has no module or nothing was
+    /// ever captured in this database, as for a revision the recorder lacks.
     pub fn read_at_revision(&self, doc_id: &str, rev_id: &str) -> Result<Option<RevisionRead>> {
-        self.recorder()?
-            .read_at_revision(&self.conn, doc_id, rev_id)
+        match self.history_reader()? {
+            Some(h) => h.read_at_revision(&self.conn, doc_id, rev_id),
+            None => Ok(None),
+        }
     }
 
     /// The change feed (`spec/surface` §3 `changes_since`, 6.0; `spec/store`
@@ -557,7 +669,7 @@ impl Store {
         repo_id: &str,
         opts: &ChangesSinceOptions<'_>,
     ) -> Result<ChangesPage> {
-        feed::changes_since(&self.conn, self.history.as_deref(), repo_id, opts)
+        feed::changes_since(&self.conn, self.history_reader()?, repo_id, opts)
     }
 
     /// `{ epoch, oldest, head }` of the repository's feed ([`feed::feed_status`]).
@@ -628,7 +740,7 @@ impl Store {
     /// §7: recompute derived tables (the `block_changes` projection through
     /// [`HistoryRecorder::rebuild_projection`]).
     pub fn rebuild_index(&self, target: RebuildTarget) -> Result<()> {
-        derived::rebuild_index(&self.conn, target, self.history.as_deref())
+        derived::rebuild_index(&self.conn, target, self.capture_for(None)?)
     }
 
     /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
@@ -653,9 +765,15 @@ impl Store {
         if !enabled {
             return Ok(GcResult::default());
         }
-        let recorder = self.recorder()?;
+        // The recorder's half runs when the store carries the module and
+        // the bundle's tables exist (Phase 4a — a store whose every
+        // repository runs with history disabled has nothing to collect there).
+        let recorder = self.capture_for(None)?;
         let tx = self.conn.unchecked_transaction()?;
-        let mut result = recorder.gc(&tx)?;
+        let mut result = match recorder {
+            Some(r) => r.gc(&tx)?,
+            None => GcResult::default(),
+        };
         result.feed_pruned = feed::prune_feed(&tx, now)?;
         let scopes = self.claim_scopes(&tx)?;
         result.claims_released = self.ids.claims().prune(&tx, now, &scopes)?;
@@ -699,12 +817,19 @@ impl Store {
     /// What [`Store::gc`] would sweep, without deleting (§8 I5) — the three
     /// counts, the `same` rows (14.2) included.
     pub fn gc_dry_run(&self) -> Result<GcResult> {
-        self.recorder()?.gc_dry_run(&self.conn)
+        match self.capture_for(None)? {
+            Some(r) => r.gc_dry_run(&self.conn),
+            None => Ok(GcResult::default()),
+        }
     }
 
-    /// §7 (14.2): the `same` disposition rows a store through 14.1 wrote.
+    /// §7 (14.2): the `same` disposition rows a store through 14.1 wrote (0
+    /// without the module or the bundle's tables).
     pub fn count_same_dispositions(&self) -> Result<usize> {
-        self.recorder()?.count_same_dispositions(&self.conn)
+        match self.capture_for(None)? {
+            Some(r) => r.count_same_dispositions(&self.conn),
+            None => Ok(0),
+        }
     }
 
     /// §5.5: delete expired pool rows; returns how many.
@@ -719,7 +844,7 @@ impl Store {
     pub fn size_report(&self) -> Result<SizeReport> {
         size::size_report(
             &self.conn,
-            self.history.as_deref(),
+            self.capture_for(None)?,
             self.semantic.as_deref(),
             self.ids.claims(),
         )
@@ -732,7 +857,7 @@ impl Store {
     pub fn size_report_at(&self, now: &str, repo_id: Option<&str>) -> Result<SizeReport> {
         size::size_report_at(
             &self.conn,
-            self.history.as_deref(),
+            self.capture_for(None)?,
             self.semantic.as_deref(),
             self.ids.claims(),
             now,
@@ -828,8 +953,9 @@ impl Capabilities {
     }
 
     /// [`Capabilities::from_env`] over [`Capabilities::standard`]: what every
-    /// fixture runner opens with, so `OMGBASE_CAPABILITIES=core` runs the
-    /// suites without the semantic bundle.
+    /// fixture runner and the binary open with, so `OMGBASE_CAPABILITIES=core`
+    /// runs the suites as a core-only build (no history module, no semantic
+    /// module — Phase 4a).
     pub fn standard_from_env() -> Result<Self> {
         Self::from_env(Self::standard)
     }

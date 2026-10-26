@@ -74,8 +74,8 @@ pub use omgbase_store::{
 pub use recovery::{RecoveryResult, recover_repo};
 pub use registry::{
     AdapterRow, SourceRow, attach, create_source, delete_source, detach, ensure_adapter,
-    ensure_repo, ensure_repo_at, list_adapters, list_sources, render_config_flags, source_by_name,
-    sources_for_repo,
+    ensure_repo, ensure_repo_at, ensure_repo_with, list_adapters, list_sources,
+    render_config_flags, source_by_name, sources_for_repo,
 };
 pub use settings::{
     Settings, deep_merge, repo_own_settings, resolve_settings, workspace_settings,
@@ -89,7 +89,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.0";
+pub const SPEC_VERSION: &str = "4.1";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

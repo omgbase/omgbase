@@ -103,12 +103,13 @@ pub fn semantic_configured(store: &Store, repo_id: Option<&str>) -> bool {
     omgbase_sync::semantic_configured(store, repo_id)
 }
 
-/// The capability manifest as `version` reports it (`spec/surface` §4,
-/// states only; byte for byte the reference's `capabilityStates`): `{
-/// history: { state }, semantic: { state } }` — since store 17.0 (3e-ii) read
-/// from the repository's `capabilities` rows (`omgbase_store::manifest`):
-/// `history` the row's state (`unavailable` when the composition lacks the
-/// recorder), `semantic` the row's state overlaid with what the host knows —
+/// The capability manifest as `version` reports it (`spec/surface` §4, 6.1;
+/// byte for byte the reference's `capabilityStates`): `{ history: { state,
+/// coverage_from, writer_requires }, semantic: { state, model } }` — since
+/// store 17.0 (3e-ii) read from the repository's `capabilities` rows
+/// (`omgbase_store::manifest`): `history` the row's state (`unavailable`
+/// when the composition lacks the recorder — a core-only build, Phase 4a),
+/// `semantic` the row's state overlaid with what the host knows —
 /// `disabled` when the store runs without the module, `unavailable` when the
 /// configured provider failed to start — never from the vectors
 /// (`phase-1-contracts.md` §7 resolution 1). Without a repository the
@@ -238,29 +239,44 @@ mod tests {
         assert_eq!(none["epoch"], Json::Null);
         assert_eq!(
             none["capabilities"],
-            json!({ "history": { "state": "disabled" }, "semantic": { "state": "disabled" } })
+            json!({
+                "history": { "state": "disabled", "coverage_from": null, "writer_requires": false },
+                "semantic": { "state": "disabled", "model": null },
+            })
         );
     }
 
-    /// The manifest member, byte for byte as both engines emit it (Phase 2;
-    /// the TypeScript twin prints the same literal): `history` is `enabled`
-    /// on every store of this round, `semantic` follows the discovery rule —
-    /// `enabled` iff a provider is configured for the repository.
+    /// The manifest member, byte for byte as both engines emit it (Phase 2 →
+    /// 4a; the TypeScript twin prints the same literal, `spec/surface` §4
+    /// 6.1's key order): `history` is `enabled` with the repository's birth
+    /// as `coverage_from` and `writer_requires` on every full store,
+    /// `semantic` follows the discovery rule — `enabled` iff a provider is
+    /// configured for the repository; without a repository the history leaves
+    /// read `null`/`false`.
     #[test]
     fn capabilities_is_the_literal_both_engines_agree_on() {
         let literal = |s: &Store, repo: Option<&str>| {
             let v = version_info_for(Some(s), repo, &BuildInfo::default(), Profile::Full).unwrap();
-            serde_json::to_string(&json!({ "capabilities": v["capabilities"] })).unwrap()
+            // The repository's birth varies; it is asserted a timestamp and masked.
+            let mut caps = v["capabilities"].clone();
+            if let Some(from) = caps["history"]["coverage_from"].as_str() {
+                assert!(
+                    from.starts_with("20"),
+                    "coverage_from is a timestamp: {from}"
+                );
+                caps["history"]["coverage_from"] = json!("<birth>");
+            }
+            serde_json::to_string(&json!({ "capabilities": caps })).unwrap()
         };
-        const DISABLED: &str =
-            r#"{"capabilities":{"history":{"state":"enabled"},"semantic":{"state":"disabled"}}}"#;
-        const ENABLED: &str =
-            r#"{"capabilities":{"history":{"state":"enabled"},"semantic":{"state":"enabled"}}}"#;
+        const DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":"<birth>","writer_requires":true},"semantic":{"state":"disabled","model":null}}}"#;
+        const ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":"<birth>","writer_requires":true},"semantic":{"state":"enabled","model":null}}}"#;
+        const WS_DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}}"#;
+        const WS_ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"enabled","model":null}}}"#;
         // The module installed, nothing configured: disabled.
         let mut store = Store::open_in_memory().unwrap();
         let repo = store.create_repo("r").unwrap();
         assert_eq!(literal(&store, Some(&repo)), DISABLED);
-        assert_eq!(literal(&store, None), DISABLED);
+        assert_eq!(literal(&store, None), WS_DISABLED);
         // The default repository's epoch rides `version` (6.0, the last key).
         let v = version_info_for(
             Some(&store),
@@ -287,28 +303,34 @@ mod tests {
         );
         omgbase_sync::write_workspace_settings(&store, &ws).unwrap();
         assert_eq!(literal(&store, Some(&repo)), ENABLED);
-        assert_eq!(literal(&store, None), ENABLED);
+        assert_eq!(literal(&store, None), WS_ENABLED);
         // The repo's own layer turns it off for the repo alone.
         let mut own = omgbase_sync::Settings::new();
         own.insert("embedding".to_owned(), json!({ "provider": "" }));
         omgbase_sync::write_repo_settings(&store, &repo, &own).unwrap();
         assert_eq!(literal(&store, Some(&repo)), DISABLED);
-        assert_eq!(literal(&store, None), ENABLED);
+        assert_eq!(literal(&store, None), WS_ENABLED);
         // Configured, but the composition detached the module: disabled, or
         // unavailable with the host's reason.
         let mut detached = Store::open_in_memory().unwrap();
         omgbase_sync::write_workspace_settings(&detached, &ws).unwrap();
         detached.detach_semantic(None);
-        assert_eq!(literal(&detached, None), DISABLED);
+        assert_eq!(literal(&detached, None), WS_DISABLED);
         detached.detach_semantic(Some("spawn ./embedder: ENOENT".to_owned()));
         let v = version_info(Some(&detached), &BuildInfo::default(), Profile::Full).unwrap();
         assert_eq!(v["capabilities"]["semantic"]["state"], "unavailable");
-        // The core-only runner's store.
-        let core = Store::open_in_memory_with_capabilities(
+        // The core-only build (Phase 4a): no recorder either — history
+        // `unavailable`; the repository it created has no coverage and
+        // requires nothing.
+        let mut core = Store::open_in_memory_with_capabilities(
             Box::new(omgbase_store::RandomMinter),
-            omgbase_store::Capabilities::standard().without_semantic(),
+            omgbase_store::Capabilities::core_only(),
         )
         .unwrap();
-        assert_eq!(literal(&core, None), DISABLED);
+        let bare = core.create_repo("bare").unwrap();
+        assert_eq!(
+            literal(&core, Some(&bare)),
+            r#"{"capabilities":{"history":{"state":"unavailable","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}}"#
+        );
     }
 }

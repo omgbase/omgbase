@@ -67,8 +67,8 @@ pub use names::{UnknownNames, VocabularyCache};
 pub use paths::{reference_path, storage_path};
 pub use planner::SqlitePlanner;
 pub use query::{
-    OqxResult, QueryOptions, collect_semantic_phrases, embed_phrases, query, query_ast,
-    rewrite_query,
+    OqxResult, QueryOptions, REVISIONS_DISABLED_HINT, REVISIONS_UNAVAILABLE_HINT,
+    collect_semantic_phrases, embed_phrases, query, query_ast, revisions_hint, rewrite_query,
 };
 pub use version::{
     BuildInfo, MCP_PROTOCOL_VERSION, capabilities, semantic_configured, version_info,
@@ -76,7 +76,7 @@ pub use version::{
 };
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "6.0";
+pub const SPEC_VERSION: &str = "6.1";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

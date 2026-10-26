@@ -33,6 +33,10 @@ pub struct BatchResult {
     pub deleted: Vec<String>,
     /// Ingested but carrying git conflict markers.
     pub conflicted: Vec<String>,
+    /// Paths whose member was rolled back because its history capture failed
+    /// (`spec/store` §5.4 step 15, resolution 18; `spec/sync` 4.1, Phase 4a) —
+    /// retried by the next sweep.
+    pub failed: Vec<String>,
 }
 
 /// The name the result carried through `spec/sync` 3.x (`checkpoint_id`
@@ -40,7 +44,7 @@ pub struct BatchResult {
 pub type CheckpointResult = BatchResult;
 
 impl BatchResult {
-    /// `{ batch_id, ingested, suppressed, deleted, conflicted }`.
+    /// `{ batch_id, ingested, suppressed, deleted, conflicted, failed }`.
     #[must_use]
     pub fn to_json(&self) -> Value {
         serde_json::json!({
@@ -49,6 +53,7 @@ impl BatchResult {
             "suppressed": self.suppressed,
             "deleted": self.deleted,
             "conflicted": self.conflicted,
+            "failed": self.failed,
         })
     }
 }
@@ -78,6 +83,7 @@ pub fn batch_id_of(outcomes: &[BatchOutcome]) -> Option<String> {
     outcomes.iter().find_map(|o| match o {
         BatchOutcome::Deleted(d) => d.commit_id.clone(),
         BatchOutcome::Observed(ob) => ob.commit_id.clone(),
+        BatchOutcome::Failed(_) => None,
     })
 }
 
@@ -134,6 +140,7 @@ pub fn finish_checkpoint(
     };
     for o in outcomes {
         match o {
+            BatchOutcome::Failed(f) => result.failed.push(f.path.clone()),
             BatchOutcome::Deleted(d) => {
                 if d.doc_id.is_some() {
                     result.deleted.push(d.path.clone());

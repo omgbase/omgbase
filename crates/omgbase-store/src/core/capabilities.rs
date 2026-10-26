@@ -154,6 +154,30 @@ pub struct RevisionRead {
     pub rendered_hash_match: bool,
 }
 
+/// A `revisions` row as the query binding reads it (`spec/surface` §1.1/§1.2
+/// — the `revisions` root and the `_revisions` relation; 17.1 Phase 4a): the
+/// `revisions` × `commits` columns under their own names, `is_current` (= the
+/// revision is its document's `head`) and `archived`. The recorder produces
+/// them ([`HistoryRecorder::revision_rows`], [`HistoryRecorder::doc_revision_rows`])
+/// so no SQL outside the history bundle names a history table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RevisionQueryRow {
+    pub rev_id: String,
+    pub doc_id: String,
+    pub seq: i64,
+    /// The 32-byte content hash (`revisions.rendered_hash`).
+    pub rendered_hash: Vec<u8>,
+    /// The path as of the revision (the storage form).
+    pub path: String,
+    pub commit_id: String,
+    pub ts: String,
+    pub origin: String,
+    pub actor: Option<String>,
+    pub reason: Option<String>,
+    pub is_current: bool,
+    pub archived: bool,
+}
+
 /// Rows a garbage collection sweeps (or would sweep).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GcResult {
@@ -265,6 +289,40 @@ pub trait HistoryRecorder {
         conn: &Connection,
         commit_id: &str,
     ) -> Result<Option<Vec<(String, i64)>>>;
+
+    /// The `revisions` query root (`spec/surface` §1.1, 4.7; Phase 4a): every
+    /// captured revision of the repository's documents — tombstoned documents
+    /// included, history is history — as the binding's rows, in the keyset
+    /// order `(path as of the revision, rev_id)`.
+    fn revision_rows(&self, conn: &Connection, repo_id: &str) -> Result<Vec<RevisionQueryRow>>;
+
+    /// The `_revisions` relation of a document (`spec/surface` §1.2): its
+    /// captured revisions by `seq`.
+    fn doc_revision_rows(&self, conn: &Connection, doc_id: &str) -> Result<Vec<RevisionQueryRow>>;
+
+    /// Has the recorder a `revisions` row under this head token? (`docs_read {
+    /// at }` on a disabled repository tells a captured revision from an
+    /// uncaptured one by this; Phase 4a.)
+    fn has_revision(&self, conn: &Connection, rev_id: &str) -> Result<bool>;
+
+    /// `doctor`'s "capture complete" (`spec/cli` §6): the live documents whose
+    /// head was minted at or after `since` (within the open coverage
+    /// interval) and has no `revisions` row.
+    fn uncaptured_heads(&self, conn: &Connection, repo_id: &str, since: &str) -> Result<i64>;
+
+    // ---- the capture lifecycle (`spec/store` §5.9, Phase 4a) ------------------------
+
+    /// `history enable`'s baseline (`phase-1-contracts.md` §1.14): under
+    /// `commit` — a feed row the core already appended (`origin = 'import'`,
+    /// `reason = 'history enabled'`) — the `commits` row, a checkpoint
+    /// `revisions` row for every live document whose head has none (`rev_id =
+    /// docs.head`, the current tree and frontmatter, `seq = 1 + its greatest
+    /// captured seq`), the recorder's hold on every live doc, head and block
+    /// id, and the edge interval record reconciled with the open edges (a
+    /// dangling open transition closed at this commit, an edge without one
+    /// opened at it). Returns the revisions written. Runs in the caller's
+    /// transaction.
+    fn baseline(&self, tx: &Connection, commit: &CommitRecord<'_>) -> Result<usize>;
 
     // ---- the projection, the mark and the sweep -------------------------------------
 
@@ -581,19 +639,29 @@ impl std::fmt::Debug for Capabilities {
     }
 }
 
-/// The environment variable the fixture runners honour
-/// (`docs/modular-core/README.md`, Phase 2's gate): `core` opens every store
-/// without the semantic bundle, so the reads and mutations run with the
-/// semantic code and data absent; unset or `standard` is
-/// [`Capabilities::standard`](crate::Capabilities::standard).
+/// The environment variable the fixture runners and the binary honour
+/// (`docs/modular-core/README.md`, Phase 2's gate; Phase 4a): `core` opens
+/// every store as a CORE-ONLY BUILD — no history module, no semantic module
+/// ([`Capabilities::core_only`]) — so the reads and mutations run with both
+/// extensions' code and data absent; unset or `standard` is
+/// [`Capabilities::standard`](crate::Capabilities::standard). A TEST-ONLY
+/// override, not a production switch: in production the composition is the
+/// build's, and whether a repository's commits are captured is its manifest
+/// row (`history enable|disable`, `spec/store` §5.9).
 pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
 
 impl Capabilities {
-    /// The core alone: no recorder, no provider, the `id_claims` oracle. The
-    /// core mints its own head token since 17.0 (M1), but legacy capture is
-    /// on for every repository through Phase 3, so a store opened with this
-    /// still cannot commit a transition (`require_history`); it reads,
-    /// queries and sweeps.
+    /// The core alone (modular-core Phase 4a): no recorder, no provider, the
+    /// `id_claims` oracle — what a core-only build is. A repository it
+    /// creates starts with history `disabled` (`spec/store` §3.1); a
+    /// repository whose manifest has history `enabled` with
+    /// `writer_requires` refuses its writes (`require_writer` →
+    /// [`Error::HistoryWriterRequired`] + the `writer_refused` alert); every
+    /// history read answers [`Error::HistoryUnavailable`]; the `revisions`
+    /// root lists nothing; the semantic calls raise `capability_unavailable {
+    /// semantic, disabled }`. Through Phase 3 this composition still carried
+    /// the recorder (every write needed it); Phase 4a made capture optional
+    /// and dropped it here.
     #[must_use]
     pub fn core_only() -> Self {
         Self {
@@ -622,14 +690,14 @@ impl Capabilities {
     }
 
     /// [`CAPABILITIES_ENV`] applied to `standard`: unset / empty / `standard`
-    /// → `standard`; `core` → `standard().without_semantic()` — Phase 2's
-    /// core (the recorder stays until Phase 3's M1 lets the core commit
-    /// without it). Any other value is an error naming the two.
+    /// → `standard`; `core` → [`Capabilities::core_only`] — a core-only build
+    /// (Phase 4a: no recorder, no semantic module). Any other value is an
+    /// error naming the two.
     pub fn from_env(standard: impl FnOnce() -> Self) -> Result<Self> {
         match std::env::var(CAPABILITIES_ENV) {
             Err(_) => Ok(standard()),
             Ok(v) if v.is_empty() || v == "standard" => Ok(standard()),
-            Ok(v) if v == "core" => Ok(standard().without_semantic()),
+            Ok(v) if v == "core" => Ok(Self::core_only()),
             Ok(v) => Err(Error::Other(format!(
                 "{CAPABILITIES_ENV}={v:?}: the values are \"standard\" and \"core\""
             ))),
@@ -649,9 +717,15 @@ pub fn unavailable(capability: &str) -> Error {
     ))
 }
 
-/// The recorder, or [`unavailable`]`("history")`.
+/// The history MODULE, or [`Error::HistoryUnavailable`] (`capability_unavailable
+/// { history, unavailable }`, `phase-1-contracts.md` §2.1) when the
+/// composition lacks it — what the retention verbs (`history
+/// plan|export|attach|detach|list`) and the 16.x → 17 migration need: the
+/// module itself, whatever a repository's manifest says. A COMMIT asks
+/// [`capture_for`](crate::core::manifest::capture_for) instead — the recorder
+/// only while the repository's capture is on (Phase 4a).
 pub fn require_history(history: Option<&dyn HistoryRecorder>) -> Result<&dyn HistoryRecorder> {
-    history.ok_or_else(|| unavailable("history"))
+    history.ok_or(Error::HistoryUnavailable)
 }
 
 /// The provider, or [`unavailable`]`("semantic")`.

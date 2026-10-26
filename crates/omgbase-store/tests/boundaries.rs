@@ -18,6 +18,16 @@
 //! string. `core/size.rs` is the one exception: its category map names every
 //! table of the database for the byte accountant (it reads `dbstat`, never a
 //! row), and its advice takes the bundle's tables from the provider.
+//!
+//! Phase 4a adds the history data boundary (the reference's
+//! `dependency-direction.test.ts` SQL gate): no SQL under `src/core/` reads
+//! or writes a history table — `commits`, `revisions`, `blobs`,
+//! `tree_nodes`, `dispositions`, `block_changes`, `edge_transitions`,
+//! `archives` — every such row goes through `HistoryRecorder`. The check is
+//! the table name after `FROM` / `INTO` / `UPDATE` / `JOIN` / `TABLE` in a
+//! string literal of the non-test source (a `#[cfg(test)]` module may build
+//! history by hand); `schema.rs` (the DDL and the 16.x migration, which
+//! reads the tables it upgrades from) is outside `src/core/`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -538,6 +548,77 @@ fn no_sql_of_the_core_names_a_vector_table_or_the_cosine_scalar() {
         "// embeddings in a comment\nlet q = \"SELECT vec FROM embeddings WHERE 1\"; /* doc_embeddings */\ncosine_bytes(a, b); conn.create_scalar_function(\"cosine\", 2, f); \"SELECT cosine(a, b)\"",
     );
     assert_eq!(sample, [(2, "embeddings"), (3, "cosine(")]);
+}
+
+/// The history bundle's tables, the names only `src/history/` may put in SQL (Phase 4a).
+const HISTORY_TABLES: [&str; 8] = [
+    "commits",
+    "revisions",
+    "blobs",
+    "tree_nodes",
+    "dispositions",
+    "block_changes",
+    "edge_transitions",
+    "archives",
+];
+
+/// `src` up to its `#[cfg(test)]` module, when it has one.
+fn without_tests(src: &str) -> &str {
+    src.find("#[cfg(test)]").map_or(src, |at| &src[..at])
+}
+
+/// Every `(line, table)` of a `FROM|INTO|UPDATE|JOIN|TABLE <history table>`
+/// in `src` (comments stripped, strings kept, the test module dropped).
+fn history_sql_mentions(src: &str) -> Vec<(usize, &'static str)> {
+    let text = strip_comments_only(without_tests(src));
+    let mut out = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        let mut words = line
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|w| !w.is_empty())
+            .peekable();
+        while let Some(w) = words.next() {
+            if matches!(w, "FROM" | "INTO" | "UPDATE" | "JOIN" | "TABLE")
+                && let Some(next) = words.peek()
+                && let Some(t) = HISTORY_TABLES.iter().find(|t| *t == next)
+            {
+                out.push((n + 1, *t));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn no_sql_of_the_core_names_a_history_table() {
+    let src = src_dir();
+    let mut lines = Vec::new();
+    for f in rust_files(&src.join("core")) {
+        let rel = f
+            .strip_prefix(&src)
+            .unwrap_or(&f)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = fs::read_to_string(&f).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
+        for (line, table) in history_sql_mentions(&text) {
+            lines.push(format!("{rel}:{line} {table}"));
+        }
+    }
+    assert!(
+        lines.is_empty(),
+        "src/core touches the history bundle's data; route it through `HistoryRecorder`:\n  {}",
+        lines.join("\n  ")
+    );
+    // The check bites: the recorder's own files do name them.
+    let recorder = fs::read_to_string(src.join("history/recorder.rs")).expect("recorder.rs");
+    assert!(
+        !history_sql_mentions(&recorder).is_empty(),
+        "the recorder names its tables"
+    );
+    let sample = history_sql_mentions(
+        "// re-derived from dispositions\nlet q = \"SELECT 1 FROM commits WHERE 1\"; let r = \"UPDATE edge_transitions SET x = 1\";\n#[cfg(test)]\nmod tests { \"INSERT INTO blobs\" }",
+    );
+    assert_eq!(sample, [(2, "commits"), (2, "edge_transitions")]);
 }
 
 #[test]

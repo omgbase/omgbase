@@ -11,9 +11,12 @@ use crate::mint::{IdSource, Mint};
 
 /// `spec/store/schema.sql`, verbatim (§3.3): the CORE bundle's DDL (17.0,
 /// §3.1) — the current state, the identity, the change feed, the derived
-/// indexes, the sync registry. Executed on a fresh database, followed by the
-/// two capability bundles ([`HISTORY_SQL`], [`SEMANTIC_SQL`]) — through Phase
-/// 3 unconditionally (Phase 4 makes them conditional on the manifest).
+/// indexes, the sync registry. Executed ALONE on a fresh database (17.1,
+/// Phase 4a); the two capability bundles ([`HISTORY_SQL`], [`SEMANTIC_SQL`])
+/// follow the manifest and the composition (§3.1 "Which bundles a database
+/// holds": the history bundle when a repository's `history` row becomes
+/// `enabled`, the semantic bundle on every open by an engine with the module
+/// — [`crate::Store`]'s `apply_bundles`).
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
 
 /// `spec/store/schema-history.sql`, verbatim (§3.3, 17.0): the history
@@ -26,8 +29,9 @@ pub const HISTORY_SQL: &str = include_str!("../schema-history.sql");
 /// bundle's DDL — `embeddings`, `doc_embeddings`.
 pub const SEMANTIC_SQL: &str = include_str!("../schema-semantic.sql");
 
-/// The three bundles in the order the opener executes them (the reference's
-/// `ALL_DDL`: core, history, semantic).
+/// The three bundles concatenated (the reference's `ALL_DDL`: core, history,
+/// semantic) — what a database with every capability on holds (the
+/// partition test; through Phase 3 what every fresh database executed).
 pub const ALL_SQL_FILES: [&str; 3] = [SCHEMA_SQL, HISTORY_SQL, SEMANTIC_SQL];
 
 /// `spec/store/archive.sql`, verbatim (§3.3, 15.0): the DDL of an archive
@@ -168,12 +172,15 @@ pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Open per §1: `0` → the three DDL files (§3.3: the core bundle, then the
-/// history and semantic bundles — every bundle on every fresh database
-/// through Phase 3); equal → done; greater → refuse; less → migrate step by
-/// step, each in its own transaction. `history` is the recorder the store
-/// opens with: step 17 resolves every live head's frontmatter through it
-/// once (`frontmatter_at_revision`), never through the delta module directly.
+/// Open per §1: `0` → `schema.sql` alone (§3.3, 17.1 Phase 4a: the CORE
+/// bundle; the capability bundles follow in the opener's `apply_bundles` —
+/// the history bundle when a repository's manifest says so, the semantic
+/// bundle with the module); equal → done; greater → refuse; less → migrate
+/// step by step, each in its own transaction. `history` is the recorder the
+/// store opens with: step 17 resolves every live head's frontmatter through
+/// it once (`frontmatter_at_revision`), never through the delta module
+/// directly, and the manifest step writes a repository's history row
+/// `enabled` only when the composition carries it.
 pub(crate) fn migrate(
     conn: &Connection,
     ids: &mut IdSource,
@@ -183,9 +190,7 @@ pub(crate) fn migrate(
     let current = user_version(conn)?;
     if current == 0 {
         let tx = conn.unchecked_transaction()?;
-        for sql in ALL_SQL_FILES {
-            tx.execute_batch(sql)?;
-        }
+        tx.execute_batch(SCHEMA_SQL)?;
         set_user_version(&tx, SCHEMA_VERSION)?;
         tx.commit()?;
         return Ok(());
@@ -208,7 +213,7 @@ pub(crate) fn migrate(
             migrate_v17_pending(conn, now)?;
             migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
-            migrate_v17_manifest(conn, now)?;
+            migrate_v17_manifest(conn, history.is_some(), now)?;
         }
         return Ok(());
     }
@@ -242,7 +247,7 @@ pub(crate) fn migrate(
             migrate_v17_pending(conn, now)?;
             migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
-            migrate_v17_manifest(conn, now)?;
+            migrate_v17_manifest(conn, history.is_some(), now)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -1469,7 +1474,7 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
 /// `disabled` (resolution 1, no vectors consulted). `alerts` starts empty.
 /// Idempotent: a repository with its rows is left alone, so a 3a–3e-i
 /// database at 17 finishes the step on open.
-fn migrate_v17_manifest(conn: &Connection, clock: &str) -> Result<()> {
+fn migrate_v17_manifest(conn: &Connection, history_present: bool, clock: &str) -> Result<()> {
     if !table_exists(conn, "repos")? {
         return Ok(());
     }
@@ -1501,7 +1506,7 @@ fn migrate_v17_manifest(conn: &Connection, clock: &str) -> Result<()> {
                 .is_some();
         if has_history_row {
             // The semantic row alone may be missing.
-            crate::core::manifest::ensure_manifest(&tx, repo_id, clock, clock)?;
+            crate::core::manifest::ensure_manifest(&tx, repo_id, clock, clock, history_present)?;
             continue;
         }
         let first: Option<String> = match first_ts_sql {
@@ -1509,7 +1514,7 @@ fn migrate_v17_manifest(conn: &Connection, clock: &str) -> Result<()> {
             None => None,
         };
         let from = first.as_deref().unwrap_or(clock);
-        crate::core::manifest::ensure_manifest(&tx, repo_id, from, clock)?;
+        crate::core::manifest::ensure_manifest(&tx, repo_id, from, clock, history_present)?;
     }
     tx.commit()?;
     Ok(())

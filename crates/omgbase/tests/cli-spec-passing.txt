@@ -62,6 +62,7 @@ admin::source-add-json
 admin::source-add-missing-dir
 admin::source-add-named
 admin::source-add-no-dir
+admin::source-add-no-history
 admin::source-add-refuses-without-yes
 admin::source-add-second-source-same-repo
 admin::source-attach-missing
@@ -127,9 +128,14 @@ history::history-attach-dir
 history::history-attach-missing
 history::history-attach-no-arg
 history::history-attach-not-a-segment
+history::history-core-build-writer-refused
 history::history-detach-attach
 history::history-detach-no-arg
 history::history-detach-unknown
+history::history-disable-then-write
+history::history-enable-after-disable
+history::history-enable-already
+history::history-enable-best-effort
 history::history-export
 history::history-export-dest
 history::history-export-dry-run

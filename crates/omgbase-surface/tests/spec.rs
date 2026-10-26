@@ -376,20 +376,110 @@ fn core_only() -> bool {
     std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
 }
 
-/// Phase 2: what a semantic step pinned to `provider_unavailable { provider:
-/// null }` (the 3.0 "no provider" case, on a store that carries the
-/// capability) must answer on a store that does not — the
-/// `capability_unavailable { capability: "semantic", state: "disabled" }`
-/// envelope of the 6.0 draft (§2.1), byte for byte. The core-only run
-/// rewrites the expectation and counts the steps it rewrote
-/// ([`CORE_REWRITES`]), so the suite's own pins stay as recorded.
-fn core_only_expectation(expect: &Json) -> Json {
+/// `spec/store` §9.4 (17.1): the instant every fixture repository is born —
+/// before every authored `ts`, so the manifest's coverage covers the whole
+/// script; what `sync_status.capabilities.coverage_from` reads on the wire.
+const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
+
+/// `spec/store` §9.4 (Phase 4a): the lifecycle steps a reads script may carry.
+const LIFECYCLE_STEP_KINDS: [&str; 3] = ["history_enable", "history_disable", "recorder_fault"];
+
+/// The history capability's `version`/`sync_status` answer on the core-only
+/// composition (Phase 4a): no module, so `unavailable`; a repository it
+/// created has no coverage and requires nothing.
+fn core_history_state() -> Json {
+    json!({ "state": "unavailable", "coverage_from": null, "writer_requires": false })
+}
+
+/// Does the query text reach the `revisions` root or the `_revisions`
+/// relation (whose rows are the recorder's)?
+fn touches_revisions(query: &str) -> bool {
+    let bytes = query.as_bytes();
+    let mut from = 0;
+    while let Some(pos) = query[from..].find("revisions") {
+        let end = from + pos + "revisions".len();
+        if bytes
+            .get(end)
+            .is_none_or(|c| !(c.is_ascii_alphanumeric() || *c == b'_'))
+        {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
+/// Is the outcome a history read refused by the core-only composition
+/// (`capability_unavailable { history, unavailable }`)?
+fn is_history_unavailable(o: &Json) -> bool {
+    o.get("error").and_then(Json::as_str) == Some("capability_unavailable")
+        && o.get("data").is_some_and(|d| {
+            d.get("capability") == Some(&json!("history"))
+                && d.get("state") == Some(&json!("unavailable"))
+        })
+}
+
+/// Phase 2 → 4a (README §7.3): a reads case's expectation under the core-only
+/// run, step by step against what the run answered — every
+/// `provider_unavailable { provider: null }` outcome becomes the semantic
+/// capability error (`capability_unavailable { semantic, disabled }`, byte
+/// for byte); and (Phase 4a — the composition has no recorder) a step the
+/// run answered `capability_unavailable { history, unavailable }` is
+/// accepted as such, a `sync_status` reads the core history state, a
+/// `version` shape reads `coverage_from` as `<null>`, and a `query` that
+/// reaches `revisions` is accepted when the run returned rows (the root
+/// lists what the recorder holds — nothing here). The mapping lives in the
+/// RUNNER, keyed on the composition it runs under, never in the fixture;
+/// the steps rewritten are counted ([`CORE_REWRITES`]).
+fn core_only_expectation(expect: &Json, steps: &[Json], actual: &[Json]) -> Json {
     let mut out = expect.clone();
-    rewrite_semantic_pins(&mut out);
+    if let Some(items) = out.get_mut("steps").and_then(Json::as_array_mut) {
+        for (i, o) in items.iter_mut().enumerate() {
+            let read = steps.get(i).and_then(|s| s.get("read"));
+            let got = actual.get(i);
+            if let (Some(read), Some(got)) = (read, got) {
+                let tool = read.get("tool").and_then(Json::as_str).unwrap_or("");
+                if is_history_unavailable(got) {
+                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    *o = got.clone();
+                    continue;
+                }
+                if tool == "sync_status" && o.get("capabilities").is_some() {
+                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    o["capabilities"]["history"] = core_history_state();
+                    continue;
+                }
+                if tool == "version"
+                    && o.get("capabilities")
+                        .and_then(|c| c.get("history"))
+                        .is_some()
+                {
+                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    o["capabilities"]["history"]["coverage_from"] = json!("<null>");
+                    continue;
+                }
+                if tool == "query"
+                    && read
+                        .get("args")
+                        .and_then(|a| a.get("query"))
+                        .and_then(Json::as_str)
+                        .is_some_and(touches_revisions)
+                    && got.get("hits").is_some_and(Json::is_array)
+                {
+                    CORE_REWRITES.fetch_add(1, Ordering::SeqCst);
+                    *o = got.clone();
+                    continue;
+                }
+            }
+            rewrite_semantic_pins(o);
+        }
+    }
     out
 }
 
 static CORE_REWRITES: AtomicUsize = AtomicUsize::new(0);
+static CORE_MAPPED_CASES: AtomicUsize = AtomicUsize::new(0);
+static CORE_SKIPPED: AtomicUsize = AtomicUsize::new(0);
 
 fn rewrite_semantic_pins(v: &mut Json) {
     match v {
@@ -401,7 +491,6 @@ fn rewrite_semantic_pins(v: &mut Json) {
                 *o = json!({
                     "error": "capability_unavailable",
                     "retriable": false,
-                    "message": omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
                     "data": {
                         "capability": "semantic",
                         "state": "disabled",
@@ -431,6 +520,10 @@ fn outcome_json(o: &BatchOutcome) -> Json {
     match o {
         BatchOutcome::Deleted(d) => {
             json!({ "path": d.path, "deleted": d.doc_id.is_some(), "doc": d.doc_id })
+        }
+        // `spec/store` §9.4 (Phase 4a): a member rolled back because its capture failed.
+        BatchOutcome::Failed(f) => {
+            json!({ "path": f.path, "failed": true, "doc": f.doc_id, "error": f.error })
         }
         BatchOutcome::Observed(o) => json!({
             "path": o.path, "echo": o.echo, "doc": o.doc_id, "commit": o.commit_id, "rev": o.rev,
@@ -487,7 +580,7 @@ fn config_from(overrides: Option<&Json>) -> Result<Config, String> {
 fn corpus_store(corpus: &[(String, String)]) -> Result<(Store, String), String> {
     let mut store = fresh_store();
     let repo = store
-        .create_repo(FIXTURE_REPO_SLUG)
+        .create_repo_at(FIXTURE_REPO_SLUG, FIXTURE_BIRTH)
         .map_err(|e| e.to_string())?;
     let items: Vec<BatchItem> = corpus
         .iter()
@@ -748,16 +841,7 @@ fn surface_composed(data: Option<&Json>) -> bool {
         return true;
     }
     [
-        "_id",
-        "_path",
-        "_doc_id",
-        "doc_path",
-        "ref",
-        "section",
-        "provider",
-        "plan_id",
-        "capability",
-        "epoch",
+        "_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider", "plan_id", "epoch",
     ]
     .iter()
     .any(|k| o.contains_key(*k))
@@ -814,7 +898,7 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
     let workspace = c.get("workspace").and_then(Json::as_bool).unwrap_or(false);
     let mut store = fresh_store();
     let repo_id = store
-        .create_repo(FIXTURE_REPO_SLUG)
+        .create_repo_at(FIXTURE_REPO_SLUG, FIXTURE_BIRTH)
         .map_err(|e| e.to_string())?;
     let name = c["name"].as_str().unwrap_or("case");
     let temp = workspace.then(|| TempDir::new(name));
@@ -869,6 +953,43 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             let dir = archives.get_or_insert_with(|| TempDir::new(&format!("{name}-archives")));
             let out = run_history_step(surface.store_mut(), &repo_id, kind, &step[*kind], &dir.0)
                 .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(out);
+        } else if let Some(kind) = LIFECYCLE_STEP_KINDS
+            .iter()
+            .find(|k| step.get(**k).is_some())
+        {
+            // `spec/store` §9.4 (Phase 4a): `history_disable` / `history_enable`
+            // around the reads — the D3 states on the wire.
+            let body = &step[*kind];
+            let out = match *kind {
+                "history_enable" => {
+                    let ts = body["ts"].as_str().ok_or("history_enable.ts")?;
+                    *clock.borrow_mut() = ts.to_owned();
+                    let writer_requires = body
+                        .get("writer_requires")
+                        .and_then(Json::as_bool)
+                        .unwrap_or(true);
+                    let r = surface
+                        .store_mut()
+                        .enable_history(&repo_id, ts, writer_requires)
+                        .map_err(|e| format!("step {i}: {e}"))?;
+                    json!({ "history": r.to_json() })
+                }
+                "history_disable" => {
+                    let ts = body["ts"].as_str().ok_or("history_disable.ts")?;
+                    *clock.borrow_mut() = ts.to_owned();
+                    let r = surface
+                        .store_mut()
+                        .disable_history(&repo_id, ts)
+                        .map_err(|e| format!("step {i}: {e}"))?;
+                    json!({ "history": r.to_json() })
+                }
+                _ => {
+                    return Err(format!(
+                        "step {i}: the recorder fault device (spec/store §9.4) is the store runner's"
+                    ));
+                }
+            };
             steps.push(out);
         } else if let Some(observe) = step.get("observe") {
             let ts = observe["ts"].as_str().ok_or("observe.ts")?;
@@ -983,7 +1104,7 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             } }));
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at"
+                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at, history_enable, history_disable"
             ));
         }
     }
@@ -1140,6 +1261,12 @@ fn run_profile_case(c: &Json) -> Result<(), String> {
 fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
     match c.kind {
         Kind::Query => {
+            // Phase 4a: a query that reaches `revisions` reads the recorder's
+            // rows — nothing on the core-only composition; skipped and counted.
+            if core_only() && c.case["query"].as_str().is_some_and(touches_revisions) {
+                CORE_SKIPPED.fetch_add(1, Ordering::SeqCst);
+                return Ok(());
+            }
             let (store, repo) = suite.store.as_ref().ok_or("suite store")?;
             run_query_case(store, repo, &c.case)
         }
@@ -1147,19 +1274,31 @@ fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
             let actual = run_cursor_case(&c.case)?;
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
-        Kind::Reads => {
-            let actual = run_reads_case(&c.case, None)?;
+        Kind::Reads | Kind::Examples => {
+            // Phase 4a: a retention or lifecycle step needs the history
+            // module; skipped and counted on the core-only run.
+            let steps = c.case["steps"].as_array().cloned().unwrap_or_default();
+            if core_only()
+                && steps.iter().any(|s| {
+                    HISTORY_STEP_KINDS
+                        .iter()
+                        .chain(LIFECYCLE_STEP_KINDS.iter())
+                        .any(|k| s.get(*k).is_some())
+                })
+            {
+                CORE_SKIPPED.fetch_add(1, Ordering::SeqCst);
+                return Ok(());
+            }
+            let corpus = (c.kind == Kind::Examples).then_some(suite.corpus);
+            let actual = run_reads_case(&c.case, corpus)?;
             let expect = if core_only() {
-                core_only_expectation(&c.case["expect"])
-            } else {
-                c.case["expect"].clone()
-            };
-            deep_eq_tol(&actual, &expect, "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
-        }
-        Kind::Examples => {
-            let actual = run_reads_case(&c.case, Some(suite.corpus))?;
-            let expect = if core_only() {
-                core_only_expectation(&c.case["expect"])
+                let got = actual["steps"].as_array().cloned().unwrap_or_default();
+                let before = CORE_REWRITES.load(Ordering::SeqCst);
+                let mapped = core_only_expectation(&c.case["expect"], &steps, &got);
+                if CORE_REWRITES.load(Ordering::SeqCst) > before {
+                    CORE_MAPPED_CASES.fetch_add(1, Ordering::SeqCst);
+                }
+                mapped
             } else {
                 c.case["expect"].clone()
             };
@@ -1327,10 +1466,17 @@ fn spec() {
         }
     );
     if core_only() {
+        assert!(
+            !update_requested(),
+            "SURFACE_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
+            omgbase_store::CAPABILITIES_ENV
+        );
         eprintln!(
-            "spec: {}=core — the semantic bundle absent; {} pinned provider_unavailable step(s) answered capability_unavailable {{ semantic, disabled }}",
+            "spec: {}=core — a core-only build (no history module, no semantic bundle); {} case(s) mapped ({} step outcomes: semantic → capability_unavailable {{ semantic, disabled }}; history reads → {{ history, unavailable }}, the core history state), {} case(s) skipped (the revisions root, retention and lifecycle steps)",
             omgbase_store::CAPABILITIES_ENV,
-            CORE_REWRITES.load(Ordering::SeqCst)
+            CORE_MAPPED_CASES.load(Ordering::SeqCst),
+            CORE_REWRITES.load(Ordering::SeqCst),
+            CORE_SKIPPED.load(Ordering::SeqCst)
         );
     }
     assert!(

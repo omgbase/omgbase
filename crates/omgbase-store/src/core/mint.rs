@@ -293,6 +293,9 @@ mod tests {
     #[test]
     fn every_checked_table_and_column_exists() {
         let store = Store::open_in_memory().unwrap();
+        // The `s` prefix probes the history bundle's `archives` (Phase 4a: the
+        // bundle follows the manifest; `history export` mints `s` only with it).
+        crate::manifest::apply_history_bundle(store.conn()).unwrap();
         for (prefix, _) in ID_TABLES {
             assert!(!id_in_use(store.conn(), prefix, "zz_0000000").unwrap());
         }

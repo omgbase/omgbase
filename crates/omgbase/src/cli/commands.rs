@@ -89,7 +89,7 @@ pub static COMMANDS: &[Command] = &[
     cmd(
         "history",
         &[],
-        "Retention: plan/export archive segments, attach/detach/list",
+        "Capture: enable/disable per repository; retention: plan/export archive segments, attach/detach/list",
         cmd::history::history,
     ),
     cmd(

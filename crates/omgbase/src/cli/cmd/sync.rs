@@ -111,23 +111,26 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
     // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
     let rooted =
         |paths: &[String]| -> Vec<String> { paths.iter().map(|p| reference_path(p)).collect() };
-    let (ingested, suppressed, deleted, conflicted, materialized) = (
+    let (ingested, suppressed, deleted, conflicted, failed, materialized) = (
         rooted(&cp.ingested),
         rooted(&cp.suppressed),
         rooted(&cp.deleted),
         rooted(&cp.conflicted),
+        rooted(&cp.failed),
         rooted(&result.materialized),
     );
     if cli.machine() {
         // The `SweepResult` as the reference spells it (camelCase); since
         // spec/cli 3.1 with step 0's `materialized` (spec/sync §4.3, 2.2);
         // `batchId` (spec/sync 4.0) the first committing member's commit id,
-        // null for an empty sweep. The human rendering does not show it.
+        // null for an empty sweep; `failed` (spec/sync 4.1, Phase 4a) the
+        // members rolled back by a capture failure. The human rendering does
+        // not show the id.
         cli.io.out(&js_json(&json!({
             "batchId": cp.batch_id, "ingested": ingested, "suppressed": suppressed,
-            "deleted": deleted, "conflicted": conflicted, "scanned": result.scanned,
-            "candidates": result.candidates, "changed": result.changed,
-            "materialized": materialized,
+            "deleted": deleted, "conflicted": conflicted, "failed": failed,
+            "scanned": result.scanned, "candidates": result.candidates,
+            "changed": result.changed, "materialized": materialized,
         })));
         return Ok(EXIT_OK);
     }

@@ -1158,6 +1158,7 @@ impl Runner<'_> {
         let conn = self.store.conn();
         let ctx = StoreContext::new(conn, self.repo_id, self.semantic.clone())
             .with_semantic_provider(self.store.semantic())
+            .with_history_reader(self.store.history_reader().unwrap_or(None))
             .with_now_ms(self.now_ms);
         let plan = if self.planned {
             SqlitePlanner::new(conn, self.repo_id)
@@ -1224,12 +1225,37 @@ fn run_parsed(
     };
     let local = VocabularyCache::default();
     let cache = opts.vocabulary.unwrap_or(&local);
-    let hints = check_names(engine.store, engine.repo_id, &own, mode, cache)?;
+    let mut hints = check_names(engine.store, engine.repo_id, &own, mode, cache)?;
+    // `spec/surface` §1.5 (6.1, Phase 4a; `phase-1-contracts.md` §2.2): a
+    // query whose root is `revisions` on a repository whose history is not
+    // `enabled` carries a capability note first — the root lists what was
+    // captured, never an error.
+    if root_target(&raw.source) == Some(Target::Revisions)
+        && let Some(note) = revisions_hint(engine.store, engine.repo_id)
+    {
+        hints.insert(0, note.to_owned());
+    }
     let mut result = run_resolved(engine, raw, opts)?;
     // `hints` is the last member, present only when there is something to say.
     result.hints = hints;
     Ok(result)
 }
+
+/// The `revisions` root's capability note (`spec/surface` §1.5, byte for byte
+/// in both engines), or `None` when the repository's history is `enabled`.
+#[must_use]
+pub fn revisions_hint(store: &Store, repo_id: &str) -> Option<&'static str> {
+    match omgbase_sync::history_state(store, Some(repo_id)) {
+        omgbase_store::CapabilityState::Enabled => None,
+        omgbase_store::CapabilityState::Unavailable => Some(REVISIONS_UNAVAILABLE_HINT),
+        omgbase_store::CapabilityState::Disabled => Some(REVISIONS_DISABLED_HINT),
+    }
+}
+
+/// `spec/surface` §1.5: the `revisions` root's hint on a repository whose capture is off.
+pub const REVISIONS_DISABLED_HINT: &str = "history is disabled for this repository — `revisions` lists only what was captured while it was enabled; `omg history enable` resumes capture";
+/// `spec/surface` §1.5: the `revisions` root's hint on a build without the history module.
+pub const REVISIONS_UNAVAILABLE_HINT: &str = "history is unavailable in this build — `revisions` is empty; run an engine with the history module to read it";
 
 fn run_resolved(engine: &Runner<'_>, raw: &Query, opts: QueryOptions<'_>) -> Result<OqxResult> {
     // The query's `select` aliases are resolved HERE, once, before the runner

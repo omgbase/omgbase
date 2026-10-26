@@ -177,7 +177,7 @@ pub struct SweepResult {
     pub scanned: usize,
     /// Stat-mismatched (or new) files hashed.
     pub candidates: usize,
-    /// `ingested`, `deleted` or `conflicted` non-empty.
+    /// `ingested`, `deleted`, `conflicted` or `failed` non-empty.
     pub changed: bool,
 }
 
@@ -227,18 +227,23 @@ pub fn freshness_sweep(
         }
     }
     let batch = process_checkpoint(store, repo_id, fs, root, &plan.to_ingest(), ts, config)?;
-    for path in &plan.changed {
+    // Refresh the stat cache for everything touched — not for a member whose
+    // capture failed (Phase 4a, resolution 18): it was rolled back and must
+    // stay a candidate for the next sweep.
+    for path in plan.changed.iter().filter(|p| !batch.failed.contains(p)) {
         let hash = plan.hashes.get(path).copied().unwrap_or([0; 32]);
         record_file_stat(store, repo_id, fs, root, path, &hash)?;
     }
-    for path in &plan.deletions {
+    for path in plan.deletions.iter().filter(|p| !batch.failed.contains(p)) {
         store.conn().execute(
             "DELETE FROM file_stats WHERE repo_id = ?1 AND path = ?2",
             params![repo_id, path],
         )?;
     }
-    let changed =
-        !batch.ingested.is_empty() || !batch.deleted.is_empty() || !batch.conflicted.is_empty();
+    let changed = !batch.ingested.is_empty()
+        || !batch.deleted.is_empty()
+        || !batch.conflicted.is_empty()
+        || !batch.failed.is_empty();
     Ok(SweepResult {
         materialized,
         batch,

@@ -245,10 +245,27 @@ pub fn ensure_repo_at(
     root_path: Option<&str>,
     now: &str,
 ) -> Result<String> {
+    ensure_repo_with(store, slug, root_path, now, true)
+}
+
+/// [`ensure_repo_at`] with the new repository's history capture chosen
+/// (`spec/store` §3.1, 17.1 Phase 4a): `history: false` creates it with
+/// capture off (`omg source add --no-history`; a fixture's `capabilities: {
+/// history: false }`) — `disabled`, no coverage, `writer_requires 0`, no
+/// history table; `true` is the default (`enabled` from its birth when the
+/// composition carries the recorder). Ignored for a repository that already
+/// exists.
+pub fn ensure_repo_with(
+    store: &mut Store,
+    slug: &str,
+    root_path: Option<&str>,
+    now: &str,
+    history: bool,
+) -> Result<String> {
     if let Some(id) = store.repo_by_slug(slug)? {
         return Ok(id);
     }
-    let repo_id = store.create_repo_at(slug, now)?;
+    let repo_id = store.create_repo_with(slug, now, history)?;
     if let Some(root) = root_path.filter(|r| !r.is_empty()) {
         register_fs_source(store, &repo_id, slug, root)?;
     }
