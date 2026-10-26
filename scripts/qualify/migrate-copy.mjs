@@ -621,6 +621,9 @@ export async function qualify(opts, log = (s) => process.stderr.write(`${s}\n`))
           steps.push({ argv: argv.join(" "), exit: r.exit, result: r.json });
         }
         const wsDb = join(ws, ".omgbase", "omgbase.db");
+        // `history purge` / `embed disable` free rows, not pages: the clone is disposable, so VACUUM it and let the
+        // size below be what an operator would see after the same maintenance — the "measured amplification" of the gate.
+        { const vdb = new Database(wsDb); try { vdb.exec("VACUUM"); } finally { vdb.close(); } }
         const snap = snapshotRows(wsDb);
         snap.bytes = bytesThrough(tsCli, ws);
         // A clone must read exactly as AFTER does; `bytes_hash` is AFTER's own finding (a legacy document, reported once in `diff`), not a composition difference — the byte-level `bytes` kind still compares the clone to AFTER.
