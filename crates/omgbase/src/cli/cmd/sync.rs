@@ -33,8 +33,8 @@ use omgbase_search::create_external_provider;
 use omgbase_surface::reference_path;
 use omgbase_sync::registry::FS_ADAPTER_COMMAND;
 use omgbase_sync::{
-    CheckpointResult, Coordinator, ExternalSource, McpEngineClient, Readiness, RealFileSystem,
-    RepoRow, SyncInSummary, SyncSource, WatchEvent, WatchLease, freshness_sweep, wait_ready,
+    BatchResult, Coordinator, ExternalSource, McpEngineClient, Readiness, RealFileSystem, RepoRow,
+    SyncInSummary, SyncSource, WatchEvent, WatchLease, freshness_sweep, wait_ready,
     with_writer_lock,
 };
 use serde_json::json;
@@ -104,11 +104,10 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
             &RealFileSystem,
             Path::new(root),
             &now,
-            None,
             &omgbase_store::Config::default(),
         )
     })?;
-    let cp = &result.checkpoint;
+    let cp = &result.batch;
     // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
     let rooted =
         |paths: &[String]| -> Vec<String> { paths.iter().map(|p| reference_path(p)).collect() };
@@ -121,10 +120,11 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
     );
     if cli.machine() {
         // The `SweepResult` as the reference spells it (camelCase); since
-        // spec/cli 3.1 with step 0's `materialized` (spec/sync §4.3, 2.2).
-        // The human rendering does not show it.
+        // spec/cli 3.1 with step 0's `materialized` (spec/sync §4.3, 2.2);
+        // `batchId` (spec/sync 4.0) the first committing member's commit id,
+        // null for an empty sweep. The human rendering does not show it.
         cli.io.out(&js_json(&json!({
-            "checkpointId": cp.checkpoint_id, "ingested": ingested, "suppressed": suppressed,
+            "batchId": cp.batch_id, "ingested": ingested, "suppressed": suppressed,
             "deleted": deleted, "conflicted": conflicted, "scanned": result.scanned,
             "candidates": result.candidates, "changed": result.changed,
             "materialized": materialized,
@@ -274,7 +274,7 @@ fn run_local_watch(cli: &mut Cli, ws: &WsInfo, repo: &RepoRow) -> Result<i32> {
 
     let glyph = sync_glyph(&style);
     let hook_drain = drain_handle.clone();
-    let on_checkpoint: watch::CheckpointHook = Arc::new(move |r: &CheckpointResult| {
+    let on_checkpoint: watch::CheckpointHook = Arc::new(move |r: &BatchResult| {
         if r.ingested.is_empty() && r.deleted.is_empty() && r.conflicted.is_empty() {
             return;
         }
@@ -443,7 +443,7 @@ fn mirror(
     let s = co.sync_in()?;
     log(&in_line(&s));
     if out {
-        let o = co.sync_out(0)?;
+        let o = co.sync_out(0, None)?;
         log(&format!(
             "out: →{} written, ✗{} removed",
             o.written.len(),

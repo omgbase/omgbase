@@ -125,12 +125,11 @@ fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 &RealFileSystem,
                 Path::new(&abs_str),
                 &now,
-                None,
                 &omgbase_store::Config::default(),
             )
         })?;
         rebuild_file_stats(store, &repo_id, &RealFileSystem, Path::new(&abs_str))?;
-        (repo_id, swept.checkpoint.ingested.len())
+        (repo_id, swept.batch.ingested.len())
     };
     if cli.machine() {
         cli.io.out(&js_json(&json!({

@@ -31,7 +31,7 @@ use omgbase_store::{Config, Store};
 use omgbase_sync::fs::RealFileSystem;
 use omgbase_sync::registry::{AdapterRow, FS_ADAPTER, FS_ADAPTER_COMMAND, SourceRow};
 use omgbase_sync::{
-    CheckpointResult, ExternalSource, Readiness, RepoRow, SyncSource, WatchEvent, WatchLease,
+    BatchResult, ExternalSource, Readiness, RepoRow, SyncSource, WatchEvent, WatchLease,
     WriterLockOptions, freshness_sweep, reconcile_changes, wait_ready, with_writer_lock,
 };
 
@@ -74,8 +74,8 @@ pub struct WatchOptions {
     pub on_checkpoint: Option<CheckpointHook>,
 }
 
-/// A host's checkpoint renderer (runs on the watcher thread).
-pub type CheckpointHook = Arc<dyn Fn(&CheckpointResult) + Send + Sync>;
+/// A host's batch renderer (runs on the watcher thread).
+pub type CheckpointHook = Arc<dyn Fn(&BatchResult) + Send + Sync>;
 
 /// How `start` ended.
 pub enum Outcome {
@@ -190,17 +190,16 @@ fn prime(store: &mut Store, opts: &WatchOptions, config: &Config) {
             &RealFileSystem,
             Path::new(root),
             &ts,
-            None,
             config,
         )
     });
     match swept {
         Ok(s) => match &opts.on_checkpoint {
-            Some(hook) => hook(&s.checkpoint),
+            Some(hook) => hook(&s.batch),
             None if s.changed => eprintln!(
                 "[watch] primed: +{} -{}",
-                s.checkpoint.ingested.len(),
-                s.checkpoint.deleted.len()
+                s.batch.ingested.len(),
+                s.batch.deleted.len()
             ),
             None => {}
         },
@@ -332,7 +331,7 @@ fn run(
         }
         let ts = stamp(opts.clock.as_ref());
         let result = with_writer_lock(&opts.omgbase_dir, WriterLockOptions::default(), || {
-            reconcile_changes(store, &opts.repo.repo_id, source, paths, &ts, None, config)
+            reconcile_changes(store, &opts.repo.repo_id, source, paths, &ts, config)
         });
         match result {
             Ok(r) => match &opts.on_checkpoint {
@@ -361,17 +360,13 @@ fn run(
     let _ = source.close();
 }
 
-/// The reference's `onCheckpoint`: log and schedule a drain when the
-/// checkpoint ingested or deleted something.
-fn on_checkpoint(r: &CheckpointResult, drain: Option<&DrainHandle>) {
+/// The reference's `onCheckpoint`: log and schedule a drain when the batch
+/// ingested or deleted something.
+fn on_checkpoint(r: &BatchResult, drain: Option<&DrainHandle>) {
     if r.ingested.is_empty() && r.deleted.is_empty() {
         return;
     }
-    eprintln!(
-        "[watch] checkpoint: +{} -{}",
-        r.ingested.len(),
-        r.deleted.len()
-    );
+    eprintln!("[watch] batch: +{} -{}", r.ingested.len(), r.deleted.len());
     if let Some(d) = drain {
         d.schedule();
     }
@@ -525,10 +520,12 @@ done
         assert_eq!(count(&db, "docs"), 1, "the priming sweep ran before live");
         watcher.stop();
         assert!(!WatchLease::live(&dir), "the lease is released");
+        // Store 17.0 (D4): a batch leaves no row of its own — the sweep's and
+        // the early batch's both wrote the repository's one status row.
         assert_eq!(
-            count(&db, "checkpoints"),
-            2,
-            "the sweep's checkpoint, then the early batch's"
+            count(&db, "sync_state WHERE source_id = '' AND path = ''"),
+            1,
+            "one status row per repository"
         );
         assert_eq!(count(&db, "docs"), 1);
     }
@@ -552,7 +549,10 @@ done
         assert!(started.elapsed() >= Duration::from_millis(300));
         assert_eq!(count(&db, "docs"), 1);
         watcher.stop();
-        assert_eq!(count(&db, "checkpoints"), 1);
+        assert_eq!(
+            count(&db, "sync_state WHERE source_id = '' AND path = ''"),
+            1
+        );
     }
 
     #[test]

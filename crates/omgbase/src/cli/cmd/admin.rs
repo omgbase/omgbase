@@ -86,7 +86,9 @@ fn truthy(v: Option<&Json>) -> bool {
 /// `identity.claims_retain_days` that name no row (`spec/store` §7.3),
 /// reported as `claimsReleased` — the human line shows it only when
 /// non-zero (the line is pinned by shape without it, and the setting is off
-/// by default).
+/// by default) — and (3d) the change-feed rows past `feed.retain_days` /
+/// `feed.retain_entries` (`spec/store` §7.4), reported as `feedPruned`, the
+/// human line likewise only when non-zero.
 pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "gc");
@@ -128,6 +130,7 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
         json!(result.same_dispositions_swept),
     );
     doc.insert("claimsReleased".to_owned(), json!(result.claims_released));
+    doc.insert("feedPruned".to_owned(), json!(result.feed_pruned));
     if let Some((reclaimable, applied)) = vacuum {
         doc.insert(
             "vacuum".to_owned(),
@@ -143,8 +146,13 @@ pub fn gc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     } else {
         String::new()
     };
+    let pruned = if result.feed_pruned > 0 {
+        format!(", {} feed rows pruned", result.feed_pruned)
+    } else {
+        String::new()
+    };
     cli.io.err(&cli.style.dim(&format!(
-        "  swept {} blobs, {} tree nodes, {} same dispositions{released}",
+        "  swept {} blobs, {} tree nodes, {} same dispositions{released}{pruned}",
         result.blobs_swept, result.tree_nodes_swept, result.same_dispositions_swept
     )));
     match vacuum {
@@ -170,7 +178,10 @@ struct Check {
 }
 
 /// `doctor [--json]` — the four checks on the selected repo; exit 1 when any
-/// fails. `doctor --size` (cli 4.3) is the size report instead (exit 0).
+/// fails. `doctor --size` (cli 4.3) is the size report instead (exit 0). The
+/// `convergence` check — `repos_status.unconverged === 0` — left with the
+/// count in store 17.0 (D9): `file_hash` IS the head's hash by construction
+/// (I1), so it was identically true; `disk.changed` is the signal.
 pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "doctor");
@@ -183,17 +194,12 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         let report = cli.store()?.size_report_at(&now)?;
         return doctor_size(cli, &report);
     }
-    let repo = cli.repo()?;
+    // The selected repo must resolve (`repo_not_found` otherwise); the checks
+    // are store-wide.
+    cli.repo()?;
     let store = cli.store()?;
     let conn = store.conn();
     let mut checks: Vec<Check> = Vec::with_capacity(4);
-
-    let status = omgbase_sync::repos_status(store, &repo.repo_id, None)?;
-    checks.push(Check {
-        name: "convergence",
-        ok: status.unconverged == 0,
-        detail: format!("{} unconverged", status.unconverged),
-    });
 
     // The index holds exactly the live leaf blocks (`spec/search` §1.1),
     // counted from FTS5's shadow table — a `count(*)` on the

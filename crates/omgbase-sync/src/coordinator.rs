@@ -13,10 +13,12 @@ fn storage_path(path: &str) -> String {
     path.trim_start_matches('/').to_owned()
 }
 
-use serde_json::Value;
+use omgbase_format::hash::{hex, sha256};
+use omgbase_store::FeedEntryKind;
+use serde_json::{Map, Value};
 
 use crate::engine::{EngineClient, FileBytes};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::source::{SyncSource, WatchEvent};
 
 /// What a `sync_in`/`reconcile` did, by path.
@@ -48,18 +50,33 @@ impl SyncInSummary {
 pub struct SyncOutSummary {
     /// The final feed cursor.
     pub cursor: i64,
+    /// The feed's epoch the cursor belongs to (§6, 4.0); a consumer stores
+    /// both. `None` when no page was read (a read-only source).
+    pub epoch: Option<String>,
     pub written: Vec<String>,
     pub removed: Vec<String>,
+    /// Set when the feed had expired the cursor and the rescan procedure
+    /// (§6) ran before resuming.
+    pub rescanned: bool,
 }
 
 impl SyncOutSummary {
+    /// `{ cursor, epoch, written, removed, rescanned? }` — `rescanned` only
+    /// when true, as the reference spells it.
     #[must_use]
     pub fn to_json(&self) -> Value {
-        serde_json::json!({
-            "cursor": self.cursor,
-            "written": self.written,
-            "removed": self.removed,
-        })
+        let mut m = Map::new();
+        m.insert("cursor".to_owned(), Value::from(self.cursor));
+        m.insert(
+            "epoch".to_owned(),
+            self.epoch.clone().map_or(Value::Null, Value::String),
+        );
+        m.insert("written".to_owned(), serde_json::json!(self.written));
+        m.insert("removed".to_owned(), serde_json::json!(self.removed));
+        if self.rescanned {
+            m.insert("rescanned".to_owned(), Value::Bool(true));
+        }
+        Value::Object(m)
     }
 }
 
@@ -122,48 +139,140 @@ impl<'a> Coordinator<'a> {
         Ok(summary)
     }
 
-    /// engine → source: page `changes_since(cursor)`; for every digest whose
-    /// origin is not `observed`, every revision's doc is re-read by path and
-    /// written, or removed when it no longer reads; follows `truncated`
-    /// pages; returns the final cursor. A source without write-through
-    /// exports nothing and returns `cursor` unchanged.
-    pub fn sync_out(&mut self, cursor: i64) -> Result<SyncOutSummary> {
+    /// engine → source: page the change feed from `(epoch, cursor)` (through
+    /// `truncated`), skipping observed-origin commits (they originated from a
+    /// source — §6), and apply each digest's documents by `kind`:
+    /// `created`/`changed`/`moved` → read the doc by path and `write` at
+    /// `_path` (a `moved` also `remove`s `from_path`); `deleted` → `remove`.
+    /// When the feed has **expired** the cursor (another epoch, past the head,
+    /// pruned behind the oldest retained row — `spec/surface` §3
+    /// `expired_cursor`) the rescan procedure of §6 runs — the server's live
+    /// documents are listed and the source reconverged to them — and the walk
+    /// resumes from the error's `head` under its `epoch`, once per call. A
+    /// source without write-through exports nothing and returns `cursor`
+    /// unchanged.
+    pub fn sync_out(&mut self, cursor: i64, epoch: Option<&str>) -> Result<SyncOutSummary> {
         let mut summary = SyncOutSummary {
             cursor,
+            epoch: epoch.map(str::to_owned),
             ..SyncOutSummary::default()
         };
         if !self.source.capabilities().write_through {
             return Ok(summary);
         }
         let mut cur = cursor;
+        let mut ep: Option<String> = epoch.map(str::to_owned);
         loop {
-            let page = self.engine.changes_since(cur, None, None)?;
+            let page = match self.engine.changes_since(cur, ep.as_deref(), None, None) {
+                Ok(page) => page,
+                Err(Error::FeedExpired { epoch, head, .. }) if !summary.rescanned => {
+                    // The rescan (§6): record S = head and E = epoch from the
+                    // error, reconverge the source to the server's live
+                    // documents, resume from (E, S). Once per call: a second
+                    // expiry means the bootstrap lease (the retention floor)
+                    // did not hold and the caller retries.
+                    let (written, removed) = self.rescan()?;
+                    summary.written.extend(written);
+                    summary.removed.extend(removed);
+                    cur = head;
+                    ep = Some(epoch);
+                    summary.rescanned = true;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
             for digest in &page.digests {
                 if digest.origin == "observed" {
                     continue;
                 }
                 for rev in &digest.revisions {
-                    // `changes_since` reports the reference form; the source takes storage paths.
+                    // `changes_since` reports the reference form; the source
+                    // takes storage paths.
                     let path = storage_path(&rev.path);
+                    if rev.kind == FeedEntryKind::Moved
+                        && let Some(from) = &rev.from_path
+                    {
+                        let from = storage_path(from);
+                        if from != path {
+                            self.remove_once(&from, &mut summary.removed)?;
+                        }
+                    }
+                    if rev.kind == FeedEntryKind::Deleted {
+                        self.remove_once(&path, &mut summary.removed)?;
+                        continue;
+                    }
                     match self.engine.read_doc(&path)? {
                         Some(doc) => {
                             self.source.write(&path, &doc.content)?;
                             summary.written.push(path);
                         }
-                        None => {
-                            self.source.remove(&path)?;
-                            summary.removed.push(path);
-                        }
+                        // The document no longer reads (tombstoned later in
+                        // the feed): its `deleted` digest follows and would
+                        // remove the same path again.
+                        None => self.remove_once(&path, &mut summary.removed)?,
                     }
                 }
             }
             cur = page.cursor;
+            ep = Some(page.epoch);
             if !page.truncated {
                 break;
             }
         }
         summary.cursor = cur;
+        summary.epoch = ep;
         Ok(summary)
+    }
+
+    /// `remove` a source path once per `sync_out` call (a tombstoned
+    /// document's own digest and its earlier digests all name it).
+    fn remove_once(&mut self, path: &str, removed: &mut Vec<String>) -> Result<()> {
+        if removed.iter().any(|p| p == path) {
+            return Ok(());
+        }
+        self.source.remove(path)?;
+        removed.push(path.to_owned());
+        Ok(())
+    }
+
+    /// The rescan procedure, steps 2–3 (§6, 4.0): page the server's live
+    /// documents into `L = { (id, path, hash) }`; for every document whose
+    /// hash differs from the source's copy (hashed as the engine hashes a
+    /// file — sha256 of the bytes), pull the bytes and write them at `path`;
+    /// every source-side path not in `L` is removed (absence from `L` is
+    /// deletion — the source has paths, not ids, so a moved document is a
+    /// write at the new path and a removal of the old one). The caller
+    /// resumes the feed (step 4). Returns `(written, removed)`.
+    pub fn rescan(&mut self) -> Result<(Vec<String>, Vec<String>)> {
+        let mut written = Vec::new();
+        let mut removed = Vec::new();
+        if !self.source.capabilities().write_through {
+            return Ok((written, removed));
+        }
+        let listed = self.engine.list_docs()?;
+        let mut live: Vec<String> = Vec::with_capacity(listed.len());
+        for d in &listed {
+            let path = storage_path(&d.path);
+            live.push(path.clone());
+            let have = self.source.fetch(&path)?;
+            let have_hash = have.map(|it| hex(&sha256(it.content.as_bytes())));
+            if have_hash.is_some() && have_hash == d.hash {
+                continue;
+            }
+            let Some(doc) = self.engine.read_doc(&path)? else {
+                continue;
+            };
+            self.source.write(&path, &doc.content)?;
+            written.push(path);
+        }
+        for entry in self.source.enumerate()? {
+            if live.contains(&entry.path) {
+                continue;
+            }
+            self.source.remove(&entry.path)?;
+            removed.push(entry.path);
+        }
+        Ok((written, removed))
     }
 
     /// Live source → engine: subscribe when the source can watch; `None`
@@ -234,9 +343,10 @@ mod tests {
                 serde_json::json!(["a.md", "b.md"])
             );
             // Observed commits are never exported.
-            let out = co.sync_out(0).unwrap();
-            assert_eq!(out.cursor, 2);
+            let out = co.sync_out(0, None).unwrap();
+            assert_eq!((out.cursor, out.epoch.as_deref()), (2, Some("ep_0")));
             assert!(out.written.is_empty() && out.removed.is_empty());
+            assert!(!out.rescanned);
         }
         // An engine-authored (api) commit exports; a gone path deletes.
         let ctx = omgbase_store::DocOpContext {
@@ -257,7 +367,7 @@ mod tests {
                 .unwrap();
             assert_eq!(s.deleted, ["b.md"]);
             assert_eq!(s.conflicted, ["c.md"]);
-            co.sync_out(2).unwrap()
+            co.sync_out(2, Some("ep_0")).unwrap()
         };
         assert_eq!(out.written, ["authored.md"]);
         assert!(out.removed.is_empty());
@@ -265,14 +375,59 @@ mod tests {
         assert_eq!(source.files["authored.md"], "# Authored\n");
         assert_eq!(source.log.len(), 1);
         assert_eq!(out.to_json()["cursor"], 5);
+        assert!(out.to_json().get("rescanned").is_none());
         // The written file comes back as an echo: the loop terminates.
         {
             let mut engine = InProcessEngineClient::new(&mut store, &repo).at(TS);
             let mut co = Coordinator::new(&mut engine, &mut source);
             let s = co.reconcile(&["authored.md".to_owned()]).unwrap();
             assert_eq!(s.suppressed, ["authored.md"]);
-            assert_eq!(co.sync_out(5).unwrap().cursor, 5);
+            assert_eq!(co.sync_out(5, None).unwrap().cursor, 5);
         }
+    }
+
+    /// §6 (4.0): an expired cursor runs the rescan — the stale copy is
+    /// rewritten, the missing document written, the foreign path removed —
+    /// and the walk resumes from the error's head under its epoch.
+    #[test]
+    fn an_expired_cursor_rescans_then_resumes() {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        let ctx = omgbase_store::DocOpContext {
+            repo_id: repo.clone(),
+            actor: Some("agent:test".into()),
+            ts: TS.into(),
+        };
+        store
+            .docs_create(
+                &ctx,
+                &mut NullDocStore,
+                "x.md",
+                "# X\n\nServer copy.\n",
+                None,
+            )
+            .unwrap();
+        store
+            .docs_create(&ctx, &mut NullDocStore, "y.md", "# Y\n", None)
+            .unwrap();
+        let mut source =
+            MemSource::with_files(&[("x.md", "# X\n\nStale copy.\n"), ("stale.md", "# S\n")]);
+        let mut engine = InProcessEngineClient::new(&mut store, &repo).at(TS);
+        let mut co = Coordinator::new(&mut engine, &mut source);
+        let out = co.sync_out(99, None).unwrap();
+        assert!(out.rescanned);
+        assert_eq!((out.cursor, out.epoch.as_deref()), (2, Some("ep_0")));
+        assert_eq!(out.written, ["x.md", "y.md"]);
+        assert_eq!(out.removed, ["stale.md"]);
+        assert_eq!(out.to_json()["rescanned"], true);
+        // Another epoch expires the cursor the same way.
+        let again = co.sync_out(0, Some("ep_other")).unwrap();
+        assert!(again.rescanned && again.written.is_empty() && again.removed.is_empty());
+        // A second expiry in one call is the caller's retry: the error surfaces.
+        // (A cursor past the head after the rescan cannot happen here; a
+        // read-only source short-circuits before any page.)
+        assert_eq!(source.files.len(), 2);
     }
 
     #[test]
@@ -304,22 +459,30 @@ mod tests {
         let out = {
             let mut engine = InProcessEngineClient::new(&mut store, &repo).at(TS);
             let mut co = Coordinator::new(&mut engine, &mut source);
-            co.sync_out(0).unwrap()
+            co.sync_out(0, None).unwrap()
         };
         assert_eq!(out.cursor, 61);
         assert_eq!(out.written.len(), 59);
-        assert_eq!(out.removed, ["n00.md"]);
+        assert_eq!(
+            out.removed,
+            ["n00.md"],
+            "removed once: the create's digest and the delete's both name it"
+        );
         assert_eq!(source.files.len(), 59);
         // Read-only source: nothing exported, cursor unchanged.
         let mut ro = MemSource::new(SourceCapabilities::default());
         let mut engine = InProcessEngineClient::new(&mut store, &repo).at(TS);
         let mut co = Coordinator::new(&mut engine, &mut ro);
         assert_eq!(
-            co.sync_out(3).unwrap(),
+            co.sync_out(3, None).unwrap(),
             SyncOutSummary {
                 cursor: 3,
                 ..SyncOutSummary::default()
             }
+        );
+        assert_eq!(
+            co.sync_out(3, None).unwrap().to_json(),
+            serde_json::json!({ "cursor": 3, "epoch": null, "written": [], "removed": [] })
         );
         assert!(co.watch_in().unwrap().is_none());
     }

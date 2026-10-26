@@ -1,13 +1,20 @@
-//! Status (`spec/sync/README.md` §4.4): `repos_status` and `sync_status`.
-//! Disk agreement is only ever reported from a read-only scan the caller
-//! asked for; without one `checked` is false and nothing is ever green.
+//! Status (`spec/sync/README.md` §4.4, 4.0): `repos_status` and
+//! `sync_status`. Disk agreement is only ever reported from a read-only scan
+//! the caller asked for; without one `checked` is false and nothing is ever
+//! green. Since store 17.0 (D7/D9) the counts name the FEED — `{ epoch,
+//! oldest, head }` in place of a `commits` count and the retired
+//! `unconverged` (identically zero under I1; `disk.changed` is the signal) —
+//! and `sync_status` reports the last observed batch from the repository's
+//! status row (D4) instead of a checkpoint id.
 
 use std::path::Path;
 
-use omgbase_store::Store;
+use omgbase_store::{FeedStatus, Store};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
+use crate::capability_state::capability_states;
+use crate::checkpoint::{LastBatch, last_batch};
 use crate::error::Result;
 use crate::freshness::{DiskDrift, detect_disk_drift};
 use crate::fs::FileSystem;
@@ -41,11 +48,10 @@ pub struct RepoStatus {
     pub root_path: String,
     pub docs: i64,
     pub blocks: i64,
-    pub commits: i64,
+    /// The change feed's position (`spec/store` §3.1 `feed`): the
+    /// repository's epoch, the oldest retained `seq`, the head.
+    pub feed: FeedStatus,
     pub open_edges: i64,
-    /// Live docs whose `file_hash` differs from their current revision's
-    /// `rendered_hash`.
-    pub unconverged: i64,
     pub disk: DiskStatus,
 }
 
@@ -60,19 +66,15 @@ impl RepoStatus {
             "rootPath": self.root_path,
             "docs": self.docs,
             "blocks": self.blocks,
-            "commits": self.commits,
+            "feed": self.feed.to_json(),
             "openEdges": self.open_edges,
-            "unconverged": self.unconverged,
             "disk": self.disk.to_json(),
         })
     }
 }
 
-/// §4.4 `repos_status`: counts, `unconverged`, and the drift with `checked:
-/// true` when a root (and filesystem) was supplied.
-// seam: self-contained recovery payloads (Phase 3, M4/D9 — `unconverged`
-// compares `docs.file_hash` alone or becomes the drift count; `commits` count
-// and `open_edges` follow M5/M6; inventory-rust.md §2.8 `admin.rs:88-109`).
+/// §4.4 `repos_status`: counts, the feed's position, and the drift with
+/// `checked: true` when a root (and filesystem) was supplied.
 pub fn repos_status(
     store: &Store,
     repo_id: &str,
@@ -88,10 +90,6 @@ pub fn repos_status(
         .optional()?;
     let count =
         |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, params![repo_id], |r| r.get(0))?) };
-    let unconverged = count(
-        "SELECT count(*) FROM docs d JOIN revisions r ON r.rev_id = d.head
-         WHERE d.repo_id = ?1 AND d.deleted_at IS NULL AND d.file_hash IS NOT r.rendered_hash",
-    )?;
     let (root_path, disk) = match disk {
         Some((fs, root)) => (
             root.to_string_lossy().into_owned(),
@@ -102,15 +100,25 @@ pub fn repos_status(
         ),
         None => (String::new(), DiskStatus::default()),
     };
+    // A repository the store does not know has no epoch to report: the
+    // status reads as an empty feed under an empty epoch (the reference's
+    // `repoEpoch` throws; the surface's `repo_not_found` guards both).
+    let feed = match slug {
+        Some(_) => store.feed_status(repo_id)?,
+        None => FeedStatus {
+            epoch: String::new(),
+            oldest: 0,
+            head: 0,
+        },
+    };
     Ok(RepoStatus {
         repo_id: repo_id.to_owned(),
         slug: slug.unwrap_or_default(),
         root_path,
         docs: count("SELECT count(*) FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL")?,
         blocks: count("SELECT count(*) FROM blocks WHERE repo_id = ?1 AND deleted_at IS NULL")?,
-        commits: count("SELECT count(*) FROM commits WHERE repo_id = ?1")?,
+        feed,
         open_edges: count("SELECT count(*) FROM edges WHERE repo_id = ?1 AND to_commit IS NULL")?,
-        unconverged,
         disk,
     })
 }
@@ -118,55 +126,53 @@ pub fn repos_status(
 /// `sync_status`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyncStatus {
-    pub last_commit_seq: i64,
-    /// The latest checkpoint by `ts`.
-    pub last_checkpoint: Option<String>,
-    /// `unconverged == 0 && checked && no drift`.
+    /// The feed's epoch (a cursor is `(epoch, seq)`).
+    pub epoch: String,
+    /// The oldest retained feed `seq` (0 when the feed is empty).
+    pub oldest: i64,
+    /// The feed's head: the greatest `seq` (0 when empty).
+    pub head: i64,
+    /// The last observed batch (the repository's status row, §4.1), or
+    /// `None` when none ran.
+    pub last_batch: Option<LastBatch>,
+    /// `checked && no drift`: never green on an unverified disk.
     pub convergent: bool,
     pub disk: DiskStatus,
+    /// The capabilities as `version` reports them.
+    pub capabilities: Value,
 }
 
 impl SyncStatus {
     #[must_use]
     pub fn to_json(&self) -> Value {
         serde_json::json!({
-            "lastCommitSeq": self.last_commit_seq,
-            "lastCheckpoint": self.last_checkpoint,
+            "epoch": self.epoch,
+            "oldest": self.oldest,
+            "head": self.head,
+            "lastBatch": self.last_batch.as_ref().map(LastBatch::to_json),
             "convergent": self.convergent,
             "diskChecked": self.disk.checked,
             "disk": self.disk.to_json(),
+            "capabilities": self.capabilities,
         })
     }
 }
 
-/// §4.4 `sync_status`.
-// seam: feed sequence / checkpoints (Phase 3, M5 and D4 — `lastCommitSeq` is
-// the feed's head, the checkpoint row collapses to sync state;
-// inventory-rust.md §2.8 `admin.rs:146-155`).
+/// §4.4 `sync_status` (4.0).
 pub fn sync_status(
     store: &Store,
     repo_id: &str,
     disk: Option<(&dyn FileSystem, &Path)>,
 ) -> Result<SyncStatus> {
-    let conn = store.conn();
-    let last_commit_seq: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(seq), 0) FROM commits WHERE repo_id = ?1",
-        params![repo_id],
-        |r| r.get(0),
-    )?;
-    let last_checkpoint: Option<String> = conn
-        .query_row(
-            "SELECT id FROM checkpoints WHERE repo_id = ?1 ORDER BY ts DESC LIMIT 1",
-            params![repo_id],
-            |r| r.get(0),
-        )
-        .optional()?;
     let status = repos_status(store, repo_id, disk)?;
     Ok(SyncStatus {
-        last_commit_seq,
-        last_checkpoint,
-        convergent: status.unconverged == 0 && status.disk.checked && status.disk.drift.is_clean(),
+        epoch: status.feed.epoch,
+        oldest: status.feed.oldest,
+        head: status.feed.head,
+        last_batch: last_batch(store.conn(), repo_id)?,
+        convergent: status.disk.checked && status.disk.drift.is_clean(),
         disk: status.disk,
+        capabilities: capability_states(Some(store), Some(repo_id)),
     })
 }
 
@@ -186,19 +192,13 @@ mod tests {
             Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
         let repo = store.create_repo("fixture").unwrap();
         let s = sync_status(&store, &repo, None).unwrap();
-        assert_eq!(s.last_commit_seq, 0);
-        assert_eq!(s.last_checkpoint, None);
+        assert_eq!((s.epoch.as_str(), s.oldest, s.head), ("ep_0", 0, 0));
+        assert_eq!(s.last_batch, None);
         assert!(!s.convergent, "an unverified disk is never convergent");
         let rs = repos_status(&store, &repo, None).unwrap();
         assert_eq!(
-            (
-                rs.docs,
-                rs.blocks,
-                rs.commits,
-                rs.open_edges,
-                rs.unconverged
-            ),
-            (0, 0, 0, 0, 0)
+            (rs.docs, rs.blocks, rs.feed.head, rs.open_edges),
+            (0, 0, 0, 0)
         );
         assert_eq!(rs.slug, "fixture");
         assert_eq!(rs.root_path, "");
@@ -214,44 +214,64 @@ mod tests {
             root,
             &["a.md".to_owned()],
             TS,
-            None,
             &Config::default(),
         )
         .unwrap();
         let rs = repos_status(&store, &repo, Some((&fs, root))).unwrap();
+        assert_eq!((rs.docs, rs.blocks, rs.open_edges), (1, 2, 1));
         assert_eq!(
-            (
-                rs.docs,
-                rs.blocks,
-                rs.commits,
-                rs.open_edges,
-                rs.unconverged
-            ),
-            (1, 2, 1, 1, 0)
+            rs.feed,
+            FeedStatus {
+                epoch: "ep_0".into(),
+                oldest: 1,
+                head: 1
+            }
         );
         assert_eq!(rs.root_path, "/r");
         assert!(rs.disk.checked);
-        // The checkpoint did not record file_stats, so a.md is a candidate
-        // but its bytes match the doc: no drift.
+        // The batch did not record file_stats, so a.md is a candidate but
+        // its bytes match the doc: no drift.
         assert!(rs.disk.drift.is_clean());
         let s = sync_status(&store, &repo, Some((&fs, root))).unwrap();
-        assert_eq!(s.last_commit_seq, 1);
-        assert_eq!(s.last_checkpoint.as_deref(), Some("cp_0"));
+        assert_eq!((s.oldest, s.head), (1, 1));
+        assert_eq!(
+            s.last_batch,
+            Some(LastBatch {
+                ts: TS.into(),
+                batch_id: Some("c_0".into()),
+                files: 1
+            })
+        );
         assert!(s.convergent);
-        assert_eq!(s.to_json()["diskChecked"], true);
-        assert_eq!(rs.to_json()["openEdges"], 1);
+        let j = s.to_json();
+        assert_eq!(j["diskChecked"], true);
+        assert_eq!(j["lastBatch"]["batchId"], "c_0");
+        assert_eq!(
+            j.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                "epoch",
+                "oldest",
+                "head",
+                "lastBatch",
+                "convergent",
+                "diskChecked",
+                "disk",
+                "capabilities"
+            ]
+        );
+        assert_eq!(j["capabilities"]["history"]["state"], "enabled");
+        let rj = rs.to_json();
+        assert_eq!(rj["openEdges"], 1);
+        assert_eq!(
+            rj["feed"],
+            serde_json::json!({ "epoch": "ep_0", "oldest": 1, "head": 1 })
+        );
+        assert!(rj.get("commits").is_none() && rj.get("unconverged").is_none());
 
         fs.set("a.md", "# A\n\nEdited.\n", 2);
         let s = sync_status(&store, &repo, Some((&fs, root))).unwrap();
         assert!(!s.convergent);
         assert_eq!(s.disk.drift.changed, 1);
-
-        // unconverged: a doc whose file_hash no longer matches its revision.
-        store
-            .conn()
-            .execute("UPDATE docs SET file_hash = x'00'", [])
-            .unwrap();
-        assert_eq!(repos_status(&store, &repo, None).unwrap().unconverged, 1);
         assert_eq!(repos_status(&store, "rp_nope", None).unwrap().slug, "");
     }
 }

@@ -47,10 +47,10 @@ use omgbase_sync::pipe::{Dir, ScriptedAdapter};
 use omgbase_sync::registry::NewSource;
 use omgbase_sync::source::{SourceCapabilities, SourceEntry, SourceIdentity, SourceItem};
 use omgbase_sync::{
-    ChangesPage, Coordinator, DeleteOutcome, Error as SyncError, ExternalSource, FileStat,
-    MemFileSystem, ObserveOutcome, RepoRow, SyncSource, WatchEvent, deep_merge, detect_disk_drift,
-    freshness_sweep, process_checkpoint, rebuild_file_stats, recover_repo, registry,
-    render_config_flags, repos_status, select_repo, settings, sweep_plan,
+    ChangesPage, Coordinator, DeleteOutcome, DocListing, Error as SyncError, ExternalSource,
+    FileStat, MemFileSystem, ObserveOutcome, RepoRow, SyncSource, WatchEvent, deep_merge,
+    detect_disk_drift, freshness_sweep, process_checkpoint, rebuild_file_stats, recover_repo,
+    registry, render_config_flags, repos_status, select_repo, settings, sweep_plan,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -104,10 +104,12 @@ const CHECKPOINT_STEPS: [&str; 7] = [
     "recover",
     "rebuild_stats",
 ];
-const CHECKPOINT_PROJECTION_KEYS: [&str; 15] = [
+const CHECKPOINT_PROJECTION_KEYS: [&str; 17] = [
     "steps",
     "docs",
     "commits",
+    "feed",
+    "feed_entries",
     "revisions",
     "blobs",
     "tree_nodes",
@@ -118,7 +120,7 @@ const CHECKPOINT_PROJECTION_KEYS: [&str; 15] = [
     "sections",
     "pending_materializations",
     "archives",
-    "checkpoints",
+    "sync_state",
     "file_stats",
 ];
 const COORDINATOR_STEPS: [&str; 5] = ["source", "engine", "sync_in", "reconcile", "sync_out"];
@@ -365,14 +367,11 @@ fn validate_checkpoint_step(
             require_path(body.get("path"), here, problems);
         }
         "sweep" => {
-            only_keys(body, &["ts", "git_head"], here, problems);
+            only_keys(body, &["ts"], here, problems);
             require_ts(body, here, problems);
-            if body.get("git_head").is_some_and(|v| !v.is_string()) {
-                problems.push(format!("{here}: `git_head` must be a string"));
-            }
         }
         "checkpoint" => {
-            only_keys(body, &["ts", "paths", "git_head"], here, problems);
+            only_keys(body, &["ts", "paths"], here, problems);
             require_ts(body, here, problems);
             match body.get("paths").and_then(Json::as_array) {
                 Some(paths) => {
@@ -381,9 +380,6 @@ fn validate_checkpoint_step(
                     }
                 }
                 None => problems.push(format!("{here}: `paths` must be an array")),
-            }
-            if body.get("git_head").is_some_and(|v| !v.is_string()) {
-                problems.push(format!("{here}: `git_head` must be a string"));
             }
         }
         "drift" | "rebuild_stats" => only_keys(body, &[], here, problems),
@@ -444,9 +440,12 @@ fn validate_coordinator_step(
             }
         }
         "sync_out" => {
-            only_keys(body, &["cursor"], here, problems);
+            only_keys(body, &["cursor", "epoch"], here, problems);
             if body.get("cursor").is_some_and(|v| !v.is_number()) {
                 problems.push(format!("{here}: `cursor` must be a number"));
+            }
+            if body.get("epoch").is_some_and(|v| !v.is_string()) {
+                problems.push(format!("{here}: `epoch` must be a string"));
             }
         }
         _ => unreachable!(),
@@ -1164,7 +1163,7 @@ fn project_registry(store: &Store) -> Result<Vec<(String, Json)>, String> {
     let conn = store.conn();
     let repos: Vec<Json> = query_rows(
         conn,
-        "SELECT repo_id, slug, settings FROM repos ORDER BY slug",
+        "SELECT repo_id, slug, settings, epoch FROM repos ORDER BY slug",
         &[],
     )
     .into_iter()
@@ -1193,7 +1192,7 @@ fn project_registry(store: &Store) -> Result<Vec<(String, Json)>, String> {
     );
     let sync_state = query_rows(
         conn,
-        "SELECT repo_id, source_id, path, revision, cursor FROM sync_state ORDER BY repo_id, source_id, path",
+        "SELECT repo_id, source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files FROM sync_state ORDER BY repo_id, source_id, path",
         &[],
     );
     let ws: Option<String> = conn
@@ -1208,9 +1207,11 @@ fn project_registry(store: &Store) -> Result<Vec<(String, Json)>, String> {
     let mut statuses = Vec::new();
     for r in &repos {
         let st = repos_status(store, str_of(r, "repo_id"), None).map_err(|e| e.to_string())?;
+        // 4.0: the feed's `{ epoch, oldest, head }` in place of `commits`;
+        // `unconverged` retired.
         statuses.push(json!({
-            "slug": r["slug"], "docs": st.docs, "blocks": st.blocks, "commits": st.commits,
-            "open_edges": st.open_edges, "unconverged": st.unconverged,
+            "slug": r["slug"], "docs": st.docs, "blocks": st.blocks, "feed": st.feed.to_json(),
+            "open_edges": st.open_edges,
         }));
     }
     Ok(vec![
@@ -1245,7 +1246,7 @@ struct Evaluation {
     problems: Vec<String>,
 }
 
-fn checkpoint_outcome(r: &omgbase_sync::CheckpointResult) -> Json {
+fn checkpoint_outcome(r: &omgbase_sync::BatchResult) -> Json {
     r.to_json()
 }
 
@@ -1286,14 +1287,13 @@ fn run_checkpoint_case(c: &Json) -> Result<Evaluation, String> {
                     &fs,
                     root,
                     body["ts"].as_str().ok_or("sweep.ts")?,
-                    body.get("git_head").and_then(Json::as_str),
                     &config,
                 )
                 .map_err(|e| e.to_string())?;
-                touched.extend(r.checkpoint.ingested.iter().cloned());
-                touched.extend(r.checkpoint.suppressed.iter().cloned());
-                touched.extend(r.checkpoint.conflicted.iter().cloned());
-                touched.extend(r.checkpoint.deleted.iter().cloned());
+                touched.extend(r.batch.ingested.iter().cloned());
+                touched.extend(r.batch.suppressed.iter().cloned());
+                touched.extend(r.batch.conflicted.iter().cloned());
+                touched.extend(r.batch.deleted.iter().cloned());
                 ingesting = true;
                 r.to_json()
             }
@@ -1306,7 +1306,6 @@ fn run_checkpoint_case(c: &Json) -> Result<Evaluation, String> {
                     root,
                     &paths,
                     body["ts"].as_str().ok_or("checkpoint.ts")?,
-                    body.get("git_head").and_then(Json::as_str),
                     &config,
                 )
                 .map_err(|e| e.to_string())?;
@@ -1374,24 +1373,21 @@ fn run_checkpoint_case(c: &Json) -> Result<Evaluation, String> {
     })
 }
 
-/// `checkpoints` (by `ts`, then insertion) with `files` parsed, and
-/// `file_stats` by path.
+/// The repo's `sync_state` rows (by `source_id`, `path`; `repo_id` omitted —
+/// the status row among them, 4.0) and `file_stats` by path.
 fn project_sync_tables(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
-    let checkpoints: Vec<Json> = query_rows(
+    let sync_state = query_rows(
         conn,
-        "SELECT id, ts, files, git_head FROM checkpoints WHERE repo_id = ?1 ORDER BY ts, rowid",
+        "SELECT source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ?1 ORDER BY source_id, path",
         &[&repo_id],
-    )
-    .into_iter()
-    .map(|r| with_json_column(r, "files"))
-    .collect();
+    );
     let file_stats = query_rows(
         conn,
         "SELECT path, mtime_ns, size, hash FROM file_stats WHERE repo_id = ?1 ORDER BY path",
         &[&repo_id],
     );
     vec![
-        ("checkpoints".to_owned(), Json::Array(checkpoints)),
+        ("sync_state".to_owned(), Json::Array(sync_state)),
         ("file_stats".to_owned(), Json::Array(file_stats)),
     ]
 }
@@ -1750,16 +1746,29 @@ impl EngineClient for RecordingEngine<'_> {
     fn changes_since(
         &mut self,
         cursor: i64,
+        epoch: Option<&str>,
         limit: Option<usize>,
         origin: Option<&str>,
     ) -> omgbase_sync::Result<ChangesPage> {
         let limit = limit.or(self.page_limit);
+        // The call is recorded with the cursor's epoch when the coordinator
+        // sent one (4.0: a cursor is `(epoch, seq)`).
         let mut call = json!({ "engine": "changes_since", "cursor": cursor });
+        if let Some(e) = epoch {
+            call["epoch"] = json!(e);
+        }
         if let Some(l) = limit {
             call["limit"] = json!(l);
         }
         self.calls.borrow_mut().push(call);
-        self.inner.changes_since(cursor, limit, origin)
+        self.inner.changes_since(cursor, epoch, limit, origin)
+    }
+
+    fn list_docs(&mut self) -> omgbase_sync::Result<Vec<DocListing>> {
+        self.calls
+            .borrow_mut()
+            .push(json!({ "engine": "list_docs" }));
+        self.inner.list_docs()
     }
 
     fn read_doc(&mut self, path: &str) -> omgbase_sync::Result<Option<DocBytes>> {
@@ -1910,7 +1919,10 @@ fn run_coordinator_case(c: &Json) -> Result<Json, String> {
                         .reconcile(&strings_of(body.get("paths")))
                         .map(|s| in_summary(&s, &calls)),
                     _ => co
-                        .sync_out(body.get("cursor").and_then(Json::as_i64).unwrap_or(0))
+                        .sync_out(
+                            body.get("cursor").and_then(Json::as_i64).unwrap_or(0),
+                            body.get("epoch").and_then(Json::as_str),
+                        )
                         .map(|s| out_summary(&s, &calls)),
                 };
                 r.map_err(|e| format!("step {i}: {e}"))?
@@ -1927,9 +1939,11 @@ fn run_coordinator_case(c: &Json) -> Result<Json, String> {
     .into_iter()
     .map(|d| json!({ "doc_id": d["doc_id"], "path": d["path"], "deleted": !d["deleted_at"].is_null() }))
     .collect();
+    // 4.0: the projection reads the feed (the core's); the recorder's
+    // `commits` is its twin.
     let commits = query_rows(
         store.conn(),
-        "SELECT commit_id, seq, origin, actor FROM commits WHERE repo_id = ?1 ORDER BY seq",
+        "SELECT commit_id, seq, origin, actor FROM feed WHERE repo_id = ?1 ORDER BY seq",
         &[&repo_id],
     );
     Ok(json!({
@@ -2376,7 +2390,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
 
     let commits = query_rows(
         conn,
-        "SELECT commit_id, seq, ts, origin, actor, reason, checkpoint_id, ops FROM commits WHERE repo_id = ?1 ORDER BY seq",
+        "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY seq",
         &[&repo_id],
     );
     let commit_seq: HashMap<String, i64> = commits
@@ -2384,6 +2398,18 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .map(|c| (str_of(c, "commit_id").to_owned(), int_of(c, "seq")))
         .collect();
     let seq_of = |id: &str| commit_seq.get(id).copied().unwrap_or(i64::MAX);
+    // 17.0 (3d): the feed and its entries — the rows of the repo's current
+    // epoch, by `seq`; the entries of a row in the order they were written.
+    let feed = query_rows(
+        conn,
+        "SELECT epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id FROM feed WHERE repo_id = ?1 ORDER BY seq",
+        &[&repo_id],
+    );
+    let feed_entries = query_rows(
+        conn,
+        "SELECT epoch, seq, doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ?1 ORDER BY seq, rowid",
+        &[&repo_id],
+    );
 
     let mut revisions = query_rows(
         conn,
@@ -2505,6 +2531,8 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     vec![
         ("docs".to_owned(), Json::Array(docs)),
         ("commits".to_owned(), Json::Array(commits)),
+        ("feed".to_owned(), Json::Array(feed)),
+        ("feed_entries".to_owned(), Json::Array(feed_entries)),
         ("revisions".to_owned(), Json::Array(revisions)),
         ("blobs".to_owned(), Json::Array(blobs)),
         ("tree_nodes".to_owned(), Json::Array(tree_nodes)),
@@ -2985,6 +3013,266 @@ fn check_invariants(
                 "C7: tombstoned doc {} deleted_at {deleted_at} != updated_at {}",
                 d.doc_id, d.updated_at
             ));
+        }
+    }
+
+    // ---- C4 the dense feed, F1–F3 the entries, H4 the log's agreement (17.0, 3d) ----------
+    let epoch: Option<String> = conn
+        .query_row(
+            "SELECT epoch FROM repos WHERE repo_id = ?1",
+            params![repo_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .expect("query runs");
+    if !epoch.as_deref().is_some_and(|e| e.starts_with("ep_")) {
+        problems.push(format!(
+            "C4: repo {repo_id} has no ep_ epoch ({})",
+            epoch.as_deref().unwrap_or("undefined")
+        ));
+    }
+    let epoch = epoch.unwrap_or_default();
+    type FeedRowT = (String, i64, String, String, String, String, Option<String>);
+    let feed_rows: Vec<FeedRowT> = all_rows(
+        conn,
+        "SELECT epoch, seq, commit_id, ts, origin, batch_id, plan_id FROM feed WHERE repo_id = ?1 ORDER BY ts, seq",
+        &[&repo_id],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        },
+    );
+    let mut feed_by_seq: Vec<&FeedRowT> = feed_rows.iter().collect();
+    feed_by_seq.sort_by_key(|r| r.1);
+    let oldest = feed_by_seq.first().map_or(0, |r| r.1);
+    let head_seq = feed_by_seq.last().map_or(0, |r| r.1);
+    if oldest > head_seq {
+        problems.push(format!("F2: feed oldest {oldest} > head {head_seq}"));
+    }
+    if (oldest == 0) != (head_seq == 0) {
+        problems.push(format!(
+            "F2: feed oldest {oldest} and head {head_seq} disagree on emptiness"
+        ));
+    }
+    for (i, r) in feed_rows.iter().enumerate() {
+        let (r_epoch, seq, commit_id, ts, origin, batch_id, plan_id) = r;
+        if *seq != oldest + i as i64 {
+            problems.push(format!(
+                "C4: feed row {commit_id} has seq {seq} at position {i} of (ts, seq) order from oldest {oldest} (the feed is not contiguous)"
+            ));
+        }
+        if *r_epoch != epoch {
+            problems.push(format!(
+                "C4: feed row {commit_id} carries epoch {r_epoch}, the repo's is {epoch}"
+            ));
+        }
+        if !is_spec_ts(ts) {
+            problems.push(format!(
+                "C4: feed row {commit_id} ts {ts} is not a §2.4 timestamp"
+            ));
+        }
+        if !commit_id.starts_with("c_") {
+            problems.push(format!(
+                "C4: feed row seq {seq} commit_id {commit_id} is not a c_ id"
+            ));
+        }
+        if !batch_id.starts_with("c_") {
+            problems.push(format!(
+                "C4: feed row {commit_id} batch_id {batch_id} is not a c_ id"
+            ));
+        }
+        // The batch id names a feed row of the same epoch at or before this
+        // one (D4: the first committing member), unless pruned.
+        let batch_row = feed_by_seq.iter().find(|b| b.2 == *batch_id);
+        match batch_row {
+            Some(b) if b.1 > *seq => problems.push(format!(
+                "C4: feed row {commit_id} (seq {seq}) names a later batch {batch_id} (seq {})",
+                b.1
+            )),
+            None if batch_id != commit_id && oldest <= 1 => problems.push(format!(
+                "C4: feed row {commit_id} names a batch {batch_id} the feed does not hold"
+            )),
+            _ => {}
+        }
+        if let Some(p) = plan_id {
+            if p.len() != 64
+                || !p
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                problems.push(format!(
+                    "C4: feed row {commit_id} plan_id {p} is not 64 hex"
+                ));
+            }
+            if origin != "api" {
+                problems.push(format!(
+                    "C4: feed row {commit_id} of origin {origin} carries a plan_id"
+                ));
+            }
+        }
+    }
+    type EntryT = (
+        String,
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<Vec<u8>>,
+        String,
+        Option<String>,
+    );
+    let entries: Vec<EntryT> = all_rows(
+        conn,
+        "SELECT epoch, seq, doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ?1 ORDER BY seq, rowid",
+        &[&repo_id],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ))
+        },
+    );
+    let feed_seqs: HashSet<i64> = feed_by_seq.iter().map(|r| r.1).collect();
+    let doc_ids_known: HashSet<&str> = docs.iter().map(|d| d.doc_id.as_str()).collect();
+    let mut last_kind_of_doc: HashMap<&str, &str> = HashMap::new();
+    for (e_epoch, seq, doc_id, path, head, hash, kind, from_path) in &entries {
+        let at = format!("feed entry ({seq}, {doc_id})");
+        if !feed_seqs.contains(seq) {
+            problems.push(format!("F1: {at} has no feed row"));
+        }
+        if *e_epoch != epoch {
+            problems.push(format!("F1: {at} carries epoch {e_epoch}"));
+        }
+        if !doc_ids_known.contains(doc_id.as_str()) {
+            problems.push(format!("F1: {at} names no docs row"));
+        }
+        if kind == "deleted" {
+            if head.is_some() || hash.is_some() {
+                problems.push(format!("F3: {at} is deleted but carries a head or a hash"));
+            }
+        } else {
+            if head.is_none() || hash.is_none() {
+                problems.push(format!("F3: {at} ({kind}) lacks a head or a hash"));
+            }
+            if let Some(h) = head
+                && !h.starts_with("r_")
+            {
+                problems.push(format!("F3: {at} head {h} is not an r_ id"));
+            }
+        }
+        if (kind == "moved") != from_path.is_some() {
+            problems.push(format!(
+                "F3: {at} from_path {} disagrees with kind {kind}",
+                from_path.as_deref().unwrap_or("null")
+            ));
+        }
+        if kind == "moved" && from_path.as_deref() == Some(path.as_str()) {
+            problems.push(format!("F3: {at} moved from its own path {path}"));
+        }
+        // The kinds in sequence per document (over the retained feed): a
+        // `created` follows nothing or a `deleted`; a `changed`/`moved` never
+        // follows a `deleted`.
+        let prev = last_kind_of_doc.get(doc_id.as_str()).copied();
+        if kind == "created"
+            && let Some(prev) = prev
+            && prev != "deleted"
+        {
+            problems.push(format!(
+                "F3: {at} is created but the document's previous entry is {prev}"
+            ));
+        }
+        if (kind == "changed" || kind == "moved") && prev == Some("deleted") {
+            problems.push(format!(
+                "F3: {at} is {kind} right after a deleted entry (a revival is created)"
+            ));
+        }
+        last_kind_of_doc.insert(doc_id.as_str(), kind.as_str());
+    }
+    // F1: every head still within retention has its entry. When nothing was
+    // pruned (oldest ≤ 1) every live doc's head and every tombstone's deletion
+    // appear; after a prune only the documents whose last change is younger
+    // than the oldest retained row are checked.
+    let oldest_ts: Option<&str> = feed_by_seq.first().map(|r| r.3.as_str());
+    let heads_in_feed: HashSet<&str> = entries.iter().filter_map(|e| e.4.as_deref()).collect();
+    let deleted_in_feed: HashSet<&str> = entries
+        .iter()
+        .filter(|e| e.6 == "deleted")
+        .map(|e| e.2.as_str())
+        .collect();
+    for d in &docs {
+        let within = oldest <= 1 || oldest_ts.is_some_and(|t| d.updated_at.as_str() > t);
+        if !within {
+            continue;
+        }
+        if d.deleted_at.is_none()
+            && let Some(head) = &d.head
+            && !heads_in_feed.contains(head.as_str())
+        {
+            problems.push(format!(
+                "F1: live doc {} ({}) head {head} appears in no feed entry",
+                d.doc_id, d.path
+            ));
+        }
+        if d.deleted_at.is_some() && !deleted_in_feed.contains(d.doc_id.as_str()) {
+            problems.push(format!(
+                "F1: tombstoned doc {} ({}) has no deleted entry",
+                d.doc_id, d.path
+            ));
+        }
+        // C7: the document's updated_at is the ts of the feed row whose entry
+        // carries its head.
+        if d.deleted_at.is_none()
+            && let Some(head) = &d.head
+            && let Some(e) = entries
+                .iter()
+                .find(|e| e.4.as_deref() == Some(head.as_str()))
+            && let Some(row) = feed_by_seq.iter().find(|r| r.1 == e.1)
+            && row.3 != d.updated_at
+        {
+            problems.push(format!(
+                "C7: doc {} updated_at {} != the ts {} of the feed row carrying its head",
+                d.doc_id, d.updated_at, row.3
+            ));
+        }
+    }
+    // H4: the recorder's `commits` agree with the feed on every retained seq.
+    let commit_rows: Vec<(String, String, i64, String)> = all_rows(
+        conn,
+        "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
+        &[&repo_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    );
+    let commit_by_seq: HashMap<i64, &(String, String, i64, String)> =
+        commit_rows.iter().map(|c| (c.2, c)).collect();
+    for r in &feed_by_seq {
+        match commit_by_seq.get(&r.1) {
+            None => problems.push(format!(
+                "H4: feed row {} (seq {}) has no commits row",
+                r.2, r.1
+            )),
+            Some(c) if c.0 != r.2 || c.1 != r.0 || c.3 != r.5 => problems.push(format!(
+                "H4: commits row at seq {} ({}, {}, {}) disagrees with the feed ({}, {}, {})",
+                r.1, c.0, c.1, c.3, r.2, r.0, r.5
+            )),
+            Some(_) => {}
+        }
+    }
+    for c in &commit_rows {
+        if c.1 != epoch {
+            problems.push(format!("H4: commit {} carries epoch {}", c.0, c.1));
         }
     }
 
@@ -3489,6 +3777,20 @@ fn check_invariants(
         core_ids.push(("e", edge_id));
     }
     core_ids.push(("rp", repo_id.to_owned()));
+    // 17.0 (3d): the epoch, every retained feed row's commit and batch, every
+    // retained entry's head.
+    if !epoch.is_empty() {
+        core_ids.push(("ep", epoch.clone()));
+    }
+    for r in &feed_by_seq {
+        core_ids.push(("c", r.2.clone()));
+        core_ids.push(("c", r.5.clone()));
+    }
+    for e in &entries {
+        if let Some(h) = &e.4 {
+            core_ids.push(("r", h.clone()));
+        }
+    }
     for (prefix, id) in &core_ids {
         match claim_of(id) {
             None => problems.push(format!(
@@ -3527,6 +3829,8 @@ fn check_invariants(
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.rev_id AND (ic.holders & 2) != 0)
          UNION SELECT DISTINCT r.doc_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
+         UNION SELECT c.commit_id FROM commits c WHERE c.repo_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = c.commit_id AND (ic.holders & 2) != 0)
          ORDER BY 1",
         &[&repo_id],
         |r| r.get(0),

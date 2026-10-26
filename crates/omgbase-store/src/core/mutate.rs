@@ -440,6 +440,7 @@ impl Store {
             actor: req.origin.commit_actor(),
             reason: req.origin.reason.as_deref(),
             clear_pending: false,
+            plan_id: None,
             ops: None,
         };
         let effects: Vec<Effect> = staged.into_iter().map(Staged::into_effect).collect();
@@ -477,6 +478,7 @@ impl Store {
             actor: None,
             reason: None,
             clear_pending: true,
+            plan_id: None,
             ops: None,
         };
         if let Err(e) = self

@@ -890,6 +890,7 @@ fn build_catalog() -> Vec<ToolSpec> {
             input_schema: schema(
                 &[
                     ("cursor", i()),
+                    ("epoch", s()),
                     (
                         "origin",
                         json!({ "type": "string", "enum": ["api", "observed", "import"] }),
@@ -2804,11 +2805,14 @@ impl Surface {
                 let (repo, _) = self.scope(args)?;
                 let page = self.store.changes_since(
                     &repo,
-                    arg_i64(args, "cursor")?.unwrap_or(0),
-                    arg_usize(args, "limit")?.unwrap_or(50),
-                    arg_str(args, "origin").filter(|o| !o.is_empty()),
+                    &omgbase_store::ChangesSinceOptions {
+                        cursor: arg_i64(args, "cursor")?.unwrap_or(0),
+                        epoch: arg_str(args, "epoch"),
+                        limit: arg_usize(args, "limit")?.unwrap_or(50),
+                        origin: arg_str(args, "origin").filter(|o| !o.is_empty()),
+                    },
                 )?;
-                Ok(root_changes_page(page.to_json()))
+                Ok(root_changes_page(page))
             }
             "repos_status" => {
                 let (repo, root) = self.scope(args)?;
@@ -2832,7 +2836,8 @@ impl Surface {
                     "repos": rows.iter().map(|r| json!({ "slug": r.slug, "hasSource": r.root_path.is_some() })).collect::<Vec<_>>(),
                 }))
             }
-            // §4 "Profiles": the tool reports which profile the host serves.
+            // §4 "Profiles": the tool reports which profile the host serves;
+            // `epoch` (6.0) the default repository's feed epoch.
             "version" => version_info_for(
                 Some(&self.store),
                 Some(&self.default_repo),
@@ -3016,72 +3021,29 @@ fn path_taken(message: String) -> SurfaceError {
     SurfaceError::from(MutationError::new(ErrorCode::PathTaken, message))
 }
 
-/// `changes_since` on the wire (§1 Paths, 2.0): the store renders its digests
-/// in the storage form; every revision `_path` is rooted here, and so is the
-/// summary's subject — the reference composes `renderSummary` from rooted
-/// paths, so the same line reads `observed: /a.md — 3 inserted`,
-/// `api(human:spec): deleted /a.md`, `api(human:spec): moved /a.md → /b.md`,
-/// `api(human:spec): moved /a.md → /b.md; /index.md — 31 edited` (a move
-/// with its retarget, mutate 2.1). The subject is the text between the first
-/// `: ` and the ` — ` detail (or the end): a comma-joined path list,
-/// `deleted <paths>`, `moved <from> → <to>` or `moved <from> → <to>; <paths>`.
-fn root_changes_page(mut page: Json) -> Json {
-    let Some(digests) = page.get_mut("digests").and_then(Json::as_array_mut) else {
-        return page;
-    };
-    for d in digests.iter_mut() {
-        if let Some(revs) = d.get_mut("revisions").and_then(Json::as_array_mut) {
-            for r in revs.iter_mut() {
-                root_field(r, "_path");
+/// `changes_since` on the wire (§1 Paths, 2.0; §3, 6.0): the store renders
+/// its digests in the storage form; every document's `_path` and `from_path`
+/// is rooted here, and the summary is re-rendered over the rooted paths with
+/// the digest's disposition counts (the reference composes `renderSummary`
+/// from rooted paths), so the same line reads `observed: /a.md — created — 3
+/// inserted`, `api(human:spec): deleted /a.md`, `api(human:spec): moved
+/// /a.md → /b.md; /index.md — changed — 31 edited`.
+fn root_changes_page(mut page: omgbase_store::ChangesPage) -> Json {
+    for d in &mut page.digests {
+        for r in &mut d.revisions {
+            r.path = reference_path(&r.path);
+            if let Some(from) = &r.from_path {
+                r.from_path = Some(reference_path(from));
             }
         }
-        if let Some(summary) = d.get("summary").and_then(Json::as_str) {
-            let rooted = root_summary(summary);
-            d["summary"] = Json::String(rooted);
-        }
+        d.summary = omgbase_store::render_summary(
+            &d.origin,
+            d.actor.as_deref(),
+            &d.revisions,
+            d.counts.as_deref(),
+        );
     }
-    page
-}
-
-/// The summary's subject paths in the reference form (see [`root_changes_page`]).
-fn root_summary(summary: &str) -> String {
-    let Some(colon) = summary.find(": ") else {
-        return summary.to_owned();
-    };
-    let (head, rest) = summary.split_at(colon + 2);
-    let (subject, detail) = match rest.find(" — ") {
-        Some(i) => rest.split_at(i),
-        None => (rest, ""),
-    };
-    let root_list = |s: &str| -> String {
-        if s.is_empty() {
-            return String::new();
-        }
-        s.split(", ")
-            .map(reference_path)
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let subject = if let Some(paths) = subject.strip_prefix("deleted ") {
-        format!("deleted {}", root_list(paths))
-    } else if let Some(mv) = subject.strip_prefix("moved ") {
-        // `moved <from> → <to>`, with the retarget's sources after a `; `.
-        let (mv, rest) = match mv.split_once("; ") {
-            Some((mv, rest)) => (mv, Some(rest)),
-            None => (mv, None),
-        };
-        let moved = match mv.split_once(" → ") {
-            Some((from, to)) => format!("moved {} → {}", reference_path(from), reference_path(to)),
-            None => format!("moved {mv}"),
-        };
-        match rest {
-            Some(rest) => format!("{moved}; {}", root_list(rest)),
-            None => moved,
-        }
-    } else {
-        root_list(subject)
-    };
-    format!("{head}{subject}{detail}")
+    page.to_json()
 }
 
 /// `spec/search` §4's evidence on the wire: `{ rrf, boosts, ftsRank?,
@@ -4262,31 +4224,75 @@ mod tests {
 
     #[test]
     fn change_summaries_are_rooted_like_the_reference_renders_them() {
+        use omgbase_store::{ChangesPage, CommitDigest, DigestRevision, FeedEntryKind};
+        let rev = |path: &str, kind: FeedEntryKind, from: Option<&str>| DigestRevision {
+            doc: "d_0".into(),
+            path: path.into(),
+            hash: Some("ff".into()),
+            kind,
+            from_path: from.map(str::to_owned),
+        };
+        let digest = |origin: &str, actor: Option<&str>, revisions: Vec<DigestRevision>, counts| {
+            CommitDigest {
+                commit: "c_0".into(),
+                seq: 1,
+                ts: "t".into(),
+                origin: origin.into(),
+                actor: actor.map(str::to_owned),
+                batch_id: "c_0".into(),
+                plan_id: None,
+                summary: String::new(),
+                counts,
+                revisions,
+            }
+        };
+        let page = root_changes_page(ChangesPage {
+            digests: vec![
+                digest(
+                    "observed",
+                    None,
+                    vec![
+                        rev("a.md", FeedEntryKind::Created, None),
+                        rev("b/c.md", FeedEntryKind::Changed, None),
+                    ],
+                    Some(vec![("edited".into(), 1), ("inserted".into(), 3)]),
+                ),
+                digest(
+                    "observed",
+                    None,
+                    vec![rev("a.md", FeedEntryKind::Deleted, None)],
+                    None,
+                ),
+                digest(
+                    "api",
+                    Some("human:spec"),
+                    vec![
+                        rev("b/a.md", FeedEntryKind::Moved, Some("a.md")),
+                        rev("index.md", FeedEntryKind::Changed, None),
+                    ],
+                    Some(vec![("edited".into(), 31), ("same".into(), 2)]),
+                ),
+            ],
+            cursor: 3,
+            epoch: "ep_0".into(),
+            oldest: 1,
+            head: 3,
+            truncated: false,
+        });
         assert_eq!(
-            root_summary("observed: a.md, b/c.md — 3 inserted, 1 edited"),
-            "observed: /a.md, /b/c.md — 3 inserted, 1 edited"
+            page["digests"][0]["summary"],
+            "observed: /a.md — created; /b/c.md — changed — 1 edited, 3 inserted"
         );
-        assert_eq!(
-            root_summary("observed: deleted a.md"),
-            "observed: deleted /a.md"
-        );
-        assert_eq!(
-            root_summary("api(human:spec): moved a.md → b/a.md"),
-            "api(human:spec): moved /a.md → /b/a.md"
-        );
-        assert_eq!(
-            root_summary("api(human:spec): moved a.md → b/a.md; index.md, c.md — 31 edited"),
-            "api(human:spec): moved /a.md → /b/a.md; /index.md, /c.md — 31 edited"
-        );
-        assert_eq!(root_summary("api(?): x.md"), "api(?): /x.md");
-        assert_eq!(root_summary("observed: "), "observed: ");
-        assert_eq!(root_summary("nonsense"), "nonsense");
-        let page = root_changes_page(json!({
-            "digests": [{ "summary": "observed: a.md", "revisions": [{ "_id": "d_0", "_path": "a.md", "_hash": "ff" }] }],
-            "cursor": 1, "truncated": false, "head": 1
-        }));
         assert_eq!(page["digests"][0]["revisions"][0]["_path"], "/a.md");
-        assert_eq!(page["digests"][0]["summary"], "observed: /a.md");
+        assert_eq!(page["digests"][1]["summary"], "observed: deleted /a.md");
+        assert_eq!(
+            page["digests"][2]["summary"],
+            "api(human:spec): moved /a.md → /b/a.md; /index.md — changed — 31 edited"
+        );
+        assert_eq!(page["digests"][2]["revisions"][0]["from_path"], "/a.md");
+        assert_eq!(page["digests"][2]["revisions"][0]["kind"], "moved");
+        assert_eq!(page["epoch"], "ep_0");
+        assert_eq!(page["oldest"], 1);
     }
 
     /// `spec/surface` §4 (4.5): `plan` returns `preview.diffs` only on

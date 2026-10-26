@@ -640,7 +640,6 @@ impl Cli {
                     &RealFileSystem,
                     Path::new(root),
                     &now,
-                    None,
                     &omgbase_store::Config::default(),
                 )
             })?;

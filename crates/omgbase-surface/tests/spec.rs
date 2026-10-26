@@ -736,7 +736,8 @@ fn cli_spec_version() -> String {
 }
 
 /// README §6: an error whose `data` names the argument it could not honor
-/// (`id`, `path`, `doc_id`, `doc_path`, `ref`, `section`, `provider`) or an
+/// (`id`, `path`, `doc_id`, `doc_path`, `ref`, `section`, `provider`,
+/// `plan_id`, `epoch` — the last is `expired_cursor`'s, 6.0) or an
 /// argument-shape error (`hint: "arguments"`) is the surface's own; its
 /// message is pinned.
 fn surface_composed(data: Option<&Json>) -> bool {
@@ -756,6 +757,7 @@ fn surface_composed(data: Option<&Json>) -> bool {
         "provider",
         "plan_id",
         "capability",
+        "epoch",
     ]
     .iter()
     .any(|k| o.contains_key(*k))
@@ -908,16 +910,22 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
                 .sweep_pool(ts)
                 .map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "swept": swept }));
-        } else if step.get("gc").is_some() {
-            // `spec/store` §9.4 (14.2): the §7 collection, enabled.
-            let r = surface
-                .store_mut()
-                .gc(true)
-                .map_err(|e| format!("step {i}: {e}"))?;
+        } else if let Some(gc) = step.get("gc") {
+            // `spec/store` §9.4 (14.2, 17.0): the §7 collection, enabled,
+            // never a dry run, `ts` the clock of the claims prune (§7.3) and
+            // the feed prune (§7.4) — the runner's clock without it.
+            let store = surface.store_mut();
+            let r = match gc.get("ts").and_then(Json::as_str) {
+                Some(ts) => store.gc_at(true, ts),
+                None => store.gc(true),
+            }
+            .map_err(|e| format!("step {i}: {e}"))?;
             steps.push(json!({ "gc": {
                 "blobs": r.blobs_swept,
                 "tree_nodes": r.tree_nodes_swept,
                 "same_dispositions": r.same_dispositions_swept,
+                "claims_released": r.claims_released,
+                "feed_pruned": r.feed_pruned,
             } }));
         } else if let Some(exec) = step.get("exec") {
             // `spec/store` §9.4 (14.2): authored SQL, verbatim, one transaction.

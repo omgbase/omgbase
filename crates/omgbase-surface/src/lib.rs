@@ -76,7 +76,7 @@ pub use version::{
 };
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "5.1";
+pub const SPEC_VERSION: &str = "6.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

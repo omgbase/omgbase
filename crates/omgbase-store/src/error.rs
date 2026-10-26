@@ -66,6 +66,10 @@ pub enum Error {
     },
     /// A malformed retention policy (spec §7.1 "The policy").
     RetentionPolicy(String),
+    /// A `changes_since` cursor the feed no longer serves (spec §7.4,
+    /// `spec/surface` §3 `expired_cursor`, 17.0 D7): another epoch, past the
+    /// head, pruned behind the oldest retained row. The consumer rescans.
+    ExpiredCursor(crate::core::feed::ExpiredCursor),
     /// A delta node or frontmatter delta that cannot be resolved (spec §4.1
     /// "Delta nodes", §6, 16.0): a `{`-form with no base revision, ops that
     /// do not consume the base, a delta inside an archive segment. A corrupt
@@ -118,6 +122,7 @@ impl fmt::Display for Error {
                 "{path}: an unrecorded segment naming revision {rev}, which is not a live revision of this store — move the file out of the way"
             ),
             Error::RetentionPolicy(msg) => f.write_str(msg),
+            Error::ExpiredCursor(e) => f.write_str(&e.message()),
             Error::Delta(msg) => write!(f, "delta: {msg}"),
             Error::Other(msg) => f.write_str(msg),
         }

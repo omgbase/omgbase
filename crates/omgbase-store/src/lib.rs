@@ -41,7 +41,9 @@
 //!   (§4.3), [`codec`] (canonical attrs, hex), [`writers`] (the id-assigned
 //!   body and the commit row's provenance), [`observe`] (§5: the observe
 //!   commit, its history half handed to the recorder), [`properties`],
-//!   [`graph`], [`derived`] (§4.5 sections, FTS, the pool sweep), [`read`]
+//!   [`graph`], [`derived`] (§4.5 sections, FTS, the pool sweep), [`feed`]
+//!   (§3.1 the change feed, §5.4 step 5, §7.4 its retention, `spec/surface`
+//!   §3 `changes_since` — 17.0, D7/M5) over [`settings`], [`read`]
 //!   (§5.2, §6.1), [`text_search`] (`spec/search` §1.3), the `spec/mutate`
 //!   host side ([`mutate`], [`doc_store`], [`macros`], [`links`], [`sugar`],
 //!   [`docs_ops`], [`yaml_emit`], [`plan`], `effects`, [`effects_plan`]),
@@ -49,10 +51,10 @@
 //!   [`capabilities`]: [`HistoryRecorder`], [`SemanticProvider`],
 //!   [`IdentityClaims`], bundled as [`Capabilities`].
 //! - [`history`] — the recorder: [`history::writers`] (blobs, tree nodes,
-//!   revisions, commits), [`tree`] (§4.1 encodings), [`delta`] (§4.1 "Delta
-//!   nodes", §4.4, §6 over [`edit_script`]'s Myers script), [`history::feed`]
-//!   (the `changes_since` feed of `spec/sync` §6), [`history::read`] (§6.2),
-//!   [`gc`] (§7 mark-and-sweep), [`retention`] and [`archive`] (§7.1, 15.0);
+//!   revisions, the commit log — the feed row's twin), [`tree`] (§4.1
+//!   encodings), [`delta`] (§4.1 "Delta nodes", §4.4, §6 over
+//!   [`edit_script`]'s Myers script), [`history::read`] (§6.2), [`gc`] (§7
+//!   mark-and-sweep), [`retention`] and [`archive`] (§7.1, 15.0);
 //!   [`Recorder`] implements [`HistoryRecorder`] over them.
 //! - [`semantic`] — the provider: [`search`] (`spec/search`: the embedding
 //!   drain over the `embeddings`/`doc_embeddings` caches, vector and hybrid
@@ -99,9 +101,10 @@ pub mod semantic;
 // place that names both the core and its extensions.
 pub(crate) use self::core::effects;
 pub use self::core::{
-    capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, graph, history_shapes,
-    ids, links, macros, materialize, mint, mutate, observe, order_key, plan, properties, read,
-    semantic_shapes, size, sugar, text_search, time, writers, yaml_emit,
+    capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, feed, graph,
+    history_shapes, ids, links, macros, materialize, mint, mutate, observe, order_key, plan,
+    properties, read, semantic_shapes, settings, size, sugar, text_search, time, writers,
+    yaml_emit,
 };
 pub use self::history::{archive, delta, edit_script, gc, retention, tree};
 pub use self::semantic::search;
@@ -117,10 +120,9 @@ pub use archive::{
     read_manifest, segment_basename, segment_file_name,
 };
 pub use capabilities::{
-    CAPABILITIES_ENV, Capabilities, CapabilityState, ChangesPage, CommitDigest, DigestRevision,
-    DispositionRow, DocEmbedStats, EmbedStats, ForeignVectors, GcResult, HistoryRecorder,
-    HistorySizeFigures, IdentityClaims, RecordedRevision, RevisionRead, RevisionTransition,
-    SemanticProvider,
+    CAPABILITIES_ENV, Capabilities, CapabilityState, DispositionRow, DocEmbedStats, EmbedStats,
+    ForeignVectors, GcResult, HistoryRecorder, HistorySizeFigures, IdentityClaims,
+    RecordedRevision, RevisionRead, RevisionTransition, SemanticProvider,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -134,6 +136,11 @@ pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use edit_script::{EditOp, myers_script};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
+pub use feed::{
+    ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor, FeedEntryKind,
+    FeedPolicy, FeedRow, FeedStatus, NewFeedRow, feed_policy, feed_status, prune_feed,
+    render_summary, repo_epoch, repo_feed_policy,
+};
 pub use gc::ARCHIVED_COMMITS_SQL;
 pub use graph::ResolvedEdge;
 pub use history::Recorder;
@@ -179,7 +186,7 @@ pub use size::{
 pub use sugar::Sugar;
 pub use text_search::{TextHit, TextSearchResult};
 pub use tree::{TreeEntry, serialize_tree_entries, serialize_tree_entry, tree_hash};
-pub use writers::{NewCommit, Origin, TreeInputBlock};
+pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
@@ -400,16 +407,18 @@ impl Store {
         Ok(self.conn.unchecked_transaction()?)
     }
 
-    /// Create a repo with `slug` (**mints `rp`**); returns its id. The
-    /// repo's own claim (`spec/store` §2.1, 17.0) is written under itself at
-    /// the clock — no commit `ts` exists here.
+    /// Create a repo with `slug` (**mints `rp`**, then its EPOCH — **`ep`**,
+    /// §3.1 `repos.epoch`, 17.0 D7); returns its id. The repo's own claim
+    /// (`spec/store` §2.1, 17.0) is written under itself at the clock — no
+    /// commit `ts` exists here — and the epoch's the same way.
     pub fn create_repo(&mut self, slug: &str) -> Result<String> {
         let repo_id = self.mint("rp")?;
-        self.minter()
-            .claim("rp", &repo_id, Some(&repo_id), &time::now_ts())?;
+        let now = time::now_ts();
+        self.minter().claim("rp", &repo_id, Some(&repo_id), &now)?;
+        let epoch = feed::mint_epoch(&mut self.minter(), &repo_id, &now)?;
         self.conn.execute(
-            "INSERT INTO repos (repo_id, slug) VALUES (?1, ?2)",
-            params![repo_id, slug],
+            "INSERT INTO repos (repo_id, slug, epoch) VALUES (?1, ?2, ?3)",
+            params![repo_id, slug, epoch],
         )?;
         Ok(repo_id)
     }
@@ -461,10 +470,15 @@ impl Store {
         history::writers::write_block_tree(&self.conn, blocks)
     }
 
-    /// [`HistoryRecorder::new_commit`]; returns `(commit_id, seq)`.
-    pub fn new_commit(&mut self, input: &NewCommit<'_>) -> Result<(String, i64)> {
-        let recorder = capabilities::require_history(self.history.as_deref())?;
-        recorder.new_commit(&self.conn, &mut self.ids.at(&self.conn), input)
+    /// [`feed::append_feed_row`] (`spec/store` §5.4 step 5): the core's feed
+    /// row — **mints `c`** — and the recorder's `commits` row under the same
+    /// id when the store carries one; on the bare connection (the tests that
+    /// build history by hand).
+    pub fn append_feed_row(&mut self, input: &NewFeedRow<'_>) -> Result<FeedRow> {
+        let Store {
+            conn, ids, history, ..
+        } = self;
+        feed::append_feed_row(conn, &mut ids.at(conn), history.as_deref(), input)
     }
 
     /// [`history::writers::write_revision`] under the caller's head token
@@ -487,18 +501,23 @@ impl Store {
             .read_at_revision(&self.conn, doc_id, rev_id)
     }
 
-    /// The change feed (`spec/sync` §6): the repo's commits with `seq >
-    /// cursor`, optionally of one `origin`, `limit + 1` fetched to set
-    /// `truncated`.
+    /// The change feed (`spec/surface` §3 `changes_since`, 6.0; `spec/store`
+    /// §3.1 `feed` — the core's, 17.0 D7): the repo's feed rows with `seq >
+    /// cursor` of its epoch, optionally of one `origin`, `limit + 1` fetched
+    /// to set `truncated`; [`Error::ExpiredCursor`] when the feed no longer
+    /// serves the cursor. The digests' disposition counts come from the
+    /// recorder when the store carries one.
     pub fn changes_since(
         &self,
         repo_id: &str,
-        cursor: i64,
-        limit: usize,
-        origin: Option<&str>,
+        opts: &ChangesSinceOptions<'_>,
     ) -> Result<ChangesPage> {
-        self.recorder()?
-            .changes_since(&self.conn, repo_id, cursor, limit, origin)
+        feed::changes_since(&self.conn, self.history.as_deref(), repo_id, opts)
+    }
+
+    /// `{ epoch, oldest, head }` of the repository's feed ([`feed::feed_status`]).
+    pub fn feed_status(&self, repo_id: &str) -> Result<FeedStatus> {
+        feed::feed_status(&self.conn, repo_id)
     }
 
     /// §5.2: the matcher's old side for a doc, from the live `blocks` rows.
@@ -551,17 +570,22 @@ impl Store {
 
     /// §7: mark-and-sweep garbage collection, flag-gated (off → no-op); since
     /// 14.2 the same sweep removes a 14.1 store's `same` disposition rows
-    /// ([`HistoryRecorder::gc`]), and since 17.0 the same run prunes
-    /// `id_claims` under `identity.claims_retain_days` at the wall clock
-    /// (§7.3, [`Store::gc_at`]).
+    /// ([`HistoryRecorder::gc`]), and since 17.0 the same run prunes the feed
+    /// under `feed.retain_days` / `feed.retain_entries` (§7.4) and
+    /// `id_claims` under `identity.claims_retain_days` (§7.3) at the wall
+    /// clock ([`Store::gc_at`]).
     pub fn gc(&self, enabled: bool) -> Result<GcResult> {
         self.gc_at(enabled, &time::now_ts())
     }
 
-    /// [`Store::gc`] with the claims prune's clock pinned to `now` (the
-    /// fixture runner's `gc { ts }`, §9.4): one transaction — the recorder's
-    /// sweep, then the core's prune (§7.3) under every repository's effective
-    /// settings and the workspace's own, `claims_released` the holds released.
+    /// [`Store::gc`] with the prunes' clock pinned to `now` (the fixture
+    /// runner's `gc { ts }`, §9.4): one transaction — the recorder's sweep,
+    /// then the core's two collections: the feed prune (§7.4, under every
+    /// repository's `feed.*` floors; `feed_pruned` the rows deleted) BEFORE
+    /// the claims prune (§7.3, under every repository's effective settings
+    /// and the workspace's own; `claims_released` the holds released), so a
+    /// commit id whose last feed row went this run can be released by the
+    /// same run once its window has passed.
     pub fn gc_at(&self, enabled: bool, now: &str) -> Result<GcResult> {
         if !enabled {
             return Ok(GcResult::default());
@@ -569,6 +593,7 @@ impl Store {
         let recorder = self.recorder()?;
         let tx = self.conn.unchecked_transaction()?;
         let mut result = recorder.gc(&tx)?;
+        result.feed_pruned = feed::prune_feed(&tx, now)?;
         let scopes = self.claim_scopes(&tx)?;
         result.claims_released = self.ids.claims().prune(&tx, now, &scopes)?;
         tx.commit()?;
@@ -586,7 +611,7 @@ impl Store {
         };
         let mut scopes = Vec::with_capacity(repos.len() + 1);
         for repo_id in repos {
-            let settings = retention::effective_settings(conn, &repo_id)?;
+            let settings = settings::effective_settings(conn, &repo_id)?;
             scopes.push(ClaimScope {
                 repo_id: Some(repo_id),
                 settings,
@@ -603,7 +628,7 @@ impl Store {
         };
         scopes.push(ClaimScope {
             repo_id: None,
-            settings: retention::parse_settings_json(workspace.as_deref()),
+            settings: settings::parse_settings_json(workspace.as_deref()),
         });
         Ok(scopes)
     }

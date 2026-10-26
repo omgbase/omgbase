@@ -843,7 +843,9 @@ fn write_segment(
             commit_ids.push(r.7.clone());
         }
     }
+    // 17.0 (3d): the recorder's row — `epoch`, `batch_id`; no `checkpoint_id`.
     type CommitRow = (
+        String,
         String,
         String,
         i64,
@@ -851,13 +853,13 @@ fn write_segment(
         String,
         Option<String>,
         Option<String>,
-        Option<String>,
+        String,
         Option<String>,
     );
     let mut commits: Vec<CommitRow> = Vec::with_capacity(commit_ids.len());
     {
         let mut stmt = conn.prepare(
-            "SELECT commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops FROM commits WHERE commit_id = ?1",
+            "SELECT commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE commit_id = ?1",
         )?;
         for c in &commit_ids {
             let row: Option<CommitRow> = stmt
@@ -872,6 +874,7 @@ fn write_segment(
                         r.get(6)?,
                         r.get(7)?,
                         r.get(8)?,
+                        r.get(9)?,
                     ))
                 })
                 .optional()?;
@@ -880,9 +883,9 @@ fn write_segment(
             }
         }
     }
-    commits.sort_by_key(|c| c.2);
-    let seq_lo = commits.first().map_or(0, |c| c.2);
-    let seq_hi = commits.last().map_or(0, |c| c.2);
+    commits.sort_by_key(|c| c.3);
+    let seq_lo = commits.first().map_or(0, |c| c.3);
+    let seq_hi = commits.last().map_or(0, |c| c.3);
     let segment_id = minter.mint("s")?;
     let created_at = plan.now.clone();
     let previous = last_segment(conn, repo_id)?;
@@ -957,10 +960,10 @@ fn write_segment(
                 ins.execute(params![r.0, r.1, r.2, root, fm, r.5, r.6, r.7])?;
             }
             let mut ins = tx.prepare(
-                "INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for c in &commits {
-                ins.execute(params![c.0, c.1, c.2, c.3, c.4, c.5, c.6, c.7, c.8])?;
+                ins.execute(params![c.0, c.1, c.2, c.3, c.4, c.5, c.6, c.7, c.8, c.9])?;
             }
             let mut ins = tx.prepare("INSERT INTO tree_nodes (hash, entries) VALUES (?1, ?2)")?;
             for (h, text) in &nodes {

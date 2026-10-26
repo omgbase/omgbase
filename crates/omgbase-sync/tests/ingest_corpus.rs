@@ -43,7 +43,6 @@ fn ingests_a_large_corpus_with_the_random_minter() {
         &RealFileSystem,
         src,
         &now_ts(),
-        None,
         &Config::default(),
     )
     .expect("the sweep ingests every file without a collision");
@@ -60,15 +59,15 @@ fn ingests_a_large_corpus_with_the_random_minter() {
          {live_blocks} live blocks ({all_blocks} rows) in {:.1}s",
         result.scanned,
         src.display(),
-        result.checkpoint.ingested.len(),
-        result.checkpoint.conflicted.len(),
-        result.checkpoint.deleted.len(),
+        result.batch.ingested.len(),
+        result.batch.conflicted.len(),
+        result.batch.deleted.len(),
         elapsed.as_secs_f64(),
     );
 
     assert!(result.scanned > 0, "the corpus has files");
-    assert_eq!(result.checkpoint.ingested.len(), result.scanned);
-    assert!(result.checkpoint.conflicted.is_empty());
+    assert_eq!(result.batch.ingested.len(), result.scanned);
+    assert!(result.batch.conflicted.is_empty());
     assert_eq!(live_docs, i64::try_from(result.scanned).unwrap());
     if let Ok(want) = std::env::var("OMGBENCH_EXPECT_DOCS") {
         assert_eq!(live_docs.to_string(), want, "OMGBENCH_EXPECT_DOCS");

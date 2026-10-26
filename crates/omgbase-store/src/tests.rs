@@ -19,6 +19,20 @@ const T0: &str = "2026-09-26T10:00:00.000Z";
 const T1: &str = "2026-09-26T10:01:00.000Z";
 const T2: &str = "2026-09-26T10:02:00.000Z";
 
+/// `changes_since` over the current epoch from `cursor`, `limit` digests.
+fn changes(store: &Store, repo: &str, cursor: i64, limit: usize) -> ChangesPage {
+    store
+        .changes_since(
+            repo,
+            &ChangesSinceOptions {
+                cursor,
+                limit,
+                ..ChangesSinceOptions::default()
+            },
+        )
+        .unwrap()
+}
+
 fn fixture_store() -> (Store, String) {
     let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
     let repo = store.create_repo("fixture").unwrap();
@@ -90,7 +104,8 @@ fn creates_every_table() {
         "edges",
         "external_nodes",
         "collections",
-        "checkpoints",
+        "feed",
+        "feed_entries",
         "resurrection_pool",
         "sections",
         "doc_edges",
@@ -177,7 +192,7 @@ fn migrates_documents_columns_and_renames_to_docs() {
          CREATE TABLE documents (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, path TEXT NOT NULL, frontmatter TEXT, current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, deleted_commit TEXT);
          CREATE TABLE blocks (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL REFERENCES documents(doc_id), parent_block TEXT, order_key TEXT NOT NULL, ordinal INTEGER NOT NULL, depth INTEGER NOT NULL, ancestor_path TEXT NOT NULL, type TEXT NOT NULL, attrs TEXT NOT NULL DEFAULT '{}', text TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, created_commit TEXT NOT NULL, deleted_commit TEXT);
          CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL);
-         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL);
+         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL, actor TEXT, reason TEXT, checkpoint_id TEXT, ops TEXT);
          CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, seq INTEGER NOT NULL, root_tree BLOB, frontmatter_blob BLOB, rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL);
          CREATE TABLE block_changes (block_id TEXT NOT NULL, commit_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (block_id, commit_id, kind));
          CREATE TABLE resurrection_pool (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, type TEXT NOT NULL, deleted_commit TEXT NOT NULL, expires_ts TEXT NOT NULL);
@@ -262,8 +277,21 @@ fn migrates_v12_to_v13_root_path_into_an_fs_source() {
     .unwrap();
     let store = Store::from_connection(conn, Box::new(SequentialMinter::new())).unwrap();
     assert_eq!(store.user_version().unwrap(), SCHEMA_VERSION);
+    // 17.0 (3d): step 17 gives every repository its epoch (the fixture
+    // minter's `ep_0`, `ep_1`).
     let cols = schema::column_names(store.conn(), "repos").unwrap();
-    assert_eq!(cols, ["repo_id", "slug", "settings"]);
+    assert_eq!(cols, ["repo_id", "slug", "settings", "epoch"]);
+    let epochs: Vec<String> = {
+        let mut stmt = store
+            .conn()
+            .prepare("SELECT epoch FROM repos ORDER BY rowid")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    assert_eq!(epochs, ["ep_0", "ep_1"]);
     let src: (String, String, String) = store
         .conn()
         .query_row(
@@ -361,8 +389,8 @@ fn migrates_v13_to_v14_with_the_pending_table() {
     );
     let tables = count(&store, "sqlite_master WHERE type = 'table'");
     assert_eq!(
-        tables, 4,
-        "repos + pending_materializations (14) + archives (15) + id_claims (17)"
+        tables, 6,
+        "repos + pending_materializations (14) + archives (15) + id_claims, feed, feed_entries (17)"
     );
 }
 
@@ -381,7 +409,7 @@ fn migrates_v14_to_v15_rebuilding_revisions() {
          CREATE TABLE resurrection_pool (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, doc_id TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, type TEXT NOT NULL, deleted_commit TEXT NOT NULL, expires_ts TEXT NOT NULL);
          CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL);
          CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL);
-         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL);
+         CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL, actor TEXT, reason TEXT, checkpoint_id TEXT, ops TEXT);
          CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(doc_id), seq INTEGER NOT NULL, root_tree BLOB NOT NULL REFERENCES tree_nodes(hash), frontmatter_blob BLOB REFERENCES blobs(hash), rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), UNIQUE (doc_id, seq));
          CREATE TABLE pending_materializations (repo_id TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL, from_path TEXT, doc_id TEXT NOT NULL, rev_id TEXT REFERENCES revisions(rev_id), rendered_hash BLOB NOT NULL, commit_id TEXT NOT NULL, PRIMARY KEY (repo_id, path));
          INSERT INTO repos (repo_id, slug) VALUES ('rp_1', 'v');
@@ -661,7 +689,7 @@ fn enforces_foreign_keys_and_check_constraints() {
     let err = store
         .conn()
         .execute(
-            "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1', ?1, 1, 't', 'bogus')",
+            "INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, batch_id) VALUES ('c_1', ?1, 'ep_0', 1, 't', 'bogus', 'c_1')",
             params![repo],
         )
         .unwrap_err();
@@ -673,8 +701,11 @@ fn transaction_rolls_back_on_drop() {
     let store = Store::open_in_memory().unwrap();
     {
         let tx = store.transaction().unwrap();
-        tx.execute("INSERT INTO repos (repo_id, slug) VALUES ('rp_1', 's')", [])
-            .unwrap();
+        tx.execute(
+            "INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1', 's', 'ep_1')",
+            [],
+        )
+        .unwrap();
     }
     assert_eq!(count(&store, "repos"), 0);
 }
@@ -811,8 +842,12 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
             params![repo],
         )
         .unwrap();
-    let (c1, s1) = store.new_commit(&NewCommit::observed(&repo, "t1")).unwrap();
-    assert_eq!((c1.as_str(), s1), ("c_0", 1));
+    let c1 = store
+        .append_feed_row(&NewFeedRow::observed(&repo, "2026-09-26T10:00:00.000Z"))
+        .unwrap();
+    assert_eq!((c1.commit_id.as_str(), c1.seq), ("c_0", 1));
+    assert_eq!((c1.epoch.as_str(), c1.batch_id.as_str()), ("ep_0", "c_0"));
+    let c1 = c1.commit_id;
     let tree = parse_markdown("# A\n");
     let blocks = assign_fresh_ids(&tree.children, &mut store.minter()).unwrap();
     let root = store.write_block_tree(&blocks).unwrap();
@@ -832,9 +867,21 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
             .unwrap()
     };
     assert_eq!(rev(&mut store, &c1), ("r_0".to_owned(), 1));
-    let (c2, s2) = store.new_commit(&NewCommit::observed(&repo, "t2")).unwrap();
-    assert_eq!((c2.as_str(), s2), ("c_1", 2));
-    assert_eq!(rev(&mut store, &c2), ("r_1".to_owned(), 2));
+    let c2 = store
+        .append_feed_row(&NewFeedRow::observed(&repo, "2026-09-26T10:01:00.000Z"))
+        .unwrap();
+    assert_eq!((c2.commit_id.as_str(), c2.seq), ("c_1", 2));
+    // The recorder's `commits` row is the feed row's twin (H4).
+    let twin: (String, i64, String) = store
+        .conn()
+        .query_row(
+            "SELECT epoch, seq, batch_id FROM commits WHERE commit_id = 'c_1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(twin, ("ep_0".to_owned(), 2, "c_1".to_owned()));
+    assert_eq!(rev(&mut store, &c2.commit_id), ("r_1".to_owned(), 2));
 }
 
 // ---- observe ----------------------------------------------------------------------------
@@ -1562,6 +1609,7 @@ fn gc_is_off_by_default_and_finds_nothing_unreachable_when_on() {
             tree_nodes_swept: 1,
             same_dispositions_swept: 0,
             claims_released: 0,
+            feed_pruned: 0,
         }
     );
     assert_eq!(
@@ -1571,6 +1619,7 @@ fn gc_is_off_by_default_and_finds_nothing_unreachable_when_on() {
             tree_nodes_swept: 1,
             same_dispositions_swept: 0,
             claims_released: 0,
+            feed_pruned: 0,
         }
     );
     assert_eq!(
@@ -2615,7 +2664,7 @@ fn a_changeset_is_one_commit_with_n_revisions() {
         Some("# B\n\nBravo.\n\nB tail.\n")
     );
 
-    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    let page = changes(&store, &repo, 2, 50);
     assert_eq!(page.digests.len(), 1, "one digest for the request");
     let d = &page.digests[0];
     assert_eq!(d.commit, "c_2");
@@ -2626,7 +2675,10 @@ fn a_changeset_is_one_commit_with_n_revisions() {
     // `same` — bytes, parent and index unchanged (`spec/mutate` §4 step
     // 5(b)) — and not persisted (store 14.2; through 14.1 the summary read
     // `4 edited, 2 inserted`).
-    assert_eq!(d.summary, "api(agent:test): a.md, b.md — 2 inserted");
+    assert_eq!(
+        d.summary,
+        "api(agent:test): a.md — changed; b.md — changed — 2 inserted"
+    );
 }
 
 /// §4 step 5 + §10 Fixed (2.1): every loaded document's disk bytes are
@@ -2790,13 +2842,13 @@ fn docs_move_with_retarget_is_one_commit() {
         )
         .unwrap();
     assert_eq!(dst, "d_0");
-    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    let page = changes(&store, &repo, 2, 50);
     assert_eq!(page.digests.len(), 1);
     // Only the paragraph whose link was rewritten is `edited`; the heading's
     // `same` carry leaves no row (store 14.2; `2 edited` through 14.1).
     assert_eq!(
         page.digests[0].summary,
-        "api(agent:mcp): moved b.md → n/b.md; a.md — 1 edited"
+        "api(agent:mcp): moved b.md → n/b.md; a.md — changed — 1 edited"
     );
     // 17.0 (D11): the moved document's revision (minted first) and the
     // rewritten source's; the summary names the move once.
@@ -2959,7 +3011,7 @@ fn docs_delete_is_one_commit_without_pooling() {
         0,
         "… and is fulfilled"
     );
-    let page = store.changes_since(&repo, 1, 50, None).unwrap();
+    let page = changes(&store, &repo, 1, 50);
     assert_eq!(page.digests[0].summary, "api(agent:mcp): deleted a.md");
 }
 
@@ -3026,6 +3078,7 @@ const API_HEAD: CommitHead<'static> = CommitHead {
     actor: Some("agent:test"),
     reason: Some("fixture"),
     clear_pending: false,
+    plan_id: None,
     ops: None,
 };
 
@@ -3617,7 +3670,7 @@ fn a_crash_after_commit_leaves_rows_the_materializer_replays() {
     );
     assert_eq!(rows[1].path, "b.md");
     assert_eq!(rows[1].head.as_deref(), Some("r_3"));
-    let page = store.changes_since(&repo, 2, 50, None).unwrap();
+    let page = changes(&store, &repo, 2, 50);
     assert_eq!(page.digests.len(), 1);
     assert_eq!(page.digests[0].commit, "c_2");
     assert_eq!(page.digests[0].revisions.len(), 2);
@@ -3634,7 +3687,7 @@ fn a_crash_after_commit_leaves_rows_the_materializer_replays() {
         ds.read("b.md").unwrap().as_deref(),
         Some("# B\n\nBravo.\n\nB tail.\n")
     );
-    let after = store.changes_since(&repo, 2, 50, None).unwrap();
+    let after = changes(&store, &repo, 2, 50);
     assert_eq!(after.digests.len(), 1, "materializing records nothing");
     for path in ["a.md", "b.md"] {
         let bytes = ds.read(path).unwrap().unwrap();
@@ -4424,10 +4477,7 @@ fn plan_then_execute_and_one_shot_apply_leave_identical_footprints() {
         })
         .unwrap();
     assert_eq!(null_ops, None);
-    assert_eq!(
-        a.changes_since(&repo_a, 1, 10, None).unwrap().digests.len(),
-        1
-    );
+    assert_eq!(changes(&a, &repo_a, 1, 10).digests.len(), 1);
 }
 
 /// A failure inside the transaction (`dispositions` taken away so the

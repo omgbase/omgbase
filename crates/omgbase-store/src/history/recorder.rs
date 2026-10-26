@@ -1,8 +1,9 @@
 //! The default [`HistoryRecorder`]: today's history code behind the trait.
 //! Every method is the call it replaced — the writers of `history::writers`,
-//! the reads of `history::read` and `history::feed`, the mark-and-sweep of
-//! `history::gc`, the retention and archive entry points — so Phase 1
-//! changes no row and no byte.
+//! the reads of `history::read`, the mark-and-sweep of `history::gc`, the
+//! retention and archive entry points — so Phase 1 changes no row and no
+//! byte. Since 17.0 (3d) the commit row is the feed row's twin
+//! ([`HistoryRecorder::record_commit`]) and the change feed is the core's.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -12,8 +13,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
 use crate::core::capabilities::{
-    ChangesPage, DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision,
-    RevisionRead, RevisionTransition,
+    DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision, RevisionRead,
+    RevisionTransition,
 };
 use crate::core::claims;
 use crate::core::history_shapes::{
@@ -23,14 +24,14 @@ use crate::core::history_shapes::{
 use crate::core::mint::Mint;
 use crate::core::observe::persists_disposition;
 use crate::core::size::{SizeArchived, SizeRetention};
-use crate::core::writers::NewCommit;
+use crate::core::writers::CommitRecord;
 use crate::error::Result;
 use crate::history::delta::TreeResolver;
 use crate::history::writers::{
-    NewRevision, TreeWriteContext, is_checkpoint_revision, new_commit, previous_revision,
+    NewRevision, TreeWriteContext, is_checkpoint_revision, previous_revision, record_commit,
     write_block_tree_in, write_frontmatter_blob, write_revision,
 };
-use crate::history::{archive, feed, gc, read, retention};
+use crate::history::{archive, gc, read, retention};
 
 /// The recorder over the store's own history tables (`revisions`,
 /// `tree_nodes`, `blobs`, `commits`, `dispositions`, `block_changes`,
@@ -39,13 +40,13 @@ use crate::history::{archive, feed, gc, read, retention};
 pub struct Recorder;
 
 impl HistoryRecorder for Recorder {
-    fn new_commit(
-        &self,
-        tx: &Connection,
-        mint: &mut Mint<'_>,
-        input: &NewCommit<'_>,
-    ) -> Result<(String, i64)> {
-        new_commit(tx, mint, input)
+    /// `spec/store` §5.4 step 15 (17.0, 3d): the `commits` row — the log's
+    /// copy of the feed row the core appended, under the same id, epoch and
+    /// seq, with `ops` (the ADR-003 intent record of an api commit) — and the
+    /// recorder's hold on the commit id's claim (§2.1).
+    fn record_commit(&self, tx: &Connection, commit: &CommitRecord<'_>) -> Result<()> {
+        record_commit(tx, commit)?;
+        claims::hold(tx, &[commit.commit_id])
     }
 
     /// `spec/store` §5.4 step 15 (17.0): 16.0's steps 0, 1, 4 and 6 from
@@ -202,15 +203,29 @@ impl HistoryRecorder for Recorder {
         )?))
     }
 
-    fn changes_since(
+    /// The disposition counts of a captured commit (`kind → n`, `same`
+    /// never persisted), `None` when the recorder has no `commits` row for it.
+    fn disposition_counts(
         &self,
         conn: &Connection,
-        repo_id: &str,
-        cursor: i64,
-        limit: usize,
-        origin: Option<&str>,
-    ) -> Result<ChangesPage> {
-        feed::changes_since(conn, repo_id, cursor, limit, origin)
+        commit_id: &str,
+    ) -> Result<Option<Vec<(String, i64)>>> {
+        let known = conn
+            .query_row(
+                "SELECT 1 FROM commits WHERE commit_id = ?1",
+                params![commit_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !known {
+            return Ok(None);
+        }
+        let mut stmt = conn.prepare_cached(
+            "SELECT kind, count(*) FROM dispositions WHERE commit_id = ?1 GROUP BY kind ORDER BY kind",
+        )?;
+        let rows = stmt.query_map(params![commit_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(Some(rows.collect::<std::result::Result<Vec<_>, _>>()?))
     }
 
     fn rebuild_projection(&self, tx: &Connection) -> Result<()> {

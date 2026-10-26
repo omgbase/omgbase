@@ -36,26 +36,32 @@ pub const CATCH_UP_MAX_DOCS: usize = 500;
 /// The feed page the catch-up walks by.
 const FEED_PAGE: usize = 200;
 
-/// The repository's feed head (`spec/sync` §6): `max(seq)`, 0 when nothing
-/// committed. Through the store's feed API — the recorder's today, the
-/// core's own `feed` in Phase 3 (D7); the semantic layer names no history
-/// item.
+/// The repository's feed head (`spec/store` §3.1 `feed`, 17.0 D7): the
+/// core's `max(seq)` of the current epoch, 0 when nothing committed.
 fn feed_head(store: &Store, repo_id: &str) -> Result<i64> {
-    Ok(store.changes_since(repo_id, 0, 0, None)?.head)
+    Ok(store.feed_status(repo_id)?.head)
 }
 
 /// The documents the feed names after `cursor`, or `None` when the cursor
-/// cannot be served (it lies beyond the head — a restore, a
-/// rebuild-from-files, a pruned feed) or the set outgrew
-/// [`CATCH_UP_MAX_DOCS`].
+/// cannot be served (`expired_cursor`: it lies beyond the head — a restore, a
+/// rebuild-from-files — or the feed was pruned past it, D7) or the set
+/// outgrew [`CATCH_UP_MAX_DOCS`].
 fn touched_since(store: &Store, repo_id: &str, cursor: i64) -> Result<Option<HashSet<String>>> {
     let mut touched = HashSet::new();
     let mut at = cursor;
     loop {
-        let page = store.changes_since(repo_id, at, FEED_PAGE, None)?;
-        if page.head < cursor {
-            return Ok(None);
-        }
+        let page = match store.changes_since(
+            repo_id,
+            &crate::core::feed::ChangesSinceOptions {
+                cursor: at,
+                limit: FEED_PAGE,
+                ..crate::core::feed::ChangesSinceOptions::default()
+            },
+        ) {
+            Ok(page) => page,
+            Err(crate::error::Error::ExpiredCursor(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
         for d in &page.digests {
             for r in &d.revisions {
                 touched.insert(r.doc.clone());

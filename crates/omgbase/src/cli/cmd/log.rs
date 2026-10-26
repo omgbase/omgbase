@@ -1,5 +1,9 @@
-//! `log` (§6): `changes_since` from a commit sequence cursor; `--since` is
-//! resolved client-side to the highest `seq` strictly before the instant.
+//! `log` (§6): `changes_since` from a feed cursor; `--since` is resolved
+//! client-side to the highest retained feed `seq` strictly before the
+//! instant. A cursor is `(epoch, seq)` since store 17.0 (D7): `--cursor <n>`
+//! continues from a seq of the current epoch unless `--epoch <ep>` names the
+//! one it came from; a cursor the feed no longer serves is `expired_cursor`
+//! (exit 1).
 
 use omgbase_store::time::format_ms;
 use rusqlite::{OptionalExtension, params};
@@ -45,6 +49,7 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
         &[
             Opt::value("since"),
             Opt::value("cursor"),
+            Opt::value("epoch"),
             Opt::value("origin"),
             Opt::value_short("n", 'n'),
         ],
@@ -59,27 +64,36 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
             ));
         }
         (None, Some(since)) => {
-            // seam: feed sequence (Phase 3, M5/D7 — `--since` resolves an
-            //       instant through the feed, not `commits.ts`;
-            //       inventory-rust.md §2.9 `log.rs:63-73`, §6.5).
+            // The instant resolves through the FEED of the current epoch
+            // (store 17.0, D7): the highest retained seq strictly before it;
+            // a `--since` before the oldest retained row means "everything
+            // the feed holds" (cursor 0).
             let iso = since_instant(since, cli.now_ms())?;
             let repo = cli.repo()?;
-            let seq: Option<i64> = cli
-                .store()?
-                .conn()
+            let conn = cli.store()?.conn();
+            let seq: Option<i64> = conn
                 .query_row(
-                    "SELECT MAX(seq) FROM commits WHERE repo_id = ?1 AND ts < ?2",
+                    "SELECT MAX(seq) FROM feed WHERE repo_id = ?1 AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?1) AND ts < ?2",
                     params![repo.repo_id, iso],
                     |r| r.get(0),
                 )
                 .optional()?
                 .flatten();
-            seq.unwrap_or(0)
+            let oldest: i64 = conn.query_row(
+                "SELECT COALESCE(MIN(seq), 0) FROM feed WHERE repo_id = ?1 AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?1)",
+                params![repo.repo_id],
+                |r| r.get(0),
+            )?;
+            let seq = seq.unwrap_or(0);
+            if seq > 0 && seq < oldest - 1 { 0 } else { seq }
         }
         (None, None) => 0,
     };
     let mut req = serde_json::Map::new();
     req.insert("cursor".to_owned(), json!(cursor));
+    if let Some(e) = a.value("epoch") {
+        req.insert("epoch".to_owned(), json!(e));
+    }
     if let Some(n) = number(&a, "n")? {
         req.insert("limit".to_owned(), json!(n));
     }

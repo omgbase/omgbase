@@ -440,6 +440,7 @@ fn record(tool: &str, result: &Json, w: &str) -> Result<Json, String> {
                         "provider",
                         "plan_id",
                         "capability",
+                        "epoch",
                     ]
                     .iter()
                     .any(|k| d.contains_key(*k))

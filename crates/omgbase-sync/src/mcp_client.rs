@@ -31,7 +31,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use omgbase_format::hash::{hex, sha256};
-use omgbase_store::{ChangesPage, CommitDigest, DeleteOutcome, DigestRevision, ObserveOutcome};
+use omgbase_store::{
+    ChangesPage, CommitDigest, DeleteOutcome, DigestRevision, FeedEntryKind, ObserveOutcome,
+};
+
+use crate::engine::DocListing;
 use serde_json::{Map, Value, json};
 
 use crate::engine::{DocBytes, EngineClient, FileBytes};
@@ -418,8 +422,9 @@ fn observe_outcome(v: &Value) -> ObserveOutcome {
     }
 }
 
-/// A `changes_since` page as the wire carries it (`camelCase`; a revision is
-/// `{ _id, _path, _hash }` — `spec/sync` §6, 3.0).
+/// A `changes_since` page as the wire carries it (`spec/surface` §3, 6.0: a
+/// document is `{ _id, _path, _hash, kind, from_path? }`; the page carries
+/// `epoch` and `oldest`).
 fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
     let digests = v
         .get("digests")
@@ -432,7 +437,10 @@ fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
                     ts: str_field(d, "ts"),
                     origin: str_field(d, "origin"),
                     actor: opt_str_field(d, "actor"),
+                    batch_id: str_field(d, "batch_id"),
+                    plan_id: opt_str_field(d, "plan_id"),
                     summary: str_field(d, "summary"),
+                    counts: None,
                     revisions: d
                         .get("revisions")
                         .and_then(Value::as_array)
@@ -441,7 +449,13 @@ fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
                                 .map(|r| DigestRevision {
                                     doc: str_field(r, "_id"),
                                     path: str_field(r, "_path"),
-                                    content_hash: str_field(r, "_hash"),
+                                    hash: opt_str_field(r, "_hash"),
+                                    kind: r
+                                        .get("kind")
+                                        .and_then(Value::as_str)
+                                        .and_then(FeedEntryKind::parse)
+                                        .unwrap_or(FeedEntryKind::Changed),
+                                    from_path: opt_str_field(r, "from_path"),
                                 })
                                 .collect()
                         })
@@ -453,9 +467,32 @@ fn changes_page(v: &Value, cursor: i64) -> ChangesPage {
     ChangesPage {
         digests,
         cursor: v.get("cursor").and_then(Value::as_i64).unwrap_or(cursor),
-        truncated: bool_field(v, "truncated"),
+        epoch: str_field(v, "epoch"),
+        oldest: v.get("oldest").and_then(Value::as_i64).unwrap_or(0),
         head: v.get("head").and_then(Value::as_i64).unwrap_or(0),
+        truncated: bool_field(v, "truncated"),
     }
+}
+
+/// `spec/surface` §3 (6.0): the one error a feed consumer acts on — the
+/// coordinator rescans (`spec/sync` §6) — surfaces with its position when the
+/// envelope is `expired_cursor { epoch, oldest, head }`.
+fn feed_expired(res: &ToolResult) -> Option<Error> {
+    if !res.is_error || res.body.get("error").and_then(Value::as_str) != Some("expired_cursor") {
+        return None;
+    }
+    let data = res.body.get("data")?;
+    Some(Error::FeedExpired {
+        epoch: data.get("epoch")?.as_str()?.to_owned(),
+        oldest: data.get("oldest")?.as_i64()?,
+        head: data.get("head")?.as_i64()?,
+        message: res
+            .body
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("expired_cursor")
+            .to_owned(),
+    })
 }
 
 impl EngineClient for McpEngineClient {
@@ -479,6 +516,9 @@ impl EngineClient for McpEngineClient {
         Ok(DeleteOutcome {
             path: opt_str_field(&out, "_path").unwrap_or_else(|| path.to_owned()),
             doc_id: opt_str_field(&out, "_id"),
+            // The wire's `observe_delete` result names no commit; the
+            // coordinator's summaries never read it.
+            commit_id: None,
             old_hash_hex: None,
         })
     }
@@ -486,19 +526,63 @@ impl EngineClient for McpEngineClient {
     fn changes_since(
         &mut self,
         cursor: i64,
+        epoch: Option<&str>,
         limit: Option<usize>,
         origin: Option<&str>,
     ) -> Result<ChangesPage> {
         let mut args = Map::new();
         args.insert("cursor".to_owned(), json!(cursor));
+        if let Some(e) = epoch {
+            args.insert("epoch".to_owned(), json!(e));
+        }
         if let Some(l) = limit {
             args.insert("limit".to_owned(), json!(l));
         }
         if let Some(o) = origin {
             args.insert("origin".to_owned(), json!(o));
         }
-        let out = self.call("changes_since", Value::Object(args))?;
+        let res = self.call_tool("changes_since", Value::Object(args))?;
+        if let Some(e) = feed_expired(&res) {
+            return Err(e);
+        }
+        let out = res.into_result("changes_since")?;
         Ok(changes_page(&out, cursor))
+    }
+
+    /// The rescan's listing (`spec/sync` §6 step 2): `query docs { select
+    /// _id, _path, _hash }` on the minimal profile, paged through its cursor.
+    fn list_docs(&mut self) -> Result<Vec<DocListing>> {
+        let mut out = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut args = Map::new();
+            args.insert(
+                "query".to_owned(),
+                json!("docs { select _id, _path, _hash }"),
+            );
+            args.insert("bare".to_owned(), json!(true));
+            args.insert("limit".to_owned(), json!(500));
+            if let Some(c) = &cursor {
+                args.insert("cursor".to_owned(), json!(c));
+            }
+            let page = self.call("query", Value::Object(args))?;
+            if let Some(hits) = page.get("hits").and_then(Value::as_array) {
+                out.extend(hits.iter().map(|h| DocListing {
+                    doc: str_field(h, "_id"),
+                    path: str_field(h, "_path"),
+                    hash: opt_str_field(h, "_hash"),
+                }));
+            }
+            let next = page
+                .get("cursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            match (bool_field(&page, "truncated"), next) {
+                (true, Some(c)) => cursor = Some(c),
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     /// `docs_read { _path }` — the argument addresses the row's `_path`
@@ -901,18 +985,48 @@ mod tests {
         assert!(echo.echo && echo.rev.is_none());
         let page = changes_page(
             &json!({
-                "digests": [{ "commit": "c_1", "seq": 1, "ts": "t", "origin": "api", "actor": null, "summary": "s",
-                              "revisions": [{ "_id": "d_0", "_path": "a.md", "_hash": "ab" }] }],
-                "cursor": 1, "truncated": false, "head": 1,
+                "digests": [{ "commit": "c_1", "seq": 1, "ts": "t", "origin": "api", "actor": null, "batch_id": "c_1", "plan_id": "ab", "summary": "s",
+                              "revisions": [{ "_id": "d_0", "_path": "/a.md", "_hash": "ab", "kind": "moved", "from_path": "/b.md" }] }],
+                "cursor": 1, "epoch": "ep_0", "oldest": 1, "head": 1, "truncated": false,
             }),
             0,
         );
-        assert_eq!(page.digests[0].revisions[0].content_hash, "ab");
-        assert_eq!(page.cursor, 1);
+        assert_eq!(page.digests[0].revisions[0].hash.as_deref(), Some("ab"));
+        assert_eq!(page.digests[0].revisions[0].kind, FeedEntryKind::Moved);
+        assert_eq!(
+            page.digests[0].revisions[0].from_path.as_deref(),
+            Some("/b.md")
+        );
+        assert_eq!(page.digests[0].batch_id, "c_1");
+        assert_eq!(page.digests[0].plan_id.as_deref(), Some("ab"));
+        assert_eq!(
+            (page.cursor, page.epoch.as_str(), page.oldest),
+            (1, "ep_0", 1)
+        );
         assert_eq!(
             changes_page(&json!({}), 7).cursor,
             7,
             "an empty page keeps the input cursor"
+        );
+        // The expired-cursor envelope becomes the coordinator's one error shape.
+        let expired = ToolResult {
+            body: json!({ "error": "expired_cursor", "message": "m", "data": { "epoch": "ep_0", "oldest": 3, "head": 4 }, "retriable": false }),
+            is_error: true,
+        };
+        assert!(matches!(
+            feed_expired(&expired),
+            Some(Error::FeedExpired {
+                oldest: 3,
+                head: 4,
+                ..
+            })
+        ));
+        assert!(
+            feed_expired(&ToolResult {
+                body: json!({ "error": "doc_missing" }),
+                is_error: true
+            })
+            .is_none()
         );
     }
 

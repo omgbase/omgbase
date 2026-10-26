@@ -380,7 +380,6 @@ impl Workspaces {
                 &RealFileSystem,
                 &vault,
                 SPEC_CLOCK,
-                None,
                 &Config::default(),
             )
             .map_err(|e| format!("freshness_sweep: {e}"))?;

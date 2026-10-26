@@ -1,11 +1,12 @@
 //! The core's half of the write vocabulary (`spec/store/README.md` §5.4):
 //! the id-assigned body a commit writes ([`TreeInputBlock`], §5.4 step 3 —
 //! what the `blocks` rows mirror and what the recorder encodes into its
-//! tree), and the commit row's provenance ([`Origin`], [`NewCommit`], step 5
-//! — what the core hands
-//! [`HistoryRecorder::new_commit`](crate::core::capabilities::HistoryRecorder::new_commit)).
-//! The immutable writers themselves — blobs, tree nodes, revisions, the
-//! commit row — are the recorder's (`history::writers`).
+//! tree), the feed row's provenance ([`Origin`]; the row itself is
+//! `core::feed`, step 5) and the commit the core hands the recorder
+//! ([`CommitRecord`] —
+//! [`HistoryRecorder::record_commit`](crate::core::capabilities::HistoryRecorder::record_commit),
+//! the feed row's twin). The immutable writers themselves — blobs, tree
+//! nodes, revisions, the commit row — are the recorder's (`history::writers`).
 
 use std::collections::BTreeMap;
 
@@ -76,7 +77,7 @@ pub fn assign_fresh_ids(blocks: &[Block], minter: &mut Mint<'_>) -> Result<Vec<T
     assign_from_map(blocks, &BTreeMap::new(), minter)
 }
 
-/// `commits.origin`.
+/// `feed.origin` (= `commits.origin`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
     Api,
@@ -97,30 +98,21 @@ impl Origin {
     }
 }
 
-/// What a commit row records besides its minted id and sequence number.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NewCommit<'a> {
+/// The commit the core hands the recorder (`spec/store` §5.4 step 15, 17.0
+/// — the feed row's twin): the `c` id the core minted and wrote on `feed`,
+/// the repository's epoch and the feed's `seq`, the row's provenance, the
+/// batch (D4) and the ADR-003 intent record (`ops`, M5 — the recorder's
+/// column, never the feed's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CommitRecord<'a> {
+    pub commit_id: &'a str,
     pub repo_id: &'a str,
+    pub epoch: &'a str,
+    pub seq: i64,
     pub ts: &'a str,
     pub origin: Origin,
     pub actor: Option<&'a str>,
     pub reason: Option<&'a str>,
-    pub checkpoint_id: Option<&'a str>,
+    pub batch_id: &'a str,
     pub ops: Option<&'a str>,
-}
-
-impl<'a> NewCommit<'a> {
-    /// An `observed` commit with every optional column `NULL`.
-    #[must_use]
-    pub fn observed(repo_id: &'a str, ts: &'a str) -> Self {
-        Self {
-            repo_id,
-            ts,
-            origin: Origin::Observed,
-            actor: None,
-            reason: None,
-            checkpoint_id: None,
-            ops: None,
-        }
-    }
 }

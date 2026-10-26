@@ -157,6 +157,7 @@ pub fn gc_dry_run(conn: &Connection) -> Result<GcResult> {
         tree_nodes_swept: trees.len(),
         same_dispositions_swept: count_same_dispositions(conn)?,
         claims_released: 0,
+        feed_pruned: 0,
     })
 }
 
@@ -184,9 +185,10 @@ pub fn sweep_unreachable(conn: &Connection) -> Result<(usize, usize)> {
 /// block of every commit, and nothing reads. A sweep, not a migration: a
 /// data-only change needs no `user_version`, and opening a database never
 /// bulk-deletes. Rebuild is unchanged (`block_changes` stays the projection
-/// of `dispositions`), so §8 I8 holds before and after. The claims prune of
-/// §7.3 (17.0) is the core's and runs after this in the same transaction
-/// (`Store::gc_at`); `claims_released` is 0 here.
+/// of `dispositions`), so §8 I8 holds before and after. The feed prune of
+/// §7.4 and the claims prune of §7.3 (17.0) are the core's and run after this
+/// in the same transaction (`Store::gc_at`); `feed_pruned` and
+/// `claims_released` are 0 here.
 pub fn run_gc(conn: &Connection, enabled: bool) -> Result<GcResult> {
     if !enabled {
         return Ok(GcResult::default());
@@ -211,5 +213,6 @@ pub fn run_gc_in(tx: &Connection) -> Result<GcResult> {
         tree_nodes_swept,
         same_dispositions_swept,
         claims_released: 0,
+        feed_pruned: 0,
     })
 }

@@ -444,7 +444,7 @@ fn a_watched_run_ingests_files_written_under_the_workspace() {
         s.stderr()
     );
     assert!(
-        s.wait_stderr("[watch] checkpoint: +1 -0", Duration::from_secs(5)),
+        s.wait_stderr("[watch] batch: +1 -0", Duration::from_secs(5)),
         "{}",
         s.stderr()
     );

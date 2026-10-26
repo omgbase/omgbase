@@ -37,6 +37,19 @@ pub enum Error {
         lock_path: PathBuf,
         holder_pid: Option<i64>,
     },
+    /// `expired_cursor` (`spec/surface` §3, 6.0; §6, 4.0): the feed no longer
+    /// serves the consumer's `(epoch, cursor)` — the repository's current
+    /// position is `{ epoch, oldest, head }` and the consumer runs the rescan
+    /// procedure, then resumes from `head` under `epoch`. Raised by both
+    /// engine clients alike (the in-process one from the store's
+    /// `ExpiredCursor`, the MCP one from the error envelope), so the
+    /// coordinator sees one shape.
+    FeedExpired {
+        epoch: String,
+        oldest: i64,
+        head: i64,
+        message: String,
+    },
     /// Anything else, with a message.
     Other(String),
 }
@@ -74,6 +87,7 @@ impl fmt::Display for Error {
                 lock_path.display(),
                 holder_pid.map_or_else(|| "?".to_owned(), |p| p.to_string())
             ),
+            Error::FeedExpired { message, .. } => f.write_str(message),
             Error::Other(msg) => f.write_str(msg),
         }
     }
@@ -92,7 +106,15 @@ impl std::error::Error for Error {
 
 impl From<omgbase_store::Error> for Error {
     fn from(e: omgbase_store::Error) -> Self {
-        Error::Store(e)
+        match e {
+            omgbase_store::Error::ExpiredCursor(x) => Error::FeedExpired {
+                message: x.message(),
+                epoch: x.epoch,
+                oldest: x.oldest,
+                head: x.head,
+            },
+            other => Error::Store(other),
+        }
     }
 }
 

@@ -13,9 +13,10 @@ pub const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 pub const ID_LEN: usize = 7;
 
 /// The id prefixes the store mints (§2.1). `v` is reserved; `s` (15.0) is an
-/// archive segment.
+/// archive segment; `ep` (17.0) the repository epoch (`cp`, the checkpoint,
+/// is retired — D4).
 pub const PREFIXES: [&str; 12] = [
-    "d", "b", "c", "r", "x", "col", "cp", "e", "rp", "v", "src", "s",
+    "d", "b", "c", "r", "x", "col", "e", "rp", "v", "src", "s", "ep",
 ];
 
 /// Where ids come from. The store owns one; production uses [`RandomMinter`],
@@ -171,7 +172,7 @@ mod tests {
     #[test]
     fn supports_multi_char_prefixes() {
         assert!(is_valid_id(&RandomMinter.mint("col"), Some("col")));
-        assert!(is_valid_id(&RandomMinter.mint("cp"), Some("cp")));
+        assert!(is_valid_id(&RandomMinter.mint("ep"), Some("ep")));
         assert!(is_valid_id(&RandomMinter.mint("src"), Some("src")));
     }
 

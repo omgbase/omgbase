@@ -3,7 +3,7 @@
 //! inner [`IdMinter`] and redraws while a candidate is **in use** — already
 //! issued by this store in this process, or claimed per the store's
 //! [`IdentityClaims`] oracle (since 17.0 the `id_claims` table for every
-//! core-minted prefix, the prefix's own table for `c`/`cp`/`s` —
+//! core-minted prefix, the prefix's own table for the recorder's `s` —
 //! `core::claims`). The claim itself is the writer's, written through
 //! [`Mint::claim`] in the row's transaction AFTER the mint, so a mint whose
 //! transaction rolls back leaves no claim and the fixture minter's sequence
@@ -284,11 +284,10 @@ mod tests {
         for p in CLAIMED_PREFIXES {
             assert!(tables_for(p).is_empty(), "{p} is claimed in id_claims");
         }
-        for p in ["c", "cp", "s"] {
-            assert!(!tables_for(p).is_empty(), "{p}");
-        }
+        assert!(!tables_for("s").is_empty());
         assert!(tables_for("col").is_empty());
         assert!(tables_for("v").is_empty());
+        assert!(tables_for("cp").is_empty(), "cp is retired (D4)");
     }
 
     #[test]
@@ -311,7 +310,7 @@ mod tests {
         store
             .conn()
             .execute(
-                "INSERT INTO repos (repo_id, slug) VALUES ('rp_0', 'planted')",
+                "INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_0', 'planted', 'ep_x')",
                 [],
             )
             .unwrap();
@@ -328,17 +327,31 @@ mod tests {
             "rp_0 is claimed; the redraw is rp_1"
         );
         assert_eq!(store.mint("col").unwrap(), "col_0", "col has no table");
-        // A `c` is still claimed by its `commits` row (§2.1).
+        // A `c` is the core's since 3d: claimed in `id_claims` with the feed
+        // row, never probed in `commits` (§2.1).
         let repo = store.create_repo("r").unwrap();
         store
             .conn()
             .execute(
-                "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_0', ?1, 1, 't', 'observed')",
+                "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES ('c_0', ?1, 'c', 't', 1)",
                 params![repo],
             )
             .unwrap();
-        assert!(id_in_use(store.conn(), "c", "c_0").unwrap());
+        assert!(
+            !id_in_use(store.conn(), "c", "c_0").unwrap(),
+            "no table probe"
+        );
         assert_eq!(store.mint("c").unwrap(), "c_1");
+        // An `s` is still claimed by its `archives` row.
+        store
+            .conn()
+            .execute(
+                "INSERT INTO archives (segment_id, repo_id, path, seq_lo, seq_hi, created_at, revision_count, bytes) VALUES ('s_0', ?1, '/x', 1, 1, 't', 0, 0)",
+                params![repo],
+            )
+            .unwrap();
+        assert!(id_in_use(store.conn(), "s", "s_0").unwrap());
+        assert_eq!(store.mint("s").unwrap(), "s_1");
     }
 
     #[test]

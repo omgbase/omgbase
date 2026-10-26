@@ -1,5 +1,6 @@
 //! `status` (§6): `repos_status` + `sync_status` + the watch-lease probe +
-//! the embed queue depth.
+//! the embed queue depth. The human grid's `commits` figure and `commit#` are
+//! the feed's head (store 17.0: `repos_status.feed`, `sync_status.head`).
 
 use std::path::Path;
 
@@ -101,13 +102,12 @@ pub fn status(cli: &mut Cli, args: &[String]) -> Result<i32> {
     ));
     cli.io.out(&style.rule());
 
+    // Why the repo isn't convergent: on-disk drift (store 17.0, D9: the
+    // DB-internal `unconverged` count was identically zero and is gone).
     let synced = if ss.convergent {
         format!("{} converged", style.ok(g.ok))
     } else {
         let mut parts: Vec<String> = Vec::new();
-        if rs.unconverged > 0 {
-            parts.push(format!("{} behind", rs.unconverged));
-        }
         if ss.disk.drift.deleted > 0 {
             parts.push(format!("{} deleted", ss.disk.drift.deleted));
         }
@@ -133,7 +133,7 @@ pub fn status(cli: &mut Cli, args: &[String]) -> Result<i32> {
             format!("{} blocks", style.dim(g.block)),
             rs.blocks.to_string(),
         ),
-        (format!("{} commits", g.diamond), rs.commits.to_string()),
+        (format!("{} commits", g.diamond), rs.feed.head.to_string()),
         (format!("{} edges", g.arrow), rs.open_edges.to_string()),
     ];
     let right: [(&str, String); 4] = [
@@ -154,7 +154,7 @@ pub fn status(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 style.warn(&format!("{queued} queued"))
             },
         ),
-        ("commit#", style.dim(&ss.last_commit_seq.to_string())),
+        ("commit#", style.dim(&ss.head.to_string())),
     ];
     for i in 0..4 {
         let (l0, l1) = &left[i];

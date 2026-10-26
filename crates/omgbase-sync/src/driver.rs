@@ -1,27 +1,27 @@
 //! The driver (`spec/sync/README.md` §6): the engine-side loop over a
-//! [`SyncSource`] — `reconcile_changes` (fetch, `observe_batch`, checkpoint)
-//! and `attach_source` (`ensure_repo`, then ingest every enumerated member).
+//! [`SyncSource`] — `reconcile_changes` (fetch, `observe_batch`, the status
+//! row) and `attach_source` (`ensure_repo`, then ingest every enumerated
+//! member).
 
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, Origin, Store};
 use serde_json::Value;
 
-use crate::checkpoint::{CheckpointResult, finish_checkpoint};
+use crate::checkpoint::{BatchResult, finish_checkpoint};
 use crate::error::Result;
 use crate::registry::ensure_repo;
 use crate::source::{SourceIdentity, SyncSource};
 
 /// Fetch every path through the source (`None` → gone), `observe_batch`,
-/// record the checkpoint exactly as §4.1.
+/// write the status row exactly as §4.1.
 pub fn reconcile_changes(
     store: &mut Store,
     repo_id: &str,
     source: &mut dyn SyncSource,
     paths: &[String],
     ts: &str,
-    git_head: Option<&str>,
     config: &Config,
-) -> Result<CheckpointResult> {
+) -> Result<BatchResult> {
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
         items.push(BatchItem {
@@ -30,7 +30,7 @@ pub fn reconcile_changes(
         });
     }
     let outcomes = store.observe_batch(repo_id, &items, ts, config)?;
-    finish_checkpoint(store, repo_id, &outcomes, ts, git_head)
+    finish_checkpoint(store, repo_id, &outcomes, ts)
 }
 
 /// What `attach_source` did.
@@ -162,35 +162,32 @@ mod tests {
             .iter()
             .map(|s| (*s).to_owned())
             .collect();
-        let cp = reconcile_changes(
-            &mut store,
-            "rp_0",
-            &mut source,
-            &paths,
-            TS,
-            Some("deadbeef"),
-            &cfg,
-        )
-        .unwrap();
+        let cp = reconcile_changes(&mut store, "rp_0", &mut source, &paths, TS, &cfg).unwrap();
         assert_eq!(cp.ingested, ["a.md"]);
         assert_eq!(cp.deleted, ["b.md"]);
-        assert_eq!(cp.checkpoint_id, "cp_0");
-        let head: Option<String> = store
+        // The batch's id is the first committing member's commit (D4): a.md's
+        // edit, the fifth commit of the store.
+        assert_eq!(cp.batch_id.as_deref(), Some("c_4"));
+        let row: (String, Option<String>, i64) = store
             .conn()
-            .query_row("SELECT git_head FROM checkpoints", [], |r| r.get(0))
+            .query_row(
+                "SELECT last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = 'rp_0' AND source_id = '' AND path = ''",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
             .unwrap();
-        assert_eq!(head.as_deref(), Some("deadbeef"));
+        assert_eq!(row, (TS.to_owned(), Some("c_4".to_owned()), 3));
         let cp = reconcile_changes(
             &mut store,
             "rp_0",
             &mut source,
             &["a.md".to_owned()],
             TS,
-            None,
             &cfg,
         )
         .unwrap();
         assert_eq!(cp.suppressed, ["a.md"]);
+        assert_eq!(cp.batch_id, None);
     }
 
     #[test]

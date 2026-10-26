@@ -2,8 +2,9 @@
 //! modular-core M3/D5): the core's default [`IdentityClaims`] over the
 //! `id_claims(id, repo_id, prefix, minted_at, holders)` table. One row per id
 //! the core has minted, written in the transaction that writes the row the id
-//! lands in (§5.4: `d` with the doc row, `r` with the head, `b` with the block
-//! rows, `x`/`e` with the graph rows, `rp`/`src` with the registry rows) —
+//! lands in (§5.4: `d` with the doc row, `c` with the feed row, `r` with the
+//! head, `b` with the block rows, `x`/`e` with the graph rows, `rp`/`ep`/`src`
+//! with the registry rows) —
 //! AFTER the minter yielded, so the fixture minter's ids never move. The
 //! probe is one statement over the table; a claim outlives every row that
 //! carried the id, which is what replaced the `blocks ∪ block_changes ∪
@@ -33,19 +34,15 @@ pub const HOLDER_CORE: i64 = 1;
 /// bit 1: the recorder's hold on a claim.
 pub const HOLDER_RECORDER: i64 = 2;
 
-/// The prefixes the core mints and claims in `id_claims` (§2.1).
-pub const CLAIMED_PREFIXES: &[&str] = &["d", "b", "r", "x", "e", "rp", "src"];
+/// The prefixes the core mints and claims in `id_claims` (§2.1): `c` and
+/// `ep` since 3d (the feed row and the repository epoch are the core's).
+pub const CLAIMED_PREFIXES: &[&str] = &["d", "b", "c", "r", "x", "e", "rp", "src", "ep"];
 
-/// §2.1: the prefixes whose claim is still the row the id lands in — `c` is
-/// minted by the recorder's `new_commit` and `s` by its export (their
-/// `commits`/`archives` rows are the recorder's own claim evidence); `cp`
-/// probes `checkpoints` until D4 retires the prefix (Phase 3e). `col` and `v`
-/// have no table and no check.
-pub(crate) const ID_TABLES: &[(&str, &[(&str, &str)])] = &[
-    ("c", &[("commits", "commit_id")]),
-    ("cp", &[("checkpoints", "id")]),
-    ("s", &[("archives", "segment_id")]),
-];
+/// §2.1: the prefixes whose claim is still the row the id lands in — `s` is
+/// minted by the recorder's export (its `archives` row is the recorder's own
+/// claim evidence). `cp` is retired (D4: `checkpoints` is gone, nothing mints
+/// it); `col` and `v` have no table and no check.
+pub(crate) const ID_TABLES: &[(&str, &[(&str, &str)])] = &[("s", &[("archives", "segment_id")])];
 
 /// The settings key of the claims prune (§7.3): `identity.claims_retain_days`,
 /// default null = never.
@@ -54,8 +51,8 @@ pub const CLAIMS_RETAIN_DAYS_KEY: &str = "claims_retain_days";
 
 const DAY_MS: i64 = 86_400_000;
 
-/// The tables an id with `prefix` is still probed in by table (`c`, `cp`,
-/// `s`); empty for every prefix claimed in `id_claims` and for `col`/`v`.
+/// The tables an id with `prefix` is still probed in by table (`s`); empty
+/// for every prefix claimed in `id_claims` and for `col`/`v`.
 #[must_use]
 pub fn tables_for(prefix: &str) -> &'static [(&'static str, &'static str)] {
     ID_TABLES
@@ -65,8 +62,8 @@ pub fn tables_for(prefix: &str) -> &'static [(&'static str, &'static str)] {
 }
 
 /// §2.1: does `id` name a row of the prefix's own table(s) ([`tables_for`])
-/// on `conn`? The legacy probe, for `c`/`cp`/`s` alone since 17.0. The
-/// statements are cached on the connection.
+/// on `conn`? The legacy probe, for `s` alone since 17.0. The statements are
+/// cached on the connection.
 pub fn id_in_use(conn: &Connection, prefix: &str, id: &str) -> Result<bool> {
     for (table, column) in tables_for(prefix) {
         let mut stmt = conn.prepare_cached(&format!(
@@ -118,16 +115,20 @@ pub struct ClaimScope {
 // The core rows an id may still name (§7.3): a claim is prunable only when
 // none of them does. `docs` keeps a tombstone forever, so a `d` is never
 // released; a `b` once its row, its pool entry and its tombstone are gone; an
-// `r` once it is no head and no pending row renders it; `x`/`e` once the node
-// or edge row is gone; `rp`/`src` while the registry rows exist.
+// `r` once it is no head, no pending row renders it and no retained feed
+// entry carries it; a `c` once no retained feed row names it (as its commit
+// or its batch) and no pending row records it; `x`/`e` once the node or edge
+// row is gone; `rp`/`ep`/`src` while the registry rows exist.
 const NAMES_NO_CORE_ROW_SQL: &str = "
   NOT EXISTS (SELECT 1 FROM docs WHERE doc_id = id_claims.id OR head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM blocks WHERE block_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM resurrection_pool WHERE block_id = id_claims.id)
-  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE head = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE head = id_claims.id OR commit_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM feed WHERE commit_id = id_claims.id OR batch_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM feed_entries WHERE head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM external_nodes WHERE node_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM edges WHERE edge_id = id_claims.id)
-  AND NOT EXISTS (SELECT 1 FROM repos WHERE repo_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM repos WHERE repo_id = id_claims.id OR epoch = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM sources WHERE source_id = id_claims.id)";
 
 /// The recorder's hold (bit 1) on every id named — an id with no claim row
@@ -148,7 +149,7 @@ pub fn hold(conn: &Connection, ids: &[&str]) -> Result<()> {
 /// core's row (idempotent — a second claim of the same id adds nothing but
 /// the core bit), `hold` sets the recorder's bit, `is_claimed` is one probe
 /// for every core-minted prefix and the legacy table probe for the
-/// recorder's own (`c`, `s`) and `cp`, `prune` is §7.3's release under
+/// recorder's own `s`, `prune` is §7.3's release under
 /// `identity.claims_retain_days`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IdClaims;
@@ -274,11 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_table_probe_covers_the_recorders_prefixes_and_cp_only() {
-        for p in ["c", "cp", "s"] {
-            assert!(!tables_for(p).is_empty(), "{p}");
-        }
-        for p in CLAIMED_PREFIXES.iter().chain(["col", "v"].iter()) {
+    fn the_legacy_table_probe_covers_the_recorders_segment_prefix_only() {
+        assert!(!tables_for("s").is_empty());
+        // `cp` is retired (D4): no table, no claim, nothing mints it.
+        for p in CLAIMED_PREFIXES.iter().chain(["col", "v", "cp"].iter()) {
             assert!(tables_for(p).is_empty(), "{p}");
         }
     }

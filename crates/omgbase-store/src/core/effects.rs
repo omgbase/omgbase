@@ -24,8 +24,8 @@
 //! `path_taken`; a document that vanished fails `doc_missing`; and a file
 //! that no longer hashes to `file_hash` returns [`Outcome::Conflict`] so the
 //! caller can ingest the disk bytes as `observed` in a transaction of its
-//! own and raise `sync_conflict`. The validation runs before `new_commit`,
-//! so a conflict burns no id.
+//! own and raise `sync_conflict`. The validation runs before the feed row
+//! is appended, so a conflict burns no id.
 //!
 //! **Recorded intent** (store 14.0). An `api` commit writes no file inside
 //! the transaction: after its effects it inserts one
@@ -45,6 +45,9 @@ use std::collections::HashSet;
 use crate::Store;
 use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
 use crate::core::codec::attrs_from_json;
+use crate::core::feed::{
+    FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
+};
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::InboundLink;
@@ -55,11 +58,15 @@ use crate::mint::Mint;
 use crate::mutate::known_plan;
 use crate::observe::{Committed, Prepared, ingest_in, tombstone_in};
 use crate::time::pool_expiry;
-use crate::writers::{NewCommit, Origin, TreeInputBlock};
+use crate::writers::{Origin, TreeInputBlock};
 
-/// The commit row a request records (`spec/store` §5.4 step 5). `ops` is
+/// The feed row a request records (`spec/store` §5.4 step 5; the recorder's
+/// `commits` row is its twin). `plan_id` is the admitted plan's digest for an
+/// effect-driven commit (resolution 3 — carried on the feed row so a Receipt
+/// correlates with the documents it touched when history is off); `ops` is
 /// ADR-003's intent record — `canonical({ v: 1, plan_id, effects })` for an
-/// effect-driven commit (`spec/mutate` §11), `NULL` for every other.
+/// effect-driven commit (`spec/mutate` §11), the recorder's column alone.
+/// Both `NULL` for every other request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CommitHead<'a> {
     pub origin: Origin,
@@ -69,6 +76,8 @@ pub(crate) struct CommitHead<'a> {
     /// pending at its path (`spec/store` §5.7, the file wins): the row is
     /// deleted in this transaction, with the commit that supersedes it.
     pub clear_pending: bool,
+    /// `feed.plan_id`.
+    pub plan_id: Option<&'a str>,
     /// `commits.ops`.
     pub ops: Option<&'a str>,
 }
@@ -276,10 +285,11 @@ impl Outcome {
 }
 
 impl Store {
-    /// Commit `effects` in order under one `commits` row (`head`, stamped
-    /// `ts`) in one `BEGIN IMMEDIATE` transaction: BEGIN, re-validate every
-    /// effect's precondition through the transaction, step 5 once, every
-    /// effect against the transaction, COMMIT. A precondition the database
+    /// Commit `effects` in order under one feed row (`head`, stamped `ts`;
+    /// the recorder's `commits` row under the same id) in one `BEGIN
+    /// IMMEDIATE` transaction: BEGIN, re-validate every effect's precondition
+    /// through the transaction, step 5 once, every effect against the
+    /// transaction — each writing its feed entry — COMMIT. A precondition the database
     /// no longer meets fails `stale_plan` / `path_taken` / `doc_missing`
     /// (`spec/mutate` §8) and a file that moved returns
     /// [`Outcome::Conflict`] — in both cases the transaction rolls back
@@ -336,16 +346,18 @@ impl Store {
         }
         let (committed, commit_id) = {
             let mut mint = ids.at(&tx);
-            let (commit_id, _) = history.new_commit(
+            let commit = append_feed_row(
                 &tx,
                 &mut mint,
-                &NewCommit {
+                Some(history),
+                &NewFeedRow {
                     repo_id,
                     ts,
                     origin: head.origin,
                     actor: head.actor,
                     reason: head.reason,
-                    checkpoint_id: None,
+                    batch_id: None,
+                    plan_id: head.plan_id,
                     ops: head.ops,
                 },
             )?;
@@ -366,14 +378,14 @@ impl Store {
                     _ => false,
                 };
                 outcomes.push(run_effect(
-                    &tx, &mut mint, history, repo_id, head, effect, ts, &expires, &commit_id,
+                    &tx, &mut mint, history, repo_id, head, effect, ts, &expires, &commit,
                     mints_head,
                 )?);
             }
             // 14.0: the files this request owes the working tree, recorded
             // before COMMIT so a crash loses nothing (`spec/store` §5.7).
             if head.origin == Origin::Api {
-                record_intent(&tx, repo_id, effects, &outcomes, &commit_id, ts)?;
+                record_intent(&tx, repo_id, effects, &outcomes, &commit.commit_id, ts)?;
             }
             if head.clear_pending {
                 for path in touched_paths(effects) {
@@ -389,7 +401,7 @@ impl Store {
                     EffectOutcome::Nothing => {}
                 }
             }
-            ((ingests, moves), commit_id)
+            ((ingests, moves), commit.commit_id)
         };
         tx.commit()?;
         let (ingests, moves) = committed;
@@ -792,7 +804,7 @@ fn run_effect(
     effect: &Effect,
     ts: &str,
     expires: &str,
-    commit_id: &str,
+    commit: &FeedRow,
     mints_head: bool,
 ) -> Result<EffectOutcome> {
     match effect {
@@ -802,7 +814,7 @@ fn run_effect(
             rendered,
             by_key,
             prior_ids,
-            ..
+            guard,
         } => {
             let tree = parse_path(path, rendered);
             // The live rows the carries are classified against (`spec/mutate`
@@ -826,14 +838,21 @@ fn run_effect(
                 head.actor,
                 head.reason,
             )?;
+            // A document loaded under another path (the moved document of a
+            // `docs_move` that this request also rewrites) gets a `moved`
+            // feed entry (D11).
+            let moved_from = match guard {
+                Guard::Doc { base, .. } if base.path != *path => Some(base.path.as_str()),
+                _ => None,
+            };
             Ok(EffectOutcome::Ingested(ingest_in(
-                tx, mint, history, repo_id, &plan, ts, expires, commit_id,
+                tx, mint, history, repo_id, &plan, ts, expires, commit, moved_from,
             )?))
         }
         Effect::IngestReconciled { prepared, .. } => {
             let plan = prepared.plan(mint, head.origin, head.actor, head.reason, None)?;
             Ok(EffectOutcome::Ingested(ingest_in(
-                tx, mint, history, repo_id, &plan, ts, expires, commit_id,
+                tx, mint, history, repo_id, &plan, ts, expires, commit, None,
             )?))
         }
         Effect::MovePath {
@@ -843,10 +862,10 @@ fn run_effect(
             inbound,
             ..
         } => Ok(EffectOutcome::Moved(move_path_in(
-            tx, mint, history, doc_id, from, to, inbound, ts, commit_id, mints_head,
+            tx, mint, history, doc_id, from, to, inbound, ts, commit, mints_head,
         )?)),
         Effect::Tombstone { doc_id, pool, .. } => {
-            tombstone_in(tx, doc_id, ts, pool.then_some(expires))?;
+            tombstone_in(tx, repo_id, commit, doc_id, ts, pool.then_some(expires))?;
             Ok(EffectOutcome::Nothing)
         }
     }
@@ -918,12 +937,13 @@ pub(crate) fn current_tree_input(conn: &Connection, doc_id: &str) -> Result<Vec<
 /// row's path and — a move is a TRANSITION — a new head token with
 /// `updated_at = ts`, handed to the recorder as a revision of the unchanged
 /// tree at the new path (`revisions.path` is immutable from 17.0; through
-/// 16.x the current revision's path was rewritten in place). `mints_head` is
-/// false for a self-linking source whose own `IngestKnown` follows in the
-/// request: that ingest mints the head and carries the new path, so the
-/// document gets one revision, not two. Then the edge index: the re-point to
-/// the old path's phantom, the affected rollups, phantom adoption at the new
-/// path.
+/// 16.x the current revision's path was rewritten in place) and its `moved`
+/// feed entry (`spec/store` §5.4 step 5; D11: `from_path` the old path, the
+/// new head, the unchanged bytes). `mints_head` is false for a self-linking
+/// source whose own `IngestKnown` follows in the request: that ingest mints
+/// the head, writes the entry and carries the new path, so the document gets
+/// one revision, not two. Then the edge index: the re-point to the old path's
+/// phantom, the affected rollups, phantom adoption at the new path.
 #[allow(clippy::too_many_arguments)]
 fn move_path_in(
     tx: &Connection,
@@ -934,7 +954,7 @@ fn move_path_in(
     to: &str,
     inbound: &[InboundLink],
     ts: &str,
-    commit_id: &str,
+    commit: &FeedRow,
     mints_head: bool,
 ) -> Result<MoveOutcome> {
     let doc: Option<(String, Option<Vec<u8>>, Option<String>)> = tx
@@ -955,6 +975,20 @@ fn move_path_in(
                 "UPDATE docs SET path = ?1, head = ?2, updated_at = ?3 WHERE doc_id = ?4",
                 params![to, minted, ts, doc_id],
             )?;
+            append_feed_entry(
+                tx,
+                &NewFeedEntry {
+                    repo_id: &repo_id,
+                    epoch: &commit.epoch,
+                    seq: commit.seq,
+                    doc_id,
+                    path: to,
+                    head: Some(&minted),
+                    hash: Some(&hash[..]),
+                    kind: FeedEntryKind::Moved,
+                    from_path: Some(from),
+                },
+            )?;
             let body = current_tree_input(tx, doc_id)?;
             let mut rendered_hash = [0u8; 32];
             if hash.len() == 32 {
@@ -973,7 +1007,7 @@ fn move_path_in(
                     frontmatter_raw: frontmatter_raw.as_deref(),
                     body: &body,
                     rendered_hash,
-                    commit_id,
+                    commit_id: &commit.commit_id,
                 },
             )?;
             head = Some(minted);

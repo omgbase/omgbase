@@ -1,12 +1,15 @@
 //! The engine client (`spec/sync/README.md` §6): the coordinator's view of
 //! "the omgbase side" — `observe_many`, `observe_delete`, `changes_since`,
-//! `read_doc` — behind one trait so the same coordinator runs against an
-//! in-process store or a remote server. The in-process client is here; a
-//! remote client belongs to the binary that speaks MCP.
+//! `list_docs` (the rescan's listing, 4.0), `read_doc` — behind one trait so
+//! the same coordinator runs against an in-process store or a remote server.
+//! The in-process client is here; a remote client belongs to the binary that
+//! speaks MCP.
 
 use omgbase_format::hash::hex;
 use omgbase_reconcile::Config;
-use omgbase_store::{BatchItem, BatchOutcome, ChangesPage, DeleteOutcome, ObserveOutcome, Store};
+use omgbase_store::{
+    BatchItem, BatchOutcome, ChangesPage, ChangesSinceOptions, DeleteOutcome, ObserveOutcome, Store,
+};
 use rusqlite::{OptionalExtension, params};
 
 use crate::error::{Error, Result};
@@ -36,6 +39,16 @@ pub struct DocBytes {
     pub content_hash: String,
 }
 
+/// A live document as the rescan lists it (§6 step 2, 4.0): `query docs {
+/// select _id, _path, _hash }` — `path` in the reference form (`/a.md`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocListing {
+    pub doc: String,
+    pub path: String,
+    /// Hex of the document's `file_hash`; `None` when it has none.
+    pub hash: Option<String>,
+}
+
 /// The default `changes_since` page size.
 pub const DEFAULT_LIMIT: usize = 50;
 
@@ -46,13 +59,18 @@ pub trait EngineClient {
     fn observe_many(&mut self, files: &[FileBytes]) -> Result<Vec<ObserveOutcome>>;
     /// Mirror a source-side deletion (tombstone, then sweep).
     fn observe_delete(&mut self, path: &str) -> Result<DeleteOutcome>;
-    /// The repo's change feed after `cursor` (§6).
+    /// The repo's change feed after `(epoch, cursor)` (§6; `epoch` `None` is
+    /// the repository's current one); [`Error::FeedExpired`] when the feed no
+    /// longer serves the cursor.
     fn changes_since(
         &mut self,
         cursor: i64,
+        epoch: Option<&str>,
         limit: Option<usize>,
         origin: Option<&str>,
     ) -> Result<ChangesPage>;
+    /// Every live document of the repo (the rescan's step 2, §6).
+    fn list_docs(&mut self) -> Result<Vec<DocListing>>;
     /// The current bytes at `path`, or `None` when no live doc reads there.
     fn read_doc(&mut self, path: &str) -> Result<Option<DocBytes>>;
     /// Release the connection (the store's lifetime is the caller's).
@@ -155,15 +173,33 @@ impl EngineClient for InProcessEngineClient<'_> {
     fn changes_since(
         &mut self,
         cursor: i64,
+        epoch: Option<&str>,
         limit: Option<usize>,
         origin: Option<&str>,
     ) -> Result<ChangesPage> {
         Ok(self.store.changes_since(
             &self.repo_id,
-            cursor,
-            limit.unwrap_or(DEFAULT_LIMIT),
-            origin,
+            &ChangesSinceOptions {
+                cursor,
+                epoch,
+                limit: limit.unwrap_or(DEFAULT_LIMIT),
+                origin,
+            },
         )?)
+    }
+
+    fn list_docs(&mut self) -> Result<Vec<DocListing>> {
+        let mut stmt = self.store.conn().prepare(
+            "SELECT doc_id, path, file_hash FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL ORDER BY path",
+        )?;
+        let rows = stmt.query_map(params![self.repo_id], |r| {
+            Ok(DocListing {
+                doc: r.get(0)?,
+                path: format!("/{}", r.get::<_, String>(1)?),
+                hash: r.get::<_, Option<Vec<u8>>>(2)?.as_deref().map(hex),
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     fn read_doc(&mut self, path: &str) -> Result<Option<DocBytes>> {
@@ -226,16 +262,36 @@ mod tests {
         assert!(d.deleted());
         assert!(!client.observe_delete("b.md").unwrap().deleted());
         assert!(client.read_doc("b.md").unwrap().is_none());
-        let page = client.changes_since(0, None, None).unwrap();
+        let page = client.changes_since(0, None, None, None).unwrap();
         assert_eq!(page.digests.len(), 3);
-        assert_eq!(page.head, 3);
-        assert_eq!(page.digests[2].origin, "observed");
-        assert!(
-            page.digests[2].revisions.is_empty(),
-            "a tombstone writes no revision"
+        assert_eq!(
+            (page.head, page.oldest, page.epoch.as_str()),
+            (3, 1, "ep_0")
         );
-        let one = client.changes_since(0, Some(1), None).unwrap();
+        assert_eq!(page.digests[2].origin, "observed");
+        // A tombstone is a `deleted` entry (17.0, 3d).
+        assert_eq!(page.digests[2].revisions.len(), 1);
+        assert_eq!(
+            page.digests[2].revisions[0].kind,
+            omgbase_store::FeedEntryKind::Deleted
+        );
+        let one = client.changes_since(0, None, Some(1), None).unwrap();
         assert!(one.truncated);
+        assert!(matches!(
+            client.changes_since(9, None, None, None),
+            Err(Error::FeedExpired { head: 3, .. })
+        ));
+        assert!(matches!(
+            client.changes_since(0, Some("ep_nope"), None, None),
+            Err(Error::FeedExpired { oldest: 1, .. })
+        ));
+        let listed = client.list_docs().unwrap();
+        assert_eq!(listed.len(), 1, "b.md is tombstoned");
+        assert_eq!(listed[0].path, "/a.md");
+        assert_eq!(
+            listed[0].hash.as_deref(),
+            Some(hex(&omgbase_format::hash::sha256(b"# A\n")).as_str())
+        );
         assert_eq!(
             client.store().user_version().unwrap(),
             omgbase_store::SCHEMA_VERSION

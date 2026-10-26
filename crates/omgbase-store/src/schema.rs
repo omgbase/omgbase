@@ -162,15 +162,18 @@ pub(crate) fn migrate(
     }
     if current == SCHEMA_VERSION {
         // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b
-        // → 3c): a database a 3a build already moved to 17 has `docs` but no
-        // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still
-        // has `pending_materializations.rev_id`. Each half of the step is
-        // idempotent, so finish it here rather than spend a schema version on
-        // a dev-only state. (A 17 database with no `docs` table — the
-        // `already-current-is-untouched` fixture — is left exactly as it is.)
+        // → 3c → 3d): a database a 3a build already moved to 17 has `docs`
+        // but no `id_claims` and the pool's `deleted_commit`; a 3a/3b build's
+        // still has `pending_materializations.rev_id`; a 3a–3c build's has no
+        // `feed`, a `checkpoints` table and `commits.checkpoint_id`. Each part
+        // of the step is idempotent, so finish it here rather than spend a
+        // schema version on a dev-only state. (A 17 database with no `docs`
+        // table — the `already-current-is-untouched` fixture — is left exactly
+        // as it is.)
         if table_exists(conn, "docs")? {
             migrate_v17_claims(conn)?;
             migrate_v17_pending(conn)?;
+            migrate_v17_feed(conn, ids)?;
         }
         return Ok(());
     }
@@ -191,10 +194,13 @@ pub(crate) fn migrate(
             // Likewise: three rebuilds under `foreign_keys = OFF` (§3.4 step
             // 17), then the identity half (3b): the pool's `deleted_at` and
             // the `id_claims` backfill, then the recovery half (3c): the
-            // self-contained `pending_materializations` row.
+            // self-contained `pending_materializations` row, then the feed
+            // half (3d): the epoch, the feed backfill, the recorder's
+            // `commits` row, the status row, `checkpoints` dropped.
             migrate_v17(conn, history)?;
             migrate_v17_claims(conn)?;
             migrate_v17_pending(conn)?;
+            migrate_v17_feed(conn, ids)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -965,6 +971,323 @@ fn migrate_v17_claims(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// `move <from> -> <to>` (a 16.x `docs_move` commit's reason) → `(from, to)`
+/// — the reference's `/^move (.+) -> (.+)$/`: the greedy first group splits
+/// at the LAST ` -> `, both sides non-empty, no line terminator in either
+/// (JavaScript's `.`).
+fn parse_move_reason(reason: &str) -> Option<(&str, &str)> {
+    let rest = reason.strip_prefix("move ")?;
+    let (from, to) = rest.rsplit_once(" -> ")?;
+    let line = |s: &str| !s.is_empty() && !s.contains(['\n', '\r', '\u{2028}', '\u{2029}']);
+    (line(from) && line(to)).then_some((from, to))
+}
+
+/// The feed half of step 17 (§3.4 step 17 (6)–(9); modular-core Phase 3d —
+/// D7/M5, D4): the repository EPOCH, the `feed`/`feed_entries` tables
+/// backfilled from the 16.x `commits`/`revisions`, the recorder's `commits`
+/// row rebuilt with `epoch`/`batch_id` and without `checkpoint_id`, the
+/// `sync_state` status row from the latest `checkpoints` row, and
+/// `checkpoints` dropped. One transaction, `foreign_keys = OFF` for its
+/// duration (`repos` and `commits` are rebuilt; both are referenced),
+/// `PRAGMA foreign_key_check` empty at its end. Idempotent on each part:
+/// `repos` with `epoch` is left alone, an existing `feed` is not backfilled
+/// again, `commits` without `checkpoint_id` is left alone, `sync_state` with
+/// the status columns is left alone, a missing `checkpoints` is nothing to
+/// drop. Runs after the identity and recovery halves (the claims table must
+/// exist for the `c`/`ep` claims). A pre-state without `repos` has no
+/// repository to give an epoch and is left alone (the migration fixtures'
+/// partial pre-states; a real database always has it). The `ep` ids are
+/// drawn from the store's minter (the fixture minter: `ep_0`, …) without the
+/// oracle, like v13's `src` — a pre-17 database has no `id_claims` to probe.
+fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource) -> Result<()> {
+    if !table_exists(conn, "repos")? {
+        return Ok(());
+    }
+    let needs_epoch = has_column(conn, "repos", "epoch")? == Some(false);
+    let needs_feed = !table_exists(conn, "feed")?;
+    let needs_commits = has_column(conn, "commits", "checkpoint_id")? == Some(true);
+    let needs_status = has_column(conn, "sync_state", "last_batch_ts")? == Some(false);
+    let has_checkpoints = table_exists(conn, "checkpoints")?;
+    if !needs_epoch && !needs_feed && !needs_commits && !needs_status && !has_checkpoints {
+        return Ok(());
+    }
+    let clock = crate::core::time::now_ts();
+    let has_commits = table_exists(conn, "commits")?;
+    let has_claims = table_exists(conn, "id_claims")?;
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let rebuilt = (|| -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        // (6) repos: the epoch — one `ep` per repository in rowid order, the
+        // claim minted at the repo's first commit's ts (the epoch is as old as
+        // the feed it scopes), else the clock. A rebuild: SQLite cannot add a
+        // NOT NULL column without a default.
+        if needs_epoch {
+            tx.execute_batch(
+                "CREATE TABLE repos_v17 (
+  repo_id   TEXT PRIMARY KEY,
+  slug      TEXT NOT NULL UNIQUE,
+  settings  TEXT NOT NULL DEFAULT '{}',
+  epoch     TEXT NOT NULL
+);",
+            )?;
+            let repos: Vec<(i64, String, SqlValue, Option<String>)> = {
+                let mut stmt =
+                    tx.prepare("SELECT rowid, repo_id, slug, settings FROM repos ORDER BY rowid")?;
+                let it =
+                    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+                it.collect::<std::result::Result<Vec<_>, _>>()?
+            };
+            let mut mint = ids.at_unchecked(&tx);
+            for (rowid, repo_id, slug, settings) in &repos {
+                let epoch = mint.mint("ep")?;
+                tx.execute(
+                    "INSERT INTO repos_v17 (rowid, repo_id, slug, settings, epoch) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![rowid, repo_id, slug, settings.as_deref().unwrap_or("{}"), epoch],
+                )?;
+                if has_claims {
+                    let first_ts: Option<String> = if has_commits {
+                        tx.query_row(
+                            "SELECT MIN(ts) FROM commits WHERE repo_id = ?1",
+                            params![repo_id],
+                            |r| r.get(0),
+                        )?
+                    } else {
+                        None
+                    };
+                    tx.execute(
+                        "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES (?1, ?2, 'ep', ?3, 1)
+                         ON CONFLICT(id) DO UPDATE SET holders = holders | 1",
+                        params![epoch, repo_id, first_ts.as_deref().unwrap_or(&clock)],
+                    )?;
+                }
+            }
+            tx.execute_batch("DROP TABLE repos; ALTER TABLE repos_v17 RENAME TO repos;")?;
+        }
+
+        // (7) feed + feed_entries, backfilled from the 16.x `commits`/`revisions`:
+        // one row per commit (`epoch` the new one, `seq = commits.seq`,
+        // `batch_id = commit_id` — no checkpoint grouped them; `plan_id` NULL);
+        // entries `created`/`changed` from `revisions` (seq 1 ⇒ created),
+        // `deleted` from the tombstones whose `deleted_at` is the commit's ts,
+        // `moved` only where a commit with no entry of its own records
+        // `move <from> -> <to>` in its reason (resolution 12: what the rows
+        // say, no path reconstruction) — the doc now at `<to>`, its current
+        // head and hash. Then the prune under the defaults.
+        if needs_feed {
+            tx.execute_batch(&ddl_for(&["feed", "feed_entries"]))?;
+            if has_commits {
+                let has_revisions = table_exists(&tx, "revisions")?;
+                let has_docs = has_column(&tx, "docs", "deleted_at")? == Some(true);
+                type CommitRow = (
+                    String,
+                    String,
+                    i64,
+                    String,
+                    String,
+                    Option<String>,
+                    Option<String>,
+                );
+                let commits: Vec<CommitRow> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT commit_id, repo_id, seq, ts, origin, actor, reason FROM commits ORDER BY repo_id, seq",
+                    )?;
+                    let it = stmt.query_map([], |r| {
+                        Ok((
+                            r.get(0)?,
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                        ))
+                    })?;
+                    it.collect::<std::result::Result<Vec<_>, _>>()?
+                };
+                let mut epoch_of = tx.prepare("SELECT epoch FROM repos WHERE repo_id = ?1")?;
+                let mut ins_row = tx.prepare(
+                    "INSERT OR IGNORE INTO feed (repo_id, epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)",
+                )?;
+                let mut ins_entry = tx.prepare(
+                    "INSERT OR IGNORE INTO feed_entries (repo_id, epoch, seq, doc_id, path, head, hash, kind, from_path) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                )?;
+                let mut revs = if has_revisions {
+                    Some(tx.prepare(
+                        "SELECT doc_id, seq, rev_id, rendered_hash, path FROM revisions WHERE commit_id = ?1 ORDER BY rowid",
+                    )?)
+                } else {
+                    None
+                };
+                let mut gone = if has_docs {
+                    Some(tx.prepare(
+                        "SELECT doc_id, path FROM docs WHERE repo_id = ?1 AND deleted_at = ?2 ORDER BY path",
+                    )?)
+                } else {
+                    None
+                };
+                let mut at = if has_docs {
+                    Some(tx.prepare(
+                        "SELECT doc_id, head, file_hash FROM docs WHERE repo_id = ?1 AND path = ?2",
+                    )?)
+                } else {
+                    None
+                };
+                for (commit_id, repo_id, seq, ts, origin, actor, reason) in &commits {
+                    let epoch: Option<String> = epoch_of
+                        .query_row(params![repo_id], |r| r.get(0))
+                        .optional()?;
+                    let Some(epoch) = epoch else {
+                        continue;
+                    };
+                    ins_row.execute(params![
+                        repo_id, epoch, seq, commit_id, ts, origin, actor, reason, commit_id
+                    ])?;
+                    let mut entries = 0usize;
+                    if let Some(revs) = revs.as_mut() {
+                        type RevRow = (String, i64, String, Vec<u8>, String);
+                        let rows: Vec<RevRow> = revs
+                            .query_map(params![commit_id], |r| {
+                                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                            })?
+                            .collect::<std::result::Result<_, _>>()?;
+                        for (doc_id, rev_seq, rev_id, rendered_hash, path) in rows {
+                            let kind = if rev_seq == 1 { "created" } else { "changed" };
+                            ins_entry.execute(params![
+                                repo_id,
+                                epoch,
+                                seq,
+                                doc_id,
+                                path,
+                                rev_id,
+                                rendered_hash,
+                                kind,
+                                Option::<String>::None
+                            ])?;
+                            entries += 1;
+                        }
+                    }
+                    if let Some(gone) = gone.as_mut() {
+                        let rows: Vec<(String, String)> = gone
+                            .query_map(params![repo_id, ts], |r| Ok((r.get(0)?, r.get(1)?)))?
+                            .collect::<std::result::Result<_, _>>()?;
+                        for (doc_id, path) in rows {
+                            ins_entry.execute(params![
+                                repo_id,
+                                epoch,
+                                seq,
+                                doc_id,
+                                path,
+                                Option::<String>::None,
+                                Option::<Vec<u8>>::None,
+                                "deleted",
+                                Option::<String>::None
+                            ])?;
+                            entries += 1;
+                        }
+                    }
+                    if entries == 0
+                        && let (Some(reason), Some(at)) = (reason.as_deref(), at.as_mut())
+                        && let Some((from, to)) = parse_move_reason(reason)
+                    {
+                        let doc: Option<(String, Option<String>, Option<Vec<u8>>)> = at
+                            .query_row(params![repo_id, to], |r| {
+                                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                            })
+                            .optional()?;
+                        if let Some((doc_id, head, file_hash)) = doc {
+                            ins_entry.execute(params![
+                                repo_id, epoch, seq, doc_id, to, head, file_hash, "moved", from
+                            ])?;
+                        }
+                    }
+                }
+            }
+            // The prune under the defaults (§7.4) — the settings layers exist
+            // on every real database; a partial fixture pre-state may lack them.
+            if table_exists(&tx, "workspace_settings")? {
+                crate::core::feed::prune_feed(&tx, &clock)?;
+            }
+            // The `c` claims (§2.1, 3d: the core mints `c` and claims it):
+            // bit 0 for every commit the feed holds, bit 1 for every `commits`
+            // row.
+            if has_claims && has_commits {
+                tx.execute(
+                    "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) SELECT commit_id, repo_id, 'c', ts, 1 FROM feed WHERE true
+                     ON CONFLICT(id) DO UPDATE SET holders = holders | 1, minted_at = min(minted_at, excluded.minted_at)",
+                    [],
+                )?;
+                tx.execute(
+                    "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) SELECT commit_id, repo_id, 'c', ts, 2 FROM commits WHERE true
+                     ON CONFLICT(id) DO UPDATE SET holders = holders | 2, minted_at = min(minted_at, excluded.minted_at)",
+                    [],
+                )?;
+            }
+        }
+
+        // (8) commits: the recorder's row — `epoch` (the repo's), `batch_id =
+        // commit_id`, `checkpoint_id` dropped, `rowid`s kept.
+        if needs_commits {
+            tx.execute_batch(
+                "CREATE TABLE commits_v17 (
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,
+  ops       TEXT,
+  UNIQUE (repo_id, epoch, seq)
+);
+INSERT INTO commits_v17 (rowid, commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops)
+  SELECT c.rowid, c.commit_id, c.repo_id, COALESCE((SELECT epoch FROM repos r WHERE r.repo_id = c.repo_id), ''), c.seq, c.ts, c.origin, c.actor, c.reason, c.commit_id, c.ops FROM commits c ORDER BY c.rowid;
+DROP TABLE commits;
+ALTER TABLE commits_v17 RENAME TO commits;",
+            )?;
+        }
+
+        // (9) sync_state: the three status columns; per repository the
+        // reserved row from the latest `checkpoints` row by ts (`last_batch_id`
+        // NULL — the batch id is unknowable, `files` the array's length); then
+        // drop `checkpoints`.
+        if needs_status {
+            tx.execute_batch(
+                "ALTER TABLE sync_state ADD COLUMN last_batch_ts TEXT;
+ALTER TABLE sync_state ADD COLUMN last_batch_id TEXT;
+ALTER TABLE sync_state ADD COLUMN last_batch_files INTEGER;",
+            )?;
+        }
+        if has_checkpoints && table_exists(&tx, "sync_state")? {
+            tx.execute(
+                "INSERT OR IGNORE INTO sync_state (repo_id, source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files)
+                 SELECT cp.repo_id, '', '', NULL, NULL, cp.ts, NULL, json_array_length(cp.files)
+                   FROM checkpoints cp WHERE cp.rowid = (SELECT c2.rowid FROM checkpoints c2 WHERE c2.repo_id = cp.repo_id ORDER BY c2.ts DESC, c2.rowid DESC LIMIT 1)",
+                [],
+            )?;
+        }
+        if has_checkpoints {
+            tx.execute_batch("DROP TABLE checkpoints")?;
+        }
+
+        let violations: i64 = {
+            let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
+            let rows = stmt.query_map([], |_| Ok(()))?;
+            i64::try_from(rows.count()).unwrap_or(i64::MAX)
+        };
+        if violations > 0 {
+            return Err(Error::Other(format!(
+                "migration v17: {violations} foreign key violation(s) after the feed step"
+            )));
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    rebuilt
+}
+
 /// v13 (ADR-014): `repos.root_path` becomes an `fs` source + attachment.
 fn migrate_v13(conn: &Connection, minter: &mut Mint<'_>) -> Result<()> {
     if has_column(conn, "repos", "root_path")? != Some(true) {
@@ -1026,6 +1349,12 @@ mod tests {
         assert!(targets.iter().any(|t| t == "workspace_settings"));
         assert!(targets.iter().any(|t| t == "pending_materializations"));
         assert!(targets.iter().any(|t| t == "archives"));
+        assert!(targets.iter().any(|t| t == "feed"));
+        assert_eq!(
+            targets.iter().filter(|t| *t == "feed").count(),
+            2,
+            "table + idx_feed_ts"
+        );
         assert_eq!(
             targets.iter().filter(|t| *t == "blocks").count(),
             5,
@@ -1058,6 +1387,10 @@ mod tests {
         let archives = ddl_for(&["archives"]);
         assert!(archives.contains("CREATE TABLE IF NOT EXISTS archives"));
         assert!(archives.contains("segment_id     TEXT PRIMARY KEY"));
+        let feed = ddl_for(&["feed", "feed_entries"]);
+        assert!(feed.contains("CREATE TABLE IF NOT EXISTS feed ("));
+        assert!(feed.contains("CREATE INDEX IF NOT EXISTS idx_feed_ts"));
+        assert!(feed.contains("CREATE TABLE IF NOT EXISTS feed_entries"));
         assert!(ddl_for(&["nope"]).is_empty());
     }
 
@@ -1082,5 +1415,41 @@ mod tests {
         assert!(!table_exists(&conn, "docs").unwrap());
         let cols = column_names(&conn, "revisions").unwrap();
         assert_eq!(cols.len(), 8, "a segment's revisions carry no `archive`");
+        let cols = column_names(&conn, "commits").unwrap();
+        assert_eq!(
+            cols,
+            [
+                "commit_id",
+                "repo_id",
+                "epoch",
+                "seq",
+                "ts",
+                "origin",
+                "actor",
+                "reason",
+                "batch_id",
+                "ops"
+            ],
+            "a segment's commits are the recorder's 17.0 row"
+        );
+    }
+
+    /// The backfill's move rule (§3.4 step 17 (7)): the reference's regex,
+    /// greedy on the first group.
+    #[test]
+    fn move_reasons_parse_like_the_reference() {
+        assert_eq!(
+            parse_move_reason("move a.md -> b.md"),
+            Some(("a.md", "b.md"))
+        );
+        assert_eq!(
+            parse_move_reason("move a -> b -> c.md"),
+            Some(("a -> b", "c.md")),
+            "the first group is greedy"
+        );
+        assert_eq!(parse_move_reason("observed deletion"), None);
+        assert_eq!(parse_move_reason("move  -> b.md"), None);
+        assert_eq!(parse_move_reason("move a.md -> "), None);
+        assert_eq!(parse_move_reason("move a.md -> b\n.md"), None);
     }
 }

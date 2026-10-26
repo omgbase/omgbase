@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use omgbase_format::hash::hex;
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Map, Value as Json};
+use serde_json::Value as Json;
 
 use crate::error::{Error, Result};
 use crate::time::{civil_from_days, parse_ms};
@@ -194,57 +194,11 @@ pub fn merge_retention_policy(
     Ok(out)
 }
 
-/// A settings blob as stored (`workspace_settings.settings`, `repos.settings`):
-/// an object, or `{}` for anything else.
-#[must_use]
-pub fn parse_settings_json(json: Option<&str>) -> Map<String, Json> {
-    json.and_then(|s| serde_json::from_str::<Json>(s).ok())
-        .and_then(|v| match v {
-            Json::Object(m) => Some(m),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-fn deep_merge(base: &Map<String, Json>, over: &Map<String, Json>) -> Map<String, Json> {
-    let mut out = base.clone();
-    for (k, v) in over {
-        let merged = match (out.get(k), v) {
-            (Some(Json::Object(b)), Json::Object(o)) => Json::Object(deep_merge(b, o)),
-            _ => v.clone(),
-        };
-        out.insert(k.clone(), merged);
-    }
-    out
-}
-
-/// The repo's own settings blob (`repos.settings`, the repo layer of
-/// `spec/sync`'s two-layer settings).
-pub(crate) fn repo_settings(conn: &Connection, repo_id: &str) -> Result<Map<String, Json>> {
-    let raw: Option<String> = conn
-        .query_row(
-            "SELECT settings FROM repos WHERE repo_id = ?1",
-            params![repo_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(parse_settings_json(raw.as_deref()))
-}
-
-/// The repo's effective settings (`spec/sync` settings: the workspace layer
-/// with the repo's own deep-merged over it at the leaf).
-pub fn effective_settings(conn: &Connection, repo_id: &str) -> Result<Map<String, Json>> {
-    let ws: Option<String> = conn
-        .query_row(
-            "SELECT settings FROM workspace_settings WHERE id = 0",
-            [],
-            |r| r.get(0),
-        )
-        .optional()?;
-    let ws = parse_settings_json(ws.as_deref());
-    let own = repo_settings(conn, repo_id)?;
-    Ok(deep_merge(&ws, &own))
-}
+// The settings readers are the core's (`core::settings`, shared with the
+// claims prune and the feed retention); re-exported for the importers that
+// reached them here.
+pub(crate) use crate::core::settings::repo_settings;
+pub use crate::core::settings::{effective_settings, parse_settings_json};
 
 /// The repo's effective policy: the defaults, the settings' `history.retention`
 /// over them, then `override` (a CLI `--policy`, a fixture's partial).

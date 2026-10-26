@@ -11,7 +11,7 @@ use omgbase_store::Store;
 use rusqlite::params;
 use serde_json::Value;
 
-use crate::checkpoint::{CheckpointResult, process_checkpoint};
+use crate::checkpoint::{BatchResult, process_checkpoint};
 use crate::error::Result;
 use crate::fs::{FileStat, FileSystem};
 
@@ -166,13 +166,13 @@ pub fn record_file_stat(
     Ok(())
 }
 
-/// The checkpoint result plus the scan counters.
+/// The batch result plus the scan counters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SweepResult {
     /// Step 0 (store 14.0): the paths whose pending materialization this
     /// sweep landed before walking (not on the wire).
     pub materialized: Vec<String>,
-    pub checkpoint: CheckpointResult,
+    pub batch: BatchResult,
     /// Files walked.
     pub scanned: usize,
     /// Stat-mismatched (or new) files hashed.
@@ -182,10 +182,10 @@ pub struct SweepResult {
 }
 
 impl SweepResult {
-    /// The checkpoint fields plus `scanned`, `candidates`, `changed`.
+    /// The batch fields plus `scanned`, `candidates`, `changed`.
     #[must_use]
     pub fn to_json(&self) -> Value {
-        let mut v = self.checkpoint.to_json();
+        let mut v = self.batch.to_json();
         v["scanned"] = Value::from(self.scanned);
         v["candidates"] = Value::from(self.candidates);
         v["changed"] = Value::from(self.changed);
@@ -198,15 +198,14 @@ impl SweepResult {
 /// landed) through the filesystem's [`DocStore`](omgbase_store::DocStore),
 /// so the walk below sees them as echoes rather than stale files; then plan
 /// over the cache and the snapshot, refresh touched-not-edited stats,
-/// checkpoint `changed ++ deletions` at `ts` (with `git_head` on the row),
-/// refresh the cache for the changed paths and drop the deletions' rows.
+/// batch `changed ++ deletions` at `ts` (the status row, 4.0), refresh the
+/// cache for the changed paths and drop the deletions' rows.
 pub fn freshness_sweep(
     store: &mut Store,
     repo_id: &str,
     fs: &dyn FileSystem,
     root: &Path,
     ts: &str,
-    git_head: Option<&str>,
     config: &Config,
 ) -> Result<SweepResult> {
     let materialized = materialize_pending(store, repo_id, fs, root)?;
@@ -227,16 +226,7 @@ pub fn freshness_sweep(
             )?;
         }
     }
-    let checkpoint = process_checkpoint(
-        store,
-        repo_id,
-        fs,
-        root,
-        &plan.to_ingest(),
-        ts,
-        git_head,
-        config,
-    )?;
+    let batch = process_checkpoint(store, repo_id, fs, root, &plan.to_ingest(), ts, config)?;
     for path in &plan.changed {
         let hash = plan.hashes.get(path).copied().unwrap_or([0; 32]);
         record_file_stat(store, repo_id, fs, root, path, &hash)?;
@@ -247,12 +237,11 @@ pub fn freshness_sweep(
             params![repo_id, path],
         )?;
     }
-    let changed = !checkpoint.ingested.is_empty()
-        || !checkpoint.deleted.is_empty()
-        || !checkpoint.conflicted.is_empty();
+    let changed =
+        !batch.ingested.is_empty() || !batch.deleted.is_empty() || !batch.conflicted.is_empty();
     Ok(SweepResult {
         materialized,
-        checkpoint,
+        batch,
         scanned: disk.len(),
         candidates: plan.candidates.len(),
         changed,
@@ -482,9 +471,9 @@ mod tests {
             }
         );
 
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         assert_eq!((r.scanned, r.candidates, r.changed), (2, 2, true));
-        assert_eq!(r.checkpoint.ingested, ["a.md", "d/b.md"]);
+        assert_eq!(r.batch.ingested, ["a.md", "d/b.md"]);
         assert_eq!(r.to_json()["scanned"], 2);
         let stats = file_stats_rows(&store, &repo).unwrap();
         assert_eq!(stats.len(), 2);
@@ -498,16 +487,16 @@ mod tests {
         );
 
         // Quiet sweep: nothing hashed, nothing changed.
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         assert_eq!((r.scanned, r.candidates, r.changed), (2, 0, false));
-        assert!(r.checkpoint.ingested.is_empty());
+        assert!(r.batch.ingested.is_empty());
 
         // A touch without an edit: a candidate, refreshed, no ingest.
         fs.set("a.md", "# A\n", 10);
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         assert_eq!((r.scanned, r.candidates, r.changed), (2, 1, false));
         assert!(
-            r.checkpoint.suppressed.is_empty(),
+            r.batch.suppressed.is_empty(),
             "a refreshed path is not even observed"
         );
         assert_eq!(file_stats_rows(&store, &repo).unwrap()[0].1, 10);
@@ -523,9 +512,9 @@ mod tests {
                 untracked: 0
             }
         );
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
-        assert_eq!(r.checkpoint.ingested, ["a.md"]);
-        assert_eq!(r.checkpoint.deleted, ["d/b.md"]);
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
+        assert_eq!(r.batch.ingested, ["a.md"]);
+        assert_eq!(r.batch.deleted, ["d/b.md"]);
         assert!(r.changed);
         let stats = file_stats_rows(&store, &repo).unwrap();
         assert_eq!(stats.len(), 1);
@@ -548,8 +537,8 @@ mod tests {
             },
             "a rebuild does not hide an untracked file"
         );
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
-        assert_eq!(r.checkpoint.ingested, ["d/b.md"]);
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
+        assert_eq!(r.batch.ingested, ["d/b.md"]);
         assert_eq!(file_stats_rows(&store, &repo).unwrap().len(), 2);
 
         // Rebuild over a pending edit: the edited file gets no row, drift and
@@ -568,8 +557,8 @@ mod tests {
             },
             "a rebuild keeps a pending edit visible"
         );
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
-        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
+        assert_eq!(r.batch.ingested, ["a.md"]);
         assert_eq!(
             file_stats_rows(&store, &repo).unwrap()[0].3,
             hex(&sha256(b"# A3\n"))
@@ -647,8 +636,8 @@ mod tests {
         let repo = store.create_repo("fixture").unwrap();
         let fs = crate::fs::RealFileSystem;
         let cfg = Config::default();
-        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, None, &cfg).unwrap();
-        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, &cfg).unwrap();
+        assert_eq!(r.batch.ingested, ["a.md"]);
         assert!(r.materialized.is_empty());
 
         // The request commits; its file half dies.
@@ -662,18 +651,18 @@ mod tests {
             "# A\n\nAlpha.\n"
         );
 
-        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, None, &cfg).unwrap();
+        let r = freshness_sweep(&mut store, &repo, &fs, &dir, TS, &cfg).unwrap();
         assert_eq!(r.materialized, ["a.md"], "step 0 landed the file");
         assert_eq!(
             std::fs::read_to_string(dir.join("a.md")).unwrap(),
             "# A\n\nAlpha.\n\nA tail.\n"
         );
         assert_eq!(
-            r.checkpoint.suppressed,
+            r.batch.suppressed,
             ["a.md"],
             "… which the walk then sees as an echo"
         );
-        assert!(r.checkpoint.ingested.is_empty());
+        assert!(r.batch.ingested.is_empty());
         assert!(store.pending_materializations(&repo).unwrap().is_empty());
         assert!(
             detect_disk_drift(&store, &repo, &fs, &dir)
@@ -704,15 +693,15 @@ mod tests {
         let root = Path::new(ROOT);
         fs.set("a.md", "# A\n\nAlpha.\n", 1);
         let cfg = Config::default();
-        freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         store
             .apply(&append_tail(&repo, "a.md"), &mut Crashed, TS)
             .unwrap_err();
         assert_eq!(store.pending_materializations(&repo).unwrap().len(), 1);
         fs.set("a.md", "# A\n\nAlpha, by a human.\n", 2);
-        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, &cfg).unwrap();
         assert!(r.materialized.is_empty(), "no write seam, no step 0");
-        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        assert_eq!(r.batch.ingested, ["a.md"]);
         assert!(store.pending_materializations(&repo).unwrap().is_empty());
         let doc: String = store
             .conn()

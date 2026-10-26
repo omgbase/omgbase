@@ -4,7 +4,8 @@
 //! *between* an omgbase repository (an [`omgbase_store::Store`]) and the
 //! places they live — the [`workspace`] on disk that holds the database, the
 //! source [`registry`] that says where a repo's bytes come from, the
-//! [`settings`] layers, the [`checkpoint`] rows and the filesystem fast path
+//! [`settings`] layers, the [`checkpoint`] batches (the status row, 4.0) and
+//! the filesystem fast path
 //! ([`freshness`] sweep, disk drift, [`recovery`]) over a [`fs::FileSystem`]
 //! seam, the adapter stdio protocol client ([`external`]), the [`driver`] and
 //! the [`coordinator`] over an [`engine::EngineClient`] — in-process, or the
@@ -21,7 +22,7 @@
 //! let repo = registry::ensure_repo(&mut store, "notes", Some("/home/me/notes"))?;
 //! let sweep = freshness::freshness_sweep(
 //!     &mut store, &repo, &RealFileSystem, "/home/me/notes".as_ref(),
-//!     "2026-09-26T10:00:00.000Z", None, &Config::default(),
+//!     "2026-09-26T10:00:00.000Z", &Config::default(),
 //! )?;
 //! println!("{} files scanned, changed: {}", sweep.scanned, sweep.changed);
 //! # Ok::<(), omgbase_sync::Error>(())
@@ -30,6 +31,7 @@
 #![deny(unsafe_code)]
 
 pub mod admin;
+pub mod capability_state;
 pub mod checkpoint;
 pub mod coordinator;
 pub mod driver;
@@ -48,10 +50,14 @@ pub mod source;
 pub mod workspace;
 
 pub use admin::{DiskStatus, RepoStatus, SyncStatus, repos_status, sync_status};
-pub use checkpoint::{CheckpointResult, finish_checkpoint, process_checkpoint};
+pub use capability_state::{capability_states, semantic_configured};
+pub use checkpoint::{
+    BatchResult, CheckpointResult, LastBatch, batch_id_of, finish_checkpoint, last_batch,
+    process_checkpoint, write_status_row,
+};
 pub use coordinator::{Coordinator, SyncInSummary, SyncOutSummary};
 pub use driver::{AttachResult, attach_source, reconcile_changes};
-pub use engine::{DocBytes, EngineClient, InProcessEngineClient};
+pub use engine::{DocBytes, DocListing, EngineClient, InProcessEngineClient};
 pub use error::{Error, Result};
 pub use external::ExternalSource;
 pub use freshness::{
@@ -61,7 +67,10 @@ pub use freshness::{
 pub use fs::{FileStat, FileSystem, MemFileSystem, RealFileSystem, is_ignored_dir};
 pub use lock::{WatchLease, WriterLock, WriterLockOptions, pid_alive, with_writer_lock};
 pub use mcp_client::{EngineSpec, McpEngineClient, ToolResult, parse_engine_spec};
-pub use omgbase_store::{ChangesPage, CommitDigest, DeleteOutcome, DigestRevision, ObserveOutcome};
+pub use omgbase_store::{
+    ChangesPage, CommitDigest, DeleteOutcome, DigestRevision, FeedEntryKind, FeedStatus,
+    ObserveOutcome,
+};
 pub use recovery::{RecoveryResult, recover_repo};
 pub use registry::{
     AdapterRow, SourceRow, attach, create_source, delete_source, detach, ensure_adapter,
@@ -79,7 +88,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "3.0";
+pub const SPEC_VERSION: &str = "4.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -408,6 +408,65 @@ itself was 57 ms faster this run); the commit path gained one `INSERT` into
 `feed`, one into `feed_entries`, the `c` claim and the cap's `SELECT` over
 the feed, and lost the `checkpoints` insert — none of which registers.
 
+### 17.0 (3d), Rust — the slim feed and the checkpoints collapse, the twin (`rust-2026-10-26T01-47-09`)
+
+The Rust twin of 3d (`crates/omgbase-store` at schema 17 with the core's
+`feed`/`feed_entries` written in every commit transaction, the repository
+epoch on `repos`, the recorder's `commits` row with `epoch`/`batch_id` and
+no `checkpoint_id`, `checkpoints` collapsed into the `sync_state` status
+row, `c` and `ep` claimed in `id_claims`), release build of the `omgbase`
+crate 0.27.3 + the working tree, the same seeded corpus; the TS 3d row
+above is the comparison, the Rust 3c row the cost of the slice.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | sync KB | TS 3d (db MB / KB / op) | Rust 3c (db MB / KB / op) | `feed` rows / KB | `feed_entries` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.35 | 6,204 | 30.9 / doc | 3.17 | 2.72 | 212 | 6.34 / 30.8 | 6.25 / 30.4 | 201 / 56 | 201 / 40 |
+| frontmatter hot update | 50 | 6.44 | 84 | 1.7 | 0 | +68 | 240 | 6.46 / 2.3 | 6.34 / 1.8 | 251 / 72 | 251 / 52 |
+| block edit | 50 | 6.57 | 132 | 2.6 | 0 | +96 | 268 | 6.59 / 2.5 | 6.43 / 1.8 | 301 / 92 | 301 / 60 |
+| rolling journal | 50 | 6.76 | 180 | 3.6 | +20 | +144 | 284 | 6.75 / 3.2 | 6.61 / 3.4 | 351 / 100 | 351 / 68 |
+| task churn | 50 | 6.85 | 88 | 1.8 | 0 | +68 | 308 | 6.85 / 1.9 | 6.66 / 1.0 | 401 / 116 | 401 / 76 |
+| link churn | 50 | 6.96 | 108 | 2.2 | +28 | +64 | 324 | 6.96 / 2.2 | 6.77 / 2.2 | 451 / 128 | 451 / 80 |
+| delete / recreate | 20 | 7.09 | 128 | 6.4 | +8 | +108 | 336 | 7.10 / 6.6 | 6.91 / 6.6 | 471 / 136 | 471 / 84 |
+| gc (default sweep) | | 7.09 | 0 | | 0 | 0 | 336 | 7.10 / 0 | 6.92 / 8 KB | 471 / 136 | 471 / 84 |
+
+Import **6.35 vs 6.34 MB (29.1× the source vs 29.0×)**, the end **7.09 vs
+7.10 MB (32.4× vs 32.5×)**; against the TS 3d run the database is within
+8–24 KB (two to six pages) at every stage, the `sync` category identical at
+every stage (212 / 240 / 268 / 284 / 308 / 324 / 336 KB) and `content` the
+same to the 10 KB. **`feed` and `feed_entries` are byte-identical to the TS
+run within a page at every stage**: 201 / 201 rows after the import (57,344 /
+40,960 B in both engines) through 251, 301, 351, 401, 451 to **471 / 471 rows
+at the end (139,264 / 86,016 B — 136 / 84 KB — in both)**, one row and one
+entry per commit. `commits` is 471 rows / 172,032 B in both (the two new
+columns, +12 KB over the Rust 3c run's 159,744); `id_claims` is row for row
+the TS run's at every stage (4,810 → 4,910 → 5,010 → 5,160 → 5,260 → 5,485 →
+5,715; +472 rows over Rust 3c's 5,243 — the 471 commit ids and the epoch;
+733,184 vs TS 737,280 B, one page); **`sync_state` 1 row / 8,192 B in both
+engines — the status row — where the Rust 3c run's `checkpoints` held 384
+rows / 106,496 B** (one per sweep, every read's empty pre-verb sweep
+included). Against Rust 3c the per-commit growth is **+0.5–0.8 KB** on the
+small-edit stages (block edit 2.6 vs 1.8 KB/op, task churn 1.8 vs 1.0) and
+flat on the frontmatter (1.7 vs 1.8), the journal (3.6 vs 3.4), the links
+(2.2 vs 2.2) and the recreate (6.4 vs 6.6) — the `feed` row, the entry and
+the `c` claim, within the seed's noise. The history tables after gc are row
+for row the TS 3d run's: `blobs` 3,218 (634,880 B vs TS 630,784),
+`tree_nodes` 1,000 (974,848 both), `dispositions` 3,824 (339,968 both),
+`block_changes` 3,824 (294,912 vs 290,816), `revisions` 461 (110,592 both),
+`commits` 471 (172,032 both); `content` 3.24 MB and `history` 3.28 MB at the
+end in both engines.
+
+Latency (p50 / p95 ms, process start 5 / 7 included): import 1,113; one
+write 26–32 / 33–44 (frontmatter 26 / 33, block edit 31 / 35, journal 30 /
+37, task churn 31 / 37, link churn 32 / 38, recreate 29 / 44); `query` docs
+18 / 28, blocks filter 16 / 22, `text("furnace")` 88 / 111, links 14 / 17;
+`outline` 14 / 16; `gc` 28. Against the Rust 3c run (writes 24–29 / 29–35,
+import 777, docs 13, text 101, outline 8, gc 17) the write p50s sit 2–6 ms
+above and the reads 4–6 ms above — the run followed a full workspace test
+pass and a release build on the same machine, and the spread is the same
+size as the 3b → 3c one; the commit path gained one `INSERT` into `feed`,
+one into `feed_entries`, the `c` claim and the cap's `SELECT` over the feed,
+and lost the `checkpoints` insert.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

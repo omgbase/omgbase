@@ -2,10 +2,12 @@
 //! steps 0–6): blobs and tree nodes are content-addressed (`INSERT OR IGNORE`
 //! gives structural sharing); since 16.0 a list or a frontmatter is written as
 //! a delta over the previous revision's where that is smaller
-//! ([`TreeWriteContext`]); commits and revisions take the next per-repo /
-//! per-document sequence number. The core's half of the old `writers` module
-//! — the id-assigned body ([`TreeInputBlock`]), `Origin`, `NewCommit` — is
-//! `core::writers`; this is what the [`HistoryRecorder`] calls.
+//! ([`TreeWriteContext`]); revisions take the next per-document sequence
+//! number, and the commit row (17.0, 3d) is the log's copy of the feed row
+//! the core appended — the same id, epoch and seq. The core's half of the old
+//! `writers` module — the id-assigned body ([`TreeInputBlock`]), `Origin`,
+//! [`CommitRecord`] — is `core::writers`; this is what the
+//! [`HistoryRecorder`] calls.
 //!
 //! [`HistoryRecorder`]: crate::core::capabilities::HistoryRecorder
 
@@ -16,8 +18,7 @@ use omgbase_format::json::attrs_to_json;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::codec::from_hex;
-use crate::core::mint::Mint;
-use crate::core::writers::{NewCommit, TreeInputBlock};
+use crate::core::writers::{CommitRecord, TreeInputBlock};
 use crate::error::Result;
 use crate::history::delta::{
     ResolvedList, ResolvedTree, encode_body_delta, encode_frontmatter_delta, entry_text,
@@ -205,35 +206,29 @@ pub fn write_frontmatter_blob(
     put_blob(conn, if delta.len() < raw.len() { &delta } else { raw })
 }
 
-/// Append a commit (§5.4 step 5): **mints `c`**, `seq = 1 + max(seq)` over
-/// the repo. Returns `(commit_id, seq)`.
-pub fn new_commit(
-    conn: &Connection,
-    minter: &mut Mint<'_>,
-    input: &NewCommit<'_>,
-) -> Result<(String, i64)> {
-    let commit_id = minter.mint("c")?;
-    let seq: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(seq), 0) + 1 FROM commits WHERE repo_id = ?1",
-        params![input.repo_id],
-        |r| r.get(0),
-    )?;
+/// The recorder's `commits` row (`spec/store` §3.1, 17.0 — 3d): the log's
+/// copy of a feed row the core appended (`core::feed::append_feed_row`),
+/// under the same `commit_id`, `epoch` and `seq`, plus `ops` — the ADR-003
+/// intent record of an effect-driven api commit, which only the recorder
+/// keeps (M5).
+pub fn record_commit(conn: &Connection, c: &CommitRecord<'_>) -> Result<()> {
     conn.execute(
-        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
-            commit_id,
-            input.repo_id,
-            seq,
-            input.ts,
-            input.origin.as_str(),
-            input.actor,
-            input.reason,
-            input.checkpoint_id,
-            input.ops,
+            c.commit_id,
+            c.repo_id,
+            c.epoch,
+            c.seq,
+            c.ts,
+            c.origin.as_str(),
+            c.actor,
+            c.reason,
+            c.batch_id,
+            c.ops,
         ],
     )?;
-    Ok((commit_id, seq))
+    Ok(())
 }
 
 /// What a revision row records besides its sequence number.

@@ -423,14 +423,21 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         "log" => spec(
             s("What changed: one digest per commit, newest first"),
             vec![s(
-                "log [--since <24h|7d|ISO>] [--cursor <n>] [--origin api|observed] [-n <N>]",
+                "log [--since <24h|7d|ISO>] [--cursor <n> [--epoch <ep>]] [--origin api|observed] [-n <N>]",
             )],
             opts(&[
                 (
                     "--since <t>",
                     "only commits after a relative age (24h, 7d) or an ISO timestamp",
                 ),
-                ("--cursor <n>", "continue from a commit sequence number"),
+                (
+                    "--cursor <n>",
+                    "continue from a feed sequence number (the `cursor` of a previous page)",
+                ),
+                (
+                    "--epoch <ep>",
+                    "the epoch the cursor belongs to (a page's `epoch`; default: the repo's current one)",
+                ),
                 (
                     "--origin <o>",
                     "api (agent/CLI writes) | observed (file edits picked up by sync)",
@@ -903,7 +910,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "gc" => spec(
             s(
-                "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row (refuses unless gc.enabled is set in repo settings)",
+                "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row and the change-feed rows past feed.retain_days / feed.retain_entries (refuses unless gc.enabled is set in repo settings)",
             ),
             vec![s("gc [--dry-run] [--vacuum]")],
             opts(&[
@@ -920,13 +927,13 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "doctor" => spec(
             s(
-                "Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
+                "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)",
             ),
             vec![s("doctor [--json]"), s("doctor --size [--json]")],
             opts(&[
                 (
                     "--size",
-                    "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice",
+                    "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync — the change feed under sync) and table, the file's pages, what VACUUM would reclaim, advice",
                 ),
                 (
                     "--json",

@@ -2266,6 +2266,10 @@ impl Store {
             actor: origin.commit_actor(),
             reason: origin.reason.as_deref(),
             clear_pending: false,
+            // The feed row carries the plan's digest (`spec/store` §3.1
+            // `feed.plan_id`, resolution 3); the recorder's row the intent
+            // record itself.
+            plan_id: Some(&plan.plan_id),
             ops: Some(&record),
         };
         let (committed, moved, commit) =

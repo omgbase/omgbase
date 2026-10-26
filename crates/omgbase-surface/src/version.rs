@@ -13,7 +13,7 @@
 //! the tool answers with this crate's own version and nulls, which is the
 //! shape the fixture runner records. Port of `packages/core/src/version.ts`.
 
-use omgbase_store::{CapabilityState, Store};
+use omgbase_store::Store;
 use serde_json::{Map, Value as Json, json};
 
 use crate::catalog::Profile;
@@ -98,55 +98,36 @@ fn specs(build: &BuildInfo) -> Json {
 
 /// Is an `embedding.provider` configured for `repo_id` (`None`: the
 /// workspace layer alone) — `spec/sync` §3 resolution, a non-blank string?
+/// (The sync layer's, re-exported: `sync_status` reports the same states.)
 pub fn semantic_configured(store: &Store, repo_id: Option<&str>) -> bool {
-    omgbase_sync::resolve_settings(store, repo_id)
-        .ok()
-        .and_then(|s| s.get("embedding").cloned())
-        .and_then(|e| e.get("provider").and_then(Json::as_str).map(str::to_owned))
-        .is_some_and(|p| !p.trim().is_empty())
+    omgbase_sync::semantic_configured(store, repo_id)
 }
 
-/// The capability manifest as `version` reports it (Phase 2; the 6.0 draft's
-/// §2.3, states only; byte for byte the reference's `capabilityStates`):
+/// The capability manifest as `version` reports it (Phase 2; `spec/surface`
+/// §4, states only; byte for byte the reference's `capabilityStates`):
 /// `{ history: { state }, semantic: { state } }` — `history` is `enabled`
 /// while the store carries the recorder, else `disabled` (no manifest row
-/// exists before Phase 3); `semantic` follows the discovery rule
+/// exists before Phase 3e); `semantic` follows the discovery rule
 /// (`phase-1-contracts.md` §7 resolution 1) read here as well as at
 /// composition: `disabled` when the store runs without the module or no
 /// provider is configured for the repository, `unavailable` when the
 /// configured one failed to start, `enabled` otherwise — never from the
 /// vectors. Without a store nothing is configured and no module runs: both
-/// `disabled`.
+/// `disabled`. The computation is the sync layer's
+/// ([`omgbase_sync::capability_states`]), which `sync_status` shares (4.0).
 pub fn capabilities(store: Option<&Store>, repo_id: Option<&str>) -> Json {
-    let (history, semantic) = match store {
-        Some(s) => {
-            let history = if s.history().is_some() {
-                CapabilityState::Enabled
-            } else {
-                CapabilityState::Disabled
-            };
-            let semantic = match s.semantic_state() {
-                CapabilityState::Enabled if !semantic_configured(s, repo_id) => {
-                    CapabilityState::Disabled
-                }
-                state => state,
-            };
-            (history, semantic)
-        }
-        None => (CapabilityState::Disabled, CapabilityState::Disabled),
-    };
-    json!({
-        "history": { "state": history.as_str() },
-        "semantic": { "state": semantic.as_str() },
-    })
+    omgbase_sync::capability_states(store, repo_id)
 }
 
 /// The `version` result: `{ engine, version, components, specs, schema,
-/// mcp, runtime, commit, built, profile, capabilities }`. `store` supplies
-/// `schema` (its `PRAGMA user_version`; `null` without one) and the
+/// mcp, runtime, commit, built, profile, capabilities, epoch }`. `store`
+/// supplies `schema` (its `PRAGMA user_version`; `null` without one) and the
 /// capability states ([`capabilities`]); `profile` is the catalog profile
 /// the host serves (§4 "Profiles", 4.3) — a server's `--tools`, and `Full`
-/// for the CLI's own `version` verb and a library embedding.
+/// for the CLI's own `version` verb and a library embedding; `epoch` (6.0,
+/// the last key) the default repository's feed epoch (`spec/store` §3.1
+/// `repos.epoch` — the first half of a `changes_since` cursor), `null`
+/// without a repository.
 pub fn version_info(
     store: Option<&Store>,
     build: &BuildInfo,
@@ -168,6 +149,12 @@ pub fn version_info_for(
         None => Json::Null,
     };
     let runtime = build.rustc.clone().unwrap_or_else(|| "rustc".to_owned());
+    // The default repository's feed epoch (`spec/surface` §4 `version.epoch`,
+    // 6.0); null when none selects or the store does not know it.
+    let epoch: Option<String> = match (store, repo_id) {
+        (Some(s), Some(r)) => omgbase_store::repo_epoch(s.conn(), r).ok(),
+        _ => None,
+    };
     Ok(json!({
         "engine": "rust",
         "version": build.version,
@@ -180,6 +167,7 @@ pub fn version_info_for(
         "built": build.built,
         "profile": profile.as_str(),
         "capabilities": capabilities(store, repo_id),
+        "epoch": epoch,
     }))
 }
 
@@ -239,11 +227,14 @@ mod tests {
                 "commit",
                 "built",
                 "profile",
-                "capabilities"
+                "capabilities",
+                "epoch"
             ]
         );
+        assert_eq!(v["epoch"], Json::Null, "no repository selected");
         let none = version_info(None, &BuildInfo::default(), Profile::Full).unwrap();
         assert_eq!(none["schema"], Json::Null);
+        assert_eq!(none["epoch"], Json::Null);
         assert_eq!(
             none["capabilities"],
             json!({ "history": { "state": "disabled" }, "semantic": { "state": "disabled" } })
@@ -269,6 +260,23 @@ mod tests {
         let repo = store.create_repo("r").unwrap();
         assert_eq!(literal(&store, Some(&repo)), DISABLED);
         assert_eq!(literal(&store, None), DISABLED);
+        // The default repository's epoch rides `version` (6.0, the last key).
+        let v = version_info_for(
+            Some(&store),
+            Some(&repo),
+            &BuildInfo::default(),
+            Profile::Full,
+        )
+        .unwrap();
+        assert!(v["epoch"].as_str().is_some_and(|e| e.starts_with("ep_")));
+        assert_eq!(
+            v.as_object()
+                .unwrap()
+                .keys()
+                .next_back()
+                .map(String::as_str),
+            Some("epoch")
+        );
         // A provider configured at the workspace layer: enabled, for the
         // repo and for the workspace alone.
         let mut ws = omgbase_sync::Settings::new();

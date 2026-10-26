@@ -1,23 +1,30 @@
-//! Checkpoints (`spec/sync/README.md` §4.1): one `checkpoints` row per batch
-//! observed through the filesystem fast path or the adapter driver, then the
-//! pool sweep — the row and the sweep in **one** transaction, so a batch
-//! never leaves a checkpoint whose sweep did not run (or the reverse). Each
-//! member's commit is still its own transaction (`spec/store` §5.4).
+//! The batch and the status row (`spec/sync/README.md` §4.1, 4.0): every
+//! batch observed through the filesystem fast path or the adapter driver
+//! updates the repository's reserved **status row** of `sync_state` —
+//! `(repo_id, '', '')` with `last_batch_ts`, `last_batch_id`,
+//! `last_batch_files` — then sweeps the pool: the row and the sweep in **one**
+//! transaction, so a batch never leaves a status whose sweep did not run (or
+//! the reverse). Each member's commit is still its own transaction
+//! (`spec/store` §5.4). Since store 17.0 (D4) a batch records no row of its
+//! own: the `checkpoints` table is gone, its id is the feed's `batch_id` (the
+//! first committing member's commit id, which every member's feed row
+//! carries) and no `cp` is minted.
 
 use std::path::Path;
 
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, BatchOutcome, Store};
-use rusqlite::params;
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use crate::error::Result;
 use crate::fs::FileSystem;
 
-/// What a checkpoint produced, in batch order.
+/// What a batch produced, in batch order (§4.1, 4.0): `batch_id` is the
+/// feed's `batch_id` — `None` when nothing committed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CheckpointResult {
-    pub checkpoint_id: String,
+pub struct BatchResult {
+    pub batch_id: Option<String>,
     /// Paths that produced observed commits.
     pub ingested: Vec<String>,
     /// Echoes: the hash already matched.
@@ -28,12 +35,16 @@ pub struct CheckpointResult {
     pub conflicted: Vec<String>,
 }
 
-impl CheckpointResult {
-    /// `{ checkpoint_id, ingested, suppressed, deleted, conflicted }`.
+/// The name the result carried through `spec/sync` 3.x (`checkpoint_id`
+/// then; `batch_id` since 4.0).
+pub type CheckpointResult = BatchResult;
+
+impl BatchResult {
+    /// `{ batch_id, ingested, suppressed, deleted, conflicted }`.
     #[must_use]
     pub fn to_json(&self) -> Value {
         serde_json::json!({
-            "checkpoint_id": self.checkpoint_id,
+            "batch_id": self.batch_id,
             "ingested": self.ingested,
             "suppressed": self.suppressed,
             "deleted": self.deleted,
@@ -42,39 +53,84 @@ impl CheckpointResult {
     }
 }
 
-/// The `files` column of a checkpoint: `[[path, old_hash | null, new_hash |
-/// null], …]` in batch order.
-#[must_use]
-pub fn files_json(outcomes: &[BatchOutcome]) -> Value {
-    Value::Array(
-        outcomes
-            .iter()
-            .map(|o| match o {
-                BatchOutcome::Deleted(d) => {
-                    serde_json::json!([d.path, d.old_hash_hex, Value::Null])
-                }
-                BatchOutcome::Observed(ob) => {
-                    serde_json::json!([ob.path, ob.old_hash_hex, ob.new_hash_hex])
-                }
-            })
-            .collect(),
-    )
+/// The last observed batch as the status row records it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastBatch {
+    pub ts: String,
+    /// The feed's `batch_id`; `None` when the batch committed nothing.
+    pub batch_id: Option<String>,
+    /// The member count.
+    pub files: i64,
 }
 
-/// §4.1: bucket the outcomes, **mint `cp`**, insert the row and sweep the
-/// pool at `ts` (`spec/store` §5.5) in one transaction: a failing sweep
-/// rolls the row back.
+impl LastBatch {
+    /// `{ ts, batchId, files }` as `sync_status.lastBatch` carries it.
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        serde_json::json!({ "ts": self.ts, "batchId": self.batch_id, "files": self.files })
+    }
+}
+
+/// The batch's id (`spec/store` §5.4 step 5, D4): the first committing
+/// member's commit id, or `None` when nothing committed.
+#[must_use]
+pub fn batch_id_of(outcomes: &[BatchOutcome]) -> Option<String> {
+    outcomes.iter().find_map(|o| match o {
+        BatchOutcome::Deleted(d) => d.commit_id.clone(),
+        BatchOutcome::Observed(ob) => ob.commit_id.clone(),
+    })
+}
+
+/// The repository's status row (§4.1; `spec/store` §3.1 `sync_state`):
+/// `(repo_id, '', '')` with the last batch's `ts`, `batch_id` and member
+/// count. Runs on the caller's connection (the batch's transaction).
+pub fn write_status_row(
+    conn: &Connection,
+    repo_id: &str,
+    ts: &str,
+    batch_id: Option<&str>,
+    files: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO sync_state (repo_id, source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files) VALUES (?1, '', '', NULL, NULL, ?2, ?3, ?4)
+         ON CONFLICT(repo_id, source_id, path) DO UPDATE SET last_batch_ts = excluded.last_batch_ts, last_batch_id = excluded.last_batch_id, last_batch_files = excluded.last_batch_files",
+        params![repo_id, ts, batch_id, files],
+    )?;
+    Ok(())
+}
+
+/// The last observed batch of the repository (the status row), or `None`
+/// when none ran.
+pub fn last_batch(conn: &Connection, repo_id: &str) -> Result<Option<LastBatch>> {
+    let row: Option<(Option<String>, Option<String>, Option<i64>)> = conn
+        .query_row(
+            "SELECT last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ?1 AND source_id = '' AND path = ''",
+            params![repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((Some(ts), batch_id, files)) => Some(LastBatch {
+            ts,
+            batch_id,
+            files: files.unwrap_or(0),
+        }),
+        _ => None,
+    })
+}
+
+/// §4.1: bucket the outcomes, write the status row and sweep the pool at
+/// `ts` (`spec/store` §5.5) in one transaction: a failing sweep rolls the
+/// row back. Nothing is minted — the batch's id is the feed's (D4).
 pub fn finish_checkpoint(
     store: &mut Store,
     repo_id: &str,
     outcomes: &[BatchOutcome],
     ts: &str,
-    git_head: Option<&str>,
-) -> Result<CheckpointResult> {
-    let checkpoint_id = store.mint("cp")?;
-    let mut result = CheckpointResult {
-        checkpoint_id: checkpoint_id.clone(),
-        ..CheckpointResult::default()
+) -> Result<BatchResult> {
+    let mut result = BatchResult {
+        batch_id: batch_id_of(outcomes),
+        ..BatchResult::default()
     };
     for o in outcomes {
         match o {
@@ -95,15 +151,12 @@ pub fn finish_checkpoint(
         }
     }
     let tx = store.transaction()?;
-    tx.execute(
-        "INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![
-            checkpoint_id,
-            repo_id,
-            ts,
-            files_json(outcomes).to_string(),
-            git_head
-        ],
+    write_status_row(
+        &tx,
+        repo_id,
+        ts,
+        result.batch_id.as_deref(),
+        i64::try_from(outcomes.len()).unwrap_or(i64::MAX),
     )?;
     omgbase_store::derived::sweep_pool(&tx, ts)?;
     tx.commit()?;
@@ -111,8 +164,7 @@ pub fn finish_checkpoint(
 }
 
 /// §4.1 `process_checkpoint`: read each path under `root` (`None` when
-/// absent), `observe_batch`, record the checkpoint.
-#[allow(clippy::too_many_arguments)]
+/// absent), `observe_batch`, write the status row.
 pub fn process_checkpoint(
     store: &mut Store,
     repo_id: &str,
@@ -120,9 +172,8 @@ pub fn process_checkpoint(
     root: &Path,
     paths: &[String],
     ts: &str,
-    git_head: Option<&str>,
     config: &Config,
-) -> Result<CheckpointResult> {
+) -> Result<BatchResult> {
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
         items.push(BatchItem {
@@ -131,7 +182,7 @@ pub fn process_checkpoint(
         });
     }
     let outcomes = store.observe_batch(repo_id, &items, ts, config)?;
-    finish_checkpoint(store, repo_id, &outcomes, ts, git_head)
+    finish_checkpoint(store, repo_id, &outcomes, ts)
 }
 
 #[cfg(test)]
@@ -139,12 +190,27 @@ mod tests {
     use super::*;
     use crate::fs::MemFileSystem;
     use omgbase_store::SequentialMinter;
-    use rusqlite::Connection;
 
     const TS: &str = "2026-09-26T10:00:00.000Z";
+    const TS2: &str = "2026-09-26T10:01:00.000Z";
+
+    fn status_row(
+        store: &Store,
+        repo: &str,
+    ) -> Option<(Option<String>, Option<String>, Option<i64>)> {
+        store
+            .conn()
+            .query_row(
+                "SELECT last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ?1 AND source_id = '' AND path = ''",
+                params![repo],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .unwrap()
+    }
 
     #[test]
-    fn checkpoint_buckets_and_files_column() {
+    fn batch_buckets_batch_id_and_the_status_row() {
         let mut store =
             Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
         let repo = store.create_repo("fixture").unwrap();
@@ -156,24 +222,45 @@ mod tests {
             .iter()
             .map(|s| (*s).to_owned())
             .collect();
-        let r = process_checkpoint(
-            &mut store,
-            &repo,
-            &fs,
-            root,
-            &paths,
-            TS,
-            None,
-            &Config::default(),
-        )
-        .unwrap();
-        assert_eq!(r.checkpoint_id, "cp_0");
+        let r = process_checkpoint(&mut store, &repo, &fs, root, &paths, TS, &Config::default())
+            .unwrap();
+        assert_eq!(r.batch_id.as_deref(), Some("c_0"));
         assert_eq!(r.ingested, ["a.md"]);
         assert_eq!(r.conflicted, ["c.md"]);
         assert!(r.deleted.is_empty(), "nothing was live at gone.md");
         assert!(r.suppressed.is_empty());
+        // Both committing members' feed rows carry the batch id; the first is its own.
+        let batches: Vec<(String, String)> = {
+            let mut stmt = store
+                .conn()
+                .prepare("SELECT commit_id, batch_id FROM feed WHERE repo_id = ?1 ORDER BY seq")
+                .unwrap();
+            stmt.query_map(params![repo], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(
+            batches,
+            [
+                ("c_0".to_owned(), "c_0".to_owned()),
+                ("c_1".to_owned(), "c_0".to_owned())
+            ]
+        );
+        assert_eq!(
+            status_row(&store, &repo),
+            Some((Some(TS.to_owned()), Some("c_0".to_owned()), Some(3)))
+        );
+        assert_eq!(
+            last_batch(store.conn(), &repo).unwrap(),
+            Some(LastBatch {
+                ts: TS.to_owned(),
+                batch_id: Some("c_0".to_owned()),
+                files: 3
+            })
+        );
 
-        // Echo + a real deletion, with a git head.
+        // Echo + a real deletion: the tombstone is the batch's first commit.
         fs.remove("c.md");
         let r2 = process_checkpoint(
             &mut store,
@@ -181,41 +268,61 @@ mod tests {
             &fs,
             root,
             &paths,
-            TS,
-            Some("abc123"),
+            TS2,
             &Config::default(),
         )
         .unwrap();
-        assert_eq!(r2.checkpoint_id, "cp_1");
+        assert_eq!(r2.batch_id.as_deref(), Some("c_2"));
         assert_eq!(r2.suppressed, ["a.md"]);
         assert_eq!(r2.deleted, ["c.md"]);
         assert_eq!(r2.to_json()["deleted"], serde_json::json!(["c.md"]));
+        assert_eq!(r2.to_json()["batch_id"], "c_2");
+        assert_eq!(
+            status_row(&store, &repo),
+            Some((Some(TS2.to_owned()), Some("c_2".to_owned()), Some(3)))
+        );
 
-        let rows: Vec<(String, String, Option<String>)> = {
-            let mut stmt = store
-                .conn()
-                .prepare(
-                    "SELECT id, files, git_head FROM checkpoints WHERE repo_id = ?1 ORDER BY rowid",
-                )
-                .unwrap();
-            stmt.query_map(params![repo], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .unwrap()
-                .map(|r| r.unwrap())
-                .collect()
-        };
-        assert_eq!(rows.len(), 2);
-        let files: Value = serde_json::from_str(&rows[0].1).unwrap();
-        assert_eq!(files.as_array().unwrap().len(), 3);
-        assert_eq!(files[0][0], "a.md");
-        assert_eq!(files[0][1], Value::Null);
-        assert_eq!(files[0][2].as_str().unwrap().len(), 64);
-        assert_eq!(files[2], serde_json::json!(["gone.md", null, null]));
-        assert_eq!(rows[1].2.as_deref(), Some("abc123"));
-        let files2: Value = serde_json::from_str(&rows[1].1).unwrap();
-        assert_eq!(files2[0][1], files2[0][2], "an echo repeats the hash");
-        assert_eq!(files2[1][2], Value::Null);
-        assert!(files2[1][1].is_string(), "the gone member's prior hash");
-        assert!(!rows[0].1.contains(' '), "compact JSON like JSON.stringify");
+        // An empty batch (every member an echo): a row with no batch id.
+        let r3 = process_checkpoint(
+            &mut store,
+            &repo,
+            &fs,
+            root,
+            &["a.md".to_owned()],
+            TS2,
+            &Config::default(),
+        )
+        .unwrap();
+        assert_eq!(r3.batch_id, None);
+        assert_eq!(
+            status_row(&store, &repo),
+            Some((Some(TS2.to_owned()), None, Some(1)))
+        );
+        assert_eq!(
+            last_batch(store.conn(), &repo).unwrap().unwrap().to_json(),
+            serde_json::json!({ "ts": TS2, "batchId": null, "files": 1 })
+        );
+        // No `checkpoints` table, no `cp` minted (D4).
+        let has_table: Option<i64> = store
+            .conn()
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'checkpoints'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(has_table, None);
+        let cps: i64 = store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM id_claims WHERE prefix = 'cp'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cps, 0);
+        assert_eq!(last_batch(store.conn(), "rp_nope").unwrap(), None);
     }
 
     // ---- transaction hygiene: the statement stream ---------------------------------------
@@ -271,31 +378,35 @@ mod tests {
         log[end].starts_with("COMMIT").then_some(begin)
     }
 
-    fn checkpoint_count(store: &Store) -> i64 {
+    fn status_rows(store: &Store) -> i64 {
         store
             .conn()
-            .query_row("SELECT count(*) FROM checkpoints", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM sync_state WHERE source_id = '' AND path = ''",
+                [],
+                |r| r.get(0),
+            )
             .unwrap()
     }
 
-    /// §4.1: the `checkpoints` row and the pool sweep are one transaction.
+    /// §4.1: the status row and the pool sweep are one transaction.
     #[test]
-    fn checkpoint_row_and_sweep_share_one_transaction() {
+    fn status_row_and_sweep_share_one_transaction() {
         let mut store =
             Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
         let repo = store.create_repo("fixture").unwrap();
         start_trace(store.conn());
-        let r = finish_checkpoint(&mut store, &repo, &[], TS, None).unwrap();
-        assert_eq!(r.checkpoint_id, "cp_0");
+        let r = finish_checkpoint(&mut store, &repo, &[], TS).unwrap();
+        assert_eq!(r.batch_id, None);
         let log = traced();
-        let row = tx_of(&log, "INSERT INTO checkpoints");
+        let row = tx_of(&log, "INSERT INTO sync_state");
         assert!(row.is_some(), "the row rides a transaction: {log:#?}");
         assert_eq!(
             row,
             tx_of(&log, "DELETE FROM resurrection_pool WHERE expires_ts"),
             "… the same one as the sweep: {log:#?}"
         );
-        assert_eq!(checkpoint_count(&store), 1);
+        assert_eq!(status_rows(&store), 1);
         assert!(store.conn().is_autocommit(), "nothing left open");
 
         // Through `process_checkpoint` too (a member commit is its own
@@ -311,26 +422,25 @@ mod tests {
             Path::new("/r"),
             &paths,
             TS,
-            None,
             &Config::default(),
         )
         .unwrap();
         let log = traced();
         let member = tx_of(&log, "INSERT INTO commits");
-        let row = tx_of(&log, "INSERT INTO checkpoints");
+        let row = tx_of(&log, "INSERT INTO sync_state");
         assert!(member.is_some() && row.is_some(), "{log:#?}");
         assert_ne!(member, row, "the member's commit is its own transaction");
         assert_eq!(
             row,
             tx_of(&log, "DELETE FROM resurrection_pool WHERE expires_ts")
         );
-        assert_eq!(checkpoint_count(&store), 2);
+        assert_eq!(status_rows(&store), 1, "one status row per repository");
     }
 
-    /// Failure injection: a sweep that fails rolls the checkpoint row back,
+    /// Failure injection: a sweep that fails rolls the status row back,
     /// leaving neither half.
     #[test]
-    fn a_failing_sweep_leaves_no_checkpoint_row() {
+    fn a_failing_sweep_leaves_no_status_row() {
         let mut store =
             Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
         let repo = store.create_repo("fixture").unwrap();
@@ -339,16 +449,16 @@ mod tests {
             .execute_batch("DROP TABLE resurrection_pool")
             .unwrap();
         start_trace(store.conn());
-        let err = finish_checkpoint(&mut store, &repo, &[], TS, None).unwrap_err();
+        let err = finish_checkpoint(&mut store, &repo, &[], TS).unwrap_err();
         assert!(
             err.to_string().contains("resurrection_pool"),
             "the sweep failed: {err}"
         );
-        assert_eq!(checkpoint_count(&store), 0, "the row was rolled back");
+        assert_eq!(status_rows(&store), 0, "the row was rolled back");
         assert!(store.conn().is_autocommit(), "the transaction is closed");
         let log = traced();
         assert!(
-            log.iter().any(|s| s.starts_with("INSERT INTO checkpoints")),
+            log.iter().any(|s| s.starts_with("INSERT INTO sync_state")),
             "the row was attempted: {log:#?}"
         );
         assert!(

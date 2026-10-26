@@ -117,6 +117,12 @@ impl From<omgbase_store::Error> for SurfaceError {
             // `spec/surface` §2 (4.9): a read of an archived revision whose
             // segment is not attached or not on disk — `{ rev, archive,
             // path? }`, `path` only when the segment is recorded.
+            // `spec/surface` §3 (6.0): a `changes_since` cursor the feed no
+            // longer serves — `expired_cursor { epoch, oldest, head }`, never
+            // retriable, the message pinned (`data.epoch` names an argument).
+            omgbase_store::Error::ExpiredCursor(x) => {
+                Self::with_data("expired_cursor", x.message(), x.data())
+            }
             e @ omgbase_store::Error::RevisionArchived { .. } => {
                 let message = e.to_string();
                 let omgbase_store::Error::RevisionArchived { rev, archive, path } = e else {
@@ -155,6 +161,16 @@ impl From<omgbase_sync::Error> for SurfaceError {
     fn from(e: omgbase_sync::Error) -> Self {
         match e {
             omgbase_sync::Error::Store(s) => Self::from(s),
+            omgbase_sync::Error::FeedExpired {
+                epoch,
+                oldest,
+                head,
+                message,
+            } => Self::with_data(
+                "expired_cursor",
+                message,
+                json!({ "epoch": epoch, "oldest": oldest, "head": head }),
+            ),
             omgbase_sync::Error::RepoNotFound {
                 message,
                 candidates,
@@ -225,6 +241,29 @@ mod tests {
             "revision \"r_1\" is archived in segment s_0 at /x/s.db, which is not on disk"
         );
         assert_eq!(e.data.unwrap()["path"], "/x/s.db");
+    }
+
+    #[test]
+    fn expired_cursor_carries_the_position_and_is_never_retriable() {
+        let e = SurfaceError::from(omgbase_store::Error::ExpiredCursor(
+            omgbase_store::ExpiredCursor {
+                cursor: 1,
+                given: "ep_0".into(),
+                epoch: "ep_0".into(),
+                oldest: 3,
+                head: 4,
+            },
+        ));
+        assert_eq!(e.code, "expired_cursor");
+        assert!(!e.retriable);
+        assert_eq!(
+            e.message,
+            "cursor 1 of epoch ep_0 has expired — the feed now begins at (ep_0, 3); rescan the repository and resume from head 4"
+        );
+        assert_eq!(
+            e.data,
+            Some(json!({ "epoch": "ep_0", "oldest": 3, "head": 4 }))
+        );
     }
 
     #[test]

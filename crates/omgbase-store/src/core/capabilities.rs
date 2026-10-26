@@ -3,11 +3,11 @@
 //! oracle, as traits the composition layer implements and hands down.
 //!
 //! - [`HistoryRecorder`] — what the recorder receives per committed
-//!   transition (the commit row, each document's revision, the matcher's
-//!   verdicts, a move) and the history reads the store exposes (the bytes at
-//!   a revision, the feed, the rendered hashes the recovery path compares,
-//!   the projection rebuild, the mark-and-sweep, the retention and archive
-//!   entry points). The default implementation is today's code moved behind
+//!   transition (the commit row — the feed row's twin — each document's
+//!   revision, the matcher's verdicts) and the history reads the store
+//!   exposes (the bytes at a revision, a digest's disposition counts, the
+//!   projection rebuild, the mark-and-sweep, the retention and archive entry
+//!   points). The default implementation is today's code moved behind
 //!   the trait (`history::Recorder`); nothing in `core/` names it.
 //! - [`SemanticProvider`] — the semantic capability as the query path, the
 //!   `blocks_resolve` tool, the CLI's `embed`/`status` verbs and the drain
@@ -48,7 +48,7 @@ use crate::core::semantic_shapes::{
     SemanticFreshness, SemanticQueue, VectorHit,
 };
 use crate::core::size::{SizeArchived, SizeRetention};
-use crate::core::writers::{NewCommit, TreeInputBlock};
+use crate::core::writers::{CommitRecord, TreeInputBlock};
 use crate::error::{Error, Result};
 
 // ---- the identity oracle --------------------------------------------------------------
@@ -78,8 +78,8 @@ pub trait IdentityClaims {
     fn hold(&self, conn: &Connection, ids: &[&str]) -> Result<()>;
 
     /// Is `id` in use under `prefix` — §2.1: one probe on `id_claims` for a
-    /// core-minted prefix (`d`, `b`, `r`, `x`, `e`, `rp`, `src`), the table
-    /// probe for `c`/`s`/`cp`.
+    /// core-minted prefix (`d`, `b`, `c`, `r`, `x`, `e`, `rp`, `src`, `ep`),
+    /// the table probe for the recorder's `s`.
     fn is_claimed(&self, conn: &Connection, prefix: &str, id: &str) -> Result<bool>;
 
     /// The claims prune (§7.3) at the clock `now` under the settings layers
@@ -165,74 +165,9 @@ pub struct GcResult {
     /// `identity.claims_retain_days` (0 while the setting is null, and on a
     /// dry run).
     pub claims_released: usize,
-}
-
-/// One revision a commit wrote (the change feed, `spec/sync` §6).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DigestRevision {
-    pub doc: String,
-    pub path: String,
-    /// Hex of the revision's `rendered_hash`.
-    pub content_hash: String,
-}
-
-/// One commit of the feed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CommitDigest {
-    pub commit: String,
-    pub seq: i64,
-    pub ts: String,
-    pub origin: String,
-    pub actor: Option<String>,
-    /// A human line (the fixtures do not pin it).
-    pub summary: String,
-    pub revisions: Vec<DigestRevision>,
-}
-
-/// A page of the feed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChangesPage {
-    pub digests: Vec<CommitDigest>,
-    /// The last digest's `seq`, or the input cursor when the page is empty.
-    pub cursor: i64,
-    /// More commits follow.
-    pub truncated: bool,
-    /// The repo's max `seq` (0 when it has no commits).
-    pub head: i64,
-}
-
-impl ChangesPage {
-    /// The page as the MCP surface renders it (`camelCase` as the reference).
-    #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "digests": self.digests.iter().map(CommitDigest::to_json).collect::<Vec<_>>(),
-            "cursor": self.cursor,
-            "truncated": self.truncated,
-            "head": self.head,
-        })
-    }
-}
-
-impl CommitDigest {
-    /// The digest as the MCP surface renders it (`spec/sync` §6, 3.0): the
-    /// digest's own keys describe a commit and stay bare; a revision is a
-    /// `revisions` row rendered, so it takes the row's engine names
-    /// `{ _id, _path, _hash }` (`spec/surface` §1.2, 5.0).
-    #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "commit": self.commit,
-            "seq": self.seq,
-            "ts": self.ts,
-            "origin": self.origin,
-            "actor": self.actor,
-            "summary": self.summary,
-            "revisions": self.revisions.iter().map(|r| serde_json::json!({
-                "_id": r.doc, "_path": r.path, "_hash": r.content_hash,
-            })).collect::<Vec<_>>(),
-        })
-    }
+    /// §7.4 (17.0): the feed rows pruned under `feed.retain_days` /
+    /// `feed.retain_entries` (and the cap); 0 on a dry run.
+    pub feed_pruned: usize,
 }
 
 /// The history figures of the size report (`spec/store` §7 "Size", 14.2 and
@@ -252,15 +187,12 @@ pub struct HistorySizeFigures {
 pub trait HistoryRecorder {
     // ---- the accepted transition ----------------------------------------------------
 
-    /// `spec/store` §5.4 step 5: the commit row — **mints `c`**, `seq = 1 +
-    /// max(seq)` over the repo. Returns `(commit_id, seq)`. Every write
-    /// entry point records one before any current-state row.
-    fn new_commit(
-        &self,
-        tx: &Connection,
-        mint: &mut Mint<'_>,
-        input: &NewCommit<'_>,
-    ) -> Result<(String, i64)>;
+    /// `spec/store` §5.4 step 15 (17.0, 3d): the `commits` row — the log's
+    /// copy of the feed row the core appended (`core::feed::append_feed_row`),
+    /// under the same `commit_id`, `epoch` and `seq`, with `ops` (the ADR-003
+    /// intent record of an api commit) — and the recorder's hold on the
+    /// commit id's claim (§2.1).
+    fn record_commit(&self, tx: &Connection, commit: &CommitRecord<'_>) -> Result<()>;
 
     /// §5.4 step 15 (17.0): the Merkle tree (full or delta over the
     /// recorder's OWN previous captured revision), the frontmatter blob (raw
@@ -307,17 +239,15 @@ pub trait HistoryRecorder {
     // `rendered_hash`/`previous_rendered_hash` in 3c — the pending row carries
     // `prior_hash` and the materializer renders from the current rows.)
 
-    /// The change feed (`spec/sync` §6): the repo's commits with `seq >
-    /// cursor`, optionally of one `origin`, `limit + 1` fetched to set
-    /// `truncated`.
-    fn changes_since(
+    /// The disposition counts of a captured commit (`kind → n` in `kind`
+    /// order, `same` never persisted) for a `changes_since` digest's summary
+    /// — `None` when the recorder has no `commits` row for it (the feed is the
+    /// core's; `core::feed`).
+    fn disposition_counts(
         &self,
         conn: &Connection,
-        repo_id: &str,
-        cursor: i64,
-        limit: usize,
-        origin: Option<&str>,
-    ) -> Result<ChangesPage>;
+        commit_id: &str,
+    ) -> Result<Option<Vec<(String, i64)>>>;
 
     // ---- the projection, the mark and the sweep -------------------------------------
 

@@ -41,6 +41,9 @@ use crate::Store;
 pub use crate::core::capabilities::DispositionRow;
 use crate::core::capabilities::{HistoryRecorder, RevisionTransition, require_history};
 use crate::core::codec::canonical_attrs;
+use crate::core::feed::{
+    FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
+};
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
@@ -55,7 +58,7 @@ use crate::order_key::key_between;
 use crate::properties::{doc_blocks, write_doc_properties};
 use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
-use crate::writers::{NewCommit, Origin, TreeInputBlock, assign_fresh_ids, assign_from_map};
+use crate::writers::{Origin, TreeInputBlock, assign_fresh_ids, assign_from_map};
 
 /// One member of a batch: the bytes now at `path`, or `None` when the path
 /// is gone.
@@ -114,6 +117,8 @@ pub struct DeleteOutcome {
     pub path: String,
     /// The tombstoned doc, or `None` when nothing was live (a no-op).
     pub doc_id: Option<String>,
+    /// The tombstone's commit (17.0, 3d — the feed row), or `None` for a no-op.
+    pub commit_id: Option<String>,
     pub old_hash_hex: Option<String>,
 }
 
@@ -581,20 +586,24 @@ fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
 }
 
 /// §5.4 steps 1–3 and 6–15 for one document against an open transaction
-/// `tx` and the commit row `commit_id` already written in it at `ts` (step 5
-/// is the caller's: [`Store::commit_ingest`] writes one row per document, the
+/// `tx` and the feed row `commit` already written in it at `ts` (step 5 is
+/// the caller's: [`Store::commit_ingest`] writes one row per document, the
 /// `api` path of [`crate::effects`] one row per request — store 13.7). Mints
 /// `d` for a new path, `r` (the head, step 6), then `x`/`e` through `mint`,
 /// which must be the store's minter over `tx`. Nothing here opens a
-/// transaction of its own.
+/// transaction of its own. `moved_from` is the path the document was at
+/// before this commit when the commit also moves it (a `docs_move` whose
+/// moved document is rewritten by the same request, `spec/mutate` §6): the
+/// feed entry is then `moved` with that `from_path` (D11) rather than
+/// `changed`.
 ///
 /// The history half — step 15: the captured revision and its bodies
 /// ([`HistoryRecorder::record_revision`]) and the verdicts
 /// ([`HistoryRecorder::record_dispositions`]) — goes through `history`, in
 /// the same place in the statement order; the current-state half (the doc
-/// row with its frontmatter raw, the head, the pool, the `blocks` refresh
-/// with every row's own bytes and timestamps, nodes, properties, edges, the
-/// pointers) is the core's own.
+/// row with its frontmatter raw, the head and its feed entry, the pool, the
+/// `blocks` refresh with every row's own bytes and timestamps, nodes,
+/// properties, edges, the pointers) is the core's own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ingest_in(
     tx: &Connection,
@@ -604,9 +613,11 @@ pub(crate) fn ingest_in(
     plan: &IngestPlan<'_>,
     ts: &str,
     expires: &str,
-    commit_id: &str,
+    commit: &FeedRow,
+    moved_from: Option<&str>,
 ) -> Result<Committed> {
     let minter = mint;
+    let commit_id = commit.commit_id.as_str();
     let tree = plan.tree;
     let source = plan.source;
     let (fm_block, _) = split_frontmatter(tree);
@@ -630,6 +641,8 @@ pub(crate) fn ingest_in(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
+    let is_new = existing.is_none();
+    let mut revived = false;
     let doc_id = match existing {
         Some((id, deleted_at)) => {
             tx.execute(
@@ -640,6 +653,7 @@ pub(crate) fn ingest_in(
             // phantom edges that accrued at its path while it was
             // tombstoned re-point to it.
             if deleted_at.is_some() {
+                revived = true;
                 adopt_phantoms(tx, plan.path, &id)?;
             }
             id
@@ -676,6 +690,32 @@ pub(crate) fn ingest_in(
     let rendered_hash = sha256(source.as_bytes());
     let head = minter.mint("r")?;
     minter.claim("r", &head, Some(repo_id), ts)?;
+    // §5.4 step 5 (17.0, 3d): the document's feed entry, under the commit's
+    // feed row — written now that the token exists, in this transaction:
+    // `moved` when the commit also moved the document here, `created` for
+    // an inserted or revived row, else `changed`.
+    let entry_kind = match moved_from {
+        Some(from) if from != plan.path => FeedEntryKind::Moved,
+        _ if is_new || revived => FeedEntryKind::Created,
+        _ => FeedEntryKind::Changed,
+    };
+    append_feed_entry(
+        tx,
+        &NewFeedEntry {
+            repo_id,
+            epoch: &commit.epoch,
+            seq: commit.seq,
+            doc_id: &doc_id,
+            path: plan.path,
+            head: Some(&head),
+            hash: Some(&rendered_hash[..]),
+            kind: entry_kind,
+            from_path: match entry_kind {
+                FeedEntryKind::Moved => moved_from,
+                _ => None,
+            },
+        },
+    )?;
     history.record_revision(
         tx,
         &RevisionTransition {
@@ -920,19 +960,46 @@ pub(crate) fn ingest_in(
     })
 }
 
-/// §5.6's tombstone against an open transaction at its commit's `ts`: with
-/// `expires`, every live block is pooled first (the observed deletion),
-/// each carrying its `created_at` (D6); without, nothing is (`docs_delete`,
-/// `spec/mutate` §6). Then the FTS rows go, the live blocks take `deleted_at
-/// = ts`, the doc row `deleted_at = ts, updated_at = ts` — liveness is a
-/// change of the document's own; the head is KEPT and no new one is minted
-/// (17.0, D11). A pool row carries `deleted_at = ts` (17.0, I6).
+/// §5.6's tombstone against an open transaction at its commit's `ts`: the
+/// document's `deleted` feed entry first (17.0, 3d — no head, no hash, the
+/// path as the tombstone leaves it); then, with `expires`, every live block
+/// is pooled (the observed deletion), each carrying its `created_at` (D6) —
+/// without, nothing is (`docs_delete`, `spec/mutate` §6). Then the FTS rows
+/// go, the live blocks take `deleted_at = ts`, the doc row `deleted_at = ts,
+/// updated_at = ts` — liveness is a change of the document's own; the head is
+/// KEPT and no new one is minted (17.0, D11). A pool row carries `deleted_at =
+/// ts` (17.0, I6).
 pub(crate) fn tombstone_in(
     tx: &Connection,
+    repo_id: &str,
+    commit: &FeedRow,
     doc_id: &str,
     ts: &str,
     expires: Option<&str>,
 ) -> Result<()> {
+    let path: Option<String> = tx
+        .query_row(
+            "SELECT path FROM docs WHERE doc_id = ?1",
+            params![doc_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(path) = &path {
+        append_feed_entry(
+            tx,
+            &NewFeedEntry {
+                repo_id,
+                epoch: &commit.epoch,
+                seq: commit.seq,
+                doc_id,
+                path,
+                head: None,
+                hash: None,
+                kind: FeedEntryKind::Deleted,
+                from_path: None,
+            },
+        )?;
+    }
     if let Some(expires) = expires {
         tx.execute(
             "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, created_at, deleted_at, expires_ts)
@@ -1084,7 +1151,11 @@ impl Store {
         }
 
         // ---- pass 2: commit, in batch order -------------------------------------------
+        // The batch id (§5.4 step 5, D4): the first committing member's
+        // commit id; every later member's feed row carries it. An echo
+        // commits nothing and names none.
         let mut out = Vec::with_capacity(pending.len());
+        let mut batch_id: Option<String> = None;
         for p in pending {
             match p {
                 Pending::Echo(outcome) => out.push(BatchOutcome::Observed(outcome)),
@@ -1094,12 +1165,23 @@ impl Store {
                     old_hash_hex,
                     ..
                 } => {
-                    if let Some(id) = &doc_id {
-                        self.tombstone_observed_deletion(repo_id, id, ts, &expires)?;
+                    let commit_id = match &doc_id {
+                        Some(id) => Some(self.tombstone_observed_deletion(
+                            repo_id,
+                            id,
+                            ts,
+                            &expires,
+                            batch_id.as_deref(),
+                        )?),
+                        None => None,
+                    };
+                    if batch_id.is_none() {
+                        batch_id.clone_from(&commit_id);
                     }
                     out.push(BatchOutcome::Deleted(DeleteOutcome {
                         path,
                         doc_id,
+                        commit_id,
                         old_hash_hex,
                     }));
                 }
@@ -1119,7 +1201,11 @@ impl Store {
                         &expires,
                         conflicted,
                         clear_pending,
+                        batch_id.as_deref(),
                     )?;
+                    if batch_id.is_none() {
+                        batch_id = Some(c.commit_id.clone());
+                    }
                     // §5.4 (14.2): the outcome counts every verdict the
                     // matcher produced, `same` included — it describes what
                     // the matcher saw; the table describes what changed
@@ -1149,6 +1235,8 @@ impl Store {
     /// commit with the matcher's dispositions, `docs.conflicted` set to
     /// `conflicted` in the same transaction — and, with `clear_pending`,
     /// the path's pending row deleted in it too (§5.7: the file won).
+    /// `batch_id` is the observed batch's (D4), when the caller runs one.
+    #[allow(clippy::too_many_arguments)]
     fn commit_prepared(
         &mut self,
         repo_id: &str,
@@ -1157,6 +1245,7 @@ impl Store {
         expires: &str,
         conflicted: bool,
         clear_pending: bool,
+        batch_id: Option<&str>,
     ) -> Result<Committed> {
         let plan = prepared.plan(
             &mut self.ids.at(&self.conn),
@@ -1171,6 +1260,7 @@ impl Store {
             ts,
             expires,
             clear_pending.then_some(prepared.path.as_str()),
+            batch_id,
         )
     }
 
@@ -1225,6 +1315,7 @@ impl Store {
             actor,
             reason,
             clear_pending: false,
+            plan_id: None,
             ops: None,
         };
         self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
@@ -1253,6 +1344,7 @@ impl Store {
             actor: None,
             reason: None,
             clear_pending: true,
+            plan_id: None,
             ops: None,
         };
         self.reconciling_commit(repo_id, path, source, ts, &head, config, Guard::None)?
@@ -1319,15 +1411,17 @@ impl Store {
             reason: None,
             conflicted: None,
         };
-        self.commit_ingest(repo_id, &plan, ts, &expires, None)
+        self.commit_ingest(repo_id, &plan, ts, &expires, None, None)
     }
 
-    /// §5.4 steps 1–13 in one transaction of their own, under a commit row
-    /// of their own (the reference's `ingestFile`): BEGIN, step 5, then
+    /// §5.4 steps 1–13 in one transaction of their own, under a feed row of
+    /// their own (the reference's `ingestFile`): BEGIN, step 5 (the core's
+    /// feed row, the recorder's `commits` row under the same id), then
     /// [`ingest_in`], the pending row at `clear_pending_at` deleted (§5.7),
     /// COMMIT. The observed path and the fresh ingest commit through this;
     /// the `api` path runs N [`ingest_in`]s under one row via
-    /// [`Store::commit_effects`](crate::effects).
+    /// [`Store::commit_effects`](crate::effects). `batch_id` is the observed
+    /// batch's first committing member (D4), `None` for a batch of one.
     pub(crate) fn commit_ingest(
         &mut self,
         repo_id: &str,
@@ -1335,27 +1429,30 @@ impl Store {
         ts: &str,
         expires: &str,
         clear_pending_at: Option<&str>,
+        batch_id: Option<&str>,
     ) -> Result<Committed> {
         let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
             let mut mint = self.ids.at(&tx);
-            // 5. The commit row.
-            let (commit_id, _) = history.new_commit(
+            // 5. The feed row.
+            let commit = append_feed_row(
                 &tx,
                 &mut mint,
-                &NewCommit {
+                Some(history),
+                &NewFeedRow {
                     repo_id,
                     ts,
                     origin: plan.origin,
                     actor: plan.actor,
                     reason: plan.reason,
-                    checkpoint_id: None,
+                    batch_id,
+                    plan_id: None,
                     ops: None,
                 },
             )?;
             let committed = ingest_in(
-                &tx, &mut mint, history, repo_id, plan, ts, expires, &commit_id,
+                &tx, &mut mint, history, repo_id, plan, ts, expires, &commit, None,
             )?;
             if let Some(path) = clear_pending_at {
                 delete_pending(&tx, repo_id, path)?;
@@ -1367,29 +1464,34 @@ impl Store {
     }
 
     /// §5.6: tombstone a live doc whose path is gone, in one transaction of
-    /// its own: an `observed deletion` commit (mints `c`), then
-    /// [`tombstone_in`] with the pool. Returns the commit id.
+    /// its own: an `observed deletion` feed row (mints `c`; the recorder's
+    /// `commits` row under the same id; `batch_id` the observed batch's,
+    /// D4), then [`tombstone_in`] with its `deleted` entry and the pool.
+    /// Returns the commit id.
     pub(crate) fn tombstone_observed_deletion(
         &mut self,
         repo_id: &str,
         doc_id: &str,
         ts: &str,
         expires: &str,
+        batch_id: Option<&str>,
     ) -> Result<String> {
         let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let commit_id = {
             let mut mint = self.ids.at(&tx);
-            let (commit_id, _) = history.new_commit(
+            let commit = append_feed_row(
                 &tx,
                 &mut mint,
-                &NewCommit {
+                Some(history),
+                &NewFeedRow {
                     reason: Some("observed deletion"),
-                    ..NewCommit::observed(repo_id, ts)
+                    batch_id,
+                    ..NewFeedRow::observed(repo_id, ts)
                 },
             )?;
-            tombstone_in(&tx, doc_id, ts, Some(expires))?;
-            commit_id
+            tombstone_in(&tx, repo_id, &commit, doc_id, ts, Some(expires))?;
+            commit.commit_id
         };
         tx.commit()?;
         Ok(commit_id)
@@ -1427,6 +1529,7 @@ impl Store {
                 return Ok(DeleteOutcome {
                     path: path.to_owned(),
                     doc_id: None,
+                    commit_id: None,
                     old_hash_hex: None,
                 });
             }
@@ -1445,14 +1548,16 @@ impl Store {
             return Ok(DeleteOutcome {
                 path: path.to_owned(),
                 doc_id: None,
+                commit_id: None,
                 old_hash_hex: None,
             });
         };
-        self.tombstone_observed_deletion(repo_id, &doc_id, ts, &expires)?;
+        let commit_id = self.tombstone_observed_deletion(repo_id, &doc_id, ts, &expires, None)?;
         sweep_pool(&self.conn, ts)?;
         Ok(DeleteOutcome {
             path: path.to_owned(),
             doc_id: Some(doc_id),
+            commit_id: Some(commit_id),
             old_hash_hex: file_hash.as_deref().map(hex),
         })
     }
