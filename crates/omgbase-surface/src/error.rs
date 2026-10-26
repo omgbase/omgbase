@@ -123,6 +123,20 @@ impl From<omgbase_store::Error> for SurfaceError {
             omgbase_store::Error::ExpiredCursor(x) => {
                 Self::with_data("expired_cursor", x.message(), x.data())
             }
+            // `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a
+            // writer without the history module refused by
+            // `writer_requires` — `capability_unavailable { capability:
+            // "history", state: "unavailable" }`, retriable (an engine that
+            // carries the module can), the reference's message byte for byte.
+            omgbase_store::Error::HistoryWriterRequired => {
+                let mut e = Self::with_data(
+                    "capability_unavailable",
+                    omgbase_store::HISTORY_WRITER_REQUIRED_MESSAGE,
+                    json!({ "capability": "history", "state": "unavailable" }),
+                );
+                e.retriable = true;
+                e
+            }
             e @ omgbase_store::Error::RevisionArchived { .. } => {
                 let message = e.to_string();
                 let omgbase_store::Error::RevisionArchived { rev, archive, path } = e else {

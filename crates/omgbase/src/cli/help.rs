@@ -927,7 +927,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "doctor" => spec(
             s(
-                "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)",
+                "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, active alerts, SQLite integrity — exit 1 on any failure (CI-able)",
             ),
             vec![s("doctor [--json]"), s("doctor --size [--json]")],
             opts(&[
@@ -937,7 +937,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (
                     "--json",
-                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, advice }`",
+                    "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice }`",
                 ),
             ]),
             vec![],

@@ -3,7 +3,8 @@
 //! keys, the document and block rows the observe commit writes
 //! ([`observe`], [`writers`], [`properties`], [`graph`], [`derived`]), the
 //! change feed and its retention ([`feed`], 17.0 — D7/M5) over the settings
-//! layers ([`settings`]), the
+//! layers ([`settings`]), the capability manifest and the alert channel
+//! ([`manifest`], [`alerts`] — 17.0, 3e-ii), the
 //! current reads ([`read`], [`text_search`]), the mutation host side
 //! ([`mutate`], [`effects_plan`], [`docs_ops`], [`macros`], [`links`],
 //! [`sugar`], [`plan`]), recovery ([`materialize`]) and the size report
@@ -14,6 +15,7 @@
 //! this directory against the extensions' module stems, with
 //! `boundary-allowlist.txt` listing what Phase 3 still has to remove.
 
+pub mod alerts;
 pub mod capabilities;
 pub mod claims;
 pub mod codec;
@@ -28,6 +30,7 @@ pub mod history_shapes;
 pub mod ids;
 pub mod links;
 pub mod macros;
+pub mod manifest;
 pub mod materialize;
 pub mod mint;
 pub mod mutate;

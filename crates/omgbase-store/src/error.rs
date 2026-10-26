@@ -75,6 +75,12 @@ pub enum Error {
     /// do not consume the base, a delta inside an archive segment. A corrupt
     /// store — the read fails rather than guessing.
     Delta(String),
+    /// `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer
+    /// without the history module on a repository whose manifest requires
+    /// capture (`capabilities.writer_requires`). The surface's
+    /// `capability_unavailable { capability: "history", state: "unavailable"
+    /// }`, retriable; the message is the reference's, byte for byte.
+    HistoryWriterRequired,
     /// Anything else, with a message.
     Other(String),
 }
@@ -124,6 +130,9 @@ impl fmt::Display for Error {
             Error::RetentionPolicy(msg) => f.write_str(msg),
             Error::ExpiredCursor(e) => f.write_str(&e.message()),
             Error::Delta(msg) => write!(f, "delta: {msg}"),
+            Error::HistoryWriterRequired => {
+                f.write_str(crate::core::manifest::HISTORY_WRITER_REQUIRED_MESSAGE)
+            }
             Error::Other(msg) => f.write_str(msg),
         }
     }

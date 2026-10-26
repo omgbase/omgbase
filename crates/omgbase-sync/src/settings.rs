@@ -3,6 +3,7 @@
 //! (overrides) — resolved by a deep merge.
 
 use omgbase_store::Store;
+use omgbase_store::manifest::{refresh_semantic_manifest, refresh_semantic_manifests};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value};
 
@@ -45,22 +46,54 @@ pub fn repo_own_settings(store: &Store, repo_id: &str) -> Result<Settings> {
     Ok(parse(text))
 }
 
-/// Replace the workspace blob.
+// Every settings write re-derives the semantic manifest row (`spec/store`
+// §3.1 `capabilities`, 17.0 3e-ii — resolution 1: `enabled` iff
+// `embedding.provider` resolves): the workspace layer touches every
+// repository's row, a repo's own layer that repository's. The Phase 4 `embed
+// enable|disable` verbs take this over; until then the manifest follows the
+// setting, in the same transaction.
+
+/// Replace the workspace blob (at the wall clock; the CLI passes its pinned
+/// clock through [`write_workspace_settings_at`]).
 pub fn write_workspace_settings(store: &Store, settings: &Settings) -> Result<()> {
-    store.conn().execute(
+    write_workspace_settings_at(store, settings, &crate::now_ts())
+}
+
+/// [`write_workspace_settings`] at `now` — the instant a flipped semantic
+/// row's coverage interval opens or closes at.
+pub fn write_workspace_settings_at(store: &Store, settings: &Settings, now: &str) -> Result<()> {
+    let conn = store.conn();
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "INSERT INTO workspace_settings (id, settings) VALUES (0, ?1)
          ON CONFLICT(id) DO UPDATE SET settings = excluded.settings",
         params![Value::Object(settings.clone()).to_string()],
     )?;
+    refresh_semantic_manifests(&tx, now)?;
+    tx.commit()?;
     Ok(())
 }
 
-/// Replace a repo's blob.
+/// Replace a repo's blob (at the wall clock; see [`write_repo_settings_at`]).
 pub fn write_repo_settings(store: &Store, repo_id: &str, settings: &Settings) -> Result<()> {
-    store.conn().execute(
+    write_repo_settings_at(store, repo_id, settings, &crate::now_ts())
+}
+
+/// [`write_repo_settings`] at `now`.
+pub fn write_repo_settings_at(
+    store: &Store,
+    repo_id: &str,
+    settings: &Settings,
+    now: &str,
+) -> Result<()> {
+    let conn = store.conn();
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "UPDATE repos SET settings = ?1 WHERE repo_id = ?2",
         params![Value::Object(settings.clone()).to_string(), repo_id],
     )?;
+    refresh_semantic_manifest(&tx, repo_id, now)?;
+    tx.commit()?;
     Ok(())
 }
 

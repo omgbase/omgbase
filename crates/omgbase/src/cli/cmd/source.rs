@@ -102,7 +102,7 @@ fn add(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let lock = cli.seams.lock_options();
     let (repo_id, ingested) = {
         let store = cli.store_mut()?;
-        let repo_id = omgbase_sync::ensure_repo(store, &slug, None)?;
+        let repo_id = omgbase_sync::ensure_repo_at(store, &slug, None, &now)?;
         omgbase_sync::ensure_adapter(store, FS_ADAPTER, FS_ADAPTER_COMMAND, &[])?;
         let mut config = serde_json::Map::new();
         config.insert("root".to_owned(), json!(abs_str));

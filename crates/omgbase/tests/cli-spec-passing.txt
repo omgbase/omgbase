@@ -17,6 +17,7 @@ admin::config-unknown-sub
 admin::doctor
 admin::doctor-after-api-delete
 admin::doctor-after-observed-delete
+admin::doctor-alert
 admin::doctor-json
 admin::doctor-size
 admin::doctor-size-after-rm

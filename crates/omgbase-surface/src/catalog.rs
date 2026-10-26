@@ -1122,11 +1122,19 @@ impl Surface {
         )
     }
 
-    /// Run a tool: its JSON result, or the error envelope.
+    /// Run a tool: its JSON result, or the error envelope. The alert channel
+    /// (`spec/surface` §4 "Alerts", 6.0 — `spec/store` §3.1 `alerts`): every
+    /// successful result that is a JSON object gains a top-level `alerts`
+    /// member holding the ACTIVE alerts of the call's repository (the `repo`
+    /// argument's, else the default) — only when there are any, so a quiet
+    /// repository's results are byte for byte what they were. An error
+    /// envelope never carries it; a result that is a JSON array
+    /// (`observe_many`) cannot. The CLI's own calls ([`Surface::call_result`])
+    /// do not pass here: they print the channel to stderr after the verb.
     pub fn call(&mut self, name: &str, args: Json) -> ToolOutcome {
         match self.call_result(name, &args) {
             Ok(body) => ToolOutcome {
-                body,
+                body: self.with_alerts(body, &args),
                 is_error: false,
             },
             Err(e) => ToolOutcome {
@@ -1134,6 +1142,40 @@ impl Surface {
                 is_error: true,
             },
         }
+    }
+
+    /// `body` with the call's repository's active alerts appended as its last
+    /// member when there are any (the reference's `withAlerts`): the `repo`
+    /// slug resolved against `repos`, an unknown slug leaving the result as
+    /// it is (the tool said so); the channel re-derived at this surface's clock.
+    fn with_alerts(&mut self, body: Json, args: &Json) -> Json {
+        let Json::Object(mut payload) = body else {
+            return body;
+        };
+        let repo_id = match args.get("repo").and_then(Json::as_str) {
+            None => self.default_repo.clone(),
+            Some(slug) => match self
+                .store
+                .conn()
+                .query_row(
+                    "SELECT repo_id FROM repos WHERE slug = ?1",
+                    params![slug],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()
+            {
+                Ok(Some(id)) => id,
+                _ => return Json::Object(payload),
+            },
+        };
+        let now = self.now();
+        match omgbase_store::alerts::active_alerts_json(self.store.conn(), &repo_id, &now) {
+            Ok(Json::Array(alerts)) if !alerts.is_empty() => {
+                payload.insert("alerts".to_owned(), Json::Array(alerts));
+            }
+            _ => {}
+        }
+        Json::Object(payload)
     }
 
     fn now(&mut self) -> String {

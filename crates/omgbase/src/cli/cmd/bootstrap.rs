@@ -119,6 +119,7 @@ fn command_exists(cmd: &str) -> bool {
 }
 
 fn set_provider(cli: &mut Cli, provider: &str) -> Result<()> {
+    let now = cli.now();
     let store = cli.store()?;
     let mut settings = omgbase_sync::workspace_settings(store)?;
     let mut emb = settings
@@ -128,7 +129,7 @@ fn set_provider(cli: &mut Cli, provider: &str) -> Result<()> {
         .unwrap_or_default();
     emb.insert("provider".to_owned(), Json::String(provider.to_owned()));
     settings.insert("embedding".to_owned(), Json::Object(emb));
-    omgbase_sync::write_workspace_settings(store, &settings)?;
+    omgbase_sync::write_workspace_settings_at(store, &settings, &now)?;
     cli.io.err(&cli.style.dim(&format!(
         "  embedding.provider = {provider} (workspace default)"
     )));

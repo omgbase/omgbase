@@ -5,10 +5,13 @@
 //! and the CLI names what it did.
 
 use omgbase_search::{EmbeddingProvider, create_external_provider};
-use omgbase_store::{LIVE_LEAF_SQL, RebuildTarget, SizeReport, format_share, human_bytes};
+use omgbase_store::{
+    LIVE_LEAF_SQL, ManifestState, RebuildTarget, SizeCapability, SizeReport, active_alerts,
+    format_share, human_bytes,
+};
 use omgbase_sync::settings::{
-    Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings,
-    write_workspace_settings,
+    Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings_at,
+    write_workspace_settings_at,
 };
 use serde_json::{Map, Value as Json, json};
 
@@ -177,7 +180,7 @@ struct Check {
     detail: String,
 }
 
-/// `doctor [--json]` — the four checks on the selected repo; exit 1 when any
+/// `doctor [--json]` — the five checks on the selected repo; exit 1 when any
 /// fails. `doctor --size` (cli 4.3) is the size report instead (exit 0). The
 /// `convergence` check — `repos_status.unconverged === 0` — left with the
 /// count in store 17.0 (D9): `file_hash` IS the head's hash by construction
@@ -200,11 +203,12 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         return doctor_size(cli, &report);
     }
     // The selected repo must resolve (`repo_not_found` otherwise); the checks
-    // are store-wide.
-    cli.repo()?;
+    // are store-wide but the alerts are its.
+    let repo = cli.repo()?;
+    let now = cli.now();
     let store = cli.store()?;
     let conn = store.conn();
-    let mut checks: Vec<Check> = Vec::with_capacity(4);
+    let mut checks: Vec<Check> = Vec::with_capacity(5);
 
     // The index holds exactly the live leaf blocks (`spec/search` §1.1),
     // counted from FTS5's shadow table — a `count(*)` on the
@@ -244,6 +248,24 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         name: "capture complete",
         ok: uncaptured == 0,
         detail: format!("{uncaptured} heads without a revision"),
+    });
+
+    // Store 17.0 (3e-ii): the alert channel (`spec/store` §3.1 `alerts`) —
+    // the conditions the engine raised for a human on the selected
+    // repository; any active one fails the check and is named in its detail.
+    let alerts = active_alerts(conn, &repo.repo_id, &now)?;
+    checks.push(Check {
+        name: "alerts",
+        ok: alerts.is_empty(),
+        detail: if alerts.is_empty() {
+            "none active".to_owned()
+        } else {
+            alerts
+                .iter()
+                .map(|a| format!("{}[{}]: {}", a.code, a.severity.as_str(), a.message))
+                .collect::<Vec<_>>()
+                .join("; ")
+        },
     });
 
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
@@ -430,6 +452,17 @@ fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
                 None => "no repository selected".to_owned(),
             },
         ],
+        // 17.0 (3e-ii): the capability manifest of the same repository
+        // (`spec/store` §3.1 `capabilities`): `history  enabled since <ts> |
+        // disabled`, `semantic  enabled (<model>) | disabled`.
+        vec![
+            "history".to_owned(),
+            capability_line(report.capabilities.as_deref(), "history"),
+        ],
+        vec![
+            "semantic".to_owned(),
+            capability_line(report.capabilities.as_deref(), "semantic"),
+        ],
     ];
     for line in columns(&file, &[Align::Left]) {
         out.push(format!("  {line}"));
@@ -438,6 +471,31 @@ fn size_lines(report: &SizeReport, style: &Style) -> Vec<String> {
         out.push(format!("  {} {a}", style.dim("advice:")));
     }
     out
+}
+
+/// The manifest line of one capability: `enabled since <coverage_from>` for
+/// history, `enabled (<model>)` for semantic, `disabled`, or `no repository
+/// selected` like `feed`.
+fn capability_line(capabilities: Option<&[SizeCapability]>, name: &str) -> String {
+    let Some(capabilities) = capabilities else {
+        return "no repository selected".to_owned();
+    };
+    let Some(c) = capabilities
+        .iter()
+        .find(|c| c.capability == name && c.state == ManifestState::Enabled)
+    else {
+        return "disabled".to_owned();
+    };
+    if name == "history" {
+        return match &c.coverage_from {
+            Some(from) => format!("enabled since {from}"),
+            None => "enabled".to_owned(),
+        };
+    }
+    match c.config.get("model").and_then(Json::as_str) {
+        Some(model) => format!("enabled ({model})"),
+        None => "enabled".to_owned(),
+    }
 }
 
 // ---- config ---------------------------------------------------------------------------
@@ -536,6 +594,7 @@ pub fn config(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     cli.workspace()?;
     let scope = resolve_scope(cli)?;
+    let now = cli.now();
     let label = match &scope {
         Scope::Workspace => "workspace",
         Scope::Repo { slug, .. } => slug.as_str(),
@@ -609,16 +668,18 @@ pub fn config(cli: &mut Cli, args: &[String]) -> Result<i32> {
             let (Some(key), Some(raw)) = (args.get(1), args.get(2)) else {
                 return Err(CliError::usage("config set <key> <value>"));
             };
+            // Store 17.0 (3e-ii): a settings write re-derives the semantic
+            // manifest row at the clock (`spec/store` §3.1 `capabilities`).
             match &scope {
                 Scope::Workspace => {
                     let mut s = workspace_settings(store)?;
                     set_path(&mut s, key, coerce(raw));
-                    write_workspace_settings(store, &s)?;
+                    write_workspace_settings_at(store, &s, &now)?;
                 }
                 Scope::Repo { repo_id, .. } => {
                     let mut s = repo_own_settings(store, repo_id)?;
                     set_path(&mut s, key, coerce(raw));
-                    write_repo_settings(store, repo_id, &s)?;
+                    write_repo_settings_at(store, repo_id, &s, &now)?;
                 }
             }
             cli.io
@@ -939,6 +1000,23 @@ mod tests {
                 retain_entries: 10_000,
                 max_entries: 100_000,
             }),
+            capabilities: Some(vec![
+                SizeCapability {
+                    capability: "history",
+                    state: ManifestState::Enabled,
+                    coverage_from: Some("2026-09-27T00:00:00.000Z".into()),
+                    config: Map::new(),
+                },
+                SizeCapability {
+                    capability: "semantic",
+                    state: ManifestState::Enabled,
+                    coverage_from: Some("2026-09-27T00:00:00.000Z".into()),
+                    config: json!({ "model": "gte-base", "dim": 768 })
+                        .as_object()
+                        .cloned()
+                        .unwrap(),
+                },
+            ]),
             advice: vec!["nothing to reclaim".to_owned()],
             detail: None,
         };
@@ -967,9 +1045,38 @@ mod tests {
                 "  archived     2 revisions in 1 segments, 12.0 KB on disk",
                 "  id claims    438 ids claimed",
                 "  feed         epoch ep_0, 20 entries, seq 1..20",
+                "  history      enabled since 2026-09-27T00:00:00.000Z",
+                "  semantic     enabled (gte-base)",
                 "  advice: nothing to reclaim",
             ]
         );
+        // The manifest lines' other forms: disabled, enabled without a
+        // model or a coverage start, and no repository selected.
+        assert_eq!(capability_line(None, "history"), "no repository selected");
+        let rows = [
+            SizeCapability {
+                capability: "history",
+                state: ManifestState::Enabled,
+                coverage_from: None,
+                config: Map::new(),
+            },
+            SizeCapability {
+                capability: "semantic",
+                state: ManifestState::Disabled,
+                coverage_from: None,
+                config: Map::new(),
+            },
+        ];
+        assert_eq!(capability_line(Some(&rows), "history"), "enabled");
+        assert_eq!(capability_line(Some(&rows), "semantic"), "disabled");
+        let bare = [SizeCapability {
+            capability: "semantic",
+            state: ManifestState::Enabled,
+            coverage_from: Some("2026-09-27T00:00:00.000Z".into()),
+            config: Map::new(),
+        }];
+        assert_eq!(capability_line(Some(&bare), "semantic"), "enabled");
+        assert_eq!(capability_line(Some(&bare), "history"), "disabled");
         // Without dbstat the cells are `—` and the fallback line follows the table.
         let blind = SizeReport {
             categories: report

@@ -769,6 +769,11 @@ fn run_schema_case() -> Json {
 
 // ---- §9.3 migrations ----------------------------------------------------------------
 
+/// README §9.3 (17.0, 3e-ii): the clock a migration case runs under — what
+/// step 17 writes where it says "the migration's clock" (the manifest's
+/// `updated_at`, a coverage start with no commit to anchor on).
+const MIGRATION_CLOCK: &str = "2026-09-27T00:00:00.000Z";
+
 fn run_migration_case(c: &Json) -> Json {
     let conn = Connection::open_in_memory().expect("in-memory connection");
     for stmt in c["setup"].as_array().expect("setup array") {
@@ -778,7 +783,12 @@ fn run_migration_case(c: &Json) -> Json {
     let uv = c["user_version"].as_i64().expect("user_version");
     conn.pragma_update(None, "user_version", uv)
         .expect("user_version set");
-    let store = match Store::from_connection(conn, Box::new(SequentialMinter::new())) {
+    let store = match Store::from_connection_at(
+        conn,
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard(),
+        MIGRATION_CLOCK,
+    ) {
         Ok(s) => s,
         // A SQLite failure renders as SQLite's own message, as the reference's
         // does (`migrations::v14-to-v15-…` pins "no such table: block_changes").
@@ -1644,6 +1654,69 @@ fn check_invariants(
 ) -> Vec<String> {
     let conn = store.conn();
     let mut problems = Vec::new();
+
+    // ---- A1 alerts re-derive (17.0, 3e-ii) ------------------------------------------------
+    // An active alert names a condition the store can re-derive, or is
+    // advisory: after re-deriving the channel at the runner's clock (as
+    // every reader of it does — a superseded pending row leaves the backlog
+    // alert stale until then), a `materialization_backlog` alert's
+    // `detail.oldest` is the `created_at` of a pending row of the repository
+    // and `detail.pending` counts at least one; `materialization_failed` and
+    // `writer_refused` are advisory (a past event, cleared by the next
+    // success). Every alert has a §2.4 `since` and a known severity.
+    match omgbase_store::active_alerts(conn, repo_id, &omgbase_store::time::now_ts()) {
+        Err(e) => problems.push(format!("A1: the alert channel cannot be read: {e}")),
+        Ok(_) => {
+            let active: Vec<(String, String, String, String)> = all_rows(
+                conn,
+                "SELECT code, severity, since, detail FROM alerts WHERE repo_id = ?1 AND cleared_at IS NULL ORDER BY since, code",
+                &[&repo_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            );
+            for (code, severity, since, detail) in &active {
+                if !is_spec_ts(since) {
+                    problems.push(format!(
+                        "A1: alert {code} has a malformed since {}",
+                        Json::String(since.clone())
+                    ));
+                }
+                if !["info", "warning", "error"].contains(&severity.as_str()) {
+                    problems.push(format!(
+                        "A1: alert {code} has severity {}",
+                        Json::String(severity.clone())
+                    ));
+                }
+                if code == omgbase_store::MATERIALIZATION_BACKLOG_ALERT {
+                    let d: Json = serde_json::from_str(detail).unwrap_or(Json::Null);
+                    let oldest = d.get("oldest").and_then(Json::as_str);
+                    let named = oldest.is_some_and(|o| {
+                        conn.query_row(
+                            "SELECT 1 FROM pending_materializations WHERE repo_id = ?1 AND created_at = ?2",
+                            [&repo_id as &dyn rusqlite::ToSql, &o],
+                            |_| Ok(()),
+                        )
+                        .optional()
+                        .ok()
+                        .flatten()
+                        .is_some()
+                    });
+                    if !named {
+                        problems.push(format!(
+                            "A1: materialization_backlog names no pending row at {}",
+                            d.get("oldest").cloned().unwrap_or(Json::Null)
+                        ));
+                    }
+                    let pending = d.get("pending").and_then(Json::as_i64);
+                    if pending.is_none_or(|n| n < 1) {
+                        problems.push(format!(
+                            "A1: materialization_backlog counts {} pending rows",
+                            d.get("pending").cloned().unwrap_or(Json::Null)
+                        ));
+                    }
+                }
+            }
+        }
+    }
 
     let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> =
         all_rows(conn, "SELECT hash, bytes, size FROM blobs", &[], |r| {
@@ -3459,13 +3532,20 @@ fn fixture_files_are_well_formed_and_every_case_file_was_loaded() {
     );
     let loaded_names: Vec<String> = loaded.files.iter().map(|f| f.file.clone()).collect();
     assert_eq!(loaded_names, loaded.file_names, "every case file must load");
-    assert!(
-        loaded
-            .file_names
-            .iter()
-            .any(|f| f == "history/edge-transitions.json"),
-        "the recorder suite under cases/history/ (README §9.5) is loaded"
-    );
+    // README §9.5: the recorder suites under `cases/history/` — the
+    // edge-transition projections and, since 3e-ii, the three recorder-only
+    // observation scripts moved there byte-identical.
+    for suite in [
+        "history/edge-transitions.json",
+        "history/garbage.json",
+        "history/delta.json",
+        "history/retention.json",
+    ] {
+        assert!(
+            loaded.file_names.iter().any(|f| f == suite),
+            "the recorder suite {suite} under cases/history/ (README §9.5) is loaded"
+        );
+    }
     for f in &loaded.files {
         assert!(!f.cases.is_empty(), "{}.json has no cases", f.stem);
     }
@@ -3531,7 +3611,8 @@ fn schema_sql_and_version_agree_with_the_spec() {
 /// §3.3 (17.0): the three bundles partition the table set — no table lost or
 /// duplicated against 17.0's single file: the 3d set minus the D9 drops
 /// (`collections`, `inferred_edges`) plus the history bundle's
-/// `edge_transitions`; 32 tables, the history bundle 8, the semantic 2.
+/// `edge_transitions`, and (3e-ii) the core's `capabilities` and `alerts`; 34
+/// tables, the history bundle 8, the semantic 2.
 #[test]
 fn the_three_bundles_partition_the_table_set() {
     fn names(ddl: &str) -> Vec<String> {
@@ -3563,12 +3644,14 @@ fn the_three_bundles_partition_the_table_set() {
         all,
         [
             "adapters",
+            "alerts",
             "archives",
             "attachments",
             "blobs",
             "block_changes",
             "blocks",
             "blocks_fts",
+            "capabilities",
             "commits",
             "dispositions",
             "doc_edges",

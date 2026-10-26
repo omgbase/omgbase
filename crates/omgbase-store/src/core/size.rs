@@ -20,6 +20,7 @@ use serde_json::{Map, Value as Json, json};
 
 use crate::core::capabilities::{HistoryRecorder, IdentityClaims, SemanticProvider};
 use crate::core::feed::{feed_status, repo_feed_policy};
+use crate::core::manifest::{ManifestRow, ManifestState, coverage_from, read_capabilities};
 use crate::error::Result;
 
 /// The six categories, in the report's fixed order.
@@ -53,6 +54,8 @@ pub const TABLE_CATEGORY: &[(&str, &str)] = &[
     ("embeddings", "search"),
     ("doc_embeddings", "search"),
     ("repos", "sync"),
+    ("capabilities", "sync"),
+    ("alerts", "sync"),
     ("sources", "sync"),
     ("adapters", "sync"),
     ("attachments", "sync"),
@@ -82,6 +85,9 @@ pub const SAME_ADVICE_MIN_SHARE: u64 = 25;
 /// of the `history` category's bytes.
 pub const RETENTION_ADVICE_MIN_SHARE: u64 = 10;
 pub const EMBEDDINGS_ADVICE_MIN_SHARE: f64 = 25.0;
+/// 17.0 (3e-ii, contracts §7.5): the claims advice fires when `id_claims`
+/// exceeds this share of the database.
+pub const CLAIMS_ADVICE_MIN_SHARE: u64 = 10;
 
 /// `<n> B` under 1024, else one decimal of KB/MB/GB/TB (1024-based), the
 /// tenths rounded half up — `4096` → `4.0 KB`, `13734297` → `13.1 MB`. Both
@@ -211,6 +217,41 @@ impl SizeFeed {
     }
 }
 
+/// §7.2 (17.0, 3e-ii): one manifest row of the report's repository as the
+/// report carries it (`config` the row's — `{ model?, dim? }` for semantic,
+/// `{}` for history; a repository with no row is `disabled` with no coverage).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SizeCapability {
+    /// `history` | `semantic`.
+    pub capability: &'static str,
+    pub state: ManifestState,
+    /// The first coverage interval's `from`; `None` when none.
+    pub coverage_from: Option<String>,
+    pub config: Map<String, Json>,
+}
+
+impl SizeCapability {
+    fn of(capability: &'static str, row: Option<&ManifestRow>) -> Self {
+        Self {
+            capability,
+            state: row.map_or(ManifestState::Disabled, |r| r.state),
+            coverage_from: coverage_from(row).map(str::to_owned),
+            config: row.map(|r| r.config.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// `{ capability, state, coverage_from, config }`.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        json!({
+            "capability": self.capability,
+            "state": self.state.as_str(),
+            "coverage_from": self.coverage_from,
+            "config": Json::Object(self.config.clone()),
+        })
+    }
+}
+
 /// The whole report.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SizeReport {
@@ -230,6 +271,9 @@ pub struct SizeReport {
     /// else the store's only one; `None` when the store has several and none
     /// was named.
     pub feed: Option<SizeFeed>,
+    /// §7.2 (17.0, 3e-ii): the capability manifest of the report's repository
+    /// (the same selection as `feed`), `history` then `semantic`; `None` like `feed`.
+    pub capabilities: Option<Vec<SizeCapability>>,
     pub advice: Vec<String>,
     /// `Some("dbstat unavailable")` when the SQLite build lacks the virtual table.
     pub detail: Option<&'static str>,
@@ -290,6 +334,12 @@ impl SizeReport {
         m.insert(
             "feed".into(),
             self.feed.as_ref().map_or(Json::Null, SizeFeed::to_json),
+        );
+        m.insert(
+            "capabilities".into(),
+            self.capabilities.as_ref().map_or(Json::Null, |c| {
+                Json::Array(c.iter().map(SizeCapability::to_json).collect())
+            }),
         );
         m.insert("advice".into(), json!(self.advice));
         if let Some(d) = self.detail {
@@ -372,6 +422,24 @@ pub fn size_advice(
             advice.push(format!(
                 "embeddings are {} of the database: a smaller model (`embedding.model` / `embedding.dim`) or `omg embed drain --prune` after a model switch shrinks them",
                 format_share(emb_share)
+            ));
+        }
+    }
+    // 17.0 (3e-ii, contracts §7.5): the identity's own growth — one
+    // `id_claims` row per id ever minted and still held; past a tenth of the
+    // database the claims prune (§7.3) is the knob (dbstat only: the
+    // comparison needs the pages).
+    if let Some(claims) = categories
+        .iter()
+        .find(|c| c.name == "identity")
+        .and_then(|c| c.tables.iter().find(|t| t.name == "id_claims"))
+        && let (Some(bytes), Some(share)) = (claims.bytes, claims.share)
+    {
+        let total: u64 = categories.iter().filter_map(|c| c.bytes).sum();
+        if bytes * 100 > total * CLAIMS_ADVICE_MIN_SHARE {
+            advice.push(format!(
+                "identity claims are {} of the database: set identity.claims_retain_days to release old ids",
+                format_share(share)
             ));
         }
     }
@@ -643,6 +711,18 @@ pub fn size_report_at(
         }
         None => None,
     };
+    // 17.0 (3e-ii): the manifest of the same repository (§3.1 `capabilities`),
+    // `history` then `semantic`.
+    let capabilities = match feed_repo {
+        Some(r) => {
+            let (history, semantic_row) = read_capabilities(conn, r)?;
+            Some(vec![
+                SizeCapability::of("history", history.as_ref()),
+                SizeCapability::of("semantic", semantic_row.as_ref()),
+            ])
+        }
+        None => None,
+    };
     let semantic_tables: &[&str] = semantic.map_or(&[], |s| s.tables());
     let advice = size_advice(
         &file,
@@ -658,6 +738,7 @@ pub fn size_report_at(
         id_claims,
         archived,
         feed,
+        capabilities,
         advice,
         detail: stat.is_none().then_some("dbstat unavailable"),
     })
@@ -741,6 +822,9 @@ mod tests {
         assert_eq!(category_of("pending_materializations"), "recovery");
         assert_eq!(category_of("edge_transitions"), "history");
         assert_eq!(category_of("feed"), "sync");
+        // 17.0 (3e-ii): the manifest per contracts §7.5, the alerts beside it.
+        assert_eq!(category_of("capabilities"), "sync");
+        assert_eq!(category_of("alerts"), "sync");
     }
 
     fn file_of(over: impl FnOnce(&mut SizeFile)) -> SizeFile {
@@ -1113,9 +1197,22 @@ mod tests {
                 "id_claims",
                 "archived",
                 "feed",
+                "capabilities",
                 "advice"
             ]
         );
+        // The store's only repository's manifest (3e-ii): history enabled
+        // from the repository's birth, semantic disabled (nothing configured).
+        assert_eq!(j["capabilities"][0]["capability"], json!("history"));
+        assert_eq!(j["capabilities"][0]["state"], json!("enabled"));
+        assert!(j["capabilities"][0]["coverage_from"].is_string());
+        assert_eq!(j["capabilities"][0]["config"], json!({}));
+        assert_eq!(
+            j["capabilities"][1],
+            json!({ "capability": "semantic", "state": "disabled", "coverage_from": null, "config": {} })
+        );
+        let cap_keys: Vec<&String> = j["capabilities"][0].as_object().unwrap().keys().collect();
+        assert_eq!(cap_keys, ["capability", "state", "coverage_from", "config"]);
         // The store's only repository: its feed — two commits, seq 1..2,
         // the default policy.
         assert_eq!(

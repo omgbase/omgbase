@@ -2595,6 +2595,69 @@ fn check_invariants(
     let conn = store.conn();
     let mut problems = Vec::new();
 
+    // ---- A1 alerts re-derive (17.0, 3e-ii) ------------------------------------------------
+    // An active alert names a condition the store can re-derive, or is
+    // advisory: after re-deriving the channel at the runner's clock (as
+    // every reader of it does — a superseded pending row leaves the backlog
+    // alert stale until then), a `materialization_backlog` alert's
+    // `detail.oldest` is the `created_at` of a pending row of the repository
+    // and `detail.pending` counts at least one; `materialization_failed` and
+    // `writer_refused` are advisory (a past event, cleared by the next
+    // success). Every alert has a §2.4 `since` and a known severity.
+    match omgbase_store::active_alerts(conn, repo_id, &omgbase_store::time::now_ts()) {
+        Err(e) => problems.push(format!("A1: the alert channel cannot be read: {e}")),
+        Ok(_) => {
+            let active: Vec<(String, String, String, String)> = all_rows(
+                conn,
+                "SELECT code, severity, since, detail FROM alerts WHERE repo_id = ?1 AND cleared_at IS NULL ORDER BY since, code",
+                &[&repo_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            );
+            for (code, severity, since, detail) in &active {
+                if !is_spec_ts(since) {
+                    problems.push(format!(
+                        "A1: alert {code} has a malformed since {}",
+                        Json::String(since.clone())
+                    ));
+                }
+                if !["info", "warning", "error"].contains(&severity.as_str()) {
+                    problems.push(format!(
+                        "A1: alert {code} has severity {}",
+                        Json::String(severity.clone())
+                    ));
+                }
+                if code == omgbase_store::MATERIALIZATION_BACKLOG_ALERT {
+                    let d: Json = serde_json::from_str(detail).unwrap_or(Json::Null);
+                    let oldest = d.get("oldest").and_then(Json::as_str);
+                    let named = oldest.is_some_and(|o| {
+                        conn.query_row(
+                            "SELECT 1 FROM pending_materializations WHERE repo_id = ?1 AND created_at = ?2",
+                            [&repo_id as &dyn rusqlite::ToSql, &o],
+                            |_| Ok(()),
+                        )
+                        .optional()
+                        .ok()
+                        .flatten()
+                        .is_some()
+                    });
+                    if !named {
+                        problems.push(format!(
+                            "A1: materialization_backlog names no pending row at {}",
+                            d.get("oldest").cloned().unwrap_or(Json::Null)
+                        ));
+                    }
+                    let pending = d.get("pending").and_then(Json::as_i64);
+                    if pending.is_none_or(|n| n < 1) {
+                        problems.push(format!(
+                            "A1: materialization_backlog counts {} pending rows",
+                            d.get("pending").cloned().unwrap_or(Json::Null)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> =
         all_rows(conn, "SELECT hash, bytes, size FROM blobs", &[], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))

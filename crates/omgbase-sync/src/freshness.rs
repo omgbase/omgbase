@@ -208,7 +208,7 @@ pub fn freshness_sweep(
     ts: &str,
     config: &Config,
 ) -> Result<SweepResult> {
-    let materialized = materialize_pending(store, repo_id, fs, root)?;
+    let materialized = materialize_pending(store, repo_id, fs, root, ts)?;
     let cache = load_cache(store, repo_id)?;
     let disk = snapshot(fs, root)?;
     let plan = {
@@ -248,16 +248,18 @@ pub fn freshness_sweep(
     })
 }
 
-/// §4.3 step 0 (store 14.0): [`Store::materialize_pending`] through the
-/// filesystem's write seam; nothing when the filesystem has none.
+/// §4.3 step 0 (store 14.0): [`Store::materialize_pending_at`] through the
+/// filesystem's write seam at `now` (the alert channel's clock, store 17.0
+/// §5.8); nothing when the filesystem has none.
 pub fn materialize_pending(
     store: &mut Store,
     repo_id: &str,
     fs: &dyn FileSystem,
     root: &Path,
+    now: &str,
 ) -> Result<Vec<String>> {
     match fs.doc_store(root) {
-        Some(mut ds) => Ok(store.materialize_pending(repo_id, ds.as_mut())?),
+        Some(mut ds) => Ok(store.materialize_pending_at(repo_id, ds.as_mut(), now)?),
         None => Ok(Vec::new()),
     }
 }

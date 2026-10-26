@@ -201,7 +201,55 @@ pub fn run_command(cli: &mut Cli, command: &str, rest: &[String]) -> Result<i32>
                 cli.prog, resolved.name
             ),
         )),
+        Ok(code) => {
+            print_alerts(cli, resolved.name, help);
+            Ok(code)
+        }
         other => other,
+    }
+}
+
+/// The verbs whose own run is a server or a session, not a command over the
+/// repository.
+const NO_ALERTS: &[&str] = &["mcp", "shell"];
+
+/// The alert channel on the CLI (`spec/cli` §3.1, store 17.0 — `spec/store`
+/// §3.1 `alerts`): after a verb that ran against a repository, every ACTIVE
+/// alert of that repository is one stderr line, `alert[<severity>] <code>:
+/// <message>`, so a stalled materialization or a refused writer is told
+/// where the user works. Help, the workspace-less verbs, the servers (`mcp`,
+/// `shell` — whose lines each run through here) and `--server` (no local
+/// store) print none; a repository that does not resolve prints none either
+/// (the verb said so).
+fn print_alerts(cli: &mut Cli, name: &str, help: bool) {
+    if help
+        || cli.flags.server.is_some()
+        || NO_WORKSPACE_OK.contains(&name)
+        || NO_ALERTS.contains(&name)
+        || !cli.engine_open()
+    {
+        // (A verb that closed its store — `sync --watch` — ran a session, not
+        // a command: the reference's read of its closed database throws and
+        // prints nothing either.)
+        return;
+    }
+    let now = cli.now();
+    let Ok(repo) = cli.repo() else {
+        return;
+    };
+    let Ok(store) = cli.store() else {
+        return;
+    };
+    let Ok(alerts) = omgbase_store::active_alerts(store.conn(), &repo.repo_id, &now) else {
+        return;
+    };
+    for a in alerts {
+        cli.io.err(&format!(
+            "alert[{}] {}: {}",
+            a.severity.as_str(),
+            a.code,
+            a.message
+        ));
     }
 }
 

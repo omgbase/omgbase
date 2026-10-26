@@ -48,6 +48,7 @@ use crate::core::codec::attrs_from_json;
 use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
+use crate::core::manifest::require_writer;
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges, retarget_open_edges};
 use crate::links::InboundLink;
@@ -334,6 +335,10 @@ impl Store {
         let Store {
             conn, ids, history, ..
         } = self;
+        // `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer
+        // without the recorder refuses on a repository whose manifest
+        // requires capture.
+        require_writer(conn, history.is_some(), repo_id, ts)?;
         let history = require_history(history.as_deref())?;
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
         #[cfg(test)]

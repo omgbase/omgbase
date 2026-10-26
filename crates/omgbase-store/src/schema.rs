@@ -178,6 +178,7 @@ pub(crate) fn migrate(
     conn: &Connection,
     ids: &mut IdSource,
     history: Option<&dyn HistoryRecorder>,
+    now: &str,
 ) -> Result<()> {
     let current = user_version(conn)?;
     if current == 0 {
@@ -197,15 +198,17 @@ pub(crate) fn migrate(
         // build's has no `feed`, a `checkpoints` table and
         // `commits.checkpoint_id`; a 3a–3d build's has
         // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
-        // `collections`/`inferred_edges` tables. Each part of the step is
-        // idempotent, so finish it here rather than spend a schema version on
-        // a dev-only state. (A 17 database with no `docs` table — the
+        // `collections`/`inferred_edges` tables; a 3a–3e-i build's has no
+        // `capabilities`/`alerts`. Each part of the step is idempotent, so
+        // finish it here rather than spend a schema version on a dev-only
+        // state. (A 17 database with no `docs` table — the
         // `already-current-is-untouched` fixture — is left exactly as it is.)
         if table_exists(conn, "docs")? {
-            migrate_v17_claims(conn)?;
-            migrate_v17_pending(conn)?;
-            migrate_v17_feed(conn, ids)?;
+            migrate_v17_claims(conn, now)?;
+            migrate_v17_pending(conn, now)?;
+            migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
+            migrate_v17_manifest(conn, now)?;
         }
         return Ok(());
     }
@@ -231,12 +234,15 @@ pub(crate) fn migrate(
             // `commits` row, the status row, `checkpoints` dropped, then the
             // edges-and-drops half (3e-i): `edges` open-only with the
             // intervals moved to `edge_transitions`, `properties` without its
-            // commit columns, `collections`/`inferred_edges` dropped.
-            migrate_v17(conn, history)?;
-            migrate_v17_claims(conn)?;
-            migrate_v17_pending(conn)?;
-            migrate_v17_feed(conn, ids)?;
+            // commit columns, `collections`/`inferred_edges` dropped, then the
+            // manifest half (3e-ii): the `capabilities` rows per repository
+            // and the empty `alerts` table.
+            migrate_v17(conn, history, now)?;
+            migrate_v17_claims(conn, now)?;
+            migrate_v17_pending(conn, now)?;
+            migrate_v17_feed(conn, ids, now)?;
             migrate_v17_edges(conn)?;
+            migrate_v17_manifest(conn, now)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -391,15 +397,18 @@ ALTER TABLE revisions_v15 RENAME TO revisions;",
 /// identity half of the step — the pool's `deleted_at` and the `id_claims`
 /// backfill (3b) — is [`migrate_v17_claims`], idempotent on its own so a 3a
 /// database at 17 can finish the step on open.
-fn migrate_v17(conn: &Connection, history: Option<&dyn HistoryRecorder>) -> Result<()> {
+fn migrate_v17(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    clock: &str,
+) -> Result<()> {
     if has_column(conn, "docs", "head")? != Some(false) {
         return Ok(());
     }
-    let clock = crate::core::time::now_ts();
     conn.pragma_update(None, "foreign_keys", "OFF")?;
     let rebuilt = (|| -> Result<()> {
         let tx = conn.unchecked_transaction()?;
-        migrate_v17_in(&tx, history, &clock)?;
+        migrate_v17_in(&tx, history, clock)?;
         let violations: i64 = {
             let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
             let rows = stmt.query_map([], |_| Ok(()))?;
@@ -803,11 +812,10 @@ fn rebuild_pool_v17(db: &Connection, clock: &str) -> Result<()> {
 /// 3a/3b database at 17 (a short transaction of its own; the table it
 /// rebuilds has no incoming foreign key). Idempotent: a table that already
 /// carries `head` is left alone, as is a pre-state without the table.
-fn migrate_v17_pending(conn: &Connection) -> Result<()> {
+fn migrate_v17_pending(conn: &Connection, clock: &str) -> Result<()> {
     if has_column(conn, "pending_materializations", "head")? != Some(false) {
         return Ok(());
     }
-    let clock = crate::core::time::now_ts();
     let has_revisions = table_exists(conn, "revisions")?;
     let has_commits = table_exists(conn, "commits")?;
     let tx = conn.unchecked_transaction()?;
@@ -869,8 +877,7 @@ fn migrate_v17_pending(conn: &Connection) -> Result<()> {
 /// upserts, ORing the holders in and keeping the earliest `minted_at`, in the
 /// reference's statement order (the table's `rowid` order is the fixture's
 /// row order). Idempotent: an existing `id_claims` table is left alone.
-fn migrate_v17_claims(conn: &Connection) -> Result<()> {
-    let clock = crate::core::time::now_ts();
+fn migrate_v17_claims(conn: &Connection, clock: &str) -> Result<()> {
     let has_claims = table_exists(conn, "id_claims")?;
     let pool_cols = column_names(conn, "resurrection_pool")?;
     let pool_done = pool_cols.is_empty() || pool_cols.iter().any(|c| c == "deleted_at");
@@ -879,7 +886,7 @@ fn migrate_v17_claims(conn: &Connection) -> Result<()> {
     }
     let tx = conn.unchecked_transaction()?;
     if !pool_done {
-        rebuild_pool_v17(&tx, &clock)?;
+        rebuild_pool_v17(&tx, clock)?;
     }
     if !has_claims {
         tx.execute_batch(&ddl_for(&["id_claims"]))?;
@@ -1041,7 +1048,7 @@ fn parse_move_reason(reason: &str) -> Option<(&str, &str)> {
 /// partial pre-states; a real database always has it). The `ep` ids are
 /// drawn from the store's minter (the fixture minter: `ep_0`, …) without the
 /// oracle, like v13's `src` — a pre-17 database has no `id_claims` to probe.
-fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource) -> Result<()> {
+fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource, clock: &str) -> Result<()> {
     if !table_exists(conn, "repos")? {
         return Ok(());
     }
@@ -1053,7 +1060,6 @@ fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource) -> Result<()> {
     if !needs_epoch && !needs_feed && !needs_commits && !needs_status && !has_checkpoints {
         return Ok(());
     }
-    let clock = crate::core::time::now_ts();
     let has_commits = table_exists(conn, "commits")?;
     let has_claims = table_exists(conn, "id_claims")?;
     conn.pragma_update(None, "foreign_keys", "OFF")?;
@@ -1099,7 +1105,7 @@ fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource) -> Result<()> {
                     tx.execute(
                         "INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES (?1, ?2, 'ep', ?3, 1)
                          ON CONFLICT(id) DO UPDATE SET holders = holders | 1",
-                        params![epoch, repo_id, first_ts.as_deref().unwrap_or(&clock)],
+                        params![epoch, repo_id, first_ts.as_deref().unwrap_or(clock)],
                     )?;
                 }
             }
@@ -1247,7 +1253,7 @@ fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource) -> Result<()> {
             // The prune under the defaults (§7.4) — the settings layers exist
             // on every real database; a partial fixture pre-state may lack them.
             if table_exists(&tx, "workspace_settings")? {
-                crate::core::feed::prune_feed(&tx, &clock)?;
+                crate::core::feed::prune_feed(&tx, clock)?;
             }
             // The `c` claims (§2.1, 3d: the core mints `c` and claims it):
             // bit 0 for every commit the feed holds, bit 1 for every `commits`
@@ -1447,6 +1453,62 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
     rebuilt
 }
 
+/// Step 17 (13)–(14) (3e-ii; §3.4): the `capabilities` manifest and the
+/// `alerts` table (both `schema.sql`'s text through [`ddl_for`]). Per
+/// repository without a manifest: the `history` row `enabled` with one open
+/// coverage interval from its first commit's `ts` (`commits` when the history
+/// bundle is here, else the feed's oldest row, else the migration's clock) and
+/// `writer_requires = 1` — existing repositories keep capturing; the
+/// `semantic` row `enabled` iff `embedding.provider` resolves for it, else
+/// `disabled` (resolution 1, no vectors consulted). `alerts` starts empty.
+/// Idempotent: a repository with its rows is left alone, so a 3a–3e-i
+/// database at 17 finishes the step on open.
+fn migrate_v17_manifest(conn: &Connection, clock: &str) -> Result<()> {
+    if !table_exists(conn, "repos")? {
+        return Ok(());
+    }
+    let had_manifest = table_exists(conn, "capabilities")?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(&ddl_for(&["capabilities"]))?;
+    tx.execute_batch(&ddl_for(&["alerts"]))?;
+    let repos: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT repo_id FROM repos ORDER BY rowid")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
+    let first_ts_sql = if table_exists(&tx, "commits")? {
+        Some("SELECT MIN(ts) FROM commits WHERE repo_id = ?1")
+    } else if table_exists(&tx, "feed")? {
+        Some("SELECT MIN(ts) FROM feed WHERE repo_id = ?1")
+    } else {
+        None
+    };
+    for repo_id in &repos {
+        let has_history_row = had_manifest
+            && tx
+                .query_row(
+                    "SELECT 1 FROM capabilities WHERE repo_id = ?1 AND capability = 'history'",
+                    params![repo_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+        if has_history_row {
+            // The semantic row alone may be missing.
+            crate::core::manifest::ensure_manifest(&tx, repo_id, clock, clock)?;
+            continue;
+        }
+        let first: Option<String> = match first_ts_sql {
+            Some(sql) => tx.query_row(sql, params![repo_id], |r| r.get(0))?,
+            None => None,
+        };
+        let from = first.as_deref().unwrap_or(clock);
+        crate::core::manifest::ensure_manifest(&tx, repo_id, from, clock)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// v13 (ADR-014): `repos.root_path` becomes an `fs` source + attachment.
 fn migrate_v13(conn: &Connection, minter: &mut Mint<'_>) -> Result<()> {
     if has_column(conn, "repos", "root_path")? != Some(true) {
@@ -1563,7 +1625,8 @@ mod tests {
     /// §3.3 (17.0): the three bundles PARTITION the table set — no table
     /// lost or duplicated against 17.0's single file: the 3d set minus the D9
     /// drops (`collections`, `inferred_edges`) plus the history bundle's
-    /// `edge_transitions`; 32 tables, the history bundle 8, the semantic 2.
+    /// `edge_transitions`, and (3e-ii) the core's `capabilities` and `alerts`;
+    /// 34 tables, the history bundle 8, the semantic 2.
     #[test]
     fn the_three_bundles_partition_the_table_set() {
         let created = |sql: &'static str| -> Vec<String> {
@@ -1592,12 +1655,14 @@ mod tests {
             all,
             [
                 "adapters",
+                "alerts",
                 "archives",
                 "attachments",
                 "blobs",
                 "block_changes",
                 "blocks",
                 "blocks_fts",
+                "capabilities",
                 "commits",
                 "dispositions",
                 "doc_edges",

@@ -232,10 +232,23 @@ pub fn sources_for_repo(store: &Store, repo_id: &str) -> Result<Vec<SourceRow>> 
 /// source — `INSERT OR IGNORE` the `fs` adapter, find or create (**mint
 /// `src`**) `<slug>-fs` with `config {"root": <root>}`, attach it.
 pub fn ensure_repo(store: &mut Store, slug: &str, root_path: Option<&str>) -> Result<String> {
+    ensure_repo_at(store, slug, root_path, &crate::now_ts())
+}
+
+/// [`ensure_repo`] with the clock a new repository is born at — its `rp`/`ep`
+/// claims and its manifest rows (`spec/store` §3.1 `capabilities`, 17.0
+/// 3e-ii: the history coverage starts here) stamped `now`; the CLI passes its
+/// pinned clock, the fixture harnesses the spec clock.
+pub fn ensure_repo_at(
+    store: &mut Store,
+    slug: &str,
+    root_path: Option<&str>,
+    now: &str,
+) -> Result<String> {
     if let Some(id) = store.repo_by_slug(slug)? {
         return Ok(id);
     }
-    let repo_id = store.create_repo(slug)?;
+    let repo_id = store.create_repo_at(slug, now)?;
     if let Some(root) = root_path.filter(|r| !r.is_empty()) {
         register_fs_source(store, &repo_id, slug, root)?;
     }

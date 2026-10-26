@@ -31,7 +31,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use omgbase_store::{Config, SequentialMinter};
-use omgbase_sync::{RealFileSystem, Workspace, ensure_repo, freshness_sweep, rebuild_file_stats};
+use omgbase_sync::{
+    RealFileSystem, Workspace, ensure_repo_at, freshness_sweep, rebuild_file_stats,
+};
 use serde_json::Value as Json;
 
 mod common;
@@ -69,6 +71,10 @@ struct Step {
     stdin: Option<String>,
     env: BTreeMap<String, String>,
     files: Vec<(String, Option<String>)>,
+    /// §8 (store 17.0): SQL run verbatim on `<tmp>/.omgbase/omgbase.db`
+    /// before the step (after `files`), one transaction — the device that
+    /// puts rows a verb never writes into the workspace (a stale pending row).
+    sql: Vec<String>,
     expect: Expect,
 }
 
@@ -78,6 +84,7 @@ struct Case {
     workspace: String,
     env: BTreeMap<String, String>,
     files: Vec<(String, Option<String>)>,
+    sql: Vec<String>,
     steps: Vec<Step>,
 }
 
@@ -101,6 +108,16 @@ fn files_of(v: Option<&Json>) -> Vec<(String, Option<String>)> {
         .unwrap_or_default()
 }
 
+fn sql_of(v: Option<&Json>) -> Vec<String> {
+    v.and_then(Json::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn expect_of(v: &Json, at: &str) -> Result<Expect, String> {
     let e = v.get("expect").ok_or_else(|| {
         format!("{at}: missing `expect` (run CLI_SPEC_UPDATE=1 on the reference)")
@@ -119,7 +136,9 @@ fn expect_of(v: &Json, at: &str) -> Result<Expect, String> {
     })
 }
 
-fn step_of(v: &Json, at: &str) -> Result<Step, String> {
+/// A step's shape (`sql` read only for a step of a sequence: a single
+/// invocation's `sql` is the case's, run once before it).
+fn step_of(v: &Json, at: &str, with_sql: bool) -> Result<Step, String> {
     let argv = v
         .get("argv")
         .and_then(Json::as_array)
@@ -136,6 +155,11 @@ fn step_of(v: &Json, at: &str) -> Result<Step, String> {
         stdin: v.get("stdin").and_then(Json::as_str).map(str::to_owned),
         env: str_map(v.get("env")),
         files: files_of(v.get("files")),
+        sql: if with_sql {
+            sql_of(v.get("sql"))
+        } else {
+            Vec::new()
+        },
         expect: expect_of(v, at)?,
     })
 }
@@ -175,9 +199,9 @@ fn load_suites() -> Result<Vec<(String, Vec<Case>)>, String> {
                 Some(steps) => steps
                     .iter()
                     .enumerate()
-                    .map(|(j, s)| step_of(s, &format!("{at}.steps[{j}]")))
+                    .map(|(j, s)| step_of(s, &format!("{at}.steps[{j}]"), true))
                     .collect::<Result<Vec<_>, _>>()?,
-                None => vec![step_of(c, &at)?],
+                None => vec![step_of(c, &at, false)?],
             };
             cases.push(Case {
                 id: at,
@@ -188,6 +212,7 @@ fn load_suites() -> Result<Vec<(String, Vec<Case>)>, String> {
                     .to_owned(),
                 env: str_map(c.get("env")),
                 files: files_of(c.get("files")),
+                sql: sql_of(c.get("sql")),
                 steps,
             });
         }
@@ -304,6 +329,28 @@ fn write_files(tmp: &Path, files: &[(String, Option<String>)]) -> Result<(), Str
     Ok(())
 }
 
+/// §8 (store 17.0): run a case's or a step's `sql` on the workspace database
+/// in one transaction (`<workspace>` substituted), through the library.
+fn run_sql(tmp: &Path, sql: &[String]) -> Result<(), String> {
+    if sql.is_empty() {
+        return Ok(());
+    }
+    let ws = Workspace::open(tmp).map_err(|e| format!("open workspace: {e}"))?;
+    let tmp_str = tmp.to_string_lossy();
+    {
+        let conn = ws.store().conn();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("sql: {e}"))?;
+        for statement in sql {
+            tx.execute(&statement.replace(WORKSPACE_TOKEN, &tmp_str), [])
+                .map_err(|e| format!("sql `{statement}`: {e}"))?;
+        }
+        tx.commit().map_err(|e| format!("sql: {e}"))?;
+    }
+    ws.close().map_err(|e| format!("close workspace: {e}"))
+}
+
 /// §8: re-record `file_stats` after a copy (a copy loses nanosecond mtimes; the call mints nothing).
 fn rewarm_stat_cache(tmp: &Path) -> Result<(), String> {
     let ws = Workspace::open(tmp).map_err(|e| format!("open workspace: {e}"))?;
@@ -369,7 +416,10 @@ impl Workspaces {
         if kind == "alchemy" {
             // `source add vault --repo fixture -y`: repo + fs source, the initial sweep, the stat cache.
             let root = vault.to_string_lossy().into_owned();
-            let repo = ensure_repo(ws.store_mut(), FIXTURE_SLUG, Some(&root))
+            // At the spec clock, as the reference's `source add` runs under
+            // `OMGBASE_SPEC_CLOCK`: the repository's birth — its claims and
+            // its manifest's coverage start (store 17.0, 3e-ii) — is the clock.
+            let repo = ensure_repo_at(ws.store_mut(), FIXTURE_SLUG, Some(&root), SPEC_CLOCK)
                 .map_err(|e| format!("ensure_repo: {e}"))?;
             if repo != "rp_0" {
                 return Err(format!("bootstrap minted repo {repo}, expected rp_0"));
@@ -999,8 +1049,10 @@ fn compare(got: &Outcome, want: &Expect) -> Option<String> {
 fn run_case(ws: &mut Workspaces, bin: &Path, c: &Case) -> Result<Option<String>, String> {
     let tmp = ws.prepare(&c.workspace)?;
     write_files(&tmp, &c.files)?;
+    run_sql(&tmp, &c.sql)?;
     for (i, s) in c.steps.iter().enumerate() {
         write_files(&tmp, &s.files)?;
+        run_sql(&tmp, &s.sql)?;
         let mut env = c.env.clone();
         env.extend(s.env.iter().map(|(k, v)| (k.clone(), v.clone())));
         let got = spawn_omg(bin, &tmp, &s.argv, s.stdin.as_deref(), &env)?;

@@ -670,6 +670,73 @@ read path beyond the one aggregate per MCP result (the CLI's alert line
 reads the channel once after the verb). Re-measure the two side by side
 before reading anything into the 20–50 ms.
 
+### 17.0 (3e-ii), Rust — the capability manifest and the alert channel, the twin (`rust-2026-10-26T06-34-57`)
+
+The Rust twin of 3e-ii (`crates/omgbase-store` with the two new core tables —
+the per-repository `capabilities` manifest written at `create_repo` and by
+migration 17 step (13), the `alerts` channel re-derived on every read of it —
+`require_writer` as step 0 of every write, the alert line after every CLI
+verb), release build of the `omgbase` crate 0.27.3 + the working tree, the
+same seeded corpus; the TS 3e-ii row above is the comparison, the Rust 3e-i
+row the cost of the slice. Nothing in the workload raises an alert and
+nothing flips the manifest.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | TS 3e-ii (db MB / KB / op / sync KB) | Rust 3e-i (db MB / KB / op / sync KB) | `capabilities` rows / KB | `alerts` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.45 | 6,447 | 32.1 / doc | 3.10 | 0.63 | 0.01 | 2.24 | 232 | 6.47 / 32.2 / 232 | 6.44 / 32.0 / 212 | 2 / 8 | 0 / 8 |
+| frontmatter hot update | 50 | 6.56 | 111 | 2.2 | 3.10 | 0.64 | 0.01 | 2.30 | 260 | 6.58 / 2.3 / 260 | 6.55 / 2.1 / 240 | 2 / 8 | 0 / 8 |
+| block edit | 50 | 6.67 | 115 | 2.3 | 3.10 | 0.66 | 0.01 | 2.37 | 288 | 6.70 / 2.4 / 288 | 6.67 / 2.5 / 268 | 2 / 8 | 0 / 8 |
+| rolling journal | 50 | 6.86 | 188 | 3.8 | 3.13 | 0.67 | 0.01 | 2.50 | 304 | 6.89 / 3.7 / 304 | 6.84 / 3.4 / 284 | 2 / 8 | 0 / 8 |
+| task churn | 50 | 6.94 | 82 | 1.6 | 3.13 | 0.68 | 0.01 | 2.55 | 328 | 6.97 / 1.6 / 328 | 6.92 / 1.6 / 308 | 2 / 8 | 0 / 8 |
+| link churn | 50 | 7.05 | 111 | 2.2 | 3.13 | 0.72 | 0.01 | 2.61 | 344 | 7.08 / 2.2 / 344 | 7.03 / 2.3 / 324 | 2 / 8 | 0 / 8 |
+| delete / recreate | 20 | 7.19 | 135 | 6.8 | 3.14 | 0.75 | 0.01 | 2.70 | 356 | 7.22 / 7.0 / 356 | 7.18 / 7.4 / 336 | 2 / 8 | 0 / 8 |
+| gc (default sweep) | | 7.19 | 0 | | 3.14 | 0.75 | 0.01 | 2.70 | 356 | 7.22 / 0 KB / 356 | 7.18 / 0 KB / 336 | 2 / 8 | 0 / 8 |
+
+**The same two pages.** `capabilities` holds its two rows (the repository's
+`history` row, `enabled` from the import's clock with `writer_requires = 1`,
+and its `semantic` row, `disabled` — `init --no-embedder`) in one 8,192 B
+page at every stage; `alerts` holds no row and its one page — 8,192 / 8,192 B
+in both engines. The `sync` category is **identical to the TS 3e-ii run at
+every stage** (232 / 260 / 288 / 304 / 328 / 344 / 356 KB) and **+20 KB over
+Rust 3e-i at every stage** (212 → 232 at import, 336 → 356 at the end): the
+two tables' 16 KB plus the schema page their DDL pushed `sqlite_schema` over
+(24,576 → 28,672 B, 92 → 96 rows — the same 96 rows TS reports). The
+database is **6.45 vs 6.47 MB at import (29.5× the source vs 29.6×) and 7.19
+vs 7.22 MB at the end (32.9× vs 33.0×)** — 20–28 KB (five to seven pages)
+under TS at every stage, on the content and search pages as in every earlier
+round (`blocks` 1,835,008 vs 1,851,392 B and `blocks_fts` 122,880 vs 131,072
+B at import; `properties`, `edges`, `doc_edges`, `docs` byte-identical) — and
+8–24 KB over Rust 3e-i (6,438,912 → 6,447,104 B at import, 7,180,288 →
+7,188,480 at the end: the two pages, the schema page, the rest the seed's
+noise). Every other category is row for row the TS run's: `content` 3.10 →
+3.14 MB (TS 3.12 → 3.15), `identity` 0.63 → 0.75 (0.63 → 0.75; `id_claims`
+4,810 → 4,910 → 5,010 → 5,160 → 5,260 → 5,485 → 5,715 rows, the TS sequence
+exactly, 737,280 vs 741,376 B at the end), `recovery` one page, `history`
+2.24 → 2.70 (2.24 → 2.70) with the tables after gc row for row — `blobs`
+3,218 (634,880 vs 630,784 B), `tree_nodes` 1,000 (974,848 both),
+`dispositions` 3,824 (335,872 vs 344,064), `block_changes` 3,824 (299,008 vs
+294,912), `revisions` 461 (110,592 both), `commits` 471 (172,032 both),
+`edge_transitions` 800 → 925 → 955 (163,840 both) — `edges` 800 → 803
+(172,032 both), `feed` / `feed_entries` 471 each (139,264 / 86,016 both),
+`search` 0.23–0.24 MB. Per operation nothing moved beyond the seed's noise
+(frontmatter 2.2 vs TS 2.3 vs Rust 3e-i 2.1, block edit 2.3 / 2.4 / 2.5,
+journal 3.8 / 3.7 / 3.4, task churn 1.6 / 1.6 / 1.6, link churn 2.2 / 2.2 /
+2.3, recreate 6.8 / 7.0 / 7.4).
+
+Latency (p50 / p95 ms, process start 6 / 8 included): import 876; one write
+24–27 / 29–38 (frontmatter 27 / 31, block edit 27 / 33, journal 24 / 29, task
+churn 25 / 31, link churn 25 / 31, recreate 24 / 38); `query` docs 14 / 15,
+blocks filter 13 / 16, `text("furnace")` 81 / 145, links 11 / 12; `outline`
+11 / 18; `gc` 21. Against the Rust 3e-i run (writes 21–24 / 28–34, import
+979, docs 13, blocks filter 12, text 70 / 92, links 10, outline 8, gc 16)
+every write is 1–3 ms slower at p50 and every read 1–3 ms: what the slice
+adds to a CLI run is one indexed read of the manifest and one no-op `UPDATE`
+of the empty channel per write (`require_writer`), and one aggregate over the
+empty `pending_materializations` after every verb (the alert line) — the
+text p95 (145 vs 92) is one slow sample of twenty. Against the TS 3e-ii run
+the picture is the one every round shows (writes 231–264 / 245–281 there,
+spawn 165 / 203).
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

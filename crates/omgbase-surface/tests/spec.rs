@@ -951,9 +951,39 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             }
             let out = surface.call(tool, args);
             steps.push(normalize_outcome(tool, &out));
+        } else if let Some(recover) = step.get("recover") {
+            // README §6 (6.0): crash recovery over the case's working tree
+            // under the step's clock (`spec/sync` §4.3) — the pending rows
+            // replayed (the alert channel re-derived with them), the disk
+            // compared to the heads; the outcome is `recover_repo`'s.
+            let ts = recover["ts"].as_str().ok_or("recover.ts")?;
+            if !recover
+                .as_object()
+                .is_some_and(|o| o.keys().all(|k| k == "ts"))
+            {
+                return Err(format!("step {i}: recover takes only `ts`"));
+            }
+            let Some(dir) = &temp else {
+                return Err(format!("step {i}: a recover step needs `workspace: true`"));
+            };
+            *clock.borrow_mut() = ts.to_owned();
+            let r = omgbase_sync::recover_repo(
+                surface.store_mut(),
+                &repo_id,
+                &omgbase_sync::RealFileSystem,
+                &dir.0,
+                ts,
+                &config,
+            )
+            .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "recovered": {
+                "materialized": r.materialized,
+                "healed": r.healed,
+                "missing": r.missing,
+            } }));
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, read, history_*, read_at"
+                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at"
             ));
         }
     }

@@ -103,9 +103,9 @@ pub mod semantic;
 // place that names both the core and its extensions.
 pub(crate) use self::core::effects;
 pub use self::core::{
-    capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, feed, graph,
-    history_shapes, ids, links, macros, materialize, mint, mutate, observe, order_key, plan,
-    properties, read, semantic_shapes, settings, size, sugar, text_search, time, writers,
+    alerts, capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, feed, graph,
+    history_shapes, ids, links, macros, manifest, materialize, mint, mutate, observe, order_key,
+    plan, properties, read, semantic_shapes, settings, size, sugar, text_search, time, writers,
     yaml_emit,
 };
 pub use self::history::{archive, delta, edit_script, gc, retention, tree};
@@ -117,6 +117,14 @@ use rusqlite::{Connection, Transaction, params};
 
 pub use self::history::writers::{NewRevision, PreviousRevision, TreeWriteContext};
 pub use self::semantic::{Provider, cosine_bytes};
+pub use alerts::{
+    Alert, AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, MATERIALIZATION_BACKLOG_ALERT,
+    MATERIALIZATION_FAILED_ALERT, RECORDER_SCHEMA_UNKNOWN_ALERT,
+    RECOVERY_ALERT_AFTER_MINUTES_DEFAULT, SEGMENT_DETACHED_ALERT, active_alerts,
+    active_alerts_json, alert_after_minutes, clear_alert, list_active_alerts,
+    materialization_backlog_message, materialization_failed_message, raise_alert,
+    refresh_backlog_alert,
+};
 pub use archive::{
     ARCHIVE_DIR, ARCHIVE_SQL, ARCHIVE_SUFFIX, Manifest, RevisionBody, parse_segment_file_name,
     read_manifest, segment_basename, segment_file_name,
@@ -154,6 +162,13 @@ pub use history_shapes::{
 pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
+pub use manifest::{
+    CoverageInterval, HISTORY_DATA_V, HISTORY_INTERFACE_V, HISTORY_WRITER_REQUIRED_MESSAGE,
+    ManifestRow, ManifestState, SEMANTIC_DATA_V, SEMANTIC_INTERFACE_V, WRITER_REFUSED_ALERT,
+    WRITER_REFUSED_MESSAGE, canonical_config_json, config_hash, coverage_from, ensure_manifest,
+    read_capabilities, read_capability, refresh_semantic_manifest, refresh_semantic_manifests,
+    require_writer,
+};
 pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
 pub use mutate::{
@@ -182,9 +197,9 @@ pub use semantic_shapes::{
     VectorHit,
 };
 pub use size::{
-    SIZE_CATEGORIES, SizeArchived, SizeCategory, SizeFeed, SizeFile, SizeReport, SizeRetention,
-    SizeTable, TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes, share_of,
-    size_advice,
+    SIZE_CATEGORIES, SizeArchived, SizeCapability, SizeCategory, SizeFeed, SizeFile, SizeReport,
+    SizeRetention, SizeTable, TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes,
+    share_of, size_advice,
 };
 pub use sugar::Sugar;
 pub use text_search::{TextHit, TextSearchResult};
@@ -294,6 +309,21 @@ impl Store {
         minter: Box<dyn IdMinter>,
         capabilities: Capabilities,
     ) -> Result<Self> {
+        Self::from_connection_at(conn, minter, capabilities, &time::now_ts())
+    }
+
+    /// [`Store::from_connection_with`] with the opener's clock: what a
+    /// migration writes where `spec/store` §3.4 says "the migration's clock"
+    /// (a timestamp with no commit to anchor on; the manifest's
+    /// `updated_at`, 3e-ii). The reference pins `Date` for the whole
+    /// process; the fixture runners pass the fixture clock here
+    /// (`spec/store` §9.3), production the wall clock.
+    pub fn from_connection_at(
+        conn: Connection,
+        minter: Box<dyn IdMinter>,
+        capabilities: Capabilities,
+        now: &str,
+    ) -> Result<Self> {
         let Capabilities {
             history,
             semantic,
@@ -309,7 +339,7 @@ impl Store {
         let mut ids = mint::IdSource::new(minter, claims);
         // The recorder is bound BEFORE the migration (17.0): step 17's
         // backfill resolves every live head's frontmatter through it.
-        schema::migrate(&conn, &mut ids, history.as_deref())?;
+        schema::migrate(&conn, &mut ids, history.as_deref(), now)?;
         Ok(Self {
             conn,
             ids,
@@ -340,9 +370,10 @@ impl Store {
         capabilities::require_semantic(self.semantic.as_deref())
     }
 
-    /// The history capability's state: `enabled` with a recorder, else
-    /// `disabled` — the store runs without the module (both engines spell a
-    /// module-less store so; no manifest row exists before Phase 3).
+    /// The history capability's state as the COMPOSITION knows it: `enabled`
+    /// with a recorder, else `disabled` — the store runs without the module.
+    /// Per repository the manifest row answers (`spec/store` §3.1
+    /// `capabilities`, 3e-ii; `omgbase-sync`'s `capability_states`).
     #[must_use]
     pub fn history_state(&self) -> CapabilityState {
         if self.history.is_some() {
@@ -412,17 +443,28 @@ impl Store {
 
     /// Create a repo with `slug` (**mints `rp`**, then its EPOCH — **`ep`**,
     /// §3.1 `repos.epoch`, 17.0 D7); returns its id. The repo's own claim
-    /// (`spec/store` §2.1, 17.0) is written under itself at the clock — no
-    /// commit `ts` exists here — and the epoch's the same way.
+    /// (`spec/store` §2.1, 17.0) is written under itself at the wall clock —
+    /// no commit `ts` exists here — and the epoch's the same way; so are the
+    /// manifest rows (§3.1 `capabilities`, 3e-ii). A caller with a pinned
+    /// clock uses [`Store::create_repo_at`].
     pub fn create_repo(&mut self, slug: &str) -> Result<String> {
+        self.create_repo_at(slug, &time::now_ts())
+    }
+
+    /// [`Store::create_repo`] at `now`: the `rp`/`ep` claims, and the
+    /// manifest rows — history `enabled` with coverage from the repository's
+    /// birth (`writer_requires` 1), semantic `enabled` iff
+    /// `embedding.provider` resolves for it (resolution 1) — all stamped
+    /// `now` (the reference's `ensureRepo` under its pinned `Date`).
+    pub fn create_repo_at(&mut self, slug: &str, now: &str) -> Result<String> {
         let repo_id = self.mint("rp")?;
-        let now = time::now_ts();
-        self.minter().claim("rp", &repo_id, Some(&repo_id), &now)?;
-        let epoch = feed::mint_epoch(&mut self.minter(), &repo_id, &now)?;
+        self.minter().claim("rp", &repo_id, Some(&repo_id), now)?;
+        let epoch = feed::mint_epoch(&mut self.minter(), &repo_id, now)?;
         self.conn.execute(
             "INSERT INTO repos (repo_id, slug, epoch) VALUES (?1, ?2, ?3)",
             params![repo_id, slug, epoch],
         )?;
+        manifest::ensure_manifest(&self.conn, &repo_id, now, now)?;
         Ok(repo_id)
     }
 

@@ -824,6 +824,58 @@ fn run_step(peer: &mut Peer, step: &Step, w: &str) -> Result<Json, String> {
     }
 }
 
+// ---- the core-only run (§7.3) ---------------------------------------------------------------------
+
+/// Is this a core-only run (`OMGBASE_CAPABILITIES=core`)? Every peer this
+/// harness spawns inherits the variable, so both engines serve the
+/// composition without the semantic module.
+fn core_only() -> bool {
+    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+}
+
+/// README §7.3 (modular-core Phase 3e-ii): a case's expectation under the
+/// core-only run — every `provider_unavailable` outcome of `writes` and
+/// `reads` becomes `capability_unavailable { semantic, disabled, fix }` (the
+/// reference's `coreModeInteropExpect`), the mapping in the RUNNER, keyed on
+/// the composition it runs under, never in the fixture. The message rides
+/// along because [`record`] keeps the message of an error whose `data` names
+/// `capability` (the surface runner's rule). Returns the outcomes mapped.
+fn core_mode_expect(expect: &Json) -> (Json, usize) {
+    fn map(v: &mut Json, mapped: &mut usize) {
+        match v {
+            Json::Object(o) => {
+                if o.get("error").and_then(Json::as_str) == Some("provider_unavailable") {
+                    *mapped += 1;
+                    *v = json!({
+                        "error": "capability_unavailable",
+                        "retriable": false,
+                        "message": omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
+                        "data": {
+                            "capability": "semantic",
+                            "state": "disabled",
+                            "fix": omgbase_surface::SEMANTIC_DISABLED_FIX,
+                        },
+                    });
+                    return;
+                }
+                for x in o.values_mut() {
+                    map(x, mapped);
+                }
+            }
+            Json::Array(a) => {
+                for x in a {
+                    map(x, mapped);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = expect.clone();
+    let mut mapped = 0;
+    map(&mut out, &mut mapped);
+    (out, mapped)
+}
+
 // ---- comparison ------------------------------------------------------------------------------------
 
 /// Deep-compare two JSON values, object key order ignored, numbers within
@@ -907,11 +959,11 @@ fn compare_step(
     })
 }
 
-/// Every mismatch of one recorded run against the case's `expect`.
-fn mismatches(case: &Case, rec: &Recorded) -> Vec<String> {
+/// Every mismatch of one recorded run against `expect` (the case's, or its
+/// core-only mapping).
+fn mismatches(case: &Case, rec: &Recorded, expect: &Json) -> Vec<String> {
     let mut out = Vec::new();
-    let exp_writes = case
-        .expect
+    let exp_writes = expect
         .get("writes")
         .and_then(Json::as_array)
         .cloned()
@@ -934,8 +986,7 @@ fn mismatches(case: &Case, rec: &Recorded) -> Vec<String> {
             ));
         }
     }
-    let exp_reads = case
-        .expect
+    let exp_reads = expect
         .get("reads")
         .and_then(Json::as_array)
         .cloned()
@@ -1000,6 +1051,8 @@ fn run_pairing(writer: Engine, reader: Engine) {
     let suite = load_suite().unwrap_or_else(|e| panic!("interop [{pair}]: {e}"));
     let mut report: Vec<String> = Vec::new();
     let mut failed = 0usize;
+    let core = core_only();
+    let mut core_mapped: Vec<String> = Vec::new();
     for case in &suite.cases {
         match run_pair(&suite, case, writer, reader) {
             Err(e) => {
@@ -1008,7 +1061,20 @@ fn run_pairing(writer: Engine, reader: Engine) {
             }
             Ok(rec) => {
                 dump(case, writer, reader, &rec);
-                let bad = mismatches(case, &rec);
+                let expect = if core {
+                    let (mapped, n) = core_mode_expect(&case.expect);
+                    if n > 0 {
+                        core_mapped.push(format!(
+                            "{} ({n} outcome{})",
+                            case.name,
+                            if n == 1 { "" } else { "s" }
+                        ));
+                    }
+                    mapped
+                } else {
+                    case.expect.clone()
+                };
+                let bad = mismatches(case, &rec, &expect);
                 if !bad.is_empty() {
                     failed += 1;
                     report.push(format!(
@@ -1026,6 +1092,16 @@ fn run_pairing(writer: Engine, reader: Engine) {
         "interop [{pair}]: {} of {total} case(s) passed",
         total - failed
     );
+    if core {
+        // The core-only run's ledger (§7.3): which outcomes answered
+        // `capability_unavailable` instead of the fixture's full-composition one.
+        eprintln!(
+            "interop [{pair}] {}=core: {} case(s) mapped provider_unavailable to capability_unavailable {{ semantic, disabled }}: {}",
+            omgbase_store::CAPABILITIES_ENV,
+            core_mapped.len(),
+            core_mapped.join(", ")
+        );
+    }
     if failed > 0 {
         let mut lines: Vec<String> = report
             .iter()

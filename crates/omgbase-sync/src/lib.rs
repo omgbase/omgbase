@@ -50,7 +50,7 @@ pub mod source;
 pub mod workspace;
 
 pub use admin::{DiskStatus, RepoStatus, SyncStatus, repos_status, sync_status};
-pub use capability_state::{capability_states, semantic_configured};
+pub use capability_state::{capability_states, history_state, semantic_configured, semantic_state};
 pub use checkpoint::{
     BatchResult, CheckpointResult, LastBatch, batch_id_of, finish_checkpoint, last_batch,
     process_checkpoint, write_status_row,
@@ -74,12 +74,13 @@ pub use omgbase_store::{
 pub use recovery::{RecoveryResult, recover_repo};
 pub use registry::{
     AdapterRow, SourceRow, attach, create_source, delete_source, detach, ensure_adapter,
-    ensure_repo, list_adapters, list_sources, render_config_flags, source_by_name,
+    ensure_repo, ensure_repo_at, list_adapters, list_sources, render_config_flags, source_by_name,
     sources_for_repo,
 };
 pub use settings::{
     Settings, deep_merge, repo_own_settings, resolve_settings, workspace_settings,
-    write_repo_settings, write_workspace_settings,
+    write_repo_settings, write_repo_settings_at, write_workspace_settings,
+    write_workspace_settings_at,
 };
 pub use source::{
     Readiness, SourceCapabilities, SourceEntry, SourceIdentity, SourceItem, SyncSource, WatchEvent,

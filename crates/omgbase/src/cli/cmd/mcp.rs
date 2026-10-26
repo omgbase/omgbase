@@ -48,6 +48,7 @@ use crate::cli::output::{CliError, EXIT_OK, Io, Result};
 use crate::cli::render::Style;
 use crate::cli::seams::{
     MinterSource, SPEC_CLOCK_ENV, SPEC_MINTER_ENV, WRITER_LOCK_TIMEOUT_ENV, open_store,
+    open_store_at,
 };
 use crate::drain::{DrainFn, DrainReport, Drainer, SharedProvider};
 use crate::{mcp as transport, watch};
@@ -373,7 +374,8 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     // The surface owns its store — a connection of its own over the database
     // — and the query path's handle to the shared provider (the last one
     // standing at shutdown, so dropping the surface kills the child).
-    let mut store = open_store(&db, &minters).map_err(|e| CliError::engine("error", e))?;
+    let mut store = open_store_at(&db, &minters, &crate::stamp(clock.as_ref()))
+        .map_err(|e| CliError::engine("error", e))?;
     // Capability discovery (Phase 2): the state is derived from the
     // configuration (`version`); a provider configured but failed to start
     // marks the capability `unavailable` with its reason, so a

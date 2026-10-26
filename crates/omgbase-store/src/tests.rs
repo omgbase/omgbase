@@ -123,6 +123,8 @@ fn creates_every_table() {
         "sync_state",
         "workspace_settings",
         "pending_materializations",
+        "capabilities",
+        "alerts",
     ] {
         assert!(names.contains(&t.to_owned()), "missing table {t}");
     }
@@ -388,8 +390,8 @@ fn migrates_v13_to_v14_with_the_pending_table() {
     );
     let tables = count(&store, "sqlite_master WHERE type = 'table'");
     assert_eq!(
-        tables, 6,
-        "repos + pending_materializations (14) + archives (15) + id_claims, feed, feed_entries (17)"
+        tables, 8,
+        "repos + pending_materializations (14) + archives (15) + id_claims, feed, feed_entries, capabilities, alerts (17)"
     );
 }
 

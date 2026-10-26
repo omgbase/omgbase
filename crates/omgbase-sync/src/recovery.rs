@@ -52,7 +52,7 @@ pub fn recover_repo(
     ts: &str,
     config: &Config,
 ) -> Result<RecoveryResult> {
-    let materialized = crate::freshness::materialize_pending(store, repo_id, fs, root)?;
+    let materialized = crate::freshness::materialize_pending(store, repo_id, fs, root, ts)?;
     let docs: Vec<(String, Option<Vec<u8>>)> = {
         let mut stmt = store.conn().prepare(
             "SELECT path, file_hash FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL ORDER BY rowid",

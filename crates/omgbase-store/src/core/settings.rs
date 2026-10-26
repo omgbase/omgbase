@@ -52,13 +52,27 @@ pub fn repo_settings(conn: &Connection, repo_id: &str) -> Result<Map<String, Jso
 /// The repo's effective settings (`spec/sync` settings: the workspace layer
 /// with the repo's own deep-merged over it at the leaf).
 pub fn effective_settings(conn: &Connection, repo_id: &str) -> Result<Map<String, Json>> {
-    let ws: Option<String> = conn
+    // A migration's partial pre-state (`spec/store` §9.3) may lack the
+    // workspace layer's table; the layer then reads as `{}` (a real database
+    // always has it).
+    let has_workspace: bool = conn
         .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspace_settings'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    let ws: Option<String> = if has_workspace {
+        conn.query_row(
             "SELECT settings FROM workspace_settings WHERE id = 0",
             [],
             |r| r.get(0),
         )
-        .optional()?;
+        .optional()?
+    } else {
+        None
+    };
     let ws = parse_settings_json(ws.as_deref());
     let own = repo_settings(conn, repo_id)?;
     Ok(deep_merge(&ws, &own))

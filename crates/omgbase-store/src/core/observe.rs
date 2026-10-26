@@ -44,6 +44,7 @@ use crate::core::codec::canonical_attrs;
 use crate::core::feed::{
     FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
+use crate::core::manifest::require_writer;
 use crate::derived::{
     EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
 };
@@ -1435,6 +1436,9 @@ impl Store {
         clear_pending_at: Option<&str>,
         batch_id: Option<&str>,
     ) -> Result<Committed> {
+        // §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer without the
+        // recorder refuses where the manifest requires capture.
+        require_writer(&self.conn, self.history.is_some(), repo_id, ts)?;
         let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
@@ -1480,6 +1484,7 @@ impl Store {
         expires: &str,
         batch_id: Option<&str>,
     ) -> Result<String> {
+        require_writer(&self.conn, self.history.is_some(), repo_id, ts)?; // §5.4 step 0 (3e-ii)
         let history = require_history(self.history.as_deref())?;
         let tx = self.conn.unchecked_transaction()?;
         let commit_id = {

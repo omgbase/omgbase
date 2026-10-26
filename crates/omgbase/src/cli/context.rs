@@ -21,7 +21,7 @@ use serde_json::{Value as Json, json};
 use super::argv::Globals;
 use super::output::{CliError, Io, Result};
 use super::render::Style;
-use super::seams::{MinterSource, Seams, discover_semantic, open_store, stamp};
+use super::seams::{MinterSource, Seams, discover_semantic, open_store_at, stamp};
 
 /// Commands that run without a workspace (§3.7).
 pub const NO_WORKSPACE_OK: &[&str] = &["init", "help", "version"];
@@ -247,8 +247,8 @@ impl Cli {
         let omgbase_dir = root.join(OMGBASE_DIR);
         let db_path = omgbase_dir.join(omgbase_sync::workspace::DB_FILE);
         std::fs::create_dir_all(&omgbase_dir)?;
-        let store =
-            open_store(&db_path, &self.minters).map_err(|e| CliError::engine("error", e))?;
+        let store = open_store_at(&db_path, &self.minters, &self.now())
+            .map_err(|e| CliError::engine("error", e))?;
         let ws = WsInfo {
             root,
             omgbase_dir,
@@ -257,6 +257,13 @@ impl Cli {
         self.ws = Some(ws.clone());
         self.engine = Engine::Store(Box::new(store));
         Ok(ws)
+    }
+
+    /// Is a store open — the workspace's connection not yet closed by a verb
+    /// that owns its own session (`sync --watch`, [`Cli::close`])?
+    #[must_use]
+    pub fn engine_open(&self) -> bool {
+        !matches!(self.engine, Engine::Closed)
     }
 
     /// The store (the workspace's connection, wherever it lives now).

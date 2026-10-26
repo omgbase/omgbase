@@ -150,6 +150,31 @@ CREATE TABLE IF NOT EXISTS external_nodes (
   UNIQUE (repo_id, uri)
 );
 
+CREATE TABLE IF NOT EXISTS capabilities (
+  repo_id          TEXT NOT NULL REFERENCES repos(repo_id),
+  capability       TEXT NOT NULL CHECK (capability IN ('history','semantic')),
+  state            TEXT NOT NULL CHECK (state IN ('enabled','disabled')),
+  interface_v      INTEGER NOT NULL,            -- the capability interface the writer implements (history 1, semantic 1)
+  data_v           INTEGER NOT NULL,            -- the bundle's own schema version (history 1 = 16.0's tables + edge_transitions; semantic 1)
+  config           TEXT NOT NULL DEFAULT '{}',  -- the configuration the data was produced under (semantic: { model, dim }; history: {})
+  config_hash      BLOB NOT NULL,               -- sha256(canonical JSON of config) — the fingerprint; a change while enabled is a rebuild
+  coverage         TEXT NOT NULL DEFAULT '[]',  -- JSON [{ "from": ts, "to": ts | null }, …]: the intervals capture was on; the last open iff enabled
+  writer_requires  INTEGER NOT NULL DEFAULT 0,  -- 1: a writer without this module must refuse writes (resolution 17; history enable defaults to 1)
+  updated_at       TEXT NOT NULL,
+  PRIMARY KEY (repo_id, capability)
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  repo_id    TEXT NOT NULL REFERENCES repos(repo_id),
+  code       TEXT NOT NULL,                      -- the condition: materialization_backlog, materialization_failed, writer_refused, …
+  severity   TEXT NOT NULL CHECK (severity IN ('info','warning','error')),
+  message    TEXT NOT NULL,                      -- one line for a human, both engines byte for byte
+  since      TEXT NOT NULL,                      -- first raised (kept while the condition stands)
+  detail     TEXT NOT NULL DEFAULT '{}',         -- JSON: what the condition is about (counts, paths, timestamps)
+  cleared_at TEXT,                               -- NULL = active
+  PRIMARY KEY (repo_id, code)
+);
+
 -- ---- core bundle: derived tables (rebuildable) --------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,

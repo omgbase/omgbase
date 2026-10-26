@@ -50,8 +50,13 @@
 
 use omgbase_format::hash::sha256;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Map, Value as Json};
 
 use crate::Store;
+use crate::core::alerts::{
+    AlertInput, AlertSeverity, MATERIALIZATION_FAILED_ALERT, clear_alert,
+    materialization_failed_message, raise_alert, refresh_backlog_alert,
+};
 use crate::doc_store::DocStore;
 use crate::error::Result;
 use crate::read::reconstruct;
@@ -379,13 +384,68 @@ impl Store {
         repo_id: &str,
         doc_store: &mut dyn DocStore,
     ) -> Result<Vec<String>> {
+        self.materialize_pending_at(repo_id, doc_store, &crate::core::time::now_ts())
+    }
+
+    /// [`Store::materialize_pending`] at `now` — the clock of the alert
+    /// channel (§5.8, 17.0 3e-ii): a replay that fails raises
+    /// `materialization_failed` (the row intact, the error propagating —
+    /// resolution 18), a full pass without a failure clears it, and the
+    /// backlog condition is re-derived either way.
+    pub fn materialize_pending_at(
+        &mut self,
+        repo_id: &str,
+        doc_store: &mut dyn DocStore,
+        now: &str,
+    ) -> Result<Vec<String>> {
+        let replayed = self.materialize_pending_rows(repo_id, doc_store, now);
+        refresh_backlog_alert(&self.conn, repo_id, now)?;
+        replayed
+    }
+
+    fn materialize_pending_rows(
+        &mut self,
+        repo_id: &str,
+        doc_store: &mut dyn DocStore,
+        now: &str,
+    ) -> Result<Vec<String>> {
         let mut done = Vec::new();
         for row in pending_rows(&self.conn, repo_id)? {
-            if materialize_row(&self.conn, &row, doc_store)? {
+            let landed = match materialize_row(&self.conn, &row, doc_store) {
+                Ok(landed) => landed,
+                Err(e) => {
+                    // §5.8 (resolution 18): the stall is reported through the
+                    // alert channel, not swallowed — the error still propagates.
+                    let path = format!("/{}", row.path);
+                    let reason = e.to_string();
+                    let mut detail = Map::new();
+                    detail.insert("path".to_owned(), Json::String(path.clone()));
+                    detail.insert(
+                        "kind".to_owned(),
+                        Json::String(row.kind.as_str().to_owned()),
+                    );
+                    detail.insert("reason".to_owned(), Json::String(reason.clone()));
+                    raise_alert(
+                        &self.conn,
+                        repo_id,
+                        &AlertInput {
+                            code: MATERIALIZATION_FAILED_ALERT,
+                            severity: AlertSeverity::Error,
+                            message: &materialization_failed_message(&path, &reason),
+                            detail: Some(&detail),
+                        },
+                        now,
+                    )?;
+                    return Err(e);
+                }
+            };
+            if landed {
                 delete_pending(&self.conn, repo_id, &row.path)?;
                 done.push(row.path);
             }
         }
+        // A full pass with no failure ends the failure condition.
+        clear_alert(&self.conn, repo_id, MATERIALIZATION_FAILED_ALERT, now)?;
         Ok(done)
     }
 

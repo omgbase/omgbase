@@ -103,18 +103,19 @@ pub fn semantic_configured(store: &Store, repo_id: Option<&str>) -> bool {
     omgbase_sync::semantic_configured(store, repo_id)
 }
 
-/// The capability manifest as `version` reports it (Phase 2; `spec/surface`
-/// §4, states only; byte for byte the reference's `capabilityStates`):
-/// `{ history: { state }, semantic: { state } }` — `history` is `enabled`
-/// while the store carries the recorder, else `disabled` (no manifest row
-/// exists before Phase 3e); `semantic` follows the discovery rule
-/// (`phase-1-contracts.md` §7 resolution 1) read here as well as at
-/// composition: `disabled` when the store runs without the module or no
-/// provider is configured for the repository, `unavailable` when the
-/// configured one failed to start, `enabled` otherwise — never from the
-/// vectors. Without a store nothing is configured and no module runs: both
-/// `disabled`. The computation is the sync layer's
-/// ([`omgbase_sync::capability_states`]), which `sync_status` shares (4.0).
+/// The capability manifest as `version` reports it (`spec/surface` §4,
+/// states only; byte for byte the reference's `capabilityStates`): `{
+/// history: { state }, semantic: { state } }` — since store 17.0 (3e-ii) read
+/// from the repository's `capabilities` rows (`omgbase_store::manifest`):
+/// `history` the row's state (`unavailable` when the composition lacks the
+/// recorder), `semantic` the row's state overlaid with what the host knows —
+/// `disabled` when the store runs without the module, `unavailable` when the
+/// configured provider failed to start — never from the vectors
+/// (`phase-1-contracts.md` §7 resolution 1). Without a repository the
+/// workspace layer's setting answers, as Phase 2 did; without a store nothing
+/// is configured and no module runs: both `disabled`. The computation is the
+/// sync layer's ([`omgbase_sync::capability_states`]), which `sync_status`
+/// shares (4.0).
 pub fn capabilities(store: Option<&Store>, repo_id: Option<&str>) -> Json {
     omgbase_sync::capability_states(store, repo_id)
 }

@@ -204,8 +204,21 @@ impl MinterSource {
 /// and the clock. The semantic slot is then settled per repository by
 /// [`discover_semantic`].
 pub fn open_store(db: &Path, minters: &MinterSource) -> Result<Store, String> {
+    open_store_at(db, minters, &stamp(None))
+}
+
+/// [`open_store`] with the opener's clock (`now`): what a migration writes
+/// where `spec/store` §3.4 says "the migration's clock" — the CLI and the
+/// server pass the pinned clock, as the reference's pinned `Date` does.
+pub fn open_store_at(db: &Path, minters: &MinterSource, now: &str) -> Result<Store, String> {
     let capabilities = Capabilities::standard_from_env().map_err(|e| e.to_string())?;
-    let store = Store::open_with(db, minters.minter(), capabilities).map_err(|e| e.to_string())?;
+    if let Some(dir) = db.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    }
+    let conn = rusqlite::Connection::open(db).map_err(|e| e.to_string())?;
+    let store = Store::from_connection_at(conn, minters.minter(), capabilities, now)
+        .map_err(|e| e.to_string())?;
     store
         .conn()
         .busy_timeout(BUSY_TIMEOUT)
