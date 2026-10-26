@@ -466,7 +466,7 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
-## 6a. Status (2026-10-26) — Phases 1–4 complete in both engines; Phase 5 open (5a the qualification tooling, 5a-ii what the first real-copy run found — both in the reference)
+## 6a. Status (2026-10-26) — Phases 0–5 complete in both engines; Phase 6 open
 
 **Phases 1–3 are complete in both engines** (store 17.0, released as
 `a91354b`): the seams (Phase 1), the semantic bundle behind
@@ -655,6 +655,15 @@ touched), 5b runs it on copies of Brendan's workspaces.
   `baseline.md`, cut over per the runbook — `omg sync` right after the
   migration repairs the legacy documents — and run `OMGBASE_FAULT` drives
   against a copy under each engine.
+
+**Phase 5 closed on 2026-10-26.** The four compositions run every suite in both engines (`pnpm conformance`, 32/32
+cells, interop live in every pairing); `OMGBASE_FAULT` injects at five sites with the acceptance outcomes pinned;
+`scripts/qualify/migrate-copy.mjs` qualified copies of three real workspaces (853, 116 and 1,405 documents —
+`baseline.md` §3): migration clean, the one legacy-trivia workspace repaired by the sweep, the Rust binary opening each
+result with byte-identical reads, the previous binary refusing it, history off removing 37–48 %. Two production
+servers were then upgraded through the engine alone (`docs/modular-core/migration-runbook.md`) and report store 17.4
+with history enabled from their first commit. Phase 6 — one alternative strategy through the documented contract — is
+the remaining phase.
 
 ## 7. Index
 
