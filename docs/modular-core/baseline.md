@@ -1199,6 +1199,7 @@ binary as `--before-bin`. Numbers only.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | A | 853 | 70.99 MB | 79.23 MB (76.52 vacuumed) | 0 | — | 0 | 0 | refused |
 | B | 116 | 2.92 MB | 4.12 MB (3.77 vacuumed) | 115 | 110 | 5 | 0 | refused |
+| C (a server workspace, database only) | 1,405 | 166.19 MB | 190.78 MB (176.57 vacuumed) | 0 | — | — | 0 | refused |
 
 Workspace B's blocks all predate block-trivia storage (`trivia_hash` NULL throughout): the 16.x engine's own reads already
 lacked the newlines between blocks while the files and `file_hash` were right; the migration now names such documents
@@ -1220,8 +1221,12 @@ The four compositions, each clone VACUUMed after its maintenance (`history disab
 | B | history only | 3.77 | 1.73 | 0.26 | 0.01 | 1.38 | 0.21 | 0.20 |
 | B | semantic only | 2.38 | 1.73 | 0.27 | 0.01 | 0 | 0.21 | 0.20 |
 | B | core | 2.38 | 1.73 | 0.27 | 0.01 | 0 | 0.21 | 0.20 |
+| C (1,405) | full | 176.57 | 35.86 | 4.96 | 0.01 | 73.49 | 59.84 | 2.41 |
+| C | history only | 176.57 | 35.86 | 4.96 | 0.01 | 73.49 | 59.84 | 2.41 |
+| C | semantic only | 102.56 | 35.86 | 4.45 | 0.01 | 0 | 59.84 | 2.40 |
+| C | core | 102.56 | 35.86 | 4.45 | 0.01 | 0 | 59.84 | 2.40 |
 
-History off removes **48 %** of workspace A (76.52 → 39.83 MB) and 37 % of B. On A the remaining bytes are the vectors
+History off removes **48 %** of workspace A (76.52 → 39.83 MB), 37 % of B and **42 %** of C (176.57 → 102.56 MB; C was qualified from its database alone — no files, so nothing to repair and nothing needing it: 0 legacy documents). On C the migration itself grew the file 166 → 177 MB vacuumed: the live bytes now sit inline on the rows as well as in the recorder's blobs (+10 MB content) and `id_claims` covers 31k blocks (+4.4 MB identity), while the one-time FTS rebuild shrank `search` by 6 MB. On A the remaining bytes are the vectors
 (22.3 MB, 56 % of the history-off database), the content (14.8) and the identity/sync bookkeeping (2.7); a `semantic`-off
 composition that also dropped the vectors would end near 17.5 MB, 4.4× the history-on-with-vectors file's 76.5.
 
