@@ -6,6 +6,8 @@ import { anyHistoryEnabled, applyHistoryBundle, ensureManifest, manifestTableExi
 import { mintId, registerIdOracle } from "../ids.js";
 import { FEED_DDL } from "./schema.js";
 import { pruneFeed, remintEpoch } from "./feed.js";
+import { ftsRebuild } from "./fts.js";
+import { legacyBytesSuspected, refreshLegacyBytesAlert } from "./legacy-bytes.js";
 import type { Capabilities, CapabilitiesFactory } from "../capabilities/types.js";
 import { bindCapabilities } from "../capabilities/registry.js";
 import { envCapabilities } from "../capabilities/default.js";
@@ -92,6 +94,7 @@ export class Store {
         this.migrateV17Edges();
         this.migrateV17Manifest();
         this.migrateV17Tombstones();
+        this.migrateV17LegacyBytes(false);
       }
       return;
     }
@@ -110,7 +113,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); this.migrateV17Manifest(); this.migrateV17Tombstones(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); this.migrateV17Manifest(); this.migrateV17Tombstones(); this.migrateV17LegacyBytes(true); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -418,6 +421,14 @@ CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, o
 CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);`);
+        // The FTS index rebuilt over the new rows (spec/store §3.4 step 17 (2),
+        // 17.4 — qualification finding F2): a 16.x index may hold every block
+        // (containers and tombstones included — the rule before `spec/search`
+        // 1.2) and `doctor`'s `fts rows == live leaf blocks` would fail on the
+        // migrated database until a `rebuild-index --fts`. The rows keep their
+        // `rowid`s, so the external-content index stays keyed the same way; the
+        // rebuild makes it hold exactly the live leaves of the live documents.
+        if (this.tableExists("blocks_fts")) ftsRebuild(db);
 
         // ---- resurrection_pool ----
         this.rebuildPoolV17();
@@ -879,11 +890,73 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
    * tombstoned block's identity stays claimed) are untouched. Runs after the
    * claims step at both entry points; idempotent (nothing to delete on a 17.3
    * database); a `blocks` table without the column (pre-17) is left to step 17.
+   *
+   * 17.4 (qualification finding F2): `blocks_fts` is an external-content index
+   * keyed by `blocks.rowid`, so a row deleted without the index's `delete`
+   * command leaves an orphan the index still counts (`doctor`'s `fts rows ==
+   * live leaf blocks` failed by exactly the tombstoned rows the 17.0–17.2
+   * engine had indexed). Before the DELETE, every tombstoned row THE INDEX
+   * HOLDS — its `rowid` has a `blocks_fts_docsize` row — gets the `delete`
+   * command with its stored `text`; a tombstoned row the index does not hold
+   * (one tombstoned by a path that purged it, or a container) is skipped,
+   * since a `delete` for an unindexed row corrupts the index's statistics.
+   * (The live path's `ftsDeleteDoc` purges LIVE leaves and would purge nothing
+   * here.) One transaction.
    */
   private migrateV17Tombstones(): void {
     const cols = this.db.pragma("table_info(blocks)") as { name: string }[];
     if (!cols.some((c) => c.name === "deleted_at")) return;
-    this.db.prepare("DELETE FROM blocks WHERE deleted_at IS NOT NULL").run();
+    const db = this.db;
+    db.transaction(() => {
+      if (this.tableExists("blocks_fts")) {
+        const rows = db
+          .prepare("SELECT b.rowid AS rowid, b.text AS text FROM blocks b WHERE b.deleted_at IS NOT NULL AND EXISTS (SELECT 1 FROM blocks_fts_docsize s WHERE s.id = b.rowid) ORDER BY b.rowid")
+          .all() as { rowid: number; text: string }[];
+        const del = db.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?, ?)");
+        for (const r of rows) del.run(r.rowid, r.text);
+      }
+      db.prepare("DELETE FROM blocks WHERE deleted_at IS NOT NULL").run();
+    })();
+  }
+
+  /**
+   * spec/store §3.4 step 17 (16) / §5.11 (17.4, modular-core Phase 5a-ii —
+   * qualification finding F1): the FIDELITY CHECK. Migration 17 copies a block's
+   * bytes from the recorder's blobs as they are, so a document ingested before
+   * block trivia was stored (pre-v6 rows: NULL `trivia_hash` on every block;
+   * pre-v7: a frontmatter with no `frontmatter_trivia`) comes out with rows
+   * that do not reproduce its `file_hash` — the same bytes the 16.x reader
+   * produced, the file and the hash being right all along. Per repository,
+   * for every live document: `sha256(reconstruct(doc)) == file_hash`; the
+   * mismatches raise the `legacy_bytes` alert (`warning`; detail `{ docs,
+   * sample }`), which `omg sync` works off by repairing the rows from the
+   * files (`sync/legacy-bytes.ts`) and `doctor` lists as `bytes
+   * reproducible`. At the 16 → 17 entry point (`full`) the check runs over
+   * every live document — a one-time cost of the migration. At the on-open
+   * entry point (a 17.0–17.3 database a released 17.x engine already
+   * migrated, or any later open) it runs only for a repository that carries
+   * the cheap SIGNATURE of legacy rows (`legacyBytesSuspected`: a top-level
+   * block with NULL trivia and a later sibling, or a frontmatter without its
+   * separator — rows the current ingest never writes), so a healthy database
+   * pays a metadata scan of `blocks` per open and never hashes its bytes; a
+   * repository without the signature and with an active alert is left to the
+   * sweep and `doctor`, which re-derive the full set. Runs after the manifest
+   * step (the `alerts` table exists) and the tombstone step. Idempotent: the
+   * raise refreshes an active row in place, the clear is a no-op on none.
+   */
+  private migrateV17LegacyBytes(full: boolean): void {
+    const db = this.db;
+    if (!this.tableExists("repos") || !this.tableExists("alerts") || !this.tableExists("docs") || !this.tableExists("blocks")) return;
+    const docCols = db.pragma("table_info(docs)") as { name: string }[];
+    if (!docCols.some((c) => c.name === "head")) return;
+    const clock = new Date().toISOString();
+    const repos = db.prepare("SELECT repo_id FROM repos ORDER BY rowid").all() as { repo_id: string }[];
+    db.transaction(() => {
+      for (const r of repos) {
+        if (!full && !legacyBytesSuspected(db, r.repo_id)) continue;
+        refreshLegacyBytesAlert(db, r.repo_id, clock);
+      }
+    })();
   }
 
   private migrateV17Manifest(): void {

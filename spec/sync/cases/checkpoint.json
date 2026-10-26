@@ -6790,6 +6790,1118 @@
         ],
         "file_stats": []
       }
+    },
+    {
+      "name": "legacy-bytes-repaired-by-the-sweep",
+      "notes": "README §4.3 step 5 (4.4; spec/store §5.11 — the migration qualification's finding F1): a.md and b.md are ingested, then the `sql` device erases a.md's separators (`trivia`/`trivia_hash` NULL on both blocks — the rows a pre-v6 ingest left behind, which the 16 → 17 migration copies as they are), so its rows read `# AAlpha…` while its file and `file_hash` are right. `legacy_bytes` re-derives the fidelity check and raises the alert (`warning`, the pinned message with the count 1, detail `{ docs: 1, sample: [d_0] }`); `alerts` shows it active. The next sweep finds nothing changed on disk (`candidates` 0, no batch) and, the alert being active, runs the repair pass: a.md's file is present and hashes to `file_hash`, its parse has the rows' shape, types and raws, so the separator columns are rewritten from the file — every block keeps its id, the head `r_0` and `updated_at` stay, no feed row, no revision (`changed` is true; the step carries `repaired: [a.md]`) — and the alert is cleared (`alerts` → none active). b.md is not touched. The projection's `blocks` carry the restored trivia and `sha256(reconstruct) == file_hash` again (C1, C9).",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "disk": {
+            "path": "b.md",
+            "content": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "sql": {
+            "statements": [
+              "UPDATE blocks SET trivia = NULL, trivia_hash = NULL WHERE doc_id = 'd_0'"
+            ]
+          }
+        },
+        {
+          "legacy_bytes": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        },
+        {
+          "alerts": {}
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:02:00.000Z"
+          }
+        },
+        {
+          "alerts": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {},
+          {
+            "batch_id": "c_0",
+            "ingested": [
+              "a.md",
+              "b.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 2,
+            "changed": true
+          },
+          {},
+          {
+            "docs": 1,
+            "sample": [
+              "d_0"
+            ]
+          },
+          {
+            "active": [
+              {
+                "code": "legacy_bytes",
+                "severity": "warning",
+                "message": "1 document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files",
+                "since": "2026-09-26T10:01:00.000Z",
+                "detail": {
+                  "docs": 1,
+                  "sample": [
+                    "d_0"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "batch_id": null,
+            "ingested": [],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 0,
+            "changed": true,
+            "repaired": [
+              "a.md"
+            ]
+          },
+          {
+            "active": []
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_0",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "head": "r_1",
+            "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "frontmatter_blob": null,
+            "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "path": "b.md",
+            "commit_id": "c_1",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "size": 66,
+            "bytes": "Beta paragraph about bees and the hives at the edge of the meadow."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw": "# B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": [],
+        "sync_state": [
+          {
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 78,
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+          },
+          {
+            "path": "b.md",
+            "mtime_ns": 1000,
+            "size": 72,
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
+          }
+        ]
+      }
+    },
+    {
+      "name": "legacy-bytes-missing-file-stays-listed",
+      "notes": "README §4.3 step 5 (4.4): a legacy document whose file is not there is NOT repaired and stays listed. After the ingest and the `sql` damage, the `sql` device also drops a.md's `file_stats` row and `rm` removes the file (a database migrated beside a tree that no longer holds the file — the sweep learns deletions only from its cache, so with no cache row a.md is not a gone member either). The sweep: nothing on disk changed, the repair pass finds no file for a.md, the alert stays active with `docs: 1` and the step carries no `repaired`. `doctor` would list the count under `bytes reproducible`; the runbook tells the operator so.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "sql": {
+            "statements": [
+              "UPDATE blocks SET trivia = NULL, trivia_hash = NULL WHERE doc_id = 'd_0'"
+            ]
+          }
+        },
+        {
+          "sql": {
+            "statements": [
+              "DELETE FROM file_stats WHERE path = 'a.md'"
+            ]
+          }
+        },
+        {
+          "rm": {
+            "path": "a.md"
+          }
+        },
+        {
+          "legacy_bytes": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:02:00.000Z"
+          }
+        },
+        {
+          "alerts": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "batch_id": "c_0",
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 1,
+            "changed": true
+          },
+          {},
+          {},
+          {},
+          {
+            "docs": 1,
+            "sample": [
+              "d_0"
+            ]
+          },
+          {
+            "batch_id": null,
+            "ingested": [],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 0,
+            "candidates": 0,
+            "changed": false
+          },
+          {
+            "active": [
+              {
+                "code": "legacy_bytes",
+                "severity": "warning",
+                "message": "1 document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files",
+                "since": "2026-09-26T10:01:00.000Z",
+                "detail": {
+                  "docs": 1,
+                  "sample": [
+                    "d_0"
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_0",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia": null,
+            "trivia_hash": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": [],
+        "sync_state": [
+          {
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
+          }
+        ],
+        "file_stats": []
+      }
+    },
+    {
+      "name": "legacy-bytes-diverged-file-is-ingested-not-repaired",
+      "notes": "README §4.3 step 5 (4.4): a legacy document whose file moved on is re-ingested by the ordinary path, not repaired. After the ingest and the `sql` damage, a.md is edited on disk (a new stat and new bytes): the sweep's plan makes it a changed candidate, `process_checkpoint` ingests it as an observed commit (a new head `r_1`, a `changed` feed entry, fresh rows written from the file with their trivia), and the repair pass that follows — the alert was active — finds every document reproducible: nothing to repair (no `repaired` member), the alert cleared.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "sql": {
+            "statements": [
+              "UPDATE blocks SET trivia = NULL, trivia_hash = NULL WHERE doc_id = 'd_0'"
+            ]
+          }
+        },
+        {
+          "legacy_bytes": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        },
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about pears and the orchard rows along the valley road.\n",
+            "mtime_ns": 2000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:02:00.000Z"
+          }
+        },
+        {
+          "alerts": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "batch_id": "c_0",
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 1,
+            "changed": true
+          },
+          {},
+          {
+            "docs": 1,
+            "sample": [
+              "d_0"
+            ]
+          },
+          {},
+          {
+            "batch_id": "c_1",
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 1,
+            "changed": true
+          },
+          {
+            "active": []
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_1",
+            "file_hash": "fe501d116d527061ba9583955b88e2156e008d24ed84f288e71305539ba65326",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "fe501d116d527061ba9583955b88e2156e008d24ed84f288e71305539ba65326",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "b222d2de2c1994e84b0fc813242bfdfcf1db22200e4db8ffb68c05d91720d3cb",
+            "frontmatter_blob": null,
+            "rendered_hash": "fe501d116d527061ba9583955b88e2156e008d24ed84f288e71305539ba65326",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "66ffd5bc5b7fed09f28bc3c5a7bb306cc5b0d226c1c2bf45ea654a66d9f8708d",
+            "size": 71,
+            "bytes": "Alpha paragraph about pears and the orchard rows along the valley road."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "b222d2de2c1994e84b0fc813242bfdfcf1db22200e4db8ffb68c05d91720d3cb",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"66ffd5bc5b7fed09f28bc3c5a7bb306cc5b0d226c1c2bf45ea654a66d9f8708d\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about pears and the orchard rows along the valley road.",
+            "raw": "Alpha paragraph about pears and the orchard rows along the valley road.",
+            "raw_hash": "66ffd5bc5b7fed09f28bc3c5a7bb306cc5b0d226c1c2bf45ea654a66d9f8708d",
+            "norm_hash": "66ffd5bc5b7fed09f28bc3c5a7bb306cc5b0d226c1c2bf45ea654a66d9f8708d",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-09-26T10:00:00.000Z",
+            "updated_at": "2026-09-26T10:02:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.89,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": [],
+        "sync_state": [
+          {
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": "c_1",
+            "last_batch_files": 1
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 2000,
+            "size": 77,
+            "hash": "fe501d116d527061ba9583955b88e2156e008d24ed84f288e71305539ba65326"
+          }
+        ]
+      }
     }
   ]
 }

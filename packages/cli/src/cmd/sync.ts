@@ -98,6 +98,12 @@ function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
     io.out(`  ${style.warn(g.warn)} conflicts ${result.conflicted.length}`);
     for (const p of result.conflicted) io.out(`      ${style.warn(p)}`);
   }
+  // spec/sync §4.3 step 5 (4.4): the legacy documents whose separator bytes
+  // were repaired from their files (spec/store §5.11) — no commit, no revision.
+  if (result.repaired.length > 0) {
+    io.out(`  ${style.ok(g.ok)} repaired  ${result.repaired.length}`);
+    for (const p of result.repaired) io.out(`      ${style.accent(p)}`);
+  }
   if (!result.changed) io.out(`  ${style.dim("already up to date")}`);
   return EXIT_OK;
 }

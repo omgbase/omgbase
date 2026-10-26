@@ -5,6 +5,8 @@ import { nodeFs, type SyncFs } from "./fs-util.js";
 import { recordStat } from "./stat-cache.js";
 import { materializePending } from "../mutate/materialize.js";
 import { FsDocStore, type DocStore } from "../mutate/doc-store.js";
+import { legacyBytesActive, refreshLegacyBytesAlert, unreproducibleDocs } from "../core/store/legacy-bytes.js";
+import { repairLegacyBytes } from "./legacy-bytes.js";
 
 export { recordStat, recordFileStat } from "./stat-cache.js";
 
@@ -123,6 +125,8 @@ export interface SweepResult extends BatchResult {
   changed: boolean;
   /** step 0 (spec/sync §4.3, 2.2): the paths whose pending materialization rows were replayed before the walk. */
   materialized: string[];
+  /** step 5 (spec/sync §4.3, 4.4; spec/store §5.11): the legacy documents whose separator bytes this sweep repaired from their files — only while the repository's `legacy_bytes` alert is active. */
+  repaired: string[];
 }
 
 /**
@@ -173,13 +177,38 @@ export function freshnessSweep(
   for (const path of plan.changed) if (!failed.has(path)) recordStat(store, repoId, path, fs.stat(rootPath, path), plan.hashes.get(path)!);
   for (const path of plan.deletions) if (!failed.has(path)) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(repoId, path);
 
+  // Step 5 (4.4; spec/store §5.11 — qualification finding F1): while the
+  // repository's `legacy_bytes` alert is active, re-derive the documents whose
+  // rows do not reproduce their `file_hash` (a changed candidate above was
+  // re-ingested from its file and reproduces now) and repair, from the file,
+  // every one whose file is present and hashes to `file_hash` — the bytes the
+  // store already agrees with; a missing or diverged file leaves its document
+  // listed. Then the alert follows the remainder: cleared when none is left.
+  const repaired = legacyBytesActive(store.db, repoId) ? repairLegacy(store, repoId, rootPath, fs, opts.ts ?? new Date().toISOString()) : [];
+
   return {
     ...result,
     scanned: snapshot.length,
     candidates: plan.candidates.length,
-    changed: result.ingested.length > 0 || result.deleted.length > 0 || result.conflicted.length > 0 || result.failed.length > 0,
+    changed: result.ingested.length > 0 || result.deleted.length > 0 || result.conflicted.length > 0 || result.failed.length > 0 || repaired.length > 0,
     materialized,
+    repaired,
   };
+}
+
+/** spec/sync §4.3 step 5: the repair pass over the alert's documents; returns the repaired paths in path order. */
+function repairLegacy(store: Store, repoId: string, rootPath: string, fs: SyncFs, ts: string): string[] {
+  const listed = unreproducibleDocs(store.db, repoId);
+  const repaired: string[] = [];
+  const remaining: typeof listed = [];
+  for (const d of listed) {
+    const bytes = fs.read(rootPath, d.path);
+    const want = (store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(d.docId) as { file_hash: Buffer | null } | undefined)?.file_hash ?? null;
+    if (bytes !== null && want !== null && sha256(bytes).equals(want) && repairLegacyBytes(store, d.docId, d.path, bytes) === "repaired") repaired.push(d.path);
+    else remaining.push(d);
+  }
+  refreshLegacyBytesAlert(store.db, repoId, ts, remaining);
+  return repaired;
 }
 
 /**

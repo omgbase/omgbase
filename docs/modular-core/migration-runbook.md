@@ -12,7 +12,7 @@ report names document paths in its `diff` entries when something differs.
 ```
 pnpm build                                   # the TS CLI + core dist the script drives
 cargo build --release -p omgbase             # the Rust opener for the compatible-open check (optional)
-node scripts/qualify/migrate-copy.mjs --workspace <dir> --rust-bin target/release/omgbase --compositions --out /tmp/qualify-<name>.json
+node scripts/qualify/migrate-copy.mjs --workspace <dir> --rust-bin target/release/omgbase --with-files --repair --compositions --out /tmp/qualify-<name>.json
 ```
 
 `<dir>` is the workspace root (`<dir>/.omgbase/omgbase.db`). Exit 0 and
@@ -21,7 +21,17 @@ after, the four compositions) and the report with `diff` as a count. Add
 `--before-bin <path to the omg that wrote the workspace>` when one is
 installed: it supplies the BEFORE bytes per document (otherwise the byte
 check is hash-level, below) and proves the old engine refuses the migrated
-copy. `--keep` leaves the temporary directory for inspection.
+copy. `--with-files` copies a source tree that lies OUTSIDE the workspace
+directory (a database-only copy of a workspace, as 5b's copies are) beside
+the copied database — the byte count is printed — so recovery and the
+repair have files to work from; without it such a root is replaced by an
+empty directory and recovery is skipped. `--repair` runs `omg sync` on the
+copy after the migration (§2a below). `--keep` leaves the temporary
+directory for inspection. A directory whose database has no `docs` table is
+not a workspace: the script prints `{ ok: false, reason }` and exits 2.
+Every `omg` the script runs passes `--stale`, and the copy's `fs` sources
+are re-pointed at the copied tree before anything opens it: nothing the
+script does can read or write the original directory.
 
 ## 1. Before you run it — a consistent backup (plan §7 step 1)
 
@@ -59,14 +69,40 @@ The script does this. What it does, so the report reads right:
   engine (`omg doctor --json`; the open runs `spec/store` §3.4 — a 16.x
   database materializes its live heads out of the recorder's Merkle tree
   ONCE and backfills the claims, the feed, the manifest with capture
-  `enabled` so prior behaviour continues, resolution 17; a 17.0–17.2
-  database runs the finish steps, 17.3's being the deletion of its tombstoned
-  `blocks` rows). The legacy fidelity limit is recorded by the manifest's
-  coverage interval (`coverage_from` = the earliest commit) and by `doctor`'s
-  "capture complete".
-- **AFTER** — the same snapshot through the TypeScript engine, plus its
-  rendered bytes and the three read queries (docs, blocks, links) both
-  engines must answer alike.
+  `enabled` so prior behaviour continues, resolution 17, rebuilds the FTS
+  index over the new rows and runs the fidelity check of step 17 (16); a
+  17.0–17.3 database runs the finish steps — 17.3's the deletion of its
+  tombstoned `blocks` rows, with their FTS entries since 17.4; 17.4's the
+  fidelity check behind the cheap signature of legacy rows). The legacy
+  fidelity limit is recorded by the manifest's coverage interval
+  (`coverage_from` = the earliest commit) and by `doctor`'s "capture
+  complete".
+- **(c′) legacy bytes and the repair (`--repair`)** — `spec/store` §5.11.
+  A document ingested before block trivia was stored (schema v6) has
+  rows that do not reproduce its file: the 16.x reader already served it
+  without the newlines between its blocks, while the file and `file_hash`
+  were right. The migration names such documents in the `legacy_bytes`
+  alert (`<n> document(s) carry bytes the engine cannot reproduce from its
+  rows …`), `doctor` fails `bytes reproducible` with the count, and the
+  report carries it as `after.ts.legacy_bytes`. The REPAIR is `omg sync`:
+  the sweep rewrites the separator bytes of every named document whose file
+  is present and hashes to `file_hash` — every block keeps its id, the head
+  stays, no commit, no revision — and clears the alert when none is left.
+  With `--repair` the script runs it on the copy (the files must be there:
+  a root inside the workspace is copied with it, an outside root needs
+  `--with-files`) and reports `repair: { legacy_bytes_before, repaired,
+  remaining }`; `remaining > 0` means documents whose files are gone (they
+  stay listed — `doctor` keeps showing the count — until the file comes
+  back or the document is deleted) or whose parse no longer matches their
+  rows. **On the real workspace, run `omg sync` once right after the
+  migration and before cutting over** (§5): until then every read of a
+  legacy document returns the legacy bytes, as it did through 16.x. A
+  document's history keeps the 16.x capture: `docs_read { at: <head> }`
+  renders the legacy bytes with `renderedHashMatch: false` until its next
+  commit.
+- **AFTER** — the same snapshot through the TypeScript engine (after the
+  repair, when `--repair` ran), plus its rendered bytes and the three read
+  queries (docs, blocks, links) both engines must answer alike.
 
 ## 3. Compare before/after (plan §7 step 4)
 
@@ -80,7 +116,7 @@ The script does this. What it does, so the report reads right:
 | `property_missing`, `property_extra`, `link_missing`, `link_extra` | a property or link row |
 | `claims` | fewer id claims after than before |
 | `pending_lost` | a pre-migration pending row neither present nor materialized |
-| `bytes_hash` | AFTER's rendered bytes do not hash to the document's `file_hash` (the hash-level byte check, always on) |
+| `bytes_hash` | AFTER's rendered bytes do not hash to the document's `file_hash` (the hash-level byte check, always on). A legacy document (§2 c′) is exactly this diff until `--repair` / `omg sync` repairs it; the migration names them (`after.ts.legacy_bytes`) |
 | `bytes`, `bytes_unreadable` | AFTER's bytes differ from the old engine's (`--before-bin`), or a document could not be rendered |
 
 Beside the diff: **CAS** — on the copy a block is updated with a stale
@@ -101,14 +137,22 @@ must agree, `doctor` must be `ok`, and the docs/blocks/links queries must
 answer byte-identically to the TypeScript engine (`compatible_open.rust`).
 With `--before-bin` the old binary must REFUSE the copy with the pinned
 `database schema (v17) is newer than this build (v16); upgrade omgbase`
-(`compatible_open.before_bin.refused`); a 17.x `--before-bin` shares the
-schema major and opens it (`opened_same_major` — reported, not a failure).
+(`compatible_open.before_bin.refused` — recognised by the message on either
+stream whatever the exit status: omgbase 0.27.3 prints it as a JSON error
+object and exits 0 under `--json`; the exit is recorded beside it); a 17.x
+`--before-bin` shares the schema major and opens it (`opened_same_major` —
+reported, not a failure). **Known limitation of the 0.27.3 Rust binary as a
+`--before-bin`:** its `markdown` crate panics on some real content when it
+renders the BEFORE bytes (`q 'docs { _path, _raw }'`), so the byte check may
+fall back to hash-level (`before.through` says so) — the refusal check does
+not render and still works. Not ours to fix; the TypeScript 0.27.x `omg` is
+the better `--before-bin`.
 
 | engine / version | schema 16 (store 16.x) | schema 17 (store 17.0–17.3) |
 | --- | --- | --- |
 | TypeScript `omgbase` ≤ 0.27 (store 16.x) | read / write | **refused** ("newer than this build") |
-| TypeScript `omgbase` ≥ 0.28 (store 17.x, this repository) | **migrates on open** to 17 (one-way; needs the history module — a `core`/`semantic` composition refuses with "upgraded by an engine that carries the history module") | read / write; a 17.0–17.2 database runs the finish steps on first open (17.3: tombstoned block rows deleted) |
-| Rust `omgbase` ≥ 0.28 (store 17.x) | migrates on open (the twin of the same step) | read / write (the 17.3 finish step with its twin) |
+| TypeScript `omgbase` ≥ 0.28 (store 17.x, this repository) | **migrates on open** to 17 (one-way; needs the history module — a `core`/`semantic` composition refuses with "upgraded by an engine that carries the history module"); rebuilds the FTS index; names the legacy documents (`legacy_bytes`) | read / write; a 17.0–17.3 database runs the finish steps on first open (17.3: tombstoned block rows deleted, with their FTS entries since 17.4; 17.4: the fidelity check behind the signature of legacy rows) |
+| Rust `omgbase` ≥ 0.28 (store 17.x) | migrates on open (the twin of the same step) | read / write (the finish steps with their twins) |
 | any engine, a database with a HIGHER `user_version` | — | refused: an unknown version never writes |
 
 The four compositions of either engine open the same 17 database: a
@@ -122,10 +166,16 @@ the opener's.
 ## 5. Cut over, and the rollback rule (plan §7 steps 5–6)
 
 Cut over only when the report says `"ok": true` with `diff: []` and the
-compatible-open block is green. Then, writers still quiesced: run the
-current engine once against the ORIGINAL (`omg doctor` — the same migration,
-now on the real database), re-run `migrate-copy.mjs` against it (a 17 → 17
-run: no diff, `doctor` ok, CAS and recovery hold), start the writers.
+compatible-open block is green (a legacy workspace is green only with
+`--repair`). Then, writers still quiesced: run the current engine once
+against the ORIGINAL (`omg doctor --stale` — the same migration, now on the
+real database; expect the `legacy_bytes` alert the copy showed), **then `omg
+sync`** (the repair: `repaired <n>`; a document whose file is gone stays
+listed — `omg doctor` keeps the count under `bytes reproducible` until the
+file returns or the document is removed), then `omg doctor` must be `ok`
+(an FTS check that fails on a database a 17.0–17.2 engine migrated earlier
+is `omg rebuild-index --fts`), re-run `migrate-copy.mjs` against it (a 17 →
+17 run: no diff, `doctor` ok, CAS and recovery hold), start the writers.
 
 - **A failed pre-cutover run leaves the original intact.** The script never
   opens the original; a red report costs nothing but a temporary directory.
@@ -158,10 +208,21 @@ measured amplification of the gate; their `history` column is 0 for
 ## 7. What 5b runs on a real repository copy
 
 ```
-node scripts/qualify/migrate-copy.mjs --workspace <the workspace> --rust-bin target/release/omgbase --compositions --out /tmp/qualify-<name>.json
+node scripts/qualify/migrate-copy.mjs --workspace <the workspace> --rust-bin target/release/omgbase --with-files --repair --compositions --out /tmp/qualify-<name>.json
 ```
 
 and, when the `omg` that wrote the workspace is still installed,
 `--before-bin "$(which omg)"` before upgrading it. Record the size table and
 the `ok` flags (numbers only) in `baseline.md` §3's style; keep the JSON out
 of the repository.
+
+**What the first run (5a-ii, 2026-10-26) found on two copies** — numbers
+only: the 853-document copy migrated with no diff and a green `doctor`; the
+116-document copy came out with 115 documents in the `legacy_bytes` alert
+(every block had been ingested before trivia was stored) and, before the
+fixes of 5a-ii, a failing FTS check (1771 index rows for 1547 live leaves —
+the 16.x index held every block) and a `--before-bin` refusal the script
+did not recognise (exit 0). After the fixes: FTS clean on both, the alert
+raised with the count, the refusal recognised by its message, and the
+repair verified on fixture databases (the real copies' files were not
+available to the run).

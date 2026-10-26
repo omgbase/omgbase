@@ -15,6 +15,7 @@ import {
   liveLeafCount,
   sizeReport,
   activeAlerts,
+  refreshLegacyBytesAlert,
   readCapability,
   openCoverageFrom,
   captureFor,
@@ -124,7 +125,7 @@ function runDoctor(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "doctor",
-      summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, active alerts, SQLite integrity — exit 1 on any failure (CI-able)",
+      summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, bytes reproducible, capture complete, active alerts, SQLite integrity — exit 1 on any failure (CI-able)",
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
         ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice"],
@@ -163,6 +164,17 @@ function runDoctor(cli: Cli, args: string[]): number {
   // build without the module) owes none and the check says so in its detail.
   const headless = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NULL").get() as { c: number }).c;
   checks.push({ name: "head present", ok: headless === 0, detail: `${headless} without a head` });
+
+  // Store 17.4 (Phase 5a-ii; spec/store §5.11, §8 C9): every live document's
+  // rows reproduce its `file_hash` — the fidelity check the migration runs,
+  // re-derived here in full for the selected repository, and the `legacy_bytes`
+  // alert written to match (raised with the count and a sample of ids, or
+  // cleared), so the `alerts` check below sees the current condition. A
+  // document ingested before block trivia was stored fails it until `omg sync`
+  // repairs its rows from the file.
+  const legacy = refreshLegacyBytesAlert(db, repo.repoId, new Date().toISOString());
+  checks.push({ name: "bytes reproducible", ok: legacy.length === 0, detail: `${legacy.length} document(s) not reproducible from their rows` });
+
   const manifest = readCapability(db, repo.repoId, "history");
   const since = openCoverageFrom(manifest);
   const recorder = captureFor(db, repo.repoId);

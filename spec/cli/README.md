@@ -657,14 +657,23 @@ block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 
 ### `doctor`
 
-`doctor [--json]` — five checks on the selected repo (through cli 5.x a
+`doctor [--json]` — six checks on the selected repo (five through cli 5.3;
+through cli 5.x a
 `convergence` check — `repos_status.unconverged === 0` — which store 17.0
 retired with the count: identically true under I1): `fts rows == live leaf blocks` (the rows the index
 holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
 `count(*)` on an external-content table answers from `blocks` — against the
 live leaf blocks of `spec/search` §1.1: live rows no live row names as
 `parent_block`; detail `fts=<n> leaves=<n>`), `head present` (every live
-document has a `docs.head`; detail `<n> without a head`), `capture complete`
+document has a `docs.head`; detail `<n> without a head`), `bytes
+reproducible` (cli 5.4, store 17.4: every live document of the selected
+repository with a `file_hash` has `sha256(reconstruct) == file_hash` —
+`spec/store` §5.11, C9 — re-derived IN FULL here and the repository's
+`legacy_bytes` alert written to match, raised with the count and a sample
+of ids or cleared, so the `alerts` check below sees the current condition;
+detail `<n> document(s) not reproducible from their rows`; a document
+ingested before block trivia was stored fails it until `omg sync` repairs
+its rows from the file), `capture complete`
 (every live head minted within the open coverage interval has its
 `revisions` row — capture agrees with the head, `spec/store` §8 H1; detail
 `<n> heads without a revision`; since cli 5.1 (store 17.1 Phase 4a) the
@@ -1527,14 +1536,19 @@ without a provider (58 for the alchemy fixture with no vectors).
 `sync [--watch]` · `sync --server <cmd|url> [-H …]… [--root <dir>] [--out]`
 — one-shot: the freshness sweep (§3.7), human: the wordmark `sync`, the rule,
 `  scanned   <n> files`, then `  ok ingested  <n>` with `      <path>` per
-file, `  x deleted   <n>` with paths, `  ! conflicts <n>` with paths, or
+file, `  x deleted   <n>` with paths, `  ! conflicts <n>` with paths,
+`  ok repaired  <n>` with paths (cli 5.4 — the legacy documents whose
+separator bytes the sweep repaired from their files, `spec/sync` §4.3 step
+5 / `spec/store` §5.11; no commit), or
 `  already up to date` when nothing changed; `--json` (every non-human mode)
-the `SweepResult` `{ batchId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed, materialized }` (`batchId` — `spec/sync` §4.1, 4.0: the first committing member's commit id, `null` when the sweep committed nothing; `checkpointId` through cli 5.x)
+the `SweepResult` `{ batchId, ingested, suppressed, deleted, conflicted, failed, scanned, candidates, changed, materialized, repaired }` (`batchId` — `spec/sync` §4.1, 4.0: the first committing member's commit id, `null` when the sweep committed nothing; `checkpointId` through cli 5.x; `repaired` since cli 5.4)
 — `materialized` (3.1) is the sweep's step 0 (`spec/sync` §4.3): the paths
 whose pending materialization rows (`spec/store` §5.7) it replayed before
 the walk, `/`-rooted like the other lists and `[]` in every fixture (a
 fixture cannot crash the engine between a commit and its file half). The
-human rendering does not mention it.
+human rendering does not mention it. `repaired` is likewise `[]` in every
+fixture (a fixture workspace has no legacy rows); `omg sync` after a
+migration is where it is non-empty (`docs/modular-core/migration-runbook.md`).
 A sourceless repo: stderr `  <slug> has no filesystem source — nothing to sync`
 (an empty-result note, §3.1), `--json`
 `{"scanned":0,"ingested":[],"deleted":[],"conflicted":[],"changed":false,"materialized":[]}`.
@@ -2129,6 +2143,19 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.4 (store 17.4 Phase 5a-ii, sync 4.4): **`doctor`'s
+  `bytes reproducible`; `sync`'s `repaired`.** `doctor` gains its sixth
+  check (§6) — the store's fidelity check re-derived in full for the
+  selected repository, the `legacy_bytes` alert written to match — and
+  `sync` renders the sweep's new `repaired` member (`spec/sync` §4.3 step
+  5): a `  ✓ repaired  <n>` line with the paths in human mode, the member in
+  every machine mode. Fixtures: every `doctor` rendering moved by the one
+  line (`admin::doctor`, `doctor-json`, `doctor-after-observed-delete`,
+  `doctor-after-api-delete`, `doctor-alert`, `invoke::help-card-doctor`,
+  `history::history-disable-then-write`, `history-purge-disabled`,
+  `history-purge-before-enabled`), the `sync --json` shapes by the member
+  (`sync::up-to-date-json`, `up-to-date-ids-is-json`, `out-of-band-edit`,
+  `out-of-band-new-file`). A check and a member added: a minor.
 - 2026-10-26, cli 5.3 (store 17.3 Phase 5a, surface 6.3, sync 4.3): **the four
   compositions in the runner** (§8) — the textual classifier that skips a
   case carrying an observable of the absent module, the ledger line, the

@@ -129,5 +129,6 @@ export function surfaceSweepResult(res: SweepResult): SweepResult {
     deleted: res.deleted.map(referencePath),
     conflicted: res.conflicted.map(referencePath),
     materialized: res.materialized.map(referencePath),
+    repaired: res.repaired.map(referencePath),
   };
 }

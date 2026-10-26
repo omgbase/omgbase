@@ -140,6 +140,9 @@ export {
   MATERIALIZATION_BACKLOG_ALERT, MATERIALIZATION_FAILED_ALERT, RECOVERY_ALERT_AFTER_MINUTES_DEFAULT,
   type Alert, type AlertInput, type AlertSeverity,
 } from "./core/store/alerts.js";
+// Legacy bytes (spec/store §3.4 step 17 (16), §5.11; spec/sync §4.3 step 5 — store 17.4, modular-core Phase 5a-ii).
+export { LEGACY_BYTES_ALERT, LEGACY_BYTES_SAMPLE, legacyBytesMessage, unreproducibleDocs, legacyBytesSuspected, refreshLegacyBytesAlert, legacyBytesActive, type UnreproducibleDoc } from "./core/store/legacy-bytes.js";
+export { repairLegacyBytes, type LegacyRepairOutcome } from "./sync/legacy-bytes.js";
 export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, RevisionNotFound, type NodeChange, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
 // The change feed (spec/store §3.1 `feed`, 17.0 — the core's; spec/surface §3 `changes_since`).
 export {

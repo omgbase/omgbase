@@ -384,7 +384,7 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
 | 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
-| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). The step also runs `DROP INDEX IF EXISTS idx_claims_repo_prefix` — unconditionally, at both entry points (the 16 → 17 step and the on-open finish of a database a 3b–3e-ii build already moved to 17), so the `(repo_id, prefix, minted_at)` index those builds created leaves on the next open (2026-10-26, §10; idempotent). (5) **`pending_materializations`** (3c — M4) rebuilt self-contained, `rowid`s kept: `head` = the row's `rev_id` (the same `r_` token — the head IS the revision id the core minted), `prior_hash` = the `rendered_hash` of the revision before `rev_id` (`seq − 1` of the same document) **resolved once** from the 16.x `revisions` — `NULL` for a `remove` row, a first revision or an unknown one, `created_at` = the `ts` of `commit_id`'s commit (the migration's clock when the commit is gone); `rev_id` and both foreign keys (`revisions`, `commits`) dropped. (6) **`repos`** (3d — D7) rebuilt with **`epoch`**: one `ep` minted per repository in `rowid` order (the fixture minter: `ep_0`, …), its claim at the repo's first commit's `ts` (the epoch is as old as the feed it scopes), else the migration's clock, `holders = 1`. (7) **`feed` + `feed_entries`** created and **backfilled** from the 16.x `commits` and `revisions` (resolution 12 — what the rows say, no path reconstruction): one feed row per `commits` row `(epoch = the new one, seq = commits.seq, commit_id, ts, origin, actor, reason, batch_id = commit_id — no checkpoint grouped them, plan_id = NULL)`; entries from `revisions` joined on `commit_id` in `rowid` order `(doc_id, path = revisions.path, head = rev_id, hash = rendered_hash, kind = created when revisions.seq = 1 else changed)`; one `deleted` entry `(doc_id, path = docs.path, head NULL, hash NULL)` per `docs` row whose `deleted_at` is the commit's `ts` (a revived document's earlier deletion leaves none — its tombstone is gone); a commit with **no entry so far** whose `reason` parses as `move <from> -> <to>` (a 16.x `retarget_inbound: false` move) gets one `moved` entry for the document now at `<to>` — its current `head` and `file_hash`, `from_path = <from>` — and none when no live document is at `<to>`. Then the feed prune under the defaults at the migration's clock (§7.4 — a 1,778-commit corpus keeps every row); the `c` claims: bit 0 for every commit the feed holds (`minted_at` the commit's `ts`), bit 1 for every `commits` row. (8) **`commits`** rebuilt as the recorder's row — `epoch` (the repo's new one), `batch_id = commit_id`, `checkpoint_id` dropped, `UNIQUE (repo_id, epoch, seq)` — `rowid`s kept. (9) **`sync_state`** gains `last_batch_ts`, `last_batch_id`, `last_batch_files`; per repository the reserved status row `('', '')` is inserted from the latest `checkpoints` row by `ts` (`last_batch_ts` its `ts`, `last_batch_id` NULL — the batch id is unknowable — `last_batch_files` the `files` array's length; no row when the repository had no checkpoint); then **`checkpoints` is dropped** (its `cp_` ids get no claim — the prefix is retired). (10) **`edges`** (3e-i — M6) becomes open-only: when the history bundle is present (`commits` exists) `edge_transitions` is created (`schema-history.sql`'s text) and every `edges` row copied into it verbatim, `rowid` order; then `edges` is rebuilt with the rows whose `to_commit IS NULL` minus the two interval columns (`rowid`s kept — the rollup's sample order), `idx_edges_src`/`idx_edges_dst` re-created without their `WHERE`, `idx_edges_temporal` dropped. The `e` claims follow the rows: bit 1 on every id a transition names, bit 0 only on the ids an open row still carries (a closed edge's claim is the recorder's alone — the rule of step (4) applied to the moved rows), a claim left with no holder deleted. (11) **`properties`** (D9) rebuilt without `created_commit`/`deleted_commit`, `rowid`s kept, its four indexes re-created without their partial predicates. (12) **`collections`** and **`inferred_edges`** dropped (D9). (13) **`capabilities`** (3e-ii) created (`schema.sql`'s text) and, per repository without a `history` row (`rowid` order), the manifest written: `history` = `(enabled, interface_v 1, data_v 1, config '{}', config_hash sha256('{}'), coverage [{ from: <the ts of the repository's earliest commits row — the feed's oldest row when the history bundle is absent — else the migration's clock>, to: null }], writer_requires 1, updated_at = the clock)` — **existing repositories keep capturing** (resolution 17); `semantic` = `enabled` with `config` `{ model?, dim? }` from the effective `embedding.*` settings and one open interval from the clock when `embedding.provider` resolves for the repository, else `disabled` with `coverage []` and `config '{}'` (resolution 1 — stored vectors are never consulted; a row is always written). (14) **`alerts`** (3e-ii) created, empty. (15) **tombstoned `blocks` rows deleted** (17.3, Phase 5a — D2 step two): `DELETE FROM blocks WHERE deleted_at IS NOT NULL`, AFTER the claims backfill of (4) so a tombstoned block's identity stays claimed (`holders = 1`) and its pool row stays; run at both entry points and idempotent — a 17.0–17.2 database loses its tombstoned rows on its first open by a 17.3 engine (a data-only finish of the unreleased 17.x line, no version spent; `migrations::v16-to-v17-heads-inline-bytes-time` projects `blocks` without `b_3` and `id_claims` with it). The history tables are read for the backfill and not touched (`edge_transitions` is created, not read). A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`, which also carries a `write` and a `remove` pending row, two checkpoints, an attachment cursor row, a `move old.md -> a.md` commit with no revision — the one `moved` entry the backfill writes — and (3e-i) a closed and an open edge, two property rows with the commit columns, and empty `collections`/`inferred_edges` tables: it projects `edges` (the open row alone, no interval columns), `edge_transitions` (both rows verbatim), `properties` (without the columns) and the `e` claims — the closed edge's `2`, the open one's `3`). (A database a pre-3b, pre-3c, pre-3d, pre-3e-i or pre-3e-ii 17.0 build already moved to 17 — `docs` present, `id_claims` absent, `pending_materializations.rev_id` present, `feed` absent / `checkpoints` present / `commits.checkpoint_id` present, `edges.from_commit` / `properties.created_commit` / `collections` / `inferred_edges` present, or `capabilities` / `alerts` absent (or a repository without its manifest rows) — runs the missing parts on open; 17.0 is unreleased and each part is idempotent, so no version is spent on those states.) |
+| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`; then, when `blocks_fts` exists, **the FTS index is rebuilt** over the new rows (17.4 — §7's rebuild: `delete-all`, then every live leaf of every live document; a 16.x index may hold every block, containers and tombstones included — the rule before `spec/search` 1.2 — and `doctor`'s `fts rows == live leaf blocks` would otherwise fail on the migrated database until a `rebuild-index --fts`; the rows keep their `rowid`s, so the external-content index stays keyed the same way). (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). The step also runs `DROP INDEX IF EXISTS idx_claims_repo_prefix` — unconditionally, at both entry points (the 16 → 17 step and the on-open finish of a database a 3b–3e-ii build already moved to 17), so the `(repo_id, prefix, minted_at)` index those builds created leaves on the next open (2026-10-26, §10; idempotent). (5) **`pending_materializations`** (3c — M4) rebuilt self-contained, `rowid`s kept: `head` = the row's `rev_id` (the same `r_` token — the head IS the revision id the core minted), `prior_hash` = the `rendered_hash` of the revision before `rev_id` (`seq − 1` of the same document) **resolved once** from the 16.x `revisions` — `NULL` for a `remove` row, a first revision or an unknown one, `created_at` = the `ts` of `commit_id`'s commit (the migration's clock when the commit is gone); `rev_id` and both foreign keys (`revisions`, `commits`) dropped. (6) **`repos`** (3d — D7) rebuilt with **`epoch`**: one `ep` minted per repository in `rowid` order (the fixture minter: `ep_0`, …), its claim at the repo's first commit's `ts` (the epoch is as old as the feed it scopes), else the migration's clock, `holders = 1`. (7) **`feed` + `feed_entries`** created and **backfilled** from the 16.x `commits` and `revisions` (resolution 12 — what the rows say, no path reconstruction): one feed row per `commits` row `(epoch = the new one, seq = commits.seq, commit_id, ts, origin, actor, reason, batch_id = commit_id — no checkpoint grouped them, plan_id = NULL)`; entries from `revisions` joined on `commit_id` in `rowid` order `(doc_id, path = revisions.path, head = rev_id, hash = rendered_hash, kind = created when revisions.seq = 1 else changed)`; one `deleted` entry `(doc_id, path = docs.path, head NULL, hash NULL)` per `docs` row whose `deleted_at` is the commit's `ts` (a revived document's earlier deletion leaves none — its tombstone is gone); a commit with **no entry so far** whose `reason` parses as `move <from> -> <to>` (a 16.x `retarget_inbound: false` move) gets one `moved` entry for the document now at `<to>` — its current `head` and `file_hash`, `from_path = <from>` — and none when no live document is at `<to>`. Then the feed prune under the defaults at the migration's clock (§7.4 — a 1,778-commit corpus keeps every row); the `c` claims: bit 0 for every commit the feed holds (`minted_at` the commit's `ts`), bit 1 for every `commits` row. (8) **`commits`** rebuilt as the recorder's row — `epoch` (the repo's new one), `batch_id = commit_id`, `checkpoint_id` dropped, `UNIQUE (repo_id, epoch, seq)` — `rowid`s kept. (9) **`sync_state`** gains `last_batch_ts`, `last_batch_id`, `last_batch_files`; per repository the reserved status row `('', '')` is inserted from the latest `checkpoints` row by `ts` (`last_batch_ts` its `ts`, `last_batch_id` NULL — the batch id is unknowable — `last_batch_files` the `files` array's length; no row when the repository had no checkpoint); then **`checkpoints` is dropped** (its `cp_` ids get no claim — the prefix is retired). (10) **`edges`** (3e-i — M6) becomes open-only: when the history bundle is present (`commits` exists) `edge_transitions` is created (`schema-history.sql`'s text) and every `edges` row copied into it verbatim, `rowid` order; then `edges` is rebuilt with the rows whose `to_commit IS NULL` minus the two interval columns (`rowid`s kept — the rollup's sample order), `idx_edges_src`/`idx_edges_dst` re-created without their `WHERE`, `idx_edges_temporal` dropped. The `e` claims follow the rows: bit 1 on every id a transition names, bit 0 only on the ids an open row still carries (a closed edge's claim is the recorder's alone — the rule of step (4) applied to the moved rows), a claim left with no holder deleted. (11) **`properties`** (D9) rebuilt without `created_commit`/`deleted_commit`, `rowid`s kept, its four indexes re-created without their partial predicates. (12) **`collections`** and **`inferred_edges`** dropped (D9). (13) **`capabilities`** (3e-ii) created (`schema.sql`'s text) and, per repository without a `history` row (`rowid` order), the manifest written: `history` = `(enabled, interface_v 1, data_v 1, config '{}', config_hash sha256('{}'), coverage [{ from: <the ts of the repository's earliest commits row — the feed's oldest row when the history bundle is absent — else the migration's clock>, to: null }], writer_requires 1, updated_at = the clock)` — **existing repositories keep capturing** (resolution 17); `semantic` = `enabled` with `config` `{ model?, dim? }` from the effective `embedding.*` settings and one open interval from the clock when `embedding.provider` resolves for the repository, else `disabled` with `coverage []` and `config '{}'` (resolution 1 — stored vectors are never consulted; a row is always written). (14) **`alerts`** (3e-ii) created, empty. (15) **tombstoned `blocks` rows deleted** (17.3, Phase 5a — D2 step two): `DELETE FROM blocks WHERE deleted_at IS NOT NULL`, AFTER the claims backfill of (4) so a tombstoned block's identity stays claimed (`holders = 1`) and its pool row stays; run at both entry points and idempotent — a 17.0–17.2 database loses its tombstoned rows on its first open by a 17.3 engine (a data-only finish of the unreleased 17.x line, no version spent; `migrations::v16-to-v17-heads-inline-bytes-time` projects `blocks` without `b_3` and `id_claims` with it). **With their FTS entries** (17.4 — qualification finding F2): `blocks_fts` is an external-content index keyed by `blocks.rowid`, so a row deleted without the index's `delete` command leaves an orphan the index still counts. BEFORE the DELETE, in the same transaction, every tombstoned row **the index holds** — its `rowid` has a `blocks_fts_docsize` row — gets `INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', <rowid>, <the row's text>)`, in `rowid` order; a tombstoned row the index does not hold is skipped (a `delete` for an unindexed row corrupts the index's statistics). The live path's `ftsDeleteDoc` purges LIVE leaves and is not the rule here — it would purge nothing. (16) **the fidelity check** (17.4, Phase 5a-ii — qualification finding F1; §5.11): per repository in `rowid` order, for every live document with a `file_hash`, `sha256(reconstruct(doc)) == file_hash` (§6.1); the documents that fail it, in bytewise `path` order, raise the repository's **`legacy_bytes`** alert (§5.8: `warning`, the pinned message with their count, detail `{ docs: <count>, sample: [<the first 20 doc ids>] }`) at the migration's clock; none → the alert is cleared if active. Runs after (13)–(15) (the `alerts` table exists, the tombstoned rows are gone). At the 16 → 17 entry point the check runs over **every** live document (one pass of the repository's bytes, a one-time cost of the migration: step (2) copies a block's bytes from the recorder's blobs as they are, so a document ingested before block trivia was stored — schema v6 added `blocks.trivia_hash`, v7 `docs.frontmatter_trivia` — comes out with rows that do not reproduce its file, exactly as the 16.x reader read it; the file and `file_hash` were right all along). At the on-open entry point (a 17.0–17.3 database a released 17.x engine already migrated, and every later open) it runs only for a repository that carries the cheap **signature** of legacy rows — a live top-level block with a NULL `trivia` and a later top-level sibling in its document, or a live document with a `frontmatter_raw` and no `frontmatter_trivia`; `spec/format` §1 rule 4 makes both impossible for the current ingest (a `raw` never ends in a line ending, so the bytes between two top-level blocks are at least one) — so a healthy database pays one metadata scan of `blocks` per open and never hashes its bytes; a repository without the signature whose alert is active is left to the sweep and `doctor`, which re-derive the full set (§5.11). Idempotent (the raise refreshes an active row in place). `migrations::v16-to-v17-legacy-trivia` pins it over a pre-state with a legacy document and a healthy one; `v16-to-v17-heads-inline-bytes-time`'s authored `file_hash` (X'06') is not the hash of its raws, so the check names its `d_1` too — the one place the fixture's fake hash is observable. The history tables are read for the backfill and not touched (`edge_transitions` is created, not read). A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`, which also carries a `write` and a `remove` pending row, two checkpoints, an attachment cursor row, a `move old.md -> a.md` commit with no revision — the one `moved` entry the backfill writes — and (3e-i) a closed and an open edge, two property rows with the commit columns, and empty `collections`/`inferred_edges` tables: it projects `edges` (the open row alone, no interval columns), `edge_transitions` (both rows verbatim), `properties` (without the columns) and the `e` claims — the closed edge's `2`, the open one's `3`). (A database a pre-3b, pre-3c, pre-3d, pre-3e-i or pre-3e-ii 17.0 build already moved to 17 — `docs` present, `id_claims` absent, `pending_materializations.rev_id` present, `feed` absent / `checkpoints` present / `commits.checkpoint_id` present, `edges.from_commit` / `properties.created_commit` / `collections` / `inferred_edges` present, or `capabilities` / `alerts` absent (or a repository without its manifest rows) — runs the missing parts on open; 17.0 is unreleased and each part is idempotent, so no version is spent on those states.) |
 | 16 | **nothing** — no DDL, no data pass. Every node a 15.x store holds is a `[`-form list and every frontmatter blob a raw: exactly the 16.0 **checkpoint forms** (§4.4), so every existing revision is a checkpoint and the store is already a valid 16.0 database; deltas appear with the next commit to each document (§4.4 decides per revision). The step only lets the opener move `user_version`. Compare the per-key-parts branch `2f7b286`, whose migration had to split every frontmatter blob in a verified full pass: there the old encoding was *not* a valid new one; here it is, by construction (§10 Decisions, 16.0) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
@@ -1157,7 +1157,9 @@ phase-1-contracts.md` §7 "+"). One row per `(repo_id, code)`:
   severity, message, since, detail? }` — `detail` omitted when `{}`.
 - **Derivable conditions are re-derived whenever the channel is read**
   (`active_alerts`): the table remembers `since` and the message, the
-  condition itself is always current.
+  condition itself is always current — except a condition whose derivation
+  is a pass over the repository's bytes (`legacy_bytes`, 17.4), which the
+  table's row names say for; its raisers are listed with it.
 
 The raisers of 17.0, each with its condition and its end:
 
@@ -1168,6 +1170,7 @@ The raisers of 17.0, each with its condition and its end:
 | `writer_refused` | `error` | a writer without the history module was refused by `writer_requires` (§5.4 step 0; the write is `capability_unavailable { capability: history, state: unavailable }`, `spec/surface` §4). Unreachable through 17.0: every composition carries the recorder. Message: `a writer without the history module was refused: this repository requires capture (writer_requires) — write through an engine that carries the history module, or run omg history disable` | a write by an engine that carries the module passes the check | `{ capability: "history" }` |
 | `capture_failed` | `error` | (17.1, Phase 4a; resolution 18) the recorder threw inside a member's transaction: the member was rolled back, the next sweep retries. Message: `history capture of <path \| a commit> failed: <reason> — the write was rolled back and is retried by the next sweep; fix the recorder or run omg history disable` | a later capture of the same path succeeds | `{ path?, reason }` |
 | `feed_capped` | `warning` | (17.2, Phase 4b) the write-time cap pruned feed rows inside a commit's transaction (§7.4: more than `feed.max_entries` rows of the epoch were newer than them) — rows the floors promised a consumer are leaving because the cap is too low for the write rate. Raised in the committing transaction at the commit's `ts`. Message: `the feed reached feed.max_entries (<max>) and pruned <n> row[s] a consumer may not have read: raise feed.max_entries or shorten the sync interval` | a `gc` (§7, §7.4) whose cap pass prunes nothing — the feed is within the cap again (the floors did the work, or the cap was raised); a gc whose cap pass prunes re-raises it | `{ pruned: <the rows this write pruned>, oldest, head }` (the feed's position after the prune) |
+| `legacy_bytes` | `warning` | (17.4, Phase 5a-ii; §5.11) some live document's rows do not reproduce its `file_hash` — `sha256(reconstruct(doc)) != file_hash` — because they were imported before block trivia was stored (the 16 → 17 migration copies such rows as they are). Raised by the migration at both entry points (§3.4 step 17 (16)), re-derived IN FULL by `doctor` (`spec/cli` §6 `bytes reproducible`) and by every freshness sweep while it is active (`spec/sync` §4.3 step 5 — the sweep repairs the documents whose files are present); **not** re-derived on an ordinary read of the channel (`active_alerts`): the check is a pass over the repository's bytes. Message, with the count: `<n> document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files` (the literal `document(s)`, whatever `n`) | a re-derivation finds no such document — the sweep repaired them from their files, or re-ingested the ones whose files moved on | `{ docs: <n>, sample: [<the first 20 doc ids, bytewise path order>] }` |
 
 Nothing else raises; a code outside this table is a newer engine's. The
 conditions the contracts name beyond these — a detached segment a read
@@ -1287,6 +1290,79 @@ FTS-only. With NO provider configured the row is `disabled` too, and every
 path keeps its 5.1 answer (`provider_unavailable` — "the module is here
 and has nothing to score with", `spec/surface` §4); `version` and
 `sync_status` read `disabled` in both cases.
+
+### 5.11 Legacy bytes and their repair (17.4, Phase 5a-ii)
+
+The Phase 5 qualification (`docs/modular-core/migration-runbook.md`) ran
+the 16 → 17 migration on copies of two real workspaces and found, in one of
+them, 115 of 116 live documents whose rows did **not** reproduce their
+`file_hash` after the migration — while the files on disk hashed to
+`file_hash` for every one of them. Their blocks had been ingested before
+the store kept block trivia (schema v6 added `blocks.trivia_hash`, v7
+`docs.frontmatter_trivia`): every block's `trivia_hash` was NULL, the 16.x
+reader took a NULL for "empty trailing bytes" (so `---\n# H\n\n## T\n` read
+as `---# H## T`), and step 17 (2) copied the rows as they were. The 16.x
+engine had been serving those bytes all along; what changed is that the
+store now says so.
+
+**The condition.** For a live document *d* with a `file_hash`:
+`sha256(reconstruct(d)) != file_hash` (§6.1). The set of such documents of
+a repository, in bytewise `path` order, is the repository's **legacy
+set**; it is non-empty only by this cause (a current-state ingest checks
+`reconstruct(d) == source` as it commits, C1). The store records it as the
+`legacy_bytes` alert (§5.8) with the count and the first 20 ids, and
+nothing else — no column is spent: the condition is re-derived where a
+pass over the repository's bytes is affordable — by the migration (§3.4
+step 17 (16): in full at the 16 → 17 entry point, behind the cheap
+signature of legacy rows at the on-open one), by `doctor` (`spec/cli` §6
+`bytes reproducible`, in full, on demand) and by the freshness sweep while
+the alert is active (`spec/sync` §4.3 step 5). An ordinary read of the
+channel does not re-derive it. Recovery (`spec/sync` §4.3) does not look
+at it: a legacy document's file hashes to `file_hash`, so recovery sees
+nothing to heal.
+
+**The repair** (the sweep's step 5; `spec/sync` §4.3) — for each document
+of the legacy set whose file is present and hashes to `file_hash` (the
+bytes the store already agrees with, I1):
+
+1. Parse the file (`spec/format`); split off the `frontmatter` block.
+2. The parse must have the rows' **exact shape**: the same number of
+   top-level blocks, and recursively the same children; at every position
+   the same `type` and the same `raw`; the frontmatter block's `raw` equal
+   to `docs.frontmatter_raw` (both absent, or equal). Identical texts map to
+   the same ids **positionally** — no matcher runs; a parse that differs
+   anywhere leaves the document in the set (it is not a pure separator
+   loss) and nothing is written.
+3. Rewrite the **separator columns from the parse, and nothing else**:
+   `blocks.trivia`/`trivia_hash` of every paired block (`NULL`/`NULL` when
+   the parsed trivia is empty, else the bytes and their sha256 — C2),
+   `docs.leading_trivia`, `docs.frontmatter_trivia` (the frontmatter block's
+   trivia; NULL without one). `raw`, `raw_hash`, `text`, `norm_hash`,
+   `attrs`, the ids, `parent_block`, `order_key`, `ordinal`, the FTS index
+   (it indexes `text`), the nodes (byte spans into `raw`), the sections,
+   the properties and the edges are untouched.
+4. `sha256(reconstruct(d)) == file_hash` must hold afterwards, or the
+   rewrite is rolled back and the document stays in the set.
+
+A repair mints **nothing**: no feed row, no feed entry, no head (content,
+structure, path and liveness did not change — D1), no `updated_at` on the
+document or its blocks (D6), no revision, no disposition. **Legacy
+fidelity:** the recorder's capture of the head stays what the 16.x engine
+captured — a tree whose entries name no trivia — so `docs_read { at:
+<head> }` (§6.2) renders the legacy bytes with `rendered_hash_match:
+false`, as it did through 16.x, until the document's next commit captures
+a fresh revision; the head's `revisions.rendered_hash` was right all along.
+A document whose file is **gone** (a database migrated beside a tree that
+no longer holds it) stays in the set and listed; one whose file **moved
+on** is a changed candidate of the same sweep and is re-ingested by the
+ordinary path (a new head, a `changed` entry, rows written from the file)
+before the repair pass looks, so it is no longer in the set. After the
+pass the alert follows the remainder: refreshed with the new count, or
+cleared when none is left. The sweep's result carries the repaired paths
+(`repaired`). `checkpoint::legacy-bytes-repaired-by-the-sweep`,
+`-missing-file-stays-listed` and `-diverged-file-is-ingested-not-repaired`
+of `spec/sync` pin the three outcomes; the migration fixtures pin the
+check (§9.3).
 
 ## 6. Reads this spec pins
 
@@ -1965,6 +2041,24 @@ checked. (`docs/modular-core/phase-1-contracts.md` §1.15 is the source.)
   §5.6 keeps). `prior_hash` is defined, not derivable — it names bytes the
   engine wrote at the path that no current row holds — so only its nullness
   is checked.
+- **C9 Bytes reproducible, or named (17.4, §5.11).** For every live doc
+  with a `file_hash`: `sha256(reconstruct(doc)) == file_hash`, **or** the
+  repository's `legacy_bytes` alert is active and names it — then
+  `detail.docs` is the count of such documents and every id of
+  `detail.sample` is one of them (A1's reading of the code). A document the
+  active alert names is a legacy document until the sweep repairs it: C1's
+  `reconstruct(doc) == source` clause is what C9 relaxes for it, and H3's
+  trivia-hash clause is not owed for it (its capture is the 16.x one — the
+  recorder's tree names no trivia, as the rows name none). After the repair
+  the rows carry the trivia and the recorder's tree still does not: H3's
+  trivia clause is not owed for a **repaired** legacy head either, and
+  neither is H1's "reconstruct at it `== source`" — the capture is the 16.x
+  capture until the document's next commit. A runner cannot tell such a head
+  apart (no column records the repair), so the fixtures reach the legacy
+  state through `spec/sync`'s `sql` device, which erases the rows'
+  separators and leaves the recorder's tree whole; on them H1/H3 hold again
+  after the repair. (The 16 → 17 migration itself never produces a
+  repaired head — the state exists only after a sweep.)
 - **F1 Every head is in the feed (17.0).** Every live doc's `head` appears
   as some retained entry's `head`, and every tombstoned doc has a retained
   `deleted` entry — for the documents whose `updated_at` is **not older
@@ -1990,7 +2084,9 @@ checked. (`docs/modular-core/phase-1-contracts.md` §1.15 is the source.)
   `materialization_backlog` row's `detail.oldest` is the `created_at` of a
   `pending_materializations` row of the repository and `detail.pending ≥
   1`; `materialization_failed` and `writer_refused` are advisory (a past
-  event, cleared by the next success). A cleared row is not checked.
+  event, cleared by the next success); a `legacy_bytes` row's
+  `detail.docs` equals the size of the repository's legacy set (§5.11) and
+  its `sample` names members of it (C9). A cleared row is not checked.
 - **H1 Capture agrees with the head (I1 restated).** For every live doc
   `docs.head` names a live `revisions` row with `path == docs.path`,
   `rendered_hash == file_hash == sha256(source)` and its commit's `ts ==
@@ -2169,7 +2265,15 @@ live block's `3`, a tombstoned block's `1`, a pooled block known to
 since 3e-ii it projects `capabilities` (the `history` row `enabled` with
 its interval from the first commit's `ts` and `updated_at` the fixture
 clock; the `semantic` row `disabled` — the pre-state configures no
-provider) and the empty `alerts`.
+provider) and — since 17.4 — the one `alerts` row step 17 (16) raises over
+it (its authored `file_hash` X'06' is not the hash of its raws, so the
+fidelity check names `d_1`: `legacy_bytes`, `warning`, the message with the
+count 1, `since` the fixture clock, detail `{"docs":1,"sample":["d_1"]}`).
+`migrations::v16-to-v17-legacy-trivia` (17.4) pins the check on purpose: a
+pre-state with a legacy document (both blocks' `trivia_hash` NULL, the
+document's `file_hash` the real sha256 of `# A\n\nPara.\n`) and a healthy
+one (its trivia blobs stored, the real hash of its file) comes out with the
+alert naming the legacy document alone and the rows untouched.
 `migrations::v15-to-v16-is-lazy` pins step 16: a 15.x pre-state with two
 revisions, a full node and a raw frontmatter blob comes out at
 `user_version` 16 with every `revisions`, `tree_nodes` and `blobs` row
@@ -2497,6 +2601,41 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (17.4, Phase 5a-ii) — the migration's fidelity check, the
+  `legacy_bytes` alert and the sweep's repair; the FTS index through the
+  migration.** Found by running the Phase 5a script on copies of two real
+  16.x workspaces (116 and 853 documents; numbers only here). **F1:** in
+  the 116-document database every block carried a NULL `trivia_hash` (an
+  ingest older than schema v6); 16.x `reconstruct` had assumed NULL meant
+  empty trailing bytes and read the documents without the newlines between
+  their blocks, while the files and `docs.file_hash` were right; step 17
+  (2) copied the rows as they were, so 115 of 116 documents came out with
+  `sha256(reconstruct) != file_hash` (the 853-document database, whose
+  blocks had their trivia, migrated with no diff). Decided: no column —
+  the condition is re-derived where a pass over the bytes is affordable
+  (the migration, `doctor`, the sweep while the alert is active) and
+  recorded as the `legacy_bytes` alert with a bounded sample (§5.8, §5.11,
+  §3.4 step 17 (16)); the on-open entry point is gated by the cheap
+  signature of legacy rows so a healthy database never hashes its bytes on
+  open; the repair rewrites the separator columns alone, positionally,
+  mints nothing and leaves the recorder's capture of the head as the 16.x
+  capture (legacy fidelity, C9). Verified on the 116-document copy: the
+  alert names 115 documents and the repair rule's structural match holds
+  for the parse of every file whose hash equals `file_hash`. **F2:** the
+  17.3 finish step deleted a 17.0–17.2 database's tombstoned rows without
+  the FTS `delete` command, and a 16.x index built under the rule before
+  `spec/search` 1.2 held every block (containers included: 1771 index rows
+  for 1547 live leaves on the 116-document copy), so `doctor`'s `fts rows
+  == live leaf blocks` failed on every migrated database. Decided: step 17
+  (2) rebuilds the index once at the 16 → 17 entry point; the finish step
+  purges exactly the tombstoned rows the index holds (`blocks_fts_docsize`
+  says which) before the DELETE, since a `delete` for an unindexed row
+  corrupts the index. Fixtures: `migrations::v16-to-v17-heads-inline-bytes-
+  time` moved (its `alerts` projection gains the row the fake hash earns),
+  `migrations::v16-to-v17-legacy-trivia` new; `spec/sync` `checkpoint::`
+  three new cases and the `sql`/`legacy_bytes`/`alerts` steps; `spec/cli`
+  every `doctor` rendering (the `bytes reproducible` line) and the
+  `sync --json` shape (`repaired`).
 - **Changed (17.3, Phase 5a) — D2 step two: a tombstone deletes the block
   rows.** No DDL change (`blocks.deleted_at` stays, always NULL). Both
   tombstone paths — the observed deletion (§5.6) and the api `docs_delete`
@@ -2935,6 +3074,23 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-26, store 17.4 (Phase 5a-ii of `docs/modular-core/`): **legacy
+  bytes are named, not spent a column on; the sweep repairs them.** A
+  procedure minor — no DDL change. Decided in the implementation (§10
+  "Changed (17.4)"): the fidelity check `sha256(reconstruct) == file_hash`
+  runs in full at the 16 → 17 entry point and behind the cheap signature of
+  legacy rows at the on-open one (the alternative — a per-document flag
+  column — was a store major for a transient condition, and a full check
+  on every open an O(bytes) cost forever); the `legacy_bytes` alert carries
+  the count and the first 20 ids, and `doctor` and the active-alert sweep
+  re-derive the set in full; the repair is positional and separator-only
+  (the matcher would match identical texts to the same ids anyway, and
+  running it would be a re-ingest in disguise), mints nothing and leaves
+  the recorder's capture alone — a repaired head's capture is the 16.x
+  capture until the next commit (legacy fidelity, pinned by C9's reading
+  of H1/H3). The 16 → 17 step also rebuilds the FTS index once, and the
+  tombstone finish step purges the index entries it holds before deleting
+  the rows (the rule the 17.3 twin must correct to).
 - 2026-10-26, store 17.3 (Phase 5a of `docs/modular-core/`): **D2 step two,
   the four compositions, fault injection.** A procedure minor — no DDL change.
   Decided in the implementation: a tombstone DELETES the document's `blocks`

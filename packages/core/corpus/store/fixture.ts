@@ -25,6 +25,7 @@ import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/i
 import { sha256 } from "../../src/core/hash.js";
 import { pinClock } from "../../src/core/clock.js";
 import { activeAlerts, MATERIALIZATION_BACKLOG_ALERT } from "../../src/core/store/alerts.js";
+import { LEGACY_BYTES_ALERT, legacyBytesActive, unreproducibleDocs } from "../../src/core/store/legacy-bytes.js";
 import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/document.js";
 import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { attachArchive, detachArchive, exportHistory, RevisionArchived, segmentBasename, ARCHIVE_SUFFIX } from "../../src/core/store/archive.js";
@@ -995,6 +996,16 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       if (!row) problems.push(`A1: materialization_backlog names no pending row at ${JSON.stringify(d.oldest)}`);
       if (typeof d.pending !== "number" || d.pending < 1) problems.push(`A1: materialization_backlog counts ${JSON.stringify(d.pending)} pending rows`);
     }
+    // 17.4 (§5.11, C9): a `legacy_bytes` alert names the live documents whose
+    // rows do not reproduce their `file_hash` — `detail.docs` is their count
+    // and every id of `detail.sample` is one of them.
+    if (a.code === LEGACY_BYTES_ALERT) {
+      const d = a.detail ?? {};
+      const docs = unreproducibleDocs(db, repoId);
+      if (d.docs !== docs.length) problems.push(`A1: legacy_bytes counts ${JSON.stringify(d.docs)} documents, ${docs.length} are not reproducible`);
+      const ids = new Set(docs.map((x) => x.docId));
+      if (!Array.isArray(d.sample) || d.sample.some((id) => typeof id !== "string" || !ids.has(id))) problems.push(`A1: legacy_bytes sample ${JSON.stringify(d.sample)} names a reproducible document`);
+    }
   }
 
   // ---- the composition and the coverage (README §8, Phase 4a) -------------------------------
@@ -1196,6 +1207,21 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if (bytes === null || !sha256(bytes).equals(p.rendered_hash)) problems.push(`C8: ${at} reconstruct(doc) does not hash to rendered_hash`);
   }
 
+  // ---- C9 bytes reproducible, or named (17.4, §5.11) --------------------------------------
+  // Every live document's rows reproduce its `file_hash`, or the repository's
+  // active `legacy_bytes` alert names it (A1 above checks the count and sample).
+  const unreproducible = unreproducibleDocs(db, repoId);
+  if (unreproducible.length > 0 && !legacyBytesActive(db, repoId)) {
+    problems.push(`C9: ${unreproducible.length} live document(s) do not reproduce their file_hash and no legacy_bytes alert names them: ${unreproducible.map((d) => d.path).join(", ")}`);
+  }
+  // A document the active alert names is a LEGACY document until the sweep
+  // repairs it (§5.11): C1's reconstruct clause is what C9 relaxes for it, and
+  // H3's trivia clause is not owed — its capture is the 16.x one. (The
+  // fixtures reach the state through the `sql` device, which erases the rows'
+  // separators and leaves the recorder's tree whole; on a real legacy document
+  // the tree names no trivia either.)
+  const legacyNamed = new Set(legacyBytesActive(db, repoId) ? unreproducible.map((d) => d.docId) : []);
+
   // ---- C1 convergence from the rows; H1/H3 the recorder's capture agrees with the head ----
   for (const d of docs) {
     if (d.deleted_at !== null || d.head === null) continue;
@@ -1206,7 +1232,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     } else {
       const want = sha256(source);
       if (!d.file_hash || !d.file_hash.equals(want)) problems.push(`C1: ${at} file_hash != sha256(source)`);
-      if (reconstructContent(db, d.doc_id) !== source) problems.push(`C1: ${at} reconstruct(doc) != source`);
+      if (!legacyNamed.has(d.doc_id) && reconstructContent(db, d.doc_id) !== source) problems.push(`C1: ${at} reconstruct(doc) != source`);
     }
     // H1: with capture on, the head IS a captured revision — same path, same
     // bytes, the same commit instant as `updated_at` — and reconstruct at it
@@ -1272,7 +1298,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
         if (r.block_id !== id) problems.push(`H3: ${where}[${i}]: block ${r.block_id} vs tree entry ${id}`);
         if (r.type !== type) problems.push(`H3: ${where}[${i}]: type ${r.type} vs ${type}`);
         if (r.raw_hash.toString("hex") !== raw) problems.push(`H3: ${where}[${i}]: raw_hash differs from the tree entry`);
-        if ((r.trivia_hash ? r.trivia_hash.toString("hex") : null) !== trivia) problems.push(`H3: ${where}[${i}]: trivia_hash differs from the tree entry`);
+        if (!legacyNamed.has(d.doc_id) && (r.trivia_hash ? r.trivia_hash.toString("hex") : null) !== trivia) problems.push(`H3: ${where}[${i}]: trivia_hash differs from the tree entry`);
         if (r.ordinal !== i) problems.push(`C3: ${where}[${i}]: ordinal ${r.ordinal} (order_key order says ${i})`);
         if (r.depth !== depth) problems.push(`C3: ${where}[${i}]: depth ${r.depth} != ${depth}`);
         if (r.ancestor_path !== ancestorPath) problems.push(`C3: ${where}[${i}]: ancestor_path ${r.ancestor_path} != ${ancestorPath}`);

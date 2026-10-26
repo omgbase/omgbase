@@ -33,6 +33,8 @@ import { freshnessSweep, detectDiskDrift, rebuildFileStats, sweepPlan, type Stat
 import { processCheckpoint, type BatchResult } from "../../src/sync/checkpoint.js";
 import { recoverRepo } from "../../src/sync/recovery.js";
 import { reposStatus } from "../../src/sync/admin.js";
+import { LEGACY_BYTES_SAMPLE, refreshLegacyBytesAlert } from "../../src/core/store/legacy-bytes.js";
+import { listActiveAlerts } from "../../src/core/store/alerts.js";
 import { createExternalSource } from "../../src/sync/external-source.js";
 import type { SyncFs } from "../../src/sync/fs-util.js";
 import type { SourceWatch, SyncSource } from "../../src/sync/plugin.js";
@@ -304,9 +306,15 @@ export type CheckpointStep =
   | { checkpoint: { ts: string; paths: string[] } }
   | { drift: Record<string, never> }
   | { recover: { ts: string } }
-  | { rebuild_stats: Record<string, never> };
+  | { rebuild_stats: Record<string, never> }
+  /** README §8 (4.4): raw SQL on the store — the device that plants a state the production paths never write (a legacy document's NULL separators). */
+  | { sql: { statements: string[] } }
+  /** README §8 (4.4): the fidelity check (spec/store §5.11) re-derived and the `legacy_bytes` alert written to match; outcome `{ docs, sample }`. */
+  | { legacy_bytes: { ts: string } }
+  /** README §8 (4.4): the repository's active alerts as the channel lists them; outcome `{ active: [{ code, severity, message, since, detail? }] }`. */
+  | { alerts: Record<string, never> };
 
-export const CHECKPOINT_STEPS = ["disk", "rm", "sweep", "checkpoint", "drift", "recover", "rebuild_stats"] as const;
+export const CHECKPOINT_STEPS = ["disk", "rm", "sweep", "checkpoint", "drift", "recover", "rebuild_stats", "sql", "legacy_bytes", "alerts"] as const;
 
 export interface CheckpointProjection extends Omit<StoreProjection, "steps" | "id_claims"> {
   steps: Record<string, unknown>[];
@@ -374,9 +382,18 @@ export function runCheckpointCase(c: Omit<CheckpointCase, "expect">): Checkpoint
           steps.push({});
         } else if ("sweep" in step) {
           const r = freshnessSweep(store, repoId, FIXTURE_ROOT, { ts: step.sweep.ts, fs });
-          touched([...r.ingested, ...r.suppressed, ...r.conflicted, ...r.deleted]);
-          steps.push({ ...checkpointOutcome(r), scanned: r.scanned, candidates: r.candidates, changed: r.changed });
+          touched([...r.ingested, ...r.suppressed, ...r.conflicted, ...r.deleted, ...r.repaired]);
+          // README §8 (4.4): `repaired` is projected only when the sweep repaired something (spec/store §5.11).
+          steps.push({ ...checkpointOutcome(r), scanned: r.scanned, candidates: r.candidates, changed: r.changed, ...(r.repaired.length > 0 ? { repaired: r.repaired } : {}) });
           ingesting = true;
+        } else if ("sql" in step) {
+          for (const stmt of step.sql.statements) store.db.exec(stmt);
+          steps.push({});
+        } else if ("legacy_bytes" in step) {
+          const docs = refreshLegacyBytesAlert(store.db, repoId, step.legacy_bytes.ts);
+          steps.push({ docs: docs.length, sample: docs.slice(0, LEGACY_BYTES_SAMPLE).map((d) => d.docId) });
+        } else if ("alerts" in step) {
+          steps.push({ active: listActiveAlerts(store.db, repoId) });
         } else if ("checkpoint" in step) {
           const s = step.checkpoint;
           const r = processCheckpoint(store, repoId, FIXTURE_ROOT, s.paths.map((path) => ({ path })), { ts: s.ts, fs });
@@ -777,8 +794,16 @@ function validateCheckpointStep(kind: string, body: Record<string, unknown>, her
       onlyKeys(body, [], here, problems);
       break;
     case "recover":
+    case "legacy_bytes":
       onlyKeys(body, ["ts"], here, problems);
       requireTs(body, here, problems);
+      break;
+    case "sql":
+      onlyKeys(body, ["statements"], here, problems);
+      if (!Array.isArray(body.statements) || body.statements.length === 0 || body.statements.some((s) => typeof s !== "string" || s === "")) problems.push(`${here}: \`statements\` must be a non-empty array of SQL statements`);
+      break;
+    case "alerts":
+      onlyKeys(body, [], here, problems);
       break;
   }
 }

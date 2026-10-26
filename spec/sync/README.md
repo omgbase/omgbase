@@ -183,8 +183,24 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
    — except a `failed` member's (4.1): it was rolled back and stays a
    candidate for the next sweep.
 
+5. **Legacy repair** (4.4; `spec/store` §5.11): when the repository's
+   `legacy_bytes` alert is **active** after step 3, re-derive the
+   repository's legacy set — the live documents whose rows do not reproduce
+   their `file_hash` (`spec/store` §3.4 step 17 (16); a member step 3 just
+   ingested reproduces by construction) — and for each one whose file is
+   present and hashes to `file_hash`, run the repair of `spec/store` §5.11:
+   the file's parse must have the rows' exact shape, types and `raw`s, then
+   the separator columns alone are rewritten from it; no commit, no head,
+   no feed row, no `updated_at`. A document whose file is absent, whose
+   bytes differ from `file_hash` (it moved on between the plan and now), or
+   whose parse differs from its rows stays in the set. Then the alert
+   follows the remainder — refreshed with the new count and sample, or
+   cleared when none is left. The repaired paths are reported as
+   `repaired` (bytewise path order). A sweep without an active alert skips
+   the step entirely: the check is a pass over the repository's bytes.
+
 Result: the batch result plus `{ scanned, candidates, changed:
-ingested or deleted or conflicted or failed non-empty, materialized }`; a sweep with nothing to do
+ingested or deleted or conflicted or failed or repaired non-empty, materialized, repaired }`; a sweep with nothing to do
 still writes the status row (`batch_id` NULL). `file_stats` is derived: a
 rebuild deletes the repo's rows, then re-stats and re-hashes every walked
 file **that has a live doc** (one whose `file_hash` is null matches nothing)
@@ -210,7 +226,9 @@ re-ingested as an observed commit (one document at a time, not a batch — §9)
 and listed `healed`, and a pending row step 0 kept at that path (foreign
 bytes) goes with the heal: the file won. Recovery writes no status row
 and does not refresh `file_stats` (the next sweep re-hashes the healed file
-and echo-suppresses it).
+and echo-suppresses it). Recovery does not run the legacy repair (step 5
+above): a legacy document's file hashes to `file_hash`, so recovery sees
+nothing to heal; the sweep owns the repair.
 
 ### 4.4 Status (4.0)
 
@@ -431,9 +449,18 @@ Three case shapes:
   set `{ path, content, mtime_ns }` — a safe-integer JSON number; `rm`
   steps remove; the walk is insertion order), on a sourceless repo `rp_0`,
   with `sweep { ts }`, `checkpoint { ts, paths }` (4.0: no `git_head`),
-  `drift`, `recover { ts }`, `rebuild_stats` steps; `expect.steps` records
+  `drift`, `recover { ts }`, `rebuild_stats` steps, and (4.4) `sql {
+  statements }` (raw SQL executed on the store in order — the device that
+  plants a state the production paths never write: a legacy document's NULL
+  separators, a dropped `file_stats` row; outcome `{}`), `legacy_bytes { ts
+  }` (the fidelity check of `spec/store` §5.11 re-derived and the
+  `legacy_bytes` alert written to match at `ts`; outcome `{ docs, sample }`
+  — the count and the first 20 ids) and `alerts {}` (the repository's active
+  alerts as the channel lists them; outcome `{ active: [{ code, severity,
+  message, since, detail? }] }`); `expect.steps` records
   each result (`batch_id` — 4.0, `checkpoint_id` through 3.x — buckets,
-  counters — `scanned`, `candidates`, `changed`), and the projection adds
+  counters — `scanned`, `candidates`, `changed`; a `sweep` outcome carries
+  `repaired` **only when non-empty**, 4.4), and the projection adds
   `sync_state` (4.0: the repo's rows by (`source_id`, `path`) as `{
   source_id, path, revision, cursor, last_batch_ts, last_batch_id,
   last_batch_files }` — the status row among them; `checkpoints` through
@@ -627,6 +654,24 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.4 (store 17.4 Phase 5a-ii of `docs/modular-core/`):
+  **the sweep repairs legacy bytes.** The freshness sweep gains step 5
+  (§4.3) and its result `repaired`: while the repository's `legacy_bytes`
+  alert is active — the migration qualification found a real 16.x
+  workspace whose rows, imported before block trivia was stored, did not
+  reproduce their files (`spec/store` §5.11) — the sweep re-derives the
+  legacy set and rewrites the separator columns of every document whose
+  file is present and hashes to `file_hash`, minting nothing; a missing
+  file leaves its document listed, a diverged file is the ordinary
+  re-ingest. Decided here: the repair is the SWEEP's (the operator's `omg
+  sync` after migrating, the runbook's step), not recovery's (recovery sees
+  nothing to heal) and not the open's (the open names, it does not read
+  files); the gate is the active alert, so a healthy repository's sweep
+  never pays the pass over its bytes; `repaired` is projected in a `sweep`
+  outcome only when non-empty, so the 19 existing checkpoint fixtures do
+  not move. New steps for the fixtures: `sql` (the device `spec/cli` §8
+  already had), `legacy_bytes`, `alerts`; three new `checkpoint::legacy-
+  bytes-*` cases. A result member added: a minor.
 - 2026-10-26, sync 4.3 (store 17.3 Phase 5a of `docs/modular-core/`): **the
   four compositions.** The §8 rule is keyed on the absent history module
   (`core`, `semantic`: 19 checkpoint cases mapped; `history`: as `full`) and

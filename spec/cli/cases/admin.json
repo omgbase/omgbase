@@ -904,7 +904,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1193,7 +1193,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+        "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
       }
     },
     {
@@ -1205,7 +1205,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
       }
     },
     {
@@ -1223,7 +1223,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"batchId\":\"c_20\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"failed\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
+            "stdout": "{\"batchId\":\"c_20\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"failed\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[],\"repaired\":[]}\n"
           }
         },
         {
@@ -1232,7 +1232,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1242,7 +1242,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {
@@ -1263,7 +1263,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1293,7 +1293,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1316,7 +1316,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1336,7 +1336,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 1,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  x alerts  (materialization_backlog[warning]: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them)\n  ok sqlite integrity\n",
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  x alerts  (materialization_backlog[warning]: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them)\n  ok sqlite integrity\n",
             "stderr": "alert[warning] materialization_backlog: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them\n"
           }
         },
@@ -1348,7 +1348,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 1,
-            "stdout": "{\"ok\":false,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":false,\"detail\":\"materialization_backlog[warning]: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n",
+            "stdout": "{\"ok\":false,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":false,\"detail\":\"materialization_backlog[warning]: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n",
             "stderr": "alert[warning] materialization_backlog: 1 pending materialization older than 10 minutes (oldest 2026-09-26T23:00:00.000Z): the api path still owes the working tree these files — omg sync replays them\n"
           }
         },
@@ -1984,7 +1984,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok bytes reproducible\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -2241,7 +2241,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         }
       ]

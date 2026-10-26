@@ -2109,7 +2109,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {
@@ -2451,7 +2451,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {
@@ -2557,7 +2557,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"bytes reproducible\",\"ok\":true,\"detail\":\"0 document(s) not reproducible from their rows\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {

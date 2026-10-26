@@ -466,7 +466,7 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
-## 6a. Status (2026-10-26) — Phases 1–4 complete in both engines; Phase 5 open (5a, the qualification tooling, in the reference)
+## 6a. Status (2026-10-26) — Phases 1–4 complete in both engines; Phase 5 open (5a the qualification tooling, 5a-ii what the first real-copy run found — both in the reference)
 
 **Phases 1–3 are complete in both engines** (store 17.0, released as
 `a91354b`): the seams (Phase 1), the semantic bundle behind
@@ -599,12 +599,62 @@ touched), 5b runs it on copies of Brendan's workspaces.
   32 cells green (`conformance: 32 cells green`, 2026-10-26, ≈ 20 minutes
   wall-clock — the CLI suite is 4–5 of them per composition).
 
+- **5a-ii (this slice; TypeScript reference + spec, `spec/store` 17.4,
+  `spec/sync` 4.4, `spec/cli` 5.4).** What the first 5b run — the script on
+  copies of two real 16.x workspaces, 853 and 116 documents — found, fixed
+  in the reference. **(F1) Legacy bytes.** In the 116-document database
+  every block had been ingested before block trivia was stored (schema v6
+  added `blocks.trivia_hash`); 16.x `reconstruct` had assumed a NULL meant
+  empty trailing bytes and served the documents without the newlines
+  between their blocks, while the files and `docs.file_hash` were right;
+  step 17 copied the rows as they were, so 115 of 116 documents came out
+  with `sha256(reconstruct) != file_hash` (the 853-document database, its
+  trivia stored, migrated with no diff). Decided — no column: the migration
+  runs a **fidelity check** (`spec/store` §3.4 step 17 (16) — in full at the
+  16 → 17 entry point, behind a cheap signature of legacy rows on every
+  later open, so a healthy database never hashes its bytes on open) and
+  names the documents in the **`legacy_bytes`** alert (`warning`, the count
+  and the first 20 ids); `omg doctor` gains **`bytes reproducible`** and
+  re-derives it in full; **`omg sync` repairs** every named document whose
+  file is present and hashes to `file_hash` — the separator columns
+  rewritten from the file's parse, positionally (identical texts to the same
+  ids, no matcher), every block keeps its id, the head stays, no commit, no
+  revision, no `updated_at`; the recorder's capture of the head stays the
+  16.x capture until the next commit (legacy fidelity, `spec/store` §5.11,
+  §8 C9); the sweep result gains `repaired`; a document whose file is gone
+  stays listed. **(F2) FTS orphans.** The 16 → 17 step rebuilds the FTS
+  index (a 16.x index held every block — 1771 rows for 1547 leaves on the
+  116-document copy) and the 17.3 finish step purges the index entries of
+  the tombstoned rows it deletes (only those the index holds —
+  `blocks_fts_docsize` says which; a `delete` for an unindexed row corrupts
+  the index). **(F3/F4) The script**: the `--before-bin` refusal recognised
+  by its message whatever the exit (omgbase 0.27.3 exits 0 under `--json`);
+  a database with no `docs` table reported `{ ok: false, reason }`, exit 2;
+  the copy's `fs` sources re-pointed at the copied tree (`--with-files`
+  copies an outside root, every `omg` runs `--stale`) so nothing reaches the
+  original directory — the 5a script's recovery check had run against the
+  original root; `--repair` runs the sweep on the copy and reports `repair:
+  { legacy_bytes_before, repaired, remaining }`; the composition pass no
+  longer counts AFTER's own `bytes_hash` as a composition difference (the
+  `reads_equal_after: false` of the first run was F1's consequence, not a
+  composition's). Fixtures: `migrations::v16-to-v17-legacy-trivia` new,
+  `v16-to-v17-heads-inline-bytes-time` moved (its fake hash earns the
+  alert row); `spec/sync` three `checkpoint::legacy-bytes-*` cases and the
+  `sql`/`legacy_bytes`/`alerts` steps; `spec/cli` the nine `doctor`
+  renderings and four `sync --json` shapes. After the fixes, on the copies:
+  the 116-document one at v17 with `legacy_bytes` 115, FTS 1547 == 1547,
+  `doctor` red on the two legacy checks alone; the 853-document one green.
+  **The Rust twin must mirror**: step 17 (2)'s FTS rebuild, (15)'s
+  docsize-gated purge, (16)'s check at both entry points with the signature
+  gate, the alert's message/detail byte for byte, `doctor`'s line, the
+  sweep's step 5 and `repaired`, the three fixture steps.
 - **5b (next).** Run `node scripts/qualify/migrate-copy.mjs --workspace <dir>
-  --rust-bin target/release/omgbase --compositions` on copies of the real
-  workspaces (with `--before-bin` where the writing `omg` is still
-  installed), record the size tables (numbers only) in `baseline.md`, cut
-  over per the runbook, and run `OMGBASE_FAULT` drives against a copy under
-  each engine.
+  --rust-bin target/release/omgbase --with-files --repair --compositions` on
+  copies of the real workspaces (with `--before-bin` where the writing `omg`
+  is still installed), record the size tables (numbers only) in
+  `baseline.md`, cut over per the runbook — `omg sync` right after the
+  migration repairs the legacy documents — and run `OMGBASE_FAULT` drives
+  against a copy under each engine.
 
 ## 7. Index
 

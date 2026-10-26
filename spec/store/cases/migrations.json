@@ -2035,7 +2035,345 @@
               "updated_at": "2026-09-27T00:00:00.000Z"
             }
           ],
-          "alerts": []
+          "alerts": [
+            {
+              "repo_id": "rp_1",
+              "code": "legacy_bytes",
+              "severity": "warning",
+              "message": "1 document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files",
+              "since": "2026-09-27T00:00:00.000Z",
+              "detail": "{\"docs\":1,\"sample\":[\"d_1\"]}",
+              "cleared_at": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "v16-to-v17-legacy-trivia",
+      "notes": "Step 17 (16) (17.4, Phase 5a-ii — qualification finding F1): the fidelity check over a 16.x pre-state with LEGACY rows. a.md was ingested before block trivia was stored (schema v6): both its blocks carry a NULL `trivia_hash`, while its `file_hash` is the real sha256 of its file `# A\\n\\nPara.\\n` — the 16.x reader already read it as `# APara.` and the migration copies the rows as they are (`trivia` NULL), so `sha256(reconstruct(d_1)) != file_hash`. b.md is a healthy 16.x document (its trivia blobs `\\n\\n` and `\\n` stored, `file_hash` the real hash of `# B\\n\\nBeta.\\n`) and reproduces. The check names d_1 alone: the `legacy_bytes` alert is raised at the migration's clock — `warning`, the pinned message with the count 1, detail `{ docs: 1, sample: [d_1] }` — and nothing else about the rows changes (`blocks` carries the NULL trivia the recorder's tree names; `omg sync` repairs them from the file, spec/sync `checkpoint::legacy-bytes-repaired-by-the-sweep`). The pre-state has no `blocks_fts`, so the index rebuild of (2) is skipped.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT, UNIQUE (repo_id, path))",
+        "CREATE TABLE blocks (block_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), doc_id TEXT NOT NULL REFERENCES docs(doc_id), parent_block TEXT, order_key TEXT NOT NULL, ordinal INTEGER NOT NULL, depth INTEGER NOT NULL, ancestor_path TEXT NOT NULL, type TEXT NOT NULL, attrs TEXT NOT NULL DEFAULT '{}', text TEXT NOT NULL, raw_hash BLOB NOT NULL, norm_hash BLOB NOT NULL, trivia_hash BLOB, created_commit TEXT NOT NULL, deleted_commit TEXT)",
+        "CREATE INDEX idx_blocks_doc ON blocks(doc_id, parent_block, order_key) WHERE deleted_commit IS NULL",
+        "CREATE INDEX idx_blocks_type ON blocks(repo_id, type) WHERE deleted_commit IS NULL",
+        "CREATE INDEX idx_blocks_rawhash ON blocks(raw_hash)",
+        "CREATE INDEX idx_blocks_ancestor ON blocks(doc_id, ancestor_path)",
+        "CREATE TABLE blobs (hash BLOB PRIMARY KEY, bytes BLOB NOT NULL, size INTEGER NOT NULL)",
+        "CREATE TABLE tree_nodes (hash BLOB PRIMARY KEY, entries TEXT NOT NULL)",
+        "CREATE TABLE commits (commit_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), seq INTEGER NOT NULL, ts TEXT NOT NULL, origin TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')), actor TEXT, reason TEXT, checkpoint_id TEXT, ops TEXT, UNIQUE (repo_id, seq))",
+        "CREATE TABLE revisions (rev_id TEXT PRIMARY KEY, doc_id TEXT NOT NULL REFERENCES docs(doc_id), seq INTEGER NOT NULL, root_tree BLOB, frontmatter_blob BLOB, rendered_hash BLOB NOT NULL, path TEXT NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), archive TEXT, UNIQUE (doc_id, seq))",
+        "CREATE TABLE block_changes (block_id TEXT NOT NULL, commit_id TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (block_id, commit_id, kind))",
+        "INSERT INTO repos (repo_id, slug) VALUES ('rp_1','vault')",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1','rp_1',1,'2026-10-17T10:00:00.000Z','observed')",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_2','rp_1',2,'2026-10-17T10:01:00.000Z','observed')",
+        "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash, leading_trivia, frontmatter_trivia, deleted_commit) VALUES ('d_1','rp_1','a.md','r_1', X'4a37152bc6f223cc1034af6b483f19edad7690ebaaef8b1606027c80816b6d19', '', NULL, NULL)",
+        "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash, leading_trivia, frontmatter_trivia, deleted_commit) VALUES ('d_2','rp_1','b.md','r_2', X'ed6e05fad9fd4d16208e38c64635586433f15d50917b39c995e3a543f8a38466', '', NULL, NULL)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'a1', X'232041', 3)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'a2', X'506172612e', 5)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'b1', X'232042', 3)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'b2', X'426574612e', 5)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'cc', X'0a0a', 2)",
+        "INSERT INTO blobs (hash, bytes, size) VALUES (X'ee', X'0a', 1)",
+        "INSERT INTO tree_nodes (hash, entries) VALUES (X'01', '[[\"b_1\",\"a1\",null,\"heading\",{\"level\":1},null],[\"b_2\",\"a2\",null,\"paragraph\",{},null]]')",
+        "INSERT INTO tree_nodes (hash, entries) VALUES (X'02', '[[\"b_3\",\"b1\",null,\"heading\",{\"level\":1},\"cc\"],[\"b_4\",\"b2\",null,\"paragraph\",{},\"ee\"]]')",
+        "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive) VALUES ('r_1','d_1',1,X'01',NULL,X'4a37152bc6f223cc1034af6b483f19edad7690ebaaef8b1606027c80816b6d19','a.md','c_1',NULL)",
+        "INSERT INTO revisions (rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id, archive) VALUES ('r_2','d_2',1,X'02',NULL,X'ed6e05fad9fd4d16208e38c64635586433f15d50917b39c995e3a543f8a38466','b.md','c_2',NULL)",
+        "INSERT INTO blocks (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit) VALUES ('b_1','rp_1','d_1',NULL,'V',0,0,'/','heading','{\"level\":1}','A',X'a1',X'10',NULL,'c_1',NULL)",
+        "INSERT INTO blocks (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit) VALUES ('b_2','rp_1','d_1',NULL,'W',1,0,'/','paragraph','{}','Para.',X'a2',X'11',NULL,'c_1',NULL)",
+        "INSERT INTO blocks (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit) VALUES ('b_3','rp_1','d_2',NULL,'V',0,0,'/','heading','{\"level\":1}','B',X'b1',X'12',X'cc','c_2',NULL)",
+        "INSERT INTO blocks (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth, ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit, deleted_commit) VALUES ('b_4','rp_1','d_2',NULL,'W',1,0,'/','paragraph','{}','Beta.',X'b2',X'13',X'ee','c_2',NULL)",
+        "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_1','c_1','inserted')",
+        "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_2','c_1','inserted')",
+        "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_3','c_2','inserted')",
+        "INSERT INTO block_changes (block_id, commit_id, kind) VALUES ('b_4','c_2','inserted')"
+      ],
+      "user_version": 16,
+      "rows": [
+        "docs",
+        "blocks",
+        "alerts"
+      ],
+      "expect": {
+        "user_version": 17,
+        "tables": {
+          "alerts": [
+            "repo_id",
+            "code",
+            "severity",
+            "message",
+            "since",
+            "detail",
+            "cleared_at"
+          ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "block_changes": [
+            "block_id",
+            "commit_id",
+            "kind"
+          ],
+          "blocks": [
+            "block_id",
+            "repo_id",
+            "doc_id",
+            "parent_block",
+            "order_key",
+            "ordinal",
+            "depth",
+            "ancestor_path",
+            "type",
+            "attrs",
+            "text",
+            "raw",
+            "raw_hash",
+            "norm_hash",
+            "trivia",
+            "trivia_hash",
+            "created_at",
+            "updated_at",
+            "deleted_at"
+          ],
+          "capabilities": [
+            "repo_id",
+            "capability",
+            "state",
+            "interface_v",
+            "data_v",
+            "config",
+            "config_hash",
+            "coverage",
+            "writer_requires",
+            "updated_at"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "epoch",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "ops"
+          ],
+          "doc_embeddings": [
+            "doc_id",
+            "model",
+            "input_hash",
+            "method",
+            "dim",
+            "vec"
+          ],
+          "docs": [
+            "doc_id",
+            "repo_id",
+            "path",
+            "format",
+            "head",
+            "file_hash",
+            "conflicted",
+            "leading_trivia",
+            "frontmatter_raw",
+            "frontmatter_trivia",
+            "created_at",
+            "updated_at",
+            "deleted_at"
+          ],
+          "embeddings": [
+            "content_hash",
+            "ctx_hash",
+            "model",
+            "dim",
+            "vec"
+          ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
+          "id_claims": [
+            "id",
+            "repo_id",
+            "prefix",
+            "minted_at",
+            "holders"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings",
+            "epoch"
+          ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
+          ]
+        },
+        "rows": {
+          "docs": [
+            {
+              "doc_id": "d_1",
+              "repo_id": "rp_1",
+              "path": "a.md",
+              "format": "markdown",
+              "head": "r_1",
+              "file_hash": "4a37152bc6f223cc1034af6b483f19edad7690ebaaef8b1606027c80816b6d19",
+              "conflicted": 0,
+              "leading_trivia": "",
+              "frontmatter_raw": null,
+              "frontmatter_trivia": null,
+              "created_at": "2026-10-17T10:00:00.000Z",
+              "updated_at": "2026-10-17T10:00:00.000Z",
+              "deleted_at": null
+            },
+            {
+              "doc_id": "d_2",
+              "repo_id": "rp_1",
+              "path": "b.md",
+              "format": "markdown",
+              "head": "r_2",
+              "file_hash": "ed6e05fad9fd4d16208e38c64635586433f15d50917b39c995e3a543f8a38466",
+              "conflicted": 0,
+              "leading_trivia": "",
+              "frontmatter_raw": null,
+              "frontmatter_trivia": null,
+              "created_at": "2026-10-17T10:01:00.000Z",
+              "updated_at": "2026-10-17T10:01:00.000Z",
+              "deleted_at": null
+            }
+          ],
+          "blocks": [
+            {
+              "block_id": "b_1",
+              "repo_id": "rp_1",
+              "doc_id": "d_1",
+              "parent_block": null,
+              "order_key": "V",
+              "ordinal": 0,
+              "depth": 0,
+              "ancestor_path": "/",
+              "type": "heading",
+              "attrs": "{\"level\":1}",
+              "text": "A",
+              "raw": "# A",
+              "raw_hash": "a1",
+              "norm_hash": "10",
+              "trivia": null,
+              "trivia_hash": null,
+              "created_at": "2026-10-17T10:00:00.000Z",
+              "updated_at": "2026-10-17T10:00:00.000Z",
+              "deleted_at": null
+            },
+            {
+              "block_id": "b_2",
+              "repo_id": "rp_1",
+              "doc_id": "d_1",
+              "parent_block": null,
+              "order_key": "W",
+              "ordinal": 1,
+              "depth": 0,
+              "ancestor_path": "/",
+              "type": "paragraph",
+              "attrs": "{}",
+              "text": "Para.",
+              "raw": "Para.",
+              "raw_hash": "a2",
+              "norm_hash": "11",
+              "trivia": null,
+              "trivia_hash": null,
+              "created_at": "2026-10-17T10:00:00.000Z",
+              "updated_at": "2026-10-17T10:00:00.000Z",
+              "deleted_at": null
+            },
+            {
+              "block_id": "b_3",
+              "repo_id": "rp_1",
+              "doc_id": "d_2",
+              "parent_block": null,
+              "order_key": "V",
+              "ordinal": 0,
+              "depth": 0,
+              "ancestor_path": "/",
+              "type": "heading",
+              "attrs": "{\"level\":1}",
+              "text": "B",
+              "raw": "# B",
+              "raw_hash": "b1",
+              "norm_hash": "12",
+              "trivia": "\n\n",
+              "trivia_hash": "cc",
+              "created_at": "2026-10-17T10:01:00.000Z",
+              "updated_at": "2026-10-17T10:01:00.000Z",
+              "deleted_at": null
+            },
+            {
+              "block_id": "b_4",
+              "repo_id": "rp_1",
+              "doc_id": "d_2",
+              "parent_block": null,
+              "order_key": "W",
+              "ordinal": 1,
+              "depth": 0,
+              "ancestor_path": "/",
+              "type": "paragraph",
+              "attrs": "{}",
+              "text": "Beta.",
+              "raw": "Beta.",
+              "raw_hash": "b2",
+              "norm_hash": "13",
+              "trivia": "\n",
+              "trivia_hash": "ee",
+              "created_at": "2026-10-17T10:01:00.000Z",
+              "updated_at": "2026-10-17T10:01:00.000Z",
+              "deleted_at": null
+            }
+          ],
+          "alerts": [
+            {
+              "repo_id": "rp_1",
+              "code": "legacy_bytes",
+              "severity": "warning",
+              "message": "1 document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files",
+              "since": "2026-09-27T00:00:00.000Z",
+              "detail": "{\"docs\":1,\"sample\":[\"d_1\"]}",
+              "cleared_at": null
+            }
+          ]
         }
       }
     },
