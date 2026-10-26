@@ -53,13 +53,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "9a0b04d2a016309299ca2f2b3adf96c2ebf0ba95befb2e6cf9e705ff637ad99e",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -199,6 +225,12 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
@@ -274,13 +306,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "61a773f8b5675b09dd8e9cecda18c4e91c63c33ab20bfc6349e84d40acdc2464",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -314,6 +372,12 @@
         "block_changes": [],
         "resurrection_pool": [],
         "id_claims": [
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
           {
             "prefix": "d",
             "id": "d_0",
@@ -384,13 +448,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "b1cf6a90055e3ab22dc4ba14374887b7db1cb07bfd65c03974220e63d357121b",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -475,6 +565,12 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
@@ -552,13 +648,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "f38d2879fa6850be23e8a8afec0a9812ce509bdbde54c688d5e8e54d751ce4a9",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -693,6 +815,12 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
@@ -795,23 +923,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "9a0b04d2a016309299ca2f2b3adf96c2ebf0ba95befb2e6cf9e705ff637ad99e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "58198e74dba9dea4a0bf1ff830730bfcaabe45fcc11b41ae28b915ed1d86ce9c",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -967,6 +1143,18 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
@@ -1075,23 +1263,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "9a0b04d2a016309299ca2f2b3adf96c2ebf0ba95befb2e6cf9e705ff637ad99e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "a03f5df4d39ea76c18b0998e5d88b6e33504384d22949b87032906a1c314a26c",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -1242,6 +1478,18 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-09-26T10:01:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
@@ -1325,13 +1573,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "5e8a183d873070be1637e2dbe3b28cdaa383cd0bb890b9d3f69f9b744fa09346",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -1457,6 +1731,12 @@
           {
             "prefix": "b",
             "id": "b_1",
+            "minted_at": "2026-09-26T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
             "minted_at": "2026-09-26T10:00:00.000Z",
             "holders": 3
           },

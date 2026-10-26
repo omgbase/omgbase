@@ -178,63 +178,199 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-10-17T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-10-17T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-10-17T10:02:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-10-17T10:03:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-10-17T10:04:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_4",
             "ops": null
           },
           {
             "commit_id": "c_5",
+            "epoch": "ep_0",
             "seq": 6,
             "ts": "2026-10-17T10:05:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_5",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-17T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-17T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-17T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-17T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-17T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "commit_id": "c_5",
+            "ts": "2026-10-17T10:05:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_5",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "9924b8ba12c6514148b328903111cbe17ad60adb0aa94e41b5cf1a149f684588",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "4d82950bd115d7a71996dc8c66490d17ffc272aa0038f8860d7cd157687de65d",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "86a4166b91da33a33efd3a56aed52af26a581c87a464a610f313feebc64dc4e2",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_3",
+            "hash": "b294ca338f184c9a4431433618990e383eda5c0944c3dd3d57cbd7a1c0f197f9",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_4",
+            "hash": "9c2a0fe29a90a12e877f638f6b4995fc8fed8928a1842bb2af0943f3b76b5a39",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_5",
+            "hash": "86061a913c9072be5b6b5f2b550e2c3396a7902f5048a91dd0795e7a857fcac4",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -451,6 +587,42 @@
             "prefix": "b",
             "id": "b_1",
             "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
             "holders": 3
           },
           {
@@ -696,63 +868,199 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-10-17T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-10-17T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-10-17T10:02:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-10-17T10:03:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-10-17T10:04:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_4",
             "ops": null
           },
           {
             "commit_id": "c_5",
+            "epoch": "ep_0",
             "seq": 6,
             "ts": "2026-10-17T10:05:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_5",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-17T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-17T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-17T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-17T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-17T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "commit_id": "c_5",
+            "ts": "2026-10-17T10:05:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_5",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_0",
+            "hash": "eed741f804b7585056f0d4ef53bedcafa4918a7ca72f9062efb13f730334567a",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_1",
+            "hash": "6d8a4a7560a44f7c09115ef1ca1b290d04e8536a37164149c38a938c75f5832f",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_2",
+            "hash": "69bc44120b948ac27c37187e35ca8eade8ac57cb548b1205ac595ab36fc0aa9b",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_3",
+            "hash": "97f10f090ae454d32889d9a4a4cba0ed88b75e82adc484d6f980fe4e6513d6fa",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_4",
+            "hash": "dfb60359550061d1cb657ae0cf85f2f1715fe868408af2a7e6b08abbb82ef111",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "doc_id": "d_0",
+            "path": "journal.md",
+            "head": "r_5",
+            "hash": "a1c2d59081fd159a3f5345e1658c3157a5870de777ec50ea8f146e07929322dd",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -3060,6 +3368,42 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-10-17T10:00:00.000Z",
@@ -3704,213 +4048,679 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-10-17T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-10-17T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-10-17T10:02:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-10-17T10:03:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-10-17T10:04:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_4",
             "ops": null
           },
           {
             "commit_id": "c_5",
+            "epoch": "ep_0",
             "seq": 6,
             "ts": "2026-10-17T10:05:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_5",
             "ops": null
           },
           {
             "commit_id": "c_6",
+            "epoch": "ep_0",
             "seq": 7,
             "ts": "2026-10-17T10:06:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_6",
             "ops": null
           },
           {
             "commit_id": "c_7",
+            "epoch": "ep_0",
             "seq": 8,
             "ts": "2026-10-17T10:07:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_7",
             "ops": null
           },
           {
             "commit_id": "c_8",
+            "epoch": "ep_0",
             "seq": 9,
             "ts": "2026-10-17T10:08:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_8",
             "ops": null
           },
           {
             "commit_id": "c_9",
+            "epoch": "ep_0",
             "seq": 10,
             "ts": "2026-10-17T10:09:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_9",
             "ops": null
           },
           {
             "commit_id": "c_10",
+            "epoch": "ep_0",
             "seq": 11,
             "ts": "2026-10-17T10:10:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_10",
             "ops": null
           },
           {
             "commit_id": "c_11",
+            "epoch": "ep_0",
             "seq": 12,
             "ts": "2026-10-17T10:11:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_11",
             "ops": null
           },
           {
             "commit_id": "c_12",
+            "epoch": "ep_0",
             "seq": 13,
             "ts": "2026-10-17T10:12:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_12",
             "ops": null
           },
           {
             "commit_id": "c_13",
+            "epoch": "ep_0",
             "seq": 14,
             "ts": "2026-10-17T10:13:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_13",
             "ops": null
           },
           {
             "commit_id": "c_14",
+            "epoch": "ep_0",
             "seq": 15,
             "ts": "2026-10-17T10:14:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_14",
             "ops": null
           },
           {
             "commit_id": "c_15",
+            "epoch": "ep_0",
             "seq": 16,
             "ts": "2026-10-17T10:15:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_15",
             "ops": null
           },
           {
             "commit_id": "c_16",
+            "epoch": "ep_0",
             "seq": 17,
             "ts": "2026-10-17T10:16:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_16",
             "ops": null
           },
           {
             "commit_id": "c_17",
+            "epoch": "ep_0",
             "seq": 18,
             "ts": "2026-10-17T10:17:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_17",
             "ops": null
           },
           {
             "commit_id": "c_18",
+            "epoch": "ep_0",
             "seq": 19,
             "ts": "2026-10-17T10:18:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_18",
             "ops": null
           },
           {
             "commit_id": "c_19",
+            "epoch": "ep_0",
             "seq": 20,
             "ts": "2026-10-17T10:19:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_19",
             "ops": null
           },
           {
             "commit_id": "c_20",
+            "epoch": "ep_0",
             "seq": 21,
             "ts": "2026-10-17T10:20:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_20",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-17T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-17T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-17T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-17T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-17T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "commit_id": "c_5",
+            "ts": "2026-10-17T10:05:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_5",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 7,
+            "commit_id": "c_6",
+            "ts": "2026-10-17T10:06:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_6",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 8,
+            "commit_id": "c_7",
+            "ts": "2026-10-17T10:07:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_7",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 9,
+            "commit_id": "c_8",
+            "ts": "2026-10-17T10:08:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_8",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 10,
+            "commit_id": "c_9",
+            "ts": "2026-10-17T10:09:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_9",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 11,
+            "commit_id": "c_10",
+            "ts": "2026-10-17T10:10:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_10",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 12,
+            "commit_id": "c_11",
+            "ts": "2026-10-17T10:11:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_11",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 13,
+            "commit_id": "c_12",
+            "ts": "2026-10-17T10:12:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_12",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 14,
+            "commit_id": "c_13",
+            "ts": "2026-10-17T10:13:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_13",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 15,
+            "commit_id": "c_14",
+            "ts": "2026-10-17T10:14:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_14",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 16,
+            "commit_id": "c_15",
+            "ts": "2026-10-17T10:15:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_15",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 17,
+            "commit_id": "c_16",
+            "ts": "2026-10-17T10:16:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_16",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 18,
+            "commit_id": "c_17",
+            "ts": "2026-10-17T10:17:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_17",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 19,
+            "commit_id": "c_18",
+            "ts": "2026-10-17T10:18:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_18",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 20,
+            "commit_id": "c_19",
+            "ts": "2026-10-17T10:19:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_19",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 21,
+            "commit_id": "c_20",
+            "ts": "2026-10-17T10:20:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_20",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_0",
+            "hash": "5064364fcd29e53dfd8a8a5a6a38fa3f5a238fe916883f37115e050e73e5f41b",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_1",
+            "hash": "b1c858917f12e36e234626b69bf081d52f645aecabb4355d3af9df47f0b18f27",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_2",
+            "hash": "2fb0b1399c8d697e516b1c42a4776bc8caf378cfbaabfcb6388fddb27ac8ab45",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_3",
+            "hash": "47aa25ab370e0ccce792c20003c1d74be07a103df6e439b61fdd22933e141fca",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_4",
+            "hash": "c03c0f85cc0aa199a5a74c33b26c8418a680952105f40295e0015e8935914ab9",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_5",
+            "hash": "4913e5bc5b108e15d83c9e143fe9d9567dd96477d83b2124f5a2822dd4baafc1",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 7,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_6",
+            "hash": "9daf87551726c7f9357d5327c844d6123a64a7cc31222ca77eebfa742eab7e37",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 8,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_7",
+            "hash": "e1ebedec1eb2ad97719bf8b5a93596a3d8795d6c4ee84465e16204be0d98abc8",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 9,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_8",
+            "hash": "e833743137f5b34db1276627970feff84e53467ee3b36fc890793e53aa801a4a",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 10,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_9",
+            "hash": "379b6b85d4cdf66b09dcc614a13b7e58e7d361c7f553d07c0bd325cf0b720e0e",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 11,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_10",
+            "hash": "169ce0715f35d55412c61b377691466ae4fdea325ee81622216d03bc8c00ea0c",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 12,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_11",
+            "hash": "aaaf2b244a04989d6d6c77b9fb939bcf5f4fd66fd7371d549a2659bc91d5137a",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 13,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_12",
+            "hash": "6c470aa9d06842c9e15c1309138b5bdec91e4ae572f08a5ee0fbfa08aca5b6a6",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 14,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_13",
+            "hash": "a2efd4666ff0c68c805bb65e1b7e08c86e05b6989d2139bb1c86b7a89617af74",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 15,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_14",
+            "hash": "382cc2b31aa6a52d5035f283e933de58041a1f2ab055ba1b1a3a86803b90b45f",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 16,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_15",
+            "hash": "c2c09ca152106271cf63e51f3d54fab41bf1a2ee3d236a121b94f23fdd4972f1",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 17,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_16",
+            "hash": "e83bb753c6905a3907288166452c883b40c7150116d425bac5b07b468ebe8f2b",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 18,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_17",
+            "hash": "88ceac01375cdefeb3fb85d9e522a286ab42aa183d4ad13d9deb5982c324b60b",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 19,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_18",
+            "hash": "68dced39f6e7d25c77e021deba380dc6869e831246e5b3ece67ff652be2e6c03",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 20,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_19",
+            "hash": "a6f04294e78e85b7aae97dec53f9575f8cf2a3051923fa009a4ad58221e6cebe",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 21,
+            "doc_id": "d_0",
+            "path": "ten.md",
+            "head": "r_20",
+            "hash": "3318cb0c4def956d1b2c4b664f48c0af1f4d971f16eb26a0a1dcc64ce980e2d4",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -5431,6 +6241,132 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_10",
+            "minted_at": "2026-10-17T10:10:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_11",
+            "minted_at": "2026-10-17T10:11:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_12",
+            "minted_at": "2026-10-17T10:12:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_13",
+            "minted_at": "2026-10-17T10:13:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_14",
+            "minted_at": "2026-10-17T10:14:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_15",
+            "minted_at": "2026-10-17T10:15:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_16",
+            "minted_at": "2026-10-17T10:16:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_17",
+            "minted_at": "2026-10-17T10:17:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_18",
+            "minted_at": "2026-10-17T10:18:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_19",
+            "minted_at": "2026-10-17T10:19:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_20",
+            "minted_at": "2026-10-17T10:20:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_5",
+            "minted_at": "2026-10-17T10:05:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_6",
+            "minted_at": "2026-10-17T10:06:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_7",
+            "minted_at": "2026-10-17T10:07:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_8",
+            "minted_at": "2026-10-17T10:08:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_9",
+            "minted_at": "2026-10-17T10:09:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-10-17T10:00:00.000Z",
@@ -5947,7 +6883,8 @@
               "blobs": 0,
               "tree_nodes": 0,
               "same_dispositions": 0,
-              "claims_released": 0
+              "claims_released": 0,
+              "feed_pruned": 0
             }
           }
         ],
@@ -5970,73 +6907,231 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-01T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-02T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-09-03T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-09-04T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-09-05T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_4",
             "ops": null
           },
           {
             "commit_id": "c_5",
+            "epoch": "ep_0",
             "seq": 6,
             "ts": "2026-09-06T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_5",
             "ops": null
           },
           {
             "commit_id": "c_6",
+            "epoch": "ep_0",
             "seq": 7,
             "ts": "2026-09-11T00:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_6",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-01T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-02T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-09-03T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-09-04T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-09-05T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "commit_id": "c_5",
+            "ts": "2026-09-06T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_5",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 7,
+            "commit_id": "c_6",
+            "ts": "2026-09-11T00:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_6",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_0",
+            "hash": "68b82e8031d9fca74eaedd73905a53558432f1fbf4eef1ebf3d999c88ca8131a",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_1",
+            "hash": "c16eb6337f05d060370ec21d13c0b78c8d8d08e2b5fb24d131427cd2249aa2bc",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_2",
+            "hash": "d8990f56939f6db45a3bdca3ce8a422164753d304c26980f83029c5b22359a8d",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_3",
+            "hash": "41bf4d56c18018648c10005214379b805887673ae3b1f0d6759a1fb9a4349c48",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_4",
+            "hash": "829a67f8d5810264074e08695d4a819b1a0dfb6be4f5f97872a02a4e9305f6a8",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 6,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_5",
+            "hash": "2a6215039135eb8a854b70bc65703bcd4455ef4a35ac7fc97c8f62d334f652b4",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 7,
+            "doc_id": "d_0",
+            "path": "s.md",
+            "head": "r_6",
+            "hash": "6e2490ca11a9ce3c7bb813481ad4a762acecc09029e33f98ce03b39efed6fd56",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -6454,6 +7549,48 @@
             "holders": 3
           },
           {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-09-01T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-09-02T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-09-03T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-09-04T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-09-05T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_5",
+            "minted_at": "2026-09-06T00:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_6",
+            "minted_at": "2026-09-11T00:00:00.000Z",
+            "holders": 3
+          },
+          {
             "prefix": "d",
             "id": "d_0",
             "minted_at": "2026-09-01T00:00:00.000Z",
@@ -6676,53 +7813,167 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-10-17T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-10-17T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-10-17T10:02:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-10-17T10:03:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-10-17T10:04:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_4",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-17T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-17T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-17T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-17T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-17T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "f.md",
+            "head": "r_0",
+            "hash": "df543a387dcf4f5d6b29e06ffb125574da3fa6f96f3a5c55d369c24401e0c36f",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "f.md",
+            "head": "r_1",
+            "hash": "becaeffd9a5a4fd08508e4b7418a944196f569899224c9ad6e51f391ce872d78",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "f.md",
+            "head": "r_2",
+            "hash": "02915d88b8324c8f5e5ad3281cc9d1c37526d6833c2faac6d55b735d63c2e756",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "f.md",
+            "head": "r_3",
+            "hash": "df543a387dcf4f5d6b29e06ffb125574da3fa6f96f3a5c55d369c24401e0c36f",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "f.md",
+            "head": "r_4",
+            "hash": "02915d88b8324c8f5e5ad3281cc9d1c37526d6833c2faac6d55b735d63c2e756",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -6908,6 +8159,36 @@
             "prefix": "b",
             "id": "b_1",
             "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-17T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-17T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-17T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-17T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-17T10:04:00.000Z",
             "holders": 3
           },
           {

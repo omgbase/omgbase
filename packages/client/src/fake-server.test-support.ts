@@ -35,6 +35,7 @@ export interface Commit {
   origin: string;
   actor: string | null;
   summary: string;
+  batch_id: string;
   revisions: { _id: string; _path: string; _hash: string }[];
 }
 
@@ -235,7 +236,7 @@ export class FakeServer {
         const limit = (args.limit as number | undefined) ?? 50;
         const after = this.commits.filter((c) => c.seq > cursor && (args.origin === undefined || c.origin === args.origin));
         const page = after.slice(0, limit);
-        return { digests: page, cursor: page.length ? page[page.length - 1]!.seq : cursor, truncated: after.length > limit, head: this.commits.length ? this.commits[this.commits.length - 1]!.seq : 0 };
+        return { digests: page, cursor: page.length ? page[page.length - 1]!.seq : cursor, epoch: "ep_fake", oldest: this.commits.length ? 1 : 0, truncated: after.length > limit, head: this.commits.length ? this.commits[this.commits.length - 1]!.seq : 0 };
       }
       case "apply":
         this.repoScope(args);
@@ -321,7 +322,8 @@ export class FakeServer {
     });
     for (const w of writes) w();
     const revisions = [...touched.values()].map((d) => { d.rev = this.rev(); return { _id: d._id, _path: d._path, _hash: this.hash() }; });
-    const commit = { commit: `c_${++this.n}`, seq: this.commits.length + 1, ts: new Date(0).toISOString(), origin: "api", actor: "agent:mcp", summary: reason ?? "", revisions };
+    const id = `c_${++this.n}`;
+    const commit = { commit: id, seq: this.commits.length + 1, ts: new Date(0).toISOString(), origin: "api", actor: "agent:mcp", batch_id: id, summary: reason ?? "", revisions };
     this.commits.push(commit);
     return { plan_id: `p_${this.n}`, commit: commit.commit, revisions, new_ids: {}, committed: true, summary: effects.map((e) => `${String(e.op)} ${String(e.field ?? "")}`.trim()) };
   }

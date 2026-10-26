@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { changesSince } from "../store/feed.js";
 import { Store } from "../store/store.js";
 import { ingestFile } from "../ingest.js";
 import { ensureRepo } from "../attach.js";
@@ -64,7 +65,10 @@ describe("capabilities", () => {
     expect("renderedHash" in history).toBe(false);
     expect("priorRenderedHash" in history).toBe(false);
     expect(history.docsHistory(repoId, { doc: r1.docId }).docs[0]?.versions.map((v) => v._rev)).toEqual([r1.revId, r2.revId]);
-    expect(history.changesSince(repoId).digests.map((d) => d.commit)).toEqual([r1.commitId, r2.commitId]);
+    // 3d: the change feed is the core's (`core/store/feed.ts`); the recorder answers a digest's disposition counts.
+    expect(changesSince(store, repoId).digests.map((d) => d.commit)).toEqual([r1.commitId, r2.commitId]);
+    expect(history.dispositionCounts(r2.commitId)).toEqual(store.db.prepare("SELECT kind, count(*) AS n FROM dispositions WHERE commit_id = ? GROUP BY kind ORDER BY kind").all(r2.commitId));
+    expect(history.dispositionCounts("c_nope")).toBeNull();
     expect(history.diffUnified(r1.docId, r1.revId, r2.revId)).toContain("+Two paragraph.");
     const mark = history.markReachable();
     expect(mark.trees.size).toBeGreaterThan(0);
@@ -198,9 +202,11 @@ describe("the core-only composition (OMGBASE_CAPABILITIES=core)", () => {
     writeRepoSettings(full.store, full.repoId, { embedding: { provider: "http://localhost:9/embed" } });
     // Configured but the host could not start it: unavailable.
     expect(capabilityStates(full.store, full.repoId, { provider: "http://localhost:9/embed", reason: "ECONNREFUSED" }).semantic.state).toBe("unavailable");
-    // `version` carries it after `profile` — the literal both engines pin.
-    const v = versionInfo(full.store, undefined, "full", capabilityStates(full.store, full.repoId));
-    expect(Object.keys(v).slice(-2)).toEqual(["profile", "capabilities"]);
+    // `version` carries it after `profile`, then `epoch` (6.0) — the literal both engines pin.
+    const v = versionInfo(full.store, undefined, "full", capabilityStates(full.store, full.repoId), "ep_x");
+    expect(Object.keys(v).slice(-3)).toEqual(["profile", "capabilities", "epoch"]);
+    expect(v.epoch).toBe("ep_x");
+    expect(versionInfo(null).epoch).toBeNull();
     expect(v.capabilities).toEqual({ history: { state: "enabled" }, semantic: { state: "enabled" } });
     expect(JSON.stringify(versionInfo(null).capabilities)).toBe('{"history":{"state":"disabled"},"semantic":{"state":"disabled"}}');
     full.store.close();

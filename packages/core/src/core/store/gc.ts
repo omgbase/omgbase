@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "./store.js";
 import { explicitEntries, parseNodeText } from "./delta.js";
 import { requireHistory } from "../capabilities/registry.js";
+import { pruneFeed } from "./feed.js";
 
 // Garbage collection (spec/store §7). Mark-and-sweep from the LIVE revision
 // roots removes unreachable blobs and tree_nodes. Through 14.x nothing was ever
@@ -19,6 +20,8 @@ export interface GcResult {
   sameDispositionsSwept: number;
   /** spec/store §7.3 (17.0): the core holds released from `id_claims` under `identity.claims_retain_days` (0 while the setting is null). */
   claimsReleased: number;
+  /** spec/store §7.4 (17.0): the feed rows pruned under `feed.retain_days` / `feed.retain_entries` (and the cap). */
+  feedPruned: number;
 }
 
 /**
@@ -116,10 +119,13 @@ export function countSameDispositions(store: Store): number {
  *
  * spec/store §7.3 (17.0): the same run prunes `id_claims` under the
  * installation's `identity.claims_retain_days` (`IdentityClaims.prune` at
- * `now`, the clock) — the one collection the core owns.
+ * `now`, the clock), and (§7.4) the feed under `feed.retain_days` /
+ * `feed.retain_entries` — the two collections the core owns. The feed is
+ * pruned BEFORE the claims so a commit id whose last feed row went this run
+ * can be released by the same run once the window has passed.
  */
 export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean; now?: string } = {}): GcResult {
-  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0 };
+  if (!opts.enabled) return { blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0, feedPruned: 0 };
   return store.write((db): GcResult => {
     const dry = Boolean(opts.dryRun);
     const { blobsSwept, treeNodesSwept } = sweepUnreachable(store, dry);
@@ -130,18 +136,23 @@ export function runGc(store: Store, opts: { enabled?: boolean; dryRun?: boolean;
       db.prepare("DELETE FROM dispositions WHERE kind = 'same'").run();
     }
 
+    const now = opts.now ?? new Date().toISOString();
+    // spec/store §7.4 (17.0): the feed prune under the floors; a dry run prunes
+    // nothing and counts nothing.
+    const feedPruned = dry ? 0 : pruneFeed(store, now);
+
     // spec/store §7.3 (17.0): the claims prune — the core's hold released on
     // every claim older than `identity.claims_retain_days` that names no core
     // row; nothing while the setting is null. A dry run releases nothing and
     // counts nothing (the count is the release's own `changes`).
-    const claimsReleased = dry ? 0 : store.capabilities.claims.prune(opts.now ?? new Date().toISOString());
+    const claimsReleased = dry ? 0 : store.capabilities.claims.prune(now);
 
-    return { blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased };
+    return { blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased, feedPruned };
   });
 }
 
 /** Resurrection-pool expiry sweep (02 §7): drop rows past their expires_ts.
- * Runs routinely (lazy, at checkpoint time). */
+ * Runs routinely (lazy, once per observed batch). */
 export function sweepResurrectionPool(store: Store, nowIso: string): number {
   const res = store.db.prepare("DELETE FROM resurrection_pool WHERE expires_ts <= ?").run(nowIso);
   return res.changes;

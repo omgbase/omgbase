@@ -40,7 +40,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — 1 edited, 1 inserted\n"
+            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — changed — 1 edited, 1 inserted\n"
           }
         }
       ]
@@ -2253,7 +2253,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"95eef8f1ce839377679f504647efa5234911e873e7f32c704016029ea4734ca0\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"batch_id\":\"c_20\",\"plan_id\":\"9c8789ed722da74089c5ac04a0e666cc622fc74c025e7ce653c8e6d54036f60f\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — changed — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"95eef8f1ce839377679f504647efa5234911e873e7f32c704016029ea4734ca0\",\"kind\":\"changed\"}]}],\"cursor\":21,\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"truncated\":false}\n"
           }
         }
       ]
@@ -2451,7 +2451,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"batch_id\":\"c_20\",\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — changed — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\",\"kind\":\"changed\"}]}],\"cursor\":21,\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"truncated\":false}\n"
           }
         }
       ]
@@ -2607,7 +2607,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"batch_id\":\"c_20\",\"plan_id\":\"524a59ea12eeca3c4964b0981ced042e33eba97e1cba4db0fd70a5744468b3a3\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — changed — 1 edited, 1 inserted\",\"revisions\":[{\"_id\":\"d_17\",\"_path\":\"/texts/mutus-liber.md\",\"_hash\":\"97fa8e1175b89d94092673f07fd9bdeb3fde121ac8143077211423a622e344c9\",\"kind\":\"changed\"}]}],\"cursor\":21,\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"truncated\":false}\n"
           }
         }
       ]

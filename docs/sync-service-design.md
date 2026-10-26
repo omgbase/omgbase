@@ -239,7 +239,7 @@ store touch for an MCP tool call. Mapping:
 | member left scope (delete) | `tombstoneObservedDeletion(...)` | `docs_delete(doc)` |
 | conflict markers → ingest opaque + flag | `ingestFile(..., { conflicted })` (the flag is written inside the ingest transaction since store 13.6) | `observe(path, content)`; conflict flag stays engine-side (observe detects markers) |
 | normal changed member → ingest observed | `ingestFile(store, repoId, path, content, {resolveIds: reconciling})` | **`observe(path, content, source)`** (§4.1) — identity threading stays server-side |
-| checkpoint row | `INSERT INTO checkpoints …` | server writes it inside `observe`/batch; client advances its `sync_state` cursor |
+| the batch's status row (store 17.0: `sync_state (repo_id, '', '')` — `checkpoints` through 16.x) | written with the pool sweep after the batch | server writes it inside `observe`/batch; client advances its own `(epoch, seq)` cursor |
 | resurrection sweep | `sweepResurrectionPool(...)` | server-side, inside the observe/commit path |
 | `attachSource` initial walk | `source.enumerate()` + per-file `ingestFile` | `source.enumerate()` + per-file `observe` (or a batched `observe_many`) |
 | export direction (DB → source) | (today only the in-proc watcher via `source.write`) | poll `changes_since`/`subscribe` → `docs_read` → `source.write(path, bytes)` |

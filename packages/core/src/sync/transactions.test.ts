@@ -153,14 +153,14 @@ describe("the checkpoint row and the pool sweep are one transaction (spec/sync Â
     spyPrepare();
     const r = processCheckpoint(store, repoId, dir, [{ path: "a.md" }, { path: "b.md" }]);
     expect(r.ingested.sort()).toEqual(["a.md", "b.md"]);
-    const insert = ranMatching("INSERT INTO checkpoints");
+    const insert = ranMatching("INSERT INTO sync_state");
     const sweep = ranMatching("DELETE FROM resurrection_pool WHERE expires_ts");
     expect(insert).toHaveLength(1);
     expect(sweep).toHaveLength(1);
     expect(insert[0]!.inTransaction).toBe(true);
     expect(sweep[0]!.inTransaction).toBe(true);
     expect(ran.indexOf(insert[0]!)).toBeLessThan(ran.indexOf(sweep[0]!));
-    // Two member commits, each its own transaction, both before the checkpoint row.
+    // Two member commits, each its own transaction, both before the status row.
     const commits = ranMatching("INSERT INTO commits");
     expect(commits).toHaveLength(2);
     for (const c of commits) {
@@ -170,24 +170,25 @@ describe("the checkpoint row and the pool sweep are one transaction (spec/sync Â
     expect(store.db.inTransaction).toBe(false);
   });
 
-  it("a failing sweep leaves no checkpoint row (the members' commits, already their own transactions, stay)", () => {
+  it("a failing sweep leaves no status row (the members' commits, already their own transactions, stay)", () => {
+    const statusRows = (): number => count("SELECT count(*) c FROM sync_state WHERE source_id = '' AND path = ''");
     writeFileSync(join(dir, "a.md"), "# A\n\nbody\n");
     spyPrepare();
     failOn = ["DELETE FROM resurrection_pool WHERE expires_ts"];
     expect(() => processCheckpoint(store, repoId, dir, [{ path: "a.md" }])).toThrow(/injected failure/);
     expect(store.db.inTransaction).toBe(false);
-    expect(count("SELECT count(*) c FROM checkpoints")).toBe(0);
+    expect(statusRows()).toBe(0);
     expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_at IS NULL")).toBe(1); // the member commit stands
     // The same through finishCheckpoint directly, with the row the failing half.
-    failOn = ["INSERT INTO checkpoints"];
-    expect(() => finishCheckpoint(store, repoId, [], { ts: new Date().toISOString(), gitHead: null })).toThrow(/injected failure/);
-    expect(count("SELECT count(*) c FROM checkpoints")).toBe(0);
+    failOn = ["INSERT INTO sync_state"];
+    expect(() => finishCheckpoint(store, repoId, [], { ts: new Date().toISOString() })).toThrow(/injected failure/);
+    expect(statusRows()).toBe(0);
     // A deletion in the same batch as a failing sweep: the tombstone (its own
-    // transaction) stands, the checkpoint does not.
+    // transaction) stands, the status row does not.
     failOn = ["DELETE FROM resurrection_pool WHERE expires_ts"];
     unlinkSync(join(dir, "a.md"));
     expect(() => processCheckpoint(store, repoId, dir, [{ path: "a.md" }])).toThrow(/injected failure/);
     expect(count("SELECT count(*) c FROM docs WHERE path = 'a.md' AND deleted_at IS NOT NULL")).toBe(1);
-    expect(count("SELECT count(*) c FROM checkpoints")).toBe(0);
+    expect(statusRows()).toBe(0);
   });
 });

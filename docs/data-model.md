@@ -43,7 +43,8 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE repos (
   repo_id      TEXT PRIMARY KEY,          -- 'rp_' + base32
   slug         TEXT NOT NULL UNIQUE,
-  settings     TEXT NOT NULL DEFAULT '{}' -- JSON: sync.quiescence_ms, matcher thresholds, embedding config…
+  settings     TEXT NOT NULL DEFAULT '{}',-- JSON: sync.quiescence_ms, matcher thresholds, embedding config, feed.* retention…
+  epoch        TEXT NOT NULL              -- v17 (D7): the change feed's epoch, an 'ep_' id minted with the repo; a cursor is (epoch, seq)
 );
 -- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
 -- come from is an attached `fs` source (sources.config.root via attachments); the
@@ -146,18 +147,22 @@ CREATE TABLE archives (
   bytes          INTEGER NOT NULL          -- the file's size when recorded
 );
 
+-- The recorder's commit row (v17, D7/M5): the log's copy of the core's `feed`
+-- row below — the same commit_id, epoch and seq — plus `ops`, the ADR-003
+-- intent record only the recorder keeps. Never pruned (the log is history).
 CREATE TABLE commits (
   commit_id     TEXT PRIMARY KEY,
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
-  seq           INTEGER NOT NULL,          -- per-repo total order; the change feed cursor
+  epoch         TEXT NOT NULL,             -- the feed row's epoch
+  seq           INTEGER NOT NULL,          -- = the feed row's seq
   ts            TEXT NOT NULL,             -- ISO-8601 UTC
   origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
                                              -- 'projection' reserved for projected queries (09-…); unused in v1
   actor         TEXT,                      -- 'agent:…' | 'human:…' | NULL for observed
   reason        TEXT,                      -- api commits: caller-supplied intent string
-  checkpoint_id TEXT,                      -- observed commits: REFERENCES checkpoints(id)
-  ops           TEXT,                      -- api commits: JSON array of kernel ops as applied
-  UNIQUE (repo_id, seq)
+  batch_id      TEXT NOT NULL,             -- the feed row's batch_id (D4); `checkpoint_id` through v16
+  ops           TEXT,                      -- api commits: the intent record of the admitted plan (canonical JSON)
+  UNIQUE (repo_id, epoch, seq)
 );
 
 CREATE TABLE dispositions (
@@ -210,13 +215,45 @@ CREATE TABLE collections (
   spec     TEXT NOT NULL DEFAULT '{}'      -- JSON: explicit member list and/or a stored query
 );
 
-CREATE TABLE checkpoints (
-  id        TEXT PRIMARY KEY,              -- 'cp_' + base32
-  repo_id   TEXT NOT NULL,
+-- The change feed (v17, D7/M5 — spec/store §3.1, §5.4 step 5, §7.4): the CORE's
+-- record of every commit within retention — what `changes_since` pages and the
+-- sync base rests on; it depends on no history table. One slim row per commit,
+-- one entry per touched document. `seq` is dense from 1 per (repo, epoch); a
+-- cursor is (epoch, seq); a cursor from another epoch, past the head or behind
+-- the oldest retained row is `expired_cursor` and the consumer rescans
+-- (spec/sync §6). Retention: floors feed.retain_days (10) / feed.retain_entries
+-- (10000) pruned by gc, cap feed.max_entries (100000) enforced at write time —
+-- "the feed is catch-up, a rescan is recovery, the log is history".
+CREATE TABLE feed (
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  commit_id TEXT NOT NULL UNIQUE,          -- the minted c_ id; the recorder's commits.commit_id is the same
   ts        TEXT NOT NULL,
-  files     TEXT NOT NULL,                 -- JSON [(path, old_hash|null, new_hash|null)]
-  git_head  TEXT                           -- commit sha if the tree is a git repo
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                 -- D4: the first committing member of the same observed batch (= commit_id for a batch of one and every api commit)
+  plan_id   TEXT,                          -- resolution 3: the admitted plan's digest for an effect-driven api commit
+  PRIMARY KEY (repo_id, epoch, seq)
 );
+CREATE INDEX idx_feed_ts ON feed(repo_id, ts);
+
+CREATE TABLE feed_entries (
+  repo_id   TEXT NOT NULL,
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  doc_id    TEXT NOT NULL,
+  path      TEXT NOT NULL,                 -- as of the commit
+  head      TEXT,                          -- the token minted (NULL for deleted)
+  hash      BLOB,                          -- file_hash after the commit (NULL for deleted)
+  kind      TEXT NOT NULL CHECK (kind IN ('created','changed','deleted','moved')),
+  from_path TEXT,                          -- moved only
+  PRIMARY KEY (repo_id, epoch, seq, doc_id)
+);
+-- (The v16 `checkpoints` table — one row per observed batch — is gone, D4: the
+-- batch's identity is the feed's batch_id and its record the repository's
+-- sync_state status row below.)
 
 -- Recorded intent of an api commit's working-tree effect (store 14.0): the row
 -- is inserted in the commit's transaction and deleted after the file is
@@ -311,11 +348,14 @@ CREATE TABLE attachments (
 );
 
 CREATE TABLE sync_state (
-  repo_id   TEXT NOT NULL,
-  source_id TEXT NOT NULL,
-  path      TEXT NOT NULL,                 -- '' reserved for the attachment-level cursor row
-  revision  TEXT,                          -- last-observed source revision for this path
-  cursor    TEXT,                          -- last poll/webhook cursor (attachment-level row)
+  repo_id          TEXT NOT NULL,
+  source_id        TEXT NOT NULL,          -- '' reserved for the repository's own status row (v17, D4)
+  path             TEXT NOT NULL,          -- '' reserved for the attachment-level cursor row
+  revision         TEXT,                   -- last-observed source revision for this path
+  cursor           TEXT,                   -- last poll/webhook cursor (attachment-level row)
+  last_batch_ts    TEXT,                   -- the status row only (spec/sync §4.1): the last observed batch's ts
+  last_batch_id    TEXT,                   -- its batch_id (NULL when nothing committed)
+  last_batch_files INTEGER,                -- its member count
   PRIMARY KEY (repo_id, source_id, path)
 );
 

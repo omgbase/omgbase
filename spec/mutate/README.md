@@ -325,11 +325,14 @@ Result   { results: [{ ids, removed?, merged_into? }], revisions: [{ _id, _path,
      at the path dropped — the file won); the document operations re-check
      their own guards the same way (`path_taken` for a create and for a
      move's destination, `doc_missing` for a move's source and a delete).
-     Only then one commit row (`origin = "api"`, `actor`, `reason`,
-     `checkpoint_id = NULL`, `ops` = the intent record of an effect-driven
-     commit — the canonical JSON (§11.5) of `{ v: 1, plan_id, effects }`,
-     the plan's resolved effects — and NULL for every other request, 2.3;
-     ADR-003), then per document in load order
+     Only then one **feed row** (`spec/store` §3.1 `feed`, 17.0: `origin =
+     "api"`, `actor`, `reason`, `batch_id` = its own commit id, `plan_id` =
+     the plan's digest for an effect-driven commit and NULL otherwise) with
+     the recorder's `commits` row under the same id (`ops` = the intent
+     record of an effect-driven commit — the canonical JSON (§11.5) of `{ v:
+     1, plan_id, effects }`, the plan's resolved effects — and NULL for every
+     other request, 2.3; ADR-003; through store 16.x one `commits` row with
+     `checkpoint_id = NULL`), then per document in load order
      `spec/store` §5.4 steps 1–4 and 6–13 naming that commit (`spec/store`
      §5.4 "The api path") with the **known-id resolver**: the re-parsed body
      gets the tree's ids by positional key (`"/i/j"`; a position with no id
@@ -772,7 +775,10 @@ for a foreign file is not listed); `plan_effects` → `{ plan }` or the error;
 one place §11.9's lines are pinned, since a recorded Plan omits its
 `preview`); `canonical` → `{ json, digest }`. After the last step: `files` (path → bytes
 of the in-memory doc store), and the `spec/store` §9.4 projection of `docs`,
-`blocks`, `commits`, `revisions`, `dispositions`, `resurrection_pool`,
+`blocks`, `commits`, `feed`, `feed_entries` (store 17.0, slice 3d — the api
+commit's feed row with its `plan_id` and one entry per touched document:
+`created`/`changed`, `moved` with `from_path` for a `docs_move`, `deleted`
+for a `docs_delete`), `revisions`, `dispositions`, `resurrection_pool`,
 `pending_materializations` (14.0; `[]` unless a step crashed — rows as
 `spec/store` §9.4 projects them: `{ path, kind, from_path, doc_id, head,
 rendered_hash, prior_hash, commit_id, created_at }` since store 17.0). The

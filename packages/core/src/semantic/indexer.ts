@@ -1,5 +1,5 @@
 import type { Store } from "../core/store/store.js";
-import { capabilitiesOf } from "../core/capabilities/registry.js";
+import { changesSince, ExpiredCursor, feedStatus } from "../core/store/feed.js";
 import type { EmbeddingProvider, EmbeddingWorker } from "./embeddings.js";
 import { buildEmbedTasks, buildDocEmbedTasks } from "./tasks.js";
 
@@ -121,35 +121,37 @@ export function clearWatermark(store: Store, repoId: string): void {
   store.db.prepare("DELETE FROM sync_state WHERE repo_id = ? AND source_id = ? AND path = ''").run(repoId, WATERMARK_SOURCE);
 }
 
-/** The feed head — the recorder's commit seq (`changes_since`), through the capability; null when the store runs without the recorder. */
+/** The feed head — the core's feed `seq` (`changes_since`, spec/store §3.1 `feed`, 17.0); the feed is the core's, so a store without the recorder has one too. */
 export function feedHead(store: Store, repoId: string): number | null {
-  const history = capabilitiesOf(store.db).history;
-  if (!history) return null;
-  return history.changesSince(repoId, { cursor: 0, limit: 1 }).head;
+  return feedStatus(store.db, repoId).head;
 }
 
-/** The documents the feed names after `cursor` (their revisions' ids), paged to the head. */
-function docsChangedSince(store: Store, repoId: string, cursor: number): Set<string> {
-  const history = capabilitiesOf(store.db).history;
+/** The documents the feed names after `cursor` (their entries' ids), paged to the head; null when the cursor has expired (the feed was pruned past it — a rescan). */
+function docsChangedSince(store: Store, repoId: string, cursor: number): Set<string> | null {
   const out = new Set<string>();
-  if (!history) return out;
   let at = cursor;
-  for (;;) {
-    const page = history.changesSince(repoId, { cursor: at, limit: 500 });
-    for (const d of page.digests) for (const r of d.revisions) out.add(r._id);
-    if (!page.truncated || page.cursor === at) break;
-    at = page.cursor;
+  try {
+    for (;;) {
+      const page = changesSince(store, repoId, { cursor: at, limit: 500 });
+      for (const d of page.digests) for (const r of d.revisions) out.add(r._id);
+      if (!page.truncated || page.cursor === at) break;
+      at = page.cursor;
+    }
+  } catch (e) {
+    if (e instanceof ExpiredCursor) return null;
+    throw e;
   }
   return out;
 }
 
-/** Decide the pass's mode from the watermark, the head and the identity. */
-export function drainMode(wm: SemanticWatermark | null, head: number | null, identity: SemanticIndexIdentity, force?: boolean): DrainMode {
+/** Decide the pass's mode from the watermark, the feed's position and the identity: a watermark past the head or behind the oldest retained row (an expired cursor, D7) is a rescan. */
+export function drainMode(wm: SemanticWatermark | null, head: number | null, identity: SemanticIndexIdentity, force?: boolean, oldest = 0): DrainMode {
   if (force) return "rescan";
   if (!wm) return "bootstrap";
   if (!sameIdentity(wm.identity, identity)) return "rescan";
   if (head === null) return "rescan";
   if (wm.processed_seq > head) return "rescan";
+  if (wm.processed_seq > 0 && wm.processed_seq < oldest - 1) return "rescan";
   return "catch-up";
 }
 
@@ -159,10 +161,18 @@ export function drainMode(wm: SemanticWatermark | null, head: number | null, ide
  * watermark untouched.
  */
 export async function drainRepo(store: Store, repoId: string, worker: EmbeddingWorker, provider: EmbeddingProvider, opts: DrainOptions = {}): Promise<DrainResult> {
-  const head = feedHead(store, repoId);
+  const feed = feedStatus(store.db, repoId);
+  const head = feed.head;
   const wm = readWatermark(store, repoId);
   const identity = indexIdentity(provider);
-  const mode = drainMode(wm, head, identity, opts.rescan);
+  let mode = drainMode(wm, head, identity, opts.rescan, feed.oldest);
+  // The catch-up's scope: the documents the feed names since the watermark —
+  // an expired cursor (pruned under the watermark meanwhile) widens the pass to a rescan.
+  let changed: Set<string> | null = null;
+  if (mode === "catch-up") {
+    changed = docsChangedSince(store, repoId, wm!.processed_seq);
+    if (changed === null) mode = "rescan";
+  }
 
   // An identity change invalidates: another model's vectors are foreign (the
   // prune), the same model under other dims or chunking is this model's own
@@ -183,8 +193,8 @@ export async function drainRepo(store: Store, repoId: string, worker: EmbeddingW
   // can pool from vectors cached in the same pass.
   const blocks = await worker.process(buildEmbedTasks(store, repoId), { ...batch, onProgress: progress("blocks") });
 
-  const scope = mode === "catch-up"
-    ? { docIds: [...new Set([...docsChangedSince(store, repoId, wm!.processed_seq), ...blocks.docIds])] }
+  const scope = mode === "catch-up" && changed !== null
+    ? { docIds: [...new Set([...changed, ...blocks.docIds])] }
     : {};
   const docs = await worker.processDocs(buildDocEmbedTasks(store, repoId, scope), { ...batch, onProgress: progress("docs") });
 

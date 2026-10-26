@@ -5,7 +5,7 @@
 //   runMigrationCase()      §9.3: authored pre-state → open with the reference → projection (or the refusal)
 //   runObserveCase()        §9.4: run an observation script through the production observe path,
 //                           check the §8 invariants after every observe step, project the tables
-//   checkInvariants()       README §8 on a store: the core invariants C1–C8 and, with legacy capture on, H1–H5/I10
+//   checkInvariants()       README §8 on a store: the core invariants C1–C8 and F1–F3 (the feed) and, with legacy capture on, H1–H5/I10
 //   projectStore()          the §9.4 table projection (ordering, hex hashes, JSON attrs/detail)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
@@ -105,7 +105,7 @@ export interface ObserveItem {
 export type Step =
   | { observe: { ts: string; items: ObserveItem[] } }
   | { sweep: { ts: string } }
-  /** README §9.4 (14.2, 17.0): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions, claims_released } }`; `ts` is the claims prune's clock (§7.3), the runner's clock without it */
+  /** README §9.4 (14.2, 17.0): the §7 garbage collection, enabled → `{ gc: { blobs, tree_nodes, same_dispositions, claims_released, feed_pruned } }`; `ts` is the clock of the claims prune (§7.3) and the feed prune (§7.4), the runner's clock without it */
   | { gc: { ts?: string } }
   /** README §9.4 (14.2): authored SQL run verbatim — the device that puts a 14.1 store's rows into a case → `{ changes: n }` */
   | { exec: { sql: string[] } }
@@ -136,7 +136,7 @@ export interface GoneOutcome {
   doc: string | null;
 }
 export interface GcOutcome {
-  gc: { blobs: number; tree_nodes: number; same_dispositions: number; claims_released: number };
+  gc: { blobs: number; tree_nodes: number; same_dispositions: number; claims_released: number; feed_pruned: number };
 }
 export interface PlanOutcome {
   plan: RetentionPlan;
@@ -225,7 +225,7 @@ export function runHistoryStep(store: Store, repoId: string, step: HistoryStep, 
 /** README §9.4 (14.2, 17.0): the `gc` step — `runGc` enabled, never a dry run, `ts` the claims prune's clock (§7.3); the counts in the fixture's spelling. */
 export function runGcStep(store: Store, ts?: string): GcOutcome {
   const r = runGc(store, { enabled: true, ...(ts !== undefined ? { now: ts } : {}) });
-  return { gc: { blobs: r.blobsSwept, tree_nodes: r.treeNodesSwept, same_dispositions: r.sameDispositionsSwept, claims_released: r.claimsReleased } };
+  return { gc: { blobs: r.blobsSwept, tree_nodes: r.treeNodesSwept, same_dispositions: r.sameDispositionsSwept, claims_released: r.claimsReleased, feed_pruned: r.feedPruned } };
 }
 
 /** README §9.4 (14.2): the `exec` step — every statement run verbatim, in order, in one transaction; the rows changed summed. */
@@ -240,7 +240,12 @@ export function runExecStep(store: Store, sql: string[]): { changes: number } {
 export interface Projection {
   steps: StepOutcome[];
   docs: Row[];
+  /** README §9.4 (17.0): the recorder's commit rows `{ commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops }` by `seq`. */
   commits: Row[];
+  /** README §9.4 (17.0, 3d): the change feed `{ epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id }` by `seq`. */
+  feed: Row[];
+  /** README §9.4 (17.0, 3d): the feed's entries `{ epoch, seq, doc_id, path, head, hash, kind, from_path }` by (`seq`, insertion order). */
+  feed_entries: Row[];
   revisions: Row[];
   blobs: Row[];
   tree_nodes: Row[];
@@ -248,7 +253,7 @@ export interface Projection {
   dispositions: JsonRow[];
   block_changes: Row[];
   resurrection_pool: Row[];
-  /** README §9.4 (17.0): the §2.1 claims of the case's repo as `{ prefix, id, minted_at, holders }` by (`prefix`, `id` bytewise) — the repo's own `rp` claim omitted, like `repo_id`. */
+  /** README §9.4 (17.0): the §2.1 claims of the case's repo as `{ prefix, id, minted_at, holders }` by (`prefix`, `id` bytewise) — the repo's own `rp` and `ep` claims omitted, like `repo_id`. */
   id_claims: Row[];
   sections: Row[];
   /** README §9.4 (14.0): the api path's recorded file intent — always `[]` for an observation script. */
@@ -258,7 +263,7 @@ export interface Projection {
 }
 /** The projected tables, in the order the fixture emits them. */
 export const PROJECTED_TABLES = [
-  "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks",
+  "docs", "commits", "feed", "feed_entries", "revisions", "blobs", "tree_nodes", "blocks",
   "dispositions", "block_changes", "resurrection_pool", "id_claims", "sections", "pending_materializations", "archives",
 ] as const;
 
@@ -596,10 +601,20 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
   const docIds = docs.map((d) => d.doc_id as string);
 
   const commits = (db
-    .prepare("SELECT commit_id, seq, ts, origin, actor, reason, checkpoint_id, ops FROM commits WHERE repo_id = ? ORDER BY seq")
+    .prepare("SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ? ORDER BY seq")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
   const commitSeq = new Map(commits.map((c) => [c.commit_id as string, c.seq as number]));
   const seqOf = (commitId: string): number => commitSeq.get(commitId) ?? Number.MAX_SAFE_INTEGER;
+
+  // 17.0 (3d): the feed and its entries — the rows of the repo's current epoch
+  // (a fixture database has one), by `seq`; the entries of a row in the order
+  // they were written (the member order of the commit).
+  const feed = (db
+    .prepare("SELECT epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id FROM feed WHERE repo_id = ? ORDER BY seq")
+    .all(repoId) as Record<string, unknown>[]).map(toRow);
+  const feed_entries = (db
+    .prepare("SELECT epoch, seq, doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ? ORDER BY seq, rowid")
+    .all(repoId) as Record<string, unknown>[]).map(toRow);
 
   const revisions = (db
     .prepare(
@@ -662,19 +677,20 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
     .all(repoId) as Record<string, unknown>[])
     .map((r) => toRow({ segment_id: r.segment_id, file: segmentBasename(r.path as string), seq_lo: r.seq_lo, seq_hi: r.seq_hi, created_at: r.created_at, revision_count: r.revision_count }));
 
-  return { docs, commits, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations, archives };
+  return { docs, commits, feed, feed_entries, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations, archives };
 }
 
 /**
  * README §9.4 (17.0): the `id_claims` rows of the case's repo as `{ prefix, id,
  * minted_at, holders }`, by (`prefix` bytewise, `id` bytewise). The repository's
- * own `rp` claim is omitted like `repo_id` is from every row: the runner minted
- * it before the first step, at its own clock. Projected by the store suite
- * alone — the mutate/sync runners that share `projectStore` do not carry it.
+ * own `rp` claim and its epoch's `ep` claim (3d) are omitted like `repo_id` is
+ * from every row: the runner minted both before the first step, at its own
+ * clock. Projected by the store suite alone — the mutate/sync runners that
+ * share `projectStore` do not carry it.
  */
 export function projectClaims(db: Db, repoId: string): Row[] {
   return (db
-    .prepare("SELECT prefix, id, minted_at, holders FROM id_claims WHERE repo_id = ? AND prefix != 'rp'")
+    .prepare("SELECT prefix, id, minted_at, holders FROM id_claims WHERE repo_id = ? AND prefix NOT IN ('rp', 'ep')")
     .all(repoId) as Record<string, unknown>[])
     .map(toRow)
     .sort((a, b) => cmp(a.prefix as string, b.prefix as string) || cmp(a.id as string, b.id as string));
@@ -961,6 +977,80 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     compare(rev.root_tree.toString("hex"), null, 0, "/");
   }
 
+  // ---- C4 the dense feed, F1–F3 the entries, H4 the log's agreement (17.0, 3d) ----------
+  const epoch = (db.prepare("SELECT epoch FROM repos WHERE repo_id = ?").get(repoId) as { epoch: string } | undefined)?.epoch;
+  if (epoch === undefined || !epoch.startsWith("ep_")) problems.push(`C4: repo ${repoId} has no ep_ epoch (${epoch})`);
+  const feedRows = db.prepare("SELECT epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id FROM feed WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { epoch: string; seq: number; commit_id: string; ts: string; origin: string; batch_id: string; plan_id: string | null }[];
+  const feedBySeq = [...feedRows].sort((a, b) => a.seq - b.seq);
+  const oldest = feedBySeq.length > 0 ? feedBySeq[0]!.seq : 0;
+  const headSeq = feedBySeq.length > 0 ? feedBySeq[feedBySeq.length - 1]!.seq : 0;
+  if (oldest > headSeq) problems.push(`F2: feed oldest ${oldest} > head ${headSeq}`);
+  if ((oldest === 0) !== (headSeq === 0)) problems.push(`F2: feed oldest ${oldest} and head ${headSeq} disagree on emptiness`);
+  feedRows.forEach((r, i) => {
+    if (r.seq !== oldest + i) problems.push(`C4: feed row ${r.commit_id} has seq ${r.seq} at position ${i} of (ts, seq) order from oldest ${oldest} (the feed is not contiguous)`);
+    if (r.epoch !== epoch) problems.push(`C4: feed row ${r.commit_id} carries epoch ${r.epoch}, the repo's is ${epoch}`);
+    if (!TS_RE.test(r.ts)) problems.push(`C4: feed row ${r.commit_id} ts ${r.ts} is not a §2.4 timestamp`);
+    if (!r.commit_id.startsWith("c_")) problems.push(`C4: feed row seq ${r.seq} commit_id ${r.commit_id} is not a c_ id`);
+    if (!r.batch_id.startsWith("c_")) problems.push(`C4: feed row ${r.commit_id} batch_id ${r.batch_id} is not a c_ id`);
+    // The batch id names a feed row of the same epoch at or before this one (D4: the first committing member), unless pruned.
+    const batchRow = feedBySeq.find((b) => b.commit_id === r.batch_id);
+    if (batchRow && batchRow.seq > r.seq) problems.push(`C4: feed row ${r.commit_id} (seq ${r.seq}) names a later batch ${r.batch_id} (seq ${batchRow.seq})`);
+    if (!batchRow && r.batch_id !== r.commit_id && (oldest <= 1)) problems.push(`C4: feed row ${r.commit_id} names a batch ${r.batch_id} the feed does not hold`);
+    if (r.plan_id !== null && !/^[0-9a-f]{64}$/.test(r.plan_id)) problems.push(`C4: feed row ${r.commit_id} plan_id ${r.plan_id} is not 64 hex`);
+    if (r.plan_id !== null && r.origin !== "api") problems.push(`C4: feed row ${r.commit_id} of origin ${r.origin} carries a plan_id`);
+  });
+  const entries = db.prepare("SELECT epoch, seq, doc_id, path, head, hash, kind, from_path, rowid FROM feed_entries WHERE repo_id = ? ORDER BY seq, rowid").all(repoId) as { epoch: string; seq: number; doc_id: string; path: string; head: string | null; hash: Buffer | null; kind: string; from_path: string | null; rowid: number }[];
+  const feedSeqs = new Set(feedBySeq.map((r) => r.seq));
+  const lastKindOfDoc = new Map<string, string>();
+  for (const e of entries) {
+    const at = `feed entry (${e.seq}, ${e.doc_id})`;
+    if (!feedSeqs.has(e.seq)) problems.push(`F1: ${at} has no feed row`);
+    if (e.epoch !== epoch) problems.push(`F1: ${at} carries epoch ${e.epoch}`);
+    if (!docById.has(e.doc_id)) problems.push(`F1: ${at} names no docs row`);
+    if (e.kind === "deleted") {
+      if (e.head !== null || e.hash !== null) problems.push(`F3: ${at} is deleted but carries a head or a hash`);
+    } else {
+      if (e.head === null || e.hash === null) problems.push(`F3: ${at} (${e.kind}) lacks a head or a hash`);
+      if (e.head !== null && !e.head.startsWith("r_")) problems.push(`F3: ${at} head ${e.head} is not an r_ id`);
+    }
+    if ((e.kind === "moved") !== (e.from_path !== null)) problems.push(`F3: ${at} from_path ${e.from_path} disagrees with kind ${e.kind}`);
+    if (e.kind === "moved" && e.from_path === e.path) problems.push(`F3: ${at} moved from its own path ${e.path}`);
+    // The kinds in sequence per document (over the retained feed): a `created`
+    // follows nothing or a `deleted`; a `changed`/`moved` never follows a `deleted`.
+    const prev = lastKindOfDoc.get(e.doc_id);
+    if (e.kind === "created" && prev !== undefined && prev !== "deleted") problems.push(`F3: ${at} is created but the document's previous entry is ${prev}`);
+    if ((e.kind === "changed" || e.kind === "moved") && prev === "deleted") problems.push(`F3: ${at} is ${e.kind} right after a deleted entry (a revival is created)`);
+    lastKindOfDoc.set(e.doc_id, e.kind);
+  }
+  // F1: every head still within retention has its entry. When nothing was
+  // pruned (oldest ≤ 1) every live doc's head and every tombstone's deletion
+  // appear; after a prune only the documents whose last change is younger than
+  // the oldest retained row are checked.
+  const oldestTs = feedBySeq.length > 0 ? feedBySeq[0]!.ts : null;
+  const headsInFeed = new Set(entries.map((e) => e.head).filter((h): h is string => h !== null));
+  const deletedInFeed = new Set(entries.filter((e) => e.kind === "deleted").map((e) => e.doc_id));
+  for (const d of docs) {
+    const within = oldest <= 1 || (oldestTs !== null && d.updated_at > oldestTs);
+    if (!within) continue;
+    if (d.deleted_at === null && d.head !== null && !headsInFeed.has(d.head)) problems.push(`F1: live doc ${d.doc_id} (${d.path}) head ${d.head} appears in no feed entry`);
+    if (d.deleted_at !== null && !deletedInFeed.has(d.doc_id)) problems.push(`F1: tombstoned doc ${d.doc_id} (${d.path}) has no deleted entry`);
+    // C7: the document's updated_at is the ts of the feed row whose entry carries its head.
+    if (d.deleted_at === null && d.head !== null) {
+      const e = entries.find((x) => x.head === d.head);
+      const row = e ? feedBySeq.find((r) => r.seq === e.seq) : undefined;
+      if (row && row.ts !== d.updated_at) problems.push(`C7: doc ${d.doc_id} updated_at ${d.updated_at} != the ts ${row.ts} of the feed row carrying its head`);
+    }
+  }
+  // H4: the recorder's `commits` agree with the feed on every retained seq.
+  const commitRows = db.prepare("SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; epoch: string; seq: number; batch_id: string }[];
+  const commitBySeq = new Map(commitRows.map((c) => [c.seq, c]));
+  for (const r of feedBySeq) {
+    const c = commitBySeq.get(r.seq);
+    if (!c) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
+    else if (c.commit_id !== r.commit_id || c.epoch !== r.epoch || c.batch_id !== r.batch_id) problems.push(`H4: commits row at seq ${r.seq} (${c.commit_id}, ${c.epoch}, ${c.batch_id}) disagrees with the feed (${r.commit_id}, ${r.epoch}, ${r.batch_id})`);
+  }
+  for (const c of commitRows) if (c.epoch !== epoch) problems.push(`H4: commit ${c.commit_id} carries epoch ${c.epoch}`);
+
   // ---- I4 dense sequences --------------------------------------------------------------
   commits.forEach((c, i) => {
     if (c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order`);
@@ -1025,6 +1115,12 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const r of db.prepare("SELECT node_id FROM external_nodes WHERE repo_id = ?").all(repoId) as { node_id: string }[]) coreIds.push(["x", r.node_id]);
   for (const r of db.prepare("SELECT edge_id FROM edges WHERE repo_id = ?").all(repoId) as { edge_id: string }[]) coreIds.push(["e", r.edge_id]);
   coreIds.push(["rp", repoId]);
+  if (epoch !== undefined) coreIds.push(["ep", epoch]);
+  for (const r of feedBySeq) {
+    coreIds.push(["c", r.commit_id]);
+    coreIds.push(["c", r.batch_id]);
+  }
+  for (const e of entries) if (e.head !== null) coreIds.push(["r", e.head]);
   for (const [prefix, id] of coreIds) {
     const c = claimOf.get(id) as { holders: number } | undefined;
     if (!c) problems.push(`C5: ${prefix} ${id} names a core row but has no id_claims row`);
@@ -1043,9 +1139,11 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.rev_id AND (ic.holders & 2) != 0)
        UNION SELECT DISTINCT r.doc_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
+       UNION SELECT c.commit_id FROM commits c WHERE c.repo_id = ?
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = c.commit_id AND (ic.holders & 2) != 0)
        ORDER BY 1`,
     )
-    .all(repoId, repoId, repoId) as { id: string }[];
+    .all(repoId, repoId, repoId, repoId) as { id: string }[];
   for (const r of unheld) problems.push(`H6: ${r.id} is named by a history row but its claim lacks the recorder's bit`);
 
   // ---- I7 dispositions ----------------------------------------------------------------

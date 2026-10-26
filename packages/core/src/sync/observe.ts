@@ -65,6 +65,8 @@ export type BatchOutcome =
       path: string;
       /** the tombstoned doc, or null when no live doc existed at `path` (no-op). */
       docId: string | null;
+      /** the tombstone's commit (17.0, 3d — the feed row), or null for a no-op. */
+      commitId: string | null;
       oldHashHex: string | null;
     };
 
@@ -134,7 +136,7 @@ export function observeBatch(
     if (owed && it.content === null) {
       if (owed.kind === "remove") deletePending(db, repoId, it.path);
       else {
-        pending.push({ kind: "echo", outcome: { kind: "deleted", path: it.path, docId: null, oldHashHex } });
+        pending.push({ kind: "echo", outcome: { kind: "deleted", path: it.path, docId: null, commitId: null, oldHashHex } });
         continue;
       }
     } else if (owed && sha256(it.content!).equals(owed.renderedHash)) {
@@ -179,23 +181,35 @@ export function observeBatch(
   if (pending.length > 1) crossDocPhase(pending, config);
 
   // ---- pass 2: commit, in batch order ------------------------------------------
+  // The batch id (spec/store §5.4 step 5, D4): the first committing member's
+  // commit id; every later member's feed row carries it. An echo commits
+  // nothing and names none.
   const out: BatchOutcome[] = [];
+  const batch: { id: string | null } = { id: null };
+  const joined = (commitId: string | null): void => {
+    if (batch.id === null && commitId !== null) batch.id = commitId;
+  };
   for (const p of pending) {
     if (p.kind === "echo") {
       out.push(p.outcome);
     } else if (p.kind === "gone") {
-      if (p.docId) tombstoneObservedDeletion(store, repoId, p.docId, ts);
-      out.push({ kind: "deleted", path: p.path, docId: p.docId, oldHashHex: p.oldHashHex });
+      const commitId = p.docId ? tombstoneObservedDeletion(store, repoId, p.docId, ts, batch.id) : null;
+      joined(commitId);
+      out.push({ kind: "deleted", path: p.path, docId: p.docId, commitId, oldHashHex: p.oldHashHex });
     } else if (p.clearPending) {
       // File wins (spec/store §5.7): the pending row and the observed commit
       // that supersedes it go together.
-      out.push(store.write((db) => {
-        const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex);
+      const r = store.write((db) => {
+        const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex, batch.id);
         deletePending(db, repoId, p.prepared.path);
-        return { kind: "observed", ...r } as const;
-      }));
+        return r;
+      });
+      joined(r.commitId);
+      out.push({ kind: "observed", ...r });
     } else {
-      out.push({ kind: "observed", ...commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex) });
+      const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex, batch.id);
+      joined(r.commitId);
+      out.push({ kind: "observed", ...r });
     }
   }
   return out;
@@ -251,11 +265,11 @@ function crossDocPhase(pending: Pending[], config: ReconcileConfig): void {
 // Pass 2 for one reconciled member: commit the finished result as an observed
 // revision — ONE transaction, the conflict-marker flag written inside it with
 // the revision pointers (spec/store §5.4 step 14) — then summarize dispositions.
-function commitPrepared(store: Store, repoId: string, prepared: PreparedReconcile, ts: string, oldHashHex: string | null, newHashHex: string): ObserveOneResult {
+function commitPrepared(store: Store, repoId: string, prepared: PreparedReconcile, ts: string, oldHashHex: string | null, newHashHex: string, batchId: string | null): ObserveOneResult {
   const { path, content } = prepared;
   const conflicted = hasConflictMarkers(content);
   const resolveIds = makeReconcilingResolver(store, repoId, { ts, path, prepared });
-  const res = ingestFile(store, repoId, path, content, { ts, origin: "observed", resolveIds, parsed: prepared.tree, conflicted });
+  const res = ingestFile(store, repoId, path, content, { ts, origin: "observed", resolveIds, parsed: prepared.tree, conflicted, batchId });
 
   // The outcome counts every verdict the matcher produced, `same` included —
   // it describes what the matcher saw; the `dispositions` table describes
@@ -354,4 +368,10 @@ export function observeDelete(store: Store, repoId: string, path: string, opts: 
   tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
   sweepResurrectionPool(store, ts);
   return { docId: existing.doc_id, path, deleted: true };
+}
+
+/** The batch's id (spec/store §5.4 step 5, D4): the first committing member's commit id, or null when nothing committed. */
+export function batchIdOf(outcomes: readonly BatchOutcome[]): string | null {
+  for (const o of outcomes) if (o.commitId !== null) return o.commitId;
+  return null;
 }

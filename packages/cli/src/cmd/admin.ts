@@ -2,7 +2,6 @@ import { parseArgs } from "node:util";
 import {
   rebuildIndex,
   runGc,
-  reposStatus,
   buildEmbedTasks,
   buildDocEmbedTasks,
   indexIdentity,
@@ -69,7 +68,7 @@ function runGcCmd(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "gc",
-      summary: "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row (refuses unless gc.enabled is set in repo settings)",
+      summary: "Mark-and-sweep unreferenced blobs and tree nodes, the `same` disposition rows a pre-14.2 store wrote, and (store 17.0) the id claims older than identity.claims_retain_days that name no row and the change-feed rows past feed.retain_days / feed.retain_entries (refuses unless gc.enabled is set in repo settings)",
       usage: "gc [--dry-run] [--vacuum]",
       options: [
         ["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"],
@@ -102,7 +101,9 @@ function runGcCmd(cli: Cli, args: string[]): number {
   // released something — the line is pinned by shape without it, and the
   // setting is off by default.
   const released = swept.claimsReleased > 0 ? `, ${swept.claimsReleased} id claims released` : "";
-  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes, ${swept.sameDispositionsSwept} same dispositions${released}`));
+  // spec/store §7.4 (17.0): likewise the feed rows pruned under the floors, only when non-zero.
+  const pruned = swept.feedPruned > 0 ? `, ${swept.feedPruned} feed rows pruned` : "";
+  cli.io.err(cli.style.dim(`  swept ${swept.blobsSwept} blobs, ${swept.treeNodesSwept} tree nodes, ${swept.sameDispositionsSwept} same dispositions${released}${pruned}`));
   if (vac) cli.io.err(cli.style.dim(vac.applied ? `  vacuumed, reclaimed ${humanBytes(vac.reclaimable)}` : `  would vacuum ${humanBytes(vac.reclaimable)}`));
   return EXIT_OK;
 }
@@ -114,23 +115,24 @@ function runDoctor(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "doctor",
-      summary: "Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
+      summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)",
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
-        ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync) and table, the file's pages, what VACUUM would reclaim, advice"],
+        ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync — the change feed under sync) and table, the file's pages, what VACUUM would reclaim, advice"],
         ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, advice }`"],
       ],
     });
   }
   const ws = cli.workspace();
   if (values.size) return runDoctorSize(cli, sizeReport(ws.store));
-  const repo = cli.repo(ws);
+  cli.repo(ws); // the selected repo must resolve (`repo_not_found` otherwise); the checks are store-wide
   const db = ws.store.db;
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
 
-  const status = reposStatus(ws.store, repo.repoId);
-  checks.push({ name: "convergence", ok: status.unconverged === 0, detail: `${status.unconverged} unconverged` });
-
+  // (The `convergence` check — `repos_status.unconverged === 0` — left with the
+  // count in store 17.0, D9: `file_hash` IS the head's hash by construction
+  // (I1), so it was identically true; `disk.changed` is the signal, `status`
+  // shows it.)
   // The index holds exactly the live LEAF blocks (spec/search §1.1): a container
   // has no row, a tombstone none. Counted from the index's shadow table — a plain
   // count(*) on an external-content FTS table answers from `blocks` instead.

@@ -265,7 +265,7 @@ describe("typed methods send exactly the wire arguments", () => {
     const h = harness();
     const empty = await h.client.changesSince();
     expect(h.last().args).toEqual({});
-    expect(empty).toEqual({ digests: [], cursor: 0, truncated: false, head: 0 });
+    expect(empty).toEqual({ digests: [], cursor: 0, epoch: "ep_fake", oldest: 0, truncated: false, head: 0 });
     await h.client.apply({ effects: [setFrontmatter("/plans/today.md", "status", "done")], reason: "finish" });
     await h.client.apply({ effects: [setFrontmatter("/plans/later.md", "status", "soon")] });
     const page = await h.client.changesSince({ cursor: 0, limit: 1, origin: "api" });

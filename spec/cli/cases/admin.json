@@ -338,7 +338,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#1 observed observed: /a.md — 2 inserted\n#2 observed observed: /sub/b.md — 2 inserted\n"
+            "stdout": "#1 observed observed: /a.md — created — 2 inserted\n#2 observed observed: /sub/b.md — created — 2 inserted\n"
           }
         },
         {
@@ -348,7 +348,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"notes\",\"rootPath\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"commits\":2,\"openEdges\":1,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":2,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"notes\",\"rootPath\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2},\"openEdges\":1,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\"},\"semantic\":{\"state\":\"disabled\"}}},\"watcher\":\"none\",\"embedQueue\":0}\n"
           }
         },
         {
@@ -904,7 +904,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -959,7 +959,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0}\n"
+        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0}\n"
       }
     },
     {
@@ -1013,7 +1013,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0}\n"
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0}\n"
           }
         }
       ]
@@ -1060,7 +1060,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0}\n"
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0}\n"
           }
         },
         {
@@ -1070,7 +1070,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0}\n"
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0}\n"
           }
         },
         {
@@ -1080,7 +1080,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0}\n"
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0}\n"
           }
         }
       ]
@@ -1126,7 +1126,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":false}}\n"
+        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":false}}\n"
       }
     },
     {
@@ -1168,7 +1168,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":true}}\n"
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0,\"sameDispositionsSwept\":0,\"claimsReleased\":0,\"feedPruned\":0,\"vacuum\":{\"reclaimable\":\"<number>\",\"applied\":true}}\n"
           }
         },
         {
@@ -1179,7 +1179,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1521,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":438,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":120,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":90,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":5,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":438,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
+            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1542,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":459,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":160,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":94,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":459,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
           }
         }
       ]
@@ -1193,7 +1193,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+        "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
       }
     },
     {
@@ -1205,7 +1205,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
       }
     },
     {
@@ -1223,7 +1223,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
+            "stdout": "{\"batchId\":\"c_20\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
           }
         },
         {
@@ -1232,7 +1232,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1242,7 +1242,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {
@@ -1263,7 +1263,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1293,7 +1293,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1316,7 +1316,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1331,7 +1331,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1521\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    id_claims       <bytes>  <share>   438\n  search            <bytes>  <share>   506\n    blocks_fts      <bytes>  <share>   292\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   117\n    sqlite_schema   <bytes>  <share>    90\n    repos           <bytes>  <share>     1\n    sources         <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    438 ids claimed\n  advice: nothing to reclaim\n"
+        "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1542\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    id_claims       <bytes>  <share>   459\n  search            <bytes>  <share>   506\n    blocks_fts      <bytes>  <share>   292\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   160\n    sqlite_schema   <bytes>  <share>    94\n    feed            <bytes>  <share>    20\n    repos           <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    459 ids claimed\n  advice: nothing to reclaim\n"
       }
     },
     {
@@ -1345,7 +1345,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1521,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":438,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":117,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":90,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":438,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
+        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1542,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":459,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":160,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":94,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":459,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
       }
     },
     {
@@ -1359,7 +1359,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1521,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":438,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":117,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":90,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"checkpoints\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":438,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
+        "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"collections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"inferred_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1542,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":334,\"indexes\":\"<number>\"},{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":459,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":160,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":94,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":459,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"advice\":[\"nothing to reclaim\"]}\n"
       }
     },
     {
@@ -1402,7 +1402,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1522\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    id_claims       <bytes>  <share>   438\n  search            <bytes>  <share>   495\n    blocks_fts      <bytes>  <share>   281\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   118\n    sqlite_schema   <bytes>  <share>    90\n    repos           <bytes>  <share>     1\n    sources         <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    438 ids claimed\n  advice: nothing to reclaim\n"
+            "stdout": "  category              bytes   share  rows\n  content           <bytes>  <share>   996\n    blocks          <bytes>  <share>   327\n    properties      <bytes>  <share>   214\n    nodes           <bytes>  <share>   214\n  history           <bytes>  <share>  1544\n    tree_nodes      <bytes>  <share>    55\n    blobs           <bytes>  <share>   334\n    id_claims       <bytes>  <share>   460\n  search            <bytes>  <share>   495\n    blocks_fts      <bytes>  <share>   281\n    nodes_fts       <bytes>  <share>   214\n    doc_embeddings  <bytes>  <share>     0\n  sync              <bytes>  <share>   161\n    sqlite_schema   <bytes>  <share>    94\n    feed            <bytes>  <share>    21\n    repos           <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    460 ids claimed\n  advice: nothing to reclaim\n"
           }
         }
       ]

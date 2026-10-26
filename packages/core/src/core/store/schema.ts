@@ -54,7 +54,10 @@ CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key
 // registry: adapters map a name → external command; sources name an adapter +
 // config (rendered to flags at spawn); attachments join repo ⇄ source (m:n).
 // sync_state holds engine-owned per-attachment change-tracking (revision per
-// path, cursor) so a stateless adapter can be spawned fresh each run (§6).
+// path, cursor) so a stateless adapter can be spawned fresh each run (§6), and
+// — since 17.0 (D4, the `checkpoints` table collapsed into it) — one reserved
+// row per repository, `(repo_id, '', '')`, carrying the sync status: the last
+// observed batch's ts, batch_id and member count (spec/sync §4.1).
 export const SYNC_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS adapters (
   name     TEXT PRIMARY KEY,        -- workspace-unique adapter name (e.g. "fs")
@@ -77,11 +80,14 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 
 CREATE TABLE IF NOT EXISTS sync_state (
-  repo_id   TEXT NOT NULL,
-  source_id TEXT NOT NULL,
-  path      TEXT NOT NULL,          -- '' reserved for the attachment-level cursor row
-  revision  TEXT,                   -- last-observed source revision for this path
-  cursor    TEXT,                   -- last poll/webhook cursor (attachment-level row)
+  repo_id          TEXT NOT NULL,
+  source_id        TEXT NOT NULL,     -- '' reserved for the repository's own status row (17.0, D4)
+  path             TEXT NOT NULL,     -- '' reserved for the attachment-level cursor row
+  revision         TEXT,              -- last-observed source revision for this path
+  cursor           TEXT,              -- last poll/webhook cursor (attachment-level row)
+  last_batch_ts    TEXT,              -- the repository row only (spec/sync §4.1): the last observed batch's ts
+  last_batch_id    TEXT,              -- its batch_id (NULL when nothing committed)
+  last_batch_files INTEGER,           -- its member count
   PRIMARY KEY (repo_id, source_id, path)
 );
 `;
@@ -203,6 +209,44 @@ CREATE TABLE IF NOT EXISTS archives (
 );
 `;
 
+// The change feed (spec/store §3.1 `feed`/`feed_entries`, 17.0 — D7/M5): one
+// slim row per commit to the repository within retention — the delivery record
+// `changes_since` pages, bounded by the `feed.*` settings (§7.4) — plus one
+// entry per document the commit touched. `seq` is dense from 1 per (repo,
+// epoch); a cursor is (epoch, seq). The recorder's `commits` row shares the
+// commit_id, epoch and seq; the feed is the core's and depends on no history
+// table. `plan_id` (resolution 3) correlates an api commit with its Receipt
+// when history is off. Migration 17 executes this text on a 16.x database.
+export const FEED_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS feed (
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  commit_id TEXT NOT NULL UNIQUE,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                    -- the first committing member of the same observed batch; = commit_id for a batch of one and every api commit
+  plan_id   TEXT,                             -- the admitted plan's digest (64 hex) for an effect-driven api commit; NULL otherwise
+  PRIMARY KEY (repo_id, epoch, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_ts ON feed(repo_id, ts);
+
+CREATE TABLE IF NOT EXISTS feed_entries (
+  repo_id   TEXT NOT NULL,
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  doc_id    TEXT NOT NULL,
+  path      TEXT NOT NULL,                    -- as of the commit
+  head      TEXT,                             -- the token minted (NULL for deleted)
+  hash      BLOB,                             -- file_hash after the commit (NULL for deleted)
+  kind      TEXT NOT NULL CHECK (kind IN ('created','changed','deleted','moved')),
+  from_path TEXT,                             -- moved only
+  PRIMARY KEY (repo_id, epoch, seq, doc_id)
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
@@ -223,7 +267,7 @@ export const MIGRATIONS: Record<number, string> = {
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
-  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, and the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone) — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
+  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), and (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -231,7 +275,8 @@ export const DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
-  settings  TEXT NOT NULL DEFAULT '{}'
+  settings  TEXT NOT NULL DEFAULT '{}',
+  epoch     TEXT NOT NULL                     -- the feed's epoch: a minted ep_ id (17.0, D7); re-minted by a restore / rebuild-from-files (§7.4)
 );
 -- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
 -- come from is a sources row (adapter=fs, config.root) joined via attachments;
@@ -305,16 +350,17 @@ CREATE TABLE IF NOT EXISTS revisions (
 );
 
 CREATE TABLE IF NOT EXISTS commits (
-  commit_id     TEXT PRIMARY KEY,
-  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
-  seq           INTEGER NOT NULL,
-  ts            TEXT NOT NULL,
-  origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
-  actor         TEXT,
-  reason        TEXT,
-  checkpoint_id TEXT,
-  ops           TEXT,
-  UNIQUE (repo_id, seq)
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,                    -- the feed row's epoch (17.0, D7)
+  seq       INTEGER NOT NULL,                 -- = the feed row's seq
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                    -- the feed row's batch_id (D4)
+  ops       TEXT,                             -- the ADR-003 intent record of an api commit (M5)
+  UNIQUE (repo_id, epoch, seq)
 );
 
 CREATE TABLE IF NOT EXISTS dispositions (
@@ -365,14 +411,7 @@ CREATE TABLE IF NOT EXISTS collections (
   spec    TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE TABLE IF NOT EXISTS checkpoints (
-  id       TEXT PRIMARY KEY,
-  repo_id  TEXT NOT NULL,
-  ts       TEXT NOT NULL,
-  files    TEXT NOT NULL,
-  git_head TEXT
-);
-
+${FEED_DDL}
 -- Identity claims (spec/store §2.1, 17.0 — M3/D5): one row per id the core
 -- has minted. holders is a bitmask — bit 0 the core (set at mint, released by
 -- the claims prune, §7.3), bit 1 the recorder (set when the capture first

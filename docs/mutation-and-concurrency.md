@@ -204,5 +204,5 @@ Crash safety: the commit is recorded (step 5) before the file is written (step 6
 
 - `remove` tombstones blocks (`deleted_at`) and inserts into `resurrection_pool` (`deleted_at`, TTL 30d from it).
 - Document delete = `docs_delete` (doc-level op): file is deleted on disk, document tombstoned, blocks pooled.
-- Observed file deletion: same, via checkpoint.
+- Observed file deletion: same, via an observed batch (`spec/sync` §4.1; the batch's record is the repository's `sync_state` status row since store 17.0 — the `checkpoints` table is gone).
 - Nothing is hard-deleted by the engine in v1 except expired pool rows; GC of unreachable objects ships dark (data-model §7).

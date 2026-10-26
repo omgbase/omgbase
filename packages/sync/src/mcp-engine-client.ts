@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { VERSION, type ObserveResult, type ObserveDeleteResult, type SurfaceObserveResult } from "@omgbase/core";
-import type { EngineClient, ChangesPage, DocBytes } from "./engine-client.js";
+import { FeedExpired, type EngineClient, type ChangesPage, type ChangesSinceOpts, type DocBytes, type DocListing } from "./engine-client.js";
 
 // McpEngineClient (ADR-014 §7): reaches the omgbase side over the Model Context
 // Protocol. The coordinator is identical against this or the in-process client;
@@ -59,7 +59,12 @@ export class McpEngineClient implements EngineClient {
       throw new Error(`tool ${name} returned non-JSON: ${text.slice(0, 200)}`);
     }
     if (res.isError) {
-      const err = body as { error?: string; message?: string };
+      const err = body as { error?: string; message?: string; data?: { epoch?: string; oldest?: number; head?: number } };
+      // spec/surface §3 (6.0): the one error a feed consumer acts on — the
+      // coordinator rescans (spec/sync §6) — surfaces with its position.
+      if (err.error === "expired_cursor" && err.data && typeof err.data.epoch === "string" && typeof err.data.oldest === "number" && typeof err.data.head === "number") {
+        throw new FeedExpired(err.data.epoch, err.data.oldest, err.data.head, err.message);
+      }
       throw new Error(`tool ${name} failed: ${err.error ?? "error"} — ${err.message ?? text.slice(0, 200)}`);
     }
     return body as T;
@@ -80,12 +85,31 @@ export class McpEngineClient implements EngineClient {
     return fromWireObserve(await this.callTool<SurfaceObserveResult<ObserveDeleteResult>>("observe_delete", { path }));
   }
 
-  changesSince(cursor?: number, opts?: { origin?: "api" | "observed" | "import"; limit?: number }): Promise<ChangesPage> {
+  changesSince(cursor?: number, opts?: ChangesSinceOpts): Promise<ChangesPage> {
     return this.callTool<ChangesPage>("changes_since", {
       ...(cursor !== undefined ? { cursor } : {}),
+      ...(opts?.epoch !== undefined ? { epoch: opts.epoch } : {}),
       ...(opts?.origin ? { origin: opts.origin } : {}),
       ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
     });
+  }
+
+  /** The rescan's listing (spec/sync §6 step 2): `query docs { select _id, _path, _hash }` on the minimal profile, paged through its cursor. */
+  async listDocs(): Promise<DocListing[]> {
+    const out: DocListing[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.callTool<{ hits: DocListing[]; truncated: boolean; cursor: string | null }>("query", {
+        query: "docs { select _id, _path, _hash }",
+        bare: true,
+        limit: 500,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      out.push(...page.hits);
+      if (!page.truncated || !page.cursor) break;
+      cursor = page.cursor;
+    }
+    return out;
   }
 
   async readDoc(path: string): Promise<DocBytes | null> {

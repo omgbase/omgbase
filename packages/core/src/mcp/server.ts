@@ -29,6 +29,7 @@ import { canonicalJson, fixTool } from "../mutate/canonical.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
+import { changesSince, repoEpoch } from "../core/store/feed.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { withWriterLockAsync, type WriterLockOptions } from "../sync/writer-lock.js";
 import { QUERY_SYNTAX_CARD, QUERY_SYNTAX_SECTION_NAMES, QUERY_SYNTAX_SECTIONS, querySyntaxSection } from "./reference.js";
@@ -1679,19 +1680,20 @@ export function buildServer(ctx: ServerContext): McpServer {
     "changes_since",
     {
       description: ladder(
-        "changes_since — Re-orient after time away: the commit feed after a cursor, each digest with its revisions [{ _id, _path, _hash }].",
-        "{}   everything from the start; head is the current max seq",
-        "{\"cursor\":20,\"limit\":5}   commits after seq 20, five at a time (cursor pages while truncated)",
+        "changes_since — Re-orient after time away: the change feed after a cursor, each digest with its documents [{ _id, _path, _hash, kind: created|changed|deleted|moved, from_path? }].",
+        "{}   everything the feed holds; epoch, oldest and head are the feed's position (a cursor is the pair epoch + seq)",
+        "{\"cursor\":20,\"limit\":5}   commits after seq 20, five at a time (cursor pages while truncated; store the page's epoch with the cursor and pass both back)",
         "{\"origin\":\"api\"}   only the writes made through the engine (observed = edits on disk; import)",
-        "Poll with your last cursor: an empty page with cursor == head means nothing new. Read a changed document with docs_read, its blocks with query (grammar: query_syntax).",
+        "Poll with your last cursor and epoch: an empty page with cursor == head means nothing new; expired_cursor { epoch, oldest, head } means the feed moved past you — rescan with query docs { select _id, _path, _hash }, resume from head. Read a changed document with docs_read, its blocks with query (grammar: query_syntax).",
       ),
-      inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional(), ...REPO_ARG },
+      inputSchema: { cursor: z.number().int().optional(), epoch: z.string().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return ok(history.changesSince(repoId, {
+        return ok(changesSince(store, repoId, {
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+          ...(args.epoch !== undefined ? { epoch: args.epoch } : {}),
           ...(args.origin ? { origin: args.origin } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
         }));
@@ -1705,7 +1707,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "repos_status",
     {
       description:
-        "Repo counts (`{ _id, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk }` — `_id` is the root row's id): docs, blocks, commits, open edges, unconverged doc count, and on-disk drift. " +
+        "Repo counts (`{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk }` — `_id` is the root row's id): docs, blocks, the change feed's position, open edges, and on-disk drift. " +
         "`disk` reports a READ-ONLY scan of the working tree vs the DB: `changed` (files edited on disk but not re-ingested), " +
         "`deleted` (docs whose file is gone from disk), `untracked` (new *.md not yet ingested), and `checked` " +
         "(false when the server has no working-tree path — disk agreement is then UNVERIFIED, not clean).",
@@ -1720,8 +1722,8 @@ export function buildServer(ctx: ServerContext): McpServer {
     "sync_status",
     {
       description:
-        "Watcher/sync state: last commit seq, last checkpoint, and whether the repo is convergent. " +
-        "`convergent` is true ONLY when the DB is internally converged AND a working-tree scan ran (`diskChecked`) AND found no drift " +
+        "Watcher/sync state: the feed's epoch, oldest and head, the last observed batch (`lastBatch: { ts, batchId, files } | null`), whether the repo is convergent, and the capabilities. " +
+        "`convergent` is true ONLY when a working-tree scan ran (`diskChecked`) AND found no drift " +
         "(`disk.changed`/`deleted`/`untracked` all 0). If the server has no working-tree path, `diskChecked` is false and `convergent` is " +
         "false — a green light is never shown while disk freshness is unverified, so an agent can trust `convergent: true` to mean not stale.",
       inputSchema: { ...REPO_ARG },
@@ -1764,7 +1766,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async () => {
       try {
-        return ok(versionInfo(store, ctx.host, profile, capabilityStates(store, ctx.repoId, ctx.semanticUnavailable ?? null)));
+        return ok(versionInfo(store, ctx.host, profile, capabilityStates(store, ctx.repoId, ctx.semanticUnavailable ?? null), ctx.repoId ? repoEpoch(store.db, ctx.repoId) : null));
       } catch (e) {
         return fail(e);
       }

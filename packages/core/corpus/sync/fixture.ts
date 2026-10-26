@@ -4,6 +4,7 @@
 //   runRegistryCase()       `registry.json`: a registry + settings script on a fresh store, projected
 //   runCheckpointCase()     `checkpoint.json`: disk/rm/sweep/checkpoint/drift/recover over an in-memory
 //                           filesystem, spec/store §8 invariants after every ingesting step, projected
+//                           (the batch results and the repository's `sync_state` status row, 4.0)
 //   runAdapterCase()        `protocol.json` (kind `adapter`): a scripted fake adapter process plays the
 //                           transcript's `in` lines; the engine's request lines are captured and compared
 //                           byte for byte with the `out` lines; before each request the runner waits for
@@ -29,7 +30,7 @@ import type { WatchEvent } from "../../src/sync/plugin.js";
 import { renderConfigFlags, ensureAdapter, createSource, deleteSource, attachSourceToRepo, detachSourceFromRepo } from "../../src/sync/sources.js";
 import { deepMerge, resolveSettings, writeRepoSettings, writeWorkspaceSettings, type Settings } from "../../src/sync/settings.js";
 import { freshnessSweep, detectDiskDrift, rebuildFileStats, sweepPlan, type StatCacheRow, type SnapshotEntry } from "../../src/sync/freshness.js";
-import { processCheckpoint, type CheckpointResult } from "../../src/sync/checkpoint.js";
+import { processCheckpoint, type BatchResult } from "../../src/sync/checkpoint.js";
 import { recoverRepo } from "../../src/sync/recovery.js";
 import { reposStatus } from "../../src/sync/admin.js";
 import { createExternalSource } from "../../src/sync/external-source.js";
@@ -175,13 +176,14 @@ export type JsonValue = unknown;
 
 export interface RegistryProjection {
   steps: Record<string, unknown>[];
-  repos: { repo_id: string; slug: string; settings: Record<string, unknown> }[];
+  repos: { repo_id: string; slug: string; settings: Record<string, unknown>; epoch: string }[];
   adapters: { name: string; command: string; args: unknown }[];
   sources: { source_id: string; name: string; adapter: string; config: unknown; env: unknown }[];
   attachments: { repo_id: string; source_id: string }[];
   sync_state: Row[];
   workspace_settings: Record<string, unknown>;
-  repos_status: { slug: string; docs: number; blocks: number; commits: number; open_edges: number; unconverged: number }[];
+  /** `repos_status` fields that need no disk (README §8; 4.0: the feed's `{ epoch, oldest, head }` in place of `commits`, `unconverged` retired) */
+  repos_status: { slug: string; docs: number; blocks: number; feed: { epoch: string; oldest: number; head: number }; open_edges: number }[];
 }
 
 export const REGISTRY_PROJECTION_KEYS = ["steps", "repos", "adapters", "sources", "attachments", "sync_state", "workspace_settings", "repos_status"] as const;
@@ -255,10 +257,11 @@ function parseJson(text: string): unknown {
 /** README §8 `registry.json` projection: the registry tables, both settings layers, the disk-free status fields. */
 export function projectRegistry(store: Store): Omit<RegistryProjection, "steps"> {
   const db = store.db;
-  const repos = (db.prepare("SELECT repo_id, slug, settings FROM repos ORDER BY slug").all() as { repo_id: string; slug: string; settings: string }[]).map((r) => ({
+  const repos = (db.prepare("SELECT repo_id, slug, settings, epoch FROM repos ORDER BY slug").all() as { repo_id: string; slug: string; settings: string; epoch: string }[]).map((r) => ({
     repo_id: r.repo_id,
     slug: r.slug,
     settings: parseJson(r.settings) as Record<string, unknown>,
+    epoch: r.epoch,
   }));
   const adapters = (db.prepare("SELECT name, command, args FROM adapters ORDER BY name").all() as { name: string; command: string; args: string }[]).map((r) => ({
     name: r.name,
@@ -269,12 +272,12 @@ export function projectRegistry(store: Store): Omit<RegistryProjection, "steps">
     (r) => ({ source_id: r.source_id, name: r.name, adapter: r.adapter, config: parseJson(r.config), env: parseJson(r.env) }),
   );
   const attachments = db.prepare("SELECT repo_id, source_id FROM attachments ORDER BY repo_id, source_id").all() as { repo_id: string; source_id: string }[];
-  const sync_state = db.prepare("SELECT repo_id, source_id, path, revision, cursor FROM sync_state ORDER BY repo_id, source_id, path").all() as Row[];
+  const sync_state = db.prepare("SELECT repo_id, source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files FROM sync_state ORDER BY repo_id, source_id, path").all() as Row[];
   const ws = db.prepare("SELECT settings FROM workspace_settings WHERE id = 0").get() as { settings: string } | undefined;
   const workspace_settings = ws ? (parseJson(ws.settings) as Record<string, unknown>) : {};
   const repos_status = repos.map((r) => {
     const s = reposStatus(store, r.repo_id);
-    return { slug: r.slug, docs: s.docs, blocks: s.blocks, commits: s.commits, open_edges: s.openEdges, unconverged: s.unconverged };
+    return { slug: r.slug, docs: s.docs, blocks: s.blocks, feed: s.feed, open_edges: s.openEdges };
   });
   return { repos, adapters, sources, attachments, sync_state, workspace_settings, repos_status };
 }
@@ -297,8 +300,8 @@ export function runRegistryCase(c: Omit<RegistryCase, "expect">): { expect: Regi
 export type CheckpointStep =
   | { disk: { path: string; content: string; mtime_ns: number } }
   | { rm: { path: string } }
-  | { sweep: { ts: string; git_head?: string } }
-  | { checkpoint: { ts: string; paths: string[]; git_head?: string } }
+  | { sweep: { ts: string } }
+  | { checkpoint: { ts: string; paths: string[] } }
   | { drift: Record<string, never> }
   | { recover: { ts: string } }
   | { rebuild_stats: Record<string, never> };
@@ -307,12 +310,13 @@ export const CHECKPOINT_STEPS = ["disk", "rm", "sweep", "checkpoint", "drift", "
 
 export interface CheckpointProjection extends Omit<StoreProjection, "steps" | "id_claims"> {
   steps: Record<string, unknown>[];
-  checkpoints: { id: string; ts: string; files: [string, string | null, string | null][]; git_head: string | null }[];
+  /** README §8 (4.0): the repo's `sync_state` rows — the status row `(source_id '', path '')` with the last batch's ts, batch_id and member count — by (`source_id`, `path`). */
+  sync_state: { source_id: string; path: string; revision: string | null; cursor: string | null; last_batch_ts: string | null; last_batch_id: string | null; last_batch_files: number | null }[];
   file_stats: { path: string; mtime_ns: number; size: number; hash: string }[];
 }
 
 export const CHECKPOINT_PROJECTION_KEYS = [
-  "steps", "docs", "commits", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "archives", "checkpoints", "file_stats",
+  "steps", "docs", "commits", "feed", "feed_entries", "revisions", "blobs", "tree_nodes", "blocks", "dispositions", "block_changes", "resurrection_pool", "sections", "pending_materializations", "archives", "sync_state", "file_stats",
 ] as const;
 
 export interface CheckpointCase {
@@ -330,8 +334,8 @@ export interface CheckpointEvaluation {
   problems: string[];
 }
 
-function checkpointOutcome(r: CheckpointResult): Record<string, unknown> {
-  return { checkpoint_id: r.checkpointId, ingested: r.ingested, suppressed: r.suppressed, deleted: r.deleted, conflicted: r.conflicted };
+function checkpointOutcome(r: BatchResult): Record<string, unknown> {
+  return { batch_id: r.batchId, ingested: r.ingested, suppressed: r.suppressed, deleted: r.deleted, conflicted: r.conflicted };
 }
 
 /**
@@ -369,13 +373,13 @@ export function runCheckpointCase(c: Omit<CheckpointCase, "expect">): Checkpoint
           fs.rm(step.rm.path);
           steps.push({});
         } else if ("sweep" in step) {
-          const r = freshnessSweep(store, repoId, FIXTURE_ROOT, { ts: step.sweep.ts, fs, ...(step.sweep.git_head !== undefined ? { gitHead: step.sweep.git_head } : {}) });
+          const r = freshnessSweep(store, repoId, FIXTURE_ROOT, { ts: step.sweep.ts, fs });
           touched([...r.ingested, ...r.suppressed, ...r.conflicted, ...r.deleted]);
           steps.push({ ...checkpointOutcome(r), scanned: r.scanned, candidates: r.candidates, changed: r.changed });
           ingesting = true;
         } else if ("checkpoint" in step) {
           const s = step.checkpoint;
-          const r = processCheckpoint(store, repoId, FIXTURE_ROOT, s.paths.map((path) => ({ path })), { ts: s.ts, fs, ...(s.git_head !== undefined ? { gitHead: s.git_head } : {}) });
+          const r = processCheckpoint(store, repoId, FIXTURE_ROOT, s.paths.map((path) => ({ path })), { ts: s.ts, fs });
           touched(s.paths);
           steps.push(checkpointOutcome(r));
           ingesting = true;
@@ -399,15 +403,15 @@ export function runCheckpointCase(c: Omit<CheckpointCase, "expect">): Checkpoint
   });
 }
 
-/** `checkpoints` (by `ts`, then insertion) with `files` parsed, and `file_stats` by path. */
-export function projectSyncTables(store: Store, repoId: string): Pick<CheckpointProjection, "checkpoints" | "file_stats"> {
-  const checkpoints = (store.db.prepare("SELECT id, ts, files, git_head FROM checkpoints WHERE repo_id = ? ORDER BY ts, rowid").all(repoId) as { id: string; ts: string; files: string; git_head: string | null }[]).map(
-    (r) => ({ id: r.id, ts: r.ts, files: parseJson(r.files) as [string, string | null, string | null][], git_head: r.git_head }),
-  );
+/** The repo's `sync_state` rows (by `source_id`, `path`; `repo_id` omitted) and `file_stats` by path. */
+export function projectSyncTables(store: Store, repoId: string): Pick<CheckpointProjection, "sync_state" | "file_stats"> {
+  const sync_state = store.db
+    .prepare("SELECT source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ? ORDER BY source_id, path")
+    .all(repoId) as CheckpointProjection["sync_state"];
   const file_stats = (store.db.prepare("SELECT path, mtime_ns, size, hash FROM file_stats WHERE repo_id = ? ORDER BY path").safeIntegers(true).all(repoId) as { path: string; mtime_ns: bigint; size: bigint; hash: Buffer }[]).map(
     (r) => ({ path: r.path, mtime_ns: Number(r.mtime_ns), size: Number(r.size), hash: hex(r.hash)! }),
   );
-  return { checkpoints, file_stats };
+  return { sync_state, file_stats };
 }
 
 // ---- protocol.json (kind `adapter`) ---------------------------------------------------------
@@ -739,16 +743,14 @@ function validateCheckpointStep(kind: string, body: Record<string, unknown>, her
       requirePath(body.path, here, problems);
       break;
     case "sweep":
-      onlyKeys(body, ["ts", "git_head"], here, problems);
+      onlyKeys(body, ["ts"], here, problems);
       requireTs(body, here, problems);
-      if (body.git_head !== undefined && typeof body.git_head !== "string") problems.push(`${here}: \`git_head\` must be a string`);
       break;
     case "checkpoint":
-      onlyKeys(body, ["ts", "paths", "git_head"], here, problems);
+      onlyKeys(body, ["ts", "paths"], here, problems);
       requireTs(body, here, problems);
       if (!Array.isArray(body.paths)) problems.push(`${here}: \`paths\` must be an array`);
       else body.paths.forEach((p, j) => requirePath(p, `${here}.paths[${j}]`, problems));
-      if (body.git_head !== undefined && typeof body.git_head !== "string") problems.push(`${here}: \`git_head\` must be a string`);
       break;
     case "drift":
     case "rebuild_stats":

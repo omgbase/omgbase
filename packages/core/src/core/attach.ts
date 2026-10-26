@@ -1,5 +1,6 @@
 import { Store } from "./store/store.js";
 import { mintId } from "./ids.js";
+import { mintEpoch } from "./store/feed.js";
 
 // Repo identity + fs-source registration (ADR-014). A repo owns identity +
 // history, NOT a filesystem: `ensureRepo` mints the repo row, and when given a
@@ -19,9 +20,12 @@ export function ensureRepo(store: Store, slug: string, rootPath: string | null =
   if (existing) return existing.repo_id;
   const repoId = mintId("rp");
   // spec/store §2.1 (17.0): the repo's own claim, under itself, at the clock
-  // (no commit `ts` exists here).
-  store.capabilities.claims.claim("rp", repoId, repoId, new Date().toISOString());
-  store.db.prepare("INSERT INTO repos (repo_id, slug) VALUES (?, ?)").run(repoId, slug);
+  // (no commit `ts` exists here); then its EPOCH (§7.4, D7) — the `ep` id the
+  // feed's `seq` is dense within, minted and claimed the same way.
+  const now = new Date().toISOString();
+  store.capabilities.claims.claim("rp", repoId, repoId, now);
+  const epoch = mintEpoch(store.db, repoId, now);
+  store.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES (?, ?, ?)").run(repoId, slug, epoch);
   if (rootPath) registerFsSource(store, repoId, slug, rootPath);
   return repoId;
 }

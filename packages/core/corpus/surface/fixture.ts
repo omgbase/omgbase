@@ -469,8 +469,8 @@ export function typeShape(v: unknown, path: string[] = []): unknown {
   return `<${typeof v}>`;
 }
 
-/** The `data` keys that mark an error as composed by the surface itself (README §6). */
-export const SURFACE_ERROR_KEYS: ReadonlySet<string> = new Set(["_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider", "plan_id"]);
+/** The `data` keys that mark an error as composed by the surface itself (README §6); `epoch` (6.0) is `expired_cursor`'s. */
+export const SURFACE_ERROR_KEYS: ReadonlySet<string> = new Set(["_id", "_path", "_doc_id", "doc_path", "ref", "section", "provider", "plan_id", "epoch"]);
 
 /** Is this error's message pinned (README §6)? Its `data` names an argument, or it is an argument-shape error. */
 export function surfaceComposed(data: unknown): boolean {

@@ -2,12 +2,15 @@ import type { Database } from "better-sqlite3";
 import { sha256, serializeTreeEntries, type TreeEntry } from "../hash.js";
 import { mintId } from "../ids.js";
 import type { RawBlock } from "../parse/types.js";
+import type { CommitRecord } from "../capabilities/types.js";
 import {
   byteLength, encodeBodyDelta, encodeFrontmatterDelta, entryText, fullNodeText, isCheckpointSeq, type Entry, type ResolvedList, type ResolvedTree,
 } from "./delta.js";
 
 // The RECORDER's immutable writers (spec/store §4′, §5.4 step 15 — 17.0):
-// blobs, tree nodes, the commit and revision rows. Since store 17.0 the
+// blobs, tree nodes, the commit and revision rows (the commit row since 3d is
+// the log's copy of the core's feed row — `recordCommit`; the core mints `c`
+// and writes `feed`, `core/store/feed.ts`). Since store 17.0 the
 // current-state ingest writes a block's bytes on its own row (`blocks.raw`/
 // `trivia`, `docs.frontmatter_raw`) and never calls these; `putBlob` is
 // reached only through `writeList`/`writeFrontmatterBlob`, i.e. the default
@@ -131,37 +134,17 @@ export function writeFrontmatterBlob(db: Database, raw: string, baseRaw: string 
   return putBlob(db, byteLength(delta) < byteLength(raw) ? delta : raw);
 }
 
-export interface NewCommitInput {
-  repoId: string;
-  ts: string;
-  origin: "api" | "observed" | "import" | "projection";
-  actor?: string | null;
-  reason?: string | null;
-  checkpointId?: string | null;
-  ops?: string | null;
-}
-
-/** Append a commit; assigns the per-repo total-order seq. */
-export function newCommit(db: Database, input: NewCommitInput): { commitId: string; seq: number } {
-  const commitId = mintId("c");
-  const row = db
-    .prepare("SELECT COALESCE(MAX(seq),0)+1 AS seq FROM commits WHERE repo_id = ?")
-    .get(input.repoId) as { seq: number };
+/**
+ * The recorder's `commits` row (spec/store §3.1, 17.0 — 3d): the log's copy of
+ * a feed row the core appended (`core/store/feed.ts`), under the same
+ * `commit_id`, `epoch` and `seq`, plus `ops` — the ADR-003 intent record of an
+ * effect-driven api commit, which only the recorder keeps (M5).
+ */
+export function recordCommit(db: Database, c: CommitRecord): void {
   db.prepare(
-    `INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops)
-     VALUES (@commitId, @repoId, @seq, @ts, @origin, @actor, @reason, @checkpointId, @ops)`,
-  ).run({
-    commitId,
-    repoId: input.repoId,
-    seq: row.seq,
-    ts: input.ts,
-    origin: input.origin,
-    actor: input.actor ?? null,
-    reason: input.reason ?? null,
-    checkpointId: input.checkpointId ?? null,
-    ops: input.ops ?? null,
-  });
-  return { commitId, seq: row.seq };
+    `INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops)
+     VALUES (@commitId, @repoId, @epoch, @seq, @ts, @origin, @actor, @reason, @batchId, @ops)`,
+  ).run({ commitId: c.commitId, repoId: c.repoId, epoch: c.epoch, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, reason: c.reason, batchId: c.batchId, ops: c.ops });
 }
 
 export interface NewRevisionInput {

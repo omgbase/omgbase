@@ -78,15 +78,17 @@ $ omg hist b_as1y4cr
 #3 inserted observed 2026-09-15T14:23:40.088Z
 ```
 
-`omg log` is the workspace-wide commit stream. The initial `attach` recorded one
-`observed` commit per ingested file; `-n 3` shows the first three (truncation is
-reported on stderr, and is not an error):
+`omg log` is the workspace-wide change feed. The initial `attach` recorded one
+`observed` commit per ingested file — each a `created` entry for its document
+(the kind the feed records per touched document: created, changed, deleted or
+moved) followed by the recorder's disposition counts; `-n 3` shows the first
+three (truncation is reported on stderr, and is not an error):
 
 ```console
 $ omg log -n 3
-#1 observed observed: /index.md — 31 inserted
-#2 observed observed: /lab/2026-01-notes.md — 28 inserted
-#3 observed observed: /lab/2026-02-notes.md — 23 inserted
+#1 observed observed: /index.md — created — 31 inserted
+#2 observed observed: /lab/2026-01-notes.md — created — 28 inserted
+#3 observed observed: /lab/2026-02-notes.md — created — 23 inserted
 … truncated; continue with --cursor 3
 ```
 

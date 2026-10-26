@@ -63,6 +63,8 @@ export interface VersionInfo {
    * `reads::…` like the rest.
    */
   capabilities: CapabilityStates;
+  /** the default repository's feed epoch (spec/store §3.1 `repos.epoch`, 17.0 D7 — the first half of a `changes_since` cursor); null without a repository */
+  epoch: string | null;
 }
 
 /** The omgbase packages the reference binary is built from (spec/surface §4). */
@@ -139,7 +141,7 @@ export function coreVersion(): string {
  * `profile` the catalog profile served (the MCP server's `--tools`; the CLI's
  * own `version` verb is the full library and says `full`).
  */
-export function versionInfo(store?: Store | null, host?: HostInfo, profile: ToolsProfile = "full", capabilities?: CapabilityStates): VersionInfo {
+export function versionInfo(store?: Store | null, host?: HostInfo, profile: ToolsProfile = "full", capabilities?: CapabilityStates, epoch: string | null = null): VersionInfo {
   const anchors = [...(host?.resolveFrom ? [host.resolveFrom] : []), import.meta.url];
   const components: Record<string, string> = {};
   for (const name of COMPONENT_PACKAGES) {
@@ -166,5 +168,6 @@ export function versionInfo(store?: Store | null, host?: HostInfo, profile: Tool
     // version` outside a repo; the surface runner's fixtures); without a store,
     // nothing is configured and no module runs: both `disabled`.
     capabilities: capabilities ?? (store ? capabilityStates(store, null) : { history: { state: "disabled" satisfies CapabilityState }, semantic: { state: "disabled" } }),
+    epoch,
   };
 }

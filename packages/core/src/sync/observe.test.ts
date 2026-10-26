@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { observeFile, observeMany, observeDelete } from "./observe.js";
-import { changesSince } from "../graph/history.js";
+import { changesSince } from "../core/store/feed.js";
 
 let store: Store;
 let repoId: string;

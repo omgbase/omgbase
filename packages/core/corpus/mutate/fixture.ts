@@ -217,6 +217,9 @@ export interface Projection {
   docs: Row[];
   blocks: JsonRow[];
   commits: Row[];
+  /** spec/store §9.4 (17.0, 3d): the change feed an api commit writes — one row (`plan_id` for an effect-driven request) and one entry per touched document (`moved` with `from_path`, `deleted`). */
+  feed: Row[];
+  feed_entries: Row[];
   revisions: Row[];
   dispositions: JsonRow[];
   resurrection_pool: Row[];
@@ -225,7 +228,7 @@ export interface Projection {
 }
 
 /** The projected tables, in the order the fixture emits them (README §9). */
-export const PROJECTED_TABLES = ["docs", "blocks", "commits", "revisions", "dispositions", "resurrection_pool", "pending_materializations"] as const;
+export const PROJECTED_TABLES = ["docs", "blocks", "commits", "feed", "feed_entries", "revisions", "dispositions", "resurrection_pool", "pending_materializations"] as const;
 
 export interface FixtureCase {
   name: string;
@@ -451,7 +454,7 @@ export function runCase(c: FixtureCaseInput): Evaluation {
       return {
         expect: {
           steps, files: r.docStore.snapshot(),
-          docs: t.docs, blocks: t.blocks, commits: t.commits, revisions: t.revisions, dispositions: t.dispositions, resurrection_pool: t.resurrection_pool,
+          docs: t.docs, blocks: t.blocks, commits: t.commits, feed: t.feed, feed_entries: t.feed_entries, revisions: t.revisions, dispositions: t.dispositions, resurrection_pool: t.resurrection_pool,
           pending_materializations: t.pending_materializations,
         },
         problems,

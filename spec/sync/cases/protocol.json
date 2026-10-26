@@ -912,6 +912,7 @@
           },
           {
             "cursor": 3,
+            "epoch": "ep_0",
             "written": [
               "authored.md",
               "imported.md"
@@ -1028,6 +1029,7 @@
           },
           {
             "cursor": 2,
+            "epoch": "ep_0",
             "written": [],
             "removed": [
               "x.md"
@@ -1128,6 +1130,7 @@
           },
           {
             "cursor": 3,
+            "epoch": "ep_0",
             "written": [
               "x.md",
               "y.md",
@@ -1161,6 +1164,7 @@
               {
                 "engine": "changes_since",
                 "cursor": 2,
+                "epoch": "ep_0",
                 "limit": 2
               },
               {
@@ -1268,6 +1272,7 @@
           },
           {
             "cursor": 2,
+            "epoch": "ep_0",
             "written": [
               "y.md"
             ],
@@ -1290,6 +1295,7 @@
           },
           {
             "cursor": 2,
+            "epoch": "ep_0",
             "written": [],
             "removed": [],
             "calls": [
@@ -1362,6 +1368,7 @@
           },
           {
             "cursor": 0,
+            "epoch": null,
             "written": [],
             "removed": [],
             "calls": []
@@ -1427,6 +1434,7 @@
           },
           {
             "cursor": 1,
+            "epoch": "ep_0",
             "written": [
               "x.md"
             ],
@@ -1472,6 +1480,7 @@
           },
           {
             "cursor": 1,
+            "epoch": "ep_0",
             "written": [],
             "removed": [],
             "calls": [
@@ -1496,6 +1505,168 @@
           {
             "commit_id": "c_0",
             "seq": 1,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sync-out-expired-cursor-rescans",
+      "kind": "coordinator",
+      "notes": "§6 (4.0): a `sync_out` whose cursor the feed no longer serves — here a cursor past the head, as a consumer of another repository or of a rebuilt feed carries — gets `expired_cursor { epoch, oldest, head }` and runs the rescan procedure: list the server's live documents (`list_docs` — `query docs { select _id, _path, _hash }` on the wire), write every document whose hash differs from the source's copy (x.md's stale bytes; y.md absent from the source) after reading it, remove every source path the server does not have (stale.md), then resume `changes_since` from the error's `head` under its `epoch` (empty: nothing newer). The summary carries `rescanned: true` and the final `(epoch, cursor)`.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "x.md": "# X\n\nStale copy.\n",
+              "stale.md": "# Stale\n\nNot on the server.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n\nServer copy.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "create": {
+              "path": "y.md",
+              "markdown": "# Y\n\nOnly on the server.\n"
+            }
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 99
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 2,
+            "epoch": "ep_0"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "cursor": 2,
+            "epoch": "ep_0",
+            "written": [
+              "x.md",
+              "y.md"
+            ],
+            "removed": [
+              "stale.md"
+            ],
+            "rescanned": true,
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 99
+              },
+              {
+                "engine": "list_docs"
+              },
+              {
+                "source": "fetch",
+                "path": "x.md"
+              },
+              {
+                "engine": "read_doc",
+                "path": "x.md"
+              },
+              {
+                "source": "write",
+                "path": "x.md",
+                "content": "# X\n\nServer copy.\n"
+              },
+              {
+                "source": "fetch",
+                "path": "y.md"
+              },
+              {
+                "engine": "read_doc",
+                "path": "y.md"
+              },
+              {
+                "source": "write",
+                "path": "y.md",
+                "content": "# Y\n\nOnly on the server.\n"
+              },
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "remove",
+                "path": "stale.md"
+              },
+              {
+                "engine": "changes_since",
+                "cursor": 2,
+                "epoch": "ep_0"
+              }
+            ]
+          },
+          {
+            "cursor": 2,
+            "epoch": "ep_0",
+            "written": [],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 2,
+                "epoch": "ep_0"
+              }
+            ]
+          }
+        ],
+        "files": {
+          "x.md": "# X\n\nServer copy.\n",
+          "y.md": "# Y\n\nOnly on the server.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_1",
+            "path": "y.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
             "origin": "api",
             "actor": null
           }

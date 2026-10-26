@@ -1670,11 +1670,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/index.md",
-                    "_hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed"
+                    "_hash": "74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1684,11 +1686,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_1",
                     "_path": "/lab/2026-01-notes.md",
-                    "_hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480"
+                    "_hash": "4ca40f92b6dfba673bf7e8f310945285e0b778562d67267c408cc3a0074ca480",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1698,11 +1702,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/lab/2026-02-notes.md",
-                    "_hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa"
+                    "_hash": "785e44677241bf9722ee204777ad1008a68b1360b2189550818800722ff0c7fa",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1712,11 +1718,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_3",
                     "_path": "/practitioners/jabir-ibn-hayyan.md",
-                    "_hash": "346dd857fb0acc23191d10939cde5d9c8b58317f2073968ea2cabbc5a6536ddc"
+                    "_hash": "346dd857fb0acc23191d10939cde5d9c8b58317f2073968ea2cabbc5a6536ddc",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1726,11 +1734,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_4",
                     "_path": "/practitioners/maria-prophetissa.md",
-                    "_hash": "2041503c1ff937ac1e30e76153cb145d6033faa9bc828f02b68fbcb3d25370f5"
+                    "_hash": "2041503c1ff937ac1e30e76153cb145d6033faa9bc828f02b68fbcb3d25370f5",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1740,11 +1750,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_5",
                     "_path": "/practitioners/newton.md",
-                    "_hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c"
+                    "_hash": "2d1f0bd3f92e3ab006e4f4220ab3cb6d7959184b9a41e1fd52a95e965750c06c",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1754,11 +1766,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_6",
                     "_path": "/practitioners/paracelsus.md",
-                    "_hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d"
+                    "_hash": "61b196d9470ef9c65e6330b6a0772c7d81b6c8636f1f5a54669404808365085d",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1768,11 +1782,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2"
+                    "_hash": "e021b85c0fe843013d75cbe71aa541c45419f7d13a4bc246baebaeff30d605d2",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1782,11 +1798,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_8",
                     "_path": "/processes/coagulation.md",
-                    "_hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215"
+                    "_hash": "6f132ed7dd77232f3cb3e8c0b191ff925cc72a1b072c8a0f915bd4eb6a222215",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1796,11 +1814,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_9",
                     "_path": "/processes/dissolution.md",
-                    "_hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546"
+                    "_hash": "fc915a41f88b1c5888038c386a4cab8f1e65032137ed8be91c3fee3a42cfc546",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1810,11 +1830,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_10",
                     "_path": "/processes/magnum-opus.md",
-                    "_hash": "500f49be074b792b89fddd9661e93dc5afc9948c1506c67b23c2b4c006f9a85e"
+                    "_hash": "500f49be074b792b89fddd9661e93dc5afc9948c1506c67b23c2b4c006f9a85e",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1824,11 +1846,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_11",
                     "_path": "/substances/mercury.md",
-                    "_hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f"
+                    "_hash": "f144bf5fa170bf2dea89ad6fa7c9e37961a7b3016c454364a97e2d0697131e8f",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1838,11 +1862,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_12",
                     "_path": "/substances/philosophers-stone.md",
-                    "_hash": "fdcdf3fe4c43caadb8fa3535c705b274c2dc6e1a3ee5dcd0a27e62c2ff6512e3"
+                    "_hash": "fdcdf3fe4c43caadb8fa3535c705b274c2dc6e1a3ee5dcd0a27e62c2ff6512e3",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1852,11 +1878,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_13",
                     "_path": "/substances/prima-materia.md",
-                    "_hash": "11f1d67bf403bbae11bd9904d2679f534a2315a058b6f6bc7da043b9ab3e4c19"
+                    "_hash": "11f1d67bf403bbae11bd9904d2679f534a2315a058b6f6bc7da043b9ab3e4c19",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1866,11 +1894,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_14",
                     "_path": "/substances/salt.md",
-                    "_hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3"
+                    "_hash": "bd46557a5b70181f7b5ed3478e6ddf646a92c7560a44607bbf92485e35e48cd3",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1880,11 +1910,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_15",
                     "_path": "/substances/sulphur.md",
-                    "_hash": "0531f667b6f371786055f368fc3b036cf51d31f63fd09c2437546d7255dd1ec0"
+                    "_hash": "0531f667b6f371786055f368fc3b036cf51d31f63fd09c2437546d7255dd1ec0",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1894,11 +1926,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_16",
                     "_path": "/texts/emerald-tablet.md",
-                    "_hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b"
+                    "_hash": "fd4aa62c7b28de19a0f9c9dfc5145263bdbd2bd84528ef77fa4f6ce2fa99693b",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1908,11 +1942,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_17",
                     "_path": "/texts/mutus-liber.md",
-                    "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
+                    "_hash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1922,11 +1958,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_18",
                     "_path": "/timeline/kickoff.md",
-                    "_hash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                    "_hash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1936,11 +1974,13 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_19",
                     "_path": "/timeline/review.md",
-                    "_hash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                    "_hash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701",
+                    "kind": "created"
                   }
                 ]
               },
@@ -1950,11 +1990,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_20",
+                "plan_id": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
                 "revisions": [
                   {
                     "_id": "d_14",
                     "_path": "/substances/salt.md",
-                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -1964,11 +2007,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_21",
+                "plan_id": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/lab/2026-02-notes.md",
-                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -1978,11 +2024,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_22",
+                "plan_id": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -1992,18 +2041,23 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_23",
+                "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144",
+                    "kind": "changed"
                   }
                 ]
               }
             ],
             "cursor": 24,
-            "truncated": false,
-            "head": 24
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 24,
+            "truncated": false
           },
           {
             "digests": [
@@ -2013,11 +2067,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_20",
+                "plan_id": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
                 "revisions": [
                   {
                     "_id": "d_14",
                     "_path": "/substances/salt.md",
-                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2027,11 +2084,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_21",
+                "plan_id": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/lab/2026-02-notes.md",
-                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2041,11 +2101,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_22",
+                "plan_id": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2055,18 +2118,23 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_23",
+                "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144",
+                    "kind": "changed"
                   }
                 ]
               }
             ],
             "cursor": 24,
-            "truncated": false,
-            "head": 24
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 24,
+            "truncated": false
           },
           {
             "digests": [
@@ -2076,11 +2144,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_20",
+                "plan_id": "1a6e21782435b5f2a655bc71f4e72842b863d1cfa37fa3ed434fe2969de1c4e5",
                 "revisions": [
                   {
                     "_id": "d_14",
                     "_path": "/substances/salt.md",
-                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c"
+                    "_hash": "5ce5399bbf38a715dc8507974ef15cd2b59ca4454f32372d7a225c170db4569c",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2090,11 +2161,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_21",
+                "plan_id": "557000a526778e6de29fd90c4af683a3dfba58f4df7926c57a4f554a75f2c792",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/lab/2026-02-notes.md",
-                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818"
+                    "_hash": "f3e0234562b35be5ff95444a0655b426cd104aa61e116be67df64490a3798818",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2104,11 +2178,14 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_22",
+                "plan_id": "48d3e7d80ff454cbaf69b4a45e4b0c45c4f0cf1ffd735d9d1eab9d7588534cae",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8"
+                    "_hash": "150da782ae8892f4c335c40ebfda849375fb1bc25ec76fd48e52a461d8930db8",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2118,18 +2195,23 @@
                 "ts": "2026-10-13T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_23",
+                "plan_id": "4cebb67faba4347b922151762478e60ddf56115a955489e222bee3c6bb2c7e7f",
                 "revisions": [
                   {
                     "_id": "d_7",
                     "_path": "/processes/calcination.md",
-                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144"
+                    "_hash": "43bb086695beff9c36c5212b2ebbf14185df411e603a14d46c10265fb4f28144",
+                    "kind": "changed"
                   }
                 ]
               }
             ],
             "cursor": 24,
-            "truncated": false,
-            "head": 24
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 24,
+            "truncated": false
           },
           {
             "engine": "<string>",
@@ -2163,7 +2245,8 @@
               "semantic": {
                 "state": "<string>"
               }
-            }
+            },
+            "epoch": "<string>"
           }
         ]
       }

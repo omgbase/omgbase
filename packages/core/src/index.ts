@@ -71,7 +71,7 @@ export { reconcileChanges, attachSource } from "./sync/driver.js";
 export { observeFile, observeMany, observeOne, observeDelete, observeBatch, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult, type BatchItem, type BatchOutcome } from "./sync/observe.js";
 export { buildServer, toolDescriptions, toolNames, unknownTool, UNKNOWN_TOOL_CODE, WRITE_TOOLS, MINIMAL_TOOLS, PROFILES, TOOLS_PROFILES, parseToolsProfile, type ServerContext, type ToolsProfile } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
-export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
+export { processCheckpoint, lastBatch, type BatchResult, type CheckpointResult } from "./sync/checkpoint.js";
 export { reposStatus, syncStatus, reposList, type RepoStatus, type SyncStatus, type DiskStatus, type ReposList } from "./sync/admin.js";
 
 // Read surface consumed by CLI read commands (11 §5.2–5.5).
@@ -123,7 +123,13 @@ export { createExternalProvider, type ExternalProvider } from "./semantic/extern
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./semantic/vector.js";
 export { capabilityStates, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
-export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, changesSince, RevisionNotFound, type NodeChange, type CommitDigest, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
+export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, RevisionNotFound, type NodeChange, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
+// The change feed (spec/store §3.1 `feed`, 17.0 — the core's; spec/surface §3 `changes_since`).
+export {
+  changesSince, feedStatus, repoEpoch, pruneFeed, feedPolicy, repoFeedPolicy, ExpiredCursor,
+  FEED_RETAIN_DAYS_DEFAULT, FEED_RETAIN_ENTRIES_DEFAULT, FEED_MAX_ENTRIES_DEFAULT,
+  type ChangesPage, type ChangesSinceOptions, type CommitDigest, type DigestRevision, type FeedEntryKind, type FeedPolicy, type FeedStatus,
+} from "./core/store/feed.js";
 export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./graph/links.js";
 export { FilterInvalid } from "./core/filter-invalid.js";
 export { EngineError, errorBody, type ErrorCode, type ErrorBody } from "./mcp/errors.js";

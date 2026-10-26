@@ -71,15 +71,16 @@ CREATE TABLE IF NOT EXISTS revisions (
 );
 
 CREATE TABLE IF NOT EXISTS commits (
-  commit_id     TEXT PRIMARY KEY,
-  repo_id       TEXT NOT NULL,
-  seq           INTEGER NOT NULL,
-  ts            TEXT NOT NULL,
-  origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
-  actor         TEXT,
-  reason        TEXT,
-  checkpoint_id TEXT,
-  ops           TEXT
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL,
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,
+  ops       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS blobs (
@@ -596,7 +597,7 @@ function writeSegment(store: Store, repoId: string, revIds: readonly string[], p
   const revRow = db.prepare("SELECT rev_id, doc_id, seq, root_tree, frontmatter_blob, rendered_hash, path, commit_id FROM revisions WHERE rev_id = ?");
   const revisions = revIds.map((id) => revRow.get(id) as RevisionRow);
   const commitIds = [...new Set(revisions.map((r) => r.commit_id))];
-  const commitRow = db.prepare("SELECT commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops FROM commits WHERE commit_id = ?");
+  const commitRow = db.prepare("SELECT commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE commit_id = ?");
   const commits = commitIds.map((c) => commitRow.get(c) as Record<string, unknown> & { seq: number }).sort((a, b) => a.seq - b.seq);
   const seqLo = commits[0]!.seq;
   const seqHi = commits[commits.length - 1]!.seq;
@@ -646,8 +647,8 @@ function writeSegment(store: Store, repoId: string, revIds: readonly string[], p
         const body = bodies.get(r.rev_id)!;
         insRev.run(r.rev_id, r.doc_id, r.seq, Buffer.from(body.rootHex, "hex"), body.fmHex ? Buffer.from(body.fmHex, "hex") : null, r.rendered_hash, r.path, r.commit_id);
       }
-      const insCommit = seg.prepare("INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason, checkpoint_id, ops) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-      for (const c of commits) insCommit.run(c.commit_id, c.repo_id, c.seq, c.ts, c.origin, c.actor, c.reason, c.checkpoint_id, c.ops);
+      const insCommit = seg.prepare("INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      for (const c of commits) insCommit.run(c.commit_id, c.repo_id, c.epoch, c.seq, c.ts, c.origin, c.actor, c.reason, c.batch_id, c.ops);
       const insTree = seg.prepare("INSERT INTO tree_nodes (hash, entries) VALUES (?, ?)");
       for (const h of [...nodes.keys()].sort()) insTree.run(Buffer.from(h, "hex"), nodes.get(h)!);
       const insBlob = seg.prepare("INSERT OR IGNORE INTO blobs (hash, bytes, size) VALUES (?, ?, ?)");

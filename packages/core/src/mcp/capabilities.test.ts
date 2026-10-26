@@ -52,7 +52,8 @@ describe("the semantic gate at the surface", () => {
     expect((r.body as unknown as unknown[]).length).toBe(1);
     const v = await call("version");
     expect(v.body.capabilities).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
-    expect(Object.keys(v.body).slice(-2)).toEqual(["profile", "capabilities"]);
+    expect(Object.keys(v.body).slice(-3)).toEqual(["profile", "capabilities", "epoch"]);
+    expect(v.body.epoch).toMatch(/^ep_/);
   });
 
   it("full composition, provider configured and loaded: version says enabled", async () => {

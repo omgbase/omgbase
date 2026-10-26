@@ -4,6 +4,7 @@ import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
 import { assignIds, type TreeInputBlock } from "./store/writers.js";
 import { requireHistory, claimsOf } from "./capabilities/registry.js";
+import { appendFeedEntry, appendFeedRow, feedRowOf } from "./store/feed.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
@@ -197,6 +198,10 @@ export interface IngestFileOptions {
    * §5.4 step 14). Absent ⇒ the column is left untouched — the observe path
    * sets it on every commit; api writes never touch it. */
   conflicted?: boolean;
+  /** The observed batch this commit belongs to (spec/store §5.4 step 5, D4):
+   * the first committing member's commit id; absent ⇒ a batch of one
+   * (`batch_id = commit_id`). */
+  batchId?: string | null;
 }
 
 /** The options of `ingestInto`: the commit the revision hangs off is the
@@ -204,12 +209,17 @@ export interface IngestFileOptions {
  * timestamp (the pool expiry is computed from it). */
 export interface IngestIntoOptions {
   ts: string;
-  /** The `commits` row this ingest writes its revision, block rows, dispositions, properties and edges under. */
+  /** The feed row (`appendFeedRow`) this ingest writes its entry, block rows, properties and edges under — the recorder's `commits` row shares the id. */
   commitId: string;
   resolveIds?: IdResolver | undefined;
   format?: string | undefined;
   parsed?: BlockTree | undefined;
   conflicted?: boolean | undefined;
+  /** The path the document was at before this commit when the commit also
+   * moves it (a `docs_move` whose moved document is rewritten by the same
+   * request, spec/mutate §6): the feed entry is then `moved` with this
+   * `from_path` (D11) rather than `changed`. */
+  movedFrom?: string | undefined;
 }
 
 /**
@@ -230,7 +240,9 @@ export function ingestFile(
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
   return store.write((db): IngestResult => {
-    const commit = requireHistory(db).newCommit({ repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
+    // spec/store §5.4 step 5: the feed row (the core's; the recorder's `commits`
+    // row is written under the same id inside `appendFeedRow`).
+    const commit = appendFeedRow(db, { repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null, batchId: opts.batchId ?? null });
     return ingestInto(db, repoId, path, content, {
       ts,
       commitId: commit.commitId,
@@ -244,11 +256,13 @@ export function ingestFile(
 
 /**
  * spec/store §5.4 steps 1–3 and 6–15 for one document under an EXISTING
- * commit row, inside the caller's transaction (`db` is the connection the
+ * feed row, inside the caller's transaction (`db` is the connection the
  * caller's `store.write` handed it; nothing here opens one). The head token
- * is minted here (step 6); the pool snapshot, the properties and the edge
- * intervals name `commitId`; the captured revision and the dispositions are
- * the recorder's (step 15).
+ * is minted here (step 6) and the document's feed entry written (step 5's
+ * entry: `created` for an inserted or revived row, `moved` when the commit
+ * also moved it, else `changed`); the pool snapshot, the properties and the
+ * edge intervals name `commitId`; the captured revision and the dispositions
+ * are the recorder's (step 15).
  */
 export function ingestInto(
   db: Database,
@@ -299,6 +313,7 @@ export function ingestInto(
   // transaction that writes the row carrying it — the claim is the writer's,
   // written after the minter yielded (`minted_at = ts`).
   const claims = claimsOf(db);
+  let revived = false;
   if (!doc) {
     claims.claim("d", docId, repoId, ts);
     // `created_at` is the identity's birth (D6); `updated_at` moves with the head (step 12).
@@ -314,7 +329,7 @@ export function ingestInto(
     // live again, so reads that filter `deleted_at IS NULL` see it and the
     // next identical observation echo-gates instead of re-ingesting. A revival
     // keeps `created_at` (D6).
-    const revived = doc.deleted_at !== null;
+    revived = doc.deleted_at !== null;
     db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_raw = ?, frontmatter_trivia = ?, deleted_at = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmRaw, fmTrivia, docId);
     // spec/graph §3.5: adoption happens whenever a row BECOMES live, so a
     // revived tombstone also collects the phantom edges minted at its path
@@ -342,6 +357,11 @@ export function ingestInto(
   const renderedHash = sha256(content);
   const head = mintId("r");
   claims.claim("r", head, repoId, ts);
+  // spec/store §5.4 step 5 (17.0, 3d): the document's feed entry, under the
+  // commit's feed row — written now that the token exists, in this transaction.
+  const feedRow = feedRowOf(db, commitId);
+  const entryKind = opts.movedFrom !== undefined && opts.movedFrom !== path ? "moved" : isNew || revived ? "created" : "changed";
+  appendFeedEntry(db, { repoId, epoch: feedRow.epoch, seq: feedRow.seq, docId, path, head, hash: renderedHash, kind: entryKind, fromPath: entryKind === "moved" ? opts.movedFrom! : null });
   history.captureRevision({
     docId,
     head,

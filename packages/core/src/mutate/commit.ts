@@ -6,6 +6,7 @@ import { deletePending, insertPending, materializeRow, readPending, supersede, t
 import { requireHistory } from "../core/capabilities/registry.js";
 import { mintId } from "../core/ids.js";
 import { claimsOf } from "../core/capabilities/registry.js";
+import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
@@ -54,8 +55,8 @@ import { MutationError, type MutDoc } from "./tree.js";
 //      that landed, and delete each row as its file is done (autocommit per
 //      file).
 //
-// A failure or crash between C and B' leaves the commit, its revisions and the
-// `changes_since` digest durable and the rows pending: the next materializer
+// A failure or crash between C and B' leaves the feed row (the `changes_since`
+// digest), the recorder's commit and revisions durable and the rows pending: the next materializer
 // (the freshness sweep's step 0, recovery, the next request touching the path,
 // or an observation of the file — spec/store §5.7) finishes the files from the
 // recorded intent with the api actor, reason and known ids intact. Through
@@ -139,13 +140,17 @@ export type Effect =
   | { kind: "record_stat"; path: string; bytes: string }
   | { kind: "clear_stat"; path: string };
 
-/** The one `commits` row a request records. `ops` is threaded, never populated
- *  yet (ADR-003's intent record waits for the planner step). */
+/** The one feed row a request records (spec/store §5.4 "The api path"; the
+ *  recorder's `commits` row is its twin): `planId` is the admitted plan's
+ *  digest (resolution 3 — carried on the feed row so a Receipt correlates with
+ *  the documents it touched when history is off), `ops` the ADR-003 intent
+ *  record the recorder alone keeps. Both null for a request that is not
+ *  effect-driven. */
 export interface CommitHead {
   origin: "api";
   actor: string | null;
   reason: string | null;
-  checkpointId?: string | null;
+  planId?: string | null;
   ops?: string | null;
 }
 
@@ -256,22 +261,22 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
   }
 
   // Phase C — one IMMEDIATE transaction: validate under the write lock, THEN
-  // one commit row, then the database half of every effect in order, then the
-  // file intent. Mint order: one `c`, then per document `r`, `x`, `e` (and `d`
-  // for a created document; a `move_path` mints its `r` first, 17.0 D11) —
-  // nothing before validation passes.
+  // one feed row (the core's; the recorder's `commits` row under the same id),
+  // then the database half of every effect in order — each writing its feed
+  // entry — then the file intent. Mint order: one `c`, then per document `r`,
+  // `x`, `e` (and `d` for a created document; a `move_path` mints its `r`
+  // first, 17.0 D11) — nothing before validation passes.
   let committed: CommitOutcome;
   try {
     committed = store.writeImmediate((db): CommitOutcome => {
       validate(db, repoId, effects, onDisk);
-      const history = requireHistory(db);
-      const commit = history.newCommit({
+      const commit = appendFeedRow(db, {
         repoId,
         ts,
         origin: head.origin,
         actor: head.actor,
         reason: head.reason,
-        checkpointId: head.checkpointId ?? null,
+        planId: head.planId ?? null,
         ops: head.ops ?? null,
       });
       const commitId = commit.commitId;
@@ -287,11 +292,14 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
         switch (e.kind) {
           case "ingest_known": {
             // INTENT path: persist the ops' tree with its KNOWN block ids — never
-            // re-derive identity from the rendered bytes (node-editability).
+            // re-derive identity from the rendered bytes (node-editability). A
+            // document loaded under another path (the moved document of a
+            // `docs_move` that this request also rewrites) gets a `moved` entry.
             const res = ingestInto(db, repoId, e.path, e.rendered, {
               ts,
               commitId,
               resolveIds: makeKnownIdResolver(store, repoId, e.mutDoc, e.priorIds, { path: e.path }),
+              ...(e.base && e.base.path !== e.path ? { movedFrom: e.base.path } : {}),
             });
             ingests.push(res);
             recordWrite(pending, e.path, res, sha256(e.rendered), e.base ? fromHex(e.base.fileHash) : null, commitId, ts);
@@ -314,7 +322,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
             // are that row's `prior_hash`, and the row goes (spec/store §5.7
             // "Supersession"). Read before the move rewrites the document's row.
             const owedAtFrom = pending.get(e.from) ?? readPending(db, repoId, e.from);
-            const moved = movePath(db, e, ts, commitId, !rewrittenLater.has(e.docId));
+            const moved = movePath(db, repoId, e, ts, commit, !rewrittenLater.has(e.docId));
             moves.push(moved);
             // The bytes expected at `to`: the moved document's current bytes —
             // `docs.file_hash` (I1) — under its new head (a self-linking source's
@@ -336,7 +344,7 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
             // (`docs.file_hash` — what its head renders to, I1; the last
             // observed bytes when it never had a head).
             const row = db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(e.docId) as { file_hash: Buffer | null } | undefined;
-            tombstone(db, commitId, ts, e);
+            tombstone(db, repoId, commit, ts, e);
             // A remove drops whatever the path owed (spec/store §5.7 "Supersession"): no prior, no head.
             pending.set(e.path, { path: e.path, kind: "remove", fromPath: null, docId: e.docId, head: null, renderedHash: row?.file_hash ?? sha256(""), priorHash: null, commitId, createdAt: ts });
             break;
@@ -503,7 +511,7 @@ function validate(db: Database, repoId: string, effects: Effect[], onDisk: Map<s
 // the inbound scan distinguishes them from the raw. Runs BEFORE the retarget's
 // ingests so each rewritten source's `maintainEdges` resolves `[x](new)` to the
 // document (adopted here), not to a phantom.
-function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>, ts: string, commitId: string, mintsHead: boolean): MoveOutcome {
+function movePath(db: Database, repoId: string, e: Extract<Effect, { kind: "move_path" }>, ts: string, commit: { commitId: string; epoch: string; seq: number }, mintsHead: boolean): MoveOutcome {
   const doc = db.prepare("SELECT repo_id, file_hash, frontmatter_raw FROM docs WHERE doc_id = ?").get(e.docId) as { repo_id: string; file_hash: Buffer | null; frontmatter_raw: string | null } | undefined;
   const fileHashHex = doc?.file_hash ? doc.file_hash.toString("hex") : null;
   let head: string | null = null;
@@ -511,11 +519,14 @@ function movePath(db: Database, e: Extract<Effect, { kind: "move_path" }>, ts: s
     head = mintId("r");
     claimsOf(db).claim("r", head, doc.repo_id, ts);
     db.prepare("UPDATE docs SET path = ?, head = ?, updated_at = ? WHERE doc_id = ?").run(e.to, head, ts, e.docId);
+    // The feed entry (spec/store §5.4 step 5; D11): `moved`, `from_path` the
+    // old path, the new head, the unchanged bytes.
+    appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: e.docId, path: e.to, head, hash: doc.file_hash, kind: "moved", fromPath: e.from });
     requireHistory(db).captureRevision({
       docId: e.docId,
       head,
       path: e.to,
-      commitId,
+      commitId: commit.commitId,
       blocks: currentTreeInput(db, e.docId),
       frontmatterRaw: doc.frontmatter_raw,
       renderedHash: doc.file_hash,
@@ -572,8 +583,10 @@ export function currentTreeInput(db: Database, docId: string): TreeInputBlock[] 
 // = ts` on the blocks and the doc, `updated_at = ts` on the doc — liveness is
 // a change of the document's own; the head is KEPT and no new one is minted,
 // D11); FTS rows drop with the blocks. `pool` snapshots the live blocks first,
-// each carrying its `created_at` (D6).
-function tombstone(db: Database, commitId: string, ts: string, e: Extract<Effect, { kind: "tombstone" }>): void {
+// each carrying its `created_at` (D6). The feed entry is `deleted` (no head,
+// no hash; spec/mutate §6 `docs_delete`).
+function tombstone(db: Database, repoId: string, commit: { epoch: string; seq: number }, ts: string, e: Extract<Effect, { kind: "tombstone" }>): void {
+  appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: e.docId, path: e.path, head: null, hash: null, kind: "deleted" });
   if (e.pool) {
     const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
     db.prepare(

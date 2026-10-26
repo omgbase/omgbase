@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { versionInfo, type VersionInfo } from "@omgbase/core";
+import { versionInfo, repoEpoch, type VersionInfo } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -32,12 +32,20 @@ async function runVersion(cli: Cli, args: string[]): Promise<number> {
     // `schema` is the open database's user_version; without a workspace the
     // command still answers (spec/cli §3.7: version ∈ NO_WORKSPACE_OK).
     let store = null;
+    let epoch: string | null = null;
     try {
-      store = cli.workspace().store;
+      const ws = cli.workspace();
+      store = ws.store;
+      // The default repository's feed epoch (spec/surface §4 `version.epoch`, 6.0); null when none selects.
+      try {
+        epoch = repoEpoch(store.db, cli.repo(ws).repoId);
+      } catch {
+        epoch = null;
+      }
     } catch {
       store = null;
     }
-    info = versionInfo(store, hostInfo());
+    info = versionInfo(store, hostInfo(), "full", undefined, epoch);
   }
   cli.capture?.(info);
   if (cli.flags.mode !== "human") return emitMachine(cli, info);

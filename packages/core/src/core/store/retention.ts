@@ -1,6 +1,7 @@
 import type { Store } from "./store.js";
 import { referencePath } from "../paths.js";
 import { explicitWalker } from "./gc.js";
+import { effectiveSettings, parseSettingsJson } from "./settings.js";
 
 // History retention (spec/store §7 "Retention: plan, export, squash", 15.0).
 // The policy says which revisions of a document stay hot in the store and
@@ -129,36 +130,10 @@ export function mergeRetentionPolicy(base: RetentionPolicy, partial: unknown, at
   return out;
 }
 
-/** A settings blob as stored (`workspace_settings.settings`, `repos.settings`): an object, or `{}` for anything else. */
-export function parseSettingsJson(json: string | undefined | null): Record<string, unknown> {
-  if (!json) return {};
-  try {
-    const v = JSON.parse(json) as unknown;
-    return isRecord(v) ? v : {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * The repo's effective settings (`spec/sync` settings: the workspace layer
- * with the repo's own deep-merged over it at the leaf). Inlined here rather
- * than imported from `sync/settings.ts` — `core/` does not import its
- * siblings — and kept to the rule that module states.
- */
-export function effectiveSettings(store: Store, repoId: string): Record<string, unknown> {
-  const ws = parseSettingsJson((store.db.prepare("SELECT settings FROM workspace_settings WHERE id = 0").get() as { settings: string } | undefined)?.settings);
-  const own = parseSettingsJson((store.db.prepare("SELECT settings FROM repos WHERE repo_id = ?").get(repoId) as { settings: string } | undefined)?.settings);
-  const merge = (base: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> => {
-    const out: Record<string, unknown> = { ...base };
-    for (const [k, v] of Object.entries(over)) {
-      const b = out[k];
-      out[k] = isRecord(b) && isRecord(v) ? merge(b, v) : v;
-    }
-    return out;
-  };
-  return merge(ws, own);
-}
+// The settings readers live in `settings.ts` (shared with the core's own
+// policies — the claims prune, the feed retention); re-exported for the
+// importers that reached them here.
+export { effectiveSettings, parseSettingsJson };
 
 /** The repo's effective policy: the defaults, the settings' `history.retention` over them, then `override` (a CLI `--policy`). */
 export function retentionPolicy(store: Store, repoId: string, override?: unknown): RetentionPolicy {

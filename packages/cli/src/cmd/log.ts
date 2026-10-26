@@ -9,16 +9,22 @@ type ChangesResult = ReturnType<typeof changesSince>;
 
 // `omg log` (11 §5.5) — changes_since, one digest summary per line. Relative
 // --since (24h/7d) is resolved to a literal ISO timestamp client-side, then to
-// the commit seq at/just-before that time (the query language stays clock-free).
+// the feed seq at/just-before that time (the query language stays clock-free).
+// A cursor is `(epoch, seq)` since store 17.0 (D7): `--cursor <n>` continues
+// from a seq of the current epoch unless `--epoch <ep>` names the one it came
+// from; a cursor the feed no longer serves is `expired_cursor` (exit 1).
 
 function resolveSinceSeq(cli: Cli, repoId: string, since: string | undefined): number {
   if (!since) return 0;
   const iso = relativeToIso(since);
   const ws = cli.workspace();
   const row = ws.store.db
-    .prepare("SELECT MAX(seq) AS seq FROM commits WHERE repo_id = ? AND ts < ?")
-    .get(repoId, iso) as { seq: number | null };
-  return row.seq ?? 0;
+    .prepare("SELECT MAX(seq) AS seq FROM feed WHERE repo_id = ? AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?) AND ts < ?")
+    .get(repoId, repoId, iso) as { seq: number | null };
+  // A `--since` before the oldest retained row means "everything the feed holds" (cursor 0).
+  const oldest = (ws.store.db.prepare("SELECT COALESCE(MIN(seq), 0) AS seq FROM feed WHERE repo_id = ? AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?)").get(repoId, repoId) as { seq: number }).seq;
+  const seq = row.seq ?? 0;
+  return seq > 0 && seq < oldest - 1 ? 0 : seq;
 }
 
 function relativeToIso(since: string): string {
@@ -43,6 +49,7 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     options: {
       since: { type: "string" },
       cursor: { type: "string" },
+      epoch: { type: "string" },
       origin: { type: "string" },
       n: { type: "string", short: "n" },
       help: { type: "boolean" },
@@ -52,10 +59,11 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     return renderHelp(cli, {
       name: "log",
       summary: "What changed: one digest per commit, newest first",
-      usage: "log [--since <24h|7d|ISO>] [--cursor <n>] [--origin api|observed] [-n <N>]",
+      usage: "log [--since <24h|7d|ISO>] [--cursor <n> [--epoch <ep>]] [--origin api|observed] [-n <N>]",
       options: [
         ["--since <t>", "only commits after a relative age (24h, 7d) or an ISO timestamp"],
-        ["--cursor <n>", "continue from a commit sequence number"],
+        ["--cursor <n>", "continue from a feed sequence number (the `cursor` of a previous page)"],
+        ["--epoch <ep>", "the epoch the cursor belongs to (a page's `epoch`; default: the repo's current one)"],
         ["--origin <o>", "api (agent/CLI writes) | observed (file edits picked up by sync)"],
         ["-n <N>", "max commits"],
       ],
@@ -70,6 +78,7 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     if (values.since) throw new CliUsageError("--since is not supported with --server; use --cursor <seq>");
     result = await remoteCall<ChangesResult>(cli, "changes_since", {
       ...(values.cursor ? { cursor: Number(values.cursor) } : {}),
+      ...(values.epoch ? { epoch: values.epoch } : {}),
       ...(values.n ? { limit: Number(values.n) } : {}),
       ...(values.origin ? { origin: values.origin } : {}),
     });
@@ -78,6 +87,7 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     const repo = cli.repo(ws);
     const cursor = values.cursor ? Number(values.cursor) : resolveSinceSeq(cli, repo.repoId, values.since);
     const opts: Parameters<typeof changesSince>[2] = { cursor };
+    if (values.epoch) opts.epoch = values.epoch;
     if (values.n) opts.limit = Number(values.n);
     if (values.origin) opts.origin = values.origin;
     result = changesSince(ws.store, repo.repoId, opts);

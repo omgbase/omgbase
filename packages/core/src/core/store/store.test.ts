@@ -36,7 +36,7 @@ describe("Store — schema & config", () => {
     for (const t of [
       "repos", "docs", "blocks", "blobs", "tree_nodes", "revisions",
       "commits", "dispositions", "edges", "external_nodes", "collections",
-      "checkpoints", "resurrection_pool", "sections", "doc_edges",
+      "feed", "feed_entries", "resurrection_pool", "sections", "doc_edges",
       "block_changes", "inferred_edges", "embeddings", "blocks_fts",
       "file_stats",
     ]) {
@@ -117,11 +117,11 @@ describe("Store — schema & config", () => {
 
   it("enforces CHECK constraints (commit origin enum)", () => {
     store = new Store({ path: ":memory:" });
-    store.db.prepare("INSERT INTO repos (repo_id, slug) VALUES ('rp_1','s')").run();
+    store.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1','s','ep_1')").run();
     expect(() =>
       store!.db
         .prepare(
-          "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_1','rp_1',1,'t','bogus')",
+          "INSERT INTO commits (commit_id, repo_id, epoch, seq, ts, origin, batch_id) VALUES ('c_1','rp_1','ep_1',1,'t','bogus','c_1')",
         )
         .run(),
     ).toThrow(/CHECK/);
@@ -131,7 +131,7 @@ describe("Store — schema & config", () => {
     store = new Store({ path: ":memory:" });
     expect(() =>
       store!.write((db) => {
-        db.prepare("INSERT INTO repos (repo_id, slug) VALUES ('rp_1','s')").run();
+        db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1','s','ep_1')").run();
         throw new Error("boom");
       }),
     ).toThrow("boom");

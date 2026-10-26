@@ -2,7 +2,7 @@ import type { Statement } from "better-sqlite3";
 import type { IdPrefix } from "../ids.js";
 import type { Store } from "../store/store.js";
 import type { IdentityClaims } from "./types.js";
-import { effectiveSettings, parseSettingsJson } from "../store/retention.js";
+import { effectiveSettings, parseSettingsJson } from "../store/settings.js";
 
 // Identity claims (spec/store §2.1 "Uniqueness at mint", 17.0 — modular-core
 // M3/D5). `id_claims(id, repo_id, prefix, minted_at, holders)` holds one row
@@ -27,19 +27,16 @@ export const HOLDER_CORE = 1;
 /** bit 1: the recorder's hold on a claim. */
 export const HOLDER_RECORDER = 2;
 
-/** The prefixes the core mints and claims in `id_claims` (spec/store §2.1). */
-export const CLAIMED_PREFIXES: readonly IdPrefix[] = ["d", "b", "r", "x", "e", "rp", "src"];
+/** The prefixes the core mints and claims in `id_claims` (spec/store §2.1): `c` and `ep` since 3d (the feed row and the repository epoch are the core's). */
+export const CLAIMED_PREFIXES: readonly IdPrefix[] = ["d", "b", "c", "r", "x", "e", "rp", "src", "ep"];
 
 /**
  * The prefixes whose claim is still the row the id lands in (spec/store §2.1,
- * 17.0): `c` is minted by the recorder's `newCommit` and `s` by its export —
- * their `commits`/`archives` rows are the recorder's own claim evidence; `cp`
- * probes `checkpoints` until D4 retires the prefix (Phase 3e). `col` and `v`
- * have no table and no check.
+ * 17.0): `s` is minted by the recorder's export — its `archives` row is the
+ * recorder's own claim evidence. `cp` is retired (D4: `checkpoints` is gone,
+ * nothing mints it); `col` and `v` have no table and no check.
  */
 export const ID_TABLES: Partial<Record<IdPrefix, readonly (readonly [table: string, column: string])[]>> = {
-  c: [["commits", "commit_id"]],
-  cp: [["checkpoints", "id"]],
   s: [["archives", "segment_id"]],
 };
 
@@ -74,10 +71,12 @@ const NAMES_NO_CORE_ROW_SQL = `
   NOT EXISTS (SELECT 1 FROM docs WHERE doc_id = id_claims.id OR head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM blocks WHERE block_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM resurrection_pool WHERE block_id = id_claims.id)
-  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE head = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM pending_materializations WHERE head = id_claims.id OR commit_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM feed WHERE commit_id = id_claims.id OR batch_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM feed_entries WHERE head = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM external_nodes WHERE node_id = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM edges WHERE edge_id = id_claims.id)
-  AND NOT EXISTS (SELECT 1 FROM repos WHERE repo_id = id_claims.id)
+  AND NOT EXISTS (SELECT 1 FROM repos WHERE repo_id = id_claims.id OR epoch = id_claims.id)
   AND NOT EXISTS (SELECT 1 FROM sources WHERE source_id = id_claims.id)`;
 
 /**

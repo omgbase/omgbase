@@ -7,7 +7,9 @@ import { EXIT_OK, emitMachine, renderHelp } from "../output.js";
 // `omg status` (11 §5.2): repos_status + sync_status + watch-lease probe +
 // embedding queue depth. The "where am I" command — the visual showcase. The
 // machine shape is the two tools' results, nested as they are on the wire
-// (spec/cli §6): `{ ...repos_status, sync: sync_status, watcher, embedQueue }`.
+// (spec/cli §6): `{ ...repos_status, sync: sync_status, watcher, embedQueue }`;
+// the human grid's `commits` figure and `commit#` are the feed's head (store
+// 17.0: `repos_status.feed`, `sync_status.head`).
 
 function runStatus(cli: Cli, args: string[]): number {
   const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
@@ -44,14 +46,14 @@ function runStatus(cli: Cli, args: string[]): number {
   const left: [string, string][] = [
     [`${style.path(g.doc)} docs`, String(rs.docs)],
     [`${style.dim(g.block)} blocks`, String(rs.blocks)],
-    [`${g.diamond} commits`, String(rs.commits)],
+    [`${g.diamond} commits`, String(rs.feed.head)],
     [`${g.arrow} edges`, String(rs.openEdges)],
   ];
   const right: [string, string][] = [
     ["watcher", watcher ? render.statusDot("live", "live") : render.statusDot("none", "none")],
-    ["synced", ss.convergent ? render.statusDot("ok", "converged") : render.statusDot("warn", syncedLabel(ss, rs.unconverged))],
+    ["synced", ss.convergent ? render.statusDot("ok", "converged") : render.statusDot("warn", syncedLabel(ss))],
     ["queue", queued === 0 ? style.dim("empty") : style.warn(`${queued} queued`)],
-    ["commit#", style.dim(String(ss.lastCommitSeq))],
+    ["commit#", style.dim(String(ss.head))],
   ];
 
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
@@ -64,10 +66,10 @@ function runStatus(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-// Summarize why the repo isn't convergent: DB-internal lag and/or on-disk drift.
-function syncedLabel(ss: ReturnType<typeof syncStatus>, unconverged: number): string {
+// Summarize why the repo isn't convergent: on-disk drift (store 17.0, D9: the
+// DB-internal `unconverged` count was identically zero and is gone).
+function syncedLabel(ss: ReturnType<typeof syncStatus>): string {
   const parts: string[] = [];
-  if (unconverged > 0) parts.push(`${unconverged} behind`);
   if (ss.disk.deleted > 0) parts.push(`${ss.disk.deleted} deleted`);
   if (ss.disk.changed > 0) parts.push(`${ss.disk.changed} drifted`);
   if (ss.disk.untracked > 0) parts.push(`${ss.disk.untracked} untracked`);

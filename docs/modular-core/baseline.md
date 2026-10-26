@@ -351,6 +351,63 @@ read within 1–3 ms. A first run of the same binary in the same session
 sizes and rows) was discarded as machine state — the process start itself
 was 260 ms slower — and is not kept under `baseline/`.
 
+### 17.0 (3d), TS — the slim feed and the checkpoints collapse (`ts-2026-10-26T00-23-18`)
+
+The same harness over the Phase 3d reference (store 17.0 + the core's
+`feed`/`feed_entries` written in every commit transaction, the repository
+epoch on `repos`, the recorder's `commits` row with `epoch`/`batch_id` and
+no `checkpoint_id`, `checkpoints` collapsed into the `sync_state` status
+row, `c` and `ep` claimed in `id_claims`), TS CLI, node 24; the 17.0 (3c)
+TS row above is the comparison.
+
+| stage | ops | db MB | grew KB | KB / op | content | history | sync KB | 3c TS (db MB / KB / op) | `feed` rows / KB | `feed_entries` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.34 | 6,345 | 31.6 / doc | 3.17 | 2.73 | 212 | 6.24 / 31.1 | 201 / 56 | 201 / 40 |
+| frontmatter hot update | 50 | 6.46 | 119 | 2.4 | 0 | +80 | 240 | 6.33 / 1.7 | 251 / 72 | 251 / 52 |
+| block edit | 50 | 6.59 | 127 | 2.5 | 0 | +90 | 268 | 6.42 / 1.8 | 301 / 92 | 301 / 60 |
+| rolling journal | 50 | 6.75 | 164 | 3.3 | +20 | +130 | 284 | 6.59 / 3.4 | 351 / 100 | 351 / 68 |
+| task churn | 50 | 6.85 | 98 | 2.0 | 0 | +70 | 308 | 6.64 / 1.1 | 401 / 116 | 401 / 76 |
+| link churn | 50 | 6.96 | 111 | 2.2 | +20 | +70 | 324 | 6.75 / 2.0 | 451 / 128 | 451 / 80 |
+| delete / recreate | 20 | 7.10 | 135 | 6.8 | +20 | +110 | 336 | 6.87 / 6.3 | 471 / 136 | 471 / 84 |
+| gc (default sweep) | | 7.10 | 0 | | 0 | 0 | 336 | 6.88 / 8 KB | 471 / 136 | 471 / 84 |
+
+**The feed costs about one slim row and one entry per commit, and nothing
+else moved.** The import is **29.0× the source** (3c: 28.6×) and the final
+database **32.5×** (31.5×): +100 KB after the import and +220 KB at the end,
+all of it the feed and its claims. Per commit the growth is **+0.6–0.9 KB
+over 3c** on the small-edit stages (frontmatter 2.4 vs 1.7 KB/op, block
+edit 2.5 vs 1.8, task churn 2.0 vs 1.1, link churn 2.2 vs 2.0) — a `feed`
+row (≈ 290 B with its two indexes: the `(repo, epoch, seq)` key, the UNIQUE
+commit id and `idx_feed_ts`), a `feed_entries` row (≈ 180 B) and the `c`
+claim the core now writes (≈ 130 B, the 3b figure per id) — and within the
+seed's noise on the journal (3.3 vs 3.4) and the recreate (6.8 vs 6.3).
+Table by table at the end: `feed` 471 rows / 139,264 B and `feed_entries`
+471 / 86,016 B (one row and one entry per commit — every stage here commits
+one document per op, so the two tables grow in lockstep; an observed batch
+of *n* files writes *n* rows under one `batch_id`); `commits` 471 rows /
+172,032 B vs 159,744 (the two new columns, +12 KB flat); `id_claims` 5,715
+rows / 737,280 B vs 5,243 / 671,744 (+472 rows: the 471 commit ids and the
+epoch, ≈ 139 B each); `sync_state` 1 row / 8,192 B — the status row — where
+3c's `checkpoints` held 384 rows / 61,440 B (one per sweep, including every
+read's empty pre-verb sweep: the collapse saves the row the cap would have
+let grow unbounded). The `sync` category therefore doubles (336 vs 168 KB)
+while `content` is identical at every stage (3.17 → 3.24 MB) and `history`
+is +30–60 KB (the `commits` columns and the usual seeded ±2 rows). What the
+slice removes is again a *dependency*: `changes_since`, `repos_status`,
+`sync_status`, the vocabulary cache's clock and the semantic drain's
+watermark read the feed, and `commits`/`revisions` are read by the history
+tools alone — a dependency that weighs nothing in `doctor --size` until
+Phase 4 stops writing the recorder's rows for a repository without history,
+when the feed's ≈ 470 B per commit is all a commit costs.
+
+Latency (p50 / p95 ms, process start 213 / 487 included): import 1,306;
+one write 257–273 / 273–307; `query` docs 240 / 268, blocks filter 229 /
+314, `text("furnace")` 329 / 361, links 227 / 261; `outline` 268 / 304;
+`gc` 302. Every row is within the 3c run's spread or below it (the spawn
+itself was 57 ms faster this run); the commit path gained one `INSERT` into
+`feed`, one into `feed_entries`, the `c` claim and the cap's `SELECT` over
+the feed, and lost the `checkpoints` insert — none of which registers.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

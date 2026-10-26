@@ -11,7 +11,7 @@ import { processCheckpoint } from "../sync/checkpoint.js";
 import { observeFile, observeDelete } from "../sync/observe.js";
 import { freshnessSweep } from "../sync/freshness.js";
 import { recoverRepo } from "../sync/recovery.js";
-import { changesSince } from "../graph/history.js";
+import { changesSince } from "../core/store/feed.js";
 import { apply, planChangeset } from "./apply.js";
 import { commitChangeset } from "./commit.js";
 import { docsCreate, docsDelete, docsMove } from "./doc-ops.test.helpers.js";
@@ -130,7 +130,7 @@ describe("a crash after COMMIT", () => {
     expect(feed.digests).toHaveLength(1);
     expect(feed.digests[0]!.revisions.map((r) => r._path)).toEqual(["/a.md", "/b.md"]);
     // store 14.2: untouched blocks are `same` and not persisted ("4 edited, 2 inserted" through 14.1).
-    expect(feed.digests[0]!.summary).toBe("api(agent:test): /a.md, /b.md — 2 inserted");
+    expect(feed.digests[0]!.summary).toBe("api(agent:test): /a.md — changed; /b.md — changed — 2 inserted");
     const rowA = readPending(store.db, repoId, "a.md")!;
     expect(rowA.docId).toBe(a);
     expect(rowA.renderedHash.equals(sha256("# A\n\nAlpha.\n\nA tail.\n"))).toBe(true);

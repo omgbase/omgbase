@@ -1,6 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
-import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
+import { processCheckpoint, type BatchResult } from "./checkpoint.js";
 import { nodeFs, type SyncFs } from "./fs-util.js";
 import { recordStat } from "./stat-cache.js";
 import { materializePending } from "../mutate/materialize.js";
@@ -117,7 +117,7 @@ export function snapshotOf(fs: SyncFs, rootPath: string): SnapshotEntry[] {
   return out;
 }
 
-export interface SweepResult extends CheckpointResult {
+export interface SweepResult extends BatchResult {
   scanned: number;
   candidates: number;
   changed: boolean;
@@ -126,7 +126,7 @@ export interface SweepResult extends CheckpointResult {
 }
 
 /**
- * Run the freshness sweep for a repo (spec/sync §4.3). Returns the checkpoint
+ * Run the freshness sweep for a repo (spec/sync §4.3). Returns the batch
  * result plus scan counters. Idempotent; safe alongside a live watcher
  * (hash-based echo suppression makes a double ingest a no-op). `opts.ts` pins
  * the batch timestamp (default now); `opts.fs` the filesystem seam;
@@ -138,7 +138,7 @@ export function freshnessSweep(
   store: Store,
   repoId: string,
   rootPath: string,
-  opts: { ts?: string; gitHead?: string | null; fs?: SyncFs; docStore?: DocStore } = {},
+  opts: { ts?: string; fs?: SyncFs; docStore?: DocStore } = {},
 ): SweepResult {
   const fs = opts.fs ?? nodeFs;
   // Step 0 (2.2; spec/store §5.7): replay the api path's recorded file intent
@@ -163,7 +163,7 @@ export function freshnessSweep(
     repoId,
     rootPath,
     [...plan.changed, ...plan.deletions].map((path) => ({ path })),
-    { fs, ...(opts.ts !== undefined ? { ts: opts.ts } : {}), ...(opts.gitHead !== undefined ? { gitHead: opts.gitHead } : {}) },
+    { fs, ...(opts.ts !== undefined ? { ts: opts.ts } : {}) },
   );
 
   // Refresh stat cache for everything we touched (ingested or echo-suppressed).

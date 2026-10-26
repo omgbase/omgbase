@@ -474,51 +474,6 @@
             ],
             "foreign_keys": []
           },
-          "checkpoints": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "repo_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "ts",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "files",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "git_head",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
-          },
           "collections": {
             "columns": [
               {
@@ -576,6 +531,14 @@
               },
               {
                 "cid": 2,
+                "name": "epoch",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
                 "name": "seq",
                 "type": "INTEGER",
                 "notnull": 1,
@@ -583,7 +546,7 @@
                 "pk": 0
               },
               {
-                "cid": 3,
+                "cid": 4,
                 "name": "ts",
                 "type": "TEXT",
                 "notnull": 1,
@@ -591,7 +554,7 @@
                 "pk": 0
               },
               {
-                "cid": 4,
+                "cid": 5,
                 "name": "origin",
                 "type": "TEXT",
                 "notnull": 1,
@@ -599,7 +562,7 @@
                 "pk": 0
               },
               {
-                "cid": 5,
+                "cid": 6,
                 "name": "actor",
                 "type": "TEXT",
                 "notnull": 0,
@@ -607,7 +570,7 @@
                 "pk": 0
               },
               {
-                "cid": 6,
+                "cid": 7,
                 "name": "reason",
                 "type": "TEXT",
                 "notnull": 0,
@@ -615,15 +578,15 @@
                 "pk": 0
               },
               {
-                "cid": 7,
-                "name": "checkpoint_id",
+                "cid": 8,
+                "name": "batch_id",
                 "type": "TEXT",
-                "notnull": 0,
+                "notnull": 1,
                 "dflt_value": null,
                 "pk": 0
               },
               {
-                "cid": 8,
+                "cid": 9,
                 "name": "ops",
                 "type": "TEXT",
                 "notnull": 0,
@@ -1110,6 +1073,174 @@
               {
                 "cid": 3,
                 "name": "title",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "feed": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "epoch",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "ts",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "origin",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "actor",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "reason",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "batch_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "plan_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
+          "feed_entries": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "epoch",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 4
+              },
+              {
+                "cid": 4,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "head",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "from_path",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -1713,6 +1844,14 @@
                 "notnull": 1,
                 "dflt_value": "'{}'",
                 "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "epoch",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
               }
             ],
             "foreign_keys": []
@@ -2019,6 +2158,30 @@
                 "notnull": 0,
                 "dflt_value": null,
                 "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "last_batch_ts",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "last_batch_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "last_batch_files",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
               }
             ],
             "foreign_keys": []
@@ -2146,6 +2309,16 @@
             "columns": [
               "from_commit",
               "to_commit"
+            ]
+          },
+          "idx_feed_ts": {
+            "table": "feed",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "ts"
             ]
           },
           "idx_nodes_doc": {
@@ -2293,15 +2466,6 @@
               "term"
             ]
           },
-          "sqlite_autoindex_checkpoints_1": {
-            "table": "checkpoints",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "id"
-            ]
-          },
           "sqlite_autoindex_collections_1": {
             "table": "collections",
             "unique": 1,
@@ -2327,6 +2491,7 @@
             "partial": 0,
             "columns": [
               "repo_id",
+              "epoch",
               "seq"
             ]
           },
@@ -2418,6 +2583,38 @@
             "columns": [
               "repo_id",
               "uri"
+            ]
+          },
+          "sqlite_autoindex_feed_1": {
+            "table": "feed",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "commit_id"
+            ]
+          },
+          "sqlite_autoindex_feed_2": {
+            "table": "feed",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "epoch",
+              "seq"
+            ]
+          },
+          "sqlite_autoindex_feed_entries_1": {
+            "table": "feed_entries",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "epoch",
+              "seq",
+              "doc_id"
             ]
           },
           "sqlite_autoindex_file_stats_1": {

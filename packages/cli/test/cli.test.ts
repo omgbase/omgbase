@@ -446,7 +446,8 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
 describe("--json parity", () => {
   it("status --json is repos_status plus sync (sync_status), watcher and embedQueue", () => {
     const res = JSON.parse(omg(["status", "--json"]).stdout) as Record<string, unknown>;
-    for (const k of ["slug", "rootPath", "docs", "blocks", "commits", "openEdges", "unconverged", "disk", "sync", "watcher", "embedQueue"]) {
+    // store 17.0 (3d): `feed: { epoch, oldest, head }` in place of `commits`; `unconverged` retired.
+    for (const k of ["slug", "rootPath", "docs", "blocks", "feed", "openEdges", "disk", "sync", "watcher", "embedQueue"]) {
       expect(res).toHaveProperty(k);
     }
     expect(res.sync).toHaveProperty("convergent");

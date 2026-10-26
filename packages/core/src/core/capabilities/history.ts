@@ -1,11 +1,11 @@
 import type { Store } from "../store/store.js";
-import type { CapturedRevision, HistoryRecorder, RevisionTransition } from "./types.js";
+import type { CapturedRevision, CommitRecord, HistoryRecorder, RevisionTransition } from "./types.js";
 import type { DispositionRow } from "../ingest.js";
 import { persistsDisposition } from "../ingest.js";
 import type { DocsReadAtResult } from "../read/document.js";
 import {
-  isCheckpointRevision, newCommit, previousRevision, writeBlockTree, writeFrontmatterBlob, writeRevision,
-  type NewCommitInput, type TreeWriteContext,
+  isCheckpointRevision, previousRevision, recordCommit, writeBlockTree, writeFrontmatterBlob, writeRevision,
+  type TreeWriteContext,
 } from "../store/writers.js";
 import { TreeResolver } from "../store/delta.js";
 import { markReachable } from "../store/gc.js";
@@ -15,8 +15,8 @@ import {
   type ArchiveListing, type AttachResult, type ExportOptions, type ExportResult,
 } from "../store/archive.js";
 import {
-  changesSince, diffBlocks, diffUnified, docDiffUnified, docHistory, historyNode, reconstructAtRevision,
-  type CommitDigest, type DiffEntry, type DocDiffUnified, type DocVersions, type NodeChange,
+  diffBlocks, diffUnified, docDiffUnified, docHistory, historyNode, reconstructAtRevision,
+  type DiffEntry, type DocDiffUnified, type DocVersions, type NodeChange,
 } from "../../graph/history.js";
 
 /**
@@ -35,8 +35,15 @@ export class HistoryRecorderImpl implements HistoryRecorder {
 
   // ---- capture ----
 
-  newCommit(input: NewCommitInput): { commitId: string; seq: number } {
-    return newCommit(this.store.db, input);
+  /**
+   * spec/store §5.4 step 15 (17.0, 3d): the `commits` row — the log's copy of
+   * the feed row the core appended, under the same id, epoch and seq, with
+   * `ops` (the ADR-003 intent record of an api commit) — and the recorder's
+   * hold on the commit id's claim (§2.1).
+   */
+  recordCommit(commit: CommitRecord): void {
+    recordCommit(this.store.db, commit);
+    this.store.capabilities.claims.hold([commit.commitId]);
   }
 
   /**
@@ -151,8 +158,10 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     return docHistory(this.store, repoId, opts);
   }
 
-  changesSince(repoId: string, opts: { cursor?: number; limit?: number; origin?: string } = {}): { digests: CommitDigest[]; cursor: number; truncated: boolean; head: number } {
-    return changesSince(this.store, repoId, opts);
+  dispositionCounts(commitId: string): { kind: string; n: number }[] | null {
+    const db = this.store.db;
+    if (!db.prepare("SELECT 1 FROM commits WHERE commit_id = ?").get(commitId)) return null;
+    return db.prepare("SELECT kind, count(*) AS n FROM dispositions WHERE commit_id = ? GROUP BY kind ORDER BY kind").all(commitId) as { kind: string; n: number }[];
   }
 
   // ---- maintenance ----

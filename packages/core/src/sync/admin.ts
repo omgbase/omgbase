@@ -1,9 +1,17 @@
 import type { Store } from "../core/store/store.js";
+import { feedStatus, type FeedStatus } from "../core/store/feed.js";
 import { detectDiskDrift, type DiskDrift } from "./freshness.js";
+import { lastBatch } from "./checkpoint.js";
+import { capabilityStates, type CapabilityStates } from "./capability-state.js";
 
-// Admin surface (06 §Admin): repos_status, sync_status. sync_flush lives on the
-// Watcher (force a checkpoint). These are read-your-own-writes helpers for
-// agents to confirm state after telling a human to save.
+// Admin surface (06 §Admin; spec/sync §4.4, 4.0): repos_status, sync_status.
+// sync_flush lives on the Watcher (force a batch). These are read-your-own-
+// writes helpers for agents to confirm state after telling a human to save.
+// Since store 17.0 (D7/D9) the counts name the FEED — `{ epoch, oldest, head }`
+// in place of a `commits` count and the retired `unconverged` (identically
+// zero under I1; `disk.changed` is the signal) — and `sync_status` reports the
+// last observed batch from the repository's status row (D4) instead of a
+// checkpoint id.
 
 /**
  * On-disk agreement for a repo. Present only when a rootPath was supplied so a
@@ -22,10 +30,9 @@ export interface RepoStatus {
   rootPath: string;
   docs: number;
   blocks: number;
-  commits: number;
+  /** the change feed's position (spec/store §3.1 `feed`): the repository's epoch, the oldest retained `seq`, the head */
+  feed: FeedStatus;
   openEdges: number;
-  /** docs whose file_hash != current revision rendered_hash (unconverged) */
-  unconverged: number;
   /**
    * On-disk drift vs the DB, from a READ-ONLY scan. `checked` is false when no
    * rootPath was available (disk agreement UNVERIFIED); drift counts are 0 in
@@ -42,11 +49,6 @@ export interface RepoStatus {
 export function reposStatus(store: Store, repoId: string, rootPath?: string): RepoStatus {
   const repo = store.db.prepare("SELECT slug FROM repos WHERE repo_id = ?").get(repoId) as { slug: string } | undefined;
   const count = (sql: string): number => (store.db.prepare(sql).get(repoId) as { c: number }).c;
-  // seam: HistoryRecorder.renderedHash → `docs.file_hash` (Phase 3, M4/D9 — `unconverged` is always 0 under I1; inventory-ts §2.8 row `reposStatus` 42–66, §5.8)
-  const unconverged = (store.db.prepare(
-    `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.head
-     WHERE d.repo_id = ? AND d.deleted_at IS NULL AND d.file_hash IS NOT r.rendered_hash`,
-  ).get(repoId) as { c: number }).c;
   // Only scan when the caller explicitly supplies a rootPath. We deliberately
   // do NOT fall back to the repo's stored root_path: that column is a stale,
   // filesystem-only hint (NULL for sourceless repos) and using it would blur
@@ -61,50 +63,56 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
     rootPath: rootPath ?? "",
     docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_at IS NULL"),
     blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_at IS NULL"),
-    commits: count("SELECT count(*) c FROM commits WHERE repo_id = ?"),
+    feed: feedStatus(store.db, repoId),
     openEdges: count("SELECT count(*) c FROM edges WHERE repo_id = ? AND to_commit IS NULL"),
-    unconverged,
     disk,
   };
 }
 
 export interface SyncStatus {
-  lastCommitSeq: number;
-  lastCheckpoint: string | null;
+  /** the feed's epoch (a cursor is `(epoch, seq)`) */
+  epoch: string;
+  /** the oldest retained feed `seq` (0 when the feed is empty) */
+  oldest: number;
+  /** the feed's head: the greatest `seq` (0 when empty) */
+  head: number;
+  /** the last observed batch (the repository's status row, spec/sync §4.1), or null when none ran */
+  lastBatch: { ts: string; batchId: string | null; files: number } | null;
   /**
-   * true ONLY when the DB-internal convergence holds (unconverged === 0) AND a
-   * disk scan ran (diskChecked) AND found no drift. When the disk scan could
-   * not run, this is false even if the DB signal is clean — we never show green
-   * on knowledge we can't confirm is fresh. See `diskChecked` to distinguish
-   * "verified stale" from "unverified".
+   * true ONLY when a disk scan ran (diskChecked) AND found no drift. When the
+   * disk scan could not run, this is false — we never show green on knowledge
+   * we can't confirm is fresh. See `diskChecked` to distinguish "verified
+   * stale" from "unverified".
    */
   convergent: boolean;
   /** whether a disk-drift scan actually ran (rootPath available). */
   diskChecked: boolean;
   /** on-disk drift counts from the READ-ONLY scan (all 0 when !diskChecked). */
   disk: DiskStatus;
+  /** the capabilities as `version` reports them */
+  capabilities: CapabilityStates;
 }
 
 /**
  * @param rootPath optional working-tree root; forwarded to reposStatus so the
  *   disk-drift scan can run. Without it, `convergent` is false and
  *   `diskChecked` is false: disk freshness is UNVERIFIED, which we treat as
- *   non-convergent rather than optimistically green. Reporting the DB-only
- *   signal as convergent could hide a file deleted/edited on disk but not yet
- *   re-ingested — the exact stale-under-green-light failure this guards against.
+ *   non-convergent rather than optimistically green — a file deleted/edited on
+ *   disk but not yet re-ingested is the exact stale-under-green-light failure
+ *   this guards against.
  */
 export function syncStatus(store: Store, repoId: string, rootPath?: string): SyncStatus {
-  // seam: HistoryRecorder → the feed's own sequence (Phase 3, M5/D7; inventory-ts §2.8 row `syncStatus` 95–107)
-  const lastCommit = store.db.prepare("SELECT MAX(seq) s FROM commits WHERE repo_id = ?").get(repoId) as { s: number | null };
-  const lastCp = store.db.prepare("SELECT id FROM checkpoints WHERE repo_id = ? ORDER BY ts DESC LIMIT 1").get(repoId) as { id: string } | undefined;
   const status = reposStatus(store, repoId, rootPath);
   const noDrift = status.disk.changed === 0 && status.disk.deleted === 0 && status.disk.untracked === 0;
   return {
-    lastCommitSeq: lastCommit.s ?? 0,
-    lastCheckpoint: lastCp?.id ?? null,
-    convergent: status.unconverged === 0 && status.disk.checked && noDrift,
+    epoch: status.feed.epoch,
+    oldest: status.feed.oldest,
+    head: status.feed.head,
+    lastBatch: lastBatch(store.db, repoId),
+    convergent: status.disk.checked && noDrift,
     diskChecked: status.disk.checked,
     disk: status.disk,
+    capabilities: capabilityStates(store, repoId),
   };
 }
 

@@ -1,5 +1,5 @@
 import type { Store } from "../core/store/store.js";
-import { reconcileChanges, type CheckpointResult } from "./driver.js";
+import { reconcileChanges, type BatchResult } from "./driver.js";
 import type { SyncSource, SourceWatch } from "./plugin.js";
 import { withWriterLockAsync } from "./writer-lock.js";
 
@@ -21,7 +21,7 @@ import { withWriterLockAsync } from "./writer-lock.js";
 // call in another process waits for it rather than racing its file-CAS.
 
 export interface WatcherOptions {
-  onCheckpoint?: (result: CheckpointResult) => void;
+  onCheckpoint?: (result: BatchResult) => void;
   /** Surface a reconcile error from a background batch (the watch stays live). */
   onError?: (err: unknown) => void;
   /** The workspace `.omgbase/` dir: when set, every checkpoint runs under the writer lock. */
@@ -53,9 +53,9 @@ export class Watcher {
     return this.sub.ready;
   }
 
-  private async ingest(paths: string[]): Promise<CheckpointResult | null> {
+  private async ingest(paths: string[]): Promise<BatchResult | null> {
     if (paths.length === 0) return null;
-    const reconcile = (): Promise<CheckpointResult> => reconcileChanges(this.store, this.repoId, this.source, paths.map((path) => ({ path })));
+    const reconcile = (): Promise<BatchResult> => reconcileChanges(this.store, this.repoId, this.source, paths.map((path) => ({ path })));
     const dir = this.opts.omgbaseDir;
     const result = dir !== undefined ? await withWriterLockAsync(dir, reconcile) : await reconcile();
     this.opts.onCheckpoint?.(result);

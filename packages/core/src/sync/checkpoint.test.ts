@@ -54,14 +54,22 @@ describe("processCheckpoint", () => {
     expect(commitCount()).toBe(before); // no new commit
   });
 
-  it("records a checkpoint row with file entries", () => {
+  it("records the status row (spec/sync §4.1, 4.0): the batch's ts, its id — the first committing member's commit — and its member count", () => {
     writeFileSync(join(dir, "a.md"), "# A\n");
-    const res = processCheckpoint(store, repoId, dir, [{ path: "a.md" }]);
-    const cp = store.db.prepare("SELECT files FROM checkpoints WHERE id = ?").get(res.checkpointId) as { files: string };
-    const files = JSON.parse(cp.files) as [string, string | null, string | null][];
-    expect(files[0]![0]).toBe("a.md");
-    expect(files[0]![1]).toBeNull(); // no prior hash
-    expect(files[0]![2]).not.toBeNull(); // new hash present
+    writeFileSync(join(dir, "b.md"), "# B\n");
+    const res = processCheckpoint(store, repoId, dir, [{ path: "a.md" }, { path: "b.md" }], { ts: "2026-10-25T10:00:00.000Z" });
+    expect(res.batchId).toMatch(/^c_/);
+    const row = store.db.prepare("SELECT last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ? AND source_id = '' AND path = ''").get(repoId) as { last_batch_ts: string; last_batch_id: string | null; last_batch_files: number };
+    expect(row).toEqual({ last_batch_ts: "2026-10-25T10:00:00.000Z", last_batch_id: res.batchId, last_batch_files: 2 });
+    // Both members' feed rows carry the batch id; the first is its own.
+    const rows = store.db.prepare("SELECT commit_id, batch_id FROM feed WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; batch_id: string }[];
+    expect(rows.map((r) => r.batch_id)).toEqual([res.batchId, res.batchId]);
+    expect(rows[0]!.commit_id).toBe(res.batchId);
+    // An empty batch: a row with no batch id.
+    const empty = processCheckpoint(store, repoId, dir, [{ path: "a.md" }], { ts: "2026-10-25T10:01:00.000Z" });
+    expect(empty.batchId).toBeNull();
+    const after = store.db.prepare("SELECT last_batch_ts, last_batch_id, last_batch_files FROM sync_state WHERE repo_id = ? AND source_id = '' AND path = ''").get(repoId);
+    expect(after).toEqual({ last_batch_ts: "2026-10-25T10:01:00.000Z", last_batch_id: null, last_batch_files: 1 });
   });
 
   it("detects deletion of a known document", () => {

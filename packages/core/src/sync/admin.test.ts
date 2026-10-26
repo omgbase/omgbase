@@ -38,7 +38,9 @@ describe("reposStatus / syncStatus disk drift", () => {
   it("clean repo: convergent true, all drift counts 0, diskChecked true", () => {
     const { store, root, repoId } = setup();
     const rs = reposStatus(store, repoId, root);
-    expect(rs.unconverged).toBe(0);
+    expect(rs.feed.epoch).toMatch(/^ep_/);
+    expect(rs.feed.head).toBeGreaterThan(0);
+    expect(rs.feed.oldest).toBe(1);
     expect(rs.disk).toEqual({ changed: 0, deleted: 0, untracked: 0, checked: true });
 
     const ss = syncStatus(store, repoId, root);
@@ -55,7 +57,6 @@ describe("reposStatus / syncStatus disk drift", () => {
 
     const rs = reposStatus(store, repoId, root);
     expect(rs.disk.deleted).toBeGreaterThanOrEqual(1);
-    expect(rs.unconverged).toBe(0); // DB-internal signal is still (misleadingly) clean
 
     const ss = syncStatus(store, repoId, root);
     expect(ss.convergent).toBe(false);
@@ -100,7 +101,6 @@ describe("reposStatus / syncStatus disk drift", () => {
     const { store, repoId } = setup();
     const rs = reposStatus(store, repoId); // no path
     expect(rs.disk.checked).toBe(false);
-    expect(rs.unconverged).toBe(0);
 
     const ss = syncStatus(store, repoId); // no path
     // Disk agreement is unverified => must not be a bare green light.

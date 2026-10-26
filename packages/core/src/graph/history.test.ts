@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { historyNode, diffBlocks, diffUnified, unifiedDiff, myersScript, diffLines, changesSince, docHistory } from "./history.js";
+import { historyNode, diffBlocks, diffUnified, unifiedDiff, myersScript, diffLines, docHistory } from "./history.js";
+import { changesSince } from "../core/store/feed.js";
 import { oqxRun } from "../oqx/run.js";
 import { docsDelete } from "../mutate/doc-ops.test.helpers.js";
 

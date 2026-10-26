@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { storagePath, type SyncSource, type SourceWatch } from "@omgbase/core";
-import type { EngineClient } from "./engine-client.js";
+import { FeedExpired, type EngineClient } from "./engine-client.js";
 
 // Coordinator (ADR-014): the standalone reconcile loop between a SyncSource (an
 // external store behind the adapter protocol) and an omgbase repo (behind an
@@ -22,8 +23,12 @@ export interface SyncInSummary {
 
 export interface SyncOutSummary {
   cursor: number;
+  /** the feed's epoch the cursor belongs to (spec/sync §6, 4.0); a consumer stores both */
+  epoch: string | null;
   written: string[];
   removed: string[];
+  /** set when the feed had expired the cursor and the rescan procedure (spec/sync §6) ran before resuming */
+  rescanned?: boolean;
 }
 
 export class Coordinator {
@@ -71,40 +76,117 @@ export class Coordinator {
 
   /**
    * engine → source: write engine-authored changes out to the source. Walks the
-   * commit feed from `cursor` (paging through `truncated`), skipping
-   * observed-origin commits (they originated from a source — §6), and writes
-   * each changed doc's current bytes to the source (or removes a tombstoned one).
-   * Requires a write-through source; a read-only source exports nothing.
+   * change feed from `(epoch, cursor)` (paging through `truncated`), skipping
+   * observed-origin commits (they originated from a source — §6), and applies
+   * each digest's documents by `kind`: `created`/`changed`/`moved` → read the
+   * doc by `_id` and `write` at `_path` (a `moved` also `remove`s `from_path`);
+   * `deleted` → `remove`. When the feed has **expired** the cursor (another
+   * epoch, past the head, pruned behind the oldest retained row — spec/surface
+   * §3 `expired_cursor`) the rescan procedure of spec/sync §6 runs — the
+   * server's live documents are listed and the source reconverged to them —
+   * and the walk resumes from the error's `head` under its `epoch`. Requires a
+   * write-through source; a read-only source exports nothing.
    */
-  async syncOut(cursor?: number): Promise<SyncOutSummary> {
+  async syncOut(cursor?: number, epoch?: string): Promise<SyncOutSummary> {
     const written: string[] = [];
     const removed: string[] = [];
     let cur = cursor ?? 0;
-    if (!this.source.write) return { cursor: cur, written, removed }; // read-only source
+    let ep: string | null = epoch ?? null;
+    if (!this.source.write) return { cursor: cur, epoch: ep, written, removed }; // read-only source
+    let rescanned = false;
 
     for (;;) {
-      const page = await this.engine.changesSince(cur);
+      let page;
+      try {
+        page = await this.engine.changesSince(cur, ep !== null ? { epoch: ep } : {});
+      } catch (e) {
+        if (!(e instanceof FeedExpired) || rescanned) throw e;
+        // The rescan (spec/sync §6): record S = head and E = epoch from the
+        // error, reconverge the source to the server's live documents, resume
+        // from (E, S). Once per call: a second expiry means the bootstrap lease
+        // (the retention floor) did not hold and the caller retries.
+        const r = await this.rescan();
+        written.push(...r.written);
+        removed.push(...r.removed);
+        cur = e.head;
+        ep = e.epoch;
+        rescanned = true;
+        continue;
+      }
       for (const digest of page.digests) {
         if (digest.origin === "observed") continue; // came from a source; don't echo back
         for (const rev of digest.revisions) {
-          // `changes_since` reports a revision under the row's engine names
+          // `changes_since` reports a document under the row's engine names
           // (`_id`, `_path`, `_hash` — spec/surface §1.2, 5.0) in the
           // reference form; the source takes storage paths.
           const path = storagePath(rev._path);
+          if (rev.kind === "moved" && rev.from_path !== undefined) {
+            const from = storagePath(rev.from_path);
+            if (from !== path) await this.removeOnce(from, removed);
+          }
+          if (rev.kind === "deleted") {
+            await this.removeOnce(path, removed);
+            continue;
+          }
           const doc = await this.engine.readDoc(path);
           if (doc) {
             await this.source.write(path, doc.content);
             written.push(path);
-          } else if (this.source.remove) {
-            await this.source.remove(path);
-            removed.push(path);
+          } else {
+            // The document no longer reads (tombstoned later in the feed): its
+            // `deleted` digest follows and would remove the same path again.
+            await this.removeOnce(path, removed);
           }
         }
       }
       cur = page.cursor;
+      ep = page.epoch ?? ep;
       if (!page.truncated) break;
     }
-    return { cursor: cur, written, removed };
+    return { cursor: cur, epoch: ep, written, removed, ...(rescanned ? { rescanned } : {}) };
+  }
+
+  /** `remove` a source path once per `syncOut` call (a tombstoned document's own digest and its earlier digests all name it). */
+  private async removeOnce(path: string, removed: string[]): Promise<void> {
+    if (!this.source.remove || removed.includes(path)) return;
+    await this.source.remove(path);
+    removed.push(path);
+  }
+
+  /**
+   * The rescan procedure, steps 2–3 (spec/sync §6, 4.0): page the server's
+   * live documents into `L = { (id, path, hash) }`; for every document whose
+   * hash differs from the source's copy (hashed as the engine hashes a file —
+   * sha256 of the bytes), pull the bytes and write them at `path`; every
+   * source-side path not in `L` is removed (absence from `L` is deletion — the
+   * source has paths, not ids, so a moved document is a write at the new path
+   * and a removal of the old one). The caller resumes the feed (step 4).
+   */
+  async rescan(): Promise<{ written: string[]; removed: string[] }> {
+    const written: string[] = [];
+    const removed: string[] = [];
+    if (!this.source.write) return { written, removed };
+    const listed = await this.engine.listDocs();
+    const live = new Set<string>();
+    for (const d of listed) {
+      const path = storagePath(d._path);
+      live.add(path);
+      const have = await this.source.fetch(path);
+      const haveHash = have ? createHash("sha256").update(have.content, "utf8").digest("hex") : null;
+      if (haveHash !== null && haveHash === d._hash) continue;
+      const doc = await this.engine.readDoc(path);
+      if (!doc) continue;
+      await this.source.write(path, doc.content);
+      written.push(path);
+    }
+    if (this.source.remove) {
+      for (const entry of await this.source.enumerate()) {
+        if (live.has(entry.path)) continue;
+        await this.source.remove(entry.path);
+        removed.push(entry.path);
+      }
+    }
+    return { written, removed };
   }
 
   /**

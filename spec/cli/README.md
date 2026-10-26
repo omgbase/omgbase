@@ -424,9 +424,11 @@ repo has a root, runs one **freshness sweep** over it. Consequences a case
 sees: an out-of-band file edit is visible to the very next command
 (`cat`, `outline`, `q`, …) without `sync`; `--stale` answers from the
 database and `--stale status --json` reports the drift instead
-(`disk.changed`/`deleted`/`untracked`); and **every sweep records a
-checkpoint** — an empty one too — so `sync --json`'s `checkpointId` (`cp_n`)
-counts the sweeping commands run since the bootstrap (`cp_0`). `shell` skips
+(`disk.changed`/`deleted`/`untracked`); and **every sweep writes the
+repository's status row** (`spec/sync` §4.1, 4.0) — an empty one too — so
+`sync --json`'s `batchId` is the first committing member's commit id of that
+sweep's batch, or `null` when the sweep committed nothing (through cli 5.x a
+`checkpointId` `cp_n` counted the sweeping commands run since the bootstrap). `shell` skips
 the pre-sweep but each line it runs sweeps on its own. Since `spec/sync` 2.2
 the sweep's step 0 replays the api path's pending materialization rows
 (`spec/store` §5.7), so the pre-verb sweep is also the CLI's recovery point
@@ -645,8 +647,9 @@ block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
 
 ### `doctor`
 
-`doctor [--json]` — four checks on the selected repo: `convergence`
-(`unconverged === 0`), `fts rows == live leaf blocks` (the rows the index
+`doctor [--json]` — four checks on the selected repo (through cli 5.x a
+fifth, `convergence` — `repos_status.unconverged === 0` — which store 17.0
+retired with the count: identically true under I1): `fts rows == live leaf blocks` (the rows the index
 holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
 `count(*)` on an external-content table answers from `blocks` — against the
 live leaf blocks of `spec/search` §1.1: live rows no live row names as
@@ -669,7 +672,8 @@ the four categories the store spec assigns — `content` (the live state:
 docs, blocks, sections, nodes, edges, properties…), `history` (blobs,
 tree nodes, revisions, commits, dispositions, block changes, the id claims,
 the pool, pending materializations), `search` (the FTS tables, embeddings) and `sync`
-(repos, sources, adapters, attachments, checkpoints, file stats, settings,
+(repos, sources, adapters, attachments, the change feed and its entries —
+store 17.0, where `checkpoints` was — file stats, settings,
 and anything the spec does not name — `sqlite_schema` among them) — counts
 each table's rows, and derives the advice. Needs no repo (the database is
 the workspace's); exit 0 — a size report is information, not a check — and
@@ -814,13 +818,17 @@ unless `gc.enabled` is true in the effective settings:
 allowed regardless and deletes nothing — it counts all three sweeps. Human
 (stderr) `  swept <b> blobs, <t> tree nodes, <s> same dispositions` (cli
 4.5; through 4.4 the line stopped at the tree nodes); `--json`
-`{ blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased }`
+`{ blobsSwept, treeNodesSwept, sameDispositionsSwept, claimsReleased,
+feedPruned }`
 (`claimsReleased` since store 17.0: the id claims whose core hold the prune
 released under `identity.claims_retain_days`, `spec/store` §7.3; the human
 line gains `, <n> id claims released` only when it is non-zero — the setting
-is off by default). On a workspace
+is off by default; `feedPruned` since store 17.0 slice 3d: the change-feed
+rows pruned under `feed.retain_days` / `feed.retain_entries`, `spec/store`
+§7.4, the human line gaining `, <n> feed rows pruned` only when non-zero).
+On a workspace
 this spec's fixtures build every count is `0`: a fresh store has no `same`
-rows to sweep and no claims policy.
+rows to sweep, no claims policy and a feed well within the default floors.
 
 `--vacuum` (cli 4.3) runs `VACUUM` after the sweep (`spec/store` §7
 "Vacuum") — the sweep's freed pages are what it returns — under the same
@@ -999,26 +1007,32 @@ the CLI's; `--jsonl` the same object (it is not a list). Unknown ref →
 
 ### `log`
 
-`log [--since <24h|7d|ISO>] [--cursor <n>] [--origin api|observed] [-n <N>]`
-— `changes_since` from a commit sequence cursor. `--since` is resolved
+`log [--since <24h|7d|ISO>] [--cursor <n> [--epoch <ep>]] [--origin
+api|observed] [-n <N>]` — `changes_since` from a feed cursor (`spec/surface`
+§3, 6.0: the pair `(epoch, seq)`; `--epoch` names the cursor's epoch and
+defaults to the repository's current one; a cursor the feed no longer serves
+— another epoch, past the head, pruned behind the oldest retained row — is
+the `expired_cursor` envelope, exit 1). `--since` is resolved
 **client-side** to a cursor: a relative age (`/^(\d+)([hdwm])$/`, hours,
 days, weeks, 30-day months) or an absolute timestamp becomes an instant
-(against the pinned clock), and the cursor is the highest `seq` whose `ts`
-is strictly before it (so `--since` equal to every commit's `ts` returns
-them all); anything else is
+(against the pinned clock), and the cursor is the highest retained feed
+`seq` whose `ts` is strictly before it (so `--since` equal to every commit's
+`ts` returns them all; an instant before the oldest retained row is cursor
+0 — everything the feed holds); anything else is
 `usage: bad --since '<v>' (use a relative age like 24h or 7d, or an ISO timestamp)`,
-exit 2. Human, oldest first: `#<seq> <origin padded to 8> <summary>`
-(`observed: <path> — 31 inserted`, `api(<actor>): <path> — 12 edited, 1
-inserted`); a commit that wrote no revision names what it did instead: an
-observed or api deletion `observed: deleted <path>` /
-`api(<actor>): deleted <path>` (the documents whose `deleted_at` is the
-commit's `ts`, by path — store 17.0; through 16.x `deleted_commit`), a move
-`api(<actor>): moved <from> → <to>` (from the commit's `reason`, `move <from>
--> <to>`; the moved document's own revision — a move is one since store 17.0
-— is not repeated in the list, only the rewritten sources are). None → stderr `  no changes`;
+exit 2. Human, oldest first: `#<seq> <origin padded to 8> <summary>` — the
+digest's summary, composed from its feed entries (`spec/surface` §3, 6.0,
+unpinned there; pinned here by the cases): `observed: <path> — created`,
+`api(<actor>): <path> — changed — 12 edited, 1 inserted` (the disposition
+counts follow when the history capability holds the commit), a deletion
+`observed: deleted <path>` / `api(<actor>): deleted <path>`, a move
+`api(<actor>): moved <from> → <to>` (the moved document's own entry —
+D11; the rewritten sources follow after `; `), several documents joined by
+`; `. None → stderr `  no changes`;
 truncated → the footer with the next seq. `--json` the
-`{ digests, cursor, truncated, head }` result (`spec/sync` §6 — a digest's
-`revisions` are `[{ _id, _path, _hash }]`, 5.0); `--jsonl` one digest per
+`{ digests, cursor, epoch, oldest, head, truncated }` result (`spec/surface`
+§3 — a digest's `revisions` are `[{ _id, _path, _hash, kind, from_path? }]`,
+6.0); `--jsonl` one digest per
 line plus the footer; `--ids` the commit ids plus the footer.
 
 ### `ls`
@@ -1331,15 +1345,18 @@ the right cell `<label padded to 8><value>`:
 ```
 
 `synced` is `ok converged`, or `! <reasons>` joined by `, ` from
-`<n> behind`, `<n> deleted`, `<n> drifted`, `<n> untracked`,
-`disk unverified` (a sourceless repo), or `unconverged`; `queue` is
+`<n> deleted`, `<n> drifted`, `<n> untracked`,
+`disk unverified` (a sourceless repo), or `unconverged` (store 17.0 retired
+the DB-internal `<n> behind` with `repos_status.unconverged`); the
+`commits` figure and `commit#` are the feed's head. `queue` is
 `empty` or `<n> queued`. `--json` (every machine mode) the two tools'
-results as they are on the wire:
+results as they are on the wire (`spec/sync` §4.4, 4.0):
 `{ ...repos_status, sync: sync_status, watcher, embedQueue }` =
-`{ _id, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk: { changed, deleted, untracked, checked }, sync: { lastCommitSeq, lastCheckpoint, convergent, diskChecked, disk }, watcher: "live"|"none", embedQueue }`
+`{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk: { changed, deleted, untracked, checked }, sync: { epoch, oldest, head, lastBatch: { ts, batchId, files } | null, convergent, diskChecked, disk, capabilities }, watcher: "live"|"none", embedQueue }`
 (`_id` is the root row's id under the engine names, 5.0 — `repos_status`
 spelled it `id` through 4.x; `rootPath` is `""` for a sourceless repo, as
-`repos_status` reports it).
+`repos_status` reports it; through cli 5.x `commits`, `unconverged`,
+`sync.lastCommitSeq` and `sync.lastCheckpoint`).
 `embedQueue` is the embedding queue depth of `spec/search` §2.3 — the
 embeddable blocks (live leaves of ≥ 24 tokens, §2.1) whose current
 `(content_hash, ctx_hash)` has no cached vector for the `embedding.model`
@@ -1353,7 +1370,7 @@ without a provider (58 for the alchemy fixture with no vectors).
 `  scanned   <n> files`, then `  ok ingested  <n>` with `      <path>` per
 file, `  x deleted   <n>` with paths, `  ! conflicts <n>` with paths, or
 `  already up to date` when nothing changed; `--json` (every non-human mode)
-the `SweepResult` `{ checkpointId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed, materialized }`
+the `SweepResult` `{ batchId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed, materialized }` (`batchId` — `spec/sync` §4.1, 4.0: the first committing member's commit id, `null` when the sweep committed nothing; `checkpointId` through cli 5.x)
 — `materialized` (3.1) is the sweep's step 0 (`spec/sync` §4.3): the paths
 whose pending materialization rows (`spec/store` §5.7) it replayed before
 the walk, `/`-rooted like the other lists and `[]` in every fixture (a
@@ -1875,9 +1892,11 @@ fixture change and a version bump, or keep). None was fixed here.
   `rebuild-index --fts` (`admin::doctor`, `doctor-json`,
   `doctor-after-observed-delete`, `doctor-after-api-delete`). The index was
   right all along; the check was wrong.
-- **Pinned — every freshness sweep mints a checkpoint id**, even an empty one, so
-  `sync --json`'s `checkpointId` depends on how many sweeping commands ran
-  before it (`cp_5` after four reads).
+- **Pinned — every freshness sweep writes the status row**, even an empty one;
+  `sync --json`'s `batchId` is the sweep's first committing member's commit id
+  and `null` for an empty sweep (through cli 5.x a `checkpointId` `cp_n`
+  counted the sweeping commands run since the bootstrap — `cp_5` after four
+  reads).
 - **Pinned — `gc` sweeps nothing after `rm --doc`** (`admin::gc-after-removals`):
   the tombstoned document's blobs stay referenced by its revisions.
 
@@ -1914,6 +1933,15 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-25, cli — store 17.0 slice 3d (`spec/surface` 6.0, `spec/sync` 4.0;
+  no cli version move — the verbs' argv is unchanged, their renderings
+  follow the specs they render): `log` gains `--epoch` and renders the
+  feed's summaries, `--json` the new result keys; `gc --json` gains
+  `feedPruned`; `doctor` loses the identically-true `convergence` check;
+  `doctor --size` files the feed under `sync`; `status` reports the feed's
+  position and the last batch; `sync --json`'s `checkpointId` is `batchId`.
+  Fixtures regenerated accordingly (`admin`, `history`, `read`, `sync`,
+  `shell`, `docs`, `invoke`).
 - 2026-10-20, cli 5.0 (`spec/surface` 5.0 "underscore = engine"; with
   `spec/mutate` 4.0, `spec/sync` 3.0, `spec/search` 3.0, `spec/graph` 2.0):
   the surface's row rule became one rule for every record kind — a BARE name

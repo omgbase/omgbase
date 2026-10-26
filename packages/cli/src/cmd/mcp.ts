@@ -156,7 +156,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
           omgbaseDir: ws.omgbaseDir,
           onCheckpoint: (r) => {
             if (r.ingested.length > 0 || r.deleted.length > 0) {
-              cli.io.err(cli.style.dim(`[watch] checkpoint: +${r.ingested.length} -${r.deleted.length}`));
+              cli.io.err(cli.style.dim(`[watch] batch: +${r.ingested.length} -${r.deleted.length}`));
               // A file change the watcher ingested may also need (re-)embedding.
               drainer?.schedule();
             }

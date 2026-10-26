@@ -520,6 +520,9 @@ function executeAdmitted(store: Store, req: ExecuteRequest, plan: Plan, docStore
     origin: "api",
     actor: req.origin.actor,
     reason: req.origin.reason ?? null,
+    // The feed row carries the plan's digest (spec/store §3.1 `feed.plan_id`,
+    // resolution 3); the recorder's row the intent record itself.
+    planId: plan.plan_id,
     ops: canonicalJson({
       v: 1, plan_id: plan.plan_id, effects: plan.effects,
       ...(plan.selection !== undefined ? { selection: plan.selection } : {}),

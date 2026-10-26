@@ -165,20 +165,37 @@ export interface Revision {
   _hash: string;
 }
 
+/** A document of a `changes_since` digest (spec/surface §3, 6.0): the row's engine names, the entry's `kind`, `from_path` on a move; `_hash` null for a deletion. */
+export interface DigestRevision {
+  _id: string;
+  _path: string;
+  _hash: string | null;
+  kind: "created" | "changed" | "deleted" | "moved";
+  from_path?: string;
+}
+
 export interface CommitDigest {
   commit: string;
   seq: number;
   ts: string;
   origin: string;
   actor: string | null;
+  /** the observed batch this commit belongs to (the first committing member's commit id; `= commit` for an api commit) */
+  batch_id: string;
+  /** the admitted plan's digest for an effect-driven api commit */
+  plan_id?: string;
   summary: string;
-  revisions: Revision[];
+  revisions: DigestRevision[];
 }
 
 export interface ChangesSinceResult {
   digests: CommitDigest[];
-  /** The last seq of the page — pass it back to continue. */
+  /** The last seq of the page — pass it back (with `epoch`) to continue. */
   cursor: number;
+  /** The feed's epoch: a cursor is the pair `(epoch, seq)`; a cursor from another epoch is `expired_cursor`. */
+  epoch: string;
+  /** The oldest seq the feed still holds (0 when empty); a cursor behind `oldest - 1` is `expired_cursor`. */
+  oldest: number;
   truncated: boolean;
   /** The repo's current max seq: `cursor == head` means nothing new. */
   head: number;
@@ -186,6 +203,8 @@ export interface ChangesSinceResult {
 
 export interface ChangesSinceOptions {
   cursor?: number;
+  /** the epoch the cursor came from (default: the repo's current one) */
+  epoch?: string;
   limit?: number;
   /** Only commits of one origin: writes through the engine, edits observed on disk, imports. */
   origin?: "api" | "observed" | "import";
@@ -623,7 +642,7 @@ export class OmgClient {
   }
 
   changesSince(opts: ChangesSinceOptions = {}): Promise<ChangesSinceResult> {
-    return this.call<ChangesSinceResult>("changes_since", { cursor: opts.cursor, limit: opts.limit, origin: opts.origin, repo: opts.repo });
+    return this.call<ChangesSinceResult>("changes_since", { cursor: opts.cursor, epoch: opts.epoch, limit: opts.limit, origin: opts.origin, repo: opts.repo });
   }
 
   version(): Promise<VersionInfo> {

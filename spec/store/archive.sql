@@ -29,15 +29,16 @@ CREATE TABLE IF NOT EXISTS revisions (
 );
 
 CREATE TABLE IF NOT EXISTS commits (
-  commit_id     TEXT PRIMARY KEY,
-  repo_id       TEXT NOT NULL,
-  seq           INTEGER NOT NULL,
-  ts            TEXT NOT NULL,
-  origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
-  actor         TEXT,
-  reason        TEXT,
-  checkpoint_id TEXT,
-  ops           TEXT
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL,
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,
+  ops       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS blobs (

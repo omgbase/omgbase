@@ -683,9 +683,12 @@
             "rootPath": "",
             "docs": 2,
             "blocks": 21,
-            "commits": 2,
+            "feed": {
+              "epoch": "ep_0",
+              "oldest": 1,
+              "head": 2
+            },
             "openEdges": 3,
-            "unconverged": 0,
             "disk": {
               "changed": 0,
               "deleted": 0,
@@ -694,8 +697,10 @@
             }
           },
           {
-            "lastCommitSeq": 2,
-            "lastCheckpoint": null,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 2,
+            "lastBatch": null,
             "convergent": false,
             "diskChecked": false,
             "disk": {
@@ -703,6 +708,14 @@
               "deleted": 0,
               "untracked": 0,
               "checked": false
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled"
+              },
+              "semantic": {
+                "state": "disabled"
+              }
             }
           },
           {
@@ -711,9 +724,12 @@
             "rootPath": "",
             "docs": 2,
             "blocks": 21,
-            "commits": 2,
+            "feed": {
+              "epoch": "ep_0",
+              "oldest": 1,
+              "head": 2
+            },
             "openEdges": 3,
-            "unconverged": 0,
             "disk": {
               "changed": 0,
               "deleted": 0,
@@ -760,7 +776,8 @@
               "semantic": {
                 "state": "<string>"
               }
-            }
+            },
+            "epoch": "<string>"
           }
         ]
       }
@@ -2102,11 +2119,13 @@
                 "ts": "2026-09-27T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
+                    "_hash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b",
+                    "kind": "created"
                   }
                 ]
               },
@@ -2116,11 +2135,13 @@
                 "ts": "2026-09-27T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_1",
                     "_path": "/notes/one.md",
-                    "_hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
+                    "_hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4",
+                    "kind": "created"
                   }
                 ]
               },
@@ -2130,11 +2151,13 @@
                 "ts": "2026-09-27T10:01:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_2",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d"
+                    "_hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -2144,12 +2167,22 @@
                 "ts": "2026-09-27T10:02:00.000Z",
                 "origin": "observed",
                 "actor": null,
-                "revisions": []
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
               }
             ],
             "cursor": 4,
-            "truncated": false,
-            "head": 4
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
           },
           {
             "digests": [
@@ -2159,11 +2192,13 @@
                 "ts": "2026-09-27T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_1",
                     "_path": "/notes/one.md",
-                    "_hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
+                    "_hash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4",
+                    "kind": "created"
                   }
                 ]
               },
@@ -2173,18 +2208,22 @@
                 "ts": "2026-09-27T10:01:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_2",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d"
+                    "_hash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d",
+                    "kind": "changed"
                   }
                 ]
               }
             ],
             "cursor": 3,
-            "truncated": true,
-            "head": 4
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": true
           },
           {
             "digests": [
@@ -2194,24 +2233,40 @@
                 "ts": "2026-09-27T10:02:00.000Z",
                 "origin": "observed",
                 "actor": null,
-                "revisions": []
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
               }
             ],
             "cursor": 4,
-            "truncated": false,
-            "head": 4
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
           },
           {
-            "digests": [],
-            "cursor": 9,
-            "truncated": false,
-            "head": 4
+            "error": "expired_cursor",
+            "retriable": false,
+            "message": "cursor 9 of epoch ep_0 has expired — the feed now begins at (ep_0, 1); rescan the repository and resume from head 4",
+            "data": {
+              "epoch": "ep_0",
+              "oldest": 1,
+              "head": 4
+            }
           },
           {
             "digests": [],
             "cursor": 0,
-            "truncated": false,
-            "head": 4
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
           },
           {
             "items": [
@@ -3037,11 +3092,13 @@
                 "ts": "2026-09-27T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "6abdec03027fcc6c831ee477cc7966dfc855a2e3f34d00b68fcf7ddac4b04cba"
+                    "_hash": "6abdec03027fcc6c831ee477cc7966dfc855a2e3f34d00b68fcf7ddac4b04cba",
+                    "kind": "created"
                   }
                 ]
               },
@@ -3051,11 +3108,13 @@
                 "ts": "2026-09-27T10:05:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_1",
                 "revisions": [
                   {
                     "_id": "d_1",
                     "_path": "/new.md",
-                    "_hash": "90dd49e97e52b83a3a242a34dccf76a7f0a9e8a92f18f5d4a76b907d1c77beeb"
+                    "_hash": "90dd49e97e52b83a3a242a34dccf76a7f0a9e8a92f18f5d4a76b907d1c77beeb",
+                    "kind": "created"
                   }
                 ]
               },
@@ -3065,11 +3124,13 @@
                 "ts": "2026-09-27T10:07:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_2",
                 "revisions": [
                   {
                     "_id": "d_1",
                     "_path": "/new.md",
-                    "_hash": "ef8bc0606ce2a50fd288190c0f3d69b818d81703b47b85401ebcd069aa3d1efa"
+                    "_hash": "ef8bc0606ce2a50fd288190c0f3d69b818d81703b47b85401ebcd069aa3d1efa",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -3079,11 +3140,13 @@
                 "ts": "2026-09-27T10:07:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_2",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/other.md",
-                    "_hash": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c"
+                    "_hash": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c",
+                    "kind": "created"
                   }
                 ]
               },
@@ -3093,12 +3156,22 @@
                 "ts": "2026-09-27T10:08:00.000Z",
                 "origin": "observed",
                 "actor": null,
-                "revisions": []
+                "batch_id": "c_4",
+                "revisions": [
+                  {
+                    "_id": "d_2",
+                    "_path": "/other.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
               }
             ],
             "cursor": 5,
-            "truncated": false,
-            "head": 5
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 5,
+            "truncated": false
           },
           {
             "docs": [
@@ -6238,11 +6311,14 @@
                 "ts": "2026-09-27T10:05:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_2",
+                "plan_id": "6537a066ffb5481416b0cb3450639096c4344422eb9a80a3330ca6a2b124a9e0",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "c50d718d83c07e5ecfa1fc293f1f6c81faf3e56830c5fcbfba127574205b9b37"
+                    "_hash": "c50d718d83c07e5ecfa1fc293f1f6c81faf3e56830c5fcbfba127574205b9b37",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -6252,11 +6328,14 @@
                 "ts": "2026-09-27T10:06:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_3",
+                "plan_id": "51d4a93d6dc4c56e470b16c4bfa91102d8787fc507147ff95cc81d5f4f32ff9f",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "26a50d576b27a1e9b17b496aa7a4866caef3f657c67a9ffa505893f1c1a53b1f"
+                    "_hash": "26a50d576b27a1e9b17b496aa7a4866caef3f657c67a9ffa505893f1c1a53b1f",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -6266,11 +6345,14 @@
                 "ts": "2026-09-27T10:07:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_4",
+                "plan_id": "d8b140785408fe32a7ab9e93e09546132fc1df25d2866559e514862681e6167f",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "7f015b40588e946b0fa368db4321b01c50bd4e3329831a6b61cfac69d3423150"
+                    "_hash": "7f015b40588e946b0fa368db4321b01c50bd4e3329831a6b61cfac69d3423150",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -6280,11 +6362,14 @@
                 "ts": "2026-09-27T10:08:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_5",
+                "plan_id": "04e5a7948bee87fefca4f0e42eead4dd40e46b1e8fd4bc7a05476dff399c0554",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/new.md",
-                    "_hash": "8a5144dfbeb20f1012aaaf63a4a648fbe3ffa68bf0d698083a7f0dd4e56604cc"
+                    "_hash": "8a5144dfbeb20f1012aaaf63a4a648fbe3ffa68bf0d698083a7f0dd4e56604cc",
+                    "kind": "created"
                   }
                 ]
               },
@@ -6294,11 +6379,14 @@
                 "ts": "2026-09-27T10:10:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_6",
+                "plan_id": "4f41ffb78f10cd55db904214a09c7c47730aace63605ad3da3e378b7e3ada579",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/new.md",
-                    "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
+                    "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -6308,11 +6396,15 @@
                 "ts": "2026-09-27T10:11:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
+                "batch_id": "c_7",
+                "plan_id": "487d3339243f069ad3bd5af960c787c16a676bf896ae7d8bce32f3a61e78e7cf",
                 "revisions": [
                   {
                     "_id": "d_2",
                     "_path": "/moved/new.md",
-                    "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
+                    "_hash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67",
+                    "kind": "moved",
+                    "from_path": "/new.md"
                   }
                 ]
               },
@@ -6322,12 +6414,23 @@
                 "ts": "2026-09-27T10:12:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
-                "revisions": []
+                "batch_id": "c_8",
+                "plan_id": "69e1be69f2363a7d4a7ab7e4934b22c4d5179a2b9378a91de22c054093513217",
+                "revisions": [
+                  {
+                    "_id": "d_2",
+                    "_path": "/moved/new.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
               }
             ],
             "cursor": 9,
-            "truncated": false,
-            "head": 9
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 9,
+            "truncated": false
           },
           {
             "items": [
@@ -9666,9 +9769,12 @@
             "rootPath": "",
             "docs": 18,
             "blocks": 314,
-            "commits": 18,
+            "feed": {
+              "epoch": "ep_0",
+              "oldest": 1,
+              "head": 18
+            },
             "openEdges": 64,
-            "unconverged": 0,
             "disk": {
               "changed": 0,
               "deleted": 0,
@@ -13747,11 +13853,13 @@
                 "ts": "2026-01-01T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_0",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "e91178c063fb5bc2784a4ca8e908489cdda4a99a9fc028614486806d5cb44907"
+                    "_hash": "e91178c063fb5bc2784a4ca8e908489cdda4a99a9fc028614486806d5cb44907",
+                    "kind": "created"
                   }
                 ]
               },
@@ -13761,11 +13869,13 @@
                 "ts": "2026-01-02T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_1",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "3ab73d0c09fd438c32c0e06edbb9fe4dd0a17079e770dc957a8b48e0cb7c6ac0"
+                    "_hash": "3ab73d0c09fd438c32c0e06edbb9fe4dd0a17079e770dc957a8b48e0cb7c6ac0",
+                    "kind": "changed"
                   }
                 ]
               },
@@ -13775,18 +13885,22 @@
                 "ts": "2026-01-03T10:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "batch_id": "c_2",
                 "revisions": [
                   {
                     "_id": "d_0",
                     "_path": "/guide.md",
-                    "_hash": "d605f6f676a66ce24db5454749c3561265624dc3d76060608d0a1f3fc57ec24f"
+                    "_hash": "d605f6f676a66ce24db5454749c3561265624dc3d76060608d0a1f3fc57ec24f",
+                    "kind": "changed"
                   }
                 ]
               }
             ],
             "cursor": 3,
-            "truncated": false,
-            "head": 3
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 3,
+            "truncated": false
           },
           {
             "detached": "s_0"
@@ -16283,6 +16397,744 @@
             "truncated": false,
             "cursor": null,
             "consumer": "collect"
+          }
+        ]
+      }
+    },
+    {
+      "name": "changes-since-epoch-and-expiry",
+      "notes": "§3 `changes_since` (6.0, D7): a cursor is `(epoch, seq)`; the result names the feed's `epoch`, `oldest` and `head`; each digest carries `batch_id` and its documents' `kind`. After the feed is pruned (spec/store §7.4 — `feed.retain_days: 0`, `feed.retain_entries: 1`, then gc leaves seq 3–4), `{}` lists what remains with `oldest: 3` (the consumer sees the gap — cursor 0 is always valid), `cursor: 2` is served (every entry after it is present: `cursor ≥ oldest − 1`), `cursor: 1` is `expired_cursor` (pruned past), `cursor: 5` is `expired_cursor` (past the head), another epoch is `expired_cursor` whatever the cursor, `cursor: 3` with the repo's own epoch is the last digest; `limit: 1` pages with `truncated` and the page's cursor. The error's message is pinned (`data.epoch` names an argument, §6) and `retriable: false`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "# Guide\n\nIntro paragraph.\n\n## Setup\n\n- first item\n"
+              },
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nA note.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:01:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "# Guide\n\nIntro paragraph, edited.\n\n## Setup\n\n- first item\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:02:00.000Z",
+            "items": [
+              {
+                "path": "notes/one.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "limit": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 1,
+              "limit": 1
+            }
+          }
+        },
+        {
+          "exec": {
+            "sql": [
+              "UPDATE repos SET settings = '{\"feed\":{\"retain_days\":0,\"retain_entries\":1}}' WHERE slug = 'fixture'"
+            ]
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-09-28T00:00:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 2
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 5
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 0,
+              "epoch": "ep_other"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 3,
+              "epoch": "ep_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "repos_status",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {}
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            },
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 4
+              }
+            }
+          ],
+          [
+            {
+              "path": "notes/one.md",
+              "deleted": true,
+              "doc": "d_1"
+            }
+          ],
+          {
+            "digests": [
+              {
+                "commit": "c_0",
+                "seq": 1,
+                "ts": "2026-09-27T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_0",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "19242ef7f53d39ba5e9c54565a9d1e36ba0f762630a2b741e308fb873d605251",
+                    "kind": "created"
+                  }
+                ]
+              },
+              {
+                "commit": "c_1",
+                "seq": 2,
+                "ts": "2026-09-27T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_0",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": "cc894404ad3591330f133ccef741c47ff29f3efcf90da7956a9d398a212d7990",
+                    "kind": "created"
+                  }
+                ]
+              },
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:01:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_2",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "c85ee794bc32b44155fd86fc9c8e9774766a43fcae35d856508e9c80fd59d03e",
+                    "kind": "changed"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_0",
+                "seq": 1,
+                "ts": "2026-09-27T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_0",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "19242ef7f53d39ba5e9c54565a9d1e36ba0f762630a2b741e308fb873d605251",
+                    "kind": "created"
+                  }
+                ]
+              }
+            ],
+            "cursor": 1,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": true
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_1",
+                "seq": 2,
+                "ts": "2026-09-27T10:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_0",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": "cc894404ad3591330f133ccef741c47ff29f3efcf90da7956a9d398a212d7990",
+                    "kind": "created"
+                  }
+                ]
+              }
+            ],
+            "cursor": 2,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": true
+          },
+          {
+            "changes": 1
+          },
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 2
+            }
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:01:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_2",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "c85ee794bc32b44155fd86fc9c8e9774766a43fcae35d856508e9c80fd59d03e",
+                    "kind": "changed"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 3,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:01:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_2",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "c85ee794bc32b44155fd86fc9c8e9774766a43fcae35d856508e9c80fd59d03e",
+                    "kind": "changed"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 3,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "error": "expired_cursor",
+            "retriable": false,
+            "message": "cursor 1 of epoch ep_0 has expired — the feed now begins at (ep_0, 3); rescan the repository and resume from head 4",
+            "data": {
+              "epoch": "ep_0",
+              "oldest": 3,
+              "head": 4
+            }
+          },
+          {
+            "error": "expired_cursor",
+            "retriable": false,
+            "message": "cursor 5 of epoch ep_0 has expired — the feed now begins at (ep_0, 3); rescan the repository and resume from head 4",
+            "data": {
+              "epoch": "ep_0",
+              "oldest": 3,
+              "head": 4
+            }
+          },
+          {
+            "error": "expired_cursor",
+            "retriable": false,
+            "message": "cursor 0 of epoch ep_other has expired — the feed now begins at (ep_0, 3); rescan the repository and resume from head 4",
+            "data": {
+              "epoch": "ep_0",
+              "oldest": 3,
+              "head": 4
+            }
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 3,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "_id": "rp_0",
+            "slug": "fixture",
+            "rootPath": "",
+            "docs": 1,
+            "blocks": 5,
+            "feed": {
+              "epoch": "ep_0",
+              "oldest": 3,
+              "head": 4
+            },
+            "openEdges": 0,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": false
+            }
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 3,
+            "head": 4,
+            "lastBatch": null,
+            "convergent": false,
+            "diskChecked": false,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": false
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled"
+              },
+              "semantic": {
+                "state": "disabled"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "changes-since-kinds-move-and-delete",
+      "workspace": true,
+      "notes": "§3 `changes_since` (6.0, D11/D7) over api commits in a workspace: a `docs_create` is a `created` entry, a `docs_move` a `moved` entry carrying `from_path` (the moved document's new head — a move is a transition), a `docs_delete` a `deleted` entry with `_hash: null`; every api digest carries `batch_id = commit` and, for the effect-driven tools, `plan_id`. `origin: \"api\"` filters the observed commits out.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "# Guide\n\nIntro paragraph.\n\n## Setup\n\n- first item\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_create",
+            "args": {
+              "path": "new.md",
+              "markdown": "# New\n\nCreated.\n"
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_move",
+            "args": {
+              "_path": "new.md",
+              "to_path": "moved/new.md"
+            },
+            "ts": "2026-09-27T10:02:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_delete",
+            "args": {
+              "_path": "moved/new.md"
+            },
+            "ts": "2026-09-27T10:03:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "origin": "api"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 2
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "plan_id": "97df296d48933368651d545c30c09d5aaeed0b3ca93479d3bb6dd4b47ff39809",
+            "commit": "c_1",
+            "revisions": [
+              {
+                "_id": "d_1",
+                "_path": "/new.md",
+                "_hash": "fb8b0d8ec99b6780e35323f04dc2ff8b5d92988316dab231cd8dd80e49cdd632"
+              }
+            ],
+            "new_ids": {
+              "$new.0": "d_1",
+              "$new.1": "b_5",
+              "$new.2": "b_6"
+            },
+            "committed": true,
+            "summary": [
+              "create /new.md (2 blocks)"
+            ]
+          },
+          {
+            "plan_id": "19424ddb3b3ff0ea876d743302dc693c174f9dfdd306cba4e22baa8ecdf8c277",
+            "commit": "c_2",
+            "revisions": [
+              {
+                "_id": "d_1",
+                "_path": "/moved/new.md",
+                "_hash": "fb8b0d8ec99b6780e35323f04dc2ff8b5d92988316dab231cd8dd80e49cdd632"
+              }
+            ],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "move /new.md → /moved/new.md"
+            ],
+            "retargeted": null,
+            "dangling": []
+          },
+          {
+            "plan_id": "f521cab1f25210dbca001e477ba1d7383b37415a5f3b143af9a7b56a9d542ef2",
+            "commit": "c_3",
+            "revisions": [],
+            "new_ids": {},
+            "committed": true,
+            "summary": [
+              "remove /moved/new.md"
+            ]
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_1",
+                "seq": 2,
+                "ts": "2026-09-27T10:01:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "batch_id": "c_1",
+                "plan_id": "97df296d48933368651d545c30c09d5aaeed0b3ca93479d3bb6dd4b47ff39809",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/new.md",
+                    "_hash": "fb8b0d8ec99b6780e35323f04dc2ff8b5d92988316dab231cd8dd80e49cdd632",
+                    "kind": "created"
+                  }
+                ]
+              },
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "batch_id": "c_2",
+                "plan_id": "19424ddb3b3ff0ea876d743302dc693c174f9dfdd306cba4e22baa8ecdf8c277",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/moved/new.md",
+                    "_hash": "fb8b0d8ec99b6780e35323f04dc2ff8b5d92988316dab231cd8dd80e49cdd632",
+                    "kind": "moved",
+                    "from_path": "/new.md"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:03:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "batch_id": "c_3",
+                "plan_id": "f521cab1f25210dbca001e477ba1d7383b37415a5f3b143af9a7b56a9d542ef2",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/moved/new.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "batch_id": "c_2",
+                "plan_id": "19424ddb3b3ff0ea876d743302dc693c174f9dfdd306cba4e22baa8ecdf8c277",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/moved/new.md",
+                    "_hash": "fb8b0d8ec99b6780e35323f04dc2ff8b5d92988316dab231cd8dd80e49cdd632",
+                    "kind": "moved",
+                    "from_path": "/new.md"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:03:00.000Z",
+                "origin": "api",
+                "actor": "agent:mcp",
+                "batch_id": "c_3",
+                "plan_id": "f521cab1f25210dbca001e477ba1d7383b37415a5f3b143af9a7b56a9d542ef2",
+                "revisions": [
+                  {
+                    "_id": "d_1",
+                    "_path": "/moved/new.md",
+                    "_hash": null,
+                    "kind": "deleted"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
           }
         ]
       }

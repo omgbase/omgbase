@@ -61,7 +61,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): /notes/new.md — 2 inserted\n"
+            "stdout": "#21 api      api(human:spec): /notes/new.md — created — 2 inserted\n"
           }
         }
       ]
@@ -310,7 +310,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md; /index.md — 2 edited\n"
+            "stdout": "#21 api      api(human:spec): moved /texts/mutus-liber.md → /texts/silent-book.md; /index.md — changed — 2 edited\n"
           }
         }
       ]
@@ -744,7 +744,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"commits\":21,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":21,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":57}\n"
+            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":19,\"blocks\":315,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21},\"openEdges\":69,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":21,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\"},\"semantic\":{\"state\":\"disabled\"}}},\"watcher\":\"none\",\"embedQueue\":57}\n"
           }
         }
       ]
@@ -879,7 +879,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — 1 edited, 1 edited_moved, 1 inserted, 1 moved\n"
+            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — changed — 1 edited, 1 edited_moved, 1 inserted, 1 moved\n"
           }
         }
       ]

@@ -10,7 +10,8 @@ import { myersScript } from "../core/edit-script.js";
 import { TreeResolver, type Entry } from "../core/store/delta.js";
 
 // History surface (06 §3, 07 task 4.4): blocks_history (block/doc biography),
-// diff (block-grain + Myers unified), changes_since (commit digests / change feed).
+// diff (block-grain + Myers unified), docs_history. (`changes_since` — the
+// change feed — is the core's since store 17.0, `core/store/feed.ts`.)
 
 export interface NodeChange {
   commitId: string;
@@ -309,66 +310,9 @@ export function unifiedDiff(oldText: string, newText: string): string {
   return hunks.join("\n");
 }
 
-export interface CommitDigest {
-  commit: string;
-  seq: number;
-  ts: string;
-  origin: string;
-  actor: string | null;
-  summary: string;
-  /** The revisions the commit wrote, each the document's row attributes
-   *  (spec/surface §1.2, 5.0): `_id`, `_path` as of the commit, `_hash` (hex of
-   *  the revision's rendered_hash) — the hash lets a puller decide "changed vs
-   *  echo" without a follow-up docs_read/docs_history (ADR-014 §4.2). The same
-   *  three keys an `apply` revision carries. */
-  revisions: { _id: string; _path: string; _hash: string }[];
-}
-
-/** changes_since: commit digests after a cursor (repo commit seq) — the change
- * feed (06 §3). `seq` is a dense per-REPO total order, so a cursor is only
- * meaningful against the repo it came from; `head` (the repo's current max seq)
- * lets a caller tell "no new changes" (cursor == head) from "cursor is beyond
- * this repo's feed" (cursor > head — e.g. a cursor from another repo/server),
- * which otherwise both look like an empty page. */
-export function changesSince(store: Store, repoId: string, opts: { cursor?: number; limit?: number; origin?: string } = {}): { digests: CommitDigest[]; cursor: number; truncated: boolean; head: number } {
-  const cursor = opts.cursor ?? 0;
-  const head = (store.db.prepare("SELECT COALESCE(MAX(seq), 0) AS head FROM commits WHERE repo_id = ?").get(repoId) as { head: number }).head;
-  const limit = opts.limit ?? 50;
-  const originClause = opts.origin ? "AND origin = ?" : "";
-  const params: unknown[] = [repoId, cursor];
-  if (opts.origin) params.push(opts.origin);
-  params.push(limit + 1);
-
-  const commits = store.db
-    .prepare(`SELECT commit_id, seq, ts, origin, actor, reason FROM commits WHERE repo_id = ? AND seq > ? ${originClause} ORDER BY seq LIMIT ?`)
-    .all(...params) as { commit_id: string; seq: number; ts: string; origin: string; actor: string | null; reason: string | null }[];
-
-  const truncated = commits.length > limit;
-  const page = commits.slice(0, limit);
-
-  // Every path in a digest — the revisions', a deletion's, a move's two, and
-  // the summary's — is the reference form (spec/surface §1 "Paths").
-  const digests: CommitDigest[] = page.map((c) => {
-    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ _id: r.doc, _path: referencePath(r.path), _hash: r.rendered_hash.toString("hex") }));
-    const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
-    // A deletion writes no revision: the tombstone carries the commit's `ts` as
-    // `docs.deleted_at` (store 17.0 — `deleted_commit` is gone; the per-commit
-    // deleted paths become a feed entry in Phase 3d, M5/D7, until which the
-    // tombstone instant is the join). A move names itself by its reason (`move
-    // <from> -> <to>`) and, since spec/mutate 2.1, carries the inbound
-    // retarget's revisions under the same commit — so the move is read off the
-    // reason whether or not the commit has revisions.
-    const deleted = revs.length === 0
-      ? (store.db.prepare("SELECT path FROM docs WHERE repo_id = ? AND deleted_at = ? ORDER BY path").all(repoId, c.ts) as { path: string }[]).map((r) => referencePath(r.path))
-      : [];
-    const moved = parseMove(c.reason);
-    const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: moved ? { from: referencePath(moved.from), to: referencePath(moved.to) } : null });
-    return { commit: c.commit_id, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, summary, revisions: revs };
-  });
-
-  const nextCursor = page.length > 0 ? page[page.length - 1]!.seq : cursor;
-  return { digests, cursor: nextCursor, truncated, head };
-}
+// `changes_since` is the core's since store 17.0 (3d): `core/store/feed.ts`
+// reads the feed, never `commits`/`revisions`; this module keeps the
+// recorder's reads — `blocks_history`, the diffs, `docs_history`.
 
 // ---- doc_history: version-history listing (document-centric) ----------------
 // changesSince above is a repo-wide COMMIT feed; docHistory is its per-DOCUMENT
@@ -513,38 +457,4 @@ function resolveDocRow(store: Store, repoId: string, ref: string, includeDeleted
     ? store.db.prepare("SELECT doc_id, path, head, deleted_at FROM docs WHERE doc_id = ?")
     : store.db.prepare("SELECT doc_id, path, head, deleted_at FROM docs WHERE repo_id = ? AND path = ?");
   return (asId ? stmt.get(ref) : stmt.get(repoId, storagePath(ref))) as DocRow | undefined;
-}
-
-/** The `reason` a document move records (`mutate/docs.ts`): `move <from> -> <to>`. */
-function parseMove(reason: string | null): { from: string; to: string } | null {
-  const m = reason === null ? null : /^move (.+) -> (.+)$/.exec(reason);
-  return m ? { from: m[1]!, to: m[2]! } : null;
-}
-
-/**
- * One line per commit: `<origin>[(<actor>)]: <paths> — <n> <kind>, …`. A
- * commit that touched no revision — a document deletion (observed or api) —
- * says so instead: `deleted <path>`. A move says `moved <from> → <to>`, and
- * when it also rewrote the inbound sources (spec/mutate §6, 2.1) their paths
- * follow: `moved a → b; /index.md — 31 edited` (spec/cli §6 `log`; the summary
- * is unpinned by spec/surface).
- */
-function renderSummary(
-  origin: string,
-  actor: string | null,
-  revs: { _path: string }[],
-  disp: { kind: string; n: number }[],
-  extra: { deleted: string[]; moved: { from: string; to: string } | null } = { deleted: [], moved: null },
-): string {
-  // A move is a revision of the moved document since store 17.0 (D11); the
-  // summary names the move once — `moved <from> → <to>` — and lists only the
-  // OTHER documents the commit rewrote (the retargeted sources), as 16.x did.
-  const listed = extra.moved ? revs.filter((r) => r._path !== extra.moved!.to) : revs;
-  let subject = listed.map((r) => r._path).join(", ");
-  if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}${listed.length > 0 ? `; ${subject}` : ""}`;
-  else if (revs.length === 0 && extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
-  const parts = disp.filter((d) => d.kind !== "same").map((d) => `${d.n} ${d.kind}`);
-  const detail = parts.length > 0 ? ` — ${parts.join(", ")}` : "";
-  if (origin === "api" || origin === "import") return `${origin}(${actor ?? "?"}): ${subject}${detail}`;
-  return `observed: ${subject}${detail}`;
 }

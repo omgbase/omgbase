@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL } from "./schema.js";
 import { mintId, registerIdOracle } from "../ids.js";
+import { FEED_DDL } from "./schema.js";
+import { pruneFeed } from "./feed.js";
 import type { Capabilities, CapabilitiesFactory } from "../capabilities/types.js";
 import { bindCapabilities } from "../capabilities/registry.js";
 import { envCapabilities } from "../capabilities/default.js";
@@ -68,15 +70,17 @@ export class Store {
     }
     if (current === SCHEMA_VERSION) {
       // 17.0 is unreleased and grew in slices (modular-core Phase 3a → 3b →
-      // 3c): a database a 3a build already moved to 17 has `docs` but no
+      // 3c → 3d): a database a 3a build already moved to 17 has `docs` but no
       // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still has
-      // `pending_materializations.rev_id`. Each half of the step is idempotent,
-      // so finish it here rather than spend a schema version on a dev-only
-      // state. (A 17 database with no `docs` table — the
+      // `pending_materializations.rev_id`; a 3a–3c build's has no `feed`, a
+      // `checkpoints` table and `commits.checkpoint_id`. Each part of the step
+      // is idempotent, so finish it here rather than spend a schema version on
+      // a dev-only state. (A 17 database with no `docs` table — the
       // `already-current-is-untouched` fixture — is left exactly as it is.)
       if (this.tableExists("docs")) {
         this.migrateV17Claims();
         this.migrateV17Pending();
+        this.migrateV17Feed();
       }
       return;
     }
@@ -95,7 +99,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -556,6 +560,170 @@ CREATE INDEX IF NOT EXISTS idx_claims_repo_prefix ON id_claims(repo_id, prefix, 
       ins(["repos"], `SELECT r.repo_id, r.repo_id, 'rp', COALESCE(${has("commits") ? "(SELECT MIN(ts) FROM commits WHERE repo_id = r.repo_id)" : "NULL"}, @clock), 1 FROM repos r WHERE true`);
       ins(["sources"], "SELECT source_id, NULL, 'src', @clock, 1 FROM sources WHERE true");
     })();
+  }
+
+  // The feed half of step 17 (spec/store §3.4 step 17 (6)–(9); modular-core
+  // Phase 3d — D7/M5, D4): the repository EPOCH, the `feed`/`feed_entries`
+  // tables backfilled from the 16.x `commits`/`revisions`, the recorder's
+  // `commits` row rebuilt with `epoch`/`batch_id` and without `checkpoint_id`,
+  // the `sync_state` status row from the latest `checkpoints` row, and
+  // `checkpoints` dropped. One transaction, `foreign_keys = OFF` for its
+  // duration (`repos` and `commits` are rebuilt; both are referenced),
+  // `PRAGMA foreign_key_check` empty at its end. Idempotent on each part:
+  // `repos` with `epoch` is left alone, an existing `feed` is not backfilled
+  // again, `commits` without `checkpoint_id` is left alone, `sync_state` with
+  // the status columns is left alone, a missing `checkpoints` is nothing to
+  // drop. Runs after the identity and recovery halves (the claims table must
+  // exist for the `c`/`ep` claims). A pre-state without `repos` has no
+  // repository to give an epoch and is left alone (the migration fixtures'
+  // partial pre-states; a real database always has it).
+  private migrateV17Feed(): void {
+    const db = this.db;
+    if (!this.tableExists("repos")) return;
+    const repoCols = db.pragma("table_info(repos)") as { name: string }[];
+    const commitCols = this.tableExists("commits") ? (db.pragma("table_info(commits)") as { name: string }[]) : [];
+    const syncCols = this.tableExists("sync_state") ? (db.pragma("table_info(sync_state)") as { name: string }[]) : [];
+    const needsEpoch = !repoCols.some((c) => c.name === "epoch");
+    const needsFeed = !this.tableExists("feed");
+    const needsCommits = commitCols.length > 0 && commitCols.some((c) => c.name === "checkpoint_id");
+    const needsStatus = syncCols.length > 0 && !syncCols.some((c) => c.name === "last_batch_ts");
+    const hasCheckpoints = this.tableExists("checkpoints");
+    if (!needsEpoch && !needsFeed && !needsCommits && !needsStatus && !hasCheckpoints) return;
+    const clock = new Date().toISOString();
+    const hasCommits = this.tableExists("commits");
+    const hasClaims = this.tableExists("id_claims");
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        // (6) repos: the epoch — one `ep` per repository in rowid order, the
+        // claim minted at the repo's first commit's ts (the epoch is as old as
+        // the feed it scopes), else the clock. A rebuild: SQLite cannot add a
+        // NOT NULL column without a default.
+        if (needsEpoch) {
+          db.exec(`
+CREATE TABLE repos_v17 (
+  repo_id   TEXT PRIMARY KEY,
+  slug      TEXT NOT NULL UNIQUE,
+  settings  TEXT NOT NULL DEFAULT '{}',
+  epoch     TEXT NOT NULL
+);`);
+          const firstTs = hasCommits ? db.prepare("SELECT MIN(ts) AS ts FROM commits WHERE repo_id = ?") : null;
+          const ins = db.prepare("INSERT INTO repos_v17 (rowid, repo_id, slug, settings, epoch) VALUES (?, ?, ?, ?, ?)");
+          const claim = hasClaims ? db.prepare("INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) VALUES (?, ?, 'ep', ?, 1) ON CONFLICT(id) DO UPDATE SET holders = holders | 1") : null;
+          for (const r of db.prepare("SELECT rowid, repo_id, slug, settings FROM repos ORDER BY rowid").all() as { rowid: number; repo_id: string; slug: string; settings: string | null }[]) {
+            const epoch = mintId("ep");
+            ins.run(r.rowid, r.repo_id, r.slug, r.settings ?? "{}", epoch);
+            claim?.run(epoch, r.repo_id, (firstTs?.get(r.repo_id) as { ts: string | null } | undefined)?.ts ?? clock);
+          }
+          db.exec("DROP TABLE repos; ALTER TABLE repos_v17 RENAME TO repos;");
+        }
+        const epochOf = db.prepare("SELECT epoch FROM repos WHERE repo_id = ?");
+
+        // (7) feed + feed_entries, backfilled from the 16.x `commits`/`revisions`:
+        // one row per commit (`epoch` the new one, `seq = commits.seq`,
+        // `batch_id = commit_id` — no checkpoint grouped them; `plan_id` NULL);
+        // entries `created`/`changed` from `revisions` (seq 1 ⇒ created),
+        // `deleted` from the tombstones whose `deleted_at` is the commit's ts,
+        // `moved` only where a commit with no entry of its own records
+        // `move <from> -> <to>` in its reason (resolution 12: what the rows
+        // say, no path reconstruction) — the doc now at `<to>`, its current
+        // head and hash. Then the prune under the defaults.
+        if (needsFeed) {
+          db.exec(FEED_DDL);
+          if (hasCommits) {
+            const hasRevisions = this.tableExists("revisions");
+            const hasDocs = this.tableExists("docs") && (db.pragma("table_info(docs)") as { name: string }[]).some((c) => c.name === "deleted_at");
+            const insRow = db.prepare("INSERT OR IGNORE INTO feed (repo_id, epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)");
+            const insEntry = db.prepare("INSERT OR IGNORE INTO feed_entries (repo_id, epoch, seq, doc_id, path, head, hash, kind, from_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            const revs = hasRevisions ? db.prepare("SELECT doc_id, seq, rev_id, rendered_hash, path FROM revisions WHERE commit_id = ? ORDER BY rowid") : null;
+            const gone = hasDocs ? db.prepare("SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_at = ? ORDER BY path") : null;
+            const at = hasDocs ? db.prepare("SELECT doc_id, head, file_hash FROM docs WHERE repo_id = ? AND path = ?") : null;
+            const commits = db.prepare("SELECT commit_id, repo_id, seq, ts, origin, actor, reason FROM commits ORDER BY repo_id, seq").all() as { commit_id: string; repo_id: string; seq: number; ts: string; origin: string; actor: string | null; reason: string | null }[];
+            for (const c of commits) {
+              const epoch = (epochOf.get(c.repo_id) as { epoch: string } | undefined)?.epoch;
+              if (epoch === undefined) continue;
+              insRow.run(c.repo_id, epoch, c.seq, c.commit_id, c.ts, c.origin, c.actor, c.reason, c.commit_id);
+              let entries = 0;
+              for (const r of (revs?.all(c.commit_id) ?? []) as { doc_id: string; seq: number; rev_id: string; rendered_hash: Buffer; path: string }[]) {
+                insEntry.run(c.repo_id, epoch, c.seq, r.doc_id, r.path, r.rev_id, r.rendered_hash, r.seq === 1 ? "created" : "changed", null);
+                entries++;
+              }
+              for (const d of (gone?.all(c.repo_id, c.ts) ?? []) as { doc_id: string; path: string }[]) {
+                insEntry.run(c.repo_id, epoch, c.seq, d.doc_id, d.path, null, null, "deleted", null);
+                entries++;
+              }
+              if (entries === 0 && c.reason !== null && at) {
+                const m = /^move (.+) -> (.+)$/.exec(c.reason);
+                const doc = m ? (at.get(c.repo_id, m[2]!) as { doc_id: string; head: string | null; file_hash: Buffer | null } | undefined) : undefined;
+                if (m && doc) insEntry.run(c.repo_id, epoch, c.seq, doc.doc_id, m[2]!, doc.head, doc.file_hash, "moved", m[1]!);
+              }
+            }
+          }
+          // The prune under the defaults (§7.4) — the settings layers exist on
+          // every real database; a partial fixture pre-state may lack them.
+          if (this.tableExists("workspace_settings")) pruneFeed(this, clock);
+          // The `c` claims (§2.1, 3d: the core mints `c` and claims it): bit 0
+          // for every commit the feed holds, bit 1 for every `commits` row.
+          if (hasClaims && hasCommits) {
+            db.prepare(
+              `INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) SELECT commit_id, repo_id, 'c', ts, 1 FROM feed WHERE true
+               ON CONFLICT(id) DO UPDATE SET holders = holders | 1, minted_at = min(minted_at, excluded.minted_at)`,
+            ).run();
+            db.prepare(
+              `INSERT INTO id_claims (id, repo_id, prefix, minted_at, holders) SELECT commit_id, repo_id, 'c', ts, 2 FROM commits WHERE true
+               ON CONFLICT(id) DO UPDATE SET holders = holders | 2, minted_at = min(minted_at, excluded.minted_at)`,
+            ).run();
+          }
+        }
+
+        // (8) commits: the recorder's row — `epoch` (the repo's), `batch_id =
+        // commit_id`, `checkpoint_id` dropped, `rowid`s kept.
+        if (needsCommits) {
+          db.exec(`
+CREATE TABLE commits_v17 (
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,
+  ops       TEXT,
+  UNIQUE (repo_id, epoch, seq)
+);
+INSERT INTO commits_v17 (rowid, commit_id, repo_id, epoch, seq, ts, origin, actor, reason, batch_id, ops)
+  SELECT c.rowid, c.commit_id, c.repo_id, COALESCE((SELECT epoch FROM repos r WHERE r.repo_id = c.repo_id), ''), c.seq, c.ts, c.origin, c.actor, c.reason, c.commit_id, c.ops FROM commits c ORDER BY c.rowid;
+DROP TABLE commits;
+ALTER TABLE commits_v17 RENAME TO commits;`);
+        }
+
+        // (9) sync_state: the three status columns; per repository the reserved
+        // row from the latest `checkpoints` row by ts (`last_batch_id` NULL — the
+        // batch id is unknowable, `files` the array's length); then drop
+        // `checkpoints`.
+        if (needsStatus) {
+          db.exec(`
+ALTER TABLE sync_state ADD COLUMN last_batch_ts TEXT;
+ALTER TABLE sync_state ADD COLUMN last_batch_id TEXT;
+ALTER TABLE sync_state ADD COLUMN last_batch_files INTEGER;`);
+        }
+        if (hasCheckpoints && this.tableExists("sync_state")) {
+          db.prepare(
+            `INSERT OR IGNORE INTO sync_state (repo_id, source_id, path, revision, cursor, last_batch_ts, last_batch_id, last_batch_files)
+             SELECT cp.repo_id, '', '', NULL, NULL, cp.ts, NULL, json_array_length(cp.files)
+               FROM checkpoints cp WHERE cp.rowid = (SELECT c2.rowid FROM checkpoints c2 WHERE c2.repo_id = cp.repo_id ORDER BY c2.ts DESC, c2.rowid DESC LIMIT 1)`,
+          ).run();
+        }
+        if (hasCheckpoints) db.exec("DROP TABLE checkpoints");
+
+        const violations = db.pragma("foreign_key_check") as unknown[];
+        if (violations.length > 0) throw new Error(`migration v17: ${violations.length} foreign key violation(s) after the feed step`);
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
   }
 
   /**

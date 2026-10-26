@@ -1,0 +1,3486 @@
+{
+  "suite": "feed",
+  "cases": [
+    {
+      "name": "write-edit-delete-recreate-writes-one-entry-per-commit",
+      "notes": "README §5.4 step 5, §5.6 step 1: a document's life in the feed — its first observation is a `created` entry carrying the head minted and the file hash; an edit a `changed` entry under the new head; a gone path a `deleted` entry with no head and no hash (the feed row's reason is `observed deletion`); bytes observed again at the tombstoned path revive the row — a `created` entry again (§5.6 \"Re-creation\"), under the revival's head. One feed row per commit, `seq` dense from 1, `batch_id` the row's own commit (every batch here has one committing member), `plan_id` NULL on the observe path; the recorder's `commits` row shares each id, epoch and seq (H4).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:03:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_3",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1,
+                "resurrected": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_2",
+            "file_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "batch_id": "c_2",
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "epoch": "ep_0",
+            "seq": 4,
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": null,
+            "hash": null,
+            "kind": "deleted",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "kind": "created",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "frontmatter_blob": null,
+            "rendered_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "356e52de56684b2c29c8cb5ee6e4492b3bbf5235bb2b5fdf7b8a44bdaec94050",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_3",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "size": 37,
+            "bytes": "Alpha paragraph about apples, edited."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "356e52de56684b2c29c8cb5ee6e4492b3bbf5235bb2b5fdf7b8a44bdaec94050",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_2\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples.",
+            "raw": "Alpha paragraph about apples.",
+            "raw_hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "norm_hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:03:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_0",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_3",
+            "kind": "resurrected"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_3",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "raw_hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "norm_hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": "2026-10-20T10:02:00.000Z",
+            "expires_ts": "2026-11-19T10:02:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "batch-id-is-the-first-committing-member",
+      "notes": "README §5.4 step 5 (D4): `batch_id` is the commit id of the FIRST member of the batch that committed — an echo commits nothing and names no batch. Batch 1 (two members) → both rows carry c_0. Batch 2: a.md is an echo (no commit), b.md's edit commits first (c_2, its own batch id), the gone path's tombstone and d.md's creation follow under c_2; a gone member with no live doc commits nothing. The status row the sync layer writes is spec/sync's; this suite projects the feed.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# B\n\nBeta paragraph about bees.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# B\n\nBeta paragraph about bees, edited.\n"
+              },
+              {
+                "path": "c.md",
+                "source": null
+              },
+              {
+                "path": "d.md",
+                "source": "# D\n\nDelta paragraph.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": true,
+              "doc": "d_0",
+              "commit": null,
+              "rev": null,
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {}
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            },
+            {
+              "path": "c.md",
+              "deleted": false,
+              "doc": null
+            },
+            {
+              "path": "d.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_0",
+            "file_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "head": "r_2",
+            "file_hash": "a8bab9cb0a6840340c18cb3ac325766cb57022aa4a4d2944de5d37fddd05b2b2",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_2",
+            "path": "d.md",
+            "format": "markdown",
+            "head": "r_3",
+            "file_hash": "71a1c9f0a2e091d938ad7c0a99baebb54a4a9b3f24815335ab70c80671228292",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "epoch": "ep_0",
+            "seq": 4,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "954b865c54e5d2a2429eb187a3b8b1f3150de31e6498a8a2752259fe15140ec1",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_2",
+            "hash": "a8bab9cb0a6840340c18cb3ac325766cb57022aa4a4d2944de5d37fddd05b2b2",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_2",
+            "path": "d.md",
+            "head": "r_3",
+            "hash": "71a1c9f0a2e091d938ad7c0a99baebb54a4a9b3f24815335ab70c80671228292",
+            "kind": "created",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "5aec751cf70e0e9c8024f08052010fae6b80c834e5d6200fd1f48d7a628cef31",
+            "frontmatter_blob": null,
+            "rendered_hash": "954b865c54e5d2a2429eb187a3b8b1f3150de31e6498a8a2752259fe15140ec1",
+            "path": "b.md",
+            "commit_id": "c_1",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_1",
+            "seq": 2,
+            "root_tree": "423599d7939080a61f40eb4f5e77012579997a0488a31161ca12806e8055ee5a",
+            "frontmatter_blob": null,
+            "rendered_hash": "a8bab9cb0a6840340c18cb3ac325766cb57022aa4a4d2944de5d37fddd05b2b2",
+            "path": "b.md",
+            "commit_id": "c_2",
+            "archive": null
+          },
+          {
+            "rev_id": "r_3",
+            "doc_id": "d_2",
+            "seq": 1,
+            "root_tree": "a6878ad3975d59cec53a4670a50b4576fb5e7911458bf70677a0a78d044a102f",
+            "frontmatter_blob": null,
+            "rendered_hash": "71a1c9f0a2e091d938ad7c0a99baebb54a4a9b3f24815335ab70c80671228292",
+            "path": "d.md",
+            "commit_id": "c_3",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "4c3aae08070b63b069193e175d667851fe71453c028f3e7ee84ad96e2b896638",
+            "size": 16,
+            "bytes": "Delta paragraph."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb",
+            "size": 3,
+            "bytes": "# D"
+          },
+          {
+            "hash": "fe0c883954963b94f684acbf324c286d7a18b22637ef3a201aee31e111788c3b",
+            "size": 34,
+            "bytes": "Beta paragraph about bees, edited."
+          },
+          {
+            "hash": "ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2",
+            "size": 26,
+            "bytes": "Beta paragraph about bees."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "423599d7939080a61f40eb4f5e77012579997a0488a31161ca12806e8055ee5a",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_3\",\"fe0c883954963b94f684acbf324c286d7a18b22637ef3a201aee31e111788c3b\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "5aec751cf70e0e9c8024f08052010fae6b80c834e5d6200fd1f48d7a628cef31",
+            "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "a6878ad3975d59cec53a4670a50b4576fb5e7911458bf70677a0a78d044a102f",
+            "entries": "[[\"b_4\",\"bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_5\",\"4c3aae08070b63b069193e175d667851fe71453c028f3e7ee84ad96e2b896638\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples.",
+            "raw": "Alpha paragraph about apples.",
+            "raw_hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "norm_hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw": "# B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees, edited.",
+            "raw": "Beta paragraph about bees, edited.",
+            "raw_hash": "fe0c883954963b94f684acbf324c286d7a18b22637ef3a201aee31e111788c3b",
+            "norm_hash": "fe0c883954963b94f684acbf324c286d7a18b22637ef3a201aee31e111788c3b",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_2",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "D",
+            "raw": "# D",
+            "raw_hash": "bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb",
+            "norm_hash": "3f39d5c348e5b79d06e842c114e6cc571583bbf44e4b0ebfda1a01ec05745d43",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_2",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Delta paragraph.",
+            "raw": "Delta paragraph.",
+            "raw_hash": "4c3aae08070b63b069193e175d667851fe71453c028f3e7ee84ad96e2b896638",
+            "norm_hash": "4c3aae08070b63b069193e175d667851fe71453c028f3e7ee84ad96e2b896638",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_2",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_3",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_3",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_2",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_2",
+            "heading_block": "b_4",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "retention-floors-prune-old-rows-beyond-the-entry-floor",
+      "notes": "README §7.4: a row is prunable when it is older than `feed.retain_days` AND more than `feed.retain_entries` rows of its epoch are newer than it — both floors, by `ts` against gc's clock. With `retain_days: 0` and `retain_entries: 2` five commits leave three rows after gc (seq 3–5: the row with exactly two newer rows is not \"more than\"), `feed_pruned: 2`, their entries gone with them; `oldest` moves to 3 while `commits` keeps every row (the log is history). Set through the repository's settings layer (spec/sync §3; the `exec` step is the fixture's device for a settings write). The entries invariant F1 holds because every retained document's head is in a retained entry.",
+      "steps": [
+        {
+          "exec": {
+            "sql": [
+              "UPDATE repos SET settings = '{\"feed\": {\"retain_days\": 0, \"retain_entries\": 2}}' WHERE slug = 'fixture'"
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited twice.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:03:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited a third time.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:04:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, the fifth state.\n"
+              }
+            ]
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-10-21T00:00:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "changes": 1
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_4",
+              "rev": "r_4",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 2
+            }
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_4",
+            "file_hash": "748fa231f95e387aa3887d10992e1771159f9bfc07da999cd3e789e686446ea4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:04:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "epoch": "ep_0",
+            "seq": 4,
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "ops": null
+          },
+          {
+            "commit_id": "c_4",
+            "epoch": "ep_0",
+            "seq": 5,
+            "ts": "2026-10-20T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-20T10:04:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_3",
+            "hash": "6446ed088fd96ac202a84154f7fdf085a057b8759ed1516aa58e5435ba4939c4",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_4",
+            "hash": "748fa231f95e387aa3887d10992e1771159f9bfc07da999cd3e789e686446ea4",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "frontmatter_blob": null,
+            "rendered_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "frontmatter_blob": null,
+            "rendered_hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "path": "a.md",
+            "commit_id": "c_2",
+            "archive": null
+          },
+          {
+            "rev_id": "r_3",
+            "doc_id": "d_0",
+            "seq": 4,
+            "root_tree": "95d71837d7b051f977bf6a598956cbae1e4286db6db698e21fa8ec0e4d62fc27",
+            "frontmatter_blob": null,
+            "rendered_hash": "6446ed088fd96ac202a84154f7fdf085a057b8759ed1516aa58e5435ba4939c4",
+            "path": "a.md",
+            "commit_id": "c_3",
+            "archive": null
+          },
+          {
+            "rev_id": "r_4",
+            "doc_id": "d_0",
+            "seq": 5,
+            "root_tree": "24624c38b33c0308f90dbbea14400465283437aa66260409f02a6a962c290cfc",
+            "frontmatter_blob": null,
+            "rendered_hash": "748fa231f95e387aa3887d10992e1771159f9bfc07da999cd3e789e686446ea4",
+            "path": "a.md",
+            "commit_id": "c_4",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33",
+            "size": 43,
+            "bytes": "Alpha paragraph about apples, edited twice."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568",
+            "size": 50,
+            "bytes": "Alpha paragraph about apples, edited a third time."
+          },
+          {
+            "hash": "be267ecd5b34a5dea706101efb8a9c697840e47033c58d59e7c9399a9d37d5e1",
+            "size": 46,
+            "bytes": "Alpha paragraph about apples, the fifth state."
+          },
+          {
+            "hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "size": 37,
+            "bytes": "Alpha paragraph about apples, edited."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "24624c38b33c0308f90dbbea14400465283437aa66260409f02a6a962c290cfc",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"be267ecd5b34a5dea706101efb8a9c697840e47033c58d59e7c9399a9d37d5e1\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "95d71837d7b051f977bf6a598956cbae1e4286db6db698e21fa8ec0e4d62fc27",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples, the fifth state.",
+            "raw": "Alpha paragraph about apples, the fifth state.",
+            "raw_hash": "be267ecd5b34a5dea706101efb8a9c697840e47033c58d59e7c9399a9d37d5e1",
+            "norm_hash": "be267ecd5b34a5dea706101efb8a9c697840e47033c58d59e7c9399a9d37d5e1",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:04:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.87,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_4",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8227272727272728,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_3",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_4",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-20T10:04:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-20T10:04:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "retention-days-floor-keeps-young-rows",
+      "notes": "README §7.4: the day floor alone keeps a row — with `retain_entries: 0` every row but the newest is beyond the entry floor, yet a gc one day after the commits prunes nothing (`retain_days` is the default 10), and a gc eleven days after prunes every row but the newest (`feed_pruned: 2`). Both floors must be passed; the cap (`max_entries`) is not involved.",
+      "steps": [
+        {
+          "exec": {
+            "sql": [
+              "UPDATE repos SET settings = '{\"feed\": {\"retain_entries\": 0}}' WHERE slug = 'fixture'"
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited twice.\n"
+              }
+            ]
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-10-21T10:00:00.000Z"
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-10-31T10:03:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "changes": 1
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 0
+            }
+          },
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 2
+            }
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_2",
+            "file_hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:02:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "frontmatter_blob": null,
+            "rendered_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "frontmatter_blob": null,
+            "rendered_hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "path": "a.md",
+            "commit_id": "c_2",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33",
+            "size": 43,
+            "bytes": "Alpha paragraph about apples, edited twice."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "size": 37,
+            "bytes": "Alpha paragraph about apples, edited."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples, edited twice.",
+            "raw": "Alpha paragraph about apples, edited twice.",
+            "raw_hash": "5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33",
+            "norm_hash": "5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:02:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "cap-prunes-at-write-time-regardless-of-the-floors",
+      "notes": "README §7.4: `feed.max_entries` is enforced inside the transaction that appends a feed row, oldest first, regardless of the floors — a feed never exceeds `max_entries + 1` rows. With `max_entries: 1` (and `retain_entries: 1`, the policy's lower bound) four commits leave two rows (seq 3, 4) without any gc; the gc afterwards finds nothing more to prune under the default `retain_days`. The pruned rows' commits stay in the recorder's log.",
+      "steps": [
+        {
+          "exec": {
+            "sql": [
+              "UPDATE repos SET settings = '{\"feed\": {\"retain_entries\": 1, \"max_entries\": 1}}' WHERE slug = 'fixture'"
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited twice.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:03:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited a third time.\n"
+              }
+            ]
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-10-21T10:00:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "changes": 1
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 0
+            }
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_3",
+            "file_hash": "6446ed088fd96ac202a84154f7fdf085a057b8759ed1516aa58e5435ba4939c4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "epoch": "ep_0",
+            "seq": 4,
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_3",
+            "hash": "6446ed088fd96ac202a84154f7fdf085a057b8759ed1516aa58e5435ba4939c4",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "frontmatter_blob": null,
+            "rendered_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "path": "a.md",
+            "commit_id": "c_1",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "frontmatter_blob": null,
+            "rendered_hash": "c363105c3c356db799949149291d2579447b7964bf4496b11b6f3e42404034ac",
+            "path": "a.md",
+            "commit_id": "c_2",
+            "archive": null
+          },
+          {
+            "rev_id": "r_3",
+            "doc_id": "d_0",
+            "seq": 4,
+            "root_tree": "95d71837d7b051f977bf6a598956cbae1e4286db6db698e21fa8ec0e4d62fc27",
+            "frontmatter_blob": null,
+            "rendered_hash": "6446ed088fd96ac202a84154f7fdf085a057b8759ed1516aa58e5435ba4939c4",
+            "path": "a.md",
+            "commit_id": "c_3",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33",
+            "size": 43,
+            "bytes": "Alpha paragraph about apples, edited twice."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568",
+            "size": 50,
+            "bytes": "Alpha paragraph about apples, edited a third time."
+          },
+          {
+            "hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "size": 37,
+            "bytes": "Alpha paragraph about apples, edited."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "95d71837d7b051f977bf6a598956cbae1e4286db6db698e21fa8ec0e4d62fc27",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ae5fd1793e97d580f5e885064c3fc8fc9a8ded533c56f4848be26f35933f7dd5",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"5cc1648688d5e0405c4424a104a076988598d1fef0e0183543b3ff6db6df1e33\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples, edited a third time.",
+            "raw": "Alpha paragraph about apples, edited a third time.",
+            "raw_hash": "a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568",
+            "norm_hash": "a4ad703d5a67de695b0c1543cd2efe4d56f241fabefcbabd96bba34c81051568",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.87,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "edited"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_3",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "prune-never-takes-the-newest-row",
+      "notes": "README §7.4: pruning never deletes the row with the greatest `seq` — at `retain_entries: 0` and `retain_days: 0` a gc leaves exactly the head row (`feed_pruned` = rows − 1), so `oldest == head` and a consumer at `cursor = head − 1` is still served (every entry after it is present); `changes_since` from 0 on such a feed shows the gap through `oldest` (spec/surface §3).",
+      "steps": [
+        {
+          "exec": {
+            "sql": [
+              "UPDATE repos SET settings = '{\"feed\": {\"retain_days\": 0, \"retain_entries\": 0}}' WHERE slug = 'fixture'"
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# B\n\nBeta paragraph about bees.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nAlpha paragraph about apples, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "gc": {
+            "ts": "2026-10-21T00:00:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "changes": 1
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "gc": {
+              "blobs": 0,
+              "tree_nodes": 0,
+              "same_dispositions": 0,
+              "claims_released": 0,
+              "feed_pruned": 2
+            }
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_2",
+            "file_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "head": "r_1",
+            "file_hash": "954b865c54e5d2a2429eb187a3b8b1f3150de31e6498a8a2752259fe15140ec1",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "epoch": "ep_0",
+            "seq": 1,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "epoch": "ep_0",
+            "seq": 2,
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "frontmatter_blob": null,
+            "rendered_hash": "b2dc6c309b1c25829d8dc9d964136ee53c1c07e62e32de3cf0ea6075691b74fb",
+            "path": "a.md",
+            "commit_id": "c_0",
+            "archive": null
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "frontmatter_blob": null,
+            "rendered_hash": "47eefa64595f6431f487908ff2b25c1f43eb809e3742d329cdc30dfed45ef3c5",
+            "path": "a.md",
+            "commit_id": "c_2",
+            "archive": null
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "5aec751cf70e0e9c8024f08052010fae6b80c834e5d6200fd1f48d7a628cef31",
+            "frontmatter_blob": null,
+            "rendered_hash": "954b865c54e5d2a2429eb187a3b8b1f3150de31e6498a8a2752259fe15140ec1",
+            "path": "b.md",
+            "commit_id": "c_1",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9",
+            "size": 29,
+            "bytes": "Alpha paragraph about apples."
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "size": 37,
+            "bytes": "Alpha paragraph about apples, edited."
+          },
+          {
+            "hash": "ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2",
+            "size": 26,
+            "bytes": "Beta paragraph about bees."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "5aec751cf70e0e9c8024f08052010fae6b80c834e5d6200fd1f48d7a628cef31",
+            "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "7bb8f96fda7b334b48de3a8380b28f1d6e547943f4f80f553606837dc6bb8d3c",
+            "entries": "{\"d\":[[\"=\",1],[\"~\",[\"b_1\",\"f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          },
+          {
+            "hash": "a195a0307a283b62d84b04720869a951a82481e1b7d487c13ff9bd666c0ebcc3",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1a2d1d5c02c5223def35f2512ceb4b42364e43890067fbea26c18190b1caeef9\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples, edited.",
+            "raw": "Alpha paragraph about apples, edited.",
+            "raw_hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "norm_hash": "f9199bdc2f8a861c157f02dc99a3602675f031bb9d1ae2f19d3b7ee7f9996072",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw": "# B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees.",
+            "raw": "Beta paragraph about bees.",
+            "raw_hash": "ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2",
+            "norm_hash": "ff94e6acdd7a56b7dba37d5553045d37b585494da86d1b4021b08b7d1d5afba2",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.8300000000000001,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "edited"
+          }
+        ],
+        "resurrection_pool": [],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    }
+  ]
+}

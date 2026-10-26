@@ -30,7 +30,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "sub/b.md"
@@ -76,23 +76,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "sub/b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -326,23 +374,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "sub/b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:00:00.000Z",
+            "last_batch_id": "c_0",
+            "last_batch_files": 2
           }
         ],
         "file_stats": [
@@ -387,7 +427,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -399,7 +439,7 @@
             "changed": true
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -428,13 +468,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -566,24 +632,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -629,7 +686,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -642,7 +699,7 @@
           },
           {},
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -671,13 +728,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -809,24 +892,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -872,7 +946,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -885,7 +959,7 @@
           },
           {},
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_1",
             "ingested": [
               "a.md"
             ],
@@ -916,23 +990,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -1098,30 +1220,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
-                "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": "c_1",
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -1173,7 +1280,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -1187,7 +1294,7 @@
           },
           {},
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_2",
             "ingested": [],
             "suppressed": [],
             "deleted": [
@@ -1232,33 +1339,103 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": "observed deletion",
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": null,
+            "hash": null,
+            "kind": "deleted",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -1513,35 +1690,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
-                null
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": "c_2",
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -1583,7 +1740,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -1629,23 +1786,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -1796,23 +2001,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ],
-              [
-                "b.md",
-                null,
-                "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:00:00.000Z",
+            "last_batch_id": "c_0",
+            "last_batch_files": 2
           }
         ],
         "file_stats": [
@@ -1884,7 +2081,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "sub/deep/w.md"
             ],
@@ -1915,13 +2112,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "sub/deep/w.md",
+            "head": "r_0",
+            "hash": "5b88c0b7cf6a893428f6cce0b1fc1c40656700eff155bd7e77654a00de02f874",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -2009,18 +2232,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "sub/deep/w.md",
-                null,
-                "5b88c0b7cf6a893428f6cce0b1fc1c40656700eff155bd7e77654a00de02f874"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:00:00.000Z",
+            "last_batch_id": "c_0",
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -2081,7 +2301,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -2096,7 +2316,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_2",
             "ingested": [
               "a.md",
               "b.md"
@@ -2142,43 +2362,135 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "c0f369c8cb2aea40e870b34502828fa0c6d1c281bf71f352596d3e02b868c5a1",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3efa80abcba85a591743d6e6365fd97bd65d7c41304d69eedcee70b9cccd3810",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "a9f64af35a8181bcc72b6c4c648bce3944562d1bd4b3ba9ab71e2641ec2a9e7a",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_3",
+            "hash": "a918c22679923d5ca64af88dba5c4e1391ffda74fde5732f6a0f7102153fe1fe",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -2497,40 +2809,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "c0f369c8cb2aea40e870b34502828fa0c6d1c281bf71f352596d3e02b868c5a1"
-              ],
-              [
-                "b.md",
-                null,
-                "3efa80abcba85a591743d6e6365fd97bd65d7c41304d69eedcee70b9cccd3810"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "c0f369c8cb2aea40e870b34502828fa0c6d1c281bf71f352596d3e02b868c5a1",
-                "a9f64af35a8181bcc72b6c4c648bce3944562d1bd4b3ba9ab71e2641ec2a9e7a"
-              ],
-              [
-                "b.md",
-                "3efa80abcba85a591743d6e6365fd97bd65d7c41304d69eedcee70b9cccd3810",
-                "a918c22679923d5ca64af88dba5c4e1391ffda74fde5732f6a0f7102153fe1fe"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": "c_2",
+            "last_batch_files": 2
           }
         ],
         "file_stats": [
@@ -2598,7 +2885,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -2607,7 +2894,7 @@
             "conflicted": []
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_1",
             "ingested": [
               "b.md"
             ],
@@ -2618,7 +2905,7 @@
             "conflicted": []
           },
           {
-            "checkpoint_id": "cp_2",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -2658,23 +2945,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -2825,47 +3160,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ],
-              [
-                "b.md",
-                null,
-                "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_2",
-            "ts": "2026-09-26T10:02:00.000Z",
-            "files": [
-              [
-                "c.md",
-                null,
-                null
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 1
           }
         ],
         "file_stats": []
@@ -2873,7 +3176,7 @@
     },
     {
       "name": "checkpoint-does-not-touch-file-stats",
-      "notes": "Only the sweep maintains the cache; a direct checkpoint leaves file_stats alone, so the following sweep sees every file as new but echo-suppresses them.",
+      "notes": "Only the sweep maintains the cache; a direct checkpoint leaves file_stats alone, so the following sweep sees every file as new but echo-suppresses them. (4.0: the step's `git_head` input is gone with the column, D9.)",
       "steps": [
         {
           "disk": {
@@ -2887,8 +3190,7 @@
             "ts": "2026-09-26T10:00:00.000Z",
             "paths": [
               "a.md"
-            ],
-            "git_head": "0123abcd"
+            ]
           }
         },
         {
@@ -2901,7 +3203,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -2910,7 +3212,7 @@
             "conflicted": []
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [
               "a.md"
@@ -2941,13 +3243,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -3035,30 +3363,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": "0123abcd"
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -3133,7 +3446,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -3159,7 +3472,7 @@
             "untracked": 1
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_2",
             "ingested": [
               "a.md",
               "c.md"
@@ -3226,53 +3539,167 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_4",
+            "epoch": "ep_0",
             "seq": 5,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": "observed deletion",
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "batch_id": "c_2",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_2",
+            "path": "c.md",
+            "head": "r_3",
+            "hash": "75893e6adce701bd6c7f089a8f29c6692506f182e8b6c8129e5708576261fa8a",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": null,
+            "hash": null,
+            "kind": "deleted",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -3624,45 +4051,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
-                "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc"
-              ],
-              [
-                "c.md",
-                null,
-                "75893e6adce701bd6c7f089a8f29c6692506f182e8b6c8129e5708576261fa8a"
-              ],
-              [
-                "b.md",
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
-                null
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": "c_2",
+            "last_batch_files": 3
           }
         ],
         "file_stats": [
@@ -3717,7 +4114,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -3735,7 +4132,7 @@
             "untracked": 0
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -3764,13 +4161,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -3858,24 +4281,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -3939,7 +4353,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -3962,7 +4376,7 @@
             ]
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_3",
             "ingested": [],
             "suppressed": [
               "a.md"
@@ -4009,43 +4423,135 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_2",
+            "epoch": "ep_0",
             "seq": 3,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_2",
             "ops": null
           },
           {
             "commit_id": "c_3",
+            "epoch": "ep_0",
             "seq": 4,
             "ts": "2026-09-26T10:02:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": "observed deletion",
-            "checkpoint_id": null,
+            "batch_id": "c_3",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "batch_id": "c_3",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": null,
+            "hash": null,
+            "kind": "deleted",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -4334,40 +4840,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:02:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc",
-                "ce3051a48e94a9d771ad09a02f3d8caf60a09edd84c3a2e559c9c29dc680a8dc"
-              ],
-              [
-                "b.md",
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
-                null
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": "c_3",
+            "last_batch_files": 2
           }
         ],
         "file_stats": [
@@ -4405,7 +4886,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -4440,13 +4921,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -4534,18 +5041,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:00:00.000Z",
+            "last_batch_id": "c_0",
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -4609,7 +5113,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -4630,7 +5134,7 @@
             "untracked": 0
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_1",
             "ingested": [
               "a.md"
             ],
@@ -4643,7 +5147,7 @@
           },
           {},
           {
-            "checkpoint_id": "cp_2",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -4672,23 +5176,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af",
+            "kind": "changed",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -4835,36 +5387,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "a.md",
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
-                "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_2",
-            "ts": "2026-09-26T10:02:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:02:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -4921,7 +5452,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "sub/b.md"
@@ -4938,7 +5469,7 @@
             "scanned": 2
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -4981,23 +5512,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "sub/b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -5231,29 +5810,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "sub/b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -5311,7 +5876,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -5332,7 +5897,7 @@
             "untracked": 1
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": "c_1",
             "ingested": [
               "new.md"
             ],
@@ -5377,23 +5942,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:01:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_1",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "new.md",
+            "head": "r_1",
+            "hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -5588,30 +6201,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [
-              [
-                "new.md",
-                null,
-                "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": "c_1",
+            "last_batch_files": 1
           }
         ],
         "file_stats": [
@@ -5675,7 +6273,7 @@
           {},
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md",
               "b.md"
@@ -5697,7 +6295,7 @@
             "untracked": 0
           },
           {
-            "checkpoint_id": "cp_1",
+            "batch_id": null,
             "ingested": [],
             "suppressed": [],
             "deleted": [],
@@ -5740,23 +6338,71 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
           },
           {
             "commit_id": "c_1",
+            "epoch": "ep_0",
             "seq": 2,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -5990,29 +6636,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ],
-              [
-                "b.md",
-                null,
-                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
-              ]
-            ],
-            "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:01:00.000Z",
+            "last_batch_id": null,
+            "last_batch_files": 0
           }
         ],
         "file_stats": [
@@ -6066,7 +6698,7 @@
         "steps": [
           {},
           {
-            "checkpoint_id": "cp_0",
+            "batch_id": "c_0",
             "ingested": [
               "a.md"
             ],
@@ -6107,13 +6739,39 @@
         "commits": [
           {
             "commit_id": "c_0",
+            "epoch": "ep_0",
             "seq": 1,
             "ts": "2026-09-26T10:00:00.000Z",
             "origin": "observed",
             "actor": null,
             "reason": null,
-            "checkpoint_id": null,
+            "batch_id": "c_0",
             "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "kind": "created",
+            "from_path": null
           }
         ],
         "revisions": [
@@ -6245,18 +6903,15 @@
         ],
         "pending_materializations": [],
         "archives": [],
-        "checkpoints": [
+        "sync_state": [
           {
-            "id": "cp_0",
-            "ts": "2026-09-26T10:00:00.000Z",
-            "files": [
-              [
-                "a.md",
-                null,
-                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
-              ]
-            ],
-            "git_head": null
+            "source_id": "",
+            "path": "",
+            "revision": null,
+            "cursor": null,
+            "last_batch_ts": "2026-09-26T10:00:00.000Z",
+            "last_batch_id": "c_0",
+            "last_batch_files": 1
           }
         ],
         "file_stats": []

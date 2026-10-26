@@ -47,6 +47,29 @@
             "dim",
             "vec"
           ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
           "file_stats": [
             "repo_id",
             "path",
@@ -126,7 +149,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ],
           "sources": [
             "source_id",
@@ -140,7 +164,10 @@
             "source_id",
             "path",
             "revision",
-            "cursor"
+            "cursor",
+            "last_batch_ts",
+            "last_batch_id",
+            "last_batch_files"
           ],
           "workspace_settings": [
             "id",
@@ -208,6 +235,29 @@
             "repo_id",
             "source_id"
           ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
           "id_claims": [
             "id",
             "repo_id",
@@ -230,7 +280,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ],
           "sources": [
             "source_id",
@@ -267,7 +318,8 @@
             {
               "repo_id": "rp_1",
               "slug": "vault",
-              "settings": "{}"
+              "settings": "{}",
+              "epoch": "ep_0"
             }
           ]
         }
@@ -313,6 +365,29 @@
             "repo_id",
             "source_id"
           ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
           "id_claims": [
             "id",
             "repo_id",
@@ -335,7 +410,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ],
           "sources": [
             "source_id",
@@ -359,12 +435,14 @@
             {
               "repo_id": "rp_1",
               "slug": "headless",
-              "settings": "{}"
+              "settings": "{}",
+              "epoch": "ep_0"
             },
             {
               "repo_id": "rp_2",
               "slug": "blank",
-              "settings": "{}"
+              "settings": "{}",
+              "epoch": "ep_1"
             }
           ]
         }
@@ -412,6 +490,29 @@
             "repo_id",
             "source_id"
           ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
           "id_claims": [
             "id",
             "repo_id",
@@ -434,7 +535,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ],
           "sources": [
             "source_id",
@@ -471,7 +573,8 @@
             {
               "repo_id": "rp_1",
               "slug": "vault",
-              "settings": "{}"
+              "settings": "{}",
+              "epoch": "ep_0"
             }
           ]
         }
@@ -502,6 +605,29 @@
             "revision_count",
             "bytes"
           ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
+          ],
           "id_claims": [
             "id",
             "repo_id",
@@ -524,7 +650,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ]
         },
         "rows": {
@@ -532,7 +659,8 @@
             {
               "repo_id": "rp_1",
               "slug": "vault",
-              "settings": "{}"
+              "settings": "{}",
+              "epoch": "ep_0"
             }
           ],
           "pending_materializations": []
@@ -603,7 +731,7 @@
     },
     {
       "name": "v16-to-v17-heads-inline-bytes-time",
-      "notes": "Step 17 (modular-core Phase 3a — M1, M2, D10, D6): `docs` rebuilt with `head` (= `current_rev`), `frontmatter_raw` (the live head's frontmatter RESOLVED through the 16.x delta chain once — r_2's blob is a `{\"f\":…}` delta over r_1's raw, so a.md comes out `layer: working`), `created_at` (the seq-1 revision's commit ts), `updated_at` (the head's commit ts), `deleted_at` (the tombstone commit's ts; gone.md was deleted by c_3); `blocks` rebuilt with `raw`/`trivia` copied from `blobs` by hash (b_3's NULL trivia_hash stays a NULL trivia), `created_at`/`updated_at` from MIN/MAX(commits.ts) over the block's `block_changes` (b_1: c_1; b_2: c_2) falling back to `created_commit`'s ts when it has none (b_3: c_1), `deleted_at` from `deleted_commit` (b_3: c_3); `created_commit`/`deleted_commit` gone and the two partial indexes re-created over `deleted_at`; `resurrection_pool` rebuilt with `created_at` = MIN over the block's `block_changes` (b_4: c_2), else the deleting commit's ts (b_3: c_3). The history tables (`revisions`, `blobs`, `tree_nodes`, `commits`, `block_changes`) are untouched — the recorder's, read once for the backfill. `rowid`s are kept (the FTS index is keyed by them). (3b — M3/D5) `resurrection_pool.deleted_commit` → `deleted_at` (the deleting commit's ts: b_3 c_3, b_4 c_4; `expires_ts` is already `deleted_at + 30 days`). `id_claims` created and backfilled: `d_1`/`d_2` from `docs` (`minted_at = created_at`, bit 0) plus bit 1 from their `revisions` rows → 3; `b_1`/`b_2` from `blocks` (bit 0, `minted_at = created_at`) plus bit 1 from `block_changes` → 3; `b_3` from its tombstoned `blocks` row alone → 1 (no `block_changes` row names it); `b_4` from the pool row (bit 0) plus `block_changes` (bit 1) → 3, `minted_at` the earliest of the two sources (c_2); `r_2`/`r_3` as heads (bit 0, `minted_at = docs.updated_at`) plus `revisions` (bit 1) → 3; `r_1` from `revisions` alone → 2 (an old revision's id names no core row); `rp_1` → 1 at the repo's first commit's ts. The commits `c_1`…`c_4` get no claim (the recorder's own rows). Tables the pre-state lacks (`dispositions`, `edges`, `external_nodes`, `sources`, `pending_materializations`) contribute nothing. (3c — M4) `pending_materializations` rebuilt self-contained: `head` = the row's `rev_id` (the same `r_` token — a.md's write row names r_2), `prior_hash` = the `rendered_hash` of the revision before it, resolved ONCE from the 16.x history (r_1's X'05'; NULL for the `remove` row, as for a first revision), `created_at` = the recording commit's `ts` (c_2 for the write, c_3 for the remove), `rev_id` and both foreign keys gone, `rowid`s kept.",
+      "notes": "Step 17 (modular-core Phase 3a — M1, M2, D10, D6): `docs` rebuilt with `head` (= `current_rev`), `frontmatter_raw` (the live head's frontmatter RESOLVED through the 16.x delta chain once — r_2's blob is a `{\"f\":…}` delta over r_1's raw, so a.md comes out `layer: working`), `created_at` (the seq-1 revision's commit ts), `updated_at` (the head's commit ts), `deleted_at` (the tombstone commit's ts; gone.md was deleted by c_3); `blocks` rebuilt with `raw`/`trivia` copied from `blobs` by hash (b_3's NULL trivia_hash stays a NULL trivia), `created_at`/`updated_at` from MIN/MAX(commits.ts) over the block's `block_changes` (b_1: c_1; b_2: c_2) falling back to `created_commit`'s ts when it has none (b_3: c_1), `deleted_at` from `deleted_commit` (b_3: c_3); `created_commit`/`deleted_commit` gone and the two partial indexes re-created over `deleted_at`; `resurrection_pool` rebuilt with `created_at` = MIN over the block's `block_changes` (b_4: c_2), else the deleting commit's ts (b_3: c_3). The history tables (`revisions`, `blobs`, `tree_nodes`, `commits`, `block_changes`) are untouched — the recorder's, read once for the backfill. `rowid`s are kept (the FTS index is keyed by them). (3b — M3/D5) `resurrection_pool.deleted_commit` → `deleted_at` (the deleting commit's ts: b_3 c_3, b_4 c_4; `expires_ts` is already `deleted_at + 30 days`). `id_claims` created and backfilled: `d_1`/`d_2` from `docs` (`minted_at = created_at`, bit 0) plus bit 1 from their `revisions` rows → 3; `b_1`/`b_2` from `blocks` (bit 0, `minted_at = created_at`) plus bit 1 from `block_changes` → 3; `b_3` from its tombstoned `blocks` row alone → 1 (no `block_changes` row names it); `b_4` from the pool row (bit 0) plus `block_changes` (bit 1) → 3, `minted_at` the earliest of the two sources (c_2); `r_2`/`r_3` as heads (bit 0, `minted_at = docs.updated_at`) plus `revisions` (bit 1) → 3; `r_1` from `revisions` alone → 2 (an old revision's id names no core row); `rp_1` → 1 at the repo's first commit's ts. The commits `c_1`…`c_4` get no claim (the recorder's own rows). Tables the pre-state lacks (`dispositions`, `edges`, `external_nodes`, `sources`, `pending_materializations`) contribute nothing. (3c — M4) `pending_materializations` rebuilt self-contained: `head` = the row's `rev_id` (the same `r_` token — a.md's write row names r_2), `prior_hash` = the `rendered_hash` of the revision before it, resolved ONCE from the 16.x history (r_1's X'05'; NULL for the `remove` row, as for a first revision), `created_at` = the recording commit's `ts` (c_2 for the write, c_3 for the remove), `rev_id` and both foreign keys gone, `rowid`s kept. (3d — D7/M5, D4) `repos` rebuilt with the EPOCH (`ep_0`, the fixture minter's first `ep`; its claim minted at the repo's first commit's ts, bit 0). `feed` backfilled from `commits` — one row per commit under the new epoch, `seq = commits.seq`, `batch_id = commit_id` (no checkpoint grouped them), `plan_id` NULL — and `feed_entries` from `revisions` (r_1 `created` at a.md, r_2 `changed`, r_3 `created` at gone.md, each with the revision's rendered hash) plus one `deleted` entry for gone.md under c_3 (the tombstone whose `deleted_at` is its ts); c_4 (b_4's deletion with no revision and no tombstone) has no entry; c_5 — an `api` commit with no revision whose reason is `move old.md -> a.md` — gets the one `moved` entry the backfill ever writes (resolution 12): the doc now at a.md (d_1) with its current head and hash, `from_path = old.md`. The `c` claims appear: bit 0 from the feed, bit 1 from `commits` → 3, `minted_at` the commit's ts. `commits` rebuilt with `epoch`/`batch_id` and without `checkpoint_id`, `rowid`s kept. `sync_state` gains the three status columns and the reserved row `('', '')` from the latest `checkpoints` row by ts (cp_1: `last_batch_ts`, `last_batch_id` NULL — unknowable — `last_batch_files` 3, the array's length); the attachment cursor row is untouched; `checkpoints` is dropped (its `cp_` ids get no claim).",
       "setup": [
         "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, settings TEXT NOT NULL DEFAULT '{}')",
         "CREATE TABLE docs (doc_id TEXT PRIMARY KEY, repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'markdown', current_rev TEXT, file_hash BLOB, conflicted INTEGER NOT NULL DEFAULT 0, leading_trivia TEXT NOT NULL DEFAULT '', frontmatter_trivia TEXT, deleted_commit TEXT, UNIQUE (repo_id, path))",
@@ -623,6 +751,7 @@
         "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_2','rp_1',2,'2026-10-17T10:01:00.000Z','observed')",
         "INSERT INTO commits (commit_id, repo_id, seq, ts, origin, reason) VALUES ('c_3','rp_1',3,'2026-10-17T10:02:00.000Z','observed','observed deletion')",
         "INSERT INTO commits (commit_id, repo_id, seq, ts, origin) VALUES ('c_4','rp_1',4,'2026-10-17T10:03:00.000Z','observed')",
+        "INSERT INTO commits (commit_id, repo_id, seq, ts, origin, actor, reason) VALUES ('c_5','rp_1',5,'2026-10-17T10:04:00.000Z','api','agent:test','move old.md -> a.md')",
         "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash, leading_trivia, frontmatter_trivia, deleted_commit) VALUES ('d_1','rp_1','a.md','r_2', X'06', '', X'0a', NULL)",
         "INSERT INTO docs (doc_id, repo_id, path, current_rev, file_hash, leading_trivia, frontmatter_trivia, deleted_commit) VALUES ('d_2','rp_1','gone.md','r_3', X'07', '', NULL, 'c_3')",
         "INSERT INTO blobs (hash, bytes, size) VALUES (X'aa', X'2d2d2d0a6c617965723a2064726166740a2d2d2d', 20)",
@@ -649,17 +778,27 @@
         "INSERT INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts) VALUES ('b_4','rp_1','d_1',X'dd',X'11','paragraph','c_4','2026-11-16T10:03:00.000Z')",
         "CREATE TABLE pending_materializations (repo_id TEXT NOT NULL REFERENCES repos(repo_id), path TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('write','rename','remove')), from_path TEXT, doc_id TEXT NOT NULL REFERENCES docs(doc_id), rev_id TEXT REFERENCES revisions(rev_id), rendered_hash BLOB NOT NULL, commit_id TEXT NOT NULL REFERENCES commits(commit_id), PRIMARY KEY (repo_id, path))",
         "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id) VALUES ('rp_1','a.md','write',NULL,'d_1','r_2',X'06','c_2')",
-        "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id) VALUES ('rp_1','gone.md','remove',NULL,'d_2',NULL,X'07','c_3')"
+        "INSERT INTO pending_materializations (repo_id, path, kind, from_path, doc_id, rev_id, rendered_hash, commit_id) VALUES ('rp_1','gone.md','remove',NULL,'d_2',NULL,X'07','c_3')",
+        "CREATE TABLE checkpoints (id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, ts TEXT NOT NULL, files TEXT NOT NULL, git_head TEXT)",
+        "INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES ('cp_0','rp_1','2026-10-17T10:00:00.000Z','[[\"a.md\",null,\"05\"],[\"gone.md\",null,\"07\"]]',NULL)",
+        "INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES ('cp_1','rp_1','2026-10-17T10:03:00.000Z','[[\"a.md\",\"05\",\"06\"],[\"gone.md\",\"07\",null],[\"b.md\",null,null]]','0123abcd')",
+        "CREATE TABLE sync_state (repo_id TEXT NOT NULL, source_id TEXT NOT NULL, path TEXT NOT NULL, revision TEXT, cursor TEXT, PRIMARY KEY (repo_id, source_id, path))",
+        "INSERT INTO sync_state (repo_id, source_id, path, revision, cursor) VALUES ('rp_1','src_9','','','42')"
       ],
       "user_version": 16,
       "rows": [
+        "repos",
         "docs",
         "blocks",
         "resurrection_pool",
         "id_claims",
         "revisions",
         "blobs",
-        "pending_materializations"
+        "pending_materializations",
+        "commits",
+        "feed",
+        "feed_entries",
+        "sync_state"
       ],
       "expect": {
         "user_version": 17,
@@ -698,12 +837,13 @@
           "commits": [
             "commit_id",
             "repo_id",
+            "epoch",
             "seq",
             "ts",
             "origin",
             "actor",
             "reason",
-            "checkpoint_id",
+            "batch_id",
             "ops"
           ],
           "docs": [
@@ -720,6 +860,29 @@
             "created_at",
             "updated_at",
             "deleted_at"
+          ],
+          "feed": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "commit_id",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "plan_id"
+          ],
+          "feed_entries": [
+            "repo_id",
+            "epoch",
+            "seq",
+            "doc_id",
+            "path",
+            "head",
+            "hash",
+            "kind",
+            "from_path"
           ],
           "id_claims": [
             "id",
@@ -743,7 +906,8 @@
           "repos": [
             "repo_id",
             "slug",
-            "settings"
+            "settings",
+            "epoch"
           ],
           "resurrection_pool": [
             "block_id",
@@ -767,12 +931,30 @@
             "commit_id",
             "archive"
           ],
+          "sync_state": [
+            "repo_id",
+            "source_id",
+            "path",
+            "revision",
+            "cursor",
+            "last_batch_ts",
+            "last_batch_id",
+            "last_batch_files"
+          ],
           "tree_nodes": [
             "hash",
             "entries"
           ]
         },
         "rows": {
+          "repos": [
+            {
+              "repo_id": "rp_1",
+              "slug": "vault",
+              "settings": "{}",
+              "epoch": "ep_0"
+            }
+          ],
           "docs": [
             {
               "doc_id": "d_1",
@@ -964,6 +1146,48 @@
               "prefix": "rp",
               "minted_at": "2026-10-17T10:00:00.000Z",
               "holders": 1
+            },
+            {
+              "id": "ep_0",
+              "repo_id": "rp_1",
+              "prefix": "ep",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 1
+            },
+            {
+              "id": "c_1",
+              "repo_id": "rp_1",
+              "prefix": "c",
+              "minted_at": "2026-10-17T10:00:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "c_2",
+              "repo_id": "rp_1",
+              "prefix": "c",
+              "minted_at": "2026-10-17T10:01:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "c_3",
+              "repo_id": "rp_1",
+              "prefix": "c",
+              "minted_at": "2026-10-17T10:02:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "c_4",
+              "repo_id": "rp_1",
+              "prefix": "c",
+              "minted_at": "2026-10-17T10:03:00.000Z",
+              "holders": 3
+            },
+            {
+              "id": "c_5",
+              "repo_id": "rp_1",
+              "prefix": "c",
+              "minted_at": "2026-10-17T10:04:00.000Z",
+              "holders": 3
             }
           ],
           "revisions": [
@@ -1062,6 +1286,209 @@
               "prior_hash": null,
               "commit_id": "c_3",
               "created_at": "2026-10-17T10:02:00.000Z"
+            }
+          ],
+          "commits": [
+            {
+              "commit_id": "c_1",
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 1,
+              "ts": "2026-10-17T10:00:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_1",
+              "ops": null
+            },
+            {
+              "commit_id": "c_2",
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 2,
+              "ts": "2026-10-17T10:01:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_2",
+              "ops": null
+            },
+            {
+              "commit_id": "c_3",
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 3,
+              "ts": "2026-10-17T10:02:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": "observed deletion",
+              "batch_id": "c_3",
+              "ops": null
+            },
+            {
+              "commit_id": "c_4",
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 4,
+              "ts": "2026-10-17T10:03:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_4",
+              "ops": null
+            },
+            {
+              "commit_id": "c_5",
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 5,
+              "ts": "2026-10-17T10:04:00.000Z",
+              "origin": "api",
+              "actor": "agent:test",
+              "reason": "move old.md -> a.md",
+              "batch_id": "c_5",
+              "ops": null
+            }
+          ],
+          "feed": [
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 1,
+              "commit_id": "c_1",
+              "ts": "2026-10-17T10:00:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_1",
+              "plan_id": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 2,
+              "commit_id": "c_2",
+              "ts": "2026-10-17T10:01:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_2",
+              "plan_id": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 3,
+              "commit_id": "c_3",
+              "ts": "2026-10-17T10:02:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": "observed deletion",
+              "batch_id": "c_3",
+              "plan_id": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 4,
+              "commit_id": "c_4",
+              "ts": "2026-10-17T10:03:00.000Z",
+              "origin": "observed",
+              "actor": null,
+              "reason": null,
+              "batch_id": "c_4",
+              "plan_id": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 5,
+              "commit_id": "c_5",
+              "ts": "2026-10-17T10:04:00.000Z",
+              "origin": "api",
+              "actor": "agent:test",
+              "reason": "move old.md -> a.md",
+              "batch_id": "c_5",
+              "plan_id": null
+            }
+          ],
+          "feed_entries": [
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 1,
+              "doc_id": "d_1",
+              "path": "a.md",
+              "head": "r_1",
+              "hash": "05",
+              "kind": "created",
+              "from_path": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 1,
+              "doc_id": "d_2",
+              "path": "gone.md",
+              "head": "r_3",
+              "hash": "07",
+              "kind": "created",
+              "from_path": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 2,
+              "doc_id": "d_1",
+              "path": "a.md",
+              "head": "r_2",
+              "hash": "06",
+              "kind": "changed",
+              "from_path": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 3,
+              "doc_id": "d_2",
+              "path": "gone.md",
+              "head": null,
+              "hash": null,
+              "kind": "deleted",
+              "from_path": null
+            },
+            {
+              "repo_id": "rp_1",
+              "epoch": "ep_0",
+              "seq": 5,
+              "doc_id": "d_1",
+              "path": "a.md",
+              "head": "r_2",
+              "hash": "06",
+              "kind": "moved",
+              "from_path": "old.md"
+            }
+          ],
+          "sync_state": [
+            {
+              "repo_id": "rp_1",
+              "source_id": "src_9",
+              "path": "",
+              "revision": "",
+              "cursor": "42",
+              "last_batch_ts": null,
+              "last_batch_id": null,
+              "last_batch_files": null
+            },
+            {
+              "repo_id": "rp_1",
+              "source_id": "",
+              "path": "",
+              "revision": null,
+              "cursor": null,
+              "last_batch_ts": "2026-10-17T10:03:00.000Z",
+              "last_batch_id": null,
+              "last_batch_files": 3
             }
           ]
         }

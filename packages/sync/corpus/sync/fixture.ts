@@ -14,12 +14,12 @@
 // with the step's `ts` and the case's page limit threaded through (the
 // coordinator itself passes neither), wrapped to record.
 import {
-  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, docsRead, ingestFile, NullDocStore, findDocByRef,
+  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, ExpiredCursor, docsRead, ingestFile, NullDocStore, findDocByRef, referencePath,
   applySugar, createEffects, createdDoc, deleteDocEffects,
   type ObserveResult, type ObserveDeleteResult, type SyncSource, type SourceCapabilities, type SourceEntry, type SourceItem,
 } from "@omgbase/core";
 import { Coordinator, type SyncInSummary, type SyncOutSummary } from "../../src/coordinator.js";
-import type { EngineClient, ChangesPage, DocBytes } from "../../src/engine-client.js";
+import { FeedExpired, type EngineClient, type ChangesPage, type ChangesSinceOpts, type DocBytes, type DocListing } from "../../src/engine-client.js";
 
 // ---- fixture shapes ------------------------------------------------------------
 
@@ -45,7 +45,7 @@ export type CoordinatorStep =
   | { engine: EngineStep }
   | { sync_in: { ts: string } }
   | { reconcile: { ts: string; paths: string[] } }
-  | { sync_out: { cursor?: number } };
+  | { sync_out: { cursor?: number; epoch?: string } };
 
 export const COORDINATOR_STEPS = ["source", "engine", "sync_in", "reconcile", "sync_out"] as const;
 
@@ -56,6 +56,7 @@ export interface CoordinatorProjection {
   /** the source's files after the last step, path → bytes, sorted by path */
   files: Record<string, string>;
   docs: { doc_id: string; path: string; deleted: boolean }[];
+  /** the feed rows (README §8, 4.0: read from `feed`, the core's — `commits` is the recorder's twin) */
   commits: { commit_id: string; seq: number; origin: string; actor: string | null }[];
 }
 
@@ -154,16 +155,30 @@ class RecordingEngine implements EngineClient {
     this.calls.push({ engine: "observe_delete", path });
     return Promise.resolve(observeDelete(this.store, this.repoId, path, { ts: this.ts }));
   }
-  changesSince(cursor?: number, opts?: { origin?: "api" | "observed" | "import"; limit?: number }): Promise<ChangesPage> {
+  changesSince(cursor?: number, opts?: ChangesSinceOpts): Promise<ChangesPage> {
     const limit = opts?.limit ?? this.pageLimit;
-    this.calls.push({ engine: "changes_since", cursor: cursor ?? 0, ...(limit !== undefined ? { limit } : {}) });
-    return Promise.resolve(
-      changesSince(this.store, this.repoId, {
-        ...(cursor !== undefined ? { cursor } : {}),
-        ...(opts?.origin ? { origin: opts.origin } : {}),
-        ...(limit !== undefined ? { limit } : {}),
-      }),
-    );
+    // The call is recorded with the cursor's epoch when the coordinator sent one (4.0: a cursor is `(epoch, seq)`).
+    this.calls.push({ engine: "changes_since", cursor: cursor ?? 0, ...(opts?.epoch !== undefined ? { epoch: opts.epoch } : {}), ...(limit !== undefined ? { limit } : {}) });
+    try {
+      return Promise.resolve(
+        changesSince(this.store, this.repoId, {
+          ...(cursor !== undefined ? { cursor } : {}),
+          ...(opts?.epoch !== undefined ? { epoch: opts.epoch } : {}),
+          ...(opts?.origin ? { origin: opts.origin } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        }),
+      );
+    } catch (e) {
+      if (e instanceof ExpiredCursor) return Promise.reject(new FeedExpired(e.epoch, e.oldest, e.head, e.message));
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)));
+    }
+  }
+  listDocs(): Promise<DocListing[]> {
+    this.calls.push({ engine: "list_docs" });
+    const rows = this.store.db
+      .prepare("SELECT doc_id, path, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL ORDER BY path")
+      .all(this.repoId) as { doc_id: string; path: string; file_hash: Buffer | null }[];
+    return Promise.resolve(rows.map((r) => ({ _id: r.doc_id, _path: referencePath(r.path), _hash: r.file_hash ? r.file_hash.toString("hex") : null })));
   }
   readDoc(path: string): Promise<DocBytes | null> {
     this.calls.push({ engine: "read_doc", path });
@@ -187,7 +202,7 @@ function inSummary(s: SyncInSummary, calls: Call[]): Record<string, unknown> {
 }
 
 function outSummary(s: SyncOutSummary, calls: Call[]): Record<string, unknown> {
-  return { cursor: s.cursor, written: s.written, removed: s.removed, calls };
+  return { cursor: s.cursor, epoch: s.epoch, written: s.written, removed: s.removed, ...(s.rescanned ? { rescanned: true } : {}), calls };
 }
 
 /**
@@ -223,14 +238,15 @@ export async function runCoordinatorCase(c: Omit<CoordinatorCase, "expect">): Pr
         engine.ts = step.reconcile.ts;
         steps.push(inSummary(await coord.reconcile(step.reconcile.paths), [...calls]));
       } else {
-        const s = await coord.syncOut(step.sync_out.cursor);
+        const s = await coord.syncOut(step.sync_out.cursor, step.sync_out.epoch);
         steps.push(outSummary(s, [...calls]));
       }
     }
     const docs = (store.db.prepare("SELECT doc_id, path, deleted_at FROM docs WHERE repo_id = ? ORDER BY path").all(repoId) as { doc_id: string; path: string; deleted_at: string | null }[]).map(
       (d) => ({ doc_id: d.doc_id, path: d.path, deleted: d.deleted_at !== null }),
     );
-    const commits = store.db.prepare("SELECT commit_id, seq, origin, actor FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as CoordinatorProjection["commits"];
+    // 4.0: the projection reads the feed (the core's); the recorder's `commits` is its twin.
+    const commits = store.db.prepare("SELECT commit_id, seq, origin, actor FROM feed WHERE repo_id = ? ORDER BY seq").all(repoId) as CoordinatorProjection["commits"];
     return { expect: { steps, files: source.snapshot(), docs, commits } };
   } finally {
     store.close();
@@ -325,8 +341,9 @@ export function validateCoordinatorCase(at: string, c: Record<string, unknown>, 
           if (!Array.isArray(body.paths) || !body.paths.every((p) => typeof p === "string")) problems.push(`${here}: \`paths\` must be a string array`);
           break;
         case "sync_out":
-          onlyKeys(body, ["cursor"], here, problems);
+          onlyKeys(body, ["cursor", "epoch"], here, problems);
           if (body.cursor !== undefined && typeof body.cursor !== "number") problems.push(`${here}: \`cursor\` must be a number`);
+          if (body.epoch !== undefined && typeof body.epoch !== "string") problems.push(`${here}: \`epoch\` must be a string`);
           break;
       }
     });

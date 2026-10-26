@@ -142,9 +142,11 @@ base32 (`0123456789abcdefghjkmnpqrstvwxyz`, no `i l o u`) from a CSPRNG.
 Prefixes: `d` document, `b` block, `c` commit, `r` revision — since 17.0
 the **head token** the core mints on every change to a document (§5.4 step
 6, D1), which the recorder's `revisions.rev_id` equals while capture is on
-— `x` external node, `col` collection, `cp` checkpoint, `e` edge, `rp` repo,
-`v` projection (reserved), `src` source, `s` archive segment (15.0, §7
-"Retention"). Ids are repo-scoped, never reused, never re-assigned. An id is opaque: nothing may parse anything but its prefix out
+— `x` external node, `col` collection (reserved, no table), `e` edge, `rp`
+repo, `v` projection (reserved), `src` source, `s` archive segment (15.0, §7
+"Retention"), `ep` the repository **epoch** (17.0, §3.1 `repos`, §7.4 — the
+feed's `seq` is dense within it). `cp` (checkpoint) is retired with the
+`checkpoints` table (17.0, D4): nothing mints it. Ids are repo-scoped, never reused, never re-assigned. An id is opaque: nothing may parse anything but its prefix out
 of it, and `isValidId` accepts exactly `^[a-z]+_[alphabet]{7}$`.
 
 **Uniqueness at mint (13.5; 17.0 over `id_claims`).** 32⁷ ≈ 3.4 × 10¹⁰ is
@@ -158,19 +160,20 @@ that is not. Since 17.0 (`docs/modular-core/` Phase 3b — M3, D5) the claim
 is a row of **`id_claims`** (§3.1): `(id, repo_id, prefix, minted_at,
 holders)`, one per id the core has minted. **Every core mint writes its
 claim in the transaction that writes the row carrying the id, before that
-row** — `d` with the doc row (§5.4 step 2), `r` with the head (step 6), `b`
-with the block rows (step 9: an id that was neither a live row of the
-document, nor pooled, nor evicted from another document is new), `x` and
-`e` with the graph rows (step 9c), `rp` and `src` with the registry rows
-(`minted_at` the clock there; a source is workspace-scoped, so its
-`repo_id` is NULL) — with `minted_at = ts` and `holders = 1`. A mint whose
+row** — `d` with the doc row (§5.4 step 2), `c` with the feed row (step 5),
+`r` with the head (step 6), `b` with the block rows (step 9: an id that was
+neither a live row of the document, nor pooled, nor evicted from another
+document is new), `x` and `e` with the graph rows (step 9c), `rp`, `ep` and
+`src` with the registry rows (`minted_at` the clock there; a source is
+workspace-scoped, so its `repo_id` is NULL) — with `minted_at = ts` and
+`holders = 1`. A mint whose
 transaction rolls back leaves no claim (the id is simply never used); the
 claim is written **after** the minter yielded, so the fixture minter's
 sequence (§2.2) is exactly what it was. `holders` is a bitmask: **bit 0
 (`1`) the core**, set at mint and released only by the claims prune (§7.3);
 **bit 1 (`2`) the recorder**, set when the capture first writes a row
 naming the id — its `revisions` row names the head and the document, its
-`block_changes` rows the blocks — and released only by `history purge`
+`block_changes` rows the blocks, its `commits` row the commit — and released only by `history purge`
 (Phase 3e), never by the squash. A row leaves `id_claims` only when no
 holder remains. **An id whose rows are gone stays in use as long as any
 holder keeps its claim**: this replaces the `blocks ∪ block_changes ∪
@@ -178,11 +181,12 @@ resurrection_pool` probe of 13.5–16.x and the squash's
 keep-the-earliest-`block_changes`-row rule (15.0), so `block_changes` is a
 pure projection again (§7.1). The probe is **one statement** for every
 core-minted prefix — `SELECT 1 FROM id_claims WHERE id = ?` — for `d`, `b`,
-`r`, `x`, `e`, `rp`, `src`. Three prefixes are still claimed by the row
-they land in, probed in its table: `c` in `commits` and `s` in `archives`
-(the recorder mints them — the commit row is the change feed's cursor
-through Phase 3d, the segment row the export's — and its rows are its own
-evidence), `cp` in `checkpoints` (retired with D4, Phase 3e). `col` and `v`
+`c` (17.0, slice 3d: the core mints the commit id with the feed row, §5.4
+step 5, and claims it there; the recorder's `commits` row sets bit 1), `r`,
+`x`, `e`, `rp`, `src` and `ep` (the epoch, claimed with the repo row at the
+clock). One prefix is still claimed by the row it lands in, probed in its
+table: `s` in `archives` (the recorder mints it for the export; its row is
+its own evidence). `cp` is retired (D4: `checkpoints` is gone). `col` and `v`
 have no table and no check. A redraw is unobservable except through the
 fixture device of §9.4 (`"minter": "repeat"`). The fixture minter itself
 (§2.2) is sequential over a fresh database and never collides; the check
@@ -245,32 +249,37 @@ The tables of `schema.sql` this spec fills:
 
 | Table | One row per | Meaning |
 | --- | --- | --- |
-| `repos` | repository | `repo_id`, unique `slug`, `settings` JSON (defaults `{}`). A repo owns identity and history, not a filesystem; where its bytes come from is the sync registry's business. |
+| `repos` | repository | `repo_id`, unique `slug`, `settings` JSON (defaults `{}`), **`epoch`** (17.0, D7 — a minted `ep_` id, claimed with the row (§2.1): the feed's `seq` is dense **within an epoch**, a cursor is the pair `(epoch, seq)`, and a cursor from another epoch is expired (`spec/surface` §3). Minted at `ensure_repo`; a **restore** or a **rebuild-from-files** re-mints it and starts the feed over (§7.4) — neither path exists in the reference yet). A repo owns identity and history, not a filesystem; where its bytes come from is the sync registry's business. |
 | `docs` | path ever seen in a repo | `doc_id`; `path` (repo-relative, no leading slash, unique per repo); `format`; **`head`** (17.0, D1 — the head token: an `r_` id the core mints on every change to the document — content, structure, path or liveness, §5.4 step 6; `NULL` only before a new row's first commit, never for a live doc; equal to the recorder's `revisions.rev_id` while capture is on; `current_rev` through 16.x); `file_hash` (of the bytes the head renders to — §5.4 step 12); `conflicted` (0/1, git conflict markers seen); `leading_trivia` (bytes before the first block); **`frontmatter_raw`** (17.0, D10/M1 — the frontmatter block's raw, fences included, `NULL` when the document has none: the current value, never a delta — through 16.x the current frontmatter lived only in the head revision's `frontmatter_blob`); `frontmatter_trivia` (the frontmatter block's trailing trivia, `NULL` when the document has no frontmatter); **`created_at`** (17.0, D6 — the identity's birth: the first commit's `ts`; survives tombstone and revival); **`updated_at`** (the `ts` of the commit that last minted the head — content, structure, path or liveness: a move and a tombstone count); **`deleted_at`** (the tombstone's `ts`, `NULL` = live; `deleted_commit` through 16.x). A path keeps its `doc_id` across deletion and re-creation (§5.6). |
 | `blocks` | live or tombstoned block of the **current** head | The hot table: `block_id`, `doc_id`, `parent_block` (`NULL` at top level), `order_key` (§4.3), `ordinal`, `depth`, `ancestor_path` (§4.3), `type`, `attrs` JSON, `text` (visible text, `spec/format` §4.1), **`raw`** (17.0, D10 — the block's raw source, inline; through 16.x only `blobs` held it), `raw_hash` (= `sha256(raw)`: the CAS and dedup key), `norm_hash`, **`trivia`** (the trailing trivia, `NULL` = none), `trivia_hash` (= `sha256(trivia)`, `NULL` when `trivia` is), **`created_at`** (17.0, D6 — the identity's birth, carried: the previous live row's for a carried block, the pool row's for a resurrected one, the evicted row's for a cross-document move, the commit's `ts` for an inserted or lineage-minted one — §5.4 step 9), **`updated_at`** (the block's own last change: the commit's `ts` unless the block's verdict is `same`, 14.2's rule), **`deleted_at`** (the tombstone's `ts`, `NULL` = live). `created_commit`/`deleted_commit` are gone (M2). Rebuilt wholesale by every commit to the document (§5.4); a tombstoned document keeps its rows with `deleted_at` set (D2, step one — Phase 4 stops writing them). |
 | `blobs` | distinct byte string | **The recorder's** (17.0, D10): content-addressed, `hash = sha256(bytes)`, `size = |bytes|`. Holds every block `raw`, every non-empty trivia, every frontmatter block — and, since 16.0, every **frontmatter delta** (§4.1 "Delta nodes": a `{"f":…}` text a revision's `frontmatter_blob` may name instead of the raw). Written only by the capture (§5.4 step 15), read only by the history reads (§6.2) — no current read touches it; with legacy capture on the head's bytes are therefore stored twice, on the rows and here. Never deleted except by the §7 sweep. |
 | `tree_nodes` | distinct sibling list, full or delta | Content-addressed Merkle node: `hash = sha256(entries)`, `entries` the canonical serialization §4.1 — a `[`-form full list, or (16.0) a `{"d":…}` **delta** over the same list of the document's previous revision. Identical subtrees share a row; identical deltas do too. |
 | `revisions` | (document, commit) | `rev_id`, `doc_id`, per-document `seq` from 1, `root_tree` (a `tree_nodes.hash` — a full or a delta node), `frontmatter_blob` (a `blobs.hash` — the raw or a delta — or `NULL`), `rendered_hash`, `path` at this revision, `commit_id`, `archive` (15.0: `NULL` for a live revision; the `segment_id` of the archive segment holding its bodies once the retention squash moved them — then `root_tree` and `frontmatter_blob` are `NULL` too, §7 "Retention"; the row itself never leaves). Since 15.0 the two body columns are nullable and carry no foreign key. A `{`-form body is meaningful only in this row's context (`doc_id`, `seq`): §6 resolves it against revision `seq − 1`. |
 | `archives` | archive segment the repo knows (15.0) | The registry `history list` reads: `segment_id` (a minted `s_` id, the segment's manifest id), `repo_id`, `path` (the file as recorded; `attach` re-records it), `seq_lo`/`seq_hi` (the `commits.seq` span of the segment's commits), `created_at`, `revision_count`, `bytes` (the file's size when recorded). Written by the squash transaction and by `attach`, deleted by `detach`; a revision's `archive` column may name a segment this table no longer carries (detached). |
-| `commits` | write to the repo | `commit_id`, per-repo `seq` from 1 (the change-feed cursor), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `checkpoint_id`, `ops`. Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
+| `feed` | commit to the repo, within retention (17.0, D7/M5) | **The core's change feed** — the delivery record `changes_since` pages (`spec/surface` §3) and the sync base rests on (`spec/sync` §6): `repo_id`, `epoch` (the repo's), `seq` (dense from 1 per `(repo, epoch)`), `commit_id` (the minted `c`, UNIQUE — the recorder's `commits.commit_id` is the same id), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `batch_id` (D4: the `commit_id` of the **first committing member of the same observed batch**, so a batch of one and every `api` commit have `batch_id = commit_id`), `plan_id` (the admitted plan's digest, 64 hex, for an effect-driven `api` commit — so a Receipt correlates with the documents it touched when history is off; NULL otherwise). Written by the core in the commit transaction (§5.4 step 5, §5.6 step 1); pruned by its own retention (§7.4) — "the feed is catch-up, a rescan is recovery, the log is history". Index `idx_feed_ts (repo_id, ts)` for the day floor. |
+| `feed_entries` | document touched by a feed row (17.0) | `repo_id`, `epoch`, `seq` (the feed row's), `doc_id`, `path` (as of the commit), `head` (the token minted — NULL for `deleted`), `hash` (`docs.file_hash` after the commit — NULL for `deleted`), `kind ∈ {created, changed, deleted, moved}` (`created`: the doc row was inserted or revived; `moved`: the path changed, with or without a content change — D11; `deleted`: a tombstone; `changed`: everything else that minted a head), `from_path` (`moved` only). PK `(repo_id, epoch, seq, doc_id)`; leaves with its feed row. |
+| `commits` | captured commit (**the recorder's**, 17.0) | `commit_id` (= the feed row's), `repo_id`, `epoch`, `seq` (= the feed row's — the two agree on every retained `seq`, H4), `ts`, `origin ∈ {api, observed, import, projection}`, `actor`, `reason`, `batch_id` (= the feed row's), `ops` (the ADR-003 intent record of an effect-driven `api` commit, M5 — the recorder's alone). Written by the recorder inside the commit transaction under the id the core minted (§5.4 step 15); never pruned (the log is history; `history purge` is Phase 3e's). `UNIQUE (repo_id, epoch, seq)`; `checkpoint_id` is gone (D4/D9). Observations write `observed` (§5); the mutation kernel writes `api`; `import` is bulk ingest with no retro history; `projection` is reserved. |
 | `dispositions` | (commit, block, kind) | The matcher's decisions as persisted: `kind` (the `spec/reconcile` §2 kinds), `confidence`, `reason`, `matcher_v`, `detail` JSON. Immutable once committed (R6). `INSERT OR IGNORE` on the primary key (§10). |
 | `id_claims` | id the core has minted (17.0, M3/D5) | §2.1: `id` (the primary key), `repo_id` (`NULL` for a workspace-scoped `src`), `prefix`, `minted_at` (the minting commit's `ts`; the clock for `rp`/`src`), `holders` (the bitmask: bit 0 the core, bit 1 the recorder). Written by the core with the row that carries the id, held by the recorder's capture, probed by every mint; a row leaves only when no holder remains — the claims prune (§7.3) releases the core's hold, `history purge` (Phase 3e) the recorder's. Index `idx_claims_repo_prefix (repo_id, prefix, minted_at)` for the prune and the size line. |
 | `resurrection_pool` | block deleted in an earlier commit | `block_id`, `doc_id` it left, `raw_hash`, `norm_hash`, `type`, **`created_at`** (17.0, D6 — carried from the deleted row so a resurrection restores the block's birth), **`deleted_at`** (17.0 — the deleting commit's `ts`; `deleted_commit` through 16.x), `expires_ts` (= `deleted_at + 30 days`, I6 — anchored on the row's own timestamp, so the pool depends on no history table). Feeds `spec/reconcile` phase 6b; rows leave when consumed, evicted or swept; a pooled id keeps its claim (§2.1) whatever happens to the row. |
 | `pending_materializations` | file the `api` path still owes the disk (14.0; self-contained since 17.0 — M4) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, **`head`** (17.0 — the document's head token whose bytes `write`/`rename` leave at `path`, always its CURRENT head (C8); `NULL` for `remove`; no foreign key — `rev_id → revisions` through 16.x), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), **`prior_hash`** (17.0 — the bytes the engine itself last wrote at `path`: the `file_hash` the commit validated the file against, captured at commit time, or inherited from the row it superseded; `NULL` when the engine never wrote there — a created document, a `remove`), `commit_id` (the `api` commit that recorded it; no foreign key since 17.0 — `commits` is the recorder's), **`created_at`** (17.0 — that commit's `ts`). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7); the replay reads only this row and the document's current rows. Empty at quiescence; the observe path never inserts; no cap — a row lives until its path is settled. |
-| `external_nodes`, `collections`, `checkpoints`, `properties`, `edges`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties`, `edges` and `checkpoints` are written by the reference during the same commit transaction; a runner does not compare them. |
+| `external_nodes`, `collections`, `properties`, `edges`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties` and `edges` are written by the reference during the same commit transaction; a runner does not compare them. `sync_state` (17.0, D4) carries, beside the per-attachment rows, one reserved **status row** per repository — `(repo_id, '', '')` with `last_batch_ts`, `last_batch_id`, `last_batch_files` — written by every observed batch together with the pool sweep (`spec/sync` §4.1); the `checkpoints` table it replaces is gone. |
 
 **Which tables are the recorder's (17.0).** `blobs`, `tree_nodes`,
 `revisions`, `commits`, `dispositions`, `block_changes` and `archives` are the
 **capture**: written by the recorder inside the commit transaction (§5.4
-step 15, §5.6 step 1 — `commits` is still minted by the core through Phase
-3d, since it is the change feed's cursor), read by the history reads (§6.2,
-`docs_history`, `changes_since`, `blocks_history`) and by the invariants
-that check they agree with the head (§8 H1–H5). The current state — `docs`,
-`blocks`, `id_claims`, `resurrection_pool`, `pending_materializations`,
-`sections`, the graph, properties and search tables, the sync registry — is
-read and written by the core and depends on none of them (the recorder
-touches `id_claims` in one way: it sets bit 1 on the claims its capture
-names, §2.1). The three-file split of
+step 15, §5.6 step 4 — since slice 3d the core mints the commit id and
+writes the **feed** row, and hands the recorder its `commits` row with the
+same id, epoch and seq), read by the history reads (§6.2, `docs_history`,
+`blocks_history`; the disposition counts a `changes_since` summary appends
+when the recorder holds the commit) and by the invariants that check they
+agree with the head (§8 H1–H5). The current state — `docs`, `blocks`,
+`feed`, `feed_entries`, `id_claims`, `resurrection_pool`,
+`pending_materializations`, `sections`, the graph, properties and search
+tables, the sync registry — is read and written by the core and depends on
+none of them: `changes_since` reads `feed`/`feed_entries` and never
+`commits`/`revisions` (the recorder touches `id_claims` in one way: it sets
+bit 1 on the claims its capture names, §2.1). The three-file split of
 `schema.sql` into core / history / semantic bundles (`docs/modular-core/
 phase-1-contracts.md` §1.4) lands with the manifest (Phase 3e); through
 then one `schema.sql` creates every table.
@@ -335,7 +344,7 @@ step idempotent (it inspects before it alters), each in a transaction:
 | 13 | if `repos.root_path` exists: ensure the `fs` adapter row (`INSERT OR IGNORE … ('fs', 'omgbase-fs-adapter', '[]')`, even when there are no repos); for each repo with a non-empty `root_path`, find or create a source named `<slug>-fs` (`source_id` minted with prefix `src`, `adapter = 'fs'`, `config = {"root": <root_path>}`, `env = '{}'`) and `INSERT OR IGNORE` the attachment; then `ALTER TABLE repos DROP COLUMN root_path` |
 | 14 | create `pending_materializations` (§5.7) |
 | 15 | if `revisions` exists without an `archive` column: rebuild it — with `foreign_keys = OFF` for the duration (`pending_materializations.rev_id` references it, and the DROP would otherwise be an implicit DELETE under the FK), `CREATE TABLE revisions_v15` with `schema.sql`'s 15.0 columns (`root_tree`/`frontmatter_blob` nullable, no foreign keys on them, `archive TEXT`), copy every row with `archive = NULL`, `DROP TABLE revisions`, `ALTER TABLE revisions_v15 RENAME TO revisions`, `PRAGMA foreign_key_check` must be empty; then create `archives` (§7 "Retention"). Rows keep their `rowid` order; nothing else moves |
-| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). (5) **`pending_materializations`** (3c — M4) rebuilt self-contained, `rowid`s kept: `head` = the row's `rev_id` (the same `r_` token — the head IS the revision id the core minted), `prior_hash` = the `rendered_hash` of the revision before `rev_id` (`seq − 1` of the same document) **resolved once** from the 16.x `revisions` — `NULL` for a `remove` row, a first revision or an unknown one, `created_at` = the `ts` of `commit_id`'s commit (the migration's clock when the commit is gone); `rev_id` and both foreign keys (`revisions`, `commits`) dropped. The history tables are read for the backfill and not touched. A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`, which also carries a `write` and a `remove` pending row). (A database a pre-3b or pre-3c 17.0 build already moved to 17 — `docs` present, `id_claims` absent, or `pending_materializations.rev_id` present — runs the missing halves on open; 17.0 is unreleased and each half is idempotent, so no version is spent on those states.) |
+| 17 | **the head and its bytes on the current rows** (17.0; `docs/modular-core/` Phase 3a — M1, M2, D10, D6). In one transaction with `foreign_keys = OFF` for its duration and `PRAGMA foreign_key_check` empty at its end, three table rebuilds (`<table>_v17`, copy, drop, rename — SQLite cannot rename a column a partial index names nor add a `NOT NULL` column without a default), each copying `rowid` (`blocks_fts` is an external-content index keyed by `blocks.rowid`): (1) **`docs`** — `head = current_rev`; `frontmatter_raw` = the live head's frontmatter **resolved once** through the 16.x delta chain (§6.1 "Resolving" of 16.0; the recorder's `frontmatterAtRevision`), `NULL` without one; `created_at` = the `ts` of the commit of the doc's `seq = 1` revision; `updated_at` = the `ts` of `current_rev`'s commit (a doc with no revision: the migration's clock for both); `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `current_rev` and `deleted_commit` dropped. (2) **`blocks`** — `raw` = `blobs.bytes` of `raw_hash`, `trivia` = `blobs.bytes` of `trivia_hash` (`NULL` when `NULL`) — a hash with no `blobs` row (impossible under I5; checked) **aborts the migration**; `created_at` = `MIN(commits.ts)` over the block's `block_changes`, falling back to the `ts` of `created_commit`'s commit; `updated_at` = `MAX(commits.ts)` over them, same fallback; `deleted_at` = the `ts` of `deleted_commit`'s commit, else `NULL`; `created_commit`/`deleted_commit` dropped; `idx_blocks_doc`/`idx_blocks_type` re-created over `deleted_at IS NULL`. (3) **`resurrection_pool`** — `deleted_at` = the `ts` of `deleted_commit`'s commit (else `expires_ts − 30 days`, which I6 made the same value); `created_at` = `MIN(commits.ts)` over the block's `block_changes`, else `deleted_at`; `deleted_commit` dropped. (4) **`id_claims`** (3b — M3/D5) created and **backfilled** with one row per distinct id the current rows and the history still name — `d` from `docs` (`minted_at = created_at`), `b` from `blocks` and `resurrection_pool` (their `created_at`) and from `block_changes`/`dispositions` (`MIN(commits.ts)` over the rows naming it, the migration's clock when the commit is gone), `r` from `docs.head` (`minted_at = updated_at`) and `revisions` (the commit's `ts`), `x` from `external_nodes` (the earliest `edges.from_commit` naming it, else the clock), `e` from `edges` (its `from_commit`'s `ts`), `rp` from `repos` (the repo's first commit's `ts`, else the clock), `src` from `sources` (the clock, `repo_id` NULL); `holders` = bit 0 for every id a core row names (`docs`, `blocks`, `resurrection_pool`, `docs.head`, `external_nodes`, `edges`, `repos`, `sources`) plus bit 1 for every id a history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`, `dispositions.block_id`); a source the pre-state lacks contributes nothing (the fixture pre-states are partial). So a live block's `b` is `3`, a block known only to `block_changes` `2`, a tombstoned block's with no history row `1`, an old revision's `r` `2`, a head's `3`, a repo's `rp` `1`. `c`/`s`/`cp` get no claim (§2.1). (5) **`pending_materializations`** (3c — M4) rebuilt self-contained, `rowid`s kept: `head` = the row's `rev_id` (the same `r_` token — the head IS the revision id the core minted), `prior_hash` = the `rendered_hash` of the revision before `rev_id` (`seq − 1` of the same document) **resolved once** from the 16.x `revisions` — `NULL` for a `remove` row, a first revision or an unknown one, `created_at` = the `ts` of `commit_id`'s commit (the migration's clock when the commit is gone); `rev_id` and both foreign keys (`revisions`, `commits`) dropped. (6) **`repos`** (3d — D7) rebuilt with **`epoch`**: one `ep` minted per repository in `rowid` order (the fixture minter: `ep_0`, …), its claim at the repo's first commit's `ts` (the epoch is as old as the feed it scopes), else the migration's clock, `holders = 1`. (7) **`feed` + `feed_entries`** created and **backfilled** from the 16.x `commits` and `revisions` (resolution 12 — what the rows say, no path reconstruction): one feed row per `commits` row `(epoch = the new one, seq = commits.seq, commit_id, ts, origin, actor, reason, batch_id = commit_id — no checkpoint grouped them, plan_id = NULL)`; entries from `revisions` joined on `commit_id` in `rowid` order `(doc_id, path = revisions.path, head = rev_id, hash = rendered_hash, kind = created when revisions.seq = 1 else changed)`; one `deleted` entry `(doc_id, path = docs.path, head NULL, hash NULL)` per `docs` row whose `deleted_at` is the commit's `ts` (a revived document's earlier deletion leaves none — its tombstone is gone); a commit with **no entry so far** whose `reason` parses as `move <from> -> <to>` (a 16.x `retarget_inbound: false` move) gets one `moved` entry for the document now at `<to>` — its current `head` and `file_hash`, `from_path = <from>` — and none when no live document is at `<to>`. Then the feed prune under the defaults at the migration's clock (§7.4 — a 1,778-commit corpus keeps every row); the `c` claims: bit 0 for every commit the feed holds (`minted_at` the commit's `ts`), bit 1 for every `commits` row. (8) **`commits`** rebuilt as the recorder's row — `epoch` (the repo's new one), `batch_id = commit_id`, `checkpoint_id` dropped, `UNIQUE (repo_id, epoch, seq)` — `rowid`s kept. (9) **`sync_state`** gains `last_batch_ts`, `last_batch_id`, `last_batch_files`; per repository the reserved status row `('', '')` is inserted from the latest `checkpoints` row by `ts` (`last_batch_ts` its `ts`, `last_batch_id` NULL — the batch id is unknowable — `last_batch_files` the `files` array's length; no row when the repository had no checkpoint); then **`checkpoints` is dropped** (its `cp_` ids get no claim — the prefix is retired). The history tables are read for the backfill and not touched. A 16.x reader of a 17.0 database would find no `current_rev`/`deleted_commit` column (`migrations::v16-to-v17-heads-inline-bytes-time`, which also carries a `write` and a `remove` pending row, two checkpoints, an attachment cursor row and a `move old.md -> a.md` commit with no revision — the one `moved` entry the backfill writes). (A database a pre-3b, pre-3c or pre-3d 17.0 build already moved to 17 — `docs` present, `id_claims` absent, `pending_materializations.rev_id` present, or `feed` absent / `checkpoints` present / `commits.checkpoint_id` present — runs the missing parts on open; 17.0 is unreleased and each part is idempotent, so no version is spent on those states.) |
 | 16 | **nothing** — no DDL, no data pass. Every node a 15.x store holds is a `[`-form list and every frontmatter blob a raw: exactly the 16.0 **checkpoint forms** (§4.4), so every existing revision is a checkpoint and the store is already a valid 16.0 database; deltas appear with the next commit to each document (§4.4 decides per revision). The step only lets the opener move `user_version`. Compare the per-key-parts branch `2f7b286`, whose migration had to split every frontmatter blob in a verified full pass: there the old encoding was *not* a valid new one; here it is, by construction (§10 Decisions, 16.0) |
 
 The "create" steps execute the same sub-DDL text that `schema.sql` contains
@@ -674,11 +683,22 @@ prepared result):
    id); every key is assigned, so nothing mints here.
 4. **(struck, 17.0)** — the Merkle tree is the recorder's (step 15; 16.0's
    step 4 verbatim, run against the recorder's own base tree).
-5. **Commit row.** **Mint `c`**; `seq = 1 + max(seq)` over the repo's
-   commits (0 when none); insert `(commit_id, repo_id, seq, ts, origin =
-   'observed', actor = NULL, reason = NULL, checkpoint_id = NULL, ops =
-   NULL)`. (Still the core's through Phase 3d, when the feed replaces it as
-   the change cursor — `docs/modular-core/phase-1-contracts.md` §1.11.)
+5. **Feed row (17.0, slice 3d — D7/M5).** **Mint `c`**, **claim it** (`c`,
+   `minted_at = ts`, §2.1); `seq = 1 + max(seq)` over the repo's `feed`
+   rows of the current `epoch` (0 when none); insert `(repo_id, epoch,
+   seq, commit_id, ts, origin = 'observed', actor = NULL, reason = NULL,
+   batch_id, plan_id = NULL)` — `batch_id` = this batch's first committing
+   member's `commit_id` (this one, when it is the first; an echo commits
+   nothing and names none). Hand the recorder its `commits` row — the same
+   `commit_id`, `epoch`, `seq`, `ts`, `origin`, `actor`, `reason`,
+   `batch_id`, `ops = NULL` — which sets bit 1 on the commit's claim (part
+   of step 15's capture; skipped when the store runs without the recorder).
+   Then enforce the cap (§7.4: a feed never exceeds `feed.max_entries + 1`
+   rows). **The entry**, written after step 6 mints the token, inside the
+   same transaction: `(repo_id, epoch, seq, doc_id, path, head = step 6's
+   token, hash = sha256(source), kind, from_path = NULL)` — `kind` is
+   `created` when step 2 inserted or revived the row, else `changed`
+   (`moved` is the api path's, below).
 6. **Head token (17.0, D1).** **Mint `r`** — the document's new `head`,
    minted by the core at exactly the point the recorder's revision row was
    minted through 16.x (so the mint order and every fixture id hold), and
@@ -783,14 +803,22 @@ describes what the matcher saw; the tables describe what changed (step
 10) — so an implementation counts the in-memory result, never the rows
 (14.2; through 14.1 the two were the same list).
 
-**The api path (13.7).** `spec/mutate` §4 step 5(c) runs this procedure for
+**The api path (13.7; the feed row 17.0).** `spec/mutate` §4 step 5(c) runs this procedure for
 every document of a changeset inside **one transaction**: step 5 runs once,
 before the first document, with `origin = 'api'`, the request's `actor` and
-`reason`, `checkpoint_id = NULL`, `ops = NULL`; every document's step 15
-names that commit (so N revisions and every `dispositions.commit_id`,
+`reason`, `batch_id = commit_id`, `plan_id` = the admitted plan's digest
+for an effect-driven request (`spec/mutate` §11.5; NULL otherwise) — and
+the recorder's row with `ops` = the intent record of that plan (NULL
+otherwise); every document's step 15 names that commit (so N revisions and every `dispositions.commit_id`,
 `properties.created_commit` and edge `from_commit`/`to_commit` of the
 request share one `commit_id`, and every document's `updated_at` is its
-`ts`); steps 1–3, 6–9 and 11–13 run per document in load order with the
+`ts`), and every document writes its **feed entry** under that row —
+`created`/`changed` as step 5 says, **`moved`** with `from_path` for a
+document the request moved (`docs_move`: the `move_path` effect writes the
+entry with the head it mints; a moved document the same request also
+rewrites gets its one entry from its ingest, `moved`, since it was loaded
+under the old path — `spec/mutate` §6), **`deleted`** (`head` and `hash`
+NULL) for a document it tombstoned (`docs_delete`); steps 1–3, 6–9 and 11–13 run per document in load order with the
 known-id resolver, step 15 per document; step 8
 is unchanged (in one transaction the eviction and the pool insert of a
 cross-document move run in load order, so only their visibility changes —
@@ -861,8 +889,11 @@ For a live doc whose path is gone, in one transaction (13.6; through 13.5
 the reference ran bare autocommit statements, so a failure mid-way could
 leave a pooled, half-tombstoned doc):
 
-1. **Mint `c`**; insert a commit `(seq, ts, origin = 'observed', actor =
-   NULL, reason = 'observed deletion')`.
+1. **Mint `c`** and claim it; insert the **feed row** `(epoch, seq, commit_id,
+   ts, origin = 'observed', actor = NULL, reason = 'observed deletion',
+   batch_id)` as step 5 does, and one **entry** `(doc_id, path, head = NULL,
+   hash = NULL, kind = 'deleted')`; the recorder's `commits` row under the
+   same id (17.0, slice 3d).
 2. `INSERT OR REPLACE` every live block of the doc into `resurrection_pool`
    with `created_at` = the row's, `deleted_at = ts`, `expires_ts = ts + 30
    days`. No claim moves (§2.1).
@@ -872,6 +903,9 @@ leave a pooled, half-tombstoned doc):
    ts` — **`head` is kept** (the token of the last rendered state; a CAS
    against it fails on liveness, `spec/mutate` §4) and **no head is minted**
    (D11: a delete is no revision).
+
+4. Capture (step 15) receives the transition with `kind = 'deleted'`: the
+   recorder writes the commit and no revision (D11: a delete mints none).
 
 No revision, no dispositions. The doc's `sections` rows are left in place
 (§10). The blocks are pooled because a vanished file
@@ -1106,8 +1140,10 @@ question of the recorder's revisions. It is mark-and-sweep from every
 `child_tree_hash_hex`) and every non-NULL `frontmatter_blob`: reachable tree
 nodes and blobs (raw, trivia, frontmatter) are kept, the rest deleted —
 nothing in the current rows roots a blob, and nothing a `blocks` row holds
-can be swept. The one collection the core owns is the **claims prune**
-(§7.3), which the same `gc` runs. **The mark is explicit
+can be swept. The two collections the core owns are the **feed prune**
+(§7.4) and the **claims prune** (§7.3), which the same `gc` runs — the
+feed first, so a commit id whose last feed row went this run can be
+released by the same run once its window has passed. **The mark is explicit
 (16.0):** a node marks the objects its own text names — every entry of a
 `[`-node, the `+`/`~` entries of a `{`-node (their raw and trivia blobs,
 and their child hashes, walked the same way) — and never resolves a delta.
@@ -1357,9 +1393,10 @@ open connection:
   `pending_materializations`, `archives` (15.0);
   **search** — the derived indexes: `blocks_fts`, `nodes_fts`,
   `embeddings`, `doc_embeddings`; **sync** — the workspace bookkeeping:
-  `repos`, `sources`, `adapters`, `attachments`, `checkpoints`,
-  `file_stats`, `sync_state`, `workspace_settings`, and *anything this
-  spec does not name* (`sqlite_schema`, a `sqlite_stat1`, a table from a
+  `repos`, `sources`, `adapters`, `attachments`, `feed`, `feed_entries`
+  (17.0 — the change feed is delivery bookkeeping, not history; `checkpoints`
+  left with D4), `file_stats`, `sync_state`, `workspace_settings`, and
+  *anything this spec does not name* (`sqlite_schema`, a `sqlite_stat1`, a table from a
   newer schema). A table added to `schema.sql` is assigned here in the same
   change (both engines' tests check the assignment covers the DDL).
 - *`same_dispositions`* (14.2): `count(*)` of `dispositions` rows with
@@ -1430,6 +1467,42 @@ squash (§7.1), the pool sweep (§5.5) and `history purge` never touch bit 0.
 `claims::prune-releases-the-core-hold-and-keeps-the-recorders` and
 `claims::pruned-claim-with-no-holder-is-deleted` pin it.
 
+### 7.4 Feed retention (17.0)
+
+The feed is **catch-up, not history** (D7): a consumer that is behind reads
+what the feed still holds; one that has fallen past it **rescans**
+(`spec/sync` §6) — and the log, when the history capability is on, is the
+recorder's `commits`, never pruned by this rule. Three settings
+(`spec/sync` §3 — the workspace layer with the repository's own over it),
+each a non-negative integer: **`feed.retain_days`** (default **10**, a
+floor), **`feed.retain_entries`** (default **10 000**, a floor),
+**`feed.max_entries`** (default **100 000**, a cap). A feed row is
+**prunable** when it is older than `retain_days` (by `ts` against the
+clock) **and** more than `retain_entries` rows of its epoch are newer than
+it; it is **pruned regardless** when more than `max_entries` rows of its
+epoch are newer. "More than" is literal: a row with exactly `retain_entries`
+newer rows is kept, so a floor of *n* leaves at least *n* + 1 rows and the
+cap at most `max_entries` + 1. Pruning deletes the row and its entries,
+oldest first, and never the row with the greatest `seq` (it has no newer
+row). The cap is enforced **inside the transaction that appends a feed row**
+(§5.4 step 5); the floors run in `gc` (§7, enabled, never a dry run, at the
+clock `now`), before the claims prune, and report **`feed_pruned`** (the
+rows deleted; the `GcResult`'s `feedPruned`, the CLI's `, <n> feed rows
+pruned` suffix when non-zero — `spec/cli` §6). A `max_entries` below
+`retain_entries` is a malformed policy and refused, as is any other value.
+Rows of a **previous epoch** are deleted whole by the epoch mint (§3.1
+`repos` — a restore or a rebuild-from-files; neither exists in the
+reference yet). The **bootstrap lease** (D7, resolution 2) is the floor
+itself: a consumer that reads `head` at the start of a rescan and finishes
+within both floors is guaranteed `(epoch, head)` is still a valid cursor
+(`spec/surface` §3); no server-side lease object exists, and retention never
+waits on a consumer. A pruned row's commit id stays claimed while the
+recorder holds it (§2.1); with history off the claims prune (§7.3) may
+release it once nothing names it. `feed::retention-floors-prune-old-rows-
+beyond-the-entry-floor`, `feed::retention-days-floor-keeps-young-rows`,
+`feed::cap-prunes-at-write-time-regardless-of-the-floors` and
+`feed::prune-never-takes-the-newest-row` pin it.
+
 **Vacuum** (14.1). `vacuum` runs SQLite's `VACUUM` on the bare connection
 (never inside a transaction, which SQLite refuses) and returns the free
 pages' bytes measured just before — what the file shrinks by. It rewrites
@@ -1463,11 +1536,17 @@ phase-1-contracts.md` §6).
   and agreeing with `order_key` order, `depth`/`ancestor_path` per §4.3,
   every `parent_block` a live row. (Through 16.x this was I3's structural
   half; the mirror against the recorder's tree is H3.)
-- **C4 The head.** Every live doc has a non-NULL `head`.
+- **C4 The head and the dense feed (17.0).** Every live doc has a non-NULL
+  `head`; the repository has an `ep_` epoch. The retained `feed.seq` of
+  `(repo, epoch)` is a **contiguous** range `oldest..head` in `ts`-then-`seq`
+  order, every row's `epoch` equals `repos.epoch`, every `commit_id` and
+  `batch_id` is a `c` id, a row's `batch_id` names a row at or before it
+  (unless pruned), a `plan_id` is 64 hex and only on an `api` row.
 - **C5 Claims (17.0).** Every id a core row of the repository carries —
   `docs.doc_id`, `docs.head`, `blocks.block_id` (live or tombstoned),
   `resurrection_pool.block_id`, `external_nodes.node_id`, `edges.edge_id`,
-  the repo's own `repo_id` — names an `id_claims` row with bit 0 set; no
+  the repo's own `repo_id` and `epoch`, every `feed.commit_id` and
+  `batch_id`, every `feed_entries.head` — names an `id_claims` row with bit 0 set; no
   claim has `holders = 0`; a claim's `id` starts with its `prefix` and its
   `minted_at` is a §2.4 timestamp.
 - **C6 Pool (I6 restated, 17.0).** Every `resurrection_pool` row has a §2.4
@@ -1477,7 +1556,8 @@ phase-1-contracts.md` §6).
   commit's `ts`.)
 - **C7 Timestamps.** `created_at ≤ updated_at` on every doc and block; a
   live doc's `updated_at` equals the `ts` of the commit that minted its head
-  (H1's commit); a block's `updated_at ≤` its document's; `deleted_at` is
+  (H1's commit; 17.0: the `ts` of the feed row whose entry carries its
+  head, when that row is within retention); a block's `updated_at ≤` its document's; `deleted_at` is
   `NULL` on every live row and non-NULL on every tombstoned one, a live doc
   has no tombstoned block and a tombstoned doc no live one, and a
   tombstoned doc's `deleted_at == updated_at`.
@@ -1494,6 +1574,20 @@ phase-1-contracts.md` §6).
   §5.6 keeps). `prior_hash` is defined, not derivable — it names bytes the
   engine wrote at the path that no current row holds — so only its nullness
   is checked.
+- **F1 Every head is in the feed (17.0).** Every live doc's `head` appears
+  as some retained entry's `head`, and every tombstoned doc has a retained
+  `deleted` entry — **unless pruned**: when the feed was pruned (`oldest >
+  1`) the rule holds for the documents whose `updated_at` is after the
+  oldest retained row's `ts`. Every entry's `seq` has a feed row, its
+  `epoch` is the repository's, its `doc_id` a `docs` row.
+- **F2 Oldest and head.** `oldest ≤ head`, and `oldest = 0` iff `head = 0`
+  (an empty feed).
+- **F3 Entry shape.** A `deleted` entry has NULL `head` and `hash`; every
+  other kind has both (the head an `r` id); `from_path` is non-NULL iff the
+  kind is `moved`, and then `from_path ≠ path`. Per document, over the
+  retained feed in `seq` order: a `created` entry follows nothing or a
+  `deleted` one, and a `changed`/`moved` entry never directly follows a
+  `deleted` one (a revival is `created`).
 - **H1 Capture agrees with the head (I1 restated).** For every live doc
   `docs.head` names a live `revisions` row with `path == docs.path`,
   `rendered_hash == file_hash == sha256(source)` and its commit's `ts ==
@@ -1520,6 +1614,11 @@ phase-1-contracts.md` §6).
 - **I4 Dense sequences.** `commits.seq` is `1..n` per repo in `ts`-then-seq
   order; `revisions.seq` is `1..k` per doc; `head` is the revision with the
   greatest `seq`.
+- **H4 The log agrees with the feed (17.0).** For every retained feed row
+  a `commits` row exists with the same `commit_id`, `epoch`, `seq` and
+  `batch_id`; every `commits` row's `epoch` is the repository's (the feed's
+  `seq` is a subsequence of the log's — the prune takes rows from the feed
+  only).
 - **I5 Nothing to collect.** The **explicit** mark set of §7 — from the
   **live** revisions (15.0: `root_tree IS NOT NULL`, plus every non-NULL
   `frontmatter_blob`; 16.0: a `{`-node contributes only the entries it
@@ -1531,8 +1630,8 @@ phase-1-contracts.md` §6).
   second through `read_at` (§9.4).
 - **H6 The recorder's hold (17.0).** Every id a history row of the
   repository names — `revisions.rev_id`, `revisions.doc_id`,
-  `block_changes.block_id` (`DOC` excepted) — names an `id_claims` row with
-  bit 1 set. (I6 is C6 since 17.0.)
+  `block_changes.block_id` (`DOC` excepted), `commits.commit_id` — names an
+  `id_claims` row with bit 1 set. (I6 is C6 since 17.0.)
 - **I7 Dispositions.** Every disposition's `commit_id` exists. For every
   commit that is the *current* commit of at least one live doc, over the live
   docs whose current revision it wrote (one on the observe path; N for an
@@ -1670,7 +1769,9 @@ unchanged.
           { "swept": 0 }
         ],
         "docs":        [ { "doc_id": "d_0", "path": "a.md", "format": "markdown", "head": "r_1", "file_hash": "<hex>", "conflicted": 0, "leading_trivia": "", "frontmatter_raw": null, "frontmatter_trivia": null, "created_at": "…", "updated_at": "…", "deleted_at": null } ],
-        "commits":     [ { "commit_id": "c_0", "seq": 1, "ts": "…", "origin": "observed", "actor": null, "reason": null, "checkpoint_id": null, "ops": null }, … ],
+        "commits":     [ { "commit_id": "c_0", "epoch": "ep_0", "seq": 1, "ts": "…", "origin": "observed", "actor": null, "reason": null, "batch_id": "c_0", "ops": null }, … ],
+        "feed":        [ { "epoch": "ep_0", "seq": 1, "commit_id": "c_0", "ts": "…", "origin": "observed", "actor": null, "reason": null, "batch_id": "c_0", "plan_id": null }, … ],
+        "feed_entries": [ { "epoch": "ep_0", "seq": 1, "doc_id": "d_0", "path": "a.md", "head": "r_0", "hash": "<hex>", "kind": "created", "from_path": null }, … ],
         "revisions":   [ { "rev_id": "r_0", "doc_id": "d_0", "seq": 1, "root_tree": "<hex>", "frontmatter_blob": null, "rendered_hash": "<hex>", "path": "a.md", "commit_id": "c_0" }, … ],
         "blobs":       [ { "hash": "<hex>", "size": 7, "bytes": "# Title" }, … ],
         "tree_nodes":  [ { "hash": "<hex>", "entries": "[[\"b_0\",\"…\",null,\"heading\",{\"level\":1},\"…\"],…]" }, … ],
@@ -1737,8 +1838,11 @@ unchanged.
   — §5.4; `{}` on an echo), gone items as
   `{ path, deleted, doc }` (`doc` null when nothing was live). For `sweep`,
   `{ swept: <rows deleted> }`. For `gc` (14.2, 17.0), `{ gc: { blobs,
-  tree_nodes, same_dispositions, claims_released } }` — the three counts of
-  §7 and the prune's of §7.3. For `exec` (14.2),
+  tree_nodes, same_dispositions, claims_released, feed_pruned } }` — the
+  three counts of §7, the claims prune's of §7.3 and the feed prune's of
+  §7.4 (`ts` is both prunes' clock). An `exec` step is also the fixture's
+  device for a settings write (`UPDATE repos SET settings = …` — the
+  `feed.*` policy of §7.4 in `feed.json`). For `exec` (14.2),
   `{ changes: <rows changed, summed over the statements> }`. For the
   retention steps (15.0): `history_plan` → `{ plan: <the §7.1 plan
   verbatim> }`; `history_export` → `{ export: { segment: { id, seq_lo,
@@ -1753,7 +1857,14 @@ unchanged.
   archive, path? }` with `path` as `<dest>/<file name>` when the segment is
   recorded but not on disk, or `{ error: "target_missing" }` when `rev` is
   not the document's.
-- `docs` ordered by `path`; `commits` by `seq`; `revisions` by `(doc_id
+- `docs` ordered by `path`; `commits` by `seq` (17.0: `{ commit_id, epoch,
+  seq, ts, origin, actor, reason, batch_id, ops }`); `feed` (17.0, slice 3d)
+  by `seq` as `{ epoch, seq, commit_id, ts, origin, actor, reason,
+  batch_id, plan_id }` and `feed_entries` by (`seq`, insertion order — the
+  member order of the commit) as `{ epoch, seq, doc_id, path, head, hash,
+  kind, from_path }`, both emitted after `commits` — the rows of the repo's
+  current epoch (a fixture database has one; `ep_0`, the minter's first);
+  `revisions` by `(doc_id
   bytewise, seq)`; `blobs` and `tree_nodes` by `hash`; `blocks` by doc (in
   `docs` order) then **pre-order** over the doc's rows (children by
   `parent_block`, `ordinal` order — tombstoned rows keep their tree shape);
@@ -1762,8 +1873,9 @@ unchanged.
   bytewise), as `{ block_id, doc_id, raw_hash, norm_hash, type, created_at,
   deleted_at, expires_ts }`; `id_claims` (17.0) by (`prefix` bytewise, `id`
   bytewise) as `{ prefix, id, minted_at, holders }` — the repository's own
-  `rp` claim omitted, like `repo_id` is from every row (the runner minted it
-  before the first step, at its own clock) — emitted after
+  `rp` claim and its epoch's `ep` claim omitted, like `repo_id` is from
+  every row (the runner minted both before the first step, at its own
+  clock) — emitted after
   `resurrection_pool`; `sections` by (`doc_id` bytewise, `first_ordinal`);
   `pending_materializations` (14.0; 17.0's columns) by `path`, as `{ path,
   kind, from_path, doc_id, head, rendered_hash, prior_hash, commit_id,
@@ -1810,6 +1922,50 @@ absent, every case must pass. Same mechanism as the other specs.
 Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
+
+- **Changed (17.0, slice 3d) — the slim feed is the core's change record;
+  `checkpoints` collapses into the sync status row** (`docs/modular-core/`,
+  Phase 3d: M5/D7, D4). `feed` and `feed_entries` (§3.1) are written by the
+  core in every commit transaction (§5.4 step 5, §5.6 step 1 — one row per
+  commit, one entry per touched document with its `kind` and, on a move,
+  `from_path`); `changes_since` reads them and never `commits`/`revisions`
+  (`spec/surface` §3: `cursor?`, `epoch?`, `limit?`, `origin?` → `{ digests,
+  cursor, epoch, oldest, head, truncated }`, `expired_cursor` under exactly
+  three conditions); the repository EPOCH (`repos.epoch`, an `ep` id) scopes
+  every `seq`; the commit id is minted and claimed by the core (`c` joins the
+  claimed prefixes, §2.1) and the recorder's `commits` row — `epoch`,
+  `batch_id`, no `checkpoint_id` — is its twin under the same id and seq
+  (H4); `batch_id` is the first committing member's commit id (resolution
+  6); `plan_id` rides the feed row (resolution 3); feed retention is §7.4
+  (floors `feed.retain_days` 10 / `feed.retain_entries` 10 000, cap
+  `feed.max_entries` 100 000, `gc` reports `feed_pruned`); `checkpoints`
+  and `commits.checkpoint_id` are dropped, the batch's record is
+  `sync_state`'s reserved status row (`spec/sync` §4.1; the result is `{
+  batch_id, ingested, suppressed, deleted, conflicted }`, no `cp` is
+  minted); the claims prune (§7.3) also protects `feed.commit_id`/`batch_id`,
+  `feed_entries.head`, `pending_materializations.commit_id` and
+  `repos.epoch`. New invariants C4 (the dense feed), F1–F3, H4; C5/C7/H6
+  extended. Migration 17 extended in place (steps (6)–(9)); `migrations::
+  v16-to-v17-heads-inline-bytes-time` extended with two checkpoints, a
+  16.x `sync_state` row and a `move <from> -> <to>` commit. Fixtures:
+  every observation case gains `feed`/`feed_entries` and its `c` claims,
+  `commits` rows carry `epoch`/`batch_id`; `feed.json` new (six cases).
+  Decided in the implementation, where the contracts were silent: **the
+  `ep` claim is minted at the repo's first commit's `ts`** in the migration
+  (the epoch is as old as the feed it scopes; the clock when there is none)
+  and at the clock in `ensure_repo`, like `rp`; **the entry order of a row
+  is its write order** (the member order of an api commit, `revisions`'
+  `rowid` order in the backfill); **a backfilled `moved` entry carries the
+  document's current head and hash** (what the rows say; none when no live
+  document is at `<to>`); **"more than" is literal** in §7.4 (a floor of *n*
+  keeps *n* + 1 rows, matching the contracts' own `max_entries + 1`); **the
+  migration's prune runs only when the settings layers exist** (a partial
+  fixture pre-state may lack `workspace_settings`); **the fixture omits the
+  `ep` claim** as it omits `rp` (minted at the runner's clock). Not done
+  here, by design: the six size categories (`feed`/`feed_entries` file under
+  `sync`, where `checkpoints` was, as the contracts' §7.5 has them), the
+  size report's `feed` line, the three-file schema split, the epoch re-mint
+  on restore/rebuild-from-files (no such path exists in the reference) — 3e.
 
 - **Changed (17.0, slice 3c) — the pending row is self-contained; the
   materializer reads no history table** (`docs/modular-core/`, Phase 3c:
@@ -2063,6 +2219,26 @@ brought to it).
   `history purge` and the recorder's release (3e), the manifest that would
   let a repository run without a recorder (3e) — until then every claim in
   every fixture carries both bits.
+- 2026-10-25, store 17.0 slice 3d (Phase 3d of `docs/modular-core/`):
+  **the feed is catch-up, a rescan is recovery, the log is history.** D7/M5
+  and D4 as decided (`README.md` §4) with the contracts
+  (`phase-1-contracts.md` §1.4, §1.6, §1.7, §1.11, §1.13 §7.1, §1.15, §1.16
+  step 8, §2.4, §4.1–§4.5, §7 resolutions 3, 5, 6, 7, 12) as the text §2.1,
+  §3.1, §3.4, §5.4, §5.6, §7.4, §8 and §9.4 follow — the slim `feed` row
+  plus one entry per touched document, the integer cursor with a sibling
+  `epoch`, `batch_id` the first committing member's commit id, the status
+  row on `sync_state`, `plan_id` on the feed row, the backfill "what the
+  rows say". Decided in the implementation: see §10 "Changed (17.0, slice
+  3d)". One thing the contracts' §2.4 leaves open and this slice implements
+  as written: `cursor = 0` is **always valid**, so a consumer with no stored
+  cursor reading a pruned feed is served from `oldest` and must read
+  `oldest > 1` to see the gap — the rule `0 < cursor < oldest − 1` excludes
+  zero by construction (`feed::prune-never-takes-the-newest-row`,
+  `reads::changes-since-epoch-and-expiry` pin the behaviour; whether a
+  bootstrap should instead be told to rescan is a product question flagged
+  to Brendan). Not done here, by design: the six size categories and the
+  size report's `feed` line, the three-file split, the epoch re-mint paths
+  (3e).
 - 2026-10-25, store 17.0 slice 3c (Phase 3c of `docs/modular-core/`):
   **the recovery payload is the row.** M4 as planned (`README.md` §2.11,
   §3) with the contracts (`phase-1-contracts.md` §1.7 the DDL, §1.11 §5.7,

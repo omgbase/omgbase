@@ -96,7 +96,9 @@ describe("doctor --size", () => {
     expect(lines).toContain("");
     expect(stdout).toMatch(/\n {2}file {9}.*omgbase\.db\n {2}size {9}\d+(\.\d)? [KMGT]?B on disk, wal \d+(\.\d)? [KMGT]?B\n {2}pages {8}\d+ x \d+ bytes, \d+ free\n {2}reclaimable {2}\d+(\.\d)? [KMGT]?B\n {2}archived {5}0 revisions in 0 segments, 0 B on disk\n {2}id claims {4}\d+ ids claimed\n {2}advice: nothing to reclaim\n$/);
     // The checks still run without --size.
-    expect(omg(["doctor"]).stdout).toContain("  ok convergence");
+    // store 17.0 (3d): the `convergence` check left with `repos_status.unconverged` (identically true under I1).
+    expect(omg(["doctor"]).stdout).not.toContain("convergence");
+    expect(omg(["doctor"]).stdout).toContain("  ok head present");
   });
 });
 
@@ -113,7 +115,7 @@ describe("gc --vacuum", () => {
 
     omg(["config", "set", "gc.enabled", "true"]);
     const run = JSON.parse(omg(["gc", "--vacuum", "--json"]).stdout) as typeof dry;
-    expect(run).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0, vacuum: { reclaimable: before.file.reclaimable, applied: true } });
+    expect(run).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0, feedPruned: 0, vacuum: { reclaimable: before.file.reclaimable, applied: true } });
     const after = JSON.parse(omg(["doctor", "--size", "--json"]).stdout) as SizeJson;
     expect(after.file.freelist_count).toBe(0);
     expect(after.file.reclaimable).toBe(0);

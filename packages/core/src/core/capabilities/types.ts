@@ -2,9 +2,9 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
 import type { IdPrefix } from "../ids.js";
 import type { DispositionRow } from "../ingest.js";
-import type { NewCommitInput, TreeInputBlock } from "../store/writers.js";
+import type { TreeInputBlock } from "../store/writers.js";
 import type { DocsReadAtResult } from "../read/document.js";
-import type { CommitDigest, DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
+import type { DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
 import type { EvaluateOptions, RetentionPlan, RetentionPolicy } from "../store/retention.js";
 import type { ArchiveListing, AttachResult, ExportOptions, ExportResult } from "../store/archive.js";
 import type { BlockContextInput, BlockContextResolver } from "../../semantic/tasks.js";
@@ -63,6 +63,26 @@ export interface CapturedRevision {
 }
 
 /**
+ * The commit the core hands the recorder (spec/store §5.4 step 15, 17.0 —
+ * the feed row's twin): the `c` id the core minted and wrote on `feed`, the
+ * repository's epoch and the feed's `seq`, the row's provenance, the batch
+ * (D4) and the ADR-003 intent record (`ops`, M5 — the recorder's column, never
+ * the feed's).
+ */
+export interface CommitRecord {
+  commitId: string;
+  repoId: string;
+  epoch: string;
+  seq: number;
+  ts: string;
+  origin: "api" | "observed" | "import" | "projection";
+  actor: string | null;
+  reason: string | null;
+  batchId: string;
+  ops: string | null;
+}
+
+/**
  * The history recorder (plan §3 "capture"): the write half every write entry
  * point calls per committed transition and the read half the surface exposes
  * (`docs_read { at }`, `docs_diff*`, `docs_history`, `blocks_history`,
@@ -71,10 +91,10 @@ export interface CapturedRevision {
  * inside the caller's transaction on that connection.
  */
 export interface HistoryRecorder {
-  // ---- capture: the write half (spec/store §5.4 step 5, steps 0–2, step 10; §5.6) ----
+  // ---- capture: the write half (spec/store §5.4 step 15; §5.6) ----
 
-  /** Step 5 / the api path's one `commits` row: the transition's origin, actor, reason and ts (inventory-ts §2.2 row `newCommit`). */
-  newCommit(input: NewCommitInput): { commitId: string; seq: number };
+  /** Step 15 (17.0, 3d): the `commits` row of a feed row the core appended — the same `commit_id`, `epoch` and `seq` (`core/store/feed.ts` `appendFeedRow`); sets the recorder's hold on the commit's claim. */
+  recordCommit(commit: CommitRecord): void;
   /** Step 15 (17.0): the Merkle tree (full or delta over the recorder's OWN previous captured revision), the frontmatter blob, the `revisions` row under the core's head token — one accepted transition, content, structure or path (D11: a `docs_move` hands the unchanged tree at the new path). */
   captureRevision(transition: RevisionTransition): CapturedRevision;
   /** Step 15: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
@@ -101,8 +121,8 @@ export interface HistoryRecorder {
   docDiffUnified(docId: string, opts?: { fromRev?: string; toRev?: string; label?: string }): DocDiffUnified;
   /** `docs_history`: the `revisions` rows per document. */
   docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): { docs: DocVersions[]; truncated: boolean };
-  /** `changes_since`: the commit feed after a cursor (the sync base; M5 gives the feed its own sequence in Phase 3). */
-  changesSince(repoId: string, opts?: { cursor?: number; limit?: number; origin?: string }): { digests: CommitDigest[]; cursor: number; truncated: boolean; head: number };
+  /** The disposition counts of a captured commit (`kind → n`, `same` never persisted) for a `changes_since` digest's summary — `null` when the recorder has no `commits` row for it (the feed is the core's; `core/store/feed.ts`). */
+  dispositionCounts(commitId: string): { kind: string; n: number }[] | null;
 
   // ---- maintenance: the GC mark, retention, archives (spec/store §7) ----
 

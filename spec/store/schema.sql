@@ -3,7 +3,8 @@
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
-  settings  TEXT NOT NULL DEFAULT '{}'
+  settings  TEXT NOT NULL DEFAULT '{}',
+  epoch     TEXT NOT NULL                     -- the feed's epoch: a minted ep_ id (17.0, D7); re-minted by a restore / rebuild-from-files (§7.4)
 );
 -- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
 -- come from is a sources row (adapter=fs, config.root) joined via attachments;
@@ -77,16 +78,17 @@ CREATE TABLE IF NOT EXISTS revisions (
 );
 
 CREATE TABLE IF NOT EXISTS commits (
-  commit_id     TEXT PRIMARY KEY,
-  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
-  seq           INTEGER NOT NULL,
-  ts            TEXT NOT NULL,
-  origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
-  actor         TEXT,
-  reason        TEXT,
-  checkpoint_id TEXT,
-  ops           TEXT,
-  UNIQUE (repo_id, seq)
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,                    -- the feed row's epoch (17.0, D7)
+  seq       INTEGER NOT NULL,                 -- = the feed row's seq
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                    -- the feed row's batch_id (D4)
+  ops       TEXT,                             -- the ADR-003 intent record of an api commit (M5)
+  UNIQUE (repo_id, epoch, seq)
 );
 
 CREATE TABLE IF NOT EXISTS dispositions (
@@ -137,12 +139,33 @@ CREATE TABLE IF NOT EXISTS collections (
   spec    TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE TABLE IF NOT EXISTS checkpoints (
-  id       TEXT PRIMARY KEY,
-  repo_id  TEXT NOT NULL,
-  ts       TEXT NOT NULL,
-  files    TEXT NOT NULL,
-  git_head TEXT
+
+CREATE TABLE IF NOT EXISTS feed (
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  commit_id TEXT NOT NULL UNIQUE,
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                    -- the first committing member of the same observed batch; = commit_id for a batch of one and every api commit
+  plan_id   TEXT,                             -- the admitted plan's digest (64 hex) for an effect-driven api commit; NULL otherwise
+  PRIMARY KEY (repo_id, epoch, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_ts ON feed(repo_id, ts);
+
+CREATE TABLE IF NOT EXISTS feed_entries (
+  repo_id   TEXT NOT NULL,
+  epoch     TEXT NOT NULL,
+  seq       INTEGER NOT NULL,
+  doc_id    TEXT NOT NULL,
+  path      TEXT NOT NULL,                    -- as of the commit
+  head      TEXT,                             -- the token minted (NULL for deleted)
+  hash      BLOB,                             -- file_hash after the commit (NULL for deleted)
+  kind      TEXT NOT NULL CHECK (kind IN ('created','changed','deleted','moved')),
+  from_path TEXT,                             -- moved only
+  PRIMARY KEY (repo_id, epoch, seq, doc_id)
 );
 
 -- Identity claims (spec/store §2.1, 17.0 — M3/D5): one row per id the core
@@ -335,11 +358,14 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 
 CREATE TABLE IF NOT EXISTS sync_state (
-  repo_id   TEXT NOT NULL,
-  source_id TEXT NOT NULL,
-  path      TEXT NOT NULL,          -- '' reserved for the attachment-level cursor row
-  revision  TEXT,                   -- last-observed source revision for this path
-  cursor    TEXT,                   -- last poll/webhook cursor (attachment-level row)
+  repo_id          TEXT NOT NULL,
+  source_id        TEXT NOT NULL,     -- '' reserved for the repository's own status row (17.0, D4)
+  path             TEXT NOT NULL,     -- '' reserved for the attachment-level cursor row
+  revision         TEXT,              -- last-observed source revision for this path
+  cursor           TEXT,              -- last poll/webhook cursor (attachment-level row)
+  last_batch_ts    TEXT,              -- the repository row only (spec/sync §4.1): the last observed batch's ts
+  last_batch_id    TEXT,              -- its batch_id (NULL when nothing committed)
+  last_batch_files INTEGER,           -- its member count
   PRIMARY KEY (repo_id, source_id, path)
 );
 

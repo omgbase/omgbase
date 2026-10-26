@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "./store.js";
-import { assignIds, writeBlockTree, putBlob, putTreeNode, newCommit, writeRevision } from "./writers.js";
+import { assignIds, writeBlockTree, putBlob, putTreeNode, writeRevision } from "./writers.js";
+import { appendFeedRow } from "./feed.js";
 import { parseTree } from "../parse/tree.js";
 import { sha256 } from "../hash.js";
 import type { TreeInputBlock } from "./writers.js";
@@ -13,7 +14,7 @@ afterEach(() => {
 
 function fresh(): Store {
   const s = new Store({ path: ":memory:" });
-  s.db.prepare("INSERT INTO repos (repo_id, slug) VALUES ('rp_1','s')").run();
+  s.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1','s','ep_1')").run();
   return s;
 }
 
@@ -78,13 +79,13 @@ describe("commit & revision sequencing", () => {
     store.db.prepare("INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_1','rp_1','a.md','t1','t1')").run();
 
     store.write((db) => {
-      const c1 = newCommit(db, { repoId: "rp_1", ts: "t1", origin: "observed" });
+      const c1 = appendFeedRow(db, { repoId: "rp_1", ts: "t1", origin: "observed" });
       expect(c1.seq).toBe(1);
       const root = writeBlockTree(db, assignIds(parseTree("# A\n").children));
       const r1 = writeRevision(db, { revId: "r_1", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c1.commitId });
       expect(r1.seq).toBe(1);
 
-      const c2 = newCommit(db, { repoId: "rp_1", ts: "t2", origin: "observed" });
+      const c2 = appendFeedRow(db, { repoId: "rp_1", ts: "t2", origin: "observed" });
       expect(c2.seq).toBe(2);
       const r2 = writeRevision(db, { revId: "r_2", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c2.commitId });
       expect(r2.seq).toBe(2);

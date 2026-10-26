@@ -102,28 +102,35 @@ repos SET settings` for a repo). Known keys are the consumers' business
 
 ## 4. Checkpoints and the filesystem fast path
 
-### 4.1 Checkpoint row
+### 4.1 The batch and the status row (4.0)
 
 Every batch observed through the filesystem fast path or the adapter driver
-records one `checkpoints` row: **mint `cp`**, `ts` = the batch timestamp,
-`files` = JSON `[[path, old_hash_hex | null, new_hash_hex | null], …]` in
-batch order (a gone member has `null` new hash; the old hash is the prior
-`file_hash` or `null`), `git_head` = the caller's value or `null`, and the
-resurrection pool is swept at `ts` (`spec/store` §5.5) — the row and the
-sweep in one transaction (2.1; 2.0 ran them as two autocommits). The result is
-`{ checkpoint_id, ingested, suppressed (echoes), deleted (gone members that
-had a live doc), conflicted }` in batch order.
+updates the repository's **status row** of `sync_state` — `(repo_id,
+source_id = '', path = '')`, reserved (`spec/store` §3.1; D4: the
+`checkpoints` table of 3.x collapsed into it): `last_batch_ts` = the batch
+timestamp, `last_batch_id` = the batch's **`batch_id`** — the first
+committing member's commit id, which every member's feed row carries
+(`spec/store` §5.4 step 5); NULL when nothing committed — and
+`last_batch_files` = the member count; and the resurrection pool is swept at
+`ts` (`spec/store` §5.5) — the row and the sweep in one transaction (2.1; 2.0
+ran them as two autocommits). The result is `{ batch_id, ingested,
+suppressed (echoes), deleted (gone members that had a live doc), conflicted
+}` in batch order. **No `cp` is minted**: the batch's identity is the feed's
+`batch_id`, so a consumer of `changes_since` groups an observed batch's
+commits by it (what a history strategy needs from batches, D4). The 3.x
+`files` and `git_head` columns are gone (D9: written by every sweep, read by
+no production path).
 
 `process_checkpoint(repo, root, paths, ts)`: read each path under the root
-(`null` when the file is absent), `observe_batch` (`spec/store` §5),
-record the checkpoint.
+(`null` when the file is absent), `observe_batch` (`spec/store` §5), write
+the status row.
 
 **Gone members and pending rows (2.2).** A member absent from the disk whose
 path has a pending `write`/`rename` materialization row (`spec/store` §5.7
 — the api path committed and still owes the file) is **not** tombstoned:
 `observe_batch` returns `{ deleted: false }` for it, nothing is minted, the
-row stays for the materializer, and the checkpoint `files` entry carries
-its old hash and a `null` new hash like any gone member. A `remove` row is
+row stays for the materializer (the member counts toward
+`last_batch_files` like any other). A `remove` row is
 confirmed by the absence and dropped. A present member with a pending row
 is settled by the store's gate rule (bytes the row names → echo; anything
 else → the file wins), not by this layer.
@@ -162,9 +169,9 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
    ON CONFLICT DO UPDATE` with the fresh stat and the hash; a path that
    vanished meanwhile deletes its row) and delete the rows of the deletions.
 
-Result: the checkpoint result plus `{ scanned, candidates, changed:
+Result: the batch result plus `{ scanned, candidates, changed:
 ingested or deleted or conflicted non-empty, materialized }`; a sweep with nothing to do
-still records a checkpoint row with `files: []`. `file_stats` is derived: a
+still writes the status row (`batch_id` NULL). `file_stats` is derived: a
 rebuild deletes the repo's rows, then re-stats and re-hashes every walked
 file **that has a live doc** (one whose `file_hash` is null matches nothing)
 and records a row **only when the bytes' hash equals that `file_hash`** — a
@@ -187,19 +194,24 @@ whose hash differs from the document's `file_hash` (the bytes its head
 renders to — through 16.x the current revision's `rendered_hash`) is
 re-ingested as an observed commit (one document at a time, not a batch — §9)
 and listed `healed`, and a pending row step 0 kept at that path (foreign
-bytes) goes with the heal: the file won. Recovery records no checkpoint row
+bytes) goes with the heal: the file won. Recovery writes no status row
 and does not refresh `file_stats` (the next sweep re-hashes the healed file
 and echo-suppresses it).
 
-### 4.4 Status
+### 4.4 Status (4.0)
 
-`repos_status(repo, root?)`: counts of live docs, live blocks, commits, open
-edges; `unconverged` = live docs whose `file_hash` differs from their
-current revision's `rendered_hash`; `disk` = the drift counts with
+`repos_status(repo, root?)`: counts of live docs, live blocks, the **feed's
+position** `feed: { epoch, oldest, head }` (`spec/store` §3.1 — in place of
+the 3.x `commits` count), open edges; `disk` = the drift counts with
 `checked: true` when a root was supplied, else zeros with `checked: false`.
-`sync_status`: `last_commit_seq`, `last_checkpoint` (latest by `ts`),
-`convergent` = `unconverged == 0 && checked && no drift` — never green on an
-unverified disk.
+`unconverged` is gone (D9, resolution 4: `file_hash` is the head's hash by
+construction, so it was identically zero; `disk.changed` is the signal).
+`sync_status`: `epoch`, `oldest`, `head` (the feed's; `last_commit_seq`
+through 3.x), `last_batch: { ts, batch_id, files } | null` (the status row of
+§4.1; `last_checkpoint` through 3.x), `convergent` = `checked && no drift` —
+never green on an unverified disk — and `capabilities` as `version` reports
+them (`spec/surface` §4). On the wire the keys are the reference's camelCase
+(`lastBatch.batchId`, `diskChecked`).
 
 ## 5. The adapter protocol
 
@@ -287,27 +299,60 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
   call (summary buckets: `echo` → suppressed, `conflicted`, else ingested);
   gone paths go to `observe_delete` one by one (`deleted` when a live doc
   was tombstoned).
-- The engine's **change feed**, `changes_since(cursor = 0, limit = 50,
-  origin?)`: the repo's commits with `seq > cursor` (optionally of one
-  origin), in `seq` order, `limit + 1` fetched to set `truncated`; each
-  digest `{ commit, seq, ts, origin, actor, summary, revisions: [{ _id,
-  _path, _hash = hex(rendered_hash) }] }` (3.0 — the document, its path as
-  of the commit and the revision's rendered hash, spelled as the engine
-  names of `spec/surface` §1.2, 5.0: a bare name is the user's on every
-  record, an underscore-prefixed one the engine's; `{ id, path, hash }`
-  through 2.x, `{ doc, path, content_hash }` before 2.0, `contentHash` on
-  the MCP wire). The digest's other keys describe the commit, not a row,
-  and stay bare (`commit`, `seq`, `ts`, `origin`, `actor`, `summary`,
-  `cursor`, `head`, `truncated`); the page's `cursor` is the
-  last digest's `seq` (or the input cursor when empty) and `head` the repo's
-  max `seq`. `summary` is a human line the fixtures do not pin.
-- `sync_out(cursor = 0)`: page the engine's `changes_since(cursor)`; for
-  every digest **whose origin is not `observed`** and every revision in it,
-  read the doc by path and `write` its bytes, or `remove` the path when the
-  doc no longer reads (tombstoned); follow `truncated` pages; return the
-  final cursor. A source without `write` exports nothing and returns the
-  cursor unchanged. Loop safety: the engine's echo gate makes a written file
-  that comes back an echo, and observed commits are never exported.
+- The engine's **change feed**, `changes_since(cursor = 0, epoch?, limit =
+  50, origin?)`, is `spec/surface` §3 (6.0): the core's feed
+  (`spec/store` §3.1 `feed`/`feed_entries`), each digest `{ commit, seq, ts,
+  origin, actor, batch_id, plan_id?, summary, revisions: [{ _id, _path,
+  _hash, kind, from_path? }] }`, the page `{ digests, cursor, epoch, oldest,
+  head, truncated }`. **The cursor is `(epoch, seq)`**: a consumer stores
+  both and sends both (the 3.x cursor was the bare `seq`; through 2.x the
+  revision was `{ id, path, hash }`, before 2.0 `{ doc, path, content_hash
+  }`). `summary` is a human line the fixtures do not pin and the coordinator
+  never reads.
+- **Expired cursor → rescan (4.0, D7).** On `expired_cursor { epoch, oldest,
+  head }` the consumer runs the **rescan procedure**:
+  1. Record `S = head` and `E = epoch` from the error (the server's current
+     position).
+  2. Page the server's live documents (`docs_list`, `limit`/`cursor`, with
+     `_hash`: `query` `docs { select _id, _path, _hash }` on the minimal
+     profile) into a set `L` of `(id, path, hash)`.
+  3. **Reconcile the id set**: for every `(id, path, hash)` in `L` whose
+     `hash` differs from the consumer's copy, pull the bytes
+     (`docs_read`/`read_doc`) and apply them at `path`; a consumer-side path
+     whose id is in `L` under another path is a move; **absence from `L` is
+     deletion** — every consumer-side document whose id is not in `L` is
+     removed.
+  4. Resume `changes_since(cursor = S, epoch = E)`. The feed's retention
+     floor (`spec/store` §7.4: ≥ 10 days and ≥ 10 000 entries) is the
+     **bootstrap lease**: a rescan that completes within it resumes without
+     a second expiry; one that does not repeats from step 1. No server-side
+     lease object exists in this round (resolution 2: retention never waits
+     on a consumer).
+  The reference's coordinator (`rescan()`) applies step 3 by path — a source
+  speaks paths, not ids — so a moved document is a write at the new path and
+  a removal of the old one, and runs the procedure at most once per
+  `sync_out` call (a second expiry is the caller's retry).
+- **The sync base.** A client of the feed keeps its own base — the `(epoch,
+  seq)` it last applied and the hashes it last saw; the server promises
+  nothing beyond the feed's retention floor. Optional history supplies no
+  unlimited common ancestor: a client that falls behind the floor rescans
+  and, where its own copy diverged meanwhile, surfaces the divergence as a
+  conflict in its own terms — the server's current state wins the feed, the
+  client's edits are the client's to re-apply. A server-side lease (a
+  snapshot pinned for a named client beyond the floor) is a later addition
+  and is not specified here.
+- `sync_out(cursor = 0, epoch?)`: page the engine's `changes_since(cursor,
+  epoch)`; for every digest **whose origin is not `observed`** and every
+  document in it, by `kind`: `created`/`changed`/`moved` → read the doc and
+  `write` its bytes at `_path` (a `moved` also `remove`s `from_path`);
+  `deleted` → `remove` (a path is removed at most once per call: a
+  tombstoned document's earlier digests and its own all name it); a document
+  that no longer reads is removed; follow `truncated` pages, passing the
+  page's `epoch` along; return the final `cursor` and `epoch` (and
+  `rescanned: true` when the procedure above ran). A source without `write`
+  exports nothing and returns the cursor unchanged. Loop safety: the
+  engine's echo gate makes a written file that comes back an echo, and
+  observed commits are never exported.
 - `watch_in`: subscribe when the source can watch; each batch runs
   `reconcile`.
 
@@ -358,19 +403,24 @@ Three case shapes:
   `create_source`, `delete_source`, `attach`, `detach`, `settings { scope:
   "workspace" | <slug>, set }`, `resolve_settings { repo? }`; `expect.steps`
   records each result (ids, resolved objects, or `{ error }`), and the
-  projection is `repos`, `adapters`, `sources`, `attachments`,
-  `sync_state`, `workspace_settings`, plus `repos_status` fields that need
-  no disk (`docs`, `blocks`, `commits`, `open_edges`, `unconverged`).
+  projection is `repos` (4.0: with `epoch`), `adapters`, `sources`,
+  `attachments`, `sync_state` (4.0: with the three status columns),
+  `workspace_settings`, plus `repos_status` fields that need
+  no disk (`docs`, `blocks`, `feed: { epoch, oldest, head }`, `open_edges`;
+  4.0 — `commits`/`unconverged` through 3.x).
 - **`checkpoint.json`**: scripts over an in-memory filesystem (`disk` steps
   set `{ path, content, mtime_ns }` — a safe-integer JSON number; `rm`
   steps remove; the walk is insertion order), on a sourceless repo `rp_0`,
-  with `sweep { ts, git_head? }`, `checkpoint { ts, paths, git_head? }`,
+  with `sweep { ts }`, `checkpoint { ts, paths }` (4.0: no `git_head`),
   `drift`, `recover { ts }`, `rebuild_stats` steps; `expect.steps` records
-  each result (`checkpoint_id`, buckets, counters — `scanned`,
-  `candidates`, `changed`), and the projection adds `checkpoints` (`{ id,
-  ts, files (parsed), git_head }` by `ts` then insertion) and `file_stats`
-  (`{ path, mtime_ns, size, hash }` by path) to the `spec/store` §9.4
-  tables; the store's §8 invariants hold after every ingesting step.
+  each result (`batch_id` — 4.0, `checkpoint_id` through 3.x — buckets,
+  counters — `scanned`, `candidates`, `changed`), and the projection adds
+  `sync_state` (4.0: the repo's rows by (`source_id`, `path`) as `{
+  source_id, path, revision, cursor, last_batch_ts, last_batch_id,
+  last_batch_files }` — the status row among them; `checkpoints` through
+  3.x) and `file_stats` (`{ path, mtime_ns, size, hash }` by path) to the
+  `spec/store` §9.4 tables (which include `feed`/`feed_entries` since store
+  17.0); the store's §8 invariants hold after every ingesting step.
   Registry results are `{ repo }`, `{ source }`, `{}`, `{ settings }` or
   `{ error: "unique" | "foreign_key" | "repo_not_found" }`; `attach`/`detach`
   take ids; `repos_status` is projected as an array in slug order.
@@ -407,13 +457,17 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
 - `kind: "coordinator"` — `{ name, source: { write_through }, page_limit?,
   steps, expect }` with steps `source { set | rm }`, `engine { ts, create |
   import | delete | observe }`, `sync_in { ts }`, `reconcile { ts, paths }`,
-  `sync_out { cursor? }`; each outcome records the summary and the **calls**
-  made — `[{ engine: "observe_many" | "observe_delete" | "changes_since" |
-  "read_doc", … }, { source: "enumerate" | "fetch" | "write" | "remove", … }]`
-  — against a recording in-process engine client (which injects the step's
-  `ts` and the `page_limit`) and an in-memory source; the projection adds
-  `files`, `docs [{ doc_id, path, deleted }]` and `commits [{ commit_id, seq,
-  origin, actor }]`.
+  `sync_out { cursor?, epoch? }`; each outcome records the summary (a
+  `sync_out`'s `{ cursor, epoch, written, removed, rescanned? }`, 4.0) and
+  the **calls** made — `[{ engine: "observe_many" | "observe_delete" |
+  "changes_since" (with `cursor` and, when the coordinator sent one, `epoch`)
+  | "list_docs" | "read_doc", … }, { source: "enumerate" | "fetch" | "write"
+  | "remove", … }]` — against a recording in-process engine client (which
+  injects the step's `ts` and the `page_limit`) and an in-memory source; the
+  projection adds `files`, `docs [{ doc_id, path, deleted }]` and `commits
+  [{ commit_id, seq, origin, actor }]` — read from the **feed** (4.0; the
+  recorder's `commits` is its twin). `protocol::sync-out-expired-cursor-
+  rescans` pins the rescan.
 
 **Generation.** Two runners, each rewriting only its own cases under
 `SYNC_SPEC_UPDATE=1`: `packages/core/corpus/sync/spec.test.ts` (pure,
@@ -522,6 +576,28 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-25, sync 4.0 (store 17.0 slice 3d — `docs/modular-core/` D4, D7;
+  the contracts `phase-1-contracts.md` §1.6, §4.1–§4.5, §7 resolutions 4,
+  6, 7): **`checkpoints` leaves; the feed cursor gains `epoch`.** The batch's
+  record is the reserved status row of `sync_state` — `(repo_id, '', '')`
+  with `last_batch_ts`, `last_batch_id`, `last_batch_files` — so a
+  sourceless repository (every `checkpoint.json` fixture) has one too
+  (resolution 7; the alternative was three columns on `repos`); its id is
+  the feed's `batch_id`, the first committing member's commit id (resolution
+  6 — no new prefix; `cp` is retired), and the result is `{ batch_id,
+  ingested, suppressed, deleted, conflicted }`; `files`/`git_head` are gone
+  (D9). `repos_status` reports the feed's `{ epoch, oldest, head }` and drops
+  `unconverged` (resolution 4); `sync_status` reports `epoch`/`oldest`/
+  `head`, `last_batch` and `capabilities`. The coordinator's cursor is
+  `(epoch, seq)`; `expired_cursor` runs the rescan procedure (§6) and the
+  sync base is stated. A stored row's meaning changes (`sync_state` carries
+  the status) and the engine interface's cursor gains a member: a major.
+  Fixtures: `checkpoint.json` projects `sync_state` instead of `checkpoints`
+  and its step results carry `batch_id`; `registry.json`'s `repos` gain
+  `epoch` and `repos_status` the feed; `protocol.json`'s `sync_out`
+  summaries carry `epoch` (a paged walk passes it along) and
+  `sync-out-expired-cursor-rescans` is new. The Rust `omgbase-sync` follows
+  in a separate round; until it lands its spec runner is red by design.
 - 2026-10-20, sync 3.0 (`spec/surface` 5.0 "underscore = engine"): a
   change-feed revision is `{ _id, _path, _hash }` (§6). The surface's row
   rule became one rule for every record kind — a bare name is user-authored,

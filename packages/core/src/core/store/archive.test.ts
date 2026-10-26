@@ -171,7 +171,7 @@ describe("the crash rule, gc and rebuild after a squash", () => {
   it("gc after the squash has nothing to collect; rebuild keeps the archived commits' mint rows", () => {
     threeRevisions();
     exportHistory(store, repoId, { dest, now: NOW, policy: POLICY, prune: true });
-    expect(runGc(store, { enabled: true })).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0 });
+    expect(runGc(store, { enabled: true })).toEqual({ blobsSwept: 0, treeNodesSwept: 0, sameDispositionsSwept: 0, claimsReleased: 0, feedPruned: 0 });
     const before = store.db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY 1, 2, 3").all();
     rebuildIndex(store, "block_changes");
     expect(store.db.prepare("SELECT block_id, commit_id, kind FROM block_changes ORDER BY 1, 2, 3").all()).toEqual(before);

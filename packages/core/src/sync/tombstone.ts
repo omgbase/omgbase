@@ -1,5 +1,5 @@
 import type { Store } from "../core/store/store.js";
-import { requireHistory } from "../core/capabilities/registry.js";
+import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 
 // Observed-deletion tombstone (01 §6, 02 §3/§7). Shared by BOTH observed-change
@@ -14,8 +14,9 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
 // — mint a commit, drop FTS rows, tombstone the doc's live blocks + the doc row —
 // with two deliberate differences:
 //   1. origin is "observed", not "api": the engine witnessed the disk change; it
-//      did not author it (writers.ts NewCommitInput.origin; ingestFile defaults to
-//      "observed"). No actor.
+//      did not author it (`appendFeedRow`'s origin; ingestFile defaults to
+//      "observed"). No actor. `batchId` is the observed batch's (D4), when the
+//      caller runs one.
 //   2. the live blocks are snapshotted into the resurrection_pool BEFORE they are
 //      tombstoned. An API delete is an intentional, permanent removal, so
 //      docsDelete pools nothing. An observed disk deletion is the opposite: a file
@@ -41,9 +42,13 @@ import { ftsDeleteDoc } from "../core/store/fts.js";
  * Returns the minted commit id. Idempotent-safe: if the doc has no live blocks the
  * UPDATEs simply affect zero rows.
  */
-export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string): string {
+export function tombstoneObservedDeletion(store: Store, repoId: string, docId: string, ts: string, batchId: string | null = null): string {
   return store.write((db) => {
-    const commit = requireHistory(db).newCommit({ repoId, ts, origin: "observed", reason: "observed deletion" });
+    // spec/store §5.6 step 1 (17.0, 3d): the feed row and its one `deleted`
+    // entry (no head, no hash — the path as the tombstone leaves it).
+    const commit = appendFeedRow(db, { repoId, ts, origin: "observed", reason: "observed deletion", batchId });
+    const doc = db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined;
+    if (doc) appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId, path: doc.path, head: null, hash: null, kind: "deleted" });
 
     // Snapshot the doc's live blocks into the resurrection pool BEFORE tombstoning,
     // mirroring core/ingest.ts's reconciling-delete snapshot (~30-day expiry) so a

@@ -1240,14 +1240,47 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   by its lines prefixed `-`, `+` or a space (no space after the sign), hunks
   joined by `\n`, no file header; identical texts yield `""`. Lines are
   compared as exact strings.
-- **`changes_since`**: `spec/sync` §6 (3.0; the digest shape and paging;
-  `summary` unpinned) — each digest's `revisions` are `[{ _id, _path, _hash
-  }]` (the document, its path as of the commit, the revision's rendered
-  hash — the same three keys an `apply` revision carries, §4); the digest's
-  own keys (`commit`, `seq`, `ts`, `origin`, `actor`, `summary`, `cursor`,
-  `head`, `truncated`) are roles — a digest describes a commit, not a row
-  kind — and stay bare; every path in a digest, the `summary`'s subject
-  included, in the reference form (2.0).
+- **`changes_since(cursor = 0, epoch?, limit = 50, origin?)`** (6.0 — the
+  change feed of `spec/store` §3.1 `feed`/`feed_entries`, D7; `spec/sync`
+  §6 is the consumer's side): the feed rows of the repository's epoch with
+  `seq > cursor` (optionally of one origin), in `seq` order, `limit + 1`
+  fetched to set `truncated`; **a cursor is the pair `(epoch, seq)`** — the
+  integer `cursor` with a sibling `epoch` argument, defaulting to the
+  repository's current epoch, so a consumer that never stored one behaves
+  as before and bears the rescan when the epoch moves. Result `{ digests,
+  cursor, epoch, oldest, head, truncated }`: `epoch` the repository's,
+  `oldest` the smallest `seq` the feed still holds (`0` when empty), `head`
+  the greatest, `cursor` the last digest's `seq` (the input cursor when the
+  page is empty). **Expiry:** the call fails **`expired_cursor { epoch,
+  oldest, head }`** (`retriable: false`; the message `` cursor <cursor> of
+  epoch <given> has expired — the feed now begins at (<epoch>, <oldest>);
+  rescan the repository and resume from head <head> ``, spelled alike by
+  both engines and pinned — `data.epoch` names an argument, §6) when the
+  given `epoch` is not the repository's, or `cursor > head`, or `0 < cursor
+  < oldest − 1` (every entry after the cursor is present exactly when
+  `cursor ≥ oldest − 1`; `cursor = 0` is always valid — a consumer starting
+  from nothing reads `oldest` to see where the feed begins). The consumer
+  then runs the rescan procedure (`spec/sync` §6). Each digest `{ commit,
+  seq, ts, origin, actor, batch_id, plan_id?, summary, revisions: [{ _id,
+  _path, _hash, kind, from_path? }] }` — `batch_id` the observed batch the
+  commit belongs to (the first committing member's commit id; `= commit` for
+  an api commit, D4), `plan_id` the admitted plan's digest (effect-driven
+  api commits only); each document under the row's engine names (the
+  document, its path as of the commit — the same `_id`/`_path`/`_hash` an
+  `apply` revision carries, §4) plus the entry's **`kind ∈ created | changed
+  | deleted | moved`** and, on `moved`, **`from_path`**; a `deleted` document
+  has `_hash: null`. `summary` is a human line composed from the entries
+  (`observed: /a.md — changed`, `api(agent:mcp): deleted /b.md`, `api(…):
+  moved /a.md → /c.md`; two or more joined by `; `) with the 16.0
+  disposition counts appended (` — 12 edited, 1 inserted`) only when the
+  history capability holds the commit — **unpinned**, as before; the fixtures
+  drop it. The digest's own keys (`commit`, `seq`, `ts`, `origin`, `actor`,
+  `batch_id`, `plan_id`, `summary`, `cursor`, `epoch`, `oldest`, `head`,
+  `truncated`) are roles — a digest describes a commit, not a row kind —
+  and stay bare; every path in a digest, the `summary`'s subject included,
+  in the reference form (2.0). Through 5.x the feed was the recorder's
+  `commits`×`revisions` (`{ digests, cursor, truncated, head }`, no kinds,
+  a cursor past the head an empty page).
 - **`docs_history(path_glob | _id | _path, include_deleted?, limit = 50)`**: docs by
   path (glob as `docs_list`; a glob without `*` is an exact path), live only
   unless `include_deleted`, `limit + 1` for `truncated`; each `{ _id, _path
@@ -1284,7 +1317,11 @@ query-directed admission refuses, `data: { reason, hint: "selection" }`,
 (5.1: `execute { plan_id }` alone naming a plan this server does not remember
 — `data: { plan_id }`, retriable, the message "this server has no plan <id> —
 re-run plan, or pass the plan (or `plan_id` + `effects`) with execute" spelled
-alike by both engines and pinned, `reads::plan-memory`). Any other
+alike by both engines and pinned, `reads::plan-memory`), `expired_cursor`
+(6.0: a `changes_since` cursor the feed no longer serves — another epoch,
+past the head, behind the oldest retained row — `data: { epoch, oldest,
+head }`, never retriable, the message pinned, §3; the consumer rescans,
+`spec/sync` §6; `reads::changes-since-epoch-and-expiry`). Any other
 failure is `repo_not_found` with the message (§9).
 
 **Arguments (3.0, normative; 5.0 spelling).** A tool's prefix names the row
@@ -1557,9 +1594,9 @@ identity consequences the 3.x result carried are the Plan's
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` — a file event's path, a role — in either form) | its outcomes (`observe` sweeps the pool) as `{ _id, _path, rev, commitId, converged, echo, conflicted, dispositions }` (`observe_many`: one per item, `observe_delete`: `{ _id, _path, deleted }`) — the store's own `{ doc, commit, rev }` outcome of `spec/store` §9 is re-shaped at this boundary, `_path` in the reference form |
 | `blocks_history` | `_id`, `limit?` | §3 (not repo-scoped; `history_node` before 3.0) |
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0; `docs_read_at` is `docs_read { at }`'s sugar since 4.7, §2) |
-| `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 (3.0); `repos_status` names the repository `{ _id, slug, … }` (the root row's `_id`, §1.1; `slug` and the rest roles); `sync_status` unchanged |
+| `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 (3.0; 6.0 with sync 4.0): `repos_status` names the repository `{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk }` (the root row's `_id`, §1.1; `slug` and the rest roles; `feed` replaces the `commits` count, `unconverged` — identically zero under I1 — is gone); `sync_status` is `{ epoch, oldest, head, lastBatch: { ts, batchId, files } \| null, convergent, diskChecked, disk, capabilities }` (`lastCommitSeq`/`lastCheckpoint` through 5.x; `convergent` = `diskChecked && no drift`; `capabilities` as `version` reports them) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
-| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3, the last key) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"). Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2) `{ history: { state }, semantic: { state } }`; `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 `plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -1696,7 +1733,7 @@ necessary.
   { fix }` — 4.5; `changes_since` digests lose
   `summary`; `message` kept only for the surface's OWN errors — those whose
   `data` names the argument they could not honor (`_id`, `_path`, `section`,
-  `provider`) or that carry `hint: "arguments"`,
+  `provider`, `plan_id`, `epoch` — the last is `expired_cursor`'s, 6.0) or that carry `hint: "arguments"`,
   the §4 "Arguments" wording both engines spell alike — and dropped for a
   kernel's or store's). A case with `workspace: true` gives the default repo a
   temporary directory as its `fs` source and server root, seeded from the
@@ -2342,6 +2379,29 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-25, surface 6.0 (store 17.0 slice 3d — `docs/modular-core/`
+  D7/M5, D4; the contracts `phase-1-contracts.md` §2.3, §2.4, §2.7, §7
+  resolutions 3, 5, 6, 16): **`changes_since` reads the core's feed and its
+  cursor is `(epoch, seq)`** (§3). The integer `cursor` keeps its meaning
+  and gains a sibling `epoch` argument and result key (resolution 5: an
+  opaque `"<epoch>:<seq>"` string would have changed the CLI's `--cursor
+  <n>` and the coordinator's integer base); the result gains `epoch`,
+  `oldest`; a digest gains `batch_id`, `plan_id?` and per-document `kind` /
+  `from_path`, a deleted document `_hash: null`; a cursor the feed no longer
+  serves is the **error envelope** `expired_cursor { epoch, oldest, head }`
+  (resolution 16 — a result-shaped variant would put a second shape on the
+  tool), under exactly the three conditions of §3, never for `cursor = 0`.
+  `repos_status` and `sync_status` move with `spec/sync` 4.0 (§4: `feed: {
+  epoch, oldest, head }`, no `commits`/`unconverged`; `head`/`epoch`/
+  `oldest`/`lastBatch`/`capabilities`, no `lastCommitSeq`/`lastCheckpoint`);
+  `version` gains `epoch`. A result key changes meaning (`cursor` is now
+  epoch-scoped) and two tools' shapes move: a major. Fixtures: every
+  `changes_since` outcome regenerated (the `history` case's `cursor: 9`
+  past the head is `expired_cursor` now, as the contracts say); `reads::
+  changes-since-epoch-and-expiry` and `changes-since-kinds-move-and-delete`
+  new; `version` by shape; `SURFACE_ERROR_KEYS` gains `epoch` so the
+  error's message is pinned. The Rust twin follows in its own round; until
+  it lands its surface runner is red by design.
 - 2026-10-25, surface 5.1 patch — `has_anchor()` is an open-edge probe (§1.3,
   §9). The one edges reader without `to_commit IS NULL`; fixed in both engines
   with the fixture that would have caught it. No version move.

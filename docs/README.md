@@ -57,7 +57,7 @@ These documents are maintained as **as-built** references to the implementation 
 | **Commit** | Atomic transaction across ≥1 documents; per-repo ordered; the change feed (`c_`) |
 | **Placement** | A block's parent + fractional order key + document |
 | **Disposition** | The engine's recorded belief about one block across an observed transition (kind, confidence, reason) |
-| **Checkpoint** | One debounced batch of filesystem changes (`cp_`) |
+| **Batch** (checkpoint through v16) | One debounced batch of filesystem changes; its id is the feed's `batch_id` — the first committing member's commit id — and its record the repository's `sync_state` status row (store 17.0, D4) |
 | **Section** | Derived range from a heading block to its next peer — never a stored entity |
 | **Root row** | The repository as OQX's root-scope row (surface 2.0): `^docs`/`^blocks`/`^nodes`/`^links` reach its collections from a top-level row (one caret per enclosing block, or `0^docs` from any depth), `^_id` is the repository id; `$repo` is gone |
 | **Engine field / authored key** | The name rule (surface 5.0): on every row an underscore-prefixed name is engine-provided, however derived (`_id`, `_path`, `_hash`, `_title`, `_tags`, `_doc`, `_out_links`, …), a bare name is a user-authored property (`title`, `tags`, `layer`, …; nothing is reserved), `$` names are OQX's (`$it`, `$depth`); collections (`docs`, `^docs`) and row functions (`text("x")`) stay bare. Tool results and arguments spell a row the same way (`_id`/`_path`) |

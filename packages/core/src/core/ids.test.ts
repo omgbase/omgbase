@@ -23,9 +23,9 @@ describe("ids", () => {
     expect(isValidId("b_TOOLONGX")).toBe(false);
   });
 
-  it("supports multi-char prefixes (col_, cp_)", () => {
+  it("supports multi-char prefixes (col_, ep_)", () => {
     expect(isValidId(mintId("col"), "col")).toBe(true);
-    expect(isValidId(mintId("cp"), "cp")).toBe(true);
+    expect(isValidId(mintId("ep"), "ep")).toBe(true);
   });
 
   it("mints with high uniqueness", () => {

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { changesSince } from "../graph/history.js";
+import { changesSince, ExpiredCursor } from "../core/store/feed.js";
 import { buildServer } from "./server.js";
 
 // The change feed must be walkable to the end by cursor: every commit appears
@@ -80,13 +80,19 @@ describe("MCP changes_since — cursor paging", () => {
     expect(second.digests[0]!.seq).toBe(101);
     expect(second.head).toBe(N);
     // seq is per-repo: a cursor carried across repos lands beyond the other
-    // repo's feed. `head` makes that diagnosable (cursor > head) instead of
-    // indistinguishable from "no new changes".
+    // repo's feed — `expired_cursor` (spec/surface §3, 6.0: cursor > head)
+    // with the other repo's position, instead of an empty page that looks
+    // like "no new changes".
     const otherRepo = ensureRepo(store, "other", mkdtempSync(join(tmpdir(), "mcp-changes-other-")));
-    const foreign = changesSince(store, otherRepo, { cursor: 100, limit: 100 });
-    expect(foreign.digests).toEqual([]);
-    expect(foreign.head).toBe(0);
-    expect(foreign.cursor).toBeGreaterThan(foreign.head);
+    expect(() => changesSince(store, otherRepo, { cursor: 100, limit: 100 })).toThrow(ExpiredCursor);
+    try {
+      changesSince(store, otherRepo, { cursor: 100, limit: 100 });
+    } catch (e) {
+      expect((e as ExpiredCursor).data()).toEqual({ epoch: expect.stringMatching(/^ep_/), oldest: 0, head: 0 });
+    }
+    // The other repo's epoch is not this one's: the same error, whatever the cursor.
+    const otherEpoch = (store.db.prepare("SELECT epoch FROM repos WHERE repo_id = ?").get(otherRepo) as { epoch: string }).epoch;
+    expect(() => changesSince(store, repoId, { cursor: 0, epoch: otherEpoch })).toThrow(ExpiredCursor);
     // A string cursor (as a loosely-typed remote client might send) is rejected
     // by the schema rather than silently coerced to 0 (which would restart the feed).
     const r = await client.callTool({ name: "changes_since", arguments: { cursor: "100", limit: 100 } }) as { isError?: boolean };

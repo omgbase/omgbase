@@ -4,7 +4,7 @@ import { ensureRepo } from "../core/attach.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { observeBatch, type BatchItem } from "./observe.js";
 import type { SyncSource } from "./plugin.js";
-import { finishCheckpoint, type FileChange, type CheckpointResult } from "./checkpoint.js";
+import { finishCheckpoint, type FileChange, type BatchResult } from "./checkpoint.js";
 
 // Source-agnostic reconciliation driver (sync-plugins §5, §10). One loop for
 // every EXTERNAL source: fetch each changed member through the SyncSource (a pipe
@@ -14,10 +14,10 @@ import { finishCheckpoint, type FileChange, type CheckpointResult } from "./chec
 // because every source call crosses a process boundary (13 §9). The in-process
 // filesystem fast-path (checkpoint.ts) mirrors this loop synchronously.
 
-export type { FileChange, CheckpointResult };
+export type { FileChange, BatchResult };
 
 /**
- * Reconcile a batch of changed members against a repo as one checkpoint.
+ * Reconcile a batch of changed members against a repo as one batch.
  * `source.fetch(path)` supplies current bytes (or null = left the scope). The
  * engine hashes the bytes itself: a hash equal to the stored file_hash is an
  * echo (no commit); otherwise the member is ingested as an observed commit; a
@@ -34,15 +34,15 @@ export async function reconcileChanges(
   repoId: string,
   source: SyncSource,
   changes: FileChange[],
-  opts: { ts?: string; gitHead?: string | null } = {},
-): Promise<CheckpointResult> {
+  opts: { ts?: string } = {},
+): Promise<BatchResult> {
   const ts = opts.ts ?? new Date().toISOString();
   const items: BatchItem[] = [];
   for (const change of changes) {
     const item = await source.fetch(change.path);
     items.push({ path: change.path, content: item === null ? null : item.content });
   }
-  return finishCheckpoint(store, repoId, observeBatch(store, repoId, items, ts), { ts, gitHead: opts.gitHead ?? null });
+  return finishCheckpoint(store, repoId, observeBatch(store, repoId, items, ts), { ts });
 }
 
 export interface AttachResult {

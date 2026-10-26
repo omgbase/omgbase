@@ -3,7 +3,7 @@
 // protocol) with an omgbase repo reached through an EngineClient seam:
 // InProcessEngineClient (local, direct Store) or McpEngineClient (remote, MCP).
 
-export { type EngineClient, type ChangesPage, type DocBytes, InProcessEngineClient } from "./engine-client.js";
+export { type EngineClient, type ChangesPage, type ChangesSinceOpts, type DocBytes, type DocListing, FeedExpired, InProcessEngineClient } from "./engine-client.js";
 export { McpEngineClient, connectStdioEngine, connectHttpEngine, connectEngine, parseEngineSpec, type EngineSpec } from "./mcp-engine-client.js";
 export { Coordinator, type SyncInSummary, type SyncOutSummary } from "./coordinator.js";
 export { runFsMirror, type FsMirrorOptions } from "./mirror.js";
