@@ -218,7 +218,7 @@ describe("docHistory (version-history listing)", () => {
     const a = docs.find((d) => d._path === "/journal/2026/a.md")!;
     expect(a.versions.length).toBe(2);
     // seq ascending (chronological).
-    expect(a.versions[0]!._seq).toBeLessThan(a.versions[1]!._seq);
+    expect(a.versions[0]!._seq!).toBeLessThan(a.versions[1]!._seq!);
     // isCurrent only on the latest.
     expect(a.versions.filter((v) => v._is_current).map((v) => v._rev)).toEqual([a.currentRev]);
     expect(a.versions[a.versions.length - 1]!._is_current).toBe(true);

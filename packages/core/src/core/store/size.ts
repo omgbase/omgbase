@@ -1,7 +1,8 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
 import { semanticOf } from "../capabilities/registry.js";
-import { feedStatus, repoFeedPolicy } from "./feed.js";
+import { FEED_CAPPED_ALERT, feedStatus, repoFeedPolicy } from "./feed.js";
+import { listActiveAlerts } from "./alerts.js";
 import { captureFor, coverageFrom, readCapabilities } from "./manifest.js";
 
 // The size report (spec/store §7.2 "Size", 14.1; the six categories 17.0 —
@@ -197,7 +198,7 @@ export function shareOf(bytes: number, total: number): number {
 export type VectorAdvice = (vectorBytes: number, totalBytes: number) => string[];
 
 /** spec/store §7: the advice lines, in this order; `nothing to reclaim` when none applies. `vectorAdvice` is the semantic bundle's contribution — null on a store without the module. */
-export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0, retention: SizeRetention = { revisions: 0, bytes: 0 }, vectorAdvice: VectorAdvice | null = null): string[] {
+export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sameDispositions = 0, retention: SizeRetention = { revisions: 0, bytes: 0 }, vectorAdvice: VectorAdvice | null = null, feedCap: FeedCapAdvice | null = null): string[] {
   const advice: string[] = [];
   const logical = file.page_count * file.page_size;
   if (file.reclaimable > VACUUM_ADVICE_MIN_BYTES && file.reclaimable * 100 > logical * VACUUM_ADVICE_MIN_SHARE) {
@@ -239,9 +240,17 @@ export function sizeAdvice(file: SizeFile, categories: SizeCategoryReport[], sam
       advice.push(`identity claims are ${formatShare(claims.share)} of the database: set identity.claims_retain_days to release old ids`);
     }
   }
+  // Phase 4b (contracts §7.5): the write-time cap pruned rows the floors
+  // promised — the `feed_capped` alert is active for the report's repository.
+  if (feedCap) {
+    advice.push(`the feed holds ${feedCap.entries} entries over ${feedCap.days} day${feedCap.days === 1 ? "" : "s"} (floors ${feedCap.retain_entries} / ${feedCap.retain_days}): raise feed.max_entries or shorten the sync interval`);
+  }
   if (advice.length === 0) advice.push("nothing to reclaim");
   return advice;
 }
+
+/** What the feed-cap advice line prints (spec/store §7.2, Phase 4b): the feed's entries, the days its retained rows span, the floors. */
+export interface FeedCapAdvice { entries: number; days: number; retain_entries: number; retain_days: number }
 
 interface MasterRow {
   type: string;
@@ -389,7 +398,14 @@ export function sizeReport(store: Store, opts: SizeReportOptions = {}): SizeRepo
     });
   }
   const semantic = semanticOf(db);
-  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
+  // Phase 4b: the feed-cap line reads the alert channel of the report's repository.
+  let feedCap: FeedCapAdvice | null = null;
+  if (feedRepo !== null && feed !== null && listActiveAlerts(db, feedRepo).some((a) => a.code === FEED_CAPPED_ALERT)) {
+    const span = db.prepare("SELECT MIN(ts) AS lo, MAX(ts) AS hi FROM feed WHERE repo_id = ? AND epoch = ?").get(feedRepo, feed.epoch) as { lo: string | null; hi: string | null };
+    const days = span.lo && span.hi ? Math.ceil((Date.parse(span.hi) - Date.parse(span.lo)) / 86_400_000) : 0;
+    feedCap = { entries: feed.entries, days, retain_entries: feed.retain_entries, retain_days: feed.retain_days };
+  }
+  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, feed, capabilities, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null, feedCap) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }

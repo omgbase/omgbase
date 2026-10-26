@@ -36,6 +36,7 @@ import { oqxRun, type OqxResult } from "../../src/oqx-js/run.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
 import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX } from "../../src/core/capabilities/errors.js";
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
+import { SemanticProviderMissing, disableSemantic, enableSemantic, semanticProviderOf, type CoverageInterval, type SemanticLifecycleResult } from "../../src/core/store/manifest.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
 import { FIXTURE_REPO_SLUG, TS_RE, createFixtureRepo, isHistoryStep, isLifecycleStep, runExecStep, runGcStep, runHistoryStep, runLifecycleStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
 
@@ -84,7 +85,16 @@ export interface ReadStep {
 export interface RecoverStep {
   recover: { ts: string };
 }
-export type Step = StoreStep | ReadStep | RecoverStep;
+/** The `embed` lifecycle devices (README §6, 6.2 — spec/store §5.10, Phase 4b): `embed_enable { ts, provider? }` sets `embedding.provider` at the workspace layer when given (directly, as the fixture's own device — no settings-write refresh) then runs `embed enable` at `ts`; `embed_disable { ts }` runs `embed disable`. Outcome `{ semantic: { state, coverage, provider, changed } }` or `{ error: "provider_unavailable" }` for an enable with no provider. */
+export interface EmbedStep {
+  embed_enable?: { ts: string; provider?: string };
+  embed_disable?: { ts: string };
+}
+export type Step = StoreStep | ReadStep | RecoverStep | EmbedStep;
+
+export function isEmbedStep(step: object): step is EmbedStep {
+  return "embed_enable" in step || "embed_disable" in step;
+}
 
 /** A tool error, as the fixture records it: the envelope minus its prose. */
 export interface ReadErrorOutcome {
@@ -656,8 +666,10 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
             restore();
           }
         } else if (isLifecycleStep(step)) {
-          // spec/store §9.4 (Phase 4a): `history_disable` / `history_enable` around the reads — the D3 states on the wire.
+          // spec/store §9.4 (Phase 4a/4b): `history_disable` / `history_enable` / `history_purge` around the reads — the D3 states on the wire.
           steps.push(runLifecycleStep(store, repoId, step));
+        } else if (isEmbedStep(step)) {
+          steps.push(runEmbedStep(store, repoId, step));
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;
@@ -679,6 +691,29 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
       if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
     }
   });
+}
+
+/** README §6 (6.2): the `embed_enable` / `embed_disable` devices through the production verbs (spec/store §5.10). */
+export function runEmbedStep(store: Store, repoId: string, step: EmbedStep): { semantic: { state: string; coverage: CoverageInterval[]; provider: string | null; changed: boolean } } | { error: "provider_unavailable"; message: string } {
+  const db = store.db;
+  const outcome = (r: SemanticLifecycleResult) => ({ semantic: { state: r.row.state, coverage: r.row.coverage, provider: semanticProviderOf(db, repoId), changed: r.changed } });
+  if (step.embed_enable) {
+    const { ts, provider } = step.embed_enable;
+    if (provider !== undefined) {
+      // The device writes the workspace layer directly: a settings write would refresh the row at the wall clock.
+      const row = db.prepare("SELECT settings FROM workspace_settings WHERE id = 0").get() as { settings: string } | undefined;
+      const settings = row ? (JSON.parse(row.settings) as Record<string, unknown>) : {};
+      settings.embedding = { ...(isRecord(settings.embedding) ? settings.embedding : {}), provider };
+      db.prepare("INSERT INTO workspace_settings (id, settings) VALUES (0, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings").run(JSON.stringify(settings));
+    }
+    try {
+      return outcome(enableSemantic(db, repoId, { now: ts }));
+    } catch (e) {
+      if (e instanceof SemanticProviderMissing) return { error: "provider_unavailable", message: e.message };
+      throw e;
+    }
+  }
+  return outcome(disableSemantic(db, repoId, { now: step.embed_disable!.ts }));
 }
 
 // ---- §1.4 cursor cases --------------------------------------------------------------------
@@ -716,6 +751,17 @@ const validateRead: ExtraStepValidator = (body, here, problems) => {
 };
 
 /** README §6 (6.0): a `recover` step takes exactly `ts`. */
+const validateEmbedEnable: ExtraStepValidator = (body, here, problems) => {
+  if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts" && k !== "provider")) problems.push(`${here}: embed_enable takes \`ts\` and an optional \`provider\``);
+  else {
+    if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z`);
+    if (body.provider !== undefined && (typeof body.provider !== "string" || body.provider === "")) problems.push(`${here}: \`provider\` must be a non-empty string`);
+  }
+};
+const validateEmbedDisable: ExtraStepValidator = (body, here, problems) => {
+  if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: embed_disable takes only \`ts\``);
+  else if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z`);
+};
 const validateRecover: ExtraStepValidator = (body, here, problems) => {
   if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: recover takes only \`ts\``);
   if (!isRecord(body) || typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
@@ -829,7 +875,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.bare !== undefined && typeof c.bare !== "boolean") problems.push(`${at}: \`bare\` must be a boolean`);
     } else if (kind === "reads" || kind === "examples") {
       if (c.workspace !== undefined && typeof c.workspace !== "boolean") problems.push(`${at}: \`workspace\` must be a boolean`);
-      stepCount = validateSteps(at, c.steps, problems, { read: validateRead, recover: validateRecover });
+      stepCount = validateSteps(at, c.steps, problems, { read: validateRead, recover: validateRecover, embed_enable: validateEmbedEnable, embed_disable: validateEmbedDisable });
     } else {
       const has = ["parts", "cursor"].filter((k) => c[k] !== undefined);
       if (has.length !== 1) problems.push(`${at}: exactly one of \`parts\` / \`cursor\``);

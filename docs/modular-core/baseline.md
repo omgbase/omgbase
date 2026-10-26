@@ -1014,6 +1014,28 @@ noise, as in TS: the recorder's share of a small write was never the
 latency's bulk. Reproduce: `node scripts/baseline/modular-core-baseline.mjs
 --engine rust --bin target/release/omgbase --history off`.
 
+### 17.2 (Phase 4b), TS — history on, no regression (`ts-2026-10-26T11-42-15`)
+
+The same harness over the Phase 4b reference (store 17.2: `history purge`,
+the semantic lifecycle, the `feed_capped` alert, the read-state table — none
+of which a workload here exercises), history ON. Against the 4a run
+(`ts-2026-10-26T09-07-08`): import 6.20 vs 6.20 MB, the end 6.91 vs 6.89
+MB (+20 KB, within the page noise of the 17.0 rows), every per-op cost
+identical to the tenth of a KB — frontmatter 2.2, block edit 2.6, journal
+3.4, task 1.4, link 1.9, doc churn 6.8 KB/op; `history` 2.70 MB at the end
+in both. Nothing moved.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | search | sync | same_dispositions |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.20 | 6,201 | 30.9 / doc | 3.12 | 0.38 | 0.01 | 2.23 | 0.23 | 0.24 | 0 |
+| frontmatter hot update | 50 | 6.31 | 111 | 2.2 | 3.13 | 0.39 | 0.01 | 2.29 | 0.23 | 0.27 | 0 |
+| block edit | 50 | 6.44 | 131 | 2.6 | 3.13 | 0.40 | 0.01 | 2.38 | 0.23 | 0.29 | 0 |
+| rolling journal | 50 | 6.62 | 172 | 3.4 | 3.15 | 0.41 | 0.01 | 2.49 | 0.23 | 0.31 | 0 |
+| task churn | 50 | 6.68 | 70 | 1.4 | 3.15 | 0.41 | 0.01 | 2.54 | 0.23 | 0.34 | 0 |
+| link churn | 50 | 6.78 | 94 | 1.9 | 3.15 | 0.43 | 0.01 | 2.60 | 0.23 | 0.35 | 0 |
+| delete / recreate | 20 | 6.91 | 135 | 6.8 | 3.16 | 0.44 | 0.01 | 2.70 | 0.23 | 0.36 | 0 |
+| gc | — | 6.91 | 0 | — | 3.16 | 0.44 | 0.01 | 2.70 | 0.23 | 0.36 | 0 |
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |
@@ -1048,7 +1070,45 @@ container-duplication finding of the history note, seen per edit), and the
 engines are byte-for-byte consistent on this path — the earlier "divergence"
 was the harness's.
 
-## 3. What the baseline says for the plan
+## 3. Real corpora
+
+The measurement the program exists for (Phase 4b): a real directory of
+Markdown imported four ways into fresh workspaces — history on and off,
+with and without the embedder — `scripts/baseline/real-corpus.mjs`
+(`--source <dir> [--embedder <cmd>] [--out docs/modular-core/baseline]`;
+the directory is copied into a temporary workspace and never touched; the
+table prints numbers only). Below: this repository's `docs/` (a public
+corpus — 42 Markdown files, 0.91 MB, 4,009 blocks; the baseline tables under
+`docs/modular-core/baseline/` are part of it), TS CLI 0.27.0 at store 17.2,
+`@omgbase/embedder` (`Xenova/gte-base`, 768-dim); run
+`real-corpus-ts-2026-10-26T11-54-02`.
+
+| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| history on, embedder off | 42 | 4009 | 0.91 | 9.42 | 10.4× | 5.04 (53.5 %) | 0.36 | 0.01 | 3.29 (34.9 %) | 0.56 (5.9 %) | 0.14 |
+| history off, embedder off | 42 | 4009 | 0.91 | 6.05 | 6.7× | 5.02 (83.0 %) | 0.32 | 0.01 | 0.00 (0.0 %) | 0.56 (9.3 %) | 0.14 |
+| history on, embedder on | 42 | 4009 | 0.91 | 14.98 | 16.5× | 5.05 (33.7 %) | 0.36 | 0.01 | 3.27 (21.8 %) | 6.14 (41.0 %) | 0.14 |
+| history off, embedder on | 42 | 4009 | 0.91 | 11.64 | 12.8× | 5.03 (43.2 %) | 0.32 | 0.01 | 0.00 (0.0 %) | 6.14 (52.7 %) | 0.14 |
+
+History off saves 3.38 MB — 36 % of the history-on database, 10.4× → 6.7×
+the Markdown. The embedder adds 5.55 MB of vectors (6.1× the Markdown on its
+own: 4,009 block vectors + 42 document vectors at 768 floats), so the four
+compositions span 6.7× – 16.5×. Content is 5.0 MB (5.5× the Markdown) on
+this corpus because the baseline tables are wide Markdown tables — every
+cell row a block with its raw, properties, nodes and FTS — a shape the
+synthetic workload (§2, ≈ 14× for content) does not have; the history share
+(35 %) is below the 50 % of the two-month notes corpus (§1) because an
+import is one revision per document — the per-commit constant has not
+started accumulating. Import took 2.2 s / 2.0 s without the embedder; with
+it the `source add` drains the queue (≈ 4.5 min for 4,000 blocks on this
+machine). To run it on a private repository (numbers only — the script
+prints no path and no content):
+
+```
+node scripts/baseline/real-corpus.mjs --source /path/to/notes --embedder "node $PWD/packages/embedder/dist/src/bin.js"
+```
+
+## 4. What the baseline says for the plan
 
 - **History is half the bytes on a real corpus, and growth is per commit,
   not per byte changed.** The fixed cost of a commit (`commits` + `revisions`
@@ -1067,13 +1127,14 @@ was the harness's.
   choice rather than a rebuild.
 - **gc reclaims nothing without retention** — the sweep is not a growth control.
 
-## 4. Reproduce
+## 5. Reproduce
 
 ```
 cargo build -p omgbase && pnpm --filter omgbase build        # both CLIs
 node scripts/baseline/modular-core-baseline.mjs --engine rust   # → docs/modular-core/baseline/rust-<stamp>.{json,md}
 node scripts/baseline/modular-core-baseline.mjs --engine ts
 node scripts/baseline/modular-core-baseline.mjs --engine ts --history off   # Phase 4a: the repository born with capture off (source add --no-history)
+node scripts/baseline/real-corpus.mjs --source <dir> [--embedder <cmd>]       # Phase 4b: a real directory, four compositions, numbers only (§3)
 <cli> -C <workspace> doctor --size --json                       # a real workspace, read-only
 ```
 

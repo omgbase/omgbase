@@ -19,8 +19,8 @@
 export type CapabilityName = "history" | "semantic";
 export type CapabilityState = "enabled" | "disabled" | "unavailable";
 
-/** The history states a read can raise (phase-1-contracts §2.1): `outside_coverage` and `pruned` arrive with Phase 4b. */
-export type HistoryReadState = "disabled" | "unavailable";
+/** The history states a read can raise (phase-1-contracts §2.1; spec/surface §2.1's decision table — Phase 4b added `outside_coverage` and `pruned`). */
+export type HistoryReadState = "disabled" | "unavailable" | "outside_coverage" | "pruned";
 
 /** The pinned messages, byte for byte what the Rust twin spells. */
 export const SEMANTIC_DISABLED_MESSAGE =
@@ -36,9 +36,9 @@ export class CapabilityUnavailable extends Error {
   readonly retriable: boolean;
   constructor(
     readonly capability: CapabilityName,
-    readonly state: Exclude<CapabilityState, "enabled">,
+    readonly state: Exclude<CapabilityState, "enabled"> | HistoryReadState,
     message: string,
-    readonly extra: { fix?: string; provider?: string; reason?: string; rev?: string } = {},
+    readonly extra: { fix?: string; provider?: string; reason?: string; rev?: string; coverage_from?: string } = {},
   ) {
     super(message);
     this.name = "CapabilityUnavailable";
@@ -53,8 +53,40 @@ export class CapabilityUnavailable extends Error {
       ...(this.extra.provider !== undefined ? { provider: this.extra.provider } : {}),
       ...(this.extra.reason !== undefined ? { reason: this.extra.reason } : {}),
       ...(this.extra.rev !== undefined ? { rev: this.extra.rev } : {}),
+      ...(this.extra.coverage_from !== undefined ? { coverage_from: this.extra.coverage_from } : {}),
       ...(this.extra.fix !== undefined ? { fix: this.extra.fix } : {}),
     };
+  }
+
+  /**
+   * A revision token minted while capture was off — before the first coverage
+   * interval or in a gap between two (spec/surface §2.1 `outside_coverage`,
+   * Phase 4b): the claim's `minted_at` falls in no interval of the manifest.
+   * `coverageFrom` is the first interval's start; `fix` the current document
+   * when the tool was `docs_read { at }` / `docs_read_at`.
+   */
+  static historyOutsideCoverage(rev: string, coverageFrom: string, fix?: string): CapabilityUnavailable {
+    return new CapabilityUnavailable("history", "outside_coverage", historyOutsideCoverageMessage(rev, coverageFrom), { rev, coverage_from: coverageFrom, ...(fix !== undefined ? { fix } : {}) });
+  }
+
+  /**
+   * A revision token minted within coverage whose `revisions` row is gone —
+   * `history purge` removed it (spec/surface §2.1 `pruned`, Phase 4b; spec/store
+   * §7.6). `fix` as `outside_coverage`.
+   */
+  static historyPruned(rev: string, fix?: string): CapabilityUnavailable {
+    return new CapabilityUnavailable("history", "pruned", historyPrunedMessage(rev), { rev, ...(fix !== undefined ? { fix } : {}) });
+  }
+
+  /**
+   * The semantic row was switched off by `omg embed disable` while a provider
+   * stays configured (spec/store §5.10, Phase 4b): `semantic()`, `blocks_resolve`'s
+   * vector leg and the drain refuse with `{ semantic, disabled }` and the fix
+   * `omg embed enable` — distinct from `semanticDisabled()` (no module) and
+   * from `provider_unavailable` (the module is here, nothing is configured).
+   */
+  static semanticSwitchedOff(): CapabilityUnavailable {
+    return new CapabilityUnavailable("semantic", "disabled", SEMANTIC_SWITCHED_OFF_MESSAGE, { fix: SEMANTIC_SWITCHED_OFF_FIX });
   }
 
   /**
@@ -107,6 +139,18 @@ export const HISTORY_UNAVAILABLE_MESSAGE = "history is unavailable in this build
 /** phase-1-contracts §2.1, byte for byte in both engines: a history read on a repository whose capture is off. */
 export const HISTORY_DISABLED_MESSAGE =
   "history is disabled for this repository — enable it with `omg history enable` (reads of what was captured earlier still work)";
+/** spec/surface §2.1 `outside_coverage` (Phase 4b), byte for byte in both engines. */
+export function historyOutsideCoverageMessage(rev: string, coverageFrom: string): string {
+  return `revision ${JSON.stringify(rev)} was minted outside this repository's history coverage (capture started ${coverageFrom})`;
+}
+/** spec/surface §2.1 `pruned` (Phase 4b), byte for byte in both engines. */
+export function historyPrunedMessage(rev: string): string {
+  return `revision ${JSON.stringify(rev)} was captured but its history has been purged`;
+}
+/** spec/store §5.10 (Phase 4b): the semantic row switched off by `omg embed disable` with a provider still configured. */
+export const SEMANTIC_SWITCHED_OFF_MESSAGE =
+  "semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)";
+export const SEMANTIC_SWITCHED_OFF_FIX = "omg embed enable";
 
 /**
  * Capture failed inside a commit (spec/store §5.4 step 15, 17.0 Phase 4a —

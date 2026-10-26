@@ -130,7 +130,10 @@ export {
   // The capture lifecycle and the composition rule (spec/store §5.9, §3.1 — modular-core Phase 4a).
   enableHistory, disableHistory, HISTORY_ENABLED_REASON, captureFor, historyReader, requireHistoryReader, historyBundlePresent, applyHistoryBundle, anyHistoryEnabled,
   capture, CAPTURE_FAILED_ALERT, raiseCaptureFailed, clearCaptureFailed,
-  type ManifestRow, type ManifestState, type CoverageInterval, type HistoryLifecycleResult,
+  // Phase 4b: the read-state table, `history purge`, `embed enable|disable`.
+  inCoverage, claimMintedAt, historyReadRefusal, TargetMissingRevision, purgeHistory, enableSemantic, disableSemantic, semanticSwitchedOff, semanticProviderOf,
+  SemanticProviderMissing, SEMANTIC_PROVIDER_MISSING_MESSAGE,
+  type ManifestRow, type ManifestState, type CoverageInterval, type HistoryLifecycleResult, type HistoryPurgeResult, type SemanticLifecycleResult,
 } from "./core/store/manifest.js";
 export {
   activeAlerts, listActiveAlerts, raiseAlert, clearAlert, refreshBacklogAlert, alertAfterMinutes, materializationBacklogMessage, materializationFailedMessage,

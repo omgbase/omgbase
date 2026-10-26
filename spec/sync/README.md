@@ -494,6 +494,28 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   pruned feed (the deletion the pruned rows carried reaches the source only
   through the rescan).
 
+**The core-only run (4.2; `spec/store` §9.6 — `OMGBASE_CAPABILITIES=core`,
+modular-core Phase 4b).** The checkpoint runner must be able to run the SAME
+scripts on a composition without the history module and compare them. The
+rule, mirrored by both runners: (1) nothing is skipped — every step of
+`checkpoint.json` (`disk`, `rm`, `sweep`, `checkpoint`, `drift`, `recover`,
+`rebuild_stats`) is the core's, and `pure.json`, `registry.json` and the
+`adapter` cases of `protocol.json` touch no history table, so they run
+unchanged; (2) a checkpoint case's `expect` is compared with its history
+tables EMPTIED — `commits`, `revisions`, `blobs`, `tree_nodes`,
+`dispositions`, `block_changes`, `archives` are `[]` on both sides — while
+the step outcomes (the batch id, the buckets, the counters), the core
+tables (`docs`, `feed`, `feed_entries`, `blocks`, `resurrection_pool`,
+`sections`, `pending_materializations`), `sync_state` and `file_stats` are
+compared as recorded (a repository born `disabled` writes the same feed,
+heads and claims; the projection carries no `id_claims`); (3) the store's
+invariants are the core's alone (`spec/store` §9.6); (4) the runner reports
+how many cases it compared this way; (5) `SYNC_SPEC_UPDATE` is refused under
+the override — the fixtures are the full composition's. The reference:
+`packages/core/corpus/sync/spec.test.ts` (`coreModeCheckpointExpect`); the
+coordinator cases of `@omgbase/sync`'s runner read the feed, never a history
+table, and need no mapping.
+
 **Generation.** Two runners, each rewriting only its own cases under
 `SYNC_SPEC_UPDATE=1`: `packages/core/corpus/sync/spec.test.ts` (pure,
 registry, checkpoint, adapter cases) and `packages/sync/corpus/sync/spec.test.ts`
@@ -601,6 +623,10 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.2 (store 17.2 Phase 4b of `docs/modular-core/`): **the
+  core-only run** (§8) — the checkpoint cases compare with the history tables
+  emptied under `OMGBASE_CAPABILITIES=core`; no case or outcome moved (the
+  4a gate had excluded `corpus/sync` because its runner lacked the mapping).
 - 2026-10-26, sync 4.1 (store 17.1 Phase 4a of `docs/modular-core/`,
   resolution 18): the batch result and the sweep result gain **`failed`** —
   the members a throwing recorder rolled back (§4.1, §4.3); `sync_status.

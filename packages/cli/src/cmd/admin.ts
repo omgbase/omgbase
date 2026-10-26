@@ -18,6 +18,11 @@ import {
   readCapability,
   openCoverageFrom,
   captureFor,
+  enableSemantic,
+  disableSemantic,
+  semanticProviderOf,
+  SemanticProviderMissing,
+  withWriterLock,
   vacuum,
   reclaimableBytes,
   humanBytes,
@@ -366,23 +371,29 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h") || sub === "help") {
     return renderHelp(cli, {
       name: "embed",
-      summary: "The embedding queue: report the provider + what is queued, or drain it to embed now",
-      usage: ["embed [status]", "embed drain [--verbose] [--prune]"],
+      summary: "Semantic indexing: switch it on or off per repository, report the provider + what is queued, or drain the queue to embed now",
+      usage: ["embed [status]", "embed enable [--provider <command|url>]", "embed disable", "embed drain [--verbose] [--prune]"],
       options: [
         ["status", "(default) provider, model, and how many blocks/docs are embeddable but not yet embedded"],
+        ["enable", "switch semantic indexing on for the repository (needs a provider: --provider sets embedding.provider at the workspace layer); idempotent"],
+        ["disable", "switch it off: semantic() and the drain refuse until enable; the provider setting and the vectors stay; idempotent"],
+        ["--provider <p>", "(enable) the embedder command or http(s) URL to configure first"],
         ["drain", "embed the queued blocks now — status alone makes no progress"],
         ["-v, --verbose", "(drain) per-batch progress"],
         ["--prune", "(drain) afterwards delete vectors left by other models (e.g. after switching models)"],
       ],
-      notes: [`needs embedding.provider (\`${cli.prog} config set embedding.provider omgbase-embedder --repo ""\`); without one, semantic search is simply off.`],
+      notes: [`needs embedding.provider (\`${cli.prog} config set embedding.provider omgbase-embedder --repo ""\`, or \`${cli.prog} embed enable --provider omgbase-embedder\`); without one, semantic search is simply off.`],
     });
   }
+  if (sub === "enable" || sub === "disable") return runEmbedLifecycle(cli, sub, args.filter((a) => a !== sub));
   const verbose = args.includes("--verbose") || args.includes("-v");
   const prune = args.includes("--prune");
   const ws = cli.workspace();
   const repo = cli.repo(ws);
 
-  const loaded = await loadEmbedding(ws, repo.repoId);
+  // `status`/`drain` are the explicit semantic verbs: a row switched off by
+  // `embed disable` refuses them (spec/store §5.10) rather than reporting nothing.
+  const loaded = await loadEmbedding(ws, repo.repoId, { switchedOff: "throw" });
   if (!loaded) {
     // No provider configured (05 §6). Honest report; not an error.
     const hint = 'set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)';
@@ -435,6 +446,65 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   } finally {
     await loaded.close();
   }
+}
+
+/** A semantic coverage interval's `from..to` as the human lines print it. */
+function semanticInterval(i: { from: string; to: string | null }): string {
+  return `${i.from}..${i.to ?? "now"}`;
+}
+
+/**
+ * `embed enable [--provider <p>]` / `embed disable` (spec/store §5.10, Phase
+ * 4b): the semantic manifest row is the verbs'. `enable` with `--provider`
+ * first writes `embedding.provider` at the WORKSPACE layer (as `init
+ * --embedder` does — one vector space per workspace; that write re-derives
+ * every repository's row whose provider changed), then sets the selected
+ * repository's row `enabled` with an open coverage interval; without a
+ * configured provider it is a usage error. `disable` closes the interval and
+ * sets `disabled` — the provider setting and the vectors stay. Stderr `
+ * semantic enabled since <ts> (provider <p>)` / `  semantic already enabled
+ * since <ts> (provider <p>)` / `  semantic disabled (embedded <from>..<to>[,
+ * …])` / `  semantic already disabled`; `--json` `{ state, coverage,
+ * provider, changed }`. Under the writer lock (a manifest write).
+ */
+function runEmbedLifecycle(cli: Cli, verb: "enable" | "disable", args: string[]): number {
+  const { values } = parseArgs({ args, allowPositionals: false, options: { provider: { type: "string" } } });
+  if (verb === "disable" && values.provider !== undefined) throw new CliUsageError("--provider goes with embed enable");
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  // `--provider`'s settings write may itself flip the row (a provider change
+  // re-derives it): the verb reports `changed` when the state moved either way.
+  const stateBefore = readCapability(ws.store.db, repo.repoId, "semantic")?.state ?? "disabled";
+  const result = withWriterLock(ws.omgbaseDir, () => {
+    if (verb === "enable") {
+      if (values.provider !== undefined) {
+        if (values.provider.trim() === "") throw new CliUsageError("--provider needs a <command|url>");
+        const current = workspaceSettings(ws.store);
+        const embedding = current.embedding && typeof current.embedding === "object" && !Array.isArray(current.embedding) ? (current.embedding as Record<string, unknown>) : {};
+        writeWorkspaceSettings(ws.store, { ...current, embedding: { ...embedding, provider: values.provider } });
+      }
+      try {
+        return enableSemantic(ws.store.db, repo.repoId);
+      } catch (e) {
+        if (e instanceof SemanticProviderMissing) throw new CliUsageError(e.message);
+        throw e;
+      }
+    }
+    return disableSemantic(ws.store.db, repo.repoId);
+  });
+  const row = result.row;
+  const changed = result.changed || row.state !== stateBefore;
+  const provider = semanticProviderOf(ws.store.db, repo.repoId);
+  if (cli.flags.mode !== "human") return emitMachine(cli, { state: row.state, coverage: row.coverage, provider, changed });
+  const { io, style } = cli;
+  if (verb === "enable") {
+    const open = row.coverage.length > 0 ? row.coverage[row.coverage.length - 1]! : null;
+    const since = open && open.to === null ? open.from : null;
+    io.err(style.dim(`  semantic ${changed ? "enabled" : "already enabled"}${since ? ` since ${since}` : ""}${provider ? ` (provider ${provider})` : ""}`));
+  } else {
+    io.err(style.dim(changed || row.coverage.length > 0 ? `  semantic ${changed ? "disabled" : "already disabled"} (embedded ${row.coverage.map(semanticInterval).join(", ")})` : "  semantic already disabled"));
+  }
+  return EXIT_OK;
 }
 
 // helpers ---------------------------------------------------------------------

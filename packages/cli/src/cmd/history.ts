@@ -3,20 +3,21 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   evaluateRetention, retentionPolicy, exportHistory, attachArchive, detachArchive, listArchives, humanBytes, withWriterLock,
-  enableHistory, disableHistory, openCoverageFrom,
+  enableHistory, disableHistory, purgeHistory, openCoverageFrom,
   RetentionPolicyError, NotASegment, StaleSegment, ARCHIVE_DIR,
-  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult,
+  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult, type HistoryPurgeResult,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { columns } from "../render.js";
 
-// `omg history <enable|disable|plan|export|attach|detach|list>` (spec/cli §6
-// `history`, cli 4.6; `enable|disable` cli 5.2 — store 17.0 Phase 4a): the
-// operator surface of history CAPTURE (spec/store §5.9: `enable` turns the
-// repository's capture on with a baseline commit and opens a coverage interval,
-// `disable` closes it — the rows stay, reads of what was captured keep working)
+// `omg history <enable|disable|purge|plan|export|attach|detach|list>` (spec/cli
+// §6 `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1 Phase 4a;
+// `purge` cli 5.2 — store 17.2 Phase 4b): the operator surface of history
+// CAPTURE (spec/store §5.9: `enable` turns the repository's capture on with a
+// baseline commit and opens a coverage interval, `disable` closes it — the rows
+// stay, reads of what was captured keep working; §7.6: `purge` removes the rows)
 // and of history RETENTION (spec/store §7 "Retention", 15.0: `plan` evaluates
 // the policy and prints what would move; `export` writes one archive segment
 // and with `--prune` squashes the store; `attach` / `detach` / `list` manage
@@ -24,16 +25,17 @@ import { columns } from "../render.js";
 // `version.capabilities.history`, the `revisions.archived` attribute,
 // `capability_unavailable` and `revision_archived`.
 
-const SUBCOMMANDS = ["enable", "disable", "plan", "export", "attach", "detach", "list"] as const;
+const SUBCOMMANDS = ["enable", "disable", "purge", "plan", "export", "attach", "detach", "list"] as const;
 type Sub = (typeof SUBCOMMANDS)[number];
 
 function renderCard(cli: Cli): number {
   return renderHelp(cli, {
     name: "history",
-    summary: "History capture (enable/disable per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+    summary: "History capture (enable/disable/purge per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
     usage: [
       "history enable [--best-effort]",
       "history disable",
+      "history purge [--before <ts>]",
       "history plan [--before <ts>] [--policy <json|@file>]",
       "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
       "history attach <file|dir>",
@@ -44,12 +46,13 @@ function renderCard(cli: Cli): number {
       ["enable", "turn capture on for the repository: one baseline commit (origin import) records every live document's current head, a coverage interval opens, every later write is captured; idempotent"],
       ["disable", "turn capture off: the coverage interval closes, later writes record no history (the feed still does); what was captured stays readable; idempotent"],
       ["--best-effort", "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)"],
+      ["purge", "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left"],
       ["plan", "per document: revisions kept / to archive and the bytes only they reach; the policy in effect"],
       ["export", "write ONE new segment file (default dest .omgbase/archives/) holding the archived revisions' bodies; --prune then squashes the store and records the segment"],
       ["attach <path>", "record a segment file (or every segment of a directory that belongs to this repo) so reads at its revisions work again"],
       ["detach <ref>", "forget a segment by id or path (its revisions stay listed; reading one is revision_archived)"],
       ["list", "the repo's segments: commit range, revisions, bytes, state (attached, missing, pending, detached, stale)"],
-      ["--before <ts>", "only revisions committed before this RFC 3339 instant are candidates"],
+      ["--before <ts>", "(plan/export/purge) only revisions committed before this RFC 3339 instant are candidates"],
       ["--policy <p>", "a JSON object (or @file) merged over the effective history.retention settings for this run"],
       ["--prune", "(export) after the segment is durable: NULL the archived bodies, drop their change rows, sweep, record"],
       ["--dest <dir>", "(export) where the segment file goes"],
@@ -247,6 +250,39 @@ function renderLifecycle(cli: Cli, verb: "enable" | "disable", r: HistoryLifecyc
   return EXIT_OK;
 }
 
+/**
+ * `history purge [--before <ts>]` (spec/store §7.6, Phase 4b): the receipt
+ * `{ purged: { <table>: n }, claims_released, coverage, tables_dropped }` under
+ * `--json`; human one stderr line — `  purged <c> commit(s), <r> revision(s),
+ * <d> disposition(s), <b> block change(s), <e> edge transition(s), <s>
+ * segment(s); swept <x> blob(s), <y> tree node(s); released <n> id claim(s)` —
+ * then `  history tables dropped` when the bundle left, or `  nothing to
+ * purge` when every count is zero. Coverage is untouched (it records when
+ * capture was on; a purged token reads `pruned`).
+ */
+function renderPurge(cli: Cli, r: HistoryPurgeResult): number {
+  if (cli.flags.mode !== "human") return emitMachine(cli, { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped });
+  const { io, style } = cli;
+  const p = r.purged;
+  const total = Object.values(p).reduce((n, v) => n + v, 0) + r.claims_released;
+  if (total === 0 && !r.tables_dropped) {
+    io.err(style.dim("  nothing to purge"));
+    return EXIT_OK;
+  }
+  io.err(style.dim(`  purged ${plural(p.commits, "commit")}, ${plural(p.revisions, "revision")}, ${plural(p.dispositions, "disposition")}, ${plural(p.block_changes, "block change")}, ${plural(p.edge_transitions, "edge transition")}, ${plural(p.archives, "segment")}; swept ${plural(p.blobs, "blob")}, ${plural(p.tree_nodes, "tree node")}; released ${plural(r.claims_released, "id claim")}`));
+  if (r.tables_dropped) io.err(style.dim("  history tables dropped"));
+  return EXIT_OK;
+}
+
+function runPurge(cli: Cli, args: string[]): number {
+  const { values } = parseArgs({ args, allowPositionals: false, options: { before: { type: "string" } } });
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  const before = parseBefore(values.before);
+  const result = withWriterLock(ws.omgbaseDir, () => purgeHistory(ws.store.db, repo.repoId, { ...(before !== undefined ? { before } : {}) }));
+  return renderPurge(cli, result);
+}
+
 function runEnable(cli: Cli, args: string[]): number {
   const { values } = parseArgs({ args, allowPositionals: false, options: { "best-effort": { type: "boolean" } } });
   const ws = cli.workspace();
@@ -273,6 +309,7 @@ function runHistory(cli: Cli, args: string[]): number {
   switch (sub as Sub) {
     case "enable": return runEnable(cli, rest);
     case "disable": return runDisable(cli, rest);
+    case "purge": return runPurge(cli, rest);
     case "plan": return runPlan(cli, rest);
     case "export": return runExport(cli, rest);
     case "attach": return runAttach(cli, rest);
@@ -281,4 +318,4 @@ function runHistory(cli: Cli, args: string[]): number {
   }
 }
 
-export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable per repository; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };
+export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable/purge per repository; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };

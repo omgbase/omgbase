@@ -5,6 +5,7 @@ import { claimsOf } from "../capabilities/registry.js";
 import { capture, captureFor, historyReader } from "./manifest.js";
 import { referencePath } from "../paths.js";
 import { effectiveSettingsOf } from "./settings.js";
+import { clearAlert, raiseAlert } from "./alerts.js";
 
 // The change feed (spec/store §3.1 `feed`/`feed_entries`, §5.4 step 5, §7.4;
 // spec/surface §3 `changes_since`; modular-core Phase 3d — D7/M5, D4). The
@@ -116,7 +117,7 @@ export function appendFeedRow(db: Database, input: NewFeedRowInput): FeedRow {
       ops: input.ops ?? null,
     }));
   }
-  enforceFeedCap(db, input.repoId, epoch);
+  enforceFeedCap(db, input.repoId, epoch, input.ts);
   return { commitId, epoch, seq, batchId };
 }
 
@@ -223,9 +224,30 @@ function pruneBeyond(db: Database, repoId: string, epoch: string, keep: number, 
   return victims.length;
 }
 
-/** The cap (§7.4): enforced in the transaction that appended a row — a feed never exceeds `max_entries + 1` rows. */
-function enforceFeedCap(db: Database, repoId: string, epoch: string): void {
-  pruneBeyond(db, repoId, epoch, repoFeedPolicy(db, repoId).maxEntries, null);
+/**
+ * The cap (§7.4): enforced in the transaction that appended a row — a feed
+ * never exceeds `max_entries + 1` rows. When it prunes, the `feed_capped` alert
+ * is raised (§5.8, Phase 4b): rows younger than the floors promise are leaving
+ * because the cap is too low for the write rate; `detail { pruned, oldest,
+ * head }` — the rows this write pruned and the feed's position after.
+ */
+function enforceFeedCap(db: Database, repoId: string, epoch: string, now: string): void {
+  const pruned = pruneBeyond(db, repoId, epoch, repoFeedPolicy(db, repoId).maxEntries, null);
+  if (pruned > 0) raiseFeedCapped(db, repoId, pruned, now);
+}
+
+/** The alert the write-time cap raises (spec/store §5.8, Phase 4b). */
+export const FEED_CAPPED_ALERT = "feed_capped";
+
+/** The `feed_capped` message, byte for byte in both engines. */
+export function feedCappedMessage(pruned: number, maxEntries: number): string {
+  return `the feed reached feed.max_entries (${maxEntries}) and pruned ${pruned} row${pruned === 1 ? "" : "s"} a consumer may not have read: raise feed.max_entries or shorten the sync interval`;
+}
+
+function raiseFeedCapped(db: Database, repoId: string, pruned: number, now: string): void {
+  const status = feedStatus(db, repoId);
+  const policy = repoFeedPolicy(db, repoId);
+  raiseAlert(db, repoId, { code: FEED_CAPPED_ALERT, severity: "warning", message: feedCappedMessage(pruned, policy.maxEntries), detail: { pruned, oldest: status.oldest, head: status.head } }, now);
 }
 
 /**
@@ -241,7 +263,12 @@ export function pruneFeed(store: Store, now: string): number {
     const policy = repoFeedPolicy(db, r.repo_id);
     const cutoff = new Date(Date.parse(now) - policy.retainDays * DAY_MS).toISOString();
     pruned += pruneBeyond(db, r.repo_id, r.epoch, policy.retainEntries, cutoff);
-    pruned += pruneBeyond(db, r.repo_id, r.epoch, policy.maxEntries, null);
+    const capped = pruneBeyond(db, r.repo_id, r.epoch, policy.maxEntries, null);
+    pruned += capped;
+    // §5.8 (Phase 4b): a gc whose cap prunes nothing ends the condition — the
+    // feed is within the cap again (the floors did the work, or the cap was raised).
+    if (capped > 0) raiseFeedCapped(db, r.repo_id, capped, now);
+    else clearAlert(db, r.repo_id, FEED_CAPPED_ALERT, now);
   }
   return pruned;
 }

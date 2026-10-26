@@ -1861,7 +1861,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  embed — The embedding queue: report the provider + what is queued, or drain it to embed now\n  usage: omg embed [status]\n         omg embed drain [--verbose] [--prune]\n  options:\n    status         (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    drain          embed the queued blocks now — status alone makes no progress\n    -v, --verbose  (drain) per-batch progress\n    --prune        (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help     show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off.\n"
+        "stdout": "  embed — Semantic indexing: switch it on or off per repository, report the provider + what is queued, or drain the queue to embed now\n  usage: omg embed [status]\n         omg embed enable [--provider <command|url>]\n         omg embed disable\n         omg embed drain [--verbose] [--prune]\n  options:\n    status          (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    enable          switch semantic indexing on for the repository (needs a provider: --provider sets embedding.provider at the workspace layer); idempotent\n    disable         switch it off: semantic() and the drain refuse until enable; the provider setting and the vectors stay; idempotent\n    --provider <p>  (enable) the embedder command or http(s) URL to configure first\n    drain           embed the queued blocks now — status alone makes no progress\n    -v, --verbose   (drain) per-batch progress\n    --prune         (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help      show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`, or `omg embed enable --provider omgbase-embedder`); without one, semantic search is simply off.\n"
       },
       "notes": "§5: as config help"
     },
@@ -1874,7 +1874,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  embed — The embedding queue: report the provider + what is queued, or drain it to embed now\n  usage: omg embed [status]\n         omg embed drain [--verbose] [--prune]\n  options:\n    status         (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    drain          embed the queued blocks now — status alone makes no progress\n    -v, --verbose  (drain) per-batch progress\n    --prune        (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help     show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off.\n"
+        "stdout": "  embed — Semantic indexing: switch it on or off per repository, report the provider + what is queued, or drain the queue to embed now\n  usage: omg embed [status]\n         omg embed enable [--provider <command|url>]\n         omg embed disable\n         omg embed drain [--verbose] [--prune]\n  options:\n    status          (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    enable          switch semantic indexing on for the repository (needs a provider: --provider sets embedding.provider at the workspace layer); idempotent\n    disable         switch it off: semantic() and the drain refuse until enable; the provider setting and the vectors stay; idempotent\n    --provider <p>  (enable) the embedder command or http(s) URL to configure first\n    drain           embed the queued blocks now — status alone makes no progress\n    -v, --verbose   (drain) per-batch progress\n    --prune         (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help      show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`, or `omg embed enable --provider omgbase-embedder`); without one, semantic search is simply off.\n"
       }
     },
     {
@@ -1985,6 +1985,263 @@
           "expect": {
             "exit": 0,
             "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "embed-enable-no-provider",
+      "notes": "§6 `embed enable` with no provider configured is a usage error naming `--provider` (Phase 4b; spec/store §5.10)",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "enable"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: no embedding provider configured — pass --provider <command|url>, or set one with omg config set embedding.provider <command|url>\n"
+      }
+    },
+    {
+      "name": "embed-enable-disable",
+      "notes": "§6 `embed enable --provider <p>` / `embed disable` (Phase 4b; spec/store §5.10): `enable --provider` writes `embedding.provider` at the workspace layer and opens the semantic row (`  semantic enabled since <clock> (provider …)`); again → `already enabled`; `--json` the row's state. `disable` closes the interval (`  semantic disabled (embedded <from>..<to>)`), again → `already disabled`. While switched off with the provider configured: `embed status` and `embed drain` are `capability_unavailable { semantic, disabled, fix: omg embed enable }`, `find` is FTS-only (nothing is spawned — no `embedder_failed`), a `query` with `semantic()` is the same refusal, `version --json` reports the row by shape. `enable` without `--provider` reopens it (a second interval); unsetting the provider through `config set` flips the row back to disabled.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "embed",
+            "enable",
+            "--provider",
+            "/nonexistent/embedder"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  semantic enabled since 2026-09-27T00:00:00.000Z (provider /nonexistent/embedder)\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  semantic already enabled since 2026-09-27T00:00:00.000Z (provider /nonexistent/embedder)\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "enable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"enabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"provider\":\"/nonexistent/embedder\",\"changed\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  semantic disabled (embedded 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  semantic already disabled (embedded 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "disable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"disabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"}],\"provider\":\"/nonexistent/embedder\",\"changed\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "status"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)\n  {\n    \"capability\": \"semantic\",\n    \"state\": \"disabled\",\n    \"fix\": \"omg embed enable\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "drain"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)\n  {\n    \"capability\": \"semantic\",\n    \"state\": \"disabled\",\n    \"fix\": \"omg embed enable\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "find",
+            "emerald",
+            "-n",
+            "1",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[{\"_id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}]\n"
+          }
+        },
+        {
+          "argv": [
+            "query",
+            "blocks { select _id order by semantic(\"emerald\") desc limit 1 }"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)\n  {\n    \"capability\": \"semantic\",\n    \"state\": \"disabled\",\n    \"fix\": \"omg embed enable\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  semantic enabled since 2026-09-27T00:00:00.000Z (provider /nonexistent/embedder)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "embedding.provider",
+            "",
+            "--repo",
+            ""
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set embedding.provider (workspace)\n"
+          }
+        },
+        {
+          "argv": [
+            "embed",
+            "enable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "{\"error\":\"usage\",\"message\":\"no embedding provider configured — pass --provider <command|url>, or set one with omg config set embedding.provider <command|url>\",\"retriable\":false}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "doctor-size-feed-capped",
+      "notes": "§6 `doctor --size`'s feed-cap advice (Phase 4b; spec/store §5.8 `feed_capped`, §7.2): the `sql` device caps the repository's feed at 2 entries (floor 2); the next write prunes the oldest rows inside its transaction and raises `feed_capped`, which the write prints as an alert line; `doctor --size` adds the advice `the feed holds <n> entries over <d> day(s) (floors …): raise feed.max_entries or shorten the sync interval` (and prints the alert), `--json` carries it in `advice`. `gc` (enabled by the device) prunes nothing by the cap and clears the alert; `doctor` then passes.",
+      "workspace": "alchemy",
+      "sql": [
+        "UPDATE repos SET settings = '{\"feed\":{\"max_entries\":2,\"retain_entries\":2},\"gc\":{\"enabled\":true}}'"
+      ],
+      "steps": [
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\nalert[warning] feed_capped: the feed reached feed.max_entries (2) and pruned 18 rows a consumer may not have read: raise feed.max_entries or shorten the sync interval\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  category                        bytes   share  rows\n  content                     <bytes>  <share>   996\n    blocks                    <bytes>  <share>   327\n    properties                <bytes>  <share>   214\n    nodes                     <bytes>  <share>   214\n  identity                    <bytes>  <share>   461\n    id_claims                 <bytes>  <share>   461\n    resurrection_pool         <bytes>  <share>     0\n  recovery                    <bytes>  <share>     0\n    pending_materializations  <bytes>  <share>     0\n  history                     <bytes>  <share>  1155\n    tree_nodes                <bytes>  <share>    55\n    blobs                     <bytes>  <share>   335\n    dispositions              <bytes>  <share>   327\n  search                      <bytes>  <share>   506\n    blocks_fts                <bytes>  <share>   292\n    nodes_fts                 <bytes>  <share>   214\n    doc_embeddings            <bytes>  <share>     0\n  sync                        <bytes>  <share>   130\n    sqlite_schema             <bytes>  <share>    95\n    feed                      <bytes>  <share>     3\n    repos                     <bytes>  <share>     1\n\n  file         <workspace>/.omgbase/omgbase.db\n  size         <bytes> on disk, wal <bytes>\n  pages        <number> x <number> bytes, <number> free\n  reclaimable  <bytes>\n  archived     0 revisions in 0 segments, <bytes> on disk\n  id claims    461 ids claimed\n  feed         epoch ep_0, 3 entries, seq 19..21\n  history      enabled since 2026-09-27T00:00:00.000Z\n  semantic     disabled\n  advice: the feed holds 3 entries over 0 days (floors 2 / 10): raise feed.max_entries or shorten the sync interval\n",
+            "stderr": "alert[warning] feed_capped: the feed reached feed.max_entries (2) and pruned 18 rows a consumer may not have read: raise feed.max_entries or shorten the sync interval\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":996,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":83,\"indexes\":\"<number>\"}]},{\"name\":\"identity\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":461,\"tables\":[{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":461,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"recovery\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"tables\":[{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1155,\"tables\":[{\"name\":\"tree_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":55,\"indexes\":\"<number>\"},{\"name\":\"blobs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":335,\"indexes\":\"<number>\"},{\"name\":\"dispositions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"block_changes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":327,\"indexes\":\"<number>\"},{\"name\":\"edge_transitions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":69,\"indexes\":\"<number>\"},{\"name\":\"commits\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":21,\"indexes\":\"<number>\"},{\"name\":\"revisions\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":21,\"indexes\":\"<number>\"},{\"name\":\"archives\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":506,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":292,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":214,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":130,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":95,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":3,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"alerts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"capabilities\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":3,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":20,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":461,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"feed\":{\"epoch\":\"ep_0\",\"oldest\":19,\"head\":21,\"entries\":3,\"retain_days\":10,\"retain_entries\":2,\"max_entries\":2},\"capabilities\":[{\"capability\":\"history\",\"state\":\"enabled\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"config\":{}},{\"capability\":\"semantic\",\"state\":\"disabled\",\"coverage_from\":null,\"config\":{}}],\"advice\":[\"the feed holds 3 entries over 0 days (floors 2 / 10): raise feed.max_entries or shorten the sync interval\"]}\n"
+          }
+        },
+        {
+          "argv": [
+            "gc"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  swept 0 blobs, 0 tree nodes, 0 same dispositions\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         }
       ]

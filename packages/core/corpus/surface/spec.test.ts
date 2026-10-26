@@ -20,7 +20,7 @@ import { coreCapabilities } from "../../src/core/capabilities/core.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { buildServer, toolDescriptions, toolNames, TOOLS_PROFILES, type ToolsProfile } from "../../src/mcp/server.js";
 import {
-  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
+  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, isEmbedStep, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
   type CursorCase, type CursorSuite, type ExamplesSuite, type FixtureFile, type LoadedCorpus, type ProfilesSuite, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
 } from "./fixture.js";
 
@@ -214,7 +214,7 @@ function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
 
 async function runReads(c: ReadsCase, suite: string, corpus?: Record<string, string>): Promise<void> {
   // Phase 4a: a retention step (export, attach, plan, read_at) needs the history module; skipped and counted.
-  if (CORE_MODE && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
+  if (CORE_MODE && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s) || isEmbedStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
   const { expect: actual, problems: runnerProblems } = await runReadsCase(c, corpus);
   expect(runnerProblems).toEqual([]);
   let expected = c.expect;

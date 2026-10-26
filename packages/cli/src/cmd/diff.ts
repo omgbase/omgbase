@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { findDoc, requireHistoryReader, type DocDiffUnified, type DiffEntry } from "@omgbase/core";
+import { findDoc, requireHistoryReader, historyReadRefusal, RevisionNotFound, type DocDiffUnified, type DiffEntry } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -43,12 +43,18 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     const repo = cli.repo(ws);
     const info = ref.startsWith("d_") ? findDoc(ws.store, { docId: ref }) : findDoc(ws.store, { repoId: repo.repoId, path: ref });
     if (!info) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
-    // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured.
-    result = requireHistoryReader(ws.store.db).docDiffUnified(info.docId, {
-      ...(values.from ? { fromRev: values.from } : {}),
-      ...(values.to ? { toRev: values.to } : {}),
-      label: ref,
-    });
+    // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured;
+    // a revision the recorder does not hold answers by the spec/surface §2.1 decision table (Phase 4b).
+    try {
+      result = requireHistoryReader(ws.store.db).docDiffUnified(info.docId, {
+        ...(values.from ? { fromRev: values.from } : {}),
+        ...(values.to ? { toRev: values.to } : {}),
+        label: ref,
+      });
+    } catch (e) {
+      if (e instanceof RevisionNotFound) historyReadRefusal(ws.store.db, repo.repoId, e.rev, { docId: info.docId });
+      throw e;
+    }
   }
 
   const { style, io } = cli;

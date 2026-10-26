@@ -1,0 +1,1406 @@
+{
+  "suite": "purge",
+  "cases": [
+    {
+      "name": "purge-all-on-a-disabled-repository-drops-the-bundle",
+      "notes": "§7.6 (Phase 4b): `history purge` on a repository whose capture is off removes everything the recorder holds for it. Captured: `a.md` (c_0, r_0; it links `b.md`, e_0 opened at c_0), `b.md` (c_1, r_1), the edit of `a.md` (c_2, r_2 — a delta on r_0). `history disable` at 10:03 closes the interval. The purge at 10:04 deletes the three `commits`, three `revisions`, every blob and tree node (nothing reaches them), the dispositions and block changes, and the one open edge transition (no commit remains to anchor it); the recorder's hold leaves every claim it was on (`claims_released` counts them — the docs, heads, blocks, commits and the edge; capture is off, so the live set is not kept) and, no repository being enabled with every history table empty, the bundle's tables are DROPPED (`tables_dropped: true`): the projection shows the history tables `[]` and `id_claims` with the core's bit alone. Coverage is untouched (`[{ from: <birth>, to: 10:03 }]` — the record of when capture was on, which is what makes a purged token read `pruned` at the surface). A second purge finds nothing (every count 0, nothing dropped). The write after it (`b.md` edited, c_3) lands on the core alone.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "# B\n\nOnly paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "history_disable": {
+            "ts": "2026-10-20T10:03:00.000Z"
+          }
+        },
+        {
+          "history_purge": {
+            "ts": "2026-10-20T10:04:00.000Z"
+          }
+        },
+        {
+          "history_purge": {
+            "ts": "2026-10-20T10:04:30.000Z"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:05:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "# B\n\nOnly paragraph, edited.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          [
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 2
+              }
+            }
+          ],
+          {
+            "history": {
+              "state": "disabled",
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": "2026-10-20T10:03:00.000Z"
+                }
+              ],
+              "writer_requires": false,
+              "changed": true
+            }
+          },
+          {
+            "purge": {
+              "purged": {
+                "commits": 3,
+                "revisions": 3,
+                "blobs": 8,
+                "tree_nodes": 3,
+                "dispositions": 7,
+                "block_changes": 7,
+                "edge_transitions": 1,
+                "archives": 0
+              },
+              "claims_released": 15,
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": "2026-10-20T10:03:00.000Z"
+                }
+              ],
+              "tables_dropped": true
+            }
+          },
+          {
+            "purge": {
+              "purged": {
+                "commits": 0,
+                "revisions": 0,
+                "blobs": 0,
+                "tree_nodes": 0,
+                "dispositions": 0,
+                "block_changes": 0,
+                "edge_transitions": 0,
+                "archives": 0
+              },
+              "claims_released": 0,
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": "2026-10-20T10:03:00.000Z"
+                }
+              ],
+              "tables_dropped": false
+            }
+          },
+          [
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_2",
+            "file_hash": "73e2859033611531f6fff8ef9ab9be613c4139ba565aa9d9b2e8af478fea792d",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:02:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "head": "r_3",
+            "file_hash": "6d78a10462414f3a0017cd415c6a262021596b22a2a2dd897e950ea6b8dc9f07",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "updated_at": "2026-10-20T10:05:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:05:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "b49e7ce060703d69998f024095cbbbe483cbc2a0a258f05531511dfef40faa3b",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_1",
+            "hash": "2a955c954b34fb3e069d7963d043ed30f52f8ea342251a845a828847909fe5fb",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "73e2859033611531f6fff8ef9ab9be613c4139ba565aa9d9b2e8af478fea792d",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_3",
+            "hash": "6d78a10462414f3a0017cd415c6a262021596b22a2a2dd897e950ea6b8dc9f07",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [],
+        "blobs": [],
+        "tree_nodes": [],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "See [b](/b.md).",
+            "raw": "See [b](/b.md).",
+            "raw_hash": "fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3",
+            "norm_hash": "fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "First, edited.",
+            "raw": "First, edited.",
+            "raw_hash": "29bcf2fcef1c4672135da1bd98683bb86750bbf8aa6e45d9456bffdea408d9e2",
+            "norm_hash": "29bcf2fcef1c4672135da1bd98683bb86750bbf8aa6e45d9456bffdea408d9e2",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:02:00.000Z",
+            "updated_at": "2026-10-20T10:02:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw": "# B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "updated_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Only paragraph, edited.",
+            "raw": "Only paragraph, edited.",
+            "raw_hash": "d30eed52a15227aa3b1f4a76f6b3ed4aa79cc069171f443d179a961496393b6c",
+            "norm_hash": "d30eed52a15227aa3b1f4a76f6b3ed4aa79cc069171f443d179a961496393b6c",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:05:00.000Z",
+            "updated_at": "2026-10-20T10:05:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [],
+        "block_changes": [],
+        "resurrection_pool": [
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": "2026-10-20T10:02:00.000Z",
+            "expires_ts": "2026-11-19T10:02:00.000Z"
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_1",
+            "raw_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
+            "norm_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": "2026-10-20T10:05:00.000Z",
+            "expires_ts": "2026-11-19T10:05:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-10-20T10:05:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:05:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "e",
+            "id": "e_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-20T10:05:00.000Z",
+            "holders": 1
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 2
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_3",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    },
+    {
+      "name": "purge-before-trims-an-enabled-repository",
+      "notes": "§7.6 (Phase 4b): `history purge --before <ts>` on a repository whose capture is ON trims the past and keeps the present. `a.md` is observed three times (c_0 r_0, c_1 r_1, c_2 r_2 — r_1 and r_2 deltas on their predecessors; `a.md` links `b.md`, e_0 opened at c_0) and `b.md` once (c_3, r_3). The purge at 10:05 before 10:02:30 has candidates c_0, c_1, c_2; c_2 is PROTECTED (it holds the live head r_2) so c_0 and c_1 go with r_0 and r_1, their dispositions and block changes. Before the rows go, r_2 — whose base r_1 is purged — is re-written in CHECKPOINT form (the squash's rule, §4.4), so `read_at r_2` still reconstructs byte for byte; the swept blobs/tree nodes are the bodies only r_0/r_1 reached. The open transition e_0 opened at the purged c_0 is RE-ANCHORED at the earliest retained commit c_2 (H6 holds: every open edge has an open transition). The recorder's hold is released on r_0 and r_1 alone (`claims_released` 2: their claims drop to the core's bit); the live set — d_0, d_1, the heads r_2/r_3, the live blocks, e_0 — keeps the hold as a baseline would (I7 holds). Nothing is dropped (the repository is enabled). Coverage is untouched. The edit after the purge (c_4, r_4) is captured as a delta on the re-checkpointed r_2; `read_at r_0` finds no row (`target_missing` at the store level — the surface reads it `pruned`, spec/surface §2.1).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-10-20T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst, edited twice.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:03:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "# B\n\nOnly paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "history_purge": {
+            "ts": "2026-10-20T10:05:00.000Z",
+            "before": "2026-10-20T10:02:30.000Z"
+          }
+        },
+        {
+          "read_at": {
+            "doc": "d_0",
+            "rev": "r_2"
+          }
+        },
+        {
+          "read_at": {
+            "doc": "d_0",
+            "rev": "r_0"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-10-20T10:06:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nSee [b](/b.md).\n\nFirst, edited thrice.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read_at": {
+            "doc": "d_0",
+            "rev": "r_4"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "purge": {
+              "purged": {
+                "commits": 2,
+                "revisions": 2,
+                "blobs": 2,
+                "tree_nodes": 3,
+                "dispositions": 5,
+                "block_changes": 5,
+                "edge_transitions": 0,
+                "archives": 0
+              },
+              "claims_released": 5,
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": null
+                }
+              ],
+              "tables_dropped": false
+            }
+          },
+          {
+            "raw": "# A\n\nSee [b](/b.md).\n\nFirst, edited twice.\n",
+            "rendered_hash_match": true
+          },
+          {
+            "error": "target_missing"
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_4",
+              "rev": "r_4",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 2
+              }
+            }
+          ],
+          {
+            "raw": "# A\n\nSee [b](/b.md).\n\nFirst, edited thrice.\n",
+            "rendered_hash_match": true
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "head": "r_4",
+            "file_hash": "f5ea393a8dae677df7e77921ad41726083e59ab202bcaa6879487eeae628caed",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:06:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "head": "r_3",
+            "file_hash": "2a955c954b34fb3e069d7963d043ed30f52f8ea342251a845a828847909fe5fb",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_raw": null,
+            "frontmatter_trivia": null,
+            "created_at": "2026-10-20T10:03:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_2",
+            "epoch": "ep_0",
+            "seq": 3,
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "epoch": "ep_0",
+            "seq": 4,
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "ops": null
+          },
+          {
+            "commit_id": "c_4",
+            "epoch": "ep_0",
+            "seq": 5,
+            "ts": "2026-10-20T10:06:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "ops": null
+          }
+        ],
+        "feed": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "commit_id": "c_0",
+            "ts": "2026-10-20T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_0",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "commit_id": "c_1",
+            "ts": "2026-10-20T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_1",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "commit_id": "c_2",
+            "ts": "2026-10-20T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_2",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "commit_id": "c_3",
+            "ts": "2026-10-20T10:03:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_3",
+            "plan_id": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "commit_id": "c_4",
+            "ts": "2026-10-20T10:06:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "batch_id": "c_4",
+            "plan_id": null
+          }
+        ],
+        "feed_entries": [
+          {
+            "epoch": "ep_0",
+            "seq": 1,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_0",
+            "hash": "b49e7ce060703d69998f024095cbbbe483cbc2a0a258f05531511dfef40faa3b",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 2,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_1",
+            "hash": "73e2859033611531f6fff8ef9ab9be613c4139ba565aa9d9b2e8af478fea792d",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 3,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_2",
+            "hash": "e1d16aa8fcf16a25849ab11c458b2a2589d04e3ba41f6efbb0a14bafa522a82f",
+            "kind": "changed",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 4,
+            "doc_id": "d_1",
+            "path": "b.md",
+            "head": "r_3",
+            "hash": "2a955c954b34fb3e069d7963d043ed30f52f8ea342251a845a828847909fe5fb",
+            "kind": "created",
+            "from_path": null
+          },
+          {
+            "epoch": "ep_0",
+            "seq": 5,
+            "doc_id": "d_0",
+            "path": "a.md",
+            "head": "r_4",
+            "hash": "f5ea393a8dae677df7e77921ad41726083e59ab202bcaa6879487eeae628caed",
+            "kind": "changed",
+            "from_path": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "d2814ee4ed1883aa373a29f8346513e8879c3eedf8f25ac7c506150211d15e3b",
+            "frontmatter_blob": null,
+            "rendered_hash": "e1d16aa8fcf16a25849ab11c458b2a2589d04e3ba41f6efbb0a14bafa522a82f",
+            "path": "a.md",
+            "commit_id": "c_2",
+            "archive": null
+          },
+          {
+            "rev_id": "r_4",
+            "doc_id": "d_0",
+            "seq": 4,
+            "root_tree": "edaf5d8b03ca7e9838df4ea8f49f61fb60115f7663361d684d52f31643919ebe",
+            "frontmatter_blob": null,
+            "rendered_hash": "f5ea393a8dae677df7e77921ad41726083e59ab202bcaa6879487eeae628caed",
+            "path": "a.md",
+            "commit_id": "c_4",
+            "archive": null
+          },
+          {
+            "rev_id": "r_3",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "4de5f549c3fe36276a161884114fe689edb8b6316e2b622726c94e81ded5ab5f",
+            "frontmatter_blob": null,
+            "rendered_hash": "2a955c954b34fb3e069d7963d043ed30f52f8ea342251a845a828847909fe5fb",
+            "path": "b.md",
+            "commit_id": "c_3",
+            "archive": null
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1c97d5869a49605b658e6e53d1be8554e35e032c447653e80a5fea4e322bba06",
+            "size": 20,
+            "bytes": "First, edited twice."
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
+            "size": 15,
+            "bytes": "Only paragraph."
+          },
+          {
+            "hash": "d3692f9c240eb1b2fafc166debf7594fe7f6e72597aa60ed83dd09e3e90793cf",
+            "size": 21,
+            "bytes": "First, edited thrice."
+          },
+          {
+            "hash": "fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3",
+            "size": 15,
+            "bytes": "See [b](/b.md)."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "4de5f549c3fe36276a161884114fe689edb8b6316e2b622726c94e81ded5ab5f",
+            "entries": "[[\"b_5\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_6\",\"bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "d2814ee4ed1883aa373a29f8346513e8879c3eedf8f25ac7c506150211d15e3b",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_4\",\"1c97d5869a49605b658e6e53d1be8554e35e032c447653e80a5fea4e322bba06\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "edaf5d8b03ca7e9838df4ea8f49f61fb60115f7663361d684d52f31643919ebe",
+            "entries": "{\"d\":[[\"=\",2],[\"~\",[\"b_7\",\"d3692f9c240eb1b2fafc166debf7594fe7f6e72597aa60ed83dd09e3e90793cf\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]]}"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw": "# A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "See [b](/b.md).",
+            "raw": "See [b](/b.md).",
+            "raw_hash": "fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3",
+            "norm_hash": "fbadc2d311478ef416f634b096a959fdab0b8e707c1674468047b63c5b6e4ea3",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "updated_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_7",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "First, edited thrice.",
+            "raw": "First, edited thrice.",
+            "raw_hash": "d3692f9c240eb1b2fafc166debf7594fe7f6e72597aa60ed83dd09e3e90793cf",
+            "norm_hash": "d3692f9c240eb1b2fafc166debf7594fe7f6e72597aa60ed83dd09e3e90793cf",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:06:00.000Z",
+            "updated_at": "2026-10-20T10:06:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw": "# B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia": "\n\n",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_at": "2026-10-20T10:03:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Only paragraph.",
+            "raw": "Only paragraph.",
+            "raw_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
+            "norm_hash": "bf378b68a096a12e5c3cfc939177b5d5d7177622115ded96ab01caa356b387fe",
+            "trivia": "\n",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_at": "2026-10-20T10:03:00.000Z",
+            "updated_at": "2026-10-20T10:03:00.000Z",
+            "deleted_at": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_2",
+            "block_id": "b_3",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_3",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_4",
+            "block_id": "b_4",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_4",
+            "block_id": "b_7",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_3",
+            "commit_id": "c_2",
+            "kind": "deleted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_2",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_3",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_3",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_4",
+            "kind": "deleted"
+          },
+          {
+            "block_id": "b_7",
+            "commit_id": "c_4",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "raw_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "norm_hash": "6ccbae3c549451073bfcd5d56254fc65cba81b7c44192ef9fb4e68b91872d342",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:00:00.000Z",
+            "deleted_at": "2026-10-20T10:01:00.000Z",
+            "expires_ts": "2026-11-19T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "raw_hash": "29bcf2fcef1c4672135da1bd98683bb86750bbf8aa6e45d9456bffdea408d9e2",
+            "norm_hash": "29bcf2fcef1c4672135da1bd98683bb86750bbf8aa6e45d9456bffdea408d9e2",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:01:00.000Z",
+            "deleted_at": "2026-10-20T10:02:00.000Z",
+            "expires_ts": "2026-11-19T10:02:00.000Z"
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "raw_hash": "1c97d5869a49605b658e6e53d1be8554e35e032c447653e80a5fea4e322bba06",
+            "norm_hash": "1c97d5869a49605b658e6e53d1be8554e35e032c447653e80a5fea4e322bba06",
+            "type": "paragraph",
+            "created_at": "2026-10-20T10:02:00.000Z",
+            "deleted_at": "2026-10-20T10:06:00.000Z",
+            "expires_ts": "2026-11-19T10:06:00.000Z"
+          }
+        ],
+        "id_claims": [
+          {
+            "prefix": "b",
+            "id": "b_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_1",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_2",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "b",
+            "id": "b_3",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_4",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_5",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_6",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "b",
+            "id": "b_7",
+            "minted_at": "2026-10-20T10:06:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "c",
+            "id": "c_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "c",
+            "id": "c_4",
+            "minted_at": "2026-10-20T10:06:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "d",
+            "id": "d_1",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "e",
+            "id": "e_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_0",
+            "minted_at": "2026-10-20T10:00:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_1",
+            "minted_at": "2026-10-20T10:01:00.000Z",
+            "holders": 1
+          },
+          {
+            "prefix": "r",
+            "id": "r_2",
+            "minted_at": "2026-10-20T10:02:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_3",
+            "minted_at": "2026-10-20T10:03:00.000Z",
+            "holders": 3
+          },
+          {
+            "prefix": "r",
+            "id": "r_4",
+            "minted_at": "2026-10-20T10:06:00.000Z",
+            "holders": 3
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 2
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_5",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "pending_materializations": [],
+        "archives": []
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { EmbeddingWorker, buildEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, requireSemantic, CapabilityUnavailable, EngineError, type EmbeddingProvider, type DrainMode } from "@omgbase/core";
+import { EmbeddingWorker, buildEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, requireSemantic, semanticSwitchedOff, CapabilityUnavailable, EngineError, type EmbeddingProvider, type DrainMode } from "@omgbase/core";
 import type { Cli } from "../context.js";
 
 // Shared embedding setup for the CLI (05 §6). Reads embedding.* from the repo's
@@ -30,9 +30,17 @@ export interface LoadedEmbedding {
  * embedder is never mistaken for an unconfigured one. Callers MUST call close()
  * when done (e.g. in a finally) to release a spawned process.
  */
-export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: string): Promise<LoadedEmbedding | null> {
+export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: string, opts: { switchedOff?: "null" | "throw" } = {}): Promise<LoadedEmbedding | null> {
   const settings = embeddingSettings(resolveSettings(ws.store, repoId));
   if (!settings.provider) return null;
+  // The row switched off by `omg embed disable` while the provider stays
+  // configured (spec/store §5.10, Phase 4b): an opportunistic caller (`find`,
+  // `omg mcp`'s host) gets the quiet null — FTS-only, nothing is spawned; an
+  // explicit one (`embed status|drain`) is refused with the fix `omg embed enable`.
+  if (semanticSwitchedOff(ws.store.db, repoId)) {
+    if (opts.switchedOff === "throw") throw CapabilityUnavailable.semanticSwitchedOff();
+    return null;
+  }
   // A configured provider on a store that runs WITHOUT the semantic module
   // (`OMGBASE_CAPABILITIES=core`) cannot embed or rank: `capability_unavailable
   // { semantic, disabled }` (modular-core Phase 2). An unconfigured one stays

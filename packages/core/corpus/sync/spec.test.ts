@@ -10,14 +10,15 @@
 // (inputs, notes and case order untouched; for `adapter` cases also the
 // transcript's `out` lines, which are the engine's requests) before running;
 // the diff is reviewed like code, because a changed `expect` *is* a sync change.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  deepEqualTol, runPure, runRegistryCase, runCheckpointCase, runAdapterCase, suiteKind, validateFixtureFile,
-  type AdapterCase, type CheckpointCase, type FixtureCase, type FixtureFile, type PureCase, type RegistryCase,
+  coreModeCheckpointExpect, deepEqualTol, runPure, runRegistryCase, runCheckpointCase, runAdapterCase, suiteKind, validateFixtureFile,
+  type AdapterCase, type CheckpointCase, type CheckpointProjection, type FixtureCase, type FixtureFile, type PureCase, type RegistryCase,
 } from "./fixture.js";
+import { coreCapabilities, envCapabilities } from "../../src/core/capabilities/index.js";
 
 // packages/core/corpus/sync → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/sync/", import.meta.url));
@@ -28,6 +29,17 @@ const UPDATE = (() => {
   const v = process.env.SYNC_SPEC_UPDATE;
   return v !== undefined && v !== "" && v !== "0";
 })();
+
+/**
+ * The core-only run (spec/sync §8, 4.2; spec/store §9.6 — `OMGBASE_CAPABILITIES=core`,
+ * modular-core Phase 4b): the stores this runner opens have no recorder, so a
+ * checkpoint case's expectation is compared with its history tables emptied
+ * (`coreModeCheckpointExpect`); every other suite runs unchanged. The fixtures
+ * are the full composition's: `SYNC_SPEC_UPDATE` is refused under the override.
+ */
+const CORE_MODE = envCapabilities() === coreCapabilities;
+if (CORE_MODE && UPDATE) throw new Error("SYNC_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
+const coreMapped: string[] = [];
 
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
 const EPS = 1e-9;
@@ -165,10 +177,15 @@ function sortKeys(v: unknown): unknown {
 async function run(suite: string, c: FixtureCase): Promise<void> {
   const { expect: actual, problems: found } = await evaluate(suite, c);
   expect(found).toEqual([]);
-  const diff = deepEqualTol(actual, c.expect, EPS);
+  let expected: unknown = c.expect;
+  if (CORE_MODE && suiteKind(suite) === "checkpoint") {
+    expected = coreModeCheckpointExpect(c.expect as CheckpointProjection);
+    coreMapped.push(`${suite}::${c.name}`);
+  }
+  const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) {
     // Beyond tolerance: let vitest print the structural diff (key order sorted).
-    expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+    expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
   }
 }
 
@@ -206,4 +223,10 @@ describe("sync spec fixtures (spec/sync/cases)", () => {
       }
     });
   }
+
+  // The core-only run's ledger (spec/sync §8): which cases were compared with the history tables emptied.
+  afterAll(() => {
+    if (!CORE_MODE) return;
+    process.stderr.write(`[sync spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} checkpoint case(s) compared with the history tables emptied\n`);
+  });
 });

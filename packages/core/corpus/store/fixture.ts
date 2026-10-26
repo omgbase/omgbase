@@ -35,7 +35,7 @@ import {
   type ResolvedList,
 } from "../../src/core/store/delta.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
-import { disableHistory, enableHistory, historyBundlePresent, historyReader, readCapability, type CoverageInterval } from "../../src/core/store/manifest.js";
+import { disableHistory, enableHistory, historyBundlePresent, historyReader, purgeHistory, readCapability, type CoverageInterval } from "../../src/core/store/manifest.js";
 import { bindCapabilities } from "../../src/core/capabilities/registry.js";
 import { envCapabilities } from "../../src/core/capabilities/default.js";
 import { coreCapabilities } from "../../src/core/capabilities/core.js";
@@ -130,6 +130,8 @@ export type Step =
   | { history_enable: { ts: string; writer_requires?: boolean } }
   /** README §9.4 (Phase 4a; §5.9): `history disable` at `ts` → `{ history: { state, coverage, writer_requires, changed } }` */
   | { history_disable: { ts: string } }
+  /** README §9.4 (Phase 4b; §7.6): `history purge [--before]` at `ts` → `{ purge: { purged: { <table>: n }, claims_released, coverage, tables_dropped } }` */
+  | { history_purge: { ts: string; before?: string } }
   /** README §9.4 (Phase 4a; §5.4 step 15, resolution 18): the recorder fault device — `fail: true` makes every capture throw until `fail: false` → `{ fault: boolean }` */
   | { recorder_fault: { fail: boolean } }
   /** README §9.4 (15.0): reconstruct at a revision (§6.2, through a segment when archived) → `{ raw, rendered_hash_match }` or the error */
@@ -187,7 +189,11 @@ export type ReadAtOutcome =
 export interface LifecycleOutcome {
   history: { state: "enabled" | "disabled"; coverage: CoverageInterval[]; writer_requires: boolean; changed: boolean; baseline?: { commit: string; revisions: number } };
 }
-export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | { fault: boolean };
+/** README §9.4 (Phase 4b): a `history_purge` step's outcome — the receipt (§7.6). */
+export interface PurgeOutcome {
+  purge: { purged: Record<string, number>; claims_released: number; coverage: CoverageInterval[]; tables_dropped: boolean };
+}
+export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | PurgeOutcome | { fault: boolean };
 
 /** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
 export interface HistoryContext {
@@ -641,14 +647,18 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
 
 // ---- the capture lifecycle steps (README §9.4, §5.9 — Phase 4a) ---------------------------
 
-export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { recorder_fault: unknown }>;
+export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { history_purge: unknown } | { recorder_fault: unknown }>;
 
 export function isLifecycleStep(step: object): step is LifecycleStep {
-  return "history_enable" in step || "history_disable" in step || "recorder_fault" in step;
+  return "history_enable" in step || "history_disable" in step || "history_purge" in step || "recorder_fault" in step;
 }
 
 /** `history_enable` / `history_disable` through the production verbs, the fault device through the test seam; shared with every observation-script runner. */
-export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | { fault: boolean } {
+export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | PurgeOutcome | { fault: boolean } {
+  if ("history_purge" in step) {
+    const r = purgeHistory(store.db, repoId, { now: step.history_purge.ts, before: step.history_purge.before ?? null });
+    return { purge: { purged: r.purged, claims_released: r.claims_released, coverage: r.coverage, tables_dropped: r.tables_dropped } };
+  }
   if ("history_enable" in step) {
     const r = enableHistory(store.db, repoId, { now: step.history_enable.ts, ...(step.history_enable.writer_requires !== undefined ? { writerRequires: step.history_enable.writer_requires } : {}) });
     return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed, ...(r.baseline ? { baseline: r.baseline } : {}) } };
@@ -1341,14 +1351,18 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
   // H4: the recorder's `commits` agree with the feed on every retained seq
   // WITHIN COVERAGE (Phase 4a: a feed row written while capture was off has no
-  // log row), and every log row of the current epoch at or after the oldest
-  // retained row IS a feed row (the log is a subsequence of the feed).
+  // log row) and AT OR AFTER THE LOG'S OLDEST ROW of the epoch (Phase 4b: a
+  // `history purge` trims the log's head — a feed row older than every
+  // retained commit owes none; a repository with no commit owes none), and
+  // every log row of the current epoch at or after the oldest retained feed row
+  // IS a feed row (the log is a subsequence of the feed).
   const commitRows = reader ? (db.prepare("SELECT commit_id, epoch, seq, ts, batch_id FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; epoch: string; seq: number; ts: string; batch_id: string }[]) : [];
   const commitBySeq = new Map(commitRows.filter((c) => c.epoch === epoch).map((c) => [c.seq, c]));
+  const oldestLogSeq = commitBySeq.size > 0 ? Math.min(...commitBySeq.keys()) : Infinity;
   for (const r of feedBySeq) {
     const c = commitBySeq.get(r.seq);
     if (!c) {
-      if (reader && inCoverage(r.ts)) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
+      if (reader && inCoverage(r.ts) && r.seq >= oldestLogSeq) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
     } else if (c.commit_id !== r.commit_id || c.epoch !== r.epoch || c.batch_id !== r.batch_id) problems.push(`H4: commits row at seq ${r.seq} (${c.commit_id}, ${c.epoch}, ${c.batch_id}) disagrees with the feed (${r.commit_id}, ${r.epoch}, ${r.batch_id})`);
   }
   const feedByCommit = new Map(feedBySeq.map((r) => [r.commit_id, r]));
@@ -1359,8 +1373,9 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
 
   // ---- I4 sequences (per epoch since 17.0: a re-mint restarts the seq) -----------------
   // `commits.seq` is strictly increasing in (ts, seq) order per epoch, and
-  // dense `1..n` when capture was never off (Phase 4a: a disabled interval
-  // leaves the feed's seqs of that span out of the log).
+  // dense from the oldest retained row when capture was never off (Phase 4a: a
+  // disabled interval leaves the feed's seqs of that span out of the log; Phase
+  // 4b: a purge trims the log's head, so the run starts where the log does).
   const commitsByEpoch = new Map<string, typeof commits>();
   for (const c of commitRows.slice().sort((a, b) => cmp(a.ts, b.ts) || a.seq - b.seq)) {
     let list = commitsByEpoch.get(c.epoch);
@@ -1369,14 +1384,16 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   }
   for (const [ep, list] of commitsByEpoch) {
     list.forEach((c, i) => {
-      if (neverOff && c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order of epoch ${ep}`);
+      if (neverOff && c.seq !== list[0]!.seq + i) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order of epoch ${ep} (the log begins at seq ${list[0]!.seq})`);
       if (i > 0 && c.seq <= list[i - 1]!.seq) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} after seq ${list[i - 1]!.seq} in (ts, seq) order of epoch ${ep}`);
     });
   }
   for (const d of docs) {
     const revs = revisions.filter((r) => r.doc_id === d.doc_id).sort((a, b) => a.seq - b.seq);
+    // Per document the retained revisions' seqs are consecutive; they begin at 1
+    // unless a purge trimmed the document's history (Phase 4b).
     revs.forEach((r, i) => {
-      if (r.seq !== i + 1) problems.push(`I4: revision ${r.rev_id} of ${d.doc_id} has seq ${r.seq}, expected ${i + 1}`);
+      if (r.seq !== revs[0]!.seq + i) problems.push(`I4: revision ${r.rev_id} of ${d.doc_id} has seq ${r.seq}, expected ${revs[0]!.seq + i}`);
     });
     // Phase 4a: a head minted while capture was off is newer than every captured revision (until a baseline captures it).
     if (revs.length > 0 && d.deleted_at === null && inCoverage(d.updated_at) && d.head !== revs[revs.length - 1]!.rev_id) problems.push(`I4: doc ${d.doc_id} head ${d.head} is not its greatest-seq revision`);
@@ -1628,7 +1645,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "recorder_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "history_purge", "recorder_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -1666,6 +1683,14 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     if (keys[0] === "history_disable") {
       if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: history_disable takes only \`ts\``);
       else if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+      return;
+    }
+    if (keys[0] === "history_purge") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts" && k !== "before")) problems.push(`${here}: history_purge takes \`ts\` and an optional \`before\``);
+      else {
+        if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+        if (body.before !== undefined && (typeof body.before !== "string" || !TS_RE.test(body.before))) problems.push(`${here}: \`before\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+      }
       return;
     }
     if (keys[0] === "recorder_fault") {

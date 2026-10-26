@@ -403,6 +403,26 @@ export function runCheckpointCase(c: Omit<CheckpointCase, "expect">): Checkpoint
   });
 }
 
+/**
+ * The core-only run (spec/sync §8 "The core-only run", 4.2; spec/store §9.6 —
+ * `OMGBASE_CAPABILITIES=core`): a checkpoint case runs the same script on a
+ * store without the recorder — every step of the suite (`disk`, `rm`, `sweep`,
+ * `checkpoint`, `drift`, `recover`, `rebuild_stats`) is the core's, so nothing
+ * is skipped — and its expectation is compared with the history tables
+ * emptied: `commits`, `revisions`, `blobs`, `tree_nodes`, `dispositions`,
+ * `block_changes`, `archives` are `[]` on both sides; the step outcomes, the
+ * core tables, `sync_state` and `file_stats` are compared as recorded. The
+ * `pure`, `registry` and `adapter` cases touch no history table and run
+ * unchanged.
+ */
+export const CORE_EMPTIED_TABLES = ["commits", "revisions", "blobs", "tree_nodes", "dispositions", "block_changes", "archives"] as const;
+
+export function coreModeCheckpointExpect(expect: CheckpointProjection): CheckpointProjection {
+  const out = { ...expect } as CheckpointProjection;
+  for (const t of CORE_EMPTIED_TABLES) (out as unknown as Record<string, unknown>)[t] = [];
+  return out;
+}
+
 /** The repo's `sync_state` rows (by `source_id`, `path`; `repo_id` omitted) and `file_stats` by path. */
 export function projectSyncTables(store: Store, repoId: string): Pick<CheckpointProjection, "sync_state" | "file_stats"> {
   const sync_state = store.db

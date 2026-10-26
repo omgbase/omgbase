@@ -3,7 +3,7 @@ import { sha256 } from "../hash.js";
 import { effectiveSettingsOf } from "./settings.js";
 import { capabilitiesOf } from "../capabilities/registry.js";
 import { CapabilityUnavailable, CaptureFailed, captureFailedMessage, type CapabilityName } from "../capabilities/errors.js";
-import type { CommitRecord, HistoryRecorder } from "../capabilities/types.js";
+import type { CommitRecord, HistoryPurgeOutcome, HistoryRecorder } from "../capabilities/types.js";
 import { clearAlert, raiseAlert } from "./alerts.js";
 import { HISTORY_DDL } from "./schema.js";
 import { appendFeedEntry, appendFeedRow } from "./feed.js";
@@ -202,6 +202,79 @@ export function applyHistoryBundle(db: Database): void {
   bundlePresent.set(db, true);
 }
 
+/** The bundle's tables were dropped (`history purge`, spec/store §7.6): forget the probe's answer so the next capture re-executes the DDL. */
+function forgetHistoryBundle(db: Database): void {
+  bundlePresent.delete(db);
+}
+
+/** spec/store §3.1 `coverage`: does some interval hold `ts` — `from ≤ ts` and (`to` null or `ts < to`)? */
+export function inCoverage(coverage: readonly CoverageInterval[], ts: string): boolean {
+  return coverage.some((i) => i.from <= ts && (i.to === null || ts < i.to));
+}
+
+/** Does `ts` lie after the last interval's end (or is there no interval at all)? — the `disabled` state's condition (spec/surface §2.1). */
+function afterCoverage(coverage: readonly CoverageInterval[], ts: string): boolean {
+  if (coverage.length === 0) return true;
+  const last = coverage[coverage.length - 1]!;
+  return last.to !== null && ts >= last.to;
+}
+
+/** The claim's `minted_at` for an id (spec/store §2.1 `id_claims`), null when no claim exists (never minted here, or pruned under `identity.claims_retain_days`). */
+export function claimMintedAt(db: Database, id: string): string | null {
+  const r = db.prepare("SELECT minted_at FROM id_claims WHERE id = ?").get(id) as { minted_at: string } | undefined;
+  return r ? r.minted_at : null;
+}
+
+/**
+ * The history read states, decided in the spec's order (spec/surface §2.1's
+ * table; phase-1-contracts §2.1, D3 — Phase 4b) for a revision token `rev` the
+ * recorder holds NO row for, on a repository whose current head `rev` is not
+ * (the head is served from the rows, resolution 11). Throws:
+ *   - `capability_unavailable { history, unavailable }` — no module (retriable);
+ *   - `{ history, disabled, rev }` — the row is absent or `disabled` and the
+ *     token was minted after the last coverage interval (or there is none), or
+ *     the token is no claim at all (nothing says it was ever minted here);
+ *   - `{ history, outside_coverage, rev, coverage_from, fix? }` — the claim's
+ *     `minted_at` falls in no interval: capture was off when it was minted;
+ *   - `{ history, pruned, rev, fix? }` — minted within coverage, no row: the
+ *     history was purged (spec/store §7.6);
+ *   - `target_missing` — an unclaimed token on an enabled repository (the 4a
+ *     answer, kept: the token is nobody's).
+ * A token the recorder DOES hold — another document's revision — is
+ * `target_missing` on every composition, as before. `docId` names the document
+ * asked about (the `target_missing` data); `readFix` adds the current document
+ * (`docs_read {"_id":"<id>"}`) as the `fix` of `outside_coverage`/`pruned` —
+ * the caller is `docs_read { at }` / `docs_read_at`.
+ */
+export function historyReadRefusal(db: Database, repoId: string, rev: string, opts: { docId?: string; readFix?: boolean } = {}): never {
+  if (!capabilitiesOf(db).history) throw CapabilityUnavailable.historyUnavailable();
+  if (historyReader(db)?.hasRevision(rev)) throw new TargetMissingRevision(rev, opts.docId ?? null);
+  const row = readCapability(db, repoId, "history");
+  const enabled = row !== null && row.state === "enabled";
+  const mintedAt = claimMintedAt(db, rev);
+  if (mintedAt === null) {
+    if (enabled) throw new TargetMissingRevision(rev, opts.docId ?? null);
+    throw CapabilityUnavailable.historyDisabled(rev);
+  }
+  const coverage = row?.coverage ?? [];
+  if (!enabled && afterCoverage(coverage, mintedAt)) throw CapabilityUnavailable.historyDisabled(rev);
+  const fix = opts.readFix && opts.docId !== undefined ? `docs_read ${JSON.stringify({ _id: opts.docId })}` : undefined;
+  if (!inCoverage(coverage, mintedAt)) throw CapabilityUnavailable.historyOutsideCoverage(rev, coverage[0]!.from, fix);
+  throw CapabilityUnavailable.historyPruned(rev, fix);
+}
+
+/** `target_missing` "no revision \"<rev>\" for document <id>" — the surface renders it (`mcp/errors.ts`); raised here so the table has one home. */
+export class TargetMissingRevision extends Error {
+  readonly code = "target_missing" as const;
+  constructor(readonly rev: string, readonly docId: string | null) {
+    super(`no revision ${JSON.stringify(rev)} for document ${docId ?? "?"}`);
+    this.name = "TargetMissingRevision";
+  }
+  data(): Record<string, unknown> {
+    return { ...(this.docId !== null ? { doc: this.docId } : {}), rev: this.rev };
+  }
+}
+
 /** Is any repository's history row `enabled` (the opener's rule for executing the bundle's DDL: one database holds every repository)? */
 export function anyHistoryEnabled(db: Database): boolean {
   if (!manifestTableExists(db)) return false;
@@ -333,6 +406,51 @@ function ensureHistoryManifestDisabled(db: Database, repoId: string, now: string
   return readCapability(db, repoId, "history")!;
 }
 
+export interface HistoryPurgeResult {
+  /** The rows removed, per history table (spec/store §7.6). */
+  purged: HistoryPurgeOutcome["purged"];
+  /** The recorder's holds released (claims left with no holder deleted). */
+  claims_released: number;
+  /** The manifest's coverage — unchanged by a purge: coverage records when capture was ON, not what is retained (spec/store §7.6). */
+  coverage: CoverageInterval[];
+  /** Whether the bundle's tables were dropped: no repository enabled and every history table empty after the purge. */
+  tables_dropped: boolean;
+}
+
+/**
+ * `history purge [--before <ts>]` (spec/store §7.6, Phase 4b; phase-1-contracts
+ * §1.14, D2 step two): in one transaction — the recorder removes the
+ * repository's history rows (`HistoryRecorder.purge`: every commit, or those
+ * before `before`, never a live head's revision), the recorder's hold (bit 1)
+ * is released on every claim no history row names any more (a claim with no
+ * holder left is deleted), and — when NO repository is `enabled` and every
+ * history table is empty — the bundle's tables are dropped (a workspace-wide
+ * decision taken automatically and reported as `tables_dropped`, so a
+ * database that purged its last history is a core database again; the next
+ * `history enable` re-executes the DDL). The manifest's `coverage` and
+ * `state` are NOT touched: coverage is the record of when capture was on, which
+ * a purge does not change — it is what tells a purged token (`pruned`) from
+ * one minted while capture was off (`outside_coverage`), spec/surface §2.1.
+ * Needs the module (`capability_unavailable { history, unavailable }`
+ * otherwise); a database without the bundle has nothing to purge (every count
+ * 0). The caller holds the writer lock and no transaction.
+ */
+export function purgeHistory(db: Database, repoId: string, opts: { before?: string | null; now?: string } = {}): HistoryPurgeResult {
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
+  const before = opts.before ?? null;
+  const row = readCapability(db, repoId, "history");
+  const coverage = row?.coverage ?? [];
+  if (!historyBundlePresent(db)) {
+    return { purged: { commits: 0, revisions: 0, blobs: 0, tree_nodes: 0, dispositions: 0, block_changes: 0, edge_transitions: 0, archives: 0 }, claims_released: 0, coverage, tables_dropped: false };
+  }
+  return db.transaction((): HistoryPurgeResult => {
+    const { purged, claims_released, tables_dropped } = history.purge(repoId, before, { dropIfEmpty: !anyHistoryEnabled(db), protectHeads: row?.state === "enabled" });
+    if (tables_dropped) forgetHistoryBundle(db);
+    return { purged, claims_released, coverage, tables_dropped };
+  })();
+}
+
 /** The open coverage interval's `from` (the current capture's start), or null when capture is off. */
 export function openCoverageFrom(row: ManifestRow | null): string | null {
   if (!row || row.coverage.length === 0) return null;
@@ -367,11 +485,17 @@ export function semanticConfigOf(db: Database, repoId: string): Record<string, u
  * `updated_at` stands). Returns the row as it now is. Called by `ensure_repo`,
  * migration 17 and every settings write until the Phase 4 `embed` verbs own it.
  */
-export function refreshSemanticManifest(db: Database, repoId: string, now: string): ManifestRow {
+export function refreshSemanticManifest(db: Database, repoId: string, now: string, opts: { flip?: boolean } = {}): ManifestRow {
   if (!manifestTableExists(db)) throw new Error("the capabilities table is missing — open the store through Store first");
-  const state: ManifestState = semanticProviderConfigured(db, repoId) ? "enabled" : "disabled";
   const config = semanticConfigOf(db, repoId);
   const existing = readCapability(db, repoId, "semantic");
+  // spec/store §5.10 (Phase 4b): once the row exists, a settings write that
+  // did not change the effective provider leaves the STATE alone — `omg embed
+  // disable` is sticky across unrelated settings writes — and moves the config
+  // when it changed. `flip` (default: derive the state) is the caller's word
+  // that the provider changed.
+  const flip = opts.flip ?? true;
+  const state: ManifestState = existing && !flip ? existing.state : semanticProviderConfigured(db, repoId) ? "enabled" : "disabled";
   if (!existing) {
     writeRow(db, repoId, {
       capability: "semantic", state, interfaceV: SEMANTIC_INTERFACE_V, dataV: SEMANTIC_DATA_V, config,
@@ -394,20 +518,100 @@ export function refreshSemanticManifest(db: Database, repoId: string, now: strin
 }
 
 /**
+ * `embed enable` / `embed disable` (spec/store §5.10, Phase 4b; phase-1-contracts
+ * §1.14): the semantic row is the verbs' to flip. `enable` needs the module
+ * (`capability_unavailable { semantic, disabled }` otherwise) and a configured
+ * provider (`SemanticProviderMissing` — the CLI passes `--provider` to set
+ * one first); it sets `state = 'enabled'`, opens a coverage interval, writes
+ * the config `{ model?, dim? }` from the effective settings. `disable` closes
+ * the interval and sets `disabled`; the vectors stay (`embed drain --prune` is
+ * the purge), the provider setting stays — `semantic()`, `blocks_resolve`'s
+ * vector leg and the drain then refuse with `capability_unavailable { semantic,
+ * disabled, fix: "omg embed enable" }` (`semanticSwitchedOff`). Both idempotent.
+ */
+export function enableSemantic(db: Database, repoId: string, opts: { now?: string } = {}): SemanticLifecycleResult {
+  if (!capabilitiesOf(db).semantic) throw CapabilityUnavailable.semanticDisabled();
+  const now = opts.now ?? new Date().toISOString();
+  if (!semanticProviderConfigured(db, repoId)) throw new SemanticProviderMissing();
+  const existing = readCapability(db, repoId, "semantic");
+  const config = semanticConfigOf(db, repoId);
+  if (existing && existing.state === "enabled") {
+    if (existing.config_hash.equals(configHash(config))) return { row: existing, changed: false };
+    writeRow(db, repoId, { capability: "semantic", state: "enabled", interfaceV: existing.interface_v, dataV: existing.data_v, config, coverage: existing.coverage, writerRequires: existing.writer_requires, now });
+    return { row: readCapability(db, repoId, "semantic")!, changed: true };
+  }
+  writeRow(db, repoId, {
+    capability: "semantic", state: "enabled", interfaceV: existing?.interface_v ?? SEMANTIC_INTERFACE_V, dataV: existing?.data_v ?? SEMANTIC_DATA_V, config,
+    coverage: [...(existing?.coverage ?? []), { from: now, to: null }], writerRequires: existing?.writer_requires ?? false, now,
+  });
+  return { row: readCapability(db, repoId, "semantic")!, changed: true };
+}
+
+export function disableSemantic(db: Database, repoId: string, opts: { now?: string } = {}): SemanticLifecycleResult {
+  const now = opts.now ?? new Date().toISOString();
+  const existing = readCapability(db, repoId, "semantic");
+  if (!existing || existing.state === "disabled") {
+    if (existing) return { row: existing, changed: false };
+    writeRow(db, repoId, { capability: "semantic", state: "disabled", interfaceV: SEMANTIC_INTERFACE_V, dataV: SEMANTIC_DATA_V, config: semanticConfigOf(db, repoId), coverage: [], writerRequires: false, now });
+    return { row: readCapability(db, repoId, "semantic")!, changed: false };
+  }
+  const coverage = existing.coverage.map((i, idx) => (idx === existing.coverage.length - 1 && i.to === null ? { from: i.from, to: now } : i));
+  writeRow(db, repoId, { capability: "semantic", state: "disabled", interfaceV: existing.interface_v, dataV: existing.data_v, config: existing.config, coverage, writerRequires: existing.writer_requires, now });
+  return { row: readCapability(db, repoId, "semantic")!, changed: true };
+}
+
+export interface SemanticLifecycleResult {
+  row: ManifestRow;
+  changed: boolean;
+}
+
+/** `embed enable` without a configured provider: nothing to enable (the CLI renders it as a usage error with the `--provider` hint). */
+export class SemanticProviderMissing extends Error {
+  readonly code = "provider_unavailable" as const;
+  constructor() {
+    super(SEMANTIC_PROVIDER_MISSING_MESSAGE);
+    this.name = "SemanticProviderMissing";
+  }
+}
+/** Byte for byte in both engines. */
+export const SEMANTIC_PROVIDER_MISSING_MESSAGE = "no embedding provider configured — pass --provider <command|url>, or set one with omg config set embedding.provider <command|url>";
+
+/**
+ * spec/store §5.10 (Phase 4b): is the repository's semantic row switched OFF
+ * while a provider is configured — the state only `omg embed disable` leaves
+ * (a row born `disabled` has no provider, and a provider change re-derives the
+ * row)? When true the semantic paths refuse with `semanticSwitchedOff()`.
+ */
+export function semanticSwitchedOff(db: Database, repoId: string): boolean {
+  if (!capabilitiesOf(db).semantic) return false;
+  const row = readCapability(db, repoId, "semantic");
+  return row !== null && row.state === "disabled" && semanticProviderConfigured(db, repoId);
+}
+
+/** The effective `embedding.provider` of a repository (the string, or null) — what a settings write compares before and after (spec/store §5.10). */
+export function semanticProviderOf(db: Database, repoId: string): string | null {
+  const embedding = effectiveSettingsOf(db, repoId).embedding;
+  if (!isRecord(embedding)) return null;
+  const provider = embedding.provider;
+  return typeof provider === "string" && provider.trim() !== "" ? provider : null;
+}
+
+/**
  * Both rows for a repository that has none yet: the history row with coverage
  * from `from` (its birth at `ensure_repo`; its first commit's `ts` on
  * migration) and the semantic row from the settings. Idempotent.
  */
 export function ensureManifest(db: Database, repoId: string, from: string, now: string, opts: { history?: boolean } = {}): void {
   ensureHistoryManifest(db, repoId, from, now, opts);
-  refreshSemanticManifest(db, repoId, now);
+  // An existing semantic row keeps its state (spec/store §5.10: the verbs and a provider change flip it, not a re-open).
+  refreshSemanticManifest(db, repoId, now, { flip: false });
 }
 
-/** Every repository's semantic row re-derived (a WORKSPACE-layer settings write touches them all). */
-export function refreshSemanticManifests(db: Database, now: string): void {
+/** Every repository's semantic row re-derived (a WORKSPACE-layer settings write touches them all); `flipped` names the repositories whose effective provider changed (spec/store §5.10) — the others keep their state. */
+export function refreshSemanticManifests(db: Database, now: string, flipped?: ReadonlySet<string>): void {
   if (!manifestTableExists(db)) return;
   const repos = db.prepare("SELECT repo_id FROM repos ORDER BY rowid").all() as { repo_id: string }[];
-  for (const r of repos) refreshSemanticManifest(db, r.repo_id, now);
+  for (const r of repos) refreshSemanticManifest(db, r.repo_id, now, { flip: flipped === undefined || flipped.has(r.repo_id) });
 }
 
 /** The alert a refused writer raises (spec/store §3.1 `alerts`; §7 resolution 17). */

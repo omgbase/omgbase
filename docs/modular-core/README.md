@@ -466,7 +466,7 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
-## 6a. Status (2026-10-26) — Phases 1–3 complete; Phase 4 open
+## 6a. Status (2026-10-26) — Phases 1–3 complete; Phase 4 complete in the reference, 4b's Rust twin and Phase 5 open
 
 **Phases 1–3 are complete in both engines** (store 17.0, released as
 `a91354b`): the seams (Phase 1), the semantic bundle behind
@@ -475,7 +475,8 @@ inline bytes, identity claims, self-contained recovery, the slim feed,
 open-only edges and the D9 drops, the manifest and the alert channel) —
 every current read is off the history tables, the DDL is three bundles.
 
-**Phase 4 makes capture optional**, in two slices:
+**Phase 4 makes capture optional**, in two slices (4a complete in both
+engines; 4b in the TypeScript reference, its Rust twin next):
 
 - **4a (this slice; TypeScript reference + spec, `spec/store` 17.1,
   `spec/surface` 6.1, `spec/sync` 4.1, `spec/cli` 5.1):** the composition —
@@ -501,14 +502,37 @@ every current read is off the history tables, the DDL is three bundles.
   (31.5×)** with capture on — the `history` category 0 B; small edits cost
   0.6–1.2 KB instead of 1.6–3.4. The Rust twin follows as its own task; the
   fixtures of this slice are its contract.
-- **4b (next):** the read-side coverage states (`outside_coverage`, `pruned`
-  over `id_claims.minted_at` and the coverage intervals; `docs_history`'s
-  `retained` flag — resolution 11; the `_revisions` relation's capability
-  note), `history purge` (the rows go, the recorder's holds released), `embed
-  enable|disable` owning the semantic row (the settings-following refresh
-  retires), the feed-cap alert (`feed.max_entries` reached), D2 step two (the
-  tombstoned `blocks` rows stop being written by the core), and the
-  amplification measurement on the real corpus.
+- **4b (this slice; TypeScript reference + spec, `spec/store` 17.2,
+  `spec/surface` 6.2, `spec/cli` 5.2, `spec/sync` 4.2):** the read-side
+  **decision table** (`spec/surface` §3) — `outside_coverage`/`pruned`
+  decided over the token's `id_claims.minted_at` and the manifest's coverage
+  intervals, `disabled`/`unavailable` as 4a pinned, `target_missing` for a
+  token nobody minted or another document's, `revision_archived` kept;
+  `docs_history` always lists the current head with `retained` and carries
+  `coverage` (resolution 11); the `_revisions` relation and `^revisions`
+  carry the capability note; **`omg history purge [--before <ts>]`**
+  (`spec/store` §7.6 — the rows per commit, a live head's revision protected
+  while capture is on, the first retained revision re-checkpointed, open
+  edge intervals re-anchored, the recorder's holds released except on the
+  live set while capture is on, the bundle's tables dropped automatically
+  when no repository is enabled and nothing is left; **coverage is not
+  rewritten** — it is the record `pruned` rests on); **`omg embed enable
+  [--provider] | disable`** own the semantic row (`spec/store` §5.10; a
+  settings write re-derives the row only when the effective provider
+  changed, so a `disable` is sticky; "disabled with a provider" refuses the
+  explicit semantic paths with `fix: omg embed enable`); the **`feed_capped`
+  alert** (raised by the write-time cap, cleared by a gc whose cap pass
+  prunes nothing) and `doctor --size`'s feed-cap advice read from it; the
+  TS sync runner's core-only mapping (`spec/sync` §8); and the
+  **real-corpus measurement** (`scripts/baseline/real-corpus.mjs`,
+  `baseline.md` §3): on this repository's `docs/` the database is **10.4×
+  the Markdown with history on and 6.7× with it off** (−36 %), 16.5× / 12.8×
+  with the embedder. Not done here (Phase 5 inherits): **D2 step two** — the
+  core still writes a tombstoned document's `blocks` rows (their deletion
+  from the core is the last write the recorder should own); the migration of
+  real repositories under the four compositions and fault injection; the
+  Rust twin of this slice follows as its own task, the fixtures of this slice
+  are its contract.
 
 ## 7. Index
 
@@ -519,7 +543,10 @@ every current read is off the history tables, the DDL is three bundles.
 - `docs/modular-core/baseline.md` — the measurements; the harness is
   `scripts/baseline/modular-core-baseline.mjs` (`--engine rust|ts --docs 200
   --edits 50`), the recorded runs `docs/modular-core/baseline/
-  rust-2026-10-25T03-29-38.{json,md}` and `ts-2026-10-25T03-29-46.{json,md}`.
+  rust-2026-10-25T03-29-38.{json,md}` and `ts-2026-10-25T03-29-46.{json,md}`;
+  the real-corpus harness is `scripts/baseline/real-corpus.mjs` (`--source
+  <dir> [--embedder <cmd>]`, four compositions, numbers only — `baseline.md`
+  §3).
 - The plan note, in Brendan's notes: `/projects/omgbase/modular-core-plan.md`
   (§3 names the mechanisms of §3 here; §6 the phases and gates; §10 the
   decisions to pin).

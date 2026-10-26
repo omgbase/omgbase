@@ -265,7 +265,7 @@ The tables of `schema.sql` this spec fills:
 | `pending_materializations` | file the `api` path still owes the disk (14.0; self-contained since 17.0 — M4) | `repo_id`, `path` (where the file must end up; one row per path), `kind ∈ {write, rename, remove}`, `from_path` (rename: the old path, else `NULL`), `doc_id`, **`head`** (17.0 — the document's head token whose bytes `write`/`rename` leave at `path`, always its CURRENT head (C8); `NULL` for `remove`; no foreign key — `rev_id → revisions` through 16.x), `rendered_hash` (the bytes expected at `path` — for `remove`, the bytes it is safe to unlink), **`prior_hash`** (17.0 — the bytes the engine itself last wrote at `path`: the `file_hash` the commit validated the file against, captured at commit time, or inherited from the row it superseded; `NULL` when the engine never wrote there — a created document, a `remove`), `commit_id` (the `api` commit that recorded it; no foreign key since 17.0 — `commits` is the recorder's), **`created_at`** (17.0 — that commit's `ts`). Inserted by the commit transaction, deleted per file by the materializer once the file is as recorded (§5.7); the replay reads only this row and the document's current rows. Empty at quiescence; the observe path never inserts; no cap — a row lives until its path is settled. |
 | `edges` | **open** link relation (17.0, M6) | `spec/graph` §3.3's table: `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind ∈ {document, block, external}` (`collection` struck with the `collections` table, D9), `dst_node`, `anchor`, `provenance`, `via_node`. **Open rows only**: closing an edge deletes its row; `from_commit`/`to_commit` and `idx_edges_temporal` are gone (through 16.x a closed edge stayed with `to_commit` set and every reader filtered on it), `idx_edges_src`/`idx_edges_dst` lose their `WHERE`. The interval record is the recorder's `edge_transitions`, below. Written by the reference during the commit transaction (§5.4 step 9c); pinned by `spec/graph`'s fixtures, not compared here. |
 | `edge_transitions` | edge interval (**the recorder's**, 17.0 — M6) | 16.x's `edges` row verbatim — `edge_id`, `repo_id`, `src_doc`, `src_block`, `src_field`, `predicate`, `dst_kind`, `dst_node`, `anchor`, `provenance`, `via_node`, `from_commit`, `to_commit` — written when the core opens an edge (`to_commit = NULL`) and closed (`to_commit` = the commit) when it deletes one (§5.4 step 15); `dst_node` follows the open edge's in-place rewrites (phantom adoption, a move's re-phantoming — `spec/graph` §3.5) so the record reads as 16.x's table did. Index `idx_edge_transitions_temporal (from_commit, to_commit)`. Pinned by `cases/history/edge-transitions.json` (§9.5). |
-| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), and — until the Phase 4 verbs `history enable|disable|purge` / `embed enable|disable` own it — every settings write re-derives the `semantic` row (a flip opens or closes an interval at the write's clock; a `config` change moves the hash alone). The `history` row is flipped by nothing in 17.0: every composition carries the recorder. A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
+| `capabilities` | (repository, capability) — the **capability manifest** (17.0, slice 3e-ii) | `repo_id`, `capability ∈ {history, semantic}`, `state ∈ {enabled, disabled}`, `interface_v` (the capability interface the writer implements: history 1, semantic 1), `data_v` (the bundle's own schema version: history 1 = 16.0's tables + `edge_transitions`, semantic 1), `config` (canonical JSON — keys sorted bytewise at every level — of the configuration the data was produced under: semantic `{ model?, dim? }` from the effective `embedding.*`, history `{}`), `config_hash` (= `sha256(config)`, the fingerprint; a change while `enabled` is a rebuild of the capability's data — semantic: a model switch, history: never), `coverage` (JSON `[{ "from": ts, "to": ts | null }, …]`: the intervals capture was on, the last open — `to: null` — iff `state = 'enabled'`), `writer_requires` (1: a writer without this module must refuse writes on the repository, §5.4 step 0 — resolution 17), `updated_at`. Rules: (1) a repository with no row for a capability is `disabled` with no coverage; (2) `coverage_from` — what `version` and `doctor --size` report — is the first interval's `from`, null when none; (3) the row is engine state, never derived from the settings on read. **Who writes it:** `ensure_repo` (§1 — both rows: `history` `enabled`, coverage from the repository's birth, `writer_requires = 1`; `semantic` `enabled` iff `embedding.provider` resolves for the repository, else `disabled` — resolution 1: stored vectors are never consulted), migration 17 (§3.4 step (13), the same for every existing repository with the history interval anchored on its first commit), the verbs `history enable|disable` (§5.9; 17.1) and `embed enable|disable` (§5.10; 17.2), and a settings write that CHANGES a repository's effective `embedding.provider` (17.2: it re-derives the `semantic` row — set → `enabled` with a new interval, unset → `disabled` with the interval closed; a write that leaves the provider as it was moves the row's `config` and hash alone and keeps its state, so `embed disable` is sticky — through 17.1 every settings write re-derived the row). `history purge` (§7.6) touches neither `state` nor `coverage`: coverage records when capture was ON, which is what tells a purged token (`pruned`) from one minted while capture was off (`outside_coverage`, `spec/surface` §2.1). A table, not settings keys: engine-written state that survives a settings rewrite, typed, projected row for row, read by `doctor` without resolving settings. |
 | `alerts` | (repository, condition) — the **alert channel** (17.0, slice 3e-ii; §5.8) | `repo_id`, `code` (the condition), `severity ∈ {info, warning, error}`, `message` (one line for a human, both engines byte for byte), `since` (first raised; kept while the condition stands), `detail` (canonical JSON, `{}` when none), `cleared_at` (`NULL` = active). Raised by the engine when a condition needs a human and cleared when it ends; every MCP tool result carries the active alerts of the call's repository (`spec/surface` §4 "Alerts"), the CLI prints them to stderr (`spec/cli` §3.1), `doctor` lists them. |
 | `external_nodes`, `properties`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`, `file_stats` | — | Created by `schema.sql`; semantics belong to other specs. `properties` (17.0, D9: no `created_commit`/`deleted_commit` — a property row is live exactly while its document's rows are, since the commit deletes and rewrites them per document; the four indexes lose their partial predicates) is written by the reference during the same commit transaction; a runner does not compare it. `collections` and `inferred_edges` — created and never written through 16.x — are gone (D9). `sync_state` (17.0, D4) carries, beside the per-attachment rows, one reserved **status row** per repository — `(repo_id, '', '')` with `last_batch_ts`, `last_batch_id`, `last_batch_files` — written by every observed batch together with the pool sweep (`spec/sync` §4.1); the `checkpoints` table it replaces is gone. |
 
@@ -302,7 +302,7 @@ every repository, so one enabled repository brings the bundle for all; the
 tables are harmless when present and unused — a disabled repository's
 commits never write them). A database no repository of which ever enabled
 capture has no history table; a repository whose capture was switched off
-keeps its rows until `history purge` (Phase 4b). The **semantic bundle
+keeps its rows until `history purge` (§7.6), which may drop the bundle's tables again when nothing is left. The **semantic bundle
 follows the composition**, not the manifest: its DDL is executed on every
 open by an engine that carries the semantic module (the module's reads —
 the `available` gate, the vector cache, `omg status`'s stale count — probe
@@ -1164,13 +1164,15 @@ The raisers of 17.0, each with its condition and its end:
 | `materialization_backlog` | `warning` | some `pending_materializations` row of the repository has `created_at ≤ now − recovery.alert_after_minutes` (a setting, `spec/sync` §3; default **10** — the api path still owes the working tree files a replay has not been able to leave there). Re-derived on every read of the channel and after every replay (§5.7 step 0, recovery). Message: `<n> pending materialization[s] older than <m> minutes (oldest <ts>): the api path still owes the working tree these files — omg sync replays them` | no such row | `{ pending: <n>, oldest: <the earliest created_at>, threshold_minutes: <m> }` |
 | `materialization_failed` | `error` | a pending row's replay **threw** (the doc store refused the write; the row is intact and retried by the next sweep — resolution 18: retry forever, surface loudly). The error still propagates. Message: `replaying the pending materialization of <path> failed: <reason> — the row is kept and retried on the next sweep` | the next replay pass of the repository completes without a failure | `{ path: </-rooted>, kind, reason }` |
 | `writer_refused` | `error` | a writer without the history module was refused by `writer_requires` (§5.4 step 0; the write is `capability_unavailable { capability: history, state: unavailable }`, `spec/surface` §4). Unreachable through 17.0: every composition carries the recorder. Message: `a writer without the history module was refused: this repository requires capture (writer_requires) — write through an engine that carries the history module, or run omg history disable` | a write by an engine that carries the module passes the check | `{ capability: "history" }` |
+| `capture_failed` | `error` | (17.1, Phase 4a; resolution 18) the recorder threw inside a member's transaction: the member was rolled back, the next sweep retries. Message: `history capture of <path \| a commit> failed: <reason> — the write was rolled back and is retried by the next sweep; fix the recorder or run omg history disable` | a later capture of the same path succeeds | `{ path?, reason }` |
+| `feed_capped` | `warning` | (17.2, Phase 4b) the write-time cap pruned feed rows inside a commit's transaction (§7.4: more than `feed.max_entries` rows of the epoch were newer than them) — rows the floors promised a consumer are leaving because the cap is too low for the write rate. Raised in the committing transaction at the commit's `ts`. Message: `the feed reached feed.max_entries (<max>) and pruned <n> row[s] a consumer may not have read: raise feed.max_entries or shorten the sync interval` | a `gc` (§7, §7.4) whose cap pass prunes nothing — the feed is within the cap again (the floors did the work, or the cap was raised); a gc whose cap pass prunes re-raises it | `{ pruned: <the rows this write pruned>, oldest, head }` (the feed's position after the prune) |
 
 Nothing else raises; a code outside this table is a newer engine's. The
-conditions the contracts name beyond these — capture failing on a file, a
-detached segment a read needs, a recorder with an unknown schema — have no
-raiser in 17.0 (their sites arrive with Phase 4's conditional bundles) and
-are listed so both engines spell the codes alike when they do:
-`capture_failed`, `segment_detached`, `recorder_schema_unknown`.
+conditions the contracts name beyond these — a detached segment a read
+needs, a recorder with an unknown schema — have no raiser yet and are
+listed so both engines spell the codes alike when they do:
+`segment_detached`, `recorder_schema_unknown`. `doctor --size` reads the
+channel for its feed-cap advice line (§7.2).
 
 **Step 0 of every write (resolution 17).** Before a write entry point —
 observation (§5.4), the api commit (`spec/mutate` §4), the observed
@@ -1221,7 +1223,7 @@ of the baseline.
 
 **`history disable`**: the open interval closes — `coverage[last].to = ts`
 — `state = 'disabled'`, `writer_requires = 0`. **The rows stay** (`history
-purge`, Phase 4b, removes them); reads of what was captured keep working
+purge`, §7.6, removes them); reads of what was captured keep working
 (§6.2, `docs_history`, the `revisions` root — `spec/surface` §2.1: a
 disabled repository lists what it captured); step 15 stops for this
 repository from the next commit on, in this process and every other (every
@@ -1245,6 +1247,44 @@ module — so every fixture suite can run its observation scripts with
 history off and assert the core invariants alone (§9.6). It is not a
 production switch: in production whether a repository's commits are
 captured is its manifest row, flipped by the two verbs above.
+
+### 5.10 The semantic lifecycle (17.2, Phase 4b)
+
+The `semantic` manifest row is flipped by two verbs over it (`omg embed
+enable [--provider <p>] | disable`, `spec/cli`; `phase-1-contracts.md`
+§1.14) and by a change of the effective `embedding.provider` setting
+(§3.1). Both verbs are idempotent and run under the writer lock.
+
+**`embed enable`** needs the module (a core-only build refuses with
+`capability_unavailable { semantic, disabled }`) and a configured provider
+(`embedding.provider` resolving for the repository — else the refusal `no
+embedding provider configured — pass --provider <command|url>, or set one
+with omg config set embedding.provider <command|url>`, which the CLI renders
+as a usage error; `--provider` writes the setting at the WORKSPACE layer
+first, as `init --embedder` does — one vector space per workspace — and
+that write itself re-derives every repository's row whose effective
+provider changed). Then `state = 'enabled'`, `coverage += { from: ts, to:
+null }`, `config = { model?, dim? }` from the effective `embedding.*`. An
+`enabled` row is returned unchanged (a config change moves the config
+alone). **`embed disable`**: `coverage[last].to = ts`, `state =
+'disabled'`; the vectors stay (`embed drain --prune` is the vectors' purge)
+and the provider setting stays. The outcome is the row's `{ state,
+coverage, provider, changed }`.
+
+**What `disabled` means with a provider configured** — the state only
+`embed disable` leaves (a row born `disabled` has no provider; a provider
+change re-derives the row): every explicit semantic path refuses with
+`capability_unavailable { capability: "semantic", state: "disabled", fix:
+"omg embed enable" }` and the message `` semantic search is disabled for
+this repository — enable it with `omg embed enable` (the embedding
+provider stays configured) `` (byte for byte in both engines): `semantic()`
+in a query, `blocks_resolve`'s vector leg and `embed status|drain`; the
+host spawns no embedder for such a repository, so an opportunistic caller
+(`find`, the MCP server's `blocks_resolve` without a query vector) is
+FTS-only. With NO provider configured the row is `disabled` too, and every
+path keeps its 5.1 answer (`provider_unavailable` — "the module is here
+and has nothing to score with", `spec/surface` §4); `version` and
+`sync_status` read `disabled` in both cases.
 
 ## 6. Reads this spec pins
 
@@ -1651,11 +1691,14 @@ open connection:
   exceed 25 % of the total; `identity claims are <share> of the database:
   set identity.claims_retain_days to release old ids` (17.0, slice 3e-ii —
   the contracts' §7.5) when `id_claims`' bytes exceed 10 % of the total
-  (dbstat only); else the single line `nothing to reclaim`. The contracts'
-  other 3e-ii line — the feed-cap advice, fired when the write-time cap
-  pruned a row younger than `retain_days` "since the last report" — needs a
-  counter no table of this spec carries and is **not emitted**; its natural
-  home is an alert raised by the cap (§5.8), a Phase 4 decision.
+  (dbstat only); else the single line `nothing to reclaim`. The feed-cap
+  line (17.2, Phase 4b) reads the alert channel: `` the feed holds <n>
+  entries over <d> day[s] (floors <retain_entries> / <retain_days>): raise
+  feed.max_entries or shorten the sync interval `` is emitted, after the
+  claims line, when the report's repository has an active `feed_capped`
+  alert (§5.8 — the write-time cap pruned rows) — `<n>` the feed's retained
+  rows, `<d>` the days its retained rows span (`ceil((max(ts) − min(ts)) /
+  1 day)`), the floors the effective settings'.
   `<bytes>` is humanized — `<n> B` under 1024, else one decimal of a
   1024-based KB/MB/GB/TB with the tenths rounded half up (`4096` →
   `4.0 KB`) — and `<share>` is `<n>.<d>%`; both engines format from the
@@ -1748,6 +1791,78 @@ step (§9.4; `feed::remint-epoch-starts-the-feed-over`): two commits under
 `ep_0`, the re-mint, then a commit at `seq = 1` of `ep_1` with the feed
 holding that row alone, `commits` keeping `c_0`/`c_1` under `ep_0`.
 
+### 7.6 History purge (17.2, Phase 4b)
+
+`omg history purge [--before <ts>]` (`spec/cli`; `phase-1-contracts.md`
+§1.14, D2 step two) is the recorder's collection the operator asks for:
+the repository's **captured history leaves the store**, in one transaction
+under the writer lock. Needs the module (`capability_unavailable { history,
+unavailable }` otherwise); a database without the bundle has nothing to
+purge (every count 0). The steps, in order:
+
+1. **The purged commits** are the repository's `commits` rows — all of them,
+   or those with `ts < before` — EXCEPT, **while the repository's capture is
+   `enabled`**, the commit a live document's head revision belongs to: the
+   head's row is the present, not the past, so an enabled repository trims
+   its history and keeps H1, I4 and `docs_history`'s retained head; a
+   `disabled` repository owes nothing and purges all.
+2. **Re-checkpoint first** (§4.4 base liveness, the squash's rule): every
+   retained revision whose predecessor (`seq − 1`, same document) is purged
+   is re-written in checkpoint form while its base is still readable.
+3. The purged commits' `revisions`, `dispositions` and `block_changes` rows
+   go.
+4. **The interval record is trimmed to the cut**: an `edge_transitions`
+   row whose `to_commit` is purged goes (the interval closed before the
+   cut); a row whose `from_commit` is purged but which is open or closes
+   after the cut is **re-anchored** — `from_commit` = the earliest retained
+   commit of the repository in (`ts`, `seq`) order (the interval was already
+   open at the cut, as `history enable`'s baseline records an edge it finds
+   open); when no commit remains every row of the repository goes.
+5. The purged `commits` rows go; then every `archives` row of the repository
+   no revision names any more (the segment is detached, its file untouched).
+6. The unreachable bodies are swept (§7's mark from the live revision roots).
+7. **The holds**: bit 1 is released on every claim of the repository that no
+   history row names (`revisions.rev_id`/`doc_id`, `block_changes.block_id`,
+   `dispositions.block_id`, `edge_transitions.edge_id`, `commits.commit_id`)
+   — while capture is `enabled` the hold SURVIVES on every id a live core
+   row names (a live document and its head, a live block, an open edge:
+   exactly the set a baseline holds, §5.9, so I7 and H6 keep holding); with
+   capture off every unreferenced hold goes. A claim left with no holder is
+   deleted. The core's bit 0 is never touched (§7.3).
+8. **The drop**: when NO repository of the database is `enabled` and every
+   history table is empty after the purge, the bundle's tables are dropped
+   (indexes with them) — a workspace-wide decision taken automatically and
+   reported, so a database that purged its last history is a core database
+   again; the next `history enable` re-executes the DDL (§3.1).
+
+**The manifest is untouched** — neither `state` nor `coverage` moves.
+Coverage records when capture was ON; a purge changes what is retained, not
+what happened, and the distinction is what `spec/surface` §2.1's read states
+rest on: a token minted inside an interval whose row is gone reads `pruned`
+("was captured but its history has been purged"), one minted outside every
+interval `outside_coverage` ("capture started <coverage_from>"). (The
+contracts' §7.3 sketched `coverage = []`; that would make every purged token
+read as never captured and leave `pruned` unreachable — §10.) `history
+disable` never implies a purge.
+
+The receipt: `{ purged: { commits, revisions, blobs, tree_nodes,
+dispositions, block_changes, edge_transitions, archives }, claims_released,
+coverage, tables_dropped }` — the rows removed per table (`blobs`/`tree_nodes`
+the sweep's), the holds released, the manifest's coverage as it stands, and
+whether step 8 ran. The §8 family reads after a purge as §8's preamble says
+(H4 and I4 from the log's oldest retained row). Fixtures: `purge::purge-all-
+on-a-disabled-repository-drops-the-bundle` (three captured commits, disable,
+purge → every history table `[]`, the holds released, the tables dropped, a
+second purge finds nothing, a core-only write after it) and `purge::purge-
+before-trims-an-enabled-repository` (three revisions of one document, a
+`--before` between the second and the third → the first two go, the head's
+revision is re-checkpointed and reads back byte for byte, the open edge is
+re-anchored at the retained commit, the holds on the two purged revision ids
+released and the live set's kept; the next edit is a delta on the
+re-checkpointed row) — `cases/history/purge.json`; `spec/surface`
+`reads::history-coverage` pins the read states; `spec/cli`
+`history::history-purge-disabled`/`history-purge-before-enabled` the verb.
+
 **Vacuum** (14.1). `vacuum` runs SQLite's `VACUUM` on the bare connection
 (never inside a transaction, which SQLite refuses) and returns the free
 pages' bytes measured just before — what the file shrinks by. It rewrites
@@ -1775,11 +1890,16 @@ only when a later `history enable`'s baseline wrote one — then the row's
 commit is the baseline's, so C7's "`updated_at` equals the head commit's
 `ts`" is not compared for it (its `updated_at` is outside coverage).
 **H4**: a retained feed row owes a `commits` row only when its `ts` is in
-coverage; every `commits` row of the current epoch at or after the oldest
+coverage AND its `seq` is at or after the log's oldest retained row of the
+epoch (17.2: a `history purge` trims the log's head, §7.6 — a feed row older
+than every retained commit owes none, a repository with no commit owes
+none); every `commits` row of the current epoch at or after the oldest
 retained feed row IS a feed row (the log is a subsequence of the feed).
 **I4**: `commits.seq` is strictly increasing in (`ts`, `seq`) order per
-epoch, and dense `1..n` only when capture was never off (one open interval
-from the repository's birth); `revisions.seq` stays `1..k` per document; a
+epoch, and consecutive from the log's oldest retained row only when capture
+was never off (one open interval from the repository's birth — dense `1..n`
+unless a purge trimmed the head); `revisions.seq` stays consecutive per
+document, from 1 unless a purge trimmed the document's history (17.2); a
 live document's head is its greatest-seq revision when its `updated_at` is
 in coverage; "a head with no revision" is a problem only in coverage. **H6**
 (the edges agree with the open transitions) holds while capture is on —
@@ -2135,7 +2255,10 @@ unchanged.
   writer_requires? }` and `history_disable { ts }` run the two verbs at `ts`
   → `{ history: { state, coverage, writer_requires, changed, baseline?:
   { commit, revisions } } }` (the manifest row's capture state after the
-  verb; `baseline` on an `enable` that changed something); `recorder_fault
+  verb; `baseline` on an `enable` that changed something); `history_purge {
+  ts, before? }` (17.2, §7.6) runs `history purge [--before]` at `ts` → `{
+  purge: { purged: { <table>: n }, claims_released, coverage, tables_dropped
+  } }` (the receipt); `recorder_fault
   { fail }` is the runner's **fault device** (§5.4 step 15, resolution 18):
   `fail: true` makes every capture call of the store's recorder throw until
   `fail: false` → `{ fault: boolean }` — the next `observe` then records a
@@ -2281,8 +2404,7 @@ full §9.4 projection they always had** (their core tables are the context
 the recorder's rows are read against; moving them changed no `expect`): a
 runner for a composition without the history bundle skips the whole
 directory, and a composition with it runs them exactly as §9.4. The capture
-lifecycle's suite is `capture.json` (17.1, §9.1; `history purge` arrives
-with Phase 4b).
+lifecycle's suites are `capture.json` (17.1) and `purge.json` (17.2, §7.6).
 
 ### 9.6 The core-only run (17.1, Phase 4a)
 
@@ -2308,7 +2430,9 @@ semantic bundle's tables and indexes (§3.1: the semantic bundle follows the
 composition). `STORE_SPEC_UPDATE` is refused under the override: the
 fixtures are the full composition's. The `spec/mutate` runner does the same
 over its projection (`commits`/`revisions`/`dispositions` emptied); the
-`spec/surface` runner maps the history tools' answers (`spec/surface` §7.3).
+`spec/surface` runner maps the history tools' answers (`spec/surface` §7.3);
+the `spec/sync` checkpoint runner compares with the history tables emptied
+(`spec/sync` §8 "The core-only run", 17.2).
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
@@ -2316,6 +2440,44 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (17.2, Phase 4b) — `history purge`, the semantic lifecycle, the
+  feed-cap alert.** No DDL change. (1) **§7.6 `history purge [--before]`**:
+  the recorder's rows leave the store per commit — a live head's revision is
+  protected while capture is on, the first retained revision after a cut is
+  re-checkpointed (the squash's rule), the interval record is trimmed to the
+  cut with open intervals re-anchored at the earliest retained commit, the
+  recorder's holds released except — with capture on — on the live set, the
+  bundle's tables dropped automatically when no repository is enabled and
+  nothing is left. **Coverage is not rewritten** (the contracts' §7.3 sketched
+  `coverage = []`, `state = 'disabled'`): decided here so that the four read
+  states of D3 stay truthful and reachable — a purged token reads `pruned`
+  because its claim's `minted_at` falls inside an interval capture was on
+  and no row exists; with coverage emptied it would read `outside_coverage`
+  ("capture started …") and `pruned` would have no producer. `version`'s
+  `coverage_from` therefore still names when capture began, not where
+  readable history begins; the receipt reports what left. (2) **§5.10 the
+  semantic row is the verbs'**: `embed enable|disable` flip it; a settings
+  write re-derives it only when the effective provider CHANGED (17.0–17.1:
+  on every settings write), so a `disable` survives unrelated writes and the
+  simple path — set the provider, semantic is on; unset it, off — stays. The
+  state "disabled with a provider configured" is new and refuses the
+  explicit semantic paths with `capability_unavailable { semantic, disabled,
+  fix: "omg embed enable" }`; "disabled without a provider" keeps the 5.1
+  `provider_unavailable`, so no fixture of the no-provider case moved. The
+  reference's `ensure_repo` used to re-derive an existing semantic row on
+  every open (it derived `enabled` from the provider) — it now creates the
+  row only; a disabled row survives a re-open. (3) **§5.8 `feed_capped`**: the
+  write-time cap raises it in the committing transaction, a gc whose cap
+  pass prunes nothing clears it; `doctor --size`'s feed-cap advice (§7.2)
+  reads the alert instead of the counter the contracts assumed. (4) **§8
+  under a purge**: H4 and I4 are owed from the log's oldest retained row; a
+  document's `revisions.seq` is consecutive, from 1 unless trimmed. (5) The
+  `spec/surface` §2.1 decision table over the claims (`outside_coverage`,
+  `pruned`) reads `id_claims.minted_at` of the `r` token — the claim is the
+  core's record of when a token was minted, which is exactly what tells the
+  two states apart; a token with no claim (never minted here, or pruned by
+  `identity.claims_retain_days`) is `target_missing` on an enabled repository
+  and `disabled` on one whose capture is off, as 17.1 pinned.
 - **Changed (17.1, Phase 4a) — capture is optional: the bundle follows the
   manifest, `history enable|disable`, the reachable refusal, the rollback.**
   (`docs/modular-core/` Phase 4a; `phase-1-contracts.md` §1.14, §1.15,
@@ -2691,6 +2853,25 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-26, store 17.2 (Phase 4b of `docs/modular-core/`): **`history
+  purge`, `embed enable|disable`, `feed_capped`.** A procedure minor — no
+  DDL change. Decided in the implementation (§10 "Changed (17.2)"): a purge
+  does not rewrite coverage (it is the record capture rests on; `pruned`
+  needs it), protects a live head's revision only while capture is on,
+  re-anchors open edge intervals at the earliest retained commit, keeps the
+  recorder's hold on the live set while capture is on, and drops the
+  bundle's tables automatically when nothing is left and no repository is
+  enabled (no `--drop-tables` flag: the condition is checkable and the
+  outcome reported); the semantic row follows a provider CHANGE rather than
+  every settings write, so `embed disable` is sticky; "disabled with a
+  provider" is the one new refusal and the no-provider case keeps
+  `provider_unavailable`; the feed-cap advice is read from the alert. The
+  `capability_unavailable` envelope does not gain `repo` (the contracts' §2.1
+  sketched it): adding it would move every pinned semantic
+  `capability_unavailable` fixture for a key the client already knows (it
+  named the repository). Phase 5 inherits D2 step two's write side (the
+  core still writes a tombstoned document's `blocks` rows) and the migration
+  of real repositories.
 - 2026-10-26, store 17.1 (Phase 4a of `docs/modular-core/`): **capture is
   optional.** A procedure minor — no DDL changes; which bundles a database
   holds and when a commit writes a history row do. The decisions were

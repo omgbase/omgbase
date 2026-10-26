@@ -1924,7 +1924,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
+        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|purge|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
       }
     },
     {
@@ -2355,6 +2355,235 @@
             "exit": 1,
             "stdout": "",
             "stderr": "error[capability_unavailable]: history is unavailable in this build — run an engine with the history module to read it\n  {\n    \"capability\": \"history\",\n    \"state\": \"unavailable\"\n  }\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-purge-disabled",
+      "notes": "§6 `history purge` on a repository whose capture is off (Phase 4b; spec/store §7.6): `disable` closes the interval; `purge` removes every history row of the alchemy repository — the 20 commits and revisions, the bodies, the evidence, the open edge transitions (no commit remains) — releases the recorder's hold on every claim it was on, and, no repository being enabled with every history table empty, drops the bundle's tables (`  history tables dropped`); a second purge finds `nothing to purge`; `--json` the receipt with every count 0 and the coverage untouched. Afterwards `hist` and `diff` are `capability_unavailable { history, disabled }` (nothing is captured in this database), `log` still lists the feed, `doctor` passes, a write lands, and `history enable` re-creates the tables with a baseline.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  purged 20 commits, 20 revisions, 327 dispositions, 327 block changes, 69 edge transitions, 0 segments; swept 334 blobs, 55 tree nodes; released 456 id claims\n  history tables dropped\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  nothing to purge\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"purged\":{\"commits\":0,\"revisions\":0,\"blobs\":0,\"tree_nodes\":0,\"dispositions\":0,\"block_changes\":0,\"edge_transitions\":0,\"archives\":0},\"claims_released\":0,\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"}],\"tables_dropped\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: history is disabled for this repository — enable it with `omg history enable` (reads of what was captured earlier still work)\n  {\n    \"capability\": \"history\",\n    \"state\": \"disabled\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: history is disabled for this repository — enable it with `omg history enable` (reads of what was captured earlier still work)\n  {\n    \"capability\": \"history\",\n    \"state\": \"disabled\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "-n",
+            "2"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#1 observed observed: /index.md — created\n#2 observed observed: /lab/2026-01-notes.md — created\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history enabled since 2026-09-27T00:00:00.000Z (baseline c_21: 20 revisions)\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-purge-before-enabled",
+      "notes": "§6 `history purge --before <ts>` on a repository whose capture is ON (Phase 4b; spec/store §7.6): `meta` moves `/texts/mutus-liber.md`'s head off its import revision; the purge before one millisecond past the fixture clock has every commit as a candidate but protects the commit of every live head — only the import commit whose revision (r_17) is no longer a head goes: one commit, one revision, its dispositions and block changes; the recorder's hold is released on r_17 alone (the live set keeps it). `diff --from r_17` of the document is now `capability_unavailable { history, pruned, rev: r_17 }` — the token was minted inside coverage and its row is gone — `hist b_309` lists the edit alone (its `inserted` change left with the commit), `doctor` passes (`capture complete`), and the same purge again finds nothing. `--before` that is not an instant is a usage error.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--before",
+            "2026-09-27T00:00:00.001Z"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  purged 1 commit, 1 revision, 12 dispositions, 12 block changes, 0 edge transitions, 0 segments; swept 1 blob, 0 tree nodes; released 2 id claims\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/texts/mutus-liber.md",
+            "--from",
+            "r_17",
+            "--to",
+            "r_20"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: revision \"r_17\" was captured but its history has been purged\n  {\n    \"capability\": \"history\",\n    \"state\": \"pruned\",\n    \"rev\": \"r_17\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"0 heads without a revision\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--before",
+            "2026-09-27T00:00:00.001Z",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"purged\":{\"commits\":0,\"revisions\":0,\"blobs\":0,\"tree_nodes\":0,\"dispositions\":0,\"block_changes\":0,\"edge_transitions\":0,\"archives\":0},\"claims_released\":0,\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"tables_dropped\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "purge",
+            "--before",
+            "yesterday"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: bad --before 'yesterday' (use an RFC 3339 instant)\n"
           }
         }
       ]

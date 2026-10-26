@@ -755,7 +755,14 @@ database: a smaller model (\`embedding.model\` / \`embedding.dim\`) or \`omg
 embed drain --prune\` after a model switch shrinks them` when the two
 embedding tables hold more than 25 %; `identity claims are <share> of the
 database: set identity.claims_retain_days to release old ids` (store 17.0,
-slice 3e-ii) when `id_claims` holds more than 10 %; `nothing to reclaim`
+slice 3e-ii) when `id_claims` holds more than 10 %; `the feed holds <n>
+entries over <d> day(s) (floors <retain_entries> / <retain_days>): raise
+feed.max_entries or shorten the sync interval` (cli 5.2, store 17.2 Phase
+4b — `spec/store` §5.8 `feed_capped`, §7.2) when the selected repository
+has an active `feed_capped` alert (the write-time cap pruned rows; the
+alert itself is printed to stderr as every alert is, `admin::doctor-size-
+feed-capped` — the `sql` device caps the feed, a `meta` write prunes and
+raises, `gc` clears); `nothing to reclaim`
 when none applies.
 
 `--json` (and every non-human mode — there is no list the machine modes
@@ -808,10 +815,37 @@ unpinnable; the fixtures use shell scripts as editors.
 
 ### `embed`
 
-`embed [status]` · `embed drain [--verbose] [--prune]` — the embedding
-queue. With no `embedding.provider` in the effective settings: stderr
+`embed [status]` · `embed enable [--provider <command|url>]` · `embed
+disable` · `embed drain [--verbose] [--prune]` — semantic indexing: its
+switch per repository (cli 5.2, store 17.2 Phase 4b — `spec/store` §5.10)
+and the embedding queue. With no `embedding.provider` in the effective settings: stderr
 `  no embedding provider configured — set one with \`omg config set embedding.provider <command|url>\` (e.g. omgbase-embedder)`,
 exit 0, for both `status` and `drain`; `--json` `{"provider":null,"queued":0}`.
+
+**`enable`** needs a provider: with `--provider <p>` it first writes
+`embedding.provider` at the WORKSPACE layer (as `init --embedder` does — the
+write re-derives every repository's semantic row whose provider changed),
+then sets the selected repository's row `enabled` with an open coverage
+interval; without a configured provider it is `usage: no embedding provider
+configured — pass --provider <command|url>, or set one with omg config set
+embedding.provider <command|url>` (exit 2). Stderr `  semantic enabled since
+<ts> (provider <p>)`, already on: `  semantic already enabled since <ts>
+(provider <p>)`. **`disable`** closes the interval and sets `disabled`; the
+provider setting and the vectors stay. Stderr `  semantic disabled (embedded
+<from>..<to>[, …])`, already off: `  semantic already disabled (embedded …)`
+(`  semantic already disabled` when it never ran). `--json` for both `{
+state, coverage: [{ from, to }], provider, changed }` (`changed` true when
+the state moved, by the verb or by `--provider`'s write). Under the writer
+lock. **While switched off with a provider configured** (the state only
+`disable` leaves): `embed status` and `embed drain` are
+`error[capability_unavailable]` `{ semantic, disabled, fix: "omg embed
+enable" }` (the pinned message, exit 1), `query` with `semantic()` the
+same, and `find` is FTS-only — nothing is spawned, so a broken provider is
+not `embedder_failed` here. Unsetting the provider (`config set
+embedding.provider ""`) flips the row to `disabled` by itself; a settings
+write that leaves the provider as it was leaves the state alone. Exact
+bytes under the fixture clock: `admin::embed-enable-no-provider`,
+`embed-enable-disable`.
 With a provider that cannot start, every semantic path (`embed`, `find`
 without `--no-semantic`, `query` with `semantic()`) fails
 `embedder_failed` with `data: { provider, reason }` — the `reason` is the
@@ -899,7 +933,8 @@ line; `--ids` the same array (a change carries no id).
 ### `history`
 
 `history enable [--best-effort]` · `history disable` (cli 5.1, store 17.1
-Phase 4a) · `history plan [--before <ts>] [--policy <json|@file>]` ·
+Phase 4a) · `history purge [--before <ts>]` (cli 5.2, store 17.2 Phase 4b) ·
+`history plan [--before <ts>] [--policy <json|@file>]` ·
 `history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]` ·
 `history attach <file|dir>` · `history detach <segment_id|path>` ·
 `history list` — the operator surface of history CAPTURE (`spec/store`
@@ -910,7 +945,7 @@ the segment, squashing the store, and the segment registry). Needs a repo
 (`repo_not_found` on a workspace without one, as every repo verb); not
 `--server`; a bare `history`, `history help` and `--help` print the card
 (§5); an unknown subcommand is `usage: unknown history subcommand '<x>'
-(enable|disable|plan|export|attach|detach|list)` with the card as hint.
+(enable|disable|purge|plan|export|attach|detach|list)` with the card as hint.
 
 **`enable`** turns capture on (`spec/store` §5.9): the history bundle's DDL
 when absent, the **baseline** commit — one `import` feed row, `reason`
@@ -954,6 +989,34 @@ repository's effective `history.retention` settings for the run
 non-negative integer`). `--before` is an RFC 3339 instant (`usage: bad
 --before '<x>' (use an RFC 3339 instant)`); only revisions committed
 strictly before it are candidates.
+
+**`purge`** deletes the repository's captured history (`spec/store` §7.6):
+every commit, or with `--before <ts>` (an RFC 3339 instant, `usage: bad
+--before '<x>' (use an RFC 3339 instant)` otherwise) those strictly before
+it — a live document's head revision and its commit stay while capture is
+on; the first retained revision after a cut is re-checkpointed; the
+recorder's id holds are released on what nothing names any more (the live
+set keeps them while capture is on); when no repository is enabled and
+every history table is empty afterwards the bundle's tables are dropped.
+Coverage is not rewritten (a purged token reads `pruned`, `spec/surface`
+§3). Under the writer lock. Stderr `  purged <c> commit(s), <r>
+revision(s), <d> disposition(s), <b> block change(s), <e> edge
+transition(s), <s> segment(s); swept <x> blob(s), <y> tree node(s);
+released <n> id claim(s)` then `  history tables dropped` when they were;
+nothing to do: `  nothing to purge`. `--json` the receipt `{ purged: {
+commits, revisions, blobs, tree_nodes, dispositions, block_changes,
+edge_transitions, archives }, claims_released, coverage, tables_dropped }`.
+Afterwards a purged revision asked of `diff --from <rev>` is
+`error[capability_unavailable]` `{ history, pruned, rev }`; on a database
+whose tables were dropped `hist` and `diff` are `{ history, disabled }`
+(nothing is captured in it), `log` still lists the feed, and `history
+enable` re-creates the tables with a baseline. Exact bytes:
+`history::history-purge-disabled` (disable, purge the whole alchemy
+history — 20 commits, the tables dropped — a second purge, `--json`, the
+reads, a write, `enable`), `history-purge-before-enabled` (a `meta` write,
+`purge --before` one millisecond past the clock purges the one commit whose
+revision is no longer a head, `diff --from r_17` is `pruned`, `hist`, the
+same purge again, a bad `--before`).
 
 **`plan`** evaluates the policy at the process clock and prints, on stdout,
 a §4 table `path  revisions  keep  archive  bytes` (one row per document
@@ -2039,6 +2102,25 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.2 (store 17.2 Phase 4b, surface 6.2, sync 4.2): `history`
+  gains `purge [--before <ts>]`, `embed` gains `enable [--provider <p>]` /
+  `disable` (§6), `doctor --size` gains the feed-cap advice line read from
+  the `feed_capped` alert, `diff` answers a revision the recorder does not
+  hold by `spec/surface` §3's decision table (`pruned`/`outside_coverage`/
+  `disabled`; an unknown token on an enabled repository stays
+  `target_missing` with `{ doc, rev }`). Decided here: `embed enable`
+  without a provider is a usage error (exit 2) rather than an envelope — the
+  verb was given nothing to enable; `embed status|drain` on a switched-off
+  repository refuse while `find` degrades to FTS-only (the explicit verbs
+  name the capability, the opportunistic one has no leg); `--provider` writes
+  the workspace layer, as `init --embedder` does. Fixtures moved:
+  `history::history-unknown-sub` (the subcommand list), the help cards
+  `invoke::help-bare`, `help-flag`, `help-command`, `help-card-history`,
+  `help-card-history-bare`, `help-card-history-word`, `help-card-embed`,
+  `admin::embed-help-word`, `embed-help-word-needs-workspace` (the `history`
+  and `embed` summaries and cards). New: `history::history-purge-disabled`,
+  `history-purge-before-enabled`, `admin::embed-enable-no-provider`,
+  `embed-enable-disable`, `doctor-size-feed-capped`.
 - 2026-10-26, cli 5.1 (store 17.1 Phase 4a, surface 6.1, sync 4.1): `history`
   gains `enable [--best-effort]` / `disable` (§6), `source add` gains
   `--no-history`, `doctor`'s `capture complete` reads the manifest, `version

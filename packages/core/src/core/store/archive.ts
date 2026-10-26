@@ -734,9 +734,10 @@ function squash(store: Store, repoId: string, segment: SegmentInfo, revIds: read
  * (`seq − 1`, same document) is in `archiving`: resolve its tree and
  * frontmatter, put the checkpoint forms, repoint the row. Returns how many
  * rows changed (a revision already in checkpoint form changes nothing).
- * Runs inside the squash transaction, before the bases lose their bodies.
+ * Runs inside the squash transaction, before the bases lose their bodies —
+ * and inside `history purge`'s (`history-gc.ts`), before the purged bases go.
  */
-function checkpointDependents(store: Store, archiving: ReadonlySet<string>): number {
+export function checkpointDependents(store: Store, archiving: ReadonlySet<string>): number {
   const db = store.db;
   const revRow = db.prepare("SELECT doc_id, seq FROM revisions WHERE rev_id = ?");
   const nextRow = db.prepare("SELECT rev_id, doc_id, seq, root_tree, frontmatter_blob FROM revisions WHERE doc_id = ? AND seq = ? AND archive IS NULL");

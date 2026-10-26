@@ -1,3 +1,4 @@
+import { TargetMissingRevision } from "../core/store/manifest.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import { CursorInvalid } from "../core/cursor.js";
 import { MutationError } from "../mutate/tree.js";
@@ -86,6 +87,7 @@ export function errorBody(err: unknown): ErrorBody {
   if (err instanceof FilterInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint, ...(err.fix !== undefined ? { fix: err.fix } : {}) }, retriable: false };
   if (err instanceof CursorInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason ?? `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
   if (err instanceof MutationError) return { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
+  if (err instanceof TargetMissingRevision) return { error: "target_missing", message: err.message, data: err.data(), retriable: false };
   if (err instanceof RevisionNotFound) return { error: "target_missing", message: err.message, data: { doc: err.docId, rev: err.rev }, retriable: false };
   // spec/surface 4.9: `{ rev, archive, path? }` — `path` only when the segment is recorded (then it is the file that is not on disk).
   if (err instanceof RevisionArchived) return { error: "revision_archived", message: err.message, data: { rev: err.rev, archive: err.archive, ...(err.path !== null ? { path: err.path } : {}) }, retriable: false };

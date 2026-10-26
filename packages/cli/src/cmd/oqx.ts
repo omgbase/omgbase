@@ -131,7 +131,9 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     // provider loaded. loadEmbedding is only touched when a phrase is present.
     const phrases = collectSemanticPhrases(source);
     if (phrases.length > 0) {
-      const loaded = await loadEmbedding(ws, repo.repoId);
+      // An explicit `semantic()` on a repository switched off by `omg embed
+      // disable` is the refusal with the fix, as the MCP `query` answers (Phase 4b).
+      const loaded = await loadEmbedding(ws, repo.repoId, { switchedOff: "throw" });
       if (!loaded) {
         throw new EngineErrorLike("provider_unavailable", "semantic(...) needs an embedding provider", {
           hint: "omg config set embedding.provider <command|url>",

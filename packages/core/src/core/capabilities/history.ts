@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
-import type { CapturedRevision, CommitRecord, HistoryRecorder, RevisionQueryRow, RevisionTransition } from "./types.js";
+import type { CapturedRevision, CommitRecord, HistoryPurgeOutcome, HistoryRecorder, RevisionQueryRow, RevisionTransition } from "./types.js";
 import type { DispositionRow } from "../ingest.js";
 import type { EdgeTransitions } from "../store/edges.js";
 import { persistsDisposition } from "../ingest.js";
@@ -11,7 +11,7 @@ import {
 } from "../store/history-writers.js";
 import type { TreeInputBlock } from "../store/writers.js";
 import { TreeResolver } from "../store/delta.js";
-import { collectHistory, countSameDispositions, markReachable } from "../store/history-gc.js";
+import { collectHistory, countSameDispositions, dropHistoryBundle, historyTablesEmpty, markReachable, purgeHistoryRows, releaseRecorderHolds } from "../store/history-gc.js";
 import { evaluateRetention, retentionPolicy, type EvaluateOptions, type RetentionPlan, type RetentionPolicy } from "../store/retention.js";
 import {
   archivedSummary, attachArchive, detachArchive, exportHistory, listArchives,
@@ -19,7 +19,7 @@ import {
 } from "../store/archive.js";
 import {
   diffBlocks, diffUnified, docDiffUnified, docHistory, historyNode, reconstructAtRevision,
-  type DiffEntry, type DocDiffUnified, type DocVersions, type NodeChange,
+  type DiffEntry, type DocDiffUnified, type DocHistoryResult, type NodeChange,
 } from "../../graph/history.js";
 
 const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
@@ -202,7 +202,7 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     return docDiffUnified(this.store, docId, opts);
   }
 
-  docsHistory(repoId: string, opts: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number } = {}): { docs: DocVersions[]; truncated: boolean } {
+  docsHistory(repoId: string, opts: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number } = {}): DocHistoryResult {
     return docHistory(this.store, repoId, opts);
   }
 
@@ -295,6 +295,19 @@ export class HistoryRecorderImpl implements HistoryRecorder {
        WHERE repo_id = ? AND to_commit IS NULL AND dst_node != (SELECT e.dst_node FROM edges e WHERE e.edge_id = edge_transitions.edge_id)`,
     ).run(commit.repoId);
     return { revisions };
+  }
+
+  /** spec/store §7.6 (Phase 4b): the rows, the holds, then the drop when the core allows it and nothing is left. */
+  purge(repoId: string, before: string | null, opts: { dropIfEmpty: boolean; protectHeads: boolean }): HistoryPurgeOutcome {
+    const db = this.store.db;
+    const purged = purgeHistoryRows(this.store, repoId, before, opts.protectHeads);
+    const claims_released = releaseRecorderHolds(db, repoId, opts.protectHeads);
+    let tables_dropped = false;
+    if (opts.dropIfEmpty && historyTablesEmpty(db)) {
+      dropHistoryBundle(db);
+      tables_dropped = true;
+    }
+    return { purged, claims_released, tables_dropped };
   }
 
   // ---- maintenance ----

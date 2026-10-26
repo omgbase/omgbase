@@ -24,7 +24,7 @@ import { referencePath, storagePath } from "../core/paths.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { semanticOf } from "../core/capabilities/registry.js";
-import { historyReader } from "../core/store/manifest.js";
+import { historyReader, semanticSwitchedOff } from "../core/store/manifest.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
 import type { SemanticScorer, SemanticVec } from "../core/capabilities/types.js";
 import { dateFunction, dateMethod } from "./dates.js";
@@ -755,6 +755,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   const semanticScore = (t: Kind | undefined, r: Row, phrase: string): number | null => {
     if (t === "nodes" || t === "links" || t === "revisions") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
     if (!semantic) throw CapabilityUnavailable.semanticDisabled();
+    // spec/store §5.10 (Phase 4b): the row switched off by `omg embed disable`
+    // with a provider configured → `{ semantic, disabled, fix: "omg embed enable" }`.
+    if (semanticSwitchedOff(db, repoId)) throw CapabilityUnavailable.semanticSwitchedOff();
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
     scorer ??= semantic.scorer(repoId);

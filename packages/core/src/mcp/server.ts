@@ -5,7 +5,7 @@ import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "../core/read/document.js";
 import { semanticOf } from "../core/capabilities/registry.js";
-import { historyReader, readCapability, requireHistoryReader } from "../core/store/manifest.js";
+import { historyReader, historyReadRefusal, requireHistoryReader, semanticSwitchedOff } from "../core/store/manifest.js";
 import { reconstructContent } from "../core/read/document.js";
 import { RevisionNotFound } from "../graph/history.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
@@ -428,18 +428,16 @@ export function buildServer(ctx: ServerContext): McpServer {
   function historyTools(): ReturnType<typeof requireHistoryReader> {
     return requireHistoryReader(store.db);
   }
-  // A revision the recorder does not hold, asked of a repository whose capture
-  // is off (`docs_diff`, `docs_diff_unified`): `capability_unavailable { history,
-  // disabled, rev }` rather than `target_missing` — the token may well be a head
-  // minted while capture was off (spec/surface §2.1; Phase 4a).
-  function unlessDisabled<T>(repoId: string, body: () => T): T {
+  // A revision the recorder does not hold, asked of `docs_diff`/`docs_diff_unified`:
+  // the spec/surface §2.1 decision table (Phase 4b — `disabled` / `outside_coverage`
+  // / `pruned` by the token's claim and the repository's coverage, `target_missing`
+  // for an unclaimed token on an enabled repository) rather than a bare
+  // `target_missing`: the token may well be a head minted while capture was off.
+  function unlessDisabled<T>(repoId: string, docId: string, body: () => T): T {
     try {
       return body();
     } catch (e) {
-      if (e instanceof RevisionNotFound) {
-        const row = readCapability(store.db, repoId, "history");
-        if (!row || row.state !== "enabled") throw CapabilityUnavailable.historyDisabled(e.rev);
-      }
+      if (e instanceof RevisionNotFound) historyReadRefusal(store.db, repoId, e.rev, { docId });
       throw e;
     }
   }
@@ -448,10 +446,11 @@ export function buildServer(ctx: ServerContext): McpServer {
   // the CURRENT head is served from the current rows whatever the capture
   // state — `{ _id, _path, rev, _raw, renderedHashMatch: true }`, the same
   // bytes `docs_read` returns; a captured revision reads through the recorder;
-  // a revision that is neither is `capability_unavailable { history, disabled
-  // | unavailable }` when the repository's capture is off or the build has no
-  // module (Phase 4a — `outside_coverage`/`pruned` arrive with 4b), else
-  // `target_missing` as before.
+  // a revision that is neither is the §2.1 decision table's answer (Phase 4b):
+  // `capability_unavailable { history, unavailable | disabled | outside_coverage
+  // | pruned }` — the last two carrying `fix: docs_read {"_id":…}`, the
+  // current document — or `target_missing` for an unclaimed token on an
+  // enabled repository.
   function docsReadAt(repoId: string, docId: string, rev: string): DocsReadAtResult {
     const reader = historyReader(store.db);
     const captured = reader?.readAtRevision(docId, rev) ?? null;
@@ -461,10 +460,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       const raw = reconstructContent(store.db, docId);
       if (raw !== null) return { _id: docId, _path: referencePath(doc.path), rev, _raw: raw, renderedHashMatch: true };
     }
-    if (!store.capabilities.history) throw CapabilityUnavailable.historyUnavailable();
-    const row = readCapability(store.db, repoId, "history");
-    if (!row || row.state !== "enabled") throw CapabilityUnavailable.historyDisabled(rev);
-    throw new EngineError("target_missing", `no revision ${JSON.stringify(rev)} for document ${docId}`, { data: { doc: docId, rev } });
+    return historyReadRefusal(store.db, repoId, rev, { docId, readFix: true });
   }
   // The owning document of a block id (`blocks_read`): the block must be live.
   function docOfBlock(blockId: string): string {
@@ -590,6 +586,9 @@ export function buildServer(ctx: ServerContext): McpServer {
   // The gate, in this order (phase-1-contracts §2.1 and the Phase 2 rule):
   //   1. the store runs WITHOUT the semantic module (`coreCapabilities`) →
   //      `capability_unavailable { capability: "semantic", state: "disabled" }`;
+  //   1b. the repository's semantic row was switched off by `omg embed disable`
+  //      with a provider configured (spec/store §5.10, Phase 4b) → the same
+  //      code with `fix: "omg embed enable"`;
   //   2. the host configured a provider it could not start →
   //      `capability_unavailable { …, state: "unavailable" }`, retriable;
   //   3. the module is here and no provider is configured (no `embedQuery`) →
@@ -609,8 +608,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     return new EngineError("provider_unavailable", PROVIDER_UNAVAILABLE_MESSAGE, { data: { provider: null } });
   }
   /** Steps 1–3: what a semantic call raises when nothing can rank, or undefined when the host can embed. */
-  function semanticGate(): Error | undefined {
+  function semanticGate(repoId: string): Error | undefined {
     if (!semanticOf(store.db)) return CapabilityUnavailable.semanticDisabled();
+    // 1b (Phase 4b, spec/store §5.10): the row switched off by `omg embed disable`
+    // while the provider stays configured → `{ semantic, disabled, fix: "omg embed enable" }`.
+    if (semanticSwitchedOff(store.db, repoId)) return CapabilityUnavailable.semanticSwitchedOff();
     if (ctx.semanticUnavailable) return CapabilityUnavailable.semanticUnavailable(ctx.semanticUnavailable.provider, ctx.semanticUnavailable.reason);
     if (!ctx.embedQuery) return providerUnavailable();
     return undefined;
@@ -927,7 +929,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId } = repoScope(args.repo);
         // A `semantic(...)` query the server cannot rank fails with the gate's
         // specific code (not a generic filter error) before anything runs.
-        if (collectSemanticPhrases(args.query).length > 0) { const gate = semanticGate(); if (gate) throw gate; }
+        if (collectSemanticPhrases(args.query).length > 0) { const gate = semanticGate(repoId); if (gate) throw gate; }
         return ok(await oqxRunAsync(store, repoId, args.query, {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
@@ -961,7 +963,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId } = repoScope(args.repo);
         // A `select` using semantic(...) needs a provider — surface the specific
         // code, mirroring the `query` tool.
-        if ((args.select ?? []).some((s) => collectSemanticPhrases(`docs { select x: ${s} }`).length > 0)) { const gate = semanticGate(); if (gate) throw gate; }
+        if ((args.select ?? []).some((s) => collectSemanticPhrases(`docs { select x: ${s} }`).length > 0)) { const gate = semanticGate(repoId); if (gate) throw gate; }
         return ok(await graphNeighborhood(store, repoId, args, rankableEmbed(repoId)));
       } catch (e) {
         return fail(e);
@@ -1006,7 +1008,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // not start, is `capability_unavailable` (resolution 13's letter is
         // kept to the LEG: with nothing to fuse the ranker is FTS-only).
         if (ctx.embedQuery || ctx.semanticUnavailable) {
-          const gate = semanticGate();
+          const gate = semanticGate(repoId);
           if (gate) throw gate;
           input.vector = await ctx.embedQuery!(args.query);
         }
@@ -1649,7 +1651,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // misleading-empty trap. locateDoc throws doc_missing when the ref
         // names no document.
         const docId = locateDoc(repoId, "docs_diff", registry.get("docs_diff")!.shape, args);
-        return ok(unlessDisabled(repoId, () => historyTools().diffBlocks(docId, args.from_rev, args.to_rev)));
+        return ok(unlessDisabled(repoId, docId, () => historyTools().diffBlocks(docId, args.from_rev, args.to_rev)));
       } catch (e) {
         return fail(e);
       }
@@ -1667,7 +1669,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_diff_unified", registry.get("docs_diff_unified")!.shape, args);
-        return ok(unlessDisabled(repoId, () => historyTools().docDiffUnified(docId, {
+        return ok(unlessDisabled(repoId, docId, () => historyTools().docDiffUnified(docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
           label: JSON.stringify(args._id ?? args._path),
@@ -1726,7 +1728,12 @@ export function buildServer(ctx: ServerContext): McpServer {
             : undefined;
           doc = tomb ? tomb.doc_id : locateDoc(repoId, "docs_history", registry.get("docs_history")!.shape, args);
         }
-        return ok(historyTools().docsHistory(repoId, {
+        // Resolution 11 (Phase 4b): `docs_history` is never `disabled` — a repository
+        // nothing was captured in lists every head unretained; only a build
+        // without the module refuses (`unavailable`).
+        const module = store.capabilities.history;
+        if (!module) throw CapabilityUnavailable.historyUnavailable();
+        return ok(module.docsHistory(repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(doc ? { doc } : {}),
           ...(args.include_deleted !== undefined ? { includeDeleted: args.include_deleted } : {}),

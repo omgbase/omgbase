@@ -5,7 +5,7 @@ import type { DispositionRow } from "../ingest.js";
 import type { TreeInputBlock } from "../store/writers.js";
 import type { EdgeTransitions } from "../store/edges.js";
 import type { DocsReadAtResult } from "../read/document.js";
-import type { DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
+import type { DiffEntry, DocDiffUnified, DocHistoryResult, NodeChange } from "../../graph/history.js";
 import type { EvaluateOptions, RetentionPlan, RetentionPolicy } from "../store/retention.js";
 import type { ArchiveListing, AttachResult, ExportOptions, ExportResult } from "../store/archive.js";
 import type { BlockContextInput, BlockContextResolver } from "../../semantic/tasks.js";
@@ -112,6 +112,13 @@ export interface CommitRecord {
  * instance per store, bound to its connection — the capture methods run
  * inside the caller's transaction on that connection.
  */
+/** `HistoryRecorder.purge`'s outcome (spec/store §7.6): the rows removed per table, the recorder's holds released (claims left with no holder deleted), whether the bundle's tables were dropped. */
+export interface HistoryPurgeOutcome {
+  purged: Record<"commits" | "revisions" | "blobs" | "tree_nodes" | "dispositions" | "block_changes" | "edge_transitions" | "archives", number>;
+  claims_released: number;
+  tables_dropped: boolean;
+}
+
 export interface HistoryRecorder {
   // ---- capture: the write half (spec/store §5.4 step 15; §5.6) ----
 
@@ -145,8 +152,8 @@ export interface HistoryRecorder {
   diffUnified(docId: string, fromRev: string, toRev: string): string;
   /** `docs_diff_unified` over a resolved document (defaults: previous → current). */
   docDiffUnified(docId: string, opts?: { fromRev?: string; toRev?: string; label?: string }): DocDiffUnified;
-  /** `docs_history`: the `revisions` rows per document. */
-  docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): { docs: DocVersions[]; truncated: boolean };
+  /** `docs_history`: the `revisions` rows per document — the current head always listed with `retained` (resolution 11, Phase 4b), the repository's coverage on the result; answers on a database without the bundle too (every head unretained). */
+  docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): DocHistoryResult;
   /** The disposition counts of a captured commit (`kind → n`, `same` never persisted) for a `changes_since` digest's summary — `null` when the recorder has no `commits` row for it (the feed is the core's; `core/store/feed.ts`). */
   dispositionCounts(commitId: string): { kind: string; n: number }[] | null;
   /** The `revisions` query root (spec/surface §1.1, 4.7; Phase 4a): every captured revision of the repository's documents as the binding's rows, by (`path`, `rev_id`). */
@@ -172,6 +179,21 @@ export interface HistoryRecorder {
    * revisions written.
    */
   baseline(commit: CommitRecord): { revisions: number };
+
+  /**
+   * `history purge`'s recorder half (spec/store §7.6, Phase 4b): the
+   * repository's history rows — every commit, or those with `ts < before` —
+   * removed except — while `protectHeads` (the core's word that capture is on
+   * for the repository) — a live head's revision and its commit, the retained
+   * revisions whose base went re-checkpointed first, the interval record
+   * trimmed to the cut, the segments nothing names detached, the unreachable
+   * bodies swept; then the recorder's hold released on every claim no history
+   * row names (a claim with no holder deleted); then, when `dropIfEmpty` (the
+   * core's word that no repository is enabled) and every history table is
+   * empty, the bundle's tables dropped. Runs in the caller's transaction; the
+   * manifest is the core's.
+   */
+  purge(repoId: string, before: string | null, opts: { dropIfEmpty: boolean; protectHeads: boolean }): HistoryPurgeOutcome;
 
   // ---- maintenance: the GC mark, retention, archives (spec/store §7) ----
 

@@ -973,8 +973,15 @@ emitted **first**: `disabled` → `` history is disabled for this repository —
 enable` resumes capture ``; `unavailable` (the build has no history module)
 → `` history is unavailable in this build — `revisions` is empty; run an
 engine with the history module to read it ``. The rows are still returned —
-the root lists what the recorder holds, never an error (§1.1). The
-`_revisions` relation and `^revisions` carry no note yet (Phase 4b).
+the root lists what the recorder holds, never an error (§1.1). Since 6.2
+(Phase 4b; the contracts' §2.2) the same note, once and first, when the
+query's scope chain reaches the rows through the **`_revisions` relation**
+or a **`^revisions`** scope reference (`docs { select revs: _revisions
+collect { … } }`, `_doc._revisions` from a block or link row, a `^revisions`
+block) — judged over the raw tree's references as the unknown-name check is
+(a name path with a `_revisions` segment, a root-scope `revisions`, or a
+scope whose rows are revisions); `reads::history-coverage` pins it on a
+disabled repository and its absence once capture is on again.
 
 **The vocabulary.** Per (repository, kind), read from the store the first time
 a judged bare name is not already known:
@@ -1121,12 +1128,11 @@ result shape; the 5.0 case `unknown-engine-name-is-loud`); the moved cases of
   from the current rows whatever the capture state — the same bytes
   `docs_read` returns, `renderedHashMatch: true`, `_path` the current path;
   a **captured** revision reads through the recorder; a token that is neither
-  is `capability_unavailable { capability: "history", state: "disabled",
-  rev }` (`retriable: false`, the pinned message) when the repository's
-  capture is off — the token may be a head minted while it was — and
-  `{ history, unavailable }` (retriable) when the build has no history
-  module; on an enabled repository it stays `target_missing` as before
-  (`outside_coverage`/`pruned` arrive with Phase 4b). `include_ids` together with `at` is `filter_invalid` "`include_ids`
+  is the §2.1 decision table's answer (6.2, store 17.2 Phase 4b — below):
+  `capability_unavailable { history, unavailable | disabled | outside_coverage
+  | pruned }`, the last two carrying `fix: docs_read {"_id":"<id>"}` (the
+  current document), or `target_missing` for a token nobody minted on an
+  enabled repository. `include_ids` together with `at` is `filter_invalid` "`include_ids`
   is not available with `at` (docs_read takes _id?, _path?, at?, include_ids?,
   repo?)" — `data.hint` `"arguments"`, raised after the locator (a missing
   document is `doc_missing` first), since each argument is valid on its own
@@ -1310,10 +1316,24 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   a cursor past the head an empty page).
 - **`docs_history(path_glob | _id | _path, include_deleted?, limit = 50)`**: docs by
   path (glob as `docs_list`; a glob without `*` is an exact path), live only
-  unless `include_deleted`, `limit + 1` for `truncated`; each `{ _id, _path
-  (reference form), deleted, currentRev, versions: [{ _rev, _seq, _commit,
-  _ts, _origin, _actor, _hash (the rendered hash), _is_current, _archived
-  (4.9) }] }` oldest first. **A version is a `revisions` row** (5.0), under
+  unless `include_deleted`, `limit + 1` for `truncated`; the result `{ docs,
+  truncated, coverage }` (6.2: `coverage` the repository's history coverage
+  intervals `[{ from, to }]`, `spec/store` §3.1 — `[]` when capture never
+  ran), each document `{ _id, _path (reference form), deleted, currentRev,
+  versions: [{ _rev, _seq, _commit, _ts, _origin, _actor, _hash (the rendered
+  hash), _is_current, _archived (4.9), retained (6.2) }] }` oldest first.
+  **The current head is always listed** (6.2; resolution 11): a version with
+  `retained: true` is a `revisions` row the recorder holds; when the recorder
+  has NO row for the head — minted while capture was off, or purged — the
+  head is listed last as an unretained version: `retained: false`, `_seq`
+  null, `_commit`/`_ts`/`_origin`/`_actor` from the feed row that minted it
+  (`_commit`/`_origin`/`_actor` null and `_ts` the document's `updated_at`
+  once the feed pruned that row), `_hash` the document's file hash,
+  `_is_current` true, `_archived` false; older versions appear only when
+  captured. Nothing here is an error: a repository nothing was ever captured
+  in (no history bundle) lists every head unretained; only a build without
+  the history module refuses (`unavailable`). **A version is a `revisions`
+  row** (5.0), under
   the row's names exactly — the same list is the `revisions` query target
   (§1.2, 4.7): `revisions { _path == … order by _seq }`, so a key
   copied from a version is valid in the next query (through 4.11 a version
@@ -1347,6 +1367,52 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   disable, write, every read above, `version`, `sync_status`, enable (the
   baseline's `import` commit in the feed, `_origin: "import"` on the
   baseline revision), the reads again.
+- **The read-state decision table (6.2, store 17.2 Phase 4b; the contracts'
+  §2.1, D3's four states).** For a revision token `rev` the recorder holds no
+  row for — asked of `docs_read { at }`, `docs_read_at`, `docs_diff`,
+  `docs_diff_unified` — and which is not the document's current head (served
+  from the rows), the answer is decided in this order from the repository's
+  manifest row (`spec/store` §3.1) and the token's **claim**
+  (`id_claims.minted_at` of the `r` id — the core's record of when it was
+  minted, `spec/store` §2.1):
+
+  | state | when | `data` | `retriable` |
+  | --- | --- | --- | --- |
+  | `unavailable` | the build has no history module | `{ capability, state }` | true |
+  | `target_missing` (not a capability state) | the recorder holds the token for ANOTHER document; or the token is no claim at all (never minted here, or pruned by `identity.claims_retain_days`) and the repository's capture is `enabled` — `` no revision "<rev>" for document <id> `` with `{ doc, rev }` | | false |
+  | `disabled` | the row is absent or `state = 'disabled'` and the token is no claim, or its `minted_at` is **after the last coverage interval** (or there is none) — minted while capture was off, nothing newer was ever captured | `{ capability, state, rev }` | false |
+  | `outside_coverage` | the claim's `minted_at` falls in **no** coverage interval — before the first, or in a gap between two (a baseline's row for such a head, once purged, lands here too) | `{ capability, state, rev, coverage_from, fix? }` — `coverage_from` the first interval's start | false |
+  | `pruned` | the claim's `minted_at` falls **inside** a coverage interval and no row exists — `history purge` removed it (`spec/store` §7.6) | `{ capability, state, rev, fix? }` | false |
+
+  Messages, byte for byte in both engines: `outside_coverage` `` revision
+  "<rev>" was minted outside this repository's history coverage (capture
+  started <coverage_from>) ``; `pruned` `` revision "<rev>" was captured but
+  its history has been purged ``; `disabled`/`unavailable` as 6.1. `fix` is
+  `docs_read {"_id":"<id>"}` — the current document — when the tool was
+  `docs_read { at }` / `docs_read_at`, absent on the diffs. A row that exists
+  but whose bodies are in a detached segment stays `revision_archived` (4.9).
+  The envelope gains no `repo` member (the contracts' sketch): it would move
+  every pinned semantic `capability_unavailable` fixture for a key the
+  caller already knows. `blocks_history` is unchanged (it looks up no token).
+  `reads::history-coverage` pins the table: `disabled` for a head minted
+  after a close, `outside_coverage` for a token minted in the gap once
+  capture resumed (with the `fix` on `docs_read`, without on `docs_diff`),
+  `target_missing` for an unclaimed token, `pruned` for a captured token
+  after a `history purge --before`, `docs_history`'s unretained head and
+  `coverage`, the `_revisions` relation's hint and its absence.
+- **The semantic row switched off (6.2; `spec/store` §5.10).** On a
+  repository whose semantic manifest row is `disabled` WHILE a provider is
+  configured — what `omg embed disable` leaves — `query` with `semantic(…)`,
+  `graph` with a `semantic(…)` select and `blocks_resolve`'s vector leg
+  answer `capability_unavailable { capability: "semantic", state:
+  "disabled", fix: "omg embed enable" }` (`retriable: false`; the message
+  `` semantic search is disabled for this repository — enable it with `omg
+  embed enable` (the embedding provider stays configured) ``, pinned) —
+  decided before the host's provider state, after the module check; the
+  host loads no embedder for such a repository. With no provider configured
+  the 5.1 answers stand (`provider_unavailable`). `sync_status`/`version`
+  read `disabled` either way. `reads::semantic-switched-off` pins it with
+  the `embed_enable`/`embed_disable` devices (§6).
 
 ## 4. The MCP tool catalog
 
@@ -1379,9 +1445,15 @@ engine runs without the history module — write through an engine that
 carries it, or run omg history disable` — and `state: "disabled"`, never
 retriable, the message `` history is disabled for this repository — enable
 it with `omg history enable` (reads of what was captured earlier still
-work) ``, `rev` the revision asked for when one was; `outside_coverage` and
-`pruned` arrive with Phase 4b; every message spelled alike by both engines
-and pinned), `capture_failed` (6.1, store 17.1 — `spec/store` §5.4 step 15,
+work) ``, `rev` the revision asked for when one was; `state:
+"outside_coverage"` and `state: "pruned"` (6.2, store 17.2 Phase 4b) per the
+§3 decision table — `data: { capability, state, rev, coverage_from?, fix? }`,
+never retriable, messages `` revision "<rev>" was minted outside this
+repository's history coverage (capture started <coverage_from>) `` and
+`` revision "<rev>" was captured but its history has been purged ``; and for
+`semantic` the 6.2 `fix: "omg embed enable"` form when the row was switched
+off with a provider configured (§3); every message spelled alike by both
+engines and pinned), `capture_failed` (6.1, store 17.1 — `spec/store` §5.4 step 15,
 resolution 18: the recorder threw inside a write's transaction, the write
 was rolled back; `data: { path?, reason }`, retriable, the message
 `history capture of <path | a commit> failed: <reason> — the write was
@@ -1814,7 +1886,17 @@ necessary.
   `_dst_path` and a `query-revisions.json` case reading `_seq`/`_actor`.
 - **`reads.json`**: observation scripts (`spec/store` §9.4 — since 6.1 the
   lifecycle steps `history_enable`/`history_disable` too, with their store
-  outcomes: `reads::history-disabled` is the D3 round) with `read`
+  outcomes: `reads::history-disabled` is the D3 round; since 6.2
+  `history_purge { ts, before? }` with its receipt, and the surface's own
+  `embed_enable { ts, provider? }` / `embed_disable { ts }` — `embed_enable`
+  with `provider` writes `embedding.provider` at the workspace layer
+  DIRECTLY (the runner's device; a settings write would re-derive the row at
+  the wall clock) then runs `embed enable` at `ts`, `embed_disable` runs
+  `embed disable` at `ts`; the outcome `{ semantic: { state, coverage,
+  provider, changed } }` or `{ error: "provider_unavailable", message }` for
+  an enable with no provider — `reads::semantic-switched-off`; and the
+  `feed_capped` alert on a `query` result after an `exec` step capped the
+  feed — `reads::feed-capped`) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
   values name the engine and the release; objects keep their keys and arrays
@@ -2514,6 +2596,29 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-26, surface 6.2 (store 17.2, Phase 4b of `docs/modular-core/`;
+  the contracts `phase-1-contracts.md` §2.1, §2.2, §7 resolution 11):
+  **the read-state decision table, `docs_history`'s retained head, the
+  relation's note.** `outside_coverage`/`pruned` are decided over the token's
+  claim and the manifest's coverage (§3's table); `docs_history` always
+  lists the head with `retained` and the result carries `coverage` — never
+  an error (resolution 11; `disabled` for a bundle-less database left with
+  it); the `_revisions` relation and `^revisions` carry the §1.5 note;
+  `capability_unavailable { semantic, disabled, fix: "omg embed enable" }`
+  is the one new semantic refusal (the row switched off with a provider).
+  Decided here: a token the recorder holds for another document stays
+  `target_missing` on every composition (the table checks the recorder
+  first); an unclaimed token on a disabled repository stays `disabled` (6.1);
+  the envelope gains no `repo`. Fixtures moved, all by the `docs_history`
+  shape (`retained: true` on every version, `coverage` on the result):
+  `reads::history`, `errors-and-sourceless-writes`, `workspace-writes`,
+  `revisions`, `archived`, `created-at`, `history-disabled`, and in
+  `interop.json` (§7) `read-history-admin`, `write-apply`,
+  `write-blocks-update`, `write-docs-create-move`,
+  `write-docs-set-meta-delete`, `write-docs-update`, `write-observe`,
+  `write-cross-doc-move`, `clock-seam`, `write-effects-plan-execute` (each
+  reads `docs_history`). New: `reads::history-coverage`,
+  `semantic-switched-off`, `feed-capped`.
 - 2026-10-26, surface 6.1 (store 17.1, Phase 4a of `docs/modular-core/`;
   the contracts `phase-1-contracts.md` §2.1, §2.2, §2.3, §7 resolutions 11,
   17, 18): **the history tools under optional capture.** `version.

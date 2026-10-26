@@ -1,5 +1,5 @@
 import type { Store } from "../core/store/store.js";
-import { refreshSemanticManifest, refreshSemanticManifests } from "../core/store/manifest.js";
+import { refreshSemanticManifest, refreshSemanticManifests, semanticProviderOf } from "../core/store/manifest.js";
 
 // Settings scopes (config-scope). Config is ONE schema at TWO layers: the
 // workspace_settings singleton is the default layer; a repo's repos.settings
@@ -36,23 +36,31 @@ export function repoOwnSettings(store: Store, repoId: string): Settings {
   return parse(row?.settings);
 }
 
-// Every settings write re-derives the semantic manifest row (spec/store §3.1
-// `capabilities`, 17.0 3e-ii — resolution 1: `enabled` iff `embedding.provider`
-// resolves): the workspace layer touches every repository's row, a repo's own
-// layer that repository's. The Phase 4 `embed enable|disable` verbs take this
-// over; until then the manifest follows the setting, in the same transaction.
+// A settings write that CHANGES a repository's effective `embedding.provider`
+// re-derives its semantic manifest row (spec/store §3.1 `capabilities`, §5.10 —
+// resolution 1: `enabled` iff a provider resolves): the workspace layer may
+// touch every repository's row, a repo's own layer that repository's. A write
+// that leaves the provider as it was moves the row's config (`model`/`dim`)
+// and keeps its STATE — so `omg embed disable` (Phase 4b) is sticky across
+// unrelated settings writes and `omg embed enable` is the way back; a provider
+// set or unset still flips the row, the simple path `omg init --embedder` and
+// `omg config set embedding.provider` rely on. In the same transaction.
 
 export function writeWorkspaceSettings(store: Store, settings: Settings): void {
   store.write((db) => {
+    const repos = (db.prepare("SELECT repo_id FROM repos ORDER BY rowid").all() as { repo_id: string }[]).map((r) => r.repo_id);
+    const before = new Map(repos.map((id) => [id, semanticProviderOf(db, id)] as const));
     db.prepare("INSERT INTO workspace_settings (id, settings) VALUES (0, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings").run(JSON.stringify(settings));
-    refreshSemanticManifests(db, new Date().toISOString());
+    const flipped = new Set(repos.filter((id) => semanticProviderOf(db, id) !== before.get(id)));
+    refreshSemanticManifests(db, new Date().toISOString(), flipped);
   });
 }
 
 export function writeRepoSettings(store: Store, repoId: string, settings: Settings): void {
   store.write((db) => {
+    const before = semanticProviderOf(db, repoId);
     db.prepare("UPDATE repos SET settings = ? WHERE repo_id = ?").run(JSON.stringify(settings), repoId);
-    refreshSemanticManifest(db, repoId, new Date().toISOString());
+    refreshSemanticManifest(db, repoId, new Date().toISOString(), { flip: semanticProviderOf(db, repoId) !== before });
   });
 }
 

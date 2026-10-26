@@ -11,7 +11,8 @@ import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
 import { SQLiteQueryPlanner } from "./planner.js";
 import { REPO_REMOVED_MESSAGE, ROOTS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
-import { checkNames, type UnknownNames } from "./names.js";
+import { checkNames, kindOfScope, type UnknownNames } from "./names.js";
+import { references } from "@omgbase/oqx";
 import { rootTarget } from "./planner.js";
 import { historyState } from "../sync/capability-state.js";
 import { DATE_FUNCTIONS, DATE_METHODS, dateFunction, dateMethod } from "./dates.js";
@@ -504,11 +505,24 @@ export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxO
   // spec/surface §1.5 (Phase 4a; phase-1-contracts §2.2): a query whose root
   // is `revisions` on a repository whose history is not `enabled` carries a
   // capability note first — the root lists what was captured, never an error.
-  const note = rootTarget(raw.source) === null && raw.source.kind === "ident" && raw.source.name === "revisions" ? revisionsHint(store, repoId) : null;
+  // Phase 4b (contracts §2.2): the same note when the scope chain reaches the
+  // rows through the `_revisions` relation (`docs { _revisions { … } }`,
+  // `^revisions`, `_doc._revisions`).
+  const note = (rootTarget(raw.source) === null && raw.source.kind === "ident" && raw.source.name === "revisions") || reachesRevisions(raw) ? revisionsHint(store, repoId) : null;
   if (note !== null) hints.unshift(note);
   const result = runResolved(store, repoId, raw, opts);
   // `hints` is the last member, present only when there is something to say.
   return hints.length === 0 ? result : { ...result, hints };
+}
+
+/** Does the query read `revisions` rows through a relation or scope reference — a name path with a `_revisions` segment, or a `^revisions` scope (spec/surface §1.5, Phase 4b)? Judged over the raw tree's references, as the unknown-name check is. */
+export function reachesRevisions(raw: Query): boolean {
+  for (const ref of references(raw)) {
+    if (ref.name.split(".").includes("_revisions")) return true;
+    if (ref.name === "revisions" && ref.scope.steps.length === 0) return true; // `^revisions` (or the root itself)
+    if (ref.scope.steps.length > 0 && kindOfScope(ref.scope.steps) === "revisions") return true;
+  }
+  return false;
 }
 
 /** The `revisions` root's capability note (spec/surface §1.5, byte for byte in both engines), or null when the repository's history is `enabled`. */
