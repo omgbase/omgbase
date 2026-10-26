@@ -876,8 +876,14 @@ fn migrate_v17_pending(conn: &Connection, clock: &str) -> Result<()> {
 /// claim (their own rows are their claims), nor does `cp`. Every statement
 /// upserts, ORing the holders in and keeping the earliest `minted_at`, in the
 /// reference's statement order (the table's `rowid` order is the fixture's
-/// row order). Idempotent: an existing `id_claims` table is left alone.
+/// row order). Idempotent: an existing `id_claims` table is left alone —
+/// except for its `(repo_id, prefix, minted_at)` index, which 17.0 (release
+/// prep, 2026-10-26) dropped: half the bytes of every minted id for two scans
+/// (the gc-time prune, the on-demand size line), so a 3b–3e-ii database
+/// opened at 17 loses it here (`DROP INDEX IF EXISTS`, idempotent — §3.4
+/// step 17 (4), §10).
 fn migrate_v17_claims(conn: &Connection, clock: &str) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS idx_claims_repo_prefix")?;
     let has_claims = table_exists(conn, "id_claims")?;
     let pool_cols = column_names(conn, "resurrection_pool")?;
     let pool_done = pool_cols.is_empty() || pool_cols.iter().any(|c| c == "deleted_at");

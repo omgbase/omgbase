@@ -413,19 +413,25 @@ fn validate_coordinator_step(
         "engine" => {
             only_keys(
                 body,
-                &["ts", "create", "import", "delete", "observe"],
+                &["ts", "create", "import", "delete", "observe", "gc"],
                 here,
                 problems,
             );
             require_ts(body, here, problems);
-            let ops = ["create", "import", "delete", "observe"]
+            let ops = ["create", "import", "delete", "observe", "gc"]
                 .iter()
                 .filter(|k| body.contains_key(**k))
                 .count();
             if ops != 1 {
                 problems.push(format!(
-                    "{here}: exactly one of create/import/delete/observe"
+                    "{here}: exactly one of create/import/delete/observe/gc"
                 ));
+            }
+            if let Some(gc) = body.get("gc")
+                && !(gc.get("retain_days").is_some_and(Json::is_number)
+                    && gc.get("retain_entries").is_some_and(Json::is_number))
+            {
+                problems.push(format!("{here}: `gc` is {{ retain_days, retain_entries }}"));
             }
         }
         "sync_in" => {
@@ -1823,6 +1829,21 @@ fn run_engine_step(
             )
             .map_err(|e| e.to_string())?;
         return Ok(json!({ "doc": res.doc_id, "committed": res.committed }));
+    }
+    if let Some(gc) = s.get("gc") {
+        // The feed prune (`spec/store` §7.4) the way the store fixtures set it
+        // up: the repo's settings written directly, then the default sweep at
+        // the step's clock.
+        let settings = json!({ "feed": { "retain_days": gc["retain_days"], "retain_entries": gc["retain_entries"] } });
+        store
+            .conn()
+            .execute(
+                "UPDATE repos SET settings = ?1 WHERE repo_id = ?2",
+                params![settings.to_string(), repo_id],
+            )
+            .map_err(|e| e.to_string())?;
+        let r = store.gc_at(true, ts).map_err(|e| e.to_string())?;
+        return Ok(json!({ "feed_pruned": r.feed_pruned }));
     }
     let items: Vec<BatchItem> = s
         .get("observe")

@@ -737,6 +737,128 @@ text p95 (145 vs 92) is one slow sample of twenty. Against the TS 3e-ii run
 the picture is the one every round shows (writes 231–264 / 245–281 there,
 spawn 165 / 203).
 
+### 17.0 (release prep), TS — `idx_claims_repo_prefix` dropped, cursor 0 expires on a pruned feed (`ts-2026-10-26T07-17-32`)
+
+The same harness over the release-prep reference (store 17.0 without the
+`(repo_id, prefix, minted_at)` index on `id_claims`; `changes_since` expiring
+cursor 0 on a feed pruned to `oldest ≥ 2` — nothing in the workload reads the
+feed, so the second decision has no footprint here), TS CLI, node 24; the
+17.0 (3e-ii) TS row above (`ts-2026-10-26T05-20-26`) is the comparison.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | 3e-ii TS (db MB / KB / op / identity MB) | `id_claims` rows / B (B per row) | 3e-ii TS `id_claims` B (B per row) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.17 | 6,024 | 30.0 / doc | 3.09 | 0.38 | 0.01 | 2.23 | 232 | 6.47 / 31.4 / 0.63 | 4,810 / 368,640 (76.6) | 618,496 (128.6) |
+| frontmatter hot update | 50 | 6.28 | 104 | 2.1 | 3.10 | 0.39 | 0.01 | 2.29 | 260 | 6.58 / 2.2 / 0.64 | 4,910 / 376,832 (76.7) | 634,880 (129.3) |
+| block edit | 50 | 6.41 | 128 | 2.6 | 3.10 | 0.40 | 0.01 | 2.37 | 288 | 6.70 / 2.3 / 0.66 | 5,010 / 389,120 (77.7) | 651,264 (130.0) |
+| rolling journal | 50 | 6.58 | 168 | 3.4 | 3.12 | 0.41 | 0.01 | 2.49 | 304 | 6.89 / 3.6 / 0.68 | 5,160 / 401,408 (77.8) | 667,648 (129.4) |
+| task churn | 50 | 6.66 | 80 | 1.6 | 3.12 | 0.41 | 0.01 | 2.55 | 328 | 6.97 / 1.6 / 0.69 | 5,260 / 405,504 (77.1) | 679,936 (129.3) |
+| link churn | 50 | 6.75 | 92 | 1.8 | 3.12 | 0.43 | 0.01 | 2.60 | 344 | 7.08 / 2.2 / 0.72 | 5,485 / 421,888 (76.9) | 716,800 (130.7) |
+| delete / recreate | 20 | 6.88 | 124 | 6.2 | 3.13 | 0.45 | 0.01 | 2.70 | 356 | 7.22 / 6.8 / 0.75 | 5,715 / 446,464 (78.1) | 741,376 (129.7) |
+| gc (default sweep) | | 6.88 | 0 | | 3.13 | 0.45 | 0.01 | 2.70 | 356 | 7.22 / 0 KB / 0.75 | 5,715 / 446,464 (78.1) | 741,376 (129.7) |
+
+**`id_claims` lost 40 % of its bytes at every row count — 51–52 B per
+id.** 618,496 → 368,640 B at import (4,810 rows: 128.6 → 76.6 B per row,
+−249,856 B) and 741,376 → 446,464 B at the end (5,715 rows: 129.7 → 78.1
+B per row, −294,912 B); the table's bytes grow 15.7 KB per 100 new ids
+where 3e-ii's grew 26.3 KB. What remains is the row and its primary key
+(`id` is `TEXT PRIMARY KEY`, so the key is its own B-tree): the ≈ 130 B the
+3b note measured split roughly 78 / 52 between the two, not 65 / 65 — the
+index carried `repo_id` + `prefix` + `minted_at` + the rowid, the primary
+key the 9-byte id alone. The `identity` category follows (0.63 → 0.38 MB at
+import, 0.75 → 0.45 MB at the end), the database is **6.17 vs 6.47 MB at
+import (28.2× the source vs 29.6×) and 6.88 vs 7.22 MB at the end (31.5× vs
+33.0×)** — −292 KB and −328 KB, the index's pages. `sqlite_schema` has 95
+rows (96), still 28,672 B — the `sync` category is byte-identical to 3e-ii
+at every stage (232 → 356 KB). Every other category is the 3e-ii run's to
+within the seed's noise: `content` 3.09 → 3.13 MB (3.12 → 3.15), `history`
+2.23 → 2.70 (2.24 → 2.70; `blobs` 3,218, `tree_nodes` 1,001 vs 1,000,
+`dispositions` / `block_changes` 3,822 vs 3,824, `revisions` 461, `commits`
+471, `edge_transitions` 955 — the two-row difference in the matcher's
+projection is the delete/recreate stage's and not this round's: nothing
+here touches a commit), `search` 0.23 MB, `edges` 803, `feed` /
+`feed_entries` 471 each. Per operation: frontmatter 2.1 vs 2.2, block edit
+2.6 vs 2.3, journal 3.4 vs 3.6, task churn 1.6 vs 1.6, link churn 1.8 vs
+2.2, recreate 6.2 vs 6.8 — every write that mints ids (the journal, the
+link churn, the recreate) is 0.2–0.6 KB cheaper, the index's share of its
+claims; the block edit's +0.3 is one page.
+
+Latency (p50 / p95 ms, process start 339 / 672 included): import 2,037; one
+write 346–407 / 390–446 (frontmatter 400 / 444, block edit 407 / 446,
+journal 399 / 443, task churn 346 / 397, link churn 356 / 396, recreate 352
+/ 390); `query` docs 311 / 354, blocks filter 301 / 315, `text("furnace")`
+417 / 485, links 300 / 325; `outline` 287 / 316; `gc` 320. The re-measure
+the 3e-ii section asked for says what it suspected: the spawn-baseline
+moved again — 339 / 672 against 3e-ii's 165 / 203 and 3e-i's 262 / 320 —
+and every row moved with it (writes +115 to +150 ms at p50, reads +75 to
++90). A write minus the spawn is 7–68 ms here (frontmatter 61, block edit
+68, journal 60, task churn 7, link churn 17, recreate 13) against 3e-ii's
+66–99 ms by the same subtraction: the engine's own share did not grow. The
+TS latency column of this harness measures node's start on the machine of
+the day; compare the Rust rows below for the engine.
+
+### 17.0 (release prep), Rust — the twin, same harness (`rust-2026-10-26T07-21-00`)
+
+The Rust twin of the release-prep round (`crates/omgbase-store` without
+`idx_claims_repo_prefix`, migration 17 dropping it at both entry points;
+`changes_since` expiring cursor 0 on a pruned feed), release build of the
+`omgbase` crate 0.27.3 + the working tree, the same seeded corpus; the TS
+release-prep row above is the comparison, the Rust 3e-ii row
+(`rust-2026-10-26T06-34-57`) the cost of the round.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | TS rp (db MB / KB / op / identity MB) | Rust 3e-ii (db MB / KB / op / identity MB) | `id_claims` rows / B (B per row) | Rust 3e-ii `id_claims` B (B per row) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.21 | 6,060 | 30.1 / doc | 3.11 | 0.38 | 0.01 | 2.24 | 232 | 6.17 / 30.0 / 0.38 | 6.45 / 31.3 / 0.63 | 4,810 / 372,736 (77.5) | 622,592 (129.4) |
+| frontmatter hot update | 50 | 6.31 | 100 | 2.0 | 3.11 | 0.39 | 0.01 | 2.29 | 260 | 6.28 / 2.1 / 0.39 | 6.56 / 2.2 / 0.64 | 4,910 / 376,832 (76.7) | 634,880 (129.3) |
+| block edit | 50 | 6.43 | 116 | 2.3 | 3.11 | 0.39 | 0.01 | 2.37 | 288 | 6.41 / 2.6 / 0.40 | 6.67 / 2.2 / 0.66 | 5,010 / 385,024 (76.9) | 651,264 (130.0) |
+| rolling journal | 50 | 6.62 | 192 | 3.8 | 3.14 | 0.41 | 0.01 | 2.50 | 304 | 6.58 / 3.4 / 0.41 | 6.86 / 3.7 / 0.67 | 5,160 / 405,504 (78.6) | 663,552 (128.6) |
+| task churn | 50 | 6.69 | 64 | 1.3 | 3.14 | 0.42 | 0.01 | 2.55 | 328 | 6.66 / 1.6 / 0.41 | 6.94 / 1.6 / 0.68 | 5,260 / 409,600 (77.9) | 675,840 (128.5) |
+| link churn | 50 | 6.78 | 88 | 1.8 | 3.14 | 0.43 | 0.01 | 2.61 | 344 | 6.75 / 1.8 / 0.43 | 7.05 / 2.2 / 0.72 | 5,485 / 425,984 (77.7) | 708,608 (129.2) |
+| delete / recreate | 20 | 6.90 | 120 | 6.0 | 3.15 | 0.45 | 0.01 | 2.69 | 356 | 6.88 / 6.2 / 0.45 | 7.19 / 6.6 / 0.75 | 5,715 / 442,368 (77.4) | 737,280 (129.0) |
+| gc (default sweep) | | 6.90 | 0 | | 3.15 | 0.45 | 0.01 | 2.69 | 356 | 6.88 / 0 KB / 0.45 | 7.19 / 0 KB / 0.75 | 5,715 / 442,368 (77.4) | 737,280 (129.0) |
+
+**The same 40 %, row for row.** `id_claims` is 4,810 → 4,910 → 5,010 →
+5,160 → 5,260 → 5,485 → 5,715 rows in both engines — the TS sequence
+exactly, as in every round — at 372,736 → 442,368 B here against the TS
+run's 368,640 → 446,464 (one 4,096 B page apart at either end, the
+direction flipping with the page split) and the Rust 3e-ii run's 622,592 →
+737,280: −249,856 B at import and −294,912 B at the end, the TS deltas to
+the byte. Per row 77.5 → 77.4 B against 129.4 → 129.0. `identity` 0.38 →
+0.45 MB (TS 0.38 → 0.45; Rust 3e-ii 0.63 → 0.75); `sqlite_schema` 95 rows
+(96), 28,672 B; the `sync` category byte-identical to both comparison runs
+at every stage (232 / 260 / 288 / 304 / 328 / 344 / 356 KB). The database
+is **6.21 vs 6.17 MB at import (28.4× the source vs 28.2×) and 6.90 vs 6.88
+MB at the end (31.6× vs 31.5×)** — 36 KB over TS at import and 20 KB at the
+end, where every earlier round had Rust 20–28 KB under: the content and
+search pages fell the other way this time (`blocks` 1,880,064 vs 1,867,776
+B at the end, `blocks_fts` 131,072 vs 126,976; `tree_nodes` 970,752 vs
+974,848, `edge_transitions` 159,744 vs 155,648 — a page each, the seed's
+noise) — and 242 KB / 287 KB under Rust 3e-ii (6,447,104 → 6,205,440 B at
+import, 7,188,480 → 6,901,760 at the end): the index's pages. Every other
+table is row for row the TS run's after gc — `blobs` 3,218 (634,880 vs
+630,784 B), `tree_nodes` 1,000 vs the TS run's 1,001, `dispositions` /
+`block_changes` 3,824 vs 3,822 (the recreate stage's two rows, above; the
+Rust counts are the 3e-ii counts of both engines), `revisions` 461,
+`commits` 471 (172,032 both), `edge_transitions` 955, `edges` 803 (167,936
+both), `feed` / `feed_entries` 471 each (139,264 / 86,016 both). Per
+operation: frontmatter 2.0 (TS 2.1, Rust 3e-ii 2.2), block edit 2.3 (2.6 /
+2.2), journal 3.8 (3.4 / 3.7), task churn 1.3 (1.6 / 1.6), link churn 1.8
+(1.8 / 2.2), recreate 6.0 (6.2 / 6.6).
+
+Latency (p50 / p95 ms, process start 7 / 549 included — the p95 is the one
+cold first spawn of ten): import 778; one write 22–31 / 25–41 (frontmatter
+23 / 25, block edit 31 / 41, journal 24 / 29, task churn 22 / 29, link churn
+30 / 38, recreate 24 / 36); `query` docs 20 / 28, blocks filter 19 / 26,
+`text("furnace")` 117 / 138, links 15 / 30; `outline` 11 / 27; `gc` 23.
+Against the Rust 3e-ii run (import 876, writes 24–27 / 29–38, docs 14 / 15,
+blocks filter 13 / 16, text 81 / 145, links 11 / 12, outline 11 / 18, gc 21)
+the writes are within ±4 ms at p50 — the claims insert lost an index
+maintenance per minted id and gained nothing — while the four reads are 4–6
+ms slower at p50 and the text query 36: no read in this harness touches
+`id_claims` or the feed, and the import is 98 ms faster, so the read rows
+moved with the machine (the same session's TS run shows the spawn at twice
+its 3e-ii value). Against the TS release-prep run the picture is the one
+every round shows (writes 346–407 / 390–446 there, spawn 339 / 672).
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |

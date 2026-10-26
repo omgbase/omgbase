@@ -513,10 +513,15 @@ CREATE TABLE pending_materializations_v17 (
   // long-deleted block's `b` is `2`, a live block's `3`, an old revision's `r`
   // `2`, a repo's `rp` `1`. The recorder's `c` and `s` get no claim (their own
   // rows are their claims), nor does `cp`. Idempotent: an existing `id_claims`
-  // table is left alone.
+  // table is left alone — except for its `(repo_id, prefix, minted_at)` index,
+  // which 17.0 (release prep, 2026-10-26) dropped: half the bytes of every
+  // minted id for two scans (the gc-time prune, the on-demand size line), so a
+  // 3b–3e-ii database opened at 17 loses it here (`DROP INDEX IF EXISTS`,
+  // idempotent — spec/store §3.4 step 17 (4), §10).
   private migrateV17Claims(): void {
     const db = this.db;
     const clock = new Date().toISOString();
+    db.exec("DROP INDEX IF EXISTS idx_claims_repo_prefix");
     const hasClaims = this.tableExists("id_claims");
     const poolCols = db.pragma("table_info(resurrection_pool)") as { name: string }[];
     const poolDone = poolCols.length === 0 || poolCols.some((c) => c.name === "deleted_at");
@@ -531,8 +536,7 @@ CREATE TABLE IF NOT EXISTS id_claims (
   prefix    TEXT NOT NULL,
   minted_at TEXT NOT NULL,
   holders   INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_claims_repo_prefix ON id_claims(repo_id, prefix, minted_at);`);
+);`);
       // Every statement upserts: a second source of the same id ORs its holder
       // bits in and keeps the earliest `minted_at`. The `WHERE true` disambiguates
       // the upsert clause from a join constraint (sqlite.org/lang_upsert).

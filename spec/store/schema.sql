@@ -65,7 +65,6 @@ CREATE TABLE IF NOT EXISTS id_claims (
   minted_at TEXT NOT NULL,
   holders   INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_claims_repo_prefix ON id_claims(repo_id, prefix, minted_at);
 
 CREATE TABLE IF NOT EXISTS resurrection_pool (
   block_id       TEXT PRIMARY KEY,

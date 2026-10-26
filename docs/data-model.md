@@ -298,7 +298,7 @@ CREATE TABLE id_claims (
   minted_at TEXT NOT NULL,
   holders   INTEGER NOT NULL
 );
-CREATE INDEX idx_claims_repo_prefix ON id_claims(repo_id, prefix, minted_at);
+-- no secondary index: the claims prune (gc-time) and the size line (on demand) scan; the index was half the bytes of every minted id (2026-10-26)
 
 -- The capability manifest (spec/store §3.1, v17 slice 3e-ii): one row per (repository, capability).
 CREATE TABLE capabilities (

@@ -14,7 +14,7 @@
 // with the step's `ts` and the case's page limit threaded through (the
 // coordinator itself passes neither), wrapped to record.
 import {
-  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, ExpiredCursor, docsRead, ingestFile, NullDocStore, findDocByRef, referencePath,
+  Store, ensureRepo, sequentialMinter, setIdMinter, observeMany, observeDelete, changesSince, ExpiredCursor, docsRead, ingestFile, NullDocStore, findDocByRef, referencePath, runGc,
   applySugar, createEffects, createdDoc, deleteDocEffects,
   type ObserveResult, type ObserveDeleteResult, type SyncSource, type SourceCapabilities, type SourceEntry, type SourceItem,
 } from "@omgbase/core";
@@ -38,6 +38,8 @@ export interface EngineStep {
   delete?: { path: string; actor?: string };
   /** observed commits through observe_many (the engine's own observe path, not the coordinator) */
   observe?: { path: string; content: string }[];
+  /** the repository's `feed.retain_days` / `feed.retain_entries` set, then the default gc at `ts` (spec/store §7.4) — prunes the feed; outcome `{ feed_pruned }` */
+  gc?: { retain_days: number; retain_entries: number };
 }
 
 export type CoordinatorStep =
@@ -272,6 +274,12 @@ function runEngineStep(store: Store, repoId: string, s: EngineStep): Record<stri
     applySugar(store, { repoId, docStore: new NullDocStore(), ts: s.ts, actor: s.delete.actor ?? null }, deleteDocEffects({ _id: info.docId, _path: info.path }));
     return { doc: info.docId, committed: true };
   }
+  if (s.gc) {
+    // The feed prune (spec/store §7.4) the way the store fixtures set it up: the
+    // repo's settings written directly, then the default sweep at the step's clock.
+    store.db.prepare("UPDATE repos SET settings = ? WHERE repo_id = ?").run(JSON.stringify({ feed: { retain_days: s.gc.retain_days, retain_entries: s.gc.retain_entries } }), repoId);
+    return { feed_pruned: runGc(store, { enabled: true, now: s.ts }).feedPruned };
+  }
   const out = observeMany(store, repoId, s.observe ?? [], { ts: s.ts });
   return { observed: out.map((o) => ({ path: o.path, echo: o.echo, commit: o.commitId })) };
 }
@@ -325,10 +333,11 @@ export function validateCoordinatorCase(at: string, c: Record<string, unknown>, 
           if (body.rm !== undefined && (!Array.isArray(body.rm) || !body.rm.every((v) => typeof v === "string"))) problems.push(`${here}: \`rm\` is a path list`);
           break;
         case "engine": {
-          onlyKeys(body, ["ts", "create", "import", "delete", "observe"], here, problems);
+          onlyKeys(body, ["ts", "create", "import", "delete", "observe", "gc"], here, problems);
           requireTs(body, here, problems);
-          const ops = ["create", "import", "delete", "observe"].filter((k) => body[k] !== undefined);
-          if (ops.length !== 1) problems.push(`${here}: exactly one of create/import/delete/observe`);
+          const ops = ["create", "import", "delete", "observe", "gc"].filter((k) => body[k] !== undefined);
+          if (ops.length !== 1) problems.push(`${here}: exactly one of create/import/delete/observe/gc`);
+          if (body.gc !== undefined && (!isRecord(body.gc) || typeof body.gc.retain_days !== "number" || typeof body.gc.retain_entries !== "number")) problems.push(`${here}: \`gc\` is { retain_days, retain_entries }`);
           break;
         }
         case "sync_in":

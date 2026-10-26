@@ -1259,11 +1259,16 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   epoch <given> has expired — the feed now begins at (<epoch>, <oldest>);
   rescan the repository and resume from head <head> ``, spelled alike by
   both engines and pinned — `data.epoch` names an argument, §6) when the
-  given `epoch` is not the repository's, or `cursor > head`, or `0 < cursor
-  < oldest − 1` (every entry after the cursor is present exactly when
-  `cursor ≥ oldest − 1`; `cursor = 0` is always valid — a consumer starting
-  from nothing reads `oldest` to see where the feed begins). The consumer
-  then runs the rescan procedure (`spec/sync` §6). Each digest `{ commit,
+  given `epoch` is not the repository's, or `cursor > head`, or `cursor <
+  oldest − 1` — **for every cursor, `0` included** (every entry after the
+  cursor is present exactly when `cursor ≥ oldest − 1`: an empty feed has
+  `oldest = 0, head = 0` and serves cursor 0, a feed that still begins at 1
+  serves it, a feed pruned to `oldest ≥ 2` expires it — a first-time
+  consumer must not silently miss the deletions the pruned rows carried, so
+  it bootstraps by the rescan rather than being served from `oldest`;
+  Brendan's decision of 2026-10-26, `spec/store` §10 — through the 17.0
+  slices cursor 0 was always valid). The consumer then runs the rescan
+  procedure (`spec/sync` §6). Each digest `{ commit,
   seq, ts, origin, actor, batch_id, plan_id?, summary, revisions: [{ _id,
   _path, _hash, kind, from_path? }] }` — `batch_id` the observed batch the
   commit belongs to (the first committing member's commit id; `= commit` for
@@ -2446,7 +2451,10 @@ both and runs both harnesses.
   `from_path`, a deleted document `_hash: null`; a cursor the feed no longer
   serves is the **error envelope** `expired_cursor { epoch, oldest, head }`
   (resolution 16 — a result-shaped variant would put a second shape on the
-  tool), under exactly the three conditions of §3, never for `cursor = 0`.
+  tool), under exactly the three conditions of §3 — since 2026-10-26 for
+  `cursor = 0` too, once the feed has been pruned past 1 (`spec/store` §10;
+  `reads::changes-since-epoch-and-expiry`'s `{}` after the gc moved from a
+  page beginning at `oldest` to the envelope).
   `repos_status` and `sync_status` move with `spec/sync` 4.0 (§4: `feed: {
   epoch, oldest, head }`, no `commits`/`unconverged`; `head`/`epoch`/
   `oldest`/`lastBatch`/`capabilities`, no `lastCommitSeq`/`lastCheckpoint`);

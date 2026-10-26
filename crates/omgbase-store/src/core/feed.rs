@@ -639,12 +639,14 @@ impl Default for ChangesSinceOptions<'_> {
 /// with `seq > cursor` of the repository's epoch (optionally of one origin),
 /// in `seq` order, `limit + 1` fetched to set `truncated`; the given `epoch`
 /// defaults to the repository's. Fails [`Error::ExpiredCursor`] when the
-/// given epoch is not the repository's, or `cursor > head`, or `0 < cursor <
-/// oldest − 1` (every entry after the cursor is present exactly when `cursor
-/// ≥ oldest − 1`; cursor 0 is always valid — a consumer starting from nothing
-/// reads `oldest` to see where the feed begins). Reads `feed`/`feed_entries`
-/// only; the disposition counts of the summary come from the recorder when it
-/// holds the commit.
+/// given epoch is not the repository's, or `cursor > head`, or `cursor <
+/// oldest − 1` — for every cursor, 0 included (every entry after the cursor
+/// is present exactly when `cursor ≥ oldest − 1`; an empty feed has `oldest =
+/// 0`, a feed that begins at 1 serves cursor 0, a feed pruned to `oldest ≥ 2`
+/// expires it — a first-time consumer must not silently miss deletions and
+/// bootstraps by the `spec/sync` §6 rescan; the decision of 2026-10-26,
+/// `spec/store` §10). Reads `feed`/`feed_entries` only; the disposition
+/// counts of the summary come from the recorder when it holds the commit.
 pub fn changes_since(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
@@ -654,7 +656,7 @@ pub fn changes_since(
     let cursor = opts.cursor;
     let status = feed_status(conn, repo_id)?;
     let given = opts.epoch.unwrap_or(&status.epoch);
-    if given != status.epoch || cursor > status.head || (cursor > 0 && cursor < status.oldest - 1) {
+    if given != status.epoch || cursor > status.head || cursor < status.oldest - 1 {
         return Err(Error::ExpiredCursor(ExpiredCursor {
             cursor,
             given: given.to_owned(),
@@ -978,10 +980,14 @@ mod tests {
                 .is_ok(),
             "oldest − 1 is served"
         );
+        // Cursor 0 is not special: once the feed begins at 2 it is behind
+        // `oldest − 1` like any other (2026-10-26 — a first-time consumer must
+        // not silently miss deletions; it bootstraps by the §6 rescan).
+        let e = expired(ChangesSinceOptions::default());
+        assert_eq!((e.cursor, e.oldest, e.head), (0, 2, 3));
         assert_eq!(
-            page(&store, &repo, 0, 50).oldest,
-            2,
-            "cursor 0 is always valid"
+            e.message(),
+            "cursor 0 of epoch ep_0 has expired — the feed now begins at (ep_0, 2); rescan the repository and resume from head 3"
         );
         store
             .conn()

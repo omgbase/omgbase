@@ -321,19 +321,21 @@ export interface ChangesSinceOptions {
  * `seq > cursor` of the repository's epoch (optionally of one origin), in
  * `seq` order, `limit + 1` fetched to set `truncated`; the given `epoch`
  * defaults to the repository's. Fails `ExpiredCursor` when the given epoch is
- * not the repository's, or `cursor > head`, or `0 < cursor < oldest − 1`
- * (every entry after the cursor is present exactly when `cursor ≥ oldest − 1`;
- * cursor 0 is always valid — a consumer starting from nothing reads `oldest`
- * to see where the feed begins). Reads `feed`/`feed_entries` only; the
- * disposition counts of the summary come from the recorder when it holds the
- * commit.
+ * not the repository's, or `cursor > head`, or `cursor < oldest − 1` — for
+ * every cursor, 0 included (every entry after the cursor is present exactly
+ * when `cursor ≥ oldest − 1`; an empty feed has `oldest = 0`, a feed that
+ * begins at 1 serves cursor 0, a feed pruned to `oldest ≥ 2` expires it — a
+ * first-time consumer must not silently miss deletions and bootstraps by the
+ * spec/sync §6 rescan; Brendan's decision of 2026-10-26, spec/store §10).
+ * Reads `feed`/`feed_entries` only; the disposition counts of the summary
+ * come from the recorder when it holds the commit.
  */
 export function changesSince(store: Store, repoId: string, opts: ChangesSinceOptions = {}): ChangesPage {
   const db = store.db;
   const cursor = opts.cursor ?? 0;
   const status = feedStatus(db, repoId);
   const given = opts.epoch ?? status.epoch;
-  if (given !== status.epoch || cursor > status.head || (cursor > 0 && cursor < status.oldest - 1)) {
+  if (given !== status.epoch || cursor > status.head || cursor < status.oldest - 1) {
     throw new ExpiredCursor(cursor, given, status.epoch, status.oldest, status.head);
   }
   const limit = opts.limit ?? 50;

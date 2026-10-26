@@ -315,7 +315,12 @@ client** (in-process or over MCP) with no reconciliation logic of its own.
   head, truncated }`. **The cursor is `(epoch, seq)`**: a consumer stores
   both and sends both (the 3.x cursor was the bare `seq`; through 2.x the
   revision was `{ id, path, hash }`, before 2.0 `{ doc, path, content_hash
-  }`). `summary` is a human line the fixtures do not pin and the coordinator
+  }`). A consumer with **no stored cursor** sends `cursor = 0`: served while
+  the feed still begins at 1, `expired_cursor` once it has been pruned to
+  `oldest ≥ 2` (`spec/surface` §3; store 17.0, 2026-10-26 — a first-time
+  consumer must not silently miss the deletions the pruned rows carried), so
+  it bootstraps by the rescan below instead of being served from `oldest`.
+  `summary` is a human line the fixtures do not pin and the coordinator
   never reads.
 - **Expired cursor → rescan (4.0, D7).** On `expired_cursor { epoch, oldest,
   head }` the consumer runs the **rescan procedure**:
@@ -464,7 +469,10 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   waited for.
 - `kind: "coordinator"` — `{ name, source: { write_through }, page_limit?,
   steps, expect }` with steps `source { set | rm }`, `engine { ts, create |
-  import | delete | observe }`, `sync_in { ts }`, `reconcile { ts, paths }`,
+  import | delete | observe | gc { retain_days, retain_entries } }` (`gc`:
+  the repository's `feed.*` settings written, then the default sweep at `ts`
+  — `spec/store` §7.4; outcome `{ feed_pruned }`), `sync_in { ts }`,
+  `reconcile { ts, paths }`,
   `sync_out { cursor?, epoch? }`; each outcome records the summary (a
   `sync_out`'s `{ cursor, epoch, written, removed, rescanned? }`, 4.0) and
   the **calls** made — `[{ engine: "observe_many" | "observe_delete" |
@@ -475,7 +483,10 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   projection adds `files`, `docs [{ doc_id, path, deleted }]` and `commits
   [{ commit_id, seq, origin, actor }]` — read from the **feed** (4.0; the
   recorder's `commits` is its twin). `protocol::sync-out-expired-cursor-
-  rescans` pins the rescan.
+  rescans` pins the rescan; `protocol::sync-out-cursor-0-on-a-pruned-feed-
+  rescans` pins the bootstrap of a consumer with no stored cursor over a
+  pruned feed (the deletion the pruned rows carried reaches the source only
+  through the rescan).
 
 **Generation.** Two runners, each rewriting only its own cases under
 `SYNC_SPEC_UPDATE=1`: `packages/core/corpus/sync/spec.test.ts` (pure,

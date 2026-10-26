@@ -2407,17 +2407,6 @@
               "type"
             ]
           },
-          "idx_claims_repo_prefix": {
-            "table": "id_claims",
-            "unique": 0,
-            "origin": "c",
-            "partial": 0,
-            "columns": [
-              "repo_id",
-              "prefix",
-              "minted_at"
-            ]
-          },
           "idx_edge_transitions_temporal": {
             "table": "edge_transitions",
             "unique": 0,

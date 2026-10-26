@@ -16403,7 +16403,7 @@
     },
     {
       "name": "changes-since-epoch-and-expiry",
-      "notes": "§3 `changes_since` (6.0, D7): a cursor is `(epoch, seq)`; the result names the feed's `epoch`, `oldest` and `head`; each digest carries `batch_id` and its documents' `kind`. After the feed is pruned (spec/store §7.4 — `feed.retain_days: 0`, `feed.retain_entries: 1`, then gc leaves seq 3–4), `{}` lists what remains with `oldest: 3` (the consumer sees the gap — cursor 0 is always valid), `cursor: 2` is served (every entry after it is present: `cursor ≥ oldest − 1`), `cursor: 1` is `expired_cursor` (pruned past), `cursor: 5` is `expired_cursor` (past the head), another epoch is `expired_cursor` whatever the cursor, `cursor: 3` with the repo's own epoch is the last digest; `limit: 1` pages with `truncated` and the page's cursor. The error's message is pinned (`data.epoch` names an argument, §6) and `retriable: false`.",
+      "notes": "§3 `changes_since` (6.0, D7): a cursor is `(epoch, seq)`; the result names the feed's `epoch`, `oldest` and `head`; each digest carries `batch_id` and its documents' `kind`. After the feed is pruned (spec/store §7.4 — `feed.retain_days: 0`, `feed.retain_entries: 1`, then gc leaves seq 3–4), `{}` — cursor 0, a consumer with nothing stored — is `expired_cursor` like any cursor behind `oldest − 1` (2026-10-26: a first-time consumer bootstraps by the rescan instead of being served from `oldest`; through the 17.0 slices it was served the two remaining digests), `cursor: 2` is served (every entry after it is present: `cursor ≥ oldest − 1`), `cursor: 1` is `expired_cursor` (pruned past), `cursor: 5` is `expired_cursor` (past the head), another epoch is `expired_cursor` whatever the cursor, `cursor: 3` with the repo's own epoch is the last digest; `limit: 1` pages with `truncated` and the page's cursor. The error's message is pinned (`data.epoch` names an argument, §6) and `retriable: false`.",
       "steps": [
         {
           "observe": {
@@ -16725,45 +16725,14 @@
             }
           },
           {
-            "digests": [
-              {
-                "commit": "c_2",
-                "seq": 3,
-                "ts": "2026-09-27T10:01:00.000Z",
-                "origin": "observed",
-                "actor": null,
-                "batch_id": "c_2",
-                "revisions": [
-                  {
-                    "_id": "d_0",
-                    "_path": "/guide.md",
-                    "_hash": "c85ee794bc32b44155fd86fc9c8e9774766a43fcae35d856508e9c80fd59d03e",
-                    "kind": "changed"
-                  }
-                ]
-              },
-              {
-                "commit": "c_3",
-                "seq": 4,
-                "ts": "2026-09-27T10:02:00.000Z",
-                "origin": "observed",
-                "actor": null,
-                "batch_id": "c_3",
-                "revisions": [
-                  {
-                    "_id": "d_1",
-                    "_path": "/notes/one.md",
-                    "_hash": null,
-                    "kind": "deleted"
-                  }
-                ]
-              }
-            ],
-            "cursor": 4,
-            "epoch": "ep_0",
-            "oldest": 3,
-            "head": 4,
-            "truncated": false
+            "error": "expired_cursor",
+            "retriable": false,
+            "message": "cursor 0 of epoch ep_0 has expired — the feed now begins at (ep_0, 3); rescan the repository and resume from head 4",
+            "data": {
+              "epoch": "ep_0",
+              "oldest": 3,
+              "head": 4
+            }
           },
           {
             "digests": [

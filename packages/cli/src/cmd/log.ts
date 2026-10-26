@@ -21,10 +21,12 @@ function resolveSinceSeq(cli: Cli, repoId: string, since: string | undefined): n
   const row = ws.store.db
     .prepare("SELECT MAX(seq) AS seq FROM feed WHERE repo_id = ? AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?) AND ts < ?")
     .get(repoId, repoId, iso) as { seq: number | null };
-  // A `--since` before the oldest retained row means "everything the feed holds" (cursor 0).
+  // A `--since` before the oldest retained row means "everything the feed
+  // holds" — cursor `oldest − 1` (cursor 0 on a feed pruned to `oldest ≥ 2`
+  // is `expired_cursor` since store 17.0, spec/surface §3).
   const oldest = (ws.store.db.prepare("SELECT COALESCE(MIN(seq), 0) AS seq FROM feed WHERE repo_id = ? AND epoch = (SELECT epoch FROM repos WHERE repo_id = ?)").get(repoId, repoId) as { seq: number }).seq;
   const seq = row.seq ?? 0;
-  return seq > 0 && seq < oldest - 1 ? 0 : seq;
+  return seq < oldest - 1 ? Math.max(oldest - 1, 0) : seq;
 }
 
 function relativeToIso(since: string): string {

@@ -75,6 +75,12 @@ describe("the watermark", () => {
     expect(drainMode({ processed_seq: 9, identity: id }, 5, id)).toBe("rescan");
     expect(drainMode({ processed_seq: 3, identity: id }, null, id)).toBe("rescan");
     expect(drainMode({ processed_seq: 3, identity: id }, 5, id, true)).toBe("rescan");
+    // Behind the oldest retained row (an expired cursor): 3 on a feed pruned to oldest 5 rescans, 4 catches up (oldest − 1 is served);
+    // a watermark of 0 on a pruned feed rescans too (store 17.0: cursor 0 expires once oldest ≥ 2), on a fresh feed it catches up.
+    expect(drainMode({ processed_seq: 3, identity: id }, 5, id, false, 5)).toBe("rescan");
+    expect(drainMode({ processed_seq: 4, identity: id }, 5, id, false, 5)).toBe("catch-up");
+    expect(drainMode({ processed_seq: 0, identity: id }, 5, id, false, 2)).toBe("rescan");
+    expect(drainMode({ processed_seq: 0, identity: id }, 5, id, false, 1)).toBe("catch-up");
   });
 });
 

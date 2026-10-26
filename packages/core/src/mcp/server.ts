@@ -1705,7 +1705,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description: ladder(
         "changes_since — Re-orient after time away: the change feed after a cursor, each digest with its documents [{ _id, _path, _hash, kind: created|changed|deleted|moved, from_path? }].",
-        "{}   everything the feed holds; epoch, oldest and head are the feed's position (a cursor is the pair epoch + seq)",
+        "{}   everything the feed holds (pruned feed: expired_cursor → rescan); epoch, oldest and head are the feed's position (a cursor is the pair epoch + seq)",
         "{\"cursor\":20,\"limit\":5}   commits after seq 20, five at a time (cursor pages while truncated; store the page's epoch with the cursor and pass both back)",
         "{\"origin\":\"api\"}   only the writes made through the engine (observed = edits on disk; import)",
         "Poll with your last cursor and epoch: an empty page with cursor == head means nothing new; expired_cursor { epoch, oldest, head } means the feed moved past you — rescan with query docs { select _id, _path, _hash }, resume from head. Read a changed document with docs_read, its blocks with query (grammar: query_syntax).",

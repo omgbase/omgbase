@@ -1057,7 +1057,10 @@ days, weeks, 30-day months) or an absolute timestamp becomes an instant
 (against the pinned clock), and the cursor is the highest retained feed
 `seq` whose `ts` is strictly before it (so `--since` equal to every commit's
 `ts` returns them all; an instant before the oldest retained row is cursor
-0 — everything the feed holds); anything else is
+`oldest − 1` — everything the feed holds; cursor 0 itself is
+`expired_cursor` on a feed pruned to `oldest ≥ 2`, `spec/surface` §3, so a
+bare `log` with neither flag surfaces the envelope there and the user
+continues with `--cursor <oldest − 1>`); anything else is
 `usage: bad --since '<v>' (use a relative age like 24h or 7d, or an ISO timestamp)`,
 exit 2. Human, oldest first: `#<seq> <origin padded to 8> <summary>` — the
 digest's summary, composed from its feed entries (`spec/surface` §3, 6.0,

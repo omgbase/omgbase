@@ -67,7 +67,8 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
             // The instant resolves through the FEED of the current epoch
             // (store 17.0, D7): the highest retained seq strictly before it;
             // a `--since` before the oldest retained row means "everything
-            // the feed holds" (cursor 0).
+            // the feed holds" — cursor `oldest − 1` (cursor 0 on a feed
+            // pruned to `oldest ≥ 2` is `expired_cursor`, spec/surface §3).
             let iso = since_instant(since, cli.now_ms())?;
             let repo = cli.repo()?;
             let conn = cli.store()?.conn();
@@ -85,7 +86,11 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 |r| r.get(0),
             )?;
             let seq = seq.unwrap_or(0);
-            if seq > 0 && seq < oldest - 1 { 0 } else { seq }
+            if seq < oldest - 1 {
+                (oldest - 1).max(0)
+            } else {
+                seq
+            }
         }
         (None, None) => 0,
     };

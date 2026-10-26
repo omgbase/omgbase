@@ -2954,7 +2954,7 @@
     },
     {
       "name": "prune-never-takes-the-newest-row",
-      "notes": "README §7.4: pruning never deletes the row with the greatest `seq` — at `retain_entries: 0` and `retain_days: 0` a gc leaves exactly the head row (`feed_pruned` = rows − 1), so `oldest == head` and a consumer at `cursor = head − 1` is still served (every entry after it is present); `changes_since` from 0 on such a feed shows the gap through `oldest` (spec/surface §3).",
+      "notes": "README §7.4: pruning never deletes the row with the greatest `seq` — at `retain_entries: 0` and `retain_days: 0` a gc leaves exactly the head row (`feed_pruned` = rows − 1), so `oldest == head` and a consumer at `cursor = head − 1` is still served (every entry after it is present); `changes_since` from 0 on such a feed is `expired_cursor` once `oldest ≥ 2` (spec/surface §3, 2026-10-26 — the consumer rescans).",
       "steps": [
         {
           "exec": {

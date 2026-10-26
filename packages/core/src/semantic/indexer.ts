@@ -144,14 +144,14 @@ function docsChangedSince(store: Store, repoId: string, cursor: number): Set<str
   return out;
 }
 
-/** Decide the pass's mode from the watermark, the feed's position and the identity: a watermark past the head or behind the oldest retained row (an expired cursor, D7) is a rescan. */
+/** Decide the pass's mode from the watermark, the feed's position and the identity: a watermark past the head or behind the oldest retained row (an expired cursor, D7 — a watermark of 0 on a feed pruned to `oldest ≥ 2` included, spec/surface §3) is a rescan. */
 export function drainMode(wm: SemanticWatermark | null, head: number | null, identity: SemanticIndexIdentity, force?: boolean, oldest = 0): DrainMode {
   if (force) return "rescan";
   if (!wm) return "bootstrap";
   if (!sameIdentity(wm.identity, identity)) return "rescan";
   if (head === null) return "rescan";
   if (wm.processed_seq > head) return "rescan";
-  if (wm.processed_seq > 0 && wm.processed_seq < oldest - 1) return "rescan";
+  if (wm.processed_seq < oldest - 1) return "rescan";
   return "catch-up";
 }
 

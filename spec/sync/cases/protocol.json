@@ -1672,6 +1672,202 @@
           }
         ]
       }
+    },
+    {
+      "name": "sync-out-cursor-0-on-a-pruned-feed-rescans",
+      "kind": "coordinator",
+      "notes": "§6 (4.0; store 17.0, 2026-10-26): a consumer with no stored cursor — `sync_out {}`, cursor 0 — on a feed pruned to `oldest ≥ 2` gets `expired_cursor { epoch, oldest, head }` like any other cursor behind `oldest − 1` (`spec/surface` §3: cursor 0 is not special), and bootstraps by the rescan procedure rather than being served from `oldest`. Here the server created x.md and y.md, deleted y.md and created z.md; the gc under `feed.retain_entries: 0` / `retain_days: 0` leaves only the head row (seq 4), so a consumer served from `oldest` would never see y.md's deletion. The rescan lists the live documents, writes x.md (stale copy) and z.md (absent), removes y.md (absent from the listing — the deletion the pruned feed no longer carries), then resumes from the error's `head` under its `epoch`. The summary carries `rescanned: true`; a second `sync_out` from the returned `(epoch, cursor)` is empty.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "x.md": "# X\n\nStale copy.\n",
+              "y.md": "# Y\n\nDeleted on the server.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n\nServer copy.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "create": {
+              "path": "y.md",
+              "markdown": "# Y\n\nDeleted on the server.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "delete": {
+              "path": "y.md"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:03:00.000Z",
+            "create": {
+              "path": "z.md",
+              "markdown": "# Z\n\nOnly on the server.\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-27T00:00:00.000Z",
+            "gc": {
+              "retain_days": 0,
+              "retain_entries": 0
+            }
+          }
+        },
+        {
+          "sync_out": {}
+        },
+        {
+          "sync_out": {
+            "cursor": 4,
+            "epoch": "ep_0"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "doc": "d_2",
+            "committed": true
+          },
+          {
+            "feed_pruned": 3
+          },
+          {
+            "cursor": 4,
+            "epoch": "ep_0",
+            "written": [
+              "x.md",
+              "z.md"
+            ],
+            "removed": [
+              "y.md"
+            ],
+            "rescanned": true,
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 0
+              },
+              {
+                "engine": "list_docs"
+              },
+              {
+                "source": "fetch",
+                "path": "x.md"
+              },
+              {
+                "engine": "read_doc",
+                "path": "x.md"
+              },
+              {
+                "source": "write",
+                "path": "x.md",
+                "content": "# X\n\nServer copy.\n"
+              },
+              {
+                "source": "fetch",
+                "path": "z.md"
+              },
+              {
+                "engine": "read_doc",
+                "path": "z.md"
+              },
+              {
+                "source": "write",
+                "path": "z.md",
+                "content": "# Z\n\nOnly on the server.\n"
+              },
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "remove",
+                "path": "y.md"
+              },
+              {
+                "engine": "changes_since",
+                "cursor": 4,
+                "epoch": "ep_0"
+              }
+            ]
+          },
+          {
+            "cursor": 4,
+            "epoch": "ep_0",
+            "written": [],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 4,
+                "epoch": "ep_0"
+              }
+            ]
+          }
+        ],
+        "files": {
+          "x.md": "# X\n\nServer copy.\n",
+          "z.md": "# Z\n\nOnly on the server.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_1",
+            "path": "y.md",
+            "deleted": true
+          },
+          {
+            "doc_id": "d_2",
+            "path": "z.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_3",
+            "seq": 4,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
     }
   ]
 }
