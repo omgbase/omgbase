@@ -330,8 +330,8 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
 
   // The single-scalar-row scope every property read keeps (`propScalar` and the typed forms alike).
   const scope = (key: string) => `FROM properties p
-           WHERE p.doc_id = d.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL
-             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL) = 1
+           WHERE p.doc_id = d.doc_id AND p.key = '${key}' AND p.card = 'scalar'
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = '${key}') = 1
            LIMIT 1)`;
 
   it("typed push, prop × bool: the scalar-row subquery projects `p.type = 'bool' AND p.val_bool = ?` (bound 1/0); == → IS 1, != → IS NOT 1", () => {

@@ -178,7 +178,9 @@ CREATE TABLE dispositions (
   PRIMARY KEY (commit_id, block_id, kind)
 );
 
--- Authored edges. Append-only; a row is "closed" by setting to_commit.
+-- Authored edges — the OPEN relations only (v17, M6 — spec/graph 3.0 §3.3):
+-- closing an edge deletes its row; the interval record (from_commit / to_commit,
+-- v16's columns) is the history bundle's edge_transitions below.
 CREATE TABLE edges (
   edge_id     TEXT PRIMARY KEY,            -- 'e_' + base32
   repo_id     TEXT NOT NULL,
@@ -186,19 +188,36 @@ CREATE TABLE edges (
   src_block   TEXT,                        -- NULL ⇒ frontmatter-origin
   src_field   TEXT,                        -- frontmatter key or inline-field key; NULL for plain links
   predicate   TEXT NOT NULL,               -- 'references' | any authored predicate
-  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external','collection')),
+  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external')),
   dst_node    TEXT NOT NULL,               -- node id; external nodes minted per normalized URI
   anchor      TEXT,                        -- link anchor/fragment text if present
   provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
                'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
                                            -- 'projected' reserved for projected queries (09-…); unused in v1
-  via_node    TEXT,                        -- NULL for authored edges; query block id for projected (reserved, v1-unused)
-  from_commit TEXT NOT NULL,
-  to_commit   TEXT                         -- NULL = currently asserted
+  via_node    TEXT                         -- NULL for authored edges; query block id for projected (reserved, v1-unused)
 );
-CREATE INDEX idx_edges_src ON edges(src_doc, predicate) WHERE to_commit IS NULL;
-CREATE INDEX idx_edges_dst ON edges(dst_node, predicate) WHERE to_commit IS NULL;
-CREATE INDEX idx_edges_temporal ON edges(from_commit, to_commit);
+CREATE INDEX idx_edges_src ON edges(src_doc, predicate);
+CREATE INDEX idx_edges_dst ON edges(dst_node, predicate);
+
+-- Edge intervals (v17, the history bundle's — spec/store §3.1): v16's edges row
+-- verbatim, written when the core opens an edge (to_commit NULL) and closed when
+-- it deletes one; dst_node follows the open edge's in-place rewrites (adoption).
+CREATE TABLE edge_transitions (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL,
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL,
+  via_node    TEXT,
+  from_commit TEXT NOT NULL,
+  to_commit   TEXT                         -- NULL = still open
+);
+CREATE INDEX idx_edge_transitions_temporal ON edge_transitions(from_commit, to_commit);
 
 CREATE TABLE external_nodes (
   node_id   TEXT PRIMARY KEY,              -- 'x_' + base32
@@ -208,12 +227,8 @@ CREATE TABLE external_nodes (
   UNIQUE (repo_id, uri)
 );
 
-CREATE TABLE collections (
-  node_id  TEXT PRIMARY KEY,               -- 'col_' + base32
-  repo_id  TEXT NOT NULL,
-  name     TEXT NOT NULL,
-  spec     TEXT NOT NULL DEFAULT '{}'      -- JSON: explicit member list and/or a stored query
-);
+-- (`collections` — created and never written through v16 — was dropped in v17, D9;
+-- `col_` stays a reserved prefix with no table.)
 
 -- The change feed (v17, D7/M5 — spec/store §3.1, §5.4 step 5, §7.4): the CORE's
 -- record of every commit within retention — what `changes_since` pages and the
@@ -315,14 +330,14 @@ CREATE TABLE properties (
   val_num        REAL,
   val_bool       INTEGER,
   val_json       TEXT,
-  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')),
-  created_commit TEXT NOT NULL,
-  deleted_commit TEXT
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json'))
+  -- v17 (D9): no created_commit/deleted_commit — a property row is live exactly while its
+  -- document's rows are (the commit deletes and rewrites them per document).
 );
-CREATE INDEX idx_props_doc      ON properties(doc_id)                 WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text) WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num)  WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
+CREATE INDEX idx_props_doc      ON properties(doc_id);
+CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text);
+CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num);
+CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key);
 
 -- Sync adapters/sources/attachments (sync-plugins §2). Workspace-level registry:
 -- adapters map a name → external command; sources name an adapter + config; attachments
@@ -399,17 +414,8 @@ CREATE TABLE block_changes (
   PRIMARY KEY (block_id, commit_id, kind)
 );
 
--- Inferred edges: physically separate from authored edges. Never mixed by default.
-CREATE TABLE inferred_edges (
-  src_node   TEXT NOT NULL,
-  dst_node   TEXT NOT NULL,
-  predicate  TEXT NOT NULL,                -- 'similar_to' | 'co_occurs_with' | …
-  method     TEXT NOT NULL,
-  score      REAL NOT NULL,
-  model_v    TEXT NOT NULL,
-  computed_at TEXT NOT NULL,
-  PRIMARY KEY (src_node, dst_node, predicate, method)
-);
+-- (`inferred_edges` — a stub no writer or reader ever reached — was dropped in v17, D9.
+-- Inferred relations, when they come, get their own table in a later schema.)
 
 -- Block-embedding cache, keyed by content so identity errors cannot poison it.
 CREATE TABLE embeddings (
@@ -523,6 +529,7 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 - **Delta nodes and retention (schema v16, `spec/store` §4.4 "Base liveness", §7, §7.1).** The GC mark is *explicit*: a node marks the objects its own text names (every entry of a full node, the `+`/`~` entries of a delta) and never resolves a delta; what a delta keeps "as the base" is the previous revision's to mark, and the previous revision of a live delta revision is always live — the squash maintains that by re-writing a kept revision in checkpoint form (every list full, the frontmatter raw; `squashed.checkpointed` counts them) before archiving its predecessor. Archive segments hold checkpoint forms only (computed from the resolved trees at export), so a segment never walks back into the store; `archive.sql` is unchanged.
 - `omg gc` (flag-gated, off by default) is the same mark-and-sweep from the live revision roots; after a squash it finds nothing, since the squash swept inside its own transaction. `omg doctor --size` reports `archived { revisions, segments, bytes }` and advises `omg history export --prune` when the policy would archive more than a tenth of the history pages.
 - `resurrection_pool` rows expire by `expires_ts` (= `deleted_at` + 30 days — v17 anchors the expiry on the row's own timestamp, not on a commit's) via lazy sweep at checkpoint time; a row carries the deleted block's `created_at` (v17) so a resurrected block keeps its birth; a pooled or swept id keeps its `id_claims` row.
+- **Schema v17, slice 3e-i (`spec/store` 17.0 — M6, D9; `spec/graph` 3.0).** The DDL is three files — `spec/store/schema.sql` (the core bundle), `schema-history.sql` (the recorder's), `schema-semantic.sql` — all three executed on every fresh database through Phase 3 (`DDL`, `HISTORY_DDL`, `SEMANTIC_DDL` in `schema.ts`). `edges` holds the open relations alone: closing an edge deletes its row, and the recorder keeps the interval record in `edge_transitions` (written from the transition's edge list the core hands it inside the commit; `dst_node` follows adoption); no edges reader filters an interval any more. Dropped: `properties.created_commit`/`deleted_commit` and the partial predicates, `collections` (and `edges.dst_kind`'s `'collection'`), `inferred_edges`, `idx_edges_temporal`. `doctor --size` has six categories — `content`, `identity` (`id_claims`, `resurrection_pool`), `recovery` (`pending_materializations`), `history`, `search`, `sync` — and a `feed { epoch, oldest, head, entries, retain_days, retain_entries, max_entries }` member. The epoch re-mint of a restore / rebuild-from-files is `spec/store` §7.5 (`Store.remintEpoch`: a new `ep`, the feed emptied, the next commit `seq = 1`; no production path takes it yet). Migration 17 extended in place (edges copied into `edge_transitions`, rebuilt open-only; properties rebuilt; the two tables dropped).
 - **Schema v17, slice 3b (`spec/store` 17.0 — M3/D5).** `id_claims` as above; the claims prune: `omg gc` under a repository's (or the workspace's) `identity.claims_retain_days` clears the core's bit on every claim older than the window that names no core row (`docs`/`docs.head`, `blocks`, `resurrection_pool`, `pending_materializations.head`, `external_nodes`, `edges`, `repos`, `sources`) and deletes the rows left with no holder — so with history on nothing is ever re-mintable, and with history off (or after `history purge`) an old deleted block's id may come back, which only an unguarded read by name can notice (every guarded write fails `stale_expectation`/`target_missing`). `GcResult.claimsReleased`; `doctor --size` reports `id_claims` (the identity's growth — one row per id ever minted, filed under `history` until Phase 3e's six categories). Migration 17 backfills the table from every id the current rows and the history still name, with bit 1 where a history row names it.
 - **Schema v17 (`spec/store` 17.0, modular-core Phase 3a).** The current state is self-contained: `docs.head` (the head token the core mints on every change — content, structure, path or liveness; a `docs_move` mints one and is captured as a revision of the unchanged tree at the new path, a delete mints none), `docs.frontmatter_raw`, `blocks.raw`/`trivia` inline, `created_at`/`updated_at`/`deleted_at` on docs and blocks. No current read touches `blobs`, `revisions`, `tree_nodes`, `commits`, `block_changes` or the delta resolver; those tables are the recorder's capture, written on every commit while legacy capture is on and checked to AGREE with the head (`spec/store` §8 H1/H3). The core owns no byte GC: the mark-and-sweep above is the recorder's over its own revisions, and nothing a `blocks` row holds can be swept. Migration 17 rebuilds `docs`/`blocks`/`resurrection_pool` from the v16 history tables (`spec/store` §3.4).
 - `pending_materializations` rows live only between an api commit and its file write; the materializer (phase B' of the write, the freshness sweep's step 0, `recoverRepo`) or the next observation of the path deletes them. A long-lived row means a crashed write nobody has swept yet; it is never garbage, and there is no cap: unresolved recovery work is never discarded for a storage limit (v17, spec/store §5.7). **Schema v17, slice 3c (M4).** The row is self-contained: `head` (the token whose bytes it renders; replaces `rev_id`, no FK), `prior_hash` (the bytes the engine last wrote at the path, captured at commit from the `file_hash` the transaction validated against), `created_at`; `commit_id` without its FK. The materializer renders from the current rows (`reconstruct`), `recoverRepo` compares the disk to `docs.file_hash`, retention pins nothing for a pending row, and a later request to the same path supersedes the row — a write replaces the target and keeps the earliest `prior_hash`, a rename carries the obligation of a write at `from_path`, a remove drops the write.

@@ -76,7 +76,7 @@ export interface AdapterEdge {
   srcBlock: string | null;
   srcField: string | null;
   predicate: string;
-  dstKind: "document" | "block" | "external" | "collection";
+  dstKind: "document" | "block" | "external";
   target: string;
   anchor: string | null;
   provenance: string;

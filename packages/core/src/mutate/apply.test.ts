@@ -233,7 +233,7 @@ describe("apply — changesets", () => {
     });
     expect(res.committed).toBe(true);
     const edge = store.db
-      .prepare("SELECT src_block, predicate FROM edges WHERE src_doc = ? AND provenance = 'link' AND to_commit IS NULL")
+      .prepare("SELECT src_block, predicate FROM edges WHERE src_doc = ? AND provenance = 'link'")
       .get(docId) as { src_block: string | null; predicate: string } | undefined;
     expect(edge?.predicate).toBe("references");
     // The fix: src_block is the edited block's real id, not "" — so block.out_links resolves.

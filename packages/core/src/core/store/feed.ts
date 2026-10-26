@@ -39,6 +39,23 @@ export function mintEpoch(db: Database, repoId: string, mintedAt: string): strin
   return epoch;
 }
 
+/**
+ * spec/store §7.5 (17.0): the epoch re-mint of a restore or a rebuild-from-
+ * files. Mint and claim a new `ep` at `ts`, write it on the `repos` row, and
+ * delete the repository's `feed`/`feed_entries` rows of EVERY epoch — the old
+ * epoch is unreachable by any cursor (an `expired_cursor` by construction) and
+ * the feed starts over at `seq = 1` with the next commit. The recorder's
+ * `commits` keep their old `epoch`. Runs in the caller's transaction.
+ */
+export function remintEpoch(db: Database, repoId: string, ts: string): string {
+  repoEpoch(db, repoId); // throws for an unknown repository
+  const epoch = mintEpoch(db, repoId, ts);
+  db.prepare("DELETE FROM feed_entries WHERE repo_id = ?").run(repoId);
+  db.prepare("DELETE FROM feed WHERE repo_id = ?").run(repoId);
+  db.prepare("UPDATE repos SET epoch = ? WHERE repo_id = ?").run(epoch, repoId);
+  return epoch;
+}
+
 export interface NewFeedRowInput {
   repoId: string;
   ts: string;

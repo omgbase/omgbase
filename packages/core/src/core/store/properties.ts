@@ -168,7 +168,7 @@ function shapeValues(rows: StoredRow[]): unknown {
  */
 export function docPropertiesMerged(db: Database, docId: string): Record<string, unknown> {
   const rows = db.prepare(
-    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ? AND deleted_commit IS NULL",
+    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ?",
   ).all(docId) as StoredRow[];
   const byKey = new Map<string, StoredRow[]>();
   for (const r of rows) {
@@ -184,7 +184,7 @@ export function docPropertiesMerged(db: Database, docId: string): Record<string,
 /** Properties grouped by source (docs_read shape): {frontmatter, inline, computed}. */
 export function docPropertiesGrouped(db: Database, docId: string): Record<PropertySource, Record<string, unknown>> {
   const rows = db.prepare(
-    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ? AND deleted_commit IS NULL",
+    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ?",
   ).all(docId) as StoredRow[];
   const grouped: Record<PropertySource, Map<string, StoredRow[]>> = {
     frontmatter: new Map(), inline: new Map(), computed: new Map(),
@@ -204,25 +204,26 @@ export function docPropertiesGrouped(db: Database, docId: string): Record<Proper
 
 // Replace a document's property rows. Deterministic prop_id per (source,key,ord)
 // gives dedup/stable identity; a genuine duplicate (same source+key+ord) is
-// collapsed by the primary key (INSERT OR REPLACE).
+// collapsed by the primary key (INSERT OR REPLACE). The rows carry no commit
+// column (store 17.0, D9): a property is live exactly while its document's
+// rows are — this delete-and-rewrite per commit is what keeps that true.
 export function writeDocProperties(
   db: Database,
   repoId: string,
   docId: string,
-  createdCommit: string,
   rows: PropertyRow[],
 ): number {
   deleteDocProperties(db, docId);
   const insert = db.prepare(
     `INSERT OR REPLACE INTO properties
        (prop_id, repo_id, doc_id, block_id, source, key, card, ord,
-        val_text, val_num, val_bool, val_json, type, created_commit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        val_text, val_num, val_bool, val_json, type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const r of rows) {
     insert.run(
       propId(docId, r.source, r.key, r.ord), repoId, docId, r.blockId, r.source, r.key, r.card, r.ord,
-      r.valText, r.valNum, r.valBool, r.valJson, r.type, createdCommit,
+      r.valText, r.valNum, r.valBool, r.valJson, r.type,
     );
   }
   return rows.length;

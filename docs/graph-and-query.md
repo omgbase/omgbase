@@ -8,14 +8,14 @@
 
 ## 1. Edge principles
 
-1. **Derived from content, never inherited through identity.** Extraction is a pure function of `(revision content, extraction_version)`. Block identity threads only the validity intervals (edge history).
+1. **Derived from content, never inherited through identity.** Extraction is a pure function of `(revision content, extraction_version)`. Block identity threads only the edge keys (and, in the recorder's `edge_transitions`, the edge history).
 2. **Block-grain truth, doc-grain speed.** `edges` rows originate from blocks (or frontmatter); `doc_edges` is a materialized rollup.
-3. **Inferred is quarantined.** `inferred_edges` is a separate table (each row carries `method`/`score`/`model_v`/`computed_at`), excluded from every query and traversal by construction. As-built it is a schema stub — no writer or reader is wired to it yet.
+3. **Inferred is quarantined.** Inferred relations (similarity, co-occurrence) never share the authored `edges` table. As-built nothing infers yet; the `inferred_edges` stub a v1 schema carried (no writer, no reader) was dropped in store 17.0 (D9) — a later schema adds the table with its first writer.
 4. **Structural relations are not edges.** parent/child/sibling order live in Placement, not the edge tables; OQX navigates them through relations (a block's `_children` and `_section`, a section node's `_children`/`_subsections`/`_blocks`) and the `follow` operator (§3), not through edge rows.
 
 ## 2. Extraction rules (extraction_version: x2)
 
-> **The language-neutral contract is `spec/graph/README.md`** (node projection and `node_id`, the edge descriptor and every scanner as an exact rule, resolution, interval maintenance, the `doc_edges` rollup, phantom adoption, URI normalization, the reference oddities) with executable fixtures under `spec/graph/cases` that both the reference (`packages/core/corpus/graph/spec.test.ts`, `GRAPH_SPEC_UPDATE=1` regenerates) and the Rust `omgbase-graph` crate run. This section is the design rationale; when the two disagree, the spec's fixtures win. `x2` is folded into `spec/graph/VERSION` and is not persisted.
+> **The language-neutral contract is `spec/graph/README.md`** (node projection and `node_id`, the edge descriptor and every scanner as an exact rule, resolution, the open-edge maintenance (3.0: `edges` holds the open relations, the recorder's `edge_transitions` the intervals), the `doc_edges` rollup, phantom adoption, URI normalization, the reference oddities) with executable fixtures under `spec/graph/cases` that both the reference (`packages/core/corpus/graph/spec.test.ts`, `GRAPH_SPEC_UPDATE=1` regenerates) and the Rust `omgbase-graph` crate run. This section is the design rationale; when the two disagree, the spec's fixtures win. `x2` is folded into `spec/graph/VERSION` and is not persisted.
 
 **Node spans are bytes.** `nodes.span_start` / `span_end` are `[start, end)` offsets into the UTF-8 bytes of the block's `raw` (spec/graph §2.3, like every offset in spec/format), not JavaScript string indices. The markdown adapter's `projectNodes` still records UTF-16 code-unit indices; ingest converts them at the store boundary (`core/store/nodes.ts` `toByteSpans`, via `core/utf8.ts`) before the rows are written, and `nodes_set` (`mutate/macros.ts`) converts a stored span back to code units before an editor slices the raw. A database written by the reference and read by a byte-native engine therefore agrees on any block with non-ASCII text before the feature (spec/graph §8 "Fixed").
 
@@ -33,7 +33,7 @@ Run per touched document inside the commit transaction. **Code is not prose**: a
 - Unresolvable internal targets mint a **phantom document node** (`dst_kind:"document"`, `dst_node` = path-keyed placeholder) so backlinks appear the moment the target is created. Phantoms are flagged in results.
 - Internal targets resolve **by path**: `./`/`../` destinations against the source doc's directory, anything else root-relative, one leading `/` stripped (`graph/extract.ts` `resolveRelativePath`). Consequently `docs_move` re-points the moved doc's open inbound edges at `phantom:<old path>` (a self-doc pure-fragment link `#H` excepted) and adopts phantoms at the new path — the edge index after a move equals what re-extraction would produce — and then, by default, rewrites those inbound links to the new path so they resolve again — the move and the rewrites are one transaction and one commit (reason `move <old> -> <new>`, `spec/mutate` 2.1; through 2.0 the rewrite was a separate follow-up changeset), `retarget_inbound: false` opts out (`mutate/docs.ts`, `graph/inbound-links.ts`).
 - Predicates are freeform lowercase snake_case from field/key names; `references` and `embeds` are reserved.
-- Interval maintenance at commit: diff extracted set vs currently-open rows for the doc → close missing (`to_commit = this`), open new (`from_commit = this`). Unchanged rows untouched. `doc_edges` rollup recomputed for the touched doc in the same transaction.
+- Open-edge maintenance at commit (store 17.0, `spec/graph` 3.0 §3.3): diff the extracted set against the doc's `edges` rows → delete the rows no longer wanted, insert the new ones (a fresh `e_`), leave unchanged rows untouched; the transition's edge list goes to the history recorder, which writes `edge_transitions` (`from_commit`/`to_commit` — through 16.x those two columns lived on `edges` and a closed edge stayed as a row). `doc_edges` rollup recomputed for the touched doc in the same transaction.
 
 ## 3. Traversal API
 
@@ -51,7 +51,7 @@ Knobs are clauses of the destination's block (oqx 0.20: a brace after any destin
 
 - A `graph` **convenience tool** now exists (`mcp/server.ts`): a neighborhood macro that takes `roots` + `degrees`/`direction`/`predicate`/`select` and compiles to an OQX `follow distinct _out_links { from _dst }` / `follow distinct _in_links { from _doc }` query run through the same `query` path, returning `{ documents, links, frontier }` (row keys `_`-prefixed — `documents[] { _id, _path, degree, … }`, `links[] { _id, _doc_id, _dst_path, _predicate, … }`; the generated follow query is echoed in a `queries` field; the key was `edges` before 3.0). It is a wrapper, not a new engine — reach for `query` directly for successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, correlation, or the `links { … }` scan.
 - The induced-subgraph analytics export (`graph_subgraph`) has no OQX equivalent and was dropped.
-- Extraction, the edge tables, and interval validity (§1–§2) are unchanged — only the query-time traversal surface moved.
+- Extraction and the edge tables (§1–§2) are unchanged — only the query-time traversal surface moved.
 
 ## 4. Query
 
@@ -81,4 +81,4 @@ Specified in `spec/search/README.md` §2 (which blocks embed, context/input, cac
 
 ## 7. Collections
 
-As-built, collections are only a schema stub: a `collections` table (`node_id`, `repo_id`, `name`, `spec`) in `packages/core/src/core/store/schema.ts`, with no writer or reader wired up. The aspirational `member_of` pseudo-edges, read-time membership materialization, and `within()`/traversal-seed addressing are **not** implemented — `within()` resolves only a doc id, exact path, or glob (the `within` domain function in `packages/core/src/oqx-js/context.ts`).
+As-built, collections do not exist in the schema: the `collections` stub (`node_id`, `repo_id`, `name`, `spec`) that v1 created with no writer or reader was dropped in store 17.0 (D9); `col_` stays a reserved id prefix. The aspirational `member_of` pseudo-edges, read-time membership materialization, and `within()`/traversal-seed addressing are **not** implemented — `within()` resolves only a doc id, exact path, or glob (the `within` domain function in `packages/core/src/oqx-js/context.ts`).

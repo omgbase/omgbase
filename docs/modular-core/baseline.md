@@ -9,6 +9,17 @@ was changed to take it. "Measured" is a `doctor --size --json` report
 (spec/store §7.2: bytes per table from `dbstat`, the file, the WAL) or a wall
 clock; "derived" is arithmetic on those.
 
+**Column legend.** The per-stage tables name the size report's categories
+by name. Runs through 17.0 (3d) have the four categories of store 14.1–16.x
+(`content`, `history`, `search`, `sync`), with `id_claims`, `resurrection_pool`
+and `pending_materializations` filed under `history`; runs from 17.0 (3e-i)
+have the six of `spec/store` §7.2 — `content`, `identity` (`id_claims`,
+`resurrection_pool`), `recovery` (`pending_materializations`), `history`,
+`search`, `sync` — so a `history` figure before 3e-i includes the identity
+and recovery bytes a later run reports separately. The harness
+(`scripts/baseline/modular-core-baseline.mjs`) prints every category it is
+given; an older report leaves the `identity`/`recovery` columns empty.
+
 ## 1. Three real workspaces (size reports only)
 
 Taken with the Rust CLI 0.27.3 against databases at `user_version` 16. No
@@ -466,6 +477,70 @@ pass and a release build on the same machine, and the spread is the same
 size as the 3b → 3c one; the commit path gained one `INSERT` into `feed`,
 one into `feed_entries`, the `c` claim and the cap's `SELECT` over the feed,
 and lost the `checkpoints` insert.
+
+### 17.0 (3e-i), TS — open-only edges, the D9 drops, the six categories (`ts-2026-10-26T03-14-33`)
+
+The same harness over the Phase 3e-i reference (store 17.0 with `edges` as the
+open set — a closed edge deletes its row and the recorder keeps the interval
+in the history bundle's `edge_transitions` — `properties` without its two
+commit columns, `collections` and `inferred_edges` dropped, the three DDL
+files, the six size categories), TS CLI, node 24; the 17.0 (3d) TS row above
+is the comparison. The report now has six categories, so the table below
+carries `identity` and `recovery` beside the four; against the 3d rows,
+`identity + recovery + history` here is what `history` was there.
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | sync KB | 3d TS (db MB / KB / op) | `edges` rows / KB | `edge_transitions` rows / KB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.43 | 6,435 | 32.0 / doc | 3.10 | 0.63 | 0.01 | 2.25 | 212 | 6.34 / 31.6 | 800 / 164 | 800 / 132 |
+| frontmatter hot update | 50 | 6.55 | 119 | 2.4 | 3.11 | 0.64 | 0.01 | 2.31 | 240 | 6.46 / 2.4 | 800 / 164 | 800 / 132 |
+| block edit | 50 | 6.68 | 127 | 2.5 | 3.11 | 0.66 | 0.01 | 2.38 | 268 | 6.59 / 2.5 | 800 / 164 | 800 / 132 |
+| rolling journal | 50 | 6.87 | 188 | 3.8 | 3.14 | 0.67 | 0.01 | 2.51 | 284 | 6.75 / 3.3 | 800 / 164 | 800 / 132 |
+| task churn | 50 | 6.94 | 74 | 1.5 | 3.14 | 0.68 | 0.01 | 2.56 | 308 | 6.85 / 2.0 | 800 / 164 | 800 / 132 |
+| link churn | 50 | 7.06 | 115 | 2.3 | 3.15 | 0.72 | 0.01 | 2.61 | 324 | 6.96 / 2.2 | 800 / 168 | 950 / 156 |
+| delete / recreate | 20 | 7.18 | 123 | 6.1 | 3.15 | 0.74 | 0.01 | 2.70 | 336 | 7.10 / 6.8 | 803 / 168 | 955 / 156 |
+| gc (default sweep) | | 7.18 | 0 | | 3.15 | 0.74 | 0.01 | 2.70 | 336 | 7.10 / 8 KB | 803 / 168 | 955 / 156 |
+
+**The current state got smaller; the history bundle took the intervals.**
+`content` is **3.10 → 3.15 MB (3d: 3.17 → 3.24)** — 70–90 KB less at every
+stage: `edges` 196,608 → 167,936 B at import (two columns and
+`idx_edges_temporal` gone, 800 rows both) and 221,184 → 172,032 B at the end
+(**955 → 803 rows**: the 152 rows link churn and the recreate closed are
+deleted now, not kept), `properties` 442,368 → 421,888 B (the two commit
+columns and the four partial predicates), `collections` and `inferred_edges`
+(8,192 B each, 0 rows) gone. The `history` category is **2.25 → 2.70 MB**
+where 3d's was 2.73 → 3.28 — the 0.63–0.74 MB of `id_claims` and the one
+page of `resurrection_pool`/`pending_materializations` now file under
+`identity`/`recovery`, and `edge_transitions` adds 135,168 B (800 rows) at
+import and 159,744 B (955 rows) at the end — the interval record that used
+to sit inside `edges`. Summed, `identity + recovery + history` is 2.89 →
+3.45 MB against 3d's `history` 2.73 → 3.28: **+160 KB**, which is
+`edge_transitions` itself (the rows exist twice while an edge is open — the
+open row in the core table and its transition in the recorder's — the same
+"stored twice under legacy capture" shape as the block bytes since 3a) minus
+the 30 KB the closed rows no longer occupy in `edges`. The whole database
+is 6.43 vs 6.34 MB at import (29.4× vs 29.0×) and 7.18 vs 7.10 MB at the end
+(32.8× vs 32.5×): +90 / +80 KB, all `edge_transitions`. Per operation
+nothing moved beyond the seed's noise (frontmatter 2.4 = 2.4, block edit
+2.5 = 2.5, link churn 2.3 vs 2.2, task churn 1.5 vs 2.0, journal 3.8 vs 3.3,
+recreate 6.1 vs 6.8): a link edit that used to UPDATE a `to_commit` and
+INSERT a row now DELETEs a row and INSERTs one in `edges` plus one INSERT
+and one UPDATE in `edge_transitions`. `identity` grows 0.63 → 0.74 MB
+exactly as `id_claims` did in 3d (4,810 → 5,715 rows); `sync` is identical
+(212 → 336 KB); `search` identical. What the slice removes is again a
+*dependency*: no reader of `edges` filters an interval, `has_anchor()`
+included, and when Phase 4 stops writing the recorder's rows for a
+repository without history, `edge_transitions` is 156 KB this database
+will not carry.
+
+Latency (p50 / p95 ms, process start 262 / 320 included): import 1,365; one
+write 209–247 / 228–259; `query` docs 205 / 275, blocks filter 202 / 367,
+`text("furnace")` 282 / 350, links 202 / 267; `outline` 183 / 213; `gc` 210.
+Every write is 25–60 ms *faster* than the 3d run at p50 (the spawn was 49 ms
+slower, so the engine's share dropped more) — the edge indexes lost their
+partial predicates and the readers their `to_commit IS NULL` clause, and the
+links query (`_dst_path == …`) no longer carries the interval filter; the
+difference is within what two runs on one laptop show, and nothing got
+slower.
 
 ### Latency (CLI round trips, p50 / p95 ms)
 

@@ -143,7 +143,7 @@ interface StoredRow {
 }
 
 const ROW_SQL = `SELECT prop_id, block_id, source, key, card, ord, type, val_text, val_num, val_bool, val_json
-                 FROM properties WHERE doc_id = ? AND deleted_commit IS NULL`;
+                 FROM properties WHERE doc_id = ?`;
 
 function projectRow(r: StoredRow): FixtureRow {
   let valNum: FixtureNum | null;

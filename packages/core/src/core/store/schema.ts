@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS file_stats (
 // match only scalar-authored rows while list() sees all — reproducing the
 // json_extract scalar-vs-array distinction. Current-state, maintained
 // transactionally at ingest alongside blocks (repopulated by re-ingest, not by
-// rebuild-index — see docs/properties-table.md §6).
+// rebuild-index — see docs/properties-table.md §6). Since 17.0 (D9) the rows
+// carry no commit column: a property is live exactly while its document's
+// rows are — the commit deletes and rewrites them per document — so the
+// `created_commit` stamp (never read) and `deleted_commit` (never written
+// non-NULL; four partial indexes and every read filtered on it) are gone.
 export const PROPERTIES_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS properties (
   prop_id        TEXT PRIMARY KEY,
@@ -40,14 +44,12 @@ CREATE TABLE IF NOT EXISTS properties (
   val_num        REAL,
   val_bool       INTEGER,
   val_json       TEXT,
-  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')),
-  created_commit TEXT NOT NULL,
-  deleted_commit TEXT
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json'))
 );
-CREATE INDEX IF NOT EXISTS idx_props_doc      ON properties(doc_id)                 WHERE deleted_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_props_key_text ON properties(repo_id, key, val_text) WHERE deleted_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_num)  WHERE deleted_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_props_doc      ON properties(doc_id);
+CREATE INDEX IF NOT EXISTS idx_props_key_text ON properties(repo_id, key, val_text);
+CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_num);
+CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key);
 `;
 
 // Sync adapters/sources/attachments (sync-plugins §2). A workspace-level
@@ -247,6 +249,31 @@ CREATE TABLE IF NOT EXISTS feed_entries (
 );
 `;
 
+// edge_transitions (spec/graph §3.3, 17.0 — M6; the history bundle's): 16.x's
+// `edges` row verbatim — the interval record — written when the core opens an
+// edge (`to_commit` NULL) and closed (`to_commit` = the commit) when it deletes
+// one; `dst_node` follows the open edge's in-place rewrites (phantom adoption,
+// a move's re-phantoming) so the row reads as 16.x's did. Migration 17
+// executes this text on a 16.x database and backfills it from the old columns.
+export const EDGE_TRANSITIONS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS edge_transitions (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL,
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL,
+  via_node    TEXT,
+  from_commit TEXT NOT NULL,
+  to_commit   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edge_transitions_temporal ON edge_transitions(from_commit, to_commit);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
@@ -267,16 +294,22 @@ export const MIGRATIONS: Record<number, string> = {
   14: PENDING_MATERIALIZATIONS_DDL,  // the api path's recorded file intent (spec/store §5.7)
   15: "",  // revisions.root_tree/frontmatter_blob nullable + `archive`, create `archives` (spec/store §7 "Retention"), handled programmatically in store.ts
   16: "",  // no DDL: delta tree nodes (spec/store §4.1 "Delta nodes", §3.4 step 16) — every 15.x node is already a valid checkpoint, so the step only moves user_version; handled in store.ts
-  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), and (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
+  17: "",  // the head (`docs.head`, `frontmatter_raw`), the inline block bytes (`blocks.raw`/`trivia`), the time columns (`created_at`/`updated_at`/`deleted_at`; `created_commit`/`deleted_commit` gone), `resurrection_pool.created_at`/`deleted_at`, the `id_claims` table backfilled from every id the current rows and the history still name, the self-contained `pending_materializations` row (`head`, `prior_hash`, `created_at`; the two foreign keys gone), (3d) the repository epoch, the `feed`/`feed_entries` tables backfilled from the 16.x `commits`/`revisions`, the recorder's `commits` row (`epoch`, `batch_id`; `checkpoint_id` gone), the `sync_state` status row and the dropped `checkpoints`, and (3e-i) the open-only `edges` (the closed rows and the interval columns moved to the history bundle's `edge_transitions`, `idx_edges_temporal` gone), `properties` without `created_commit`/`deleted_commit`, the dropped `collections`/`inferred_edges` — table rebuilds backfilled from the 16.x history tables (spec/store §3.4 step 17), handled programmatically in store.ts
 };
 
+// The CORE bundle (spec/store §3.1, 17.0 — `schema.sql`): the current state
+// and the identity of a repository, the change feed, the derived indexes the
+// query surfaces read, and the sync registry. Every table here is read and
+// written by the core and depends on no history or semantic table. Executed on
+// every fresh database; the two capability bundles below follow (through Phase
+// 3 unconditionally — Phase 4 makes them conditional on the manifest).
 export const DDL = /* sql */ `
--- ---- durable tables (spec/store §3.1; the history tables are the recorder's — spec/store §3.1 "capture") ----
+-- ---- core bundle: durable tables (spec/store 17.0 §3.1) ---------------------
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
   settings  TEXT NOT NULL DEFAULT '{}',
-  epoch     TEXT NOT NULL                     -- the feed's epoch: a minted ep_ id (17.0, D7); re-minted by a restore / rebuild-from-files (§7.4)
+  epoch     TEXT NOT NULL                     -- the feed's epoch: a minted ep_ id (17.0, D7); re-minted by a restore / rebuild-from-files (§7.5)
 );
 -- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
 -- come from is a sources row (adapter=fs, config.root) joined via attachments;
@@ -325,93 +358,6 @@ CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)         
 CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
 
-CREATE TABLE IF NOT EXISTS blobs (
-  hash  BLOB PRIMARY KEY,
-  bytes BLOB NOT NULL,
-  size  INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tree_nodes (
-  hash    BLOB PRIMARY KEY,
-  entries TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS revisions (
-  rev_id           TEXT PRIMARY KEY,
-  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
-  seq              INTEGER NOT NULL,
-  root_tree        BLOB,                   -- a tree_nodes.hash; NULL once archived (spec/store §7 "Retention", 15.0)
-  frontmatter_blob BLOB,                   -- a blobs.hash, or NULL (no frontmatter, or archived)
-  rendered_hash    BLOB NOT NULL,
-  path             TEXT NOT NULL,
-  commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
-  archive          TEXT,                   -- the archive segment holding the bodies; NULL = live (15.0)
-  UNIQUE (doc_id, seq)
-);
-
-CREATE TABLE IF NOT EXISTS commits (
-  commit_id TEXT PRIMARY KEY,
-  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
-  epoch     TEXT NOT NULL,                    -- the feed row's epoch (17.0, D7)
-  seq       INTEGER NOT NULL,                 -- = the feed row's seq
-  ts        TEXT NOT NULL,
-  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
-  actor     TEXT,
-  reason    TEXT,
-  batch_id  TEXT NOT NULL,                    -- the feed row's batch_id (D4)
-  ops       TEXT,                             -- the ADR-003 intent record of an api commit (M5)
-  UNIQUE (repo_id, epoch, seq)
-);
-
-CREATE TABLE IF NOT EXISTS dispositions (
-  commit_id  TEXT NOT NULL REFERENCES commits(commit_id),
-  block_id   TEXT NOT NULL,
-  kind       TEXT NOT NULL CHECK (kind IN
-             ('same','edited','moved','edited_moved','inserted','deleted',
-              'split_from','merged_into','copied_from','resurrected','bulk_rewrite')),
-  confidence REAL,
-  reason     TEXT,
-  matcher_v  TEXT,
-  detail     TEXT NOT NULL DEFAULT '{}',
-  PRIMARY KEY (commit_id, block_id, kind)
-);
-
-CREATE TABLE IF NOT EXISTS edges (
-  edge_id     TEXT PRIMARY KEY,
-  repo_id     TEXT NOT NULL,
-  src_doc     TEXT NOT NULL,
-  src_block   TEXT,
-  src_field   TEXT,
-  predicate   TEXT NOT NULL,
-  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external','collection')),
-  dst_node    TEXT NOT NULL,
-  anchor      TEXT,
-  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
-               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
-  via_node    TEXT,
-  from_commit TEXT NOT NULL,
-  to_commit   TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_edges_src      ON edges(src_doc, predicate) WHERE to_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_edges_dst      ON edges(dst_node, predicate) WHERE to_commit IS NULL;
-CREATE INDEX IF NOT EXISTS idx_edges_temporal ON edges(from_commit, to_commit);
-
-CREATE TABLE IF NOT EXISTS external_nodes (
-  node_id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
-  uri     TEXT NOT NULL,
-  title   TEXT,
-  UNIQUE (repo_id, uri)
-);
-
-CREATE TABLE IF NOT EXISTS collections (
-  node_id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
-  name    TEXT NOT NULL,
-  spec    TEXT NOT NULL DEFAULT '{}'
-);
-
-${FEED_DDL}
 -- Identity claims (spec/store §2.1, 17.0 — M3/D5): one row per id the core
 -- has minted. holders is a bitmask — bit 0 the core (set at mint, released by
 -- the claims prune, §7.3), bit 1 the recorder (set when the capture first
@@ -437,9 +383,37 @@ CREATE TABLE IF NOT EXISTS resurrection_pool (
   deleted_at     TEXT NOT NULL,            -- the deleting commit's ts (17.0; deleted_commit through 16.x)
   expires_ts     TEXT NOT NULL             -- deleted_at + 30 days (I6)
 );
-${PENDING_MATERIALIZATIONS_DDL}
-${ARCHIVES_DDL}
--- ---- derived tables (02 §4; rebuildable) ------------------------------------
+${PENDING_MATERIALIZATIONS_DDL}${FEED_DDL}
+-- Open edges (spec/graph §3.3, 17.0 — M6): one row per link relation the
+-- current heads assert. Closing an edge DELETES its row; the interval record
+-- (from_commit / to_commit, 16.x's columns) is the history bundle's
+-- edge_transitions. dst_kind 'collection' left with the collections table (D9).
+CREATE TABLE IF NOT EXISTS edges (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external')),
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
+               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
+  via_node    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src_doc, predicate);
+CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst_node, predicate);
+
+CREATE TABLE IF NOT EXISTS external_nodes (
+  node_id TEXT PRIMARY KEY,
+  repo_id TEXT NOT NULL,
+  uri     TEXT NOT NULL,
+  title   TEXT,
+  UNIQUE (repo_id, uri)
+);
+
+-- ---- core bundle: derived tables (rebuildable) --------------------------------
 CREATE TABLE IF NOT EXISTS sections (
   heading_block TEXT NOT NULL,
   doc_id        TEXT NOT NULL,
@@ -459,6 +433,72 @@ CREATE TABLE IF NOT EXISTS doc_edges (
   PRIMARY KEY (src_doc, predicate, dst_node)
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
+  text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
+);
+${NODES_DDL}${FILE_STATS_DDL}${PROPERTIES_DDL}
+-- ---- core bundle: the sync registry (spec/sync) --------------------------------
+${SYNC_DDL}${WORKSPACE_SETTINGS_DDL}`;
+
+// The HISTORY bundle (spec/store §3.1, 17.0 — `schema-history.sql`): the
+// recorder's capture. Written only by the recorder inside the commit
+// transaction (spec/store §5.4 step 15), read only by the history reads and
+// the invariants that check the capture agrees with the head; the core reads
+// none of these tables. `edge_transitions` (M6) is 16.x's `edges` row verbatim
+// — the interval record the core table lost when it became open-only.
+export const HISTORY_DDL = /* sql */ `
+-- ---- history bundle (spec/store 17.0 §3.1, the recorder's) -------------------
+CREATE TABLE IF NOT EXISTS commits (
+  commit_id TEXT PRIMARY KEY,
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  epoch     TEXT NOT NULL,                    -- the feed row's epoch (17.0, D7)
+  seq       INTEGER NOT NULL,                 -- = the feed row's seq
+  ts        TEXT NOT NULL,
+  origin    TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor     TEXT,
+  reason    TEXT,
+  batch_id  TEXT NOT NULL,                    -- the feed row's batch_id (D4)
+  ops       TEXT,                             -- the ADR-003 intent record of an api commit (M5)
+  UNIQUE (repo_id, epoch, seq)
+);
+
+CREATE TABLE IF NOT EXISTS revisions (
+  rev_id           TEXT PRIMARY KEY,
+  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
+  seq              INTEGER NOT NULL,
+  root_tree        BLOB,                   -- a tree_nodes.hash; NULL once archived (spec/store §7 "Retention", 15.0)
+  frontmatter_blob BLOB,                   -- a blobs.hash, or NULL (no frontmatter, or archived)
+  rendered_hash    BLOB NOT NULL,
+  path             TEXT NOT NULL,
+  commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  archive          TEXT,                   -- the archive segment holding the bodies; NULL = live (15.0)
+  UNIQUE (doc_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS blobs (
+  hash  BLOB PRIMARY KEY,
+  bytes BLOB NOT NULL,
+  size  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tree_nodes (
+  hash    BLOB PRIMARY KEY,
+  entries TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dispositions (
+  commit_id  TEXT NOT NULL REFERENCES commits(commit_id),
+  block_id   TEXT NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN
+             ('same','edited','moved','edited_moved','inserted','deleted',
+              'split_from','merged_into','copied_from','resurrected','bulk_rewrite')),
+  confidence REAL,
+  reason     TEXT,
+  matcher_v  TEXT,
+  detail     TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY (commit_id, block_id, kind)
+);
+
 CREATE TABLE IF NOT EXISTS block_changes (
   block_id  TEXT NOT NULL,
   commit_id TEXT NOT NULL,
@@ -466,17 +506,12 @@ CREATE TABLE IF NOT EXISTS block_changes (
   PRIMARY KEY (block_id, commit_id, kind)
 );
 
-CREATE TABLE IF NOT EXISTS inferred_edges (
-  src_node    TEXT NOT NULL,
-  dst_node    TEXT NOT NULL,
-  predicate   TEXT NOT NULL,
-  method      TEXT NOT NULL,
-  score       REAL NOT NULL,
-  model_v     TEXT NOT NULL,
-  computed_at TEXT NOT NULL,
-  PRIMARY KEY (src_node, dst_node, predicate, method)
-);
+${EDGE_TRANSITIONS_DDL}${ARCHIVES_DDL}`;
 
+// The SEMANTIC bundle (spec/store §3.1, 17.0 — `schema-semantic.sql`; spec/
+// search): the embedding caches, reached only through `SemanticProvider`.
+export const SEMANTIC_DDL = /* sql */ `
+-- ---- semantic bundle (spec/store 17.0 §3.1; spec/search) -----------------------
 CREATE TABLE IF NOT EXISTS embeddings (
   content_hash BLOB NOT NULL,
   ctx_hash     BLOB NOT NULL,
@@ -485,35 +520,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vec          BLOB NOT NULL,
   PRIMARY KEY (content_hash, ctx_hash, model)
 );
+${DOC_EMBEDDINGS_DDL}`;
 
-${DOC_EMBEDDINGS_DDL}
-
-CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
-  text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
-);
-
-CREATE TABLE IF NOT EXISTS nodes (
-  node_id    TEXT PRIMARY KEY,
-  repo_id    TEXT NOT NULL,
-  doc_id     TEXT NOT NULL,
-  block_id   TEXT,
-  kind       TEXT NOT NULL,
-  name       TEXT,
-  value      TEXT,
-  span_start INTEGER,
-  span_end   INTEGER,
-  attrs      TEXT NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS idx_nodes_doc  ON nodes(doc_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
-CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name) WHERE name IS NOT NULL;
-
-CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
-  name, value, content='nodes', content_rowid='rowid', tokenize='porter unicode61'
-);
-
-${FILE_STATS_DDL}
-${PROPERTIES_DDL}
-${SYNC_DDL}
-${WORKSPACE_SETTINGS_DDL}
-`;
+/** The three bundles as one fresh database executes them (17.0: every bundle, unconditionally — Phase 4 makes the capability bundles conditional). */
+export const ALL_DDL = `${DDL}${HISTORY_DDL}${SEMANTIC_DDL}`;

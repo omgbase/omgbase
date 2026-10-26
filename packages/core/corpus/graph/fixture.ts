@@ -1,10 +1,11 @@
 // Fixture bridge for spec/graph (README §7). Pure pieces, no vitest:
 //
 //   runCase()               §7: run an observation script (the spec/store §9.4 shape) through the
-//                           production observe path, project the graph tables, run the §7 checks
+//                           production observe path, remembering the commit that opened each edge,
+//                           project the graph tables, run the §7 checks
 //   projectGraph()          the §7 projection: `nodes`, `external_nodes`, `edges`, `doc_edges`
-//   checkGraph()            the §7 runner checks: node_id derivation, commit references, open
-//                           dst_node validity, doc_edges = a rollup recomputed from the open edges
+//   checkGraph()            the §7 runner checks: node_id derivation, open dst_node validity,
+//                           doc_edges = a rollup recomputed from the open edges
 //   deriveNodeId()          README §2.3 `n_` + first 12 hex of sha256(doc|block|kind|ordinal)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
@@ -47,7 +48,7 @@ export interface ExternalNodeRow {
   title: string | null;
 }
 
-/** Every `edges` column but `repo_id`. */
+/** Every `edges` column but `repo_id` (3.0: the table holds open rows only — no `from_commit`/`to_commit`). */
 export interface EdgeRow {
   edge_id: string;
   src_doc: string;
@@ -59,8 +60,6 @@ export interface EdgeRow {
   anchor: string | null;
   provenance: string;
   via_node: string | null;
-  from_commit: string;
-  to_commit: string | null;
 }
 
 /** README §3.4 as the fixture carries it: `samples` decoded. */
@@ -86,7 +85,7 @@ export const PROJECTED_TABLES = ["nodes", "external_nodes", "edges", "doc_edges"
 export const NODE_FIELDS = ["node_id", "doc_id", "block_id", "kind", "name", "value", "span_start", "span_end", "attrs"] as const;
 export const EXTERNAL_NODE_FIELDS = ["node_id", "uri", "title"] as const;
 export const EDGE_FIELDS = [
-  "edge_id", "src_doc", "src_block", "src_field", "predicate", "dst_kind", "dst_node", "anchor", "provenance", "via_node", "from_commit", "to_commit",
+  "edge_id", "src_doc", "src_block", "src_field", "predicate", "dst_kind", "dst_node", "anchor", "provenance", "via_node",
 ] as const;
 export const DOC_EDGE_FIELDS = ["src_doc", "predicate", "dst_node", "dst_kind", "count", "samples"] as const;
 
@@ -147,8 +146,36 @@ interface StoredDocEdge {
   samples: string;
 }
 
-/** The §7 projection of one repo's graph tables (`repo_id` omitted). */
-export function projectGraph(db: Db, repoId: string): Projection {
+/**
+ * README §7 (3.0): the runner REMEMBERS the commit that opened each edge, since
+ * the row no longer carries it — after every observe step, each edge of a
+ * committing member's document not seen before was opened by that member's
+ * commit (a document commits once per batch; adoption keeps the id). The
+ * commit's `seq` is read from the core's feed.
+ */
+export class EdgeOpenings {
+  private readonly seqOfEdge = new Map<string, number>();
+
+  /** Record the edges the step's outcomes opened: every edge of each committing member's doc not remembered yet. */
+  remember(db: Db, outcomes: { kind: string; docId: string | null; commitId: string | null }[]): void {
+    const seqOf = db.prepare("SELECT seq FROM feed WHERE commit_id = ?");
+    const edgesOf = db.prepare("SELECT edge_id FROM edges WHERE src_doc = ? ORDER BY rowid");
+    for (const o of outcomes) {
+      if (o.kind === "deleted" || o.commitId === null || o.docId === null) continue;
+      const seq = (seqOf.get(o.commitId) as { seq: number } | undefined)?.seq;
+      if (seq === undefined) continue;
+      for (const e of edgesOf.all(o.docId) as { edge_id: string }[]) if (!this.seqOfEdge.has(e.edge_id)) this.seqOfEdge.set(e.edge_id, seq);
+    }
+  }
+
+  /** The opening commit's `seq`, or the end of the order for an edge never seen opening. */
+  seq(edgeId: string): number {
+    return this.seqOfEdge.get(edgeId) ?? Number.MAX_SAFE_INTEGER;
+  }
+}
+
+/** The §7 projection of one repo's graph tables (`repo_id` omitted); `edges` by (the opening commit's seq as remembered, `edge_id`). */
+export function projectGraph(db: Db, repoId: string, openings: EdgeOpenings = new EdgeOpenings()): Projection {
   // `docs` order = path order, as spec/store §9.4 projects it; nodes follow it.
   const docIds = (db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? ORDER BY path").all(repoId) as { doc_id: string }[]).map((d) => d.doc_id);
   const docRank = new Map(docIds.map((id, i) => [id, i] as const));
@@ -165,14 +192,10 @@ export function projectGraph(db: Db, repoId: string): Projection {
     .all(repoId) as ExternalNodeRow[])
     .sort((a, b) => cmpBytes(a.uri, b.uri));
 
-  const commitSeq = new Map(
-    (db.prepare("SELECT commit_id, seq FROM commits WHERE repo_id = ?").all(repoId) as { commit_id: string; seq: number }[]).map((c) => [c.commit_id, c.seq] as const),
-  );
-  const seqOf = (commitId: string): number => commitSeq.get(commitId) ?? Number.MAX_SAFE_INTEGER;
   const edges = (db
     .prepare(`SELECT ${EDGE_FIELDS.join(", ")} FROM edges WHERE repo_id = ?`)
     .all(repoId) as EdgeRow[])
-    .sort((a, b) => seqOf(a.from_commit) - seqOf(b.from_commit) || cmpBytes(a.edge_id, b.edge_id));
+    .sort((a, b) => openings.seq(a.edge_id) - openings.seq(b.edge_id) || cmpBytes(a.edge_id, b.edge_id));
 
   // doc_edges has no repo_id; join through the source document.
   const doc_edges = (db
@@ -199,8 +222,7 @@ function byDocEdgeKey(a: DocEdgeRow, b: DocEdgeRow): number {
  *  - every `node_id` equals its §2.3 derivation — the projection is sorted by
  *    id, so per document and `(kind, block_id)` group of size n the ids must be
  *    exactly `{ derive(doc, block, kind, i) | 0 ≤ i < n }`;
- *  - every `edges.from_commit` / `to_commit` names an existing commit;
- *  - an open edge's `dst_node` is a live doc id, an `external_nodes` id, or
+ *  - every `edges` row is open (3.0): its `dst_node` is a live doc id, an `external_nodes` id, or
  *    `phantom:<path>` with no live doc at that path (`dst_kind` agrees);
  *  - `doc_edges` equals the §3.4 rollup recomputed here from the open edges
  *    (group by `(src_doc, predicate, dst_node, dst_kind)`, `count` = group size,
@@ -234,17 +256,13 @@ export function checkGraph(db: Db, repoId: string, projected: Projection): strin
     if (n.span_start !== null && n.span_end !== null && n.span_start > n.span_end) problems.push(`node ${n.node_id}: span_start > span_end`);
   }
 
-  // ---- edges -------------------------------------------------------------------
-  const commits = new Set((db.prepare("SELECT commit_id FROM commits WHERE repo_id = ?").all(repoId) as { commit_id: string }[]).map((c) => c.commit_id));
+  // ---- edges (every row is open, 3.0) --------------------------------------------
   const liveDocs = db.prepare("SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_at IS NULL").all(repoId) as { doc_id: string; path: string }[];
   const liveDocIds = new Set(liveDocs.map((d) => d.doc_id));
   const livePaths = new Set(liveDocs.map((d) => d.path));
   const externalIds = new Set(projected.external_nodes.map((x) => x.node_id));
   for (const e of projected.edges) {
     const at = `edge ${e.edge_id}`;
-    if (!commits.has(e.from_commit)) problems.push(`${at}: from_commit ${e.from_commit} is not a commit`);
-    if (e.to_commit !== null && !commits.has(e.to_commit)) problems.push(`${at}: to_commit ${e.to_commit} is not a commit`);
-    if (e.to_commit !== null) continue;
     if (e.dst_kind === "external") {
       if (!externalIds.has(e.dst_node)) problems.push(`${at}: external dst_node ${e.dst_node} is not an external_nodes row`);
     } else if (e.dst_node.startsWith("phantom:")) {
@@ -260,7 +278,7 @@ export function checkGraph(db: Db, repoId: string, projected: Projection): strin
 
   // ---- rollup ---------------------------------------------------------------------
   const openInRowid = db
-    .prepare("SELECT src_doc, src_block, predicate, dst_node, dst_kind FROM edges WHERE repo_id = ? AND to_commit IS NULL ORDER BY rowid")
+    .prepare("SELECT src_doc, src_block, predicate, dst_node, dst_kind FROM edges WHERE repo_id = ? ORDER BY rowid")
     .all(repoId) as { src_doc: string; src_block: string | null; predicate: string; dst_node: string; dst_kind: string }[];
   const rollup = new Map<string, DocEdgeRow>();
   for (const e of openInRowid) {
@@ -300,21 +318,23 @@ export function runCase(c: FixtureCaseInput): Evaluation {
     const store = new Store({ path: ":memory:" });
     try {
       const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+      const openings = new EdgeOpenings();
       for (const step of c.steps) {
         if ("observe" in step) {
           const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
-          observeBatch(store, repoId, items, step.observe.ts, { config });
+          const outcomes = observeBatch(store, repoId, items, step.observe.ts, { config });
+          openings.remember(store.db, outcomes.map((o) => ({ kind: o.kind, docId: o.kind === "deleted" ? null : o.docId, commitId: o.kind === "deleted" ? null : o.commitId })));
         } else if ("sweep" in step) {
           sweepResurrectionPool(store, step.sweep.ts);
         } else if ("gc" in step) {
           runGcStep(store);
-        } else if (isHistoryStep(step)) {
-          throw new Error("retention steps (spec/store §9.4, 15.0) are not run by the graph runner");
+        } else if (isHistoryStep(step) || "remint_epoch" in step) {
+          throw new Error("retention and epoch steps (spec/store §9.4) are not run by the graph runner");
         } else {
           runExecStep(store, step.exec.sql);
         }
       }
-      const projected = projectGraph(store.db, repoId);
+      const projected = projectGraph(store.db, repoId, openings);
       return { expect: projected, problems: checkGraph(store.db, repoId, projected) };
     } finally {
       store.close();
@@ -380,10 +400,10 @@ function validateExpect(at: string, e: unknown, problems: string[]): void {
     e.edges.forEach((r, i) => {
       const here = `${at}.edges[${i}]`;
       if (!checkFields(here, r, EDGE_FIELDS, problems)) return;
-      for (const k of ["edge_id", "src_doc", "predicate", "dst_kind", "dst_node", "provenance", "from_commit"]) {
+      for (const k of ["edge_id", "src_doc", "predicate", "dst_kind", "dst_node", "provenance"]) {
         if (typeof r[k] !== "string") problems.push(`${here}: ${k} must be a string`);
       }
-      for (const k of ["src_block", "src_field", "anchor", "via_node", "to_commit"]) {
+      for (const k of ["src_block", "src_field", "anchor", "via_node"]) {
         if (!optStr(r[k])) problems.push(`${here}: ${k} must be a string or null`);
       }
     });

@@ -26,10 +26,10 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function openEdges(): { predicate: string; dst_node: string }[] {
-  return store.db.prepare("SELECT predicate, dst_node FROM edges WHERE to_commit IS NULL ORDER BY predicate, dst_node").all() as { predicate: string; dst_node: string }[];
+  return store.db.prepare("SELECT predicate, dst_node FROM edges ORDER BY predicate, dst_node").all() as { predicate: string; dst_node: string }[];
 }
 
-describe("edge interval maintenance (05 §2)", () => {
+describe("open-edge maintenance (spec/graph §3.3; store 17.0, M6)", () => {
   it("opens edges on ingest with resolved targets + phantom docs", () => {
     save("a.md", "# A\n\nSee [foo](/foo.md) and [[Bar Note]].\n\nrelated:: [[Baz]]\n");
     const edges = openEdges();
@@ -38,16 +38,27 @@ describe("edge interval maintenance (05 §2)", () => {
     expect(edges.some((e) => e.predicate === "related")).toBe(true);
   });
 
-  it("closes an edge row when its link is removed (interval closed)", () => {
+  it("deletes an edge row when its link is removed; the recorder's edge_transitions row is closed (store 17.0, M6)", () => {
     save("a.md", "# A\n\nlink to [foo](/foo.md) here\n");
     expect(openEdges().some((e) => e.dst_node === "phantom:foo.md")).toBe(true);
+    const open = store.db.prepare("SELECT edge_id, from_commit, to_commit FROM edge_transitions WHERE dst_node='phantom:foo.md'").all() as { edge_id: string; from_commit: string; to_commit: string | null }[];
+    expect(open).toHaveLength(1);
+    expect(open[0]!.to_commit).toBeNull();
+    // spec/store §2.1: the recorder's hold (bit 1) on the opened edge's claim, beside the core's.
+    expect((store.db.prepare("SELECT holders FROM id_claims WHERE id = ?").get(open[0]!.edge_id) as { holders: number }).holders).toBe(3);
 
     save("a.md", "# A\n\nno more links here at all\n");
     expect(openEdges().some((e) => e.dst_node === "phantom:foo.md")).toBe(false);
 
-    // The historical row still exists but is closed (to_commit set).
-    const closed = store.db.prepare("SELECT count(*) c FROM edges WHERE dst_node='phantom:foo.md' AND to_commit IS NOT NULL").get() as { c: number };
-    expect(closed.c).toBe(1);
+    // The core table holds open rows only; the interval record is the history bundle's.
+    const rows = store.db.prepare("SELECT count(*) c FROM edges WHERE dst_node='phantom:foo.md'").get() as { c: number };
+    expect(rows.c).toBe(0);
+    const closed = store.db.prepare("SELECT edge_id, from_commit, to_commit FROM edge_transitions WHERE dst_node='phantom:foo.md'").all() as { edge_id: string; from_commit: string; to_commit: string | null }[];
+    expect(closed).toHaveLength(1);
+    expect(closed[0]!.edge_id).toBe(open[0]!.edge_id);
+    expect(closed[0]!.from_commit).toBe(open[0]!.from_commit);
+    expect(closed[0]!.to_commit).not.toBeNull();
+    expect(closed[0]!.to_commit).not.toBe(closed[0]!.from_commit);
   });
 
   it("phantom resolves to the real doc id once the target is created", () => {
@@ -82,7 +93,7 @@ describe("maintainEdges keeps one open row per key", () => {
     save("old.md", "# Old\n");
     save("sub/d.md", "# D\n\nUp [a](../old.md) and [b](./x/../../old.md).\n");
     const oldId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='old.md'").get() as { doc_id: string }).doc_id;
-    const open = (): number => (store.db.prepare("SELECT count(*) c FROM edges WHERE dst_node = ? AND to_commit IS NULL").get(oldId) as { c: number }).c;
+    const open = (): number => (store.db.prepare("SELECT count(*) c FROM edges WHERE dst_node = ?").get(oldId) as { c: number }).c;
     expect(open()).toBe(1);
 
     // Re-saving unchanged keeps the single row; dropping the links closes it.
@@ -92,15 +103,15 @@ describe("maintainEdges keeps one open row per key", () => {
     expect(open()).toBe(0);
   });
 
-  it("closes pre-existing duplicate open rows on the next ingest", () => {
+  it("deletes pre-existing duplicate open rows on the next ingest", () => {
     save("a.md", "# A\n\nlink [x](/x.md)\n");
-    const row = store.db.prepare("SELECT * FROM edges WHERE to_commit IS NULL").get() as Record<string, unknown>;
+    const row = store.db.prepare("SELECT * FROM edges").get() as Record<string, unknown>;
     // Simulate the duplicate an earlier maintainEdges could leave behind.
     store.write((db) => {
       db.prepare(
-        `INSERT INTO edges (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, from_commit, to_commit)
-         VALUES ('e_dup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      ).run(row.repo_id, row.src_doc, row.src_block, row.src_field, row.predicate, row.dst_kind, row.dst_node, row.anchor, row.provenance, row.from_commit);
+        `INSERT INTO edges (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance)
+         VALUES ('e_dup', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(row.repo_id, row.src_doc, row.src_block, row.src_field, row.predicate, row.dst_kind, row.dst_node, row.anchor, row.provenance);
     });
     expect(openEdges()).toHaveLength(2);
     save("a.md", "# A\n\nlink [x](/x.md) again\n");

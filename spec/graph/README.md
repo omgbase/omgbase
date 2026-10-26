@@ -3,11 +3,14 @@
 The graph layer projects **semantic nodes** out of a document's blocks
 (links, wikilinks, tasks, anchors, inline fields, sections) and extracts the
 **authored edges** between documents (links, frontmatter relations, inline
-relations), resolves their targets to node ids, keeps the edges' validity
-intervals across commits, and rolls them up per document. Everything here is
-**derived from content, never inherited through identity**: extraction is a
-pure function of a revision's blocks and frontmatter, recomputed at every
-commit; block identity only threads the intervals. This directory specifies
+relations), resolves their targets to node ids, keeps the **open** edge set
+current across commits (3.0: `edges` holds the asserted relations only — the
+interval record of when an edge opened and closed is the recorder's
+`edge_transitions`, `spec/store` §3.1), and rolls them up per document.
+Everything here is **derived from content, never inherited through
+identity**: extraction is a pure function of a revision's blocks and
+frontmatter, recomputed at every commit; block identity only threads the
+edge keys. This directory specifies
 that projection so more than one engine writes the same `nodes`,
 `external_nodes`, `edges` and `doc_edges` rows into the shared database
 (`spec/store`). It is owned by neither implementation.
@@ -15,7 +18,7 @@ that projection so more than one engine writes the same `nodes`,
 | Implementation | Where | Role |
 | --- | --- | --- |
 | `@omgbase/core` (TypeScript, npm) | `packages/core/src/graph/extract.ts`, `format/markdown.ts` (`projectNodes`), `core/store/{nodes,edges}.ts`, the resolution in `sync/reconciling-ingest.ts`, `core/ingest.ts` | **Reference.** Graph decisions land here first. |
-| `omgbase-graph` (Rust, crates.io) | `crates/omgbase-graph` | Conformance-first port: the pure extraction and projection; `omgbase-store` resolves and writes. |
+| `omgbase-graph` (Rust, crates.io) | `crates/omgbase-graph` | Conformance-first port: the pure extraction and projection; `omgbase-store` resolves and writes. The 3.0 twin follows the TypeScript reference in its own round. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
 and `cases/*.json`. **When prose and fixtures disagree, the fixtures win**,
@@ -166,18 +169,26 @@ Each descriptor's target becomes a node id, in extraction order:
   forced to **`document`** even for a `^ref` (block-ref resolution is not
   attempted; the anchor is kept on the edge — §8).
 
-### 3.3 Interval maintenance (per commit)
+### 3.3 Open-edge maintenance (per commit; 3.0)
 
 Key = `src_block|src_field|predicate|dst_node|anchor` (nulls as empty).
-Let *open* be the document's `edges` rows with `to_commit IS NULL` and
-*wanted* the resolved descriptors deduplicated on key (first wins). For each
-wanted key not open: **mint `e`**, insert `(edge_id, repo_id, src_doc,
-src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance,
-via_node = null, from_commit = this commit, to_commit = null)`, in wanted
-order. Then for each open row in `rowid` order: keep it if its key is wanted
-and no earlier open row with the same key was kept; otherwise set
-`to_commit = this commit`. Unchanged rows are untouched (their `from_commit`
-stays).
+Let *open* be the document's `edges` rows and *wanted* the resolved
+descriptors deduplicated on key (first wins). For each wanted key not open:
+**mint `e`**, insert `(edge_id, repo_id, src_doc, src_block, src_field,
+predicate, dst_kind, dst_node, anchor, provenance, via_node = null)`, in
+wanted order. Then for each open row in `rowid` order: keep it if its key is
+wanted and no earlier open row with the same key was kept; otherwise
+**delete** it. Unchanged rows are untouched (they keep their `edge_id`).
+**The recorder's half (`spec/store` §5.4 step 15):** when history is enabled
+the transition's edge list — the rows opened, the ids closed — lets the
+recorder write `edge_transitions`: one row per opened edge (16.x's `edges`
+row verbatim, `from_commit` = this commit, `to_commit = NULL`) and
+`to_commit = this commit` on every row it closed; the core writes neither
+column. Through 2.x the core table carried the two columns itself: a closed
+edge stayed as a row with `to_commit` set, and every reader filtered
+`to_commit IS NULL`. The `edges` table has no `collection` destination
+(`dst_kind ∈ document | block | external`; the `collections` table left
+with it — `spec/store` D9).
 
 Mint order within a commit (`spec/store` §5.4): every `x` during resolution
 (descriptor order), then every `e` during insertion.
@@ -185,26 +196,30 @@ Mint order within a commit (`spec/store` §5.4): every `x` during resolution
 ### 3.4 Rollup (`doc_edges`)
 
 After maintenance, delete the document's `doc_edges` and insert one row per
-group of its open edges by `(predicate, dst_node, dst_kind)`: `count` = the
-group size, `samples` = JSON array of up to three non-null `src_block`s in
-edge `rowid` order. Groups are emitted in the order SQLite's `GROUP BY`
+group of its edges (every row is open, 3.0) by `(predicate, dst_node,
+dst_kind)`: `count` = the group size, `samples` = JSON array of up to three
+non-null `src_block`s in edge `rowid` order. Groups are emitted in the order SQLite's `GROUP BY`
 yields them (the table is compared as a set).
 
 ### 3.5 Phantom adoption
 
 When a document row **becomes live** at a path — created new, or a
 tombstoned row revived by re-creation (`spec/store` §5.4 step 2) — every
-open edge in the repo with `dst_node = "phantom:" + path` is rewritten in
-place to `dst_node = doc_id` (the edge keeps its id and `from_commit`), and
-the rollup of each affected source document is recomputed. Backlinks
+edge in the repo with `dst_node = "phantom:" + path` is rewritten in place
+to `dst_node = doc_id` (the edge keeps its id; the recorder's open
+`edge_transitions` row follows the rewrite, so the interval record reads as
+16.x's `edges` did), and the rollup of each affected source document is
+recomputed. An edge deleted before the target appeared has no row to adopt
+(2.x: a closed row was not adopted). Backlinks
 therefore appear the moment the target exists, and reappear when it comes
 back (§8: the reference adopted on creation only). A tombstoned document's
 inbound edges are **not** re-phantomed (§8).
 
 ### 3.6 Deletion
 
-An observed deletion (`spec/store` §5.6) leaves the document's edges open
-and its `nodes`, `external_nodes` and `doc_edges` rows in place (§8).
+An observed deletion (`spec/store` §5.6) leaves the document's edges in
+place — a tombstoned document's edges stay open — and its `nodes`,
+`external_nodes` and `doc_edges` rows too (§8).
 
 ## 4. Normalizing URIs
 
@@ -232,11 +247,16 @@ paths.
 ## 6. Reads this spec pins
 
 - **Document links** (`omg links`; at the query surface `_out_links`/`_in_links`, `spec/surface` 5.0): out = the doc's
-  `doc_edges` (or its open `edges` at block grain), in = open `edges` whose
-  `dst_node` is the doc, grouped by `(predicate, src_doc)`.
-- **Stale links**: an open edge whose `dst_node` starts with `phantom:` is
+  `doc_edges` (or its `edges` rows at block grain), in = the `edges` rows
+  whose `dst_node` is the doc, grouped by `(predicate, src_doc)`. Every row
+  is open (3.0), so no reader filters an interval.
+- **Stale links**: an edge whose `dst_node` starts with `phantom:` is
   `dangling_doc`; external edges are counted, never verified; anchors are
   not verified in this version.
+- **`has_anchor()`** (`spec/surface` §1.3) probes `edges` for a row of the
+  block with a non-null `anchor` — with no interval filter (D8 made the
+  filter explicit in surface 5.1; 3.0 makes it moot: a link edited away has
+  no row). `reads::has-anchor-open-edges` stays as the pin.
 
 Both are projections a runner can recompute from the tables; the fixtures pin
 the tables. The surface renders them (`spec/surface` §4 `links_stale`,
@@ -264,8 +284,13 @@ minter). `expect` is the projection after the last step of:
   `{ node_id, doc_id, block_id, kind, name, value, span_start, span_end,
   attrs }`;
 - `external_nodes`: sorted by `uri` — `{ node_id, uri, title }`;
-- `edges`: sorted by (`from_commit` seq, `edge_id` bytewise) — every column
-  but `repo_id`, `to_commit` as the commit id or null;
+- `edges`: sorted by (the opening commit's `seq` **as the runner remembers
+  it**, then `edge_id` bytewise) — every column but `repo_id`. The row no
+  longer carries the commit that inserted it (3.0), so the runner remembers
+  it: after every observe step, each `edges` row of a committing member's
+  document not seen before was opened by that member's commit (a document
+  commits once per batch; adoption keeps the id), whose `seq` the core's
+  `feed` gives;
 - `doc_edges`: sorted by (`src_doc` bytewise, `predicate`, `dst_node`) —
   `{ src_doc, predicate, dst_node, dst_kind, count, samples }`.
 
@@ -274,33 +299,62 @@ block, containers, masking, section nodes), `links.json` (each scanner,
 classification, anchors, images, dedup, inline-field precedence over plain
 links, frontmatter relations incl. arrays and case), `resolve.json`
 (relative paths, root paths, phantoms, self fragments, external minting and
-reuse, `^ref` forced to document), `intervals.json` (edges opened, kept,
-closed across revisions; adoption on creation; deletion leaves edges;
-rollup counts and samples), `uri.json` (§4 table).
+reuse, `^ref` forced to document), `open-edges.json` (3.0: edges kept,
+deleted and re-opened with a new id across revisions; adoption on creation
+and revival; deletion leaves edges; rollup counts and samples — the 21
+scripts of 2.x's `intervals.json`, projecting `edges` and `doc_edges`; the
+interval record those scripts also pinned is `spec/store`'s
+`history/edge-transitions.json`, the same scripts projecting
+`edge_transitions`), `uri.json` (§4 table).
 
 **Runner checks**: every `node_id` equals its §2.3 derivation; every
-`edges.from_commit`/`to_commit` exists; open edges' `dst_node` is a doc id
-(live or tombstoned — §3.6), an `external_nodes` id, or `phantom:<path>`
-with no live doc at that path (adoption §3.5 guarantees this); `doc_edges` equals the rollup recomputed from the open edges; then
-deep-equal to `expect`.
+`edges` row's `dst_node` is a doc id (live or tombstoned — §3.6), an
+`external_nodes` id, or `phantom:<path>` with no live doc at that path
+(adoption §3.5 guarantees this); `doc_edges` equals the rollup recomputed
+from the `edges` rows; then deep-equal to `expect`. (The check that every
+`from_commit`/`to_commit` names a commit moved with the suite to
+`spec/store` §9.5.)
 
 **Generation.** `packages/core/corpus/graph/spec.test.ts`,
 `GRAPH_SPEC_UPDATE=1`. **Allowlist (Rust).**
 `crates/omgbase-graph/tests/spec-passing.txt`, `GRAPH_SPEC_UPDATE=1`; the
 Rust runner (`crates/omgbase-graph/tests/spec.rs`) drives `omgbase-store`
 through a path-only dev-dependency (dropped at publish) since the tables are
-written in the commit. The store's edge maintenance walks open rows `ORDER
-BY rowid` explicitly; the reference's unordered scan is only observably
-different when duplicate open rows exist, which maintenance prevents.
+written in the commit. The store's edge maintenance walks the open rows
+`ORDER BY rowid` in both engines; a duplicate open row (which maintenance
+prevents) is deleted by the next commit to the document.
 
 ## 8. Reference oddities surfaced while specifying, and decisions
 
+- **Changed (3.0) — `edges` holds open rows only.** Through 2.x an edge was
+  closed by setting `to_commit` and the row stayed; every reader filtered
+  `to_commit IS NULL`, `idx_edges_temporal` indexed the interval and nothing
+  read it, and the one reader without the filter (`has_anchor()`) answered
+  true for a link edited away until surface 5.1 added it. The current state
+  now owns only what is asserted (M6 of `docs/modular-core/`): closing an
+  edge deletes its row, `from_commit`/`to_commit` and `idx_edges_temporal`
+  are gone, `idx_edges_src`/`idx_edges_dst` lose their `WHERE`, and the
+  interval record is the recorder's `edge_transitions` (`spec/store` §3.1,
+  §5.4 step 15), written from the transition's edge list the core hands it
+  and following an open edge's in-place destination rewrite. What moved in
+  the fixtures: every `edges` row lost `from_commit`/`to_commit`; the one
+  closed row a non-interval suite projected (`resolve::deleted-target-re-
+  extraction-phantoms`) is gone; `intervals.json` moved to `spec/store/cases/
+  history/edge-transitions.json` (projecting `edge_transitions`, every row as
+  2.x projected it) and its scripts were re-cut here as `open-edges.json`.
+  Decided in the implementation: **the recorder mirrors adoption and a
+  move's re-phantoming** on the open transition row (`HistoryRecorder.
+  retargetEdges`) so the moved suite's rows are byte for byte 2.x's — the
+  alternative, a transition that keeps the destination as opened, would have
+  made the interval record disagree with the edge it describes; **the
+  recorder holds the opened edge's claim** (bit 1 — `spec/store` §2.1, H6),
+  as it holds every id its rows name.
 - **Fixed — a revived document adopted no phantoms.** The reference ran
   adoption only when a `docs` row was inserted, so a document deleted and
   re-created at the same path kept every inbound link dangling
   (`phantom:<path>` open while the path was live again — the §7 check would
   have failed). §3.5 now adopts whenever the row becomes live
-  (`intervals::recreated-at-tombstoned-path-adopts`).
+  (`open-edges::recreated-at-tombstoned-path-adopts`).
 - **Pinned — an inline relation's URL is also a bare-URL edge.** Step 1's
   remembered values shadow steps 2–3 only, so `source:: https://a.com/x`
   yields the `source` edge and a `references` edge
@@ -357,6 +411,16 @@ different when duplicate open rows exist, which maintenance prevents.
 
 ## Decisions
 
+- 2026-10-25, graph 3.0 (store 17.0 slice 3e-i — `docs/modular-core/` M6,
+  D8, D9; the contracts `phase-1-contracts.md` §5.1, §5.2): **`edges` is the
+  open set; the intervals are the recorder's.** §3.3 is the contracts' text;
+  §3.5 and §3.6 are unchanged in effect (an adopted edge keeps its id, a
+  tombstoned document's edges stay); §6 `has_anchor` needs no filter; §7
+  projects `edges` without the two columns, ordered by the opening commit
+  the runner remembers; `intervals.json` → `spec/store/cases/history/
+  edge-transitions.json`, `open-edges.json` new. A row's meaning changes
+  (two columns the fixtures projected are gone): a major. The Rust
+  `omgbase-graph` follows in its own round with the rest of the 17.0 twin.
 - 2026-10-20, graph 2.0 (`spec/surface` 5.0 "underscore = engine"): the
   reads §6 pins are rendered under the `links` kind's engine names —
   `_doc_id`, `_block_id`, `_field`, `_dst_id`, `_dst_path`, `_predicate`,

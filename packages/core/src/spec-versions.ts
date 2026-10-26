@@ -16,7 +16,7 @@ export const SPEC_VERSIONS = {
   reconcile: "2.3",
   store: "17.0",
   properties: "1.2",
-  graph: "2.0",
+  graph: "3.0",
   search: "3.0",
   mutate: "4.0",
   sync: "4.0",

@@ -24,7 +24,7 @@ describe("ingestDirectory (sync) extracts edges on the initial walk", () => {
     const res = ingestDirectory(store, "t", dir);
     expect(res.fileCount).toBe(2);
     expect(res.allConverged).toBe(true);
-    const edges = store.db.prepare("SELECT count(*) c FROM edges WHERE to_commit IS NULL").get() as { c: number };
+    const edges = store.db.prepare("SELECT count(*) c FROM edges").get() as { c: number };
     expect(edges.c).toBeGreaterThanOrEqual(1);
   });
 });

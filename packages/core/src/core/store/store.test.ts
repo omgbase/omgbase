@@ -35,9 +35,9 @@ describe("Store — schema & config", () => {
     ).map((r) => r.name);
     for (const t of [
       "repos", "docs", "blocks", "blobs", "tree_nodes", "revisions",
-      "commits", "dispositions", "edges", "external_nodes", "collections",
+      "commits", "dispositions", "edges", "external_nodes", "edge_transitions",
       "feed", "feed_entries", "resurrection_pool", "sections", "doc_edges",
-      "block_changes", "inferred_edges", "embeddings", "blocks_fts",
+      "block_changes", "embeddings", "blocks_fts",
       "file_stats",
     ]) {
       expect(names, `missing table ${t}`).toContain(t);

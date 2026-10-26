@@ -75,12 +75,12 @@ Seven concepts. Five durable, two derived. Concepts are not tables — see `data
 | **Revision** | One document's state at a point in history: root of a Merkle tree of `(block_id, blob_hash, …)` entries + frontmatter blob + rendered-file hash. Linear chain per document. | Immutable, append-only |
 | **Commit** | The atomic transaction: ≥1 revisions across documents + origin (`api`, `observed`, `import`, or `projection`) + actor + operations/dispositions. Totally ordered per repo. The commit log **is** the change feed. | Immutable, append-only |
 | **Placement** | Where a block sits: parent block, order key, containing document. Versioned implicitly via revisions; current state materialized. | Mutable via commits |
-| **Edge** | Typed relationship between nodes, originating from a block (or frontmatter field), with provenance and a commit-time validity interval. | Append-only, interval-closed |
+| **Edge** | Typed relationship between nodes, originating from a block (or frontmatter field), with provenance. The `edges` table holds the open relations (store 17.0); the commit-time validity interval is the recorder's `edge_transitions`. | Open set; the interval record is history |
 | **Index** | Derived acceleration: FTS, vectors, section ranges, doc-level edge rollups, block-history projection. | Disposable, rebuildable |
 
 ### 3.1 Identity
 
-- IDs are **minted, opaque, repo-scoped**: `d_` documents, `b_` blocks, `c_` commits, `r_` revisions, `x_` external nodes, `col_` collections; 7 chars of lowercase Crockford base32 from a CSPRNG; collision-checked at mint (retry). Example: `b_k7z2p9q`.
+- IDs are **minted, opaque, repo-scoped**: `d_` documents, `b_` blocks, `c_` commits, `r_` revisions, `x_` external nodes, `e_` edges, `ep_` epochs (`col_` reserved, no table); 7 chars of lowercase Crockford base32 from a CSPRNG; collision-checked at mint (retry). Example: `b_k7z2p9q`.
 - Content hashes (sha256) are **version/CAS keys**, never identity.
 - Human-readable **locators** (`projects/foo.md#Risks/p[2]`) are display duals and accepted as input anywhere an ID is; they are never authoritative.
 - Block identity is scoped to the **repository**, not the document: containment is a versioned property, so cross-document moves preserve identity.
@@ -129,11 +129,11 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 8. Graph (summary; full spec in `graph-and-query.md`)
 
-- Authored edges are **extracted fresh from parsed content at every revision** — a pure function of `(content, extraction_version)`. Identity threads their history (validity intervals), never their existence.
+- Authored edges are **extracted fresh from parsed content at every revision** — a pure function of `(content, extraction_version)`. Identity threads their history (the recorder's validity intervals), never their existence.
 - Edge sources: Markdown links/wikilinks (block-grain `references`), frontmatter relation fields (doc-grain, field recorded), Dataview-style inline fields `key:: [[target]]` (block-grain typed edges), bare URLs (external nodes).
 - Structural relations are NOT edges; they live in Placement and are presented as traversable steps by the API.
 - Inferred edges (`similar_to`, …) live in a **separate table** with mandatory `method`, `score`, `model_version`; excluded from all queries/traversals unless explicitly requested.
-- Edges are interval-valid: `(from_commit, to_commit?)` — temporal graph queries are WHERE clauses.
+- `edges` holds the open relations (store 17.0, M6); the intervals `(from_commit, to_commit?)` live in the history bundle's `edge_transitions`, where temporal graph queries will read them.
 - Doc-level edges are a materialized rollup: `GROUP BY (src_doc, predicate, dst)` with count + sample source blocks.
 - Storage: relational + recursive CTEs. **No graph database. No Cypher/Gremlin.** (ADR-006.)
 

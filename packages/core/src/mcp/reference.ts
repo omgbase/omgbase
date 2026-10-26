@@ -218,7 +218,7 @@ links:  (the authored link graph as rows — one per open link: the relation a l
                        (external URL; NULL otherwise), _predicate
                        ("references"/"embeds"/freeform), _provenance
                        ("link"/"frontmatter"/"inline_field"/…), _dst_kind
-                       ("document"/"external"/"collection"), _anchor, _field (the
+                       ("document"/"external"), _anchor, _field (the
                        frontmatter key / inline field it was authored in).
   - reach-through    = _doc.<key> (the source document), _dst.<key> (the
                        destination document; absent when dangling/external),

@@ -129,7 +129,7 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
               sum(CASE WHEN e.dst_kind = 'external' THEN 1 ELSE 0 END) AS external
        FROM edges e
        JOIN docs d ON d.doc_id = e.src_doc
-       WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL ${globSql}`,
+       WHERE e.repo_id = ? AND d.deleted_at IS NULL ${globSql}`,
     )
     .get(...params) as { total: number; external: number | null };
 
@@ -141,7 +141,7 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
               e.dst_node AS dstNode, e.anchor AS anchor
        FROM edges e
        JOIN docs d ON d.doc_id = e.src_doc
-       WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL
+       WHERE e.repo_id = ? AND d.deleted_at IS NULL
          AND e.dst_node LIKE 'phantom:%' ${globSql}
        ORDER BY d.path, e.dst_node, e.src_block
        LIMIT ?`,
@@ -225,7 +225,7 @@ export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkH
     params.push(param);
   }
   const base = `FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-     WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL ${globSql}`;
+     WHERE e.repo_id = ? AND d.deleted_at IS NULL ${globSql}`;
   const totals = store.db
     .prepare(`SELECT count(*) AS total, sum(CASE WHEN e.dst_kind = 'external' THEN 1 ELSE 0 END) AS external ${base}`)
     .get(...params) as { total: number; external: number | null };

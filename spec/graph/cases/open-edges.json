@@ -1,9 +1,9 @@
 {
-  "suite": "intervals",
+  "suite": "open-edges",
   "cases": [
     {
       "name": "edge-kept-through-unrelated-edit",
-      "notes": "§3.3: an edit elsewhere leaves the edge untouched (from_commit stays c_0, still open).",
+      "notes": "§3.3: an edit elsewhere leaves the edge untouched (same edge_id, still open).",
       "steps": [
         {
           "observe": {
@@ -54,9 +54,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -126,9 +124,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -147,7 +143,7 @@
     },
     {
       "name": "edge-closed-when-link-removed",
-      "notes": "Removing the link closes the edge (`to_commit = c_1`) and empties the rollup.",
+      "notes": "Removing the link deletes the edge row (its interval closes in the recorder's edge_transitions — spec/store `edge-transitions::edge-closed-when-link-removed`) and empties the rollup.",
       "steps": [
         {
           "observe": {
@@ -175,28 +171,13 @@
       "expect": {
         "nodes": [],
         "external_nodes": [],
-        "edges": [
-          {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          }
-        ],
+        "edges": [],
         "doc_edges": []
       }
     },
     {
       "name": "edge-reopened-with-new-id",
-      "notes": "Re-adding the link to the same block mints a new edge from c_2; the old row stays closed at c_1.",
+      "notes": "Re-adding the link to the same block mints a new edge (e_1); the row deleted at c_1 does not come back.",
       "steps": [
         {
           "observe": {
@@ -249,20 +230,6 @@
         "external_nodes": [],
         "edges": [
           {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          },
-          {
             "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_0",
@@ -272,9 +239,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_2",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -293,7 +258,7 @@
     },
     {
       "name": "anchor-change-closes-and-opens",
-      "notes": "The anchor is part of the key: `#A` → `#B` in the same block closes one edge and opens another.",
+      "notes": "The anchor is part of the key: `#A` → `#B` in the same block deletes one edge and opens another.",
       "steps": [
         {
           "observe": {
@@ -335,20 +300,6 @@
         "external_nodes": [],
         "edges": [
           {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": "A",
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          },
-          {
             "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_0",
@@ -358,9 +309,7 @@
             "dst_node": "phantom:x.md",
             "anchor": "B",
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_1",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -379,7 +328,7 @@
     },
     {
       "name": "link-moves-to-another-block",
-      "notes": "src_block is part of the key: the link moving to another paragraph closes and opens.",
+      "notes": "src_block is part of the key: the link moving to another paragraph deletes and opens.",
       "steps": [
         {
           "observe": {
@@ -421,20 +370,6 @@
         "external_nodes": [],
         "edges": [
           {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          },
-          {
             "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_3",
@@ -444,9 +379,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_1",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -516,9 +449,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -537,7 +468,7 @@
     },
     {
       "name": "frontmatter-edge-kept-across-body-edit",
-      "notes": "A frontmatter relation survives a body edit with its from_commit.",
+      "notes": "A frontmatter relation survives a body edit with its edge_id.",
       "steps": [
         {
           "observe": {
@@ -576,9 +507,7 @@
             "dst_node": "phantom:p.md",
             "anchor": null,
             "provenance": "frontmatter",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -595,7 +524,7 @@
     },
     {
       "name": "phantom-adopted-on-creation",
-      "notes": "§3.5: creating `b.md` rewrites `phantom:b.md` to `d_1` in place (same edge_id and from_commit) and rebuilds a.md's rollup.",
+      "notes": "§3.5: creating `b.md` rewrites `phantom:b.md` to `d_1` in place (same edge_id) and rebuilds a.md's rollup.",
       "steps": [
         {
           "observe": {
@@ -646,9 +575,7 @@
             "dst_node": "d_1",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -733,9 +660,7 @@
             "dst_node": "d_2",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -747,9 +672,7 @@
             "dst_node": "d_2",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_1",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -778,7 +701,7 @@
     },
     {
       "name": "adoption-ignores-closed-edges",
-      "notes": "A closed phantom edge is not adopted.",
+      "notes": "A phantom edge deleted before the target appears is not adopted (there is no row to adopt); only the open one is re-pointed.",
       "steps": [
         {
           "observe": {
@@ -817,22 +740,7 @@
       "expect": {
         "nodes": [],
         "external_nodes": [],
-        "edges": [
-          {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:b.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          }
-        ],
+        "edges": [],
         "doc_edges": []
       }
     },
@@ -915,9 +823,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -998,9 +904,7 @@
             "dst_node": "d_0",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_1",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1019,7 +923,7 @@
     },
     {
       "name": "recreated-at-tombstoned-path-adopts",
-      "notes": "§3.5: adoption happens whenever a row becomes live. The phantom edge minted while b.md was tombstoned is rewritten to d_0 in place (same edge_id and from_commit) when b.md is re-created, and a.md's rollup is rebuilt.",
+      "notes": "§3.5: adoption happens whenever a row becomes live. The phantom edge minted while b.md was tombstoned is rewritten to d_0 in place (same edge_id) when b.md is re-created, and a.md's rollup is rebuilt.",
       "steps": [
         {
           "observe": {
@@ -1092,9 +996,7 @@
             "dst_node": "d_0",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_2",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1113,7 +1015,7 @@
     },
     {
       "name": "deleted-source-recreated-keeps-open-edge",
-      "notes": "Re-observing identical bytes at a tombstoned path revives the row and commits; the still-wanted edge keeps its id and from_commit.",
+      "notes": "Re-observing identical bytes at a tombstoned path revives the row and commits; the still-wanted edge keeps its id.",
       "steps": [
         {
           "observe": {
@@ -1175,9 +1077,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1247,9 +1147,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -1261,9 +1159,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1356,9 +1252,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -1370,9 +1264,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_2",
@@ -1384,9 +1276,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_3",
@@ -1398,9 +1288,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1461,9 +1349,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "inline_field",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -1475,9 +1361,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "frontmatter",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1547,9 +1431,7 @@
             "dst_node": "phantom:x.png",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -1561,9 +1443,7 @@
             "dst_node": "phantom:x.png",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1592,7 +1472,7 @@
     },
     {
       "name": "rollup-samples-rowid-order-after-reopen",
-      "notes": "Samples follow edge rowid, not document order: after p1's edge is closed and reopened it sorts after p2's.",
+      "notes": "Samples follow edge rowid, not document order: after p1's edge is deleted and reopened it sorts after p2's.",
       "steps": [
         {
           "observe": {
@@ -1656,20 +1536,6 @@
         "external_nodes": [],
         "edges": [
           {
-            "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": "c_1"
-          },
-          {
             "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_1",
@@ -1679,9 +1545,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_2",
@@ -1693,9 +1557,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_2",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1760,9 +1622,7 @@
             "dst_node": "x_0",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [

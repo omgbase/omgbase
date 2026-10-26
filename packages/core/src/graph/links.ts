@@ -46,7 +46,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
       const rows = store.db
         .prepare(
           `SELECT predicate, dst_node, dst_kind, src_block FROM edges
-           WHERE src_doc = ? AND to_commit IS NULL ORDER BY predicate, dst_node, src_block`,
+           WHERE src_doc = ? ORDER BY predicate, dst_node, src_block`,
         )
         .all(docId) as { predicate: string; dst_node: string; dst_kind: string; src_block: string | null }[];
       for (const r of rows) if (inPred(r.predicate)) out.push({ _predicate: r.predicate, _doc_id: r.dst_node, kind: r.dst_kind, count: 1, _block_id: r.src_block });
@@ -69,7 +69,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
       const rows = store.db
         .prepare(
           `SELECT predicate, src_doc, src_block FROM edges
-           WHERE dst_node = ? AND to_commit IS NULL ORDER BY predicate, src_doc, src_block`,
+           WHERE dst_node = ? ORDER BY predicate, src_doc, src_block`,
         )
         .all(docId) as { predicate: string; src_doc: string; src_block: string | null }[];
       for (const r of rows) if (inPred(r.predicate)) inbound.push({ _predicate: r.predicate, _doc_id: r.src_doc, kind: "document", count: 1, _block_id: r.src_block });
@@ -77,7 +77,7 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
       const rows = store.db
         .prepare(
           `SELECT predicate, src_doc, count(*) AS cnt FROM edges
-           WHERE dst_node = ? AND to_commit IS NULL
+           WHERE dst_node = ?
            GROUP BY predicate, src_doc ORDER BY predicate, src_doc`,
         )
         .all(docId) as { predicate: string; src_doc: string; cnt: number }[];

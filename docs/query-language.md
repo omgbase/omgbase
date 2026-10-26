@@ -316,7 +316,7 @@ column) so pushed SQL and the in-memory engine agree.
 
 ### `links`
 The authored link graph as first-class rows — one row per link RELATION (the
-open `edges` rows of the storage table, `to_commit IS NULL`; the target was named
+the `edges` rows of the storage table (every row is open since store 17.0); the target was named
 `edges` before the 3.0 name pass). Distinct from the `md:link`/`md:wikilink`
 NODE, which is a link's syntactic occurrence in the text: the `links` row is the
 relation it establishes, `_via_id` points at that node, and a frontmatter or
@@ -331,7 +331,7 @@ data reaches a link, so every field is an engine name and a bare name here is
   `_provenance`, `_dst_kind`, `_anchor`, `_field` (the frontmatter key / inline
   field the edge was authored in; null for a link).
 - **Attributes:** `_id`, `_path` (the **source** document's path). There is no
-  `from_commit`: a query sees open edges only; the creating commit is history
+  `from_commit`: a query sees the open edges, which is all the table holds; the creating commit is history
   (`blocks_history`, `changes_since`).
 - Reach-throughs (handles, not fields): `_doc.<key>` / `_doc._id` / `_doc._path`
   is the **source document**; `_dst.<key>` / `_dst._title` the **destination

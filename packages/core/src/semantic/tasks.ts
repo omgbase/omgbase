@@ -79,7 +79,7 @@ export function makeBlockContextResolver(store: Store, scope: { repoId: string }
   for (const r of store.db.prepare(
     `SELECT p.doc_id AS doc_id, p.val_text AS title FROM properties p
      WHERE ${byRepo ? "p.repo_id = ?" : "p.doc_id = ?"} AND p.source = 'frontmatter' AND p.key = 'title'
-       AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL`,
+       AND p.card = 'scalar' AND p.type = 'string'`,
   ).all(byRepo ? scope.repoId : scope.docId) as { doc_id: string; title: string | null }[]) {
     if (r.title) titleByDoc.set(r.doc_id, r.title);
   }

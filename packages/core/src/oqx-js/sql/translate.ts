@@ -218,8 +218,8 @@ function propSubquery(docId: string, key: string, select: string, source?: strin
   const src = source ? ` AND p.source = '${source}'` : "";
   const src2 = source ? ` AND p2.source = '${source}'` : "";
   return `(SELECT ${select} FROM properties p
-           WHERE p.doc_id = ${docId} AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL${src}
-             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docId} AND p2.key = '${key}' AND p2.deleted_commit IS NULL${src2}) = 1
+           WHERE p.doc_id = ${docId} AND p.key = '${key}' AND p.card = 'scalar'${src}
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docId} AND p2.key = '${key}'${src2}) = 1
            LIMIT 1)`;
 }
 

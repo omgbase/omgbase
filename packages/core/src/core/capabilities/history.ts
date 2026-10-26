@@ -1,6 +1,7 @@
 import type { Store } from "../store/store.js";
 import type { CapturedRevision, CommitRecord, HistoryRecorder, RevisionTransition } from "./types.js";
 import type { DispositionRow } from "../ingest.js";
+import type { EdgeTransitions } from "../store/edges.js";
 import { persistsDisposition } from "../ingest.js";
 import type { DocsReadAtResult } from "../read/document.js";
 import {
@@ -121,6 +122,30 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     // `block_changes` row now names. This — not an earliest row the squash
     // keeps — is what keeps an archived block's id reserved (§7.1 step 2).
     this.store.capabilities.claims.hold(held);
+  }
+
+  /**
+   * spec/graph §3.3 (17.0, M6): the interval record. One `edge_transitions`
+   * row per opened edge — 16.x's `edges` row verbatim, `from_commit` this
+   * commit, `to_commit` NULL — and `to_commit = this commit` on every row the
+   * core deleted; the opened ids gain the recorder's hold (§2.1).
+   */
+  recordEdgeTransitions(commitId: string, t: EdgeTransitions): void {
+    const db = this.store.db;
+    const open = db.prepare(
+      `INSERT OR REPLACE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    );
+    for (const e of t.opened) open.run(e.edgeId, e.repoId, e.srcDoc, e.srcBlock, e.srcField, e.predicate, e.dstKind, e.dstNode, e.anchor, e.provenance, e.viaNode, commitId);
+    const close = db.prepare("UPDATE edge_transitions SET to_commit = ? WHERE edge_id = ? AND to_commit IS NULL");
+    for (const id of t.closed) close.run(commitId, id);
+    this.store.capabilities.claims.hold(t.opened.map((e) => e.edgeId));
+  }
+
+  retargetEdges(edgeIds: readonly string[], dstNode: string): void {
+    if (edgeIds.length === 0) return;
+    const stmt = this.store.db.prepare("UPDATE edge_transitions SET dst_node = ? WHERE edge_id = ? AND to_commit IS NULL");
+    for (const id of edgeIds) stmt.run(dstNode, id);
   }
 
   // ---- the surface's reads ----

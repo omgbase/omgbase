@@ -10,12 +10,12 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DDL, SCHEMA_VERSION } from "../../src/core/store/schema.js";
+import { ALL_DDL, DDL, HISTORY_DDL, SCHEMA_VERSION, SEMANTIC_DDL } from "../../src/core/store/schema.js";
 import { ARCHIVE_DDL } from "../../src/core/store/archive.js";
 import {
-  deepEqualTol, runMigrationCase, runObserveCase, runSchemaCase, suiteKind, validateFixtureFile,
+  deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, suiteKind, validateFixtureFile,
 } from "./fixture.js";
-import type { FixtureCase, FixtureFile, MigrationCase, ObserveCase, SchemaCase } from "./fixture.js";
+import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, ObserveCase, SchemaCase } from "./fixture.js";
 
 // packages/core/corpus/store → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/store/", import.meta.url));
@@ -29,9 +29,17 @@ const UPDATE = (() => {
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
 const EPS = 1e-9;
 
+/** `cases/*.json` and the recorder suites under `cases/history/*.json` (README §9.1, §9.5), as paths relative to `cases/`. */
 function fileNames(): string[] {
-  return existsSync(CASES_DIR) ? readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort() : [];
+  if (!existsSync(CASES_DIR)) return [];
+  const top = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
+  const historyDir = join(CASES_DIR, "history");
+  const history = existsSync(historyDir) ? readdirSync(historyDir).filter((f) => f.endsWith(".json")).sort().map((f) => `history/${f}`) : [];
+  return [...top, ...history];
 }
+
+/** The suite name of a case file: its base name without `.json`. */
+const stemOf = (file: string): string => file.replace(/\.json$/, "").replace(/^.*\//, "");
 
 // ---- evaluation ------------------------------------------------------------------
 
@@ -48,6 +56,8 @@ function evaluate(suite: string, c: FixtureCase): Evaluation {
       return { expect: runMigrationCase(c as MigrationCase), problems: [] };
     case "observe":
       return runObserveCase(c as ObserveCase);
+    case "edges":
+      return runEdgeTransitionsCase(c as EdgeTransitionsCase);
   }
 }
 
@@ -149,8 +159,32 @@ function runCase(suite: string, c: FixtureCase): void {
 // ---- registration --------------------------------------------------------------
 
 describe("store spec fixtures (spec/store/cases)", () => {
-  it("spec/store/schema.sql is the embedded DDL, byte for byte (README §3.3)", () => {
+  it("spec/store/schema.sql is the embedded core DDL, byte for byte (README §3.3)", () => {
     expect(readFileSync(join(SPEC_DIR, "schema.sql"), "utf8")).toBe(DDL);
+  });
+
+  it("spec/store/schema-history.sql and schema-semantic.sql are the embedded bundle DDLs, byte for byte (README §3.3, 17.0)", () => {
+    expect(readFileSync(join(SPEC_DIR, "schema-history.sql"), "utf8")).toBe(HISTORY_DDL);
+    expect(readFileSync(join(SPEC_DIR, "schema-semantic.sql"), "utf8")).toBe(SEMANTIC_DDL);
+  });
+
+  it("the three bundles partition the table set — no table lost or duplicated against 17.0's single file (README §3.3)", () => {
+    const names = (ddl: string): string[] => [...ddl.matchAll(/CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
+    const core = names(DDL);
+    const history = names(HISTORY_DDL);
+    const semantic = names(SEMANTIC_DDL);
+    const all = [...core, ...history, ...semantic];
+    expect(new Set(all).size).toBe(all.length);
+    expect(names(ALL_DDL)).toEqual(all);
+    // The single-file table set of 17.0 through slice 3d, minus the D9 drops
+    // (`collections`, `inferred_edges`), plus the history bundle's `edge_transitions`.
+    expect([...all].sort()).toEqual([
+      "adapters", "archives", "attachments", "blobs", "block_changes", "blocks", "blocks_fts", "commits", "dispositions", "doc_edges", "doc_embeddings", "docs",
+      "edge_transitions", "edges", "embeddings", "external_nodes", "feed", "feed_entries", "file_stats", "id_claims", "nodes", "nodes_fts",
+      "pending_materializations", "properties", "repos", "resurrection_pool", "revisions", "sections", "sources", "sync_state", "tree_nodes", "workspace_settings",
+    ]);
+    expect(history.sort()).toEqual(["archives", "blobs", "block_changes", "commits", "dispositions", "edge_transitions", "revisions", "tree_nodes"]);
+    expect(semantic.sort()).toEqual(["doc_embeddings", "embeddings"]);
   });
 
   it("spec/store/archive.sql is the embedded segment DDL, byte for byte (README §3.3, 15.0)", () => {
@@ -172,7 +206,7 @@ describe("store spec fixtures (spec/store/cases)", () => {
     expect([...loaded.keys()]).toEqual(files);
     const ids = new Set<string>();
     for (const [file, fixture] of loaded) {
-      const stem = file.replace(/\.json$/, "");
+      const stem = stemOf(file);
       for (const c of fixture.cases) {
         const id = `${stem}::${c.name}`;
         expect(ids.has(id), `duplicate case id ${id}`).toBe(false);
@@ -188,7 +222,7 @@ describe("store spec fixtures (spec/store/cases)", () => {
   });
 
   for (const [file, fixture] of loaded) {
-    const stem = file.replace(/\.json$/, "");
+    const stem = stemOf(file);
     describe(stem, () => {
       for (const c of fixture.cases) {
         it(`${stem}::${c.name}`, () => runCase(stem, c));

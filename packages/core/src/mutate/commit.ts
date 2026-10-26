@@ -9,7 +9,7 @@ import { claimsOf } from "../core/capabilities/registry.js";
 import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
-import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
+import { adoptPhantoms, rebuildDocEdges, retargetOpenEdges } from "../core/store/edges.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import type { InboundLink } from "../graph/inbound-links.js";
 import { makeKnownIdResolver } from "./known-ids.js";
@@ -536,15 +536,10 @@ function movePath(db: Database, repoId: string, e: Extract<Effect, { kind: "move
   }
 
   const phantom = `phantom:${e.from}`;
-  const affected = new Set<string>();
-  const others = db.prepare("SELECT DISTINCT src_doc FROM edges WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").all(e.docId, e.docId) as { src_doc: string }[];
-  for (const r of others) affected.add(r.src_doc);
-  db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc != ?").run(phantom, e.docId, e.docId);
-  const selfEdge = db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL AND src_doc = ? AND src_block = ? AND anchor IS ?");
+  const affected = new Set<string>(retargetOpenEdges(db, e.docId, phantom, "AND src_doc != ?", [e.docId]));
   for (const l of e.inbound) {
     if (l._doc_id !== e.docId || l._block_id === null) continue;
-    selfEdge.run(phantom, e.docId, e.docId, l._block_id, l._anchor);
-    affected.add(e.docId);
+    for (const src of retargetOpenEdges(db, e.docId, phantom, "AND src_doc = ? AND src_block = ? AND anchor IS ?", [e.docId, l._block_id, l._anchor])) affected.add(src);
   }
   for (const d of affected) rebuildDocEdges(db, d);
   // Links already written against the NEW path resolve to this doc now.

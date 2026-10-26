@@ -64,7 +64,7 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
     docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_at IS NULL"),
     blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_at IS NULL"),
     feed: feedStatus(store.db, repoId),
-    openEdges: count("SELECT count(*) c FROM edges WHERE repo_id = ? AND to_commit IS NULL"),
+    openEdges: count("SELECT count(*) c FROM edges WHERE repo_id = ?"),
     disk,
   };
 }

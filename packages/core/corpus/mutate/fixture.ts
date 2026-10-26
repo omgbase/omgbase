@@ -497,6 +497,7 @@ function runStep(r: Runner, step: Step, index = -1): StepOutcome {
     const json = canonicalJson(step.canonical.value);
     return { json, digest: sha256(json).toString("hex") };
   }
+  if ("remint_epoch" in step) throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
   return runPlan(r, step.plan);
 }
 

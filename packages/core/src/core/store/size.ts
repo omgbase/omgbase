@@ -1,22 +1,25 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
 import { requireHistory, semanticOf } from "../capabilities/registry.js";
+import { feedStatus, repoFeedPolicy } from "./feed.js";
 
-// The size report (spec/store §7 "Size", 14.1): what the database is made of,
-// table by table through SQLite's `dbstat` virtual table, grouped into the four
-// categories a reader reasons about — the live state (`content`), the
-// append-only record (`history`), the derived indexes (`search`) and the
-// workspace bookkeeping (`sync`) — plus the file's page accounting and the
+// The size report (spec/store §7.2 "Size", 14.1; the six categories 17.0 —
+// D9): what the database is made of, table by table through SQLite's `dbstat`
+// virtual table, grouped into the six categories a reader reasons about — the
+// live state (`content`), the ids and the pool (`identity`), the recovery
+// payloads (`recovery`), the recorder's capture (`history`), the derived
+// search indexes (`search`) and the workspace bookkeeping with the change feed
+// (`sync`) — plus the file's page accounting, the feed's position and the
 // deterministic advice `omg doctor --size` prints. The categorization is the
-// spec's: every table of `schema.sql` is assigned, an index counts toward its
-// table, an FTS5 virtual table's shadow tables fold into it, and anything the
-// spec does not name (`sqlite_schema`, `sqlite_stat1`, a table from a newer
+// spec's: every table of the three bundles is assigned, an index counts toward
+// its table, an FTS5 virtual table's shadow tables fold into it, and anything
+// the spec does not name (`sqlite_schema`, `sqlite_stat1`, a table from a newer
 // schema) is `sync`.
 
-export const SIZE_CATEGORIES = ["content", "history", "search", "sync"] as const;
+export const SIZE_CATEGORIES = ["content", "identity", "recovery", "history", "search", "sync"] as const;
 export type SizeCategory = (typeof SIZE_CATEGORIES)[number];
 
-/** spec/store §7: the category of every table `schema.sql` creates. */
+/** spec/store §7.2: the category of every table the three bundles create. */
 export const TABLE_CATEGORY: Readonly<Record<string, SizeCategory>> = {
   docs: "content",
   blocks: "content",
@@ -24,19 +27,18 @@ export const TABLE_CATEGORY: Readonly<Record<string, SizeCategory>> = {
   nodes: "content",
   edges: "content",
   doc_edges: "content",
-  inferred_edges: "content",
   external_nodes: "content",
   properties: "content",
-  collections: "content",
+  id_claims: "identity",
+  resurrection_pool: "identity",
+  pending_materializations: "recovery",
   blobs: "history",
   tree_nodes: "history",
   revisions: "history",
   commits: "history",
   dispositions: "history",
   block_changes: "history",
-  id_claims: "history",
-  resurrection_pool: "history",
-  pending_materializations: "history",
+  edge_transitions: "history",
   archives: "history",
   blocks_fts: "search",
   nodes_fts: "search",
@@ -106,9 +108,23 @@ export interface SizeRetention {
   bytes: number;
 }
 
+/** spec/store §7.2 (17.0): the change feed's position and policy for the report's repository (§7.4). */
+export interface SizeFeed {
+  epoch: string;
+  /** the oldest retained `seq` (0 when the feed is empty) */
+  oldest: number;
+  /** the greatest `seq` (0 when empty) */
+  head: number;
+  /** the retained `feed` rows */
+  entries: number;
+  retain_days: number;
+  retain_entries: number;
+  max_entries: number;
+}
+
 export interface SizeReport {
   file: SizeFile;
-  /** Always the four categories, in the fixed order content, history, search, sync. */
+  /** Always the six categories, in the fixed order content, identity, recovery, history, search, sync. */
   categories: SizeCategoryReport[];
   /** spec/store §7 (14.2): `dispositions` rows with `kind = 'same'` — what a store through 14.1 wrote and `omg gc` removes. */
   same_dispositions: number;
@@ -116,6 +132,8 @@ export interface SizeReport {
   id_claims: number;
   /** spec/store §7 "Retention" (15.0): archived revisions, recorded segments, and the segments' bytes on disk. */
   archived: SizeArchived;
+  /** spec/store §7.2 (17.0): the feed of the report's repository — the one named, else the store's only one; null when the store has several and none was named. */
+  feed: SizeFeed | null;
   advice: string[];
   /** Present only when the SQLite build lacks `dbstat` (row counts only). */
   detail?: "dbstat unavailable";
@@ -215,8 +233,15 @@ function dbstatBytes(store: Store): Map<string, number> | null {
   }
 }
 
+export interface SizeReportOptions {
+  /** The clock of the retention plan (defaults to now). */
+  now?: string;
+  /** The repository whose feed the report describes (`feed`); absent, the store's only repository, else `feed: null`. */
+  repoId?: string;
+}
+
 /** The size report of an open store (spec/store §7 "Size"). */
-export function sizeReport(store: Store, opts: { now?: string } = {}): SizeReport {
+export function sizeReport(store: Store, opts: SizeReportOptions = {}): SizeReport {
   const db = store.db;
   const path = db.name === "" ? ":memory:" : db.name;
   const page_size = db.pragma("page_size", { simple: true }) as number;
@@ -311,8 +336,19 @@ export function sizeReport(store: Store, opts: { now?: string } = {}): SizeRepor
     retention.revisions += plan.totals.archive;
     retention.bytes += plan.totals.bytes;
   }
+  // 17.0: the feed's position and policy — a repository's (§7.4); the report
+  // is store-wide, so it is the named repository's, else the only one's.
+  const repoIds = (db.prepare("SELECT repo_id FROM repos ORDER BY rowid").all() as { repo_id: string }[]).map((r) => r.repo_id);
+  const feedRepo = opts.repoId ?? (repoIds.length === 1 ? repoIds[0]! : null);
+  let feed: SizeFeed | null = null;
+  if (feedRepo !== null) {
+    const status = feedStatus(db, feedRepo);
+    const policy = repoFeedPolicy(db, feedRepo);
+    const entries = (db.prepare("SELECT count(*) AS c FROM feed WHERE repo_id = ? AND epoch = ?").get(feedRepo, status.epoch) as { c: number }).c;
+    feed = { epoch: status.epoch, oldest: status.oldest, head: status.head, entries, retain_days: policy.retainDays, retain_entries: policy.retainEntries, max_entries: policy.maxEntries };
+  }
   const semantic = semanticOf(db);
-  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
+  const report: SizeReport = { file, categories, same_dispositions, id_claims, archived, feed, advice: sizeAdvice(file, categories, same_dispositions, retention, semantic ? (b, t) => semantic.sizeAdvice(b, t) : null) };
   if (!stat) report.detail = "dbstat unavailable";
   return report;
 }

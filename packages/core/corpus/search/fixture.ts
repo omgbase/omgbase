@@ -313,6 +313,8 @@ export async function runObserveCase(c: ObserveCaseInput): Promise<Evaluation> {
         // README §1.1 / §7: 'delete-all' then every live leaf of every live doc.
         rebuildIndex(store, step.rebuild);
         steps.push({ rebuilt: step.rebuild });
+      } else if ("remint_epoch" in step) {
+        throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
       } else {
         steps.push(await runResolve(store, repoId, provider, step.resolve));
       }

@@ -83,7 +83,7 @@ describe("OQX conformance — type changed across revisions (planned == in-memor
 
   it("no stale property rows survive a re-ingest (either commit path)", () => {
     for (const p of ["creative/flip-observed.md", "creative/flip-api.md", "creative/list-to-scalar.md"]) {
-      const rows = store.db.prepare("SELECT p.key, p.card, p.ord, p.val_text FROM properties p JOIN docs d ON d.doc_id = p.doc_id WHERE d.path = ? AND p.key = 'type' AND p.deleted_commit IS NULL").all(p) as { val_text: string; card: string }[];
+      const rows = store.db.prepare("SELECT p.key, p.card, p.ord, p.val_text FROM properties p JOIN docs d ON d.doc_id = p.doc_id WHERE d.path = ? AND p.key = 'type'").all(p) as { val_text: string; card: string }[];
       expect(rows.map((r) => r.val_text)).toEqual([IDEA]);
       expect(rows[0]!.card).toBe("scalar");
     }

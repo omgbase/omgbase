@@ -52,7 +52,7 @@ export interface ResolvedEdgeRow {
   srcBlock: string | null;
   srcField: string | null;
   predicate: string;
-  dstKind: "document" | "block" | "external" | "collection";
+  dstKind: "document" | "block" | "external";
   dstNode: string;
   anchor: string | null;
   provenance: string;
@@ -534,10 +534,11 @@ export function ingestInto(
     }
   }
 
-  writeDocProperties(db, repoId, docId, commitId, propertyRows);
+  writeDocProperties(db, repoId, docId, propertyRows);
 
-  // Edge extraction + interval maintenance (05 §2), if the resolver supplies
-  // an extractor. Runs in this commit transaction.
+  // Edge extraction + open-edge maintenance (spec/graph §3.3; store 17.0, M6),
+  // if the resolver supplies an extractor. Runs in this commit transaction; the
+  // transition's edge list goes to the recorder inside `maintainEdges`.
   if (resolved.extractEdges) {
     const extracted = resolved.extractEdges(docId, metadata);
     maintainEdges(db, repoId, docId, commitId, extracted, ts);

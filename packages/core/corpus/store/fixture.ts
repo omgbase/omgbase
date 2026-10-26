@@ -5,6 +5,8 @@
 //   runMigrationCase()      §9.3: authored pre-state → open with the reference → projection (or the refusal)
 //   runObserveCase()        §9.4: run an observation script through the production observe path,
 //                           check the §8 invariants after every observe step, project the tables
+//   runEdgeTransitionsCase() §9.5 (17.0): the recorder's edge suite (`cases/history/edge-transitions.json`) —
+//                           the same scripts projecting `edge_transitions` alone
 //   checkInvariants()       README §8 on a store: the core invariants C1–C8 and F1–F3 (the feed) and, with legacy capture on, H1–H5/I10
 //   projectStore()          the §9.4 table projection (ordering, hex hashes, JSON attrs/detail)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
@@ -118,7 +120,9 @@ export type Step =
   /** README §9.4 (15.0): detach a segment by id → `{ detached }` */
   | { history_detach: { segment: string } }
   /** README §9.4 (15.0): reconstruct at a revision (§6.2, through a segment when archived) → `{ raw, rendered_hash_match }` or the error */
-  | { read_at: { doc: string; rev: string } };
+  | { read_at: { doc: string; rev: string } }
+  /** README §9.4 (17.0, §7.5): the epoch re-mint of a restore / rebuild-from-files at `ts` — a new `ep`, the feed emptied → `{ epoch }` */
+  | { remint_epoch: { ts: string } };
 
 export interface ObservedOutcome {
   path: string;
@@ -159,7 +163,7 @@ export type ReadAtOutcome =
   | { raw: string; rendered_hash_match: boolean }
   | { error: "revision_archived"; rev: string; archive: string; path?: string }
   | { error: "target_missing" };
-export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome;
+export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string };
 
 /** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
 export interface HistoryContext {
@@ -280,19 +284,20 @@ export interface ObserveCase {
   expect: Projection;
 }
 
-export type FixtureCase = SchemaCase | MigrationCase | ObserveCase;
+export type FixtureCase = SchemaCase | MigrationCase | ObserveCase | EdgeTransitionsCase;
 
 export interface FixtureFile {
   suite: string;
   cases: FixtureCase[];
 }
 
-export type CaseKind = "schema" | "migration" | "observe";
+export type CaseKind = "schema" | "migration" | "observe" | "edges";
 
-/** The three suite kinds, told apart by the file stem (README §9.1). */
+/** The four suite kinds, told apart by the file stem (README §9.1; `edge-transitions` under `cases/history/`, §9.5). */
 export function suiteKind(suite: string): CaseKind {
   if (suite === "schema") return "schema";
   if (suite === "migrations") return "migration";
+  if (suite === "edge-transitions") return "edges";
   return "observe";
 }
 
@@ -300,7 +305,37 @@ export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   schema: ["name", "notes", "expect"],
   migration: ["name", "notes", "setup", "user_version", "rows", "expect"],
   observe: ["name", "notes", "config", "minter", "steps", "expect"],
+  edges: ["name", "notes", "config", "steps", "expect"],
 };
+
+/** README §9.5 (17.0): an `edge_transitions` row as the recorder suite carries it — every column but `repo_id`. */
+export interface EdgeTransitionRow {
+  edge_id: string;
+  src_doc: string;
+  src_block: string | null;
+  src_field: string | null;
+  predicate: string;
+  dst_kind: string;
+  dst_node: string;
+  anchor: string | null;
+  provenance: string;
+  via_node: string | null;
+  from_commit: string;
+  to_commit: string | null;
+}
+export const EDGE_TRANSITION_FIELDS = [
+  "edge_id", "src_doc", "src_block", "src_field", "predicate", "dst_kind", "dst_node", "anchor", "provenance", "via_node", "from_commit", "to_commit",
+] as const;
+export interface EdgeTransitionsProjection {
+  edge_transitions: EdgeTransitionRow[];
+}
+export interface EdgeTransitionsCase {
+  name: string;
+  notes?: string;
+  config?: FixtureConfig;
+  steps: Step[];
+  expect: EdgeTransitionsProjection;
+}
 
 /** The repo every observation case runs in (README §9.4 "Inputs"). */
 export const FIXTURE_REPO_SLUG = "fixture";
@@ -483,32 +518,7 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
     const ctx = (): HistoryContext => (history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-store-spec-archives-")) });
     try {
       const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
-      const lastSource = new Map<string, string>();
-      const steps: StepOutcome[] = [];
-      const problems: string[] = [];
-      c.steps.forEach((step, i) => {
-        if (isHistoryStep(step)) {
-          steps.push(runHistoryStep(store, repoId, step, ctx()));
-          if ("history_export" in step) for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
-        } else if ("observe" in step) {
-          const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
-          const outcomes = observeBatch(store, repoId, items, step.observe.ts, { config });
-          for (const it of step.observe.items) {
-            if (it.source === null) lastSource.delete(it.path);
-            else lastSource.set(it.path, it.source);
-          }
-          steps.push(outcomes.map(toOutcome));
-          for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
-        } else if ("sweep" in step) {
-          steps.push({ swept: sweepResurrectionPool(store, step.sweep.ts) });
-        } else if ("gc" in step) {
-          steps.push(runGcStep(store, step.gc.ts));
-          for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
-        } else {
-          steps.push(runExecStep(store, step.exec.sql));
-        }
-      });
-      for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`at end: ${p}`);
+      const { steps, problems } = runSteps(store, repoId, c.steps, config, ctx);
       const tables = { ...projectStore(store.db, repoId), id_claims: projectClaims(store.db, repoId) };
       // Emit the tables in PROJECTED_TABLES order (README §9.4), `id_claims` in its place.
       const expect = { steps } as Projection;
@@ -519,6 +529,91 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
       if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
     }
   }, c.minter);
+}
+
+/**
+ * The step loop every observation-script suite of this spec shares: each step
+ * through its production path, the §8 invariants after every observe / gc /
+ * export step and at the end. Returns the outcomes and the problems found.
+ */
+function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnType<typeof toReconcileConfig>, ctx: () => HistoryContext): { steps: StepOutcome[]; problems: string[] } {
+  const lastSource = new Map<string, string>();
+  const steps: StepOutcome[] = [];
+  const problems: string[] = [];
+  stepsIn.forEach((step, i) => {
+    if (isHistoryStep(step)) {
+      steps.push(runHistoryStep(store, repoId, step, ctx()));
+      if ("history_export" in step) for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+    } else if ("observe" in step) {
+      const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
+      const outcomes = observeBatch(store, repoId, items, step.observe.ts, { config });
+      for (const it of step.observe.items) {
+        if (it.source === null) lastSource.delete(it.path);
+        else lastSource.set(it.path, it.source);
+      }
+      steps.push(outcomes.map(toOutcome));
+      for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+    } else if ("sweep" in step) {
+      steps.push({ swept: sweepResurrectionPool(store, step.sweep.ts) });
+    } else if ("gc" in step) {
+      steps.push(runGcStep(store, step.gc.ts));
+      for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+    } else if ("remint_epoch" in step) {
+      // README §7.5 (17.0): the epoch re-mint — a new `ep`, the feed emptied; the
+      // invariants hold on the new epoch (C4 with an empty feed, F1 vacuous).
+      steps.push({ epoch: store.remintEpoch(repoId, step.remint_epoch.ts) });
+      for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+    } else {
+      steps.push(runExecStep(store, step.exec.sql));
+    }
+  });
+  for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`at end: ${p}`);
+  return { steps, problems };
+}
+
+export type EdgeTransitionsCaseInput = Omit<EdgeTransitionsCase, "expect">;
+
+export interface EdgeTransitionsEvaluation {
+  expect: EdgeTransitionsProjection;
+  problems: string[];
+}
+
+/**
+ * README §9.5 (17.0): the recorder's edge suite — the same observation scripts
+ * as spec/graph's, projecting `edge_transitions` alone: every column but
+ * `repo_id`, by (`from_commit`'s seq, `edge_id` bytewise), `to_commit` as the
+ * commit id or null. Runner checks beyond §8: every `from_commit`/`to_commit`
+ * is a `commits` row (the check that moved here from spec/graph 2.x); every
+ * open transition (`to_commit IS NULL`) has an `edges` row of the same
+ * `edge_id` with the same `dst_node`, and every `edges` row an open transition
+ * (§8 H6).
+ */
+export function runEdgeTransitionsCase(c: EdgeTransitionsCaseInput): EdgeTransitionsEvaluation {
+  const config = toReconcileConfig(c.config);
+  return withFixtureMinter(() => {
+    const store = new Store({ path: ":memory:" });
+    const history: { ctx: HistoryContext | null } = { ctx: null };
+    const ctx = (): HistoryContext => (history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-store-spec-archives-")) });
+    try {
+      const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+      const { problems } = runSteps(store, repoId, c.steps, config, ctx);
+      const db = store.db;
+      const commitSeq = new Map((db.prepare("SELECT commit_id FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string }[]).map((r, i) => [r.commit_id, i] as const));
+      const seqOf = (id: string): number => commitSeq.get(id) ?? Number.MAX_SAFE_INTEGER;
+      const edge_transitions = (db
+        .prepare(`SELECT ${EDGE_TRANSITION_FIELDS.join(", ")} FROM edge_transitions WHERE repo_id = ?`)
+        .all(repoId) as EdgeTransitionRow[])
+        .sort((a, b) => seqOf(a.from_commit) - seqOf(b.from_commit) || cmp(a.edge_id, b.edge_id));
+      for (const t of edge_transitions) {
+        if (!commitSeq.has(t.from_commit)) problems.push(`edge ${t.edge_id}: from_commit ${t.from_commit} is not a commit`);
+        if (t.to_commit !== null && !commitSeq.has(t.to_commit)) problems.push(`edge ${t.edge_id}: to_commit ${t.to_commit} is not a commit`);
+      }
+      return { expect: { edge_transitions }, problems };
+    } finally {
+      store.close();
+      if (history.ctx) rmSync(history.ctx.dest, { recursive: true, force: true });
+    }
+  });
 }
 
 // ---- projection (README §9.4 "Expect") ------------------------------------------------
@@ -600,10 +695,14 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
     .all(repoId) as Record<string, unknown>[]).map(toRow);
   const docIds = docs.map((d) => d.doc_id as string);
 
+  // `commits` by (`ts`, `seq`) — the same order as by `seq` while one epoch
+  // exists (I4), and the chronological one across an epoch re-mint (§7.5),
+  // whose commits restart at `seq = 1`; the rank in this list orders the
+  // dispositions and block_changes by commit.
   const commits = (db
-    .prepare("SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ? ORDER BY seq")
+    .prepare("SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ? ORDER BY ts, seq")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
-  const commitSeq = new Map(commits.map((c) => [c.commit_id as string, c.seq as number]));
+  const commitSeq = new Map(commits.map((c, i) => [c.commit_id as string, i]));
   const seqOf = (commitId: string): number => commitSeq.get(commitId) ?? Number.MAX_SAFE_INTEGER;
 
   // 17.0 (3d): the feed and its entries — the rows of the repo's current epoch
@@ -1022,15 +1121,16 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if ((e.kind === "changed" || e.kind === "moved") && prev === "deleted") problems.push(`F3: ${at} is ${e.kind} right after a deleted entry (a revival is created)`);
     lastKindOfDoc.set(e.doc_id, e.kind);
   }
-  // F1: every head still within retention has its entry. When nothing was
-  // pruned (oldest ≤ 1) every live doc's head and every tombstone's deletion
-  // appear; after a prune only the documents whose last change is younger than
-  // the oldest retained row are checked.
+  // F1: every head still within the retained feed has its entry: every live
+  // doc's head and every tombstone's deletion whose last change is not older
+  // than the oldest retained row (a prune takes rows from the front; an epoch
+  // re-mint, §7.5, empties the feed — the documents committed before it have
+  // no entry and none is owed).
   const oldestTs = feedBySeq.length > 0 ? feedBySeq[0]!.ts : null;
   const headsInFeed = new Set(entries.map((e) => e.head).filter((h): h is string => h !== null));
   const deletedInFeed = new Set(entries.filter((e) => e.kind === "deleted").map((e) => e.doc_id));
   for (const d of docs) {
-    const within = oldest <= 1 || (oldestTs !== null && d.updated_at > oldestTs);
+    const within = oldestTs !== null && d.updated_at >= oldestTs;
     if (!within) continue;
     if (d.deleted_at === null && d.head !== null && !headsInFeed.has(d.head)) problems.push(`F1: live doc ${d.doc_id} (${d.path}) head ${d.head} appears in no feed entry`);
     if (d.deleted_at !== null && !deletedInFeed.has(d.doc_id)) problems.push(`F1: tombstoned doc ${d.doc_id} (${d.path}) has no deleted entry`);
@@ -1049,12 +1149,22 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if (!c) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
     else if (c.commit_id !== r.commit_id || c.epoch !== r.epoch || c.batch_id !== r.batch_id) problems.push(`H4: commits row at seq ${r.seq} (${c.commit_id}, ${c.epoch}, ${c.batch_id}) disagrees with the feed (${r.commit_id}, ${r.epoch}, ${r.batch_id})`);
   }
-  for (const c of commitRows) if (c.epoch !== epoch) problems.push(`H4: commit ${c.commit_id} carries epoch ${c.epoch}`);
+  // A commit of an earlier epoch is a re-mint's (§7.5): its epoch must still be a claimed `ep` of the repository.
+  const epochClaim = db.prepare("SELECT 1 FROM id_claims WHERE id = ? AND prefix = 'ep' AND repo_id = ?");
+  for (const c of commitRows) if (c.epoch !== epoch && !epochClaim.get(c.epoch, repoId)) problems.push(`H4: commit ${c.commit_id} carries epoch ${c.epoch}, which is neither the repository's nor a claimed earlier one`);
 
-  // ---- I4 dense sequences --------------------------------------------------------------
-  commits.forEach((c, i) => {
-    if (c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order`);
-  });
+  // ---- I4 dense sequences (per epoch since 17.0: a re-mint restarts the seq) ------------
+  const commitsByEpoch = new Map<string, typeof commits>();
+  for (const c of db.prepare("SELECT commit_id, epoch, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; epoch: string; seq: number; ts: string }[]) {
+    let list = commitsByEpoch.get(c.epoch);
+    if (!list) commitsByEpoch.set(c.epoch, (list = []));
+    list.push(c);
+  }
+  for (const [ep, list] of commitsByEpoch) {
+    list.forEach((c, i) => {
+      if (c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order of epoch ${ep}`);
+    });
+  }
   for (const d of docs) {
     const revs = revisions.filter((r) => r.doc_id === d.doc_id).sort((a, b) => a.seq - b.seq);
     revs.forEach((r, i) => {
@@ -1141,10 +1251,19 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
        UNION SELECT c.commit_id FROM commits c WHERE c.repo_id = ?
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = c.commit_id AND (ic.holders & 2) != 0)
+       UNION SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?
+         AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = t.edge_id AND (ic.holders & 2) != 0)
        ORDER BY 1`,
     )
-    .all(repoId, repoId, repoId, repoId) as { id: string }[];
+    .all(repoId, repoId, repoId, repoId, repoId) as { id: string }[];
   for (const r of unheld) problems.push(`H6: ${r.id} is named by a history row but its claim lacks the recorder's bit`);
+  // H6 (17.0, M6): the open transitions and the edges agree — same ids, same destination.
+  const openOnlyInTransitions = db.prepare("SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ? AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1").all(repoId) as { edge_id: string }[];
+  for (const r of openOnlyInTransitions) problems.push(`H6: open transition ${r.edge_id} has no edges row`);
+  const edgesWithoutTransition = db.prepare("SELECT e.edge_id FROM edges e WHERE e.repo_id = ? AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1").all(repoId) as { edge_id: string }[];
+  for (const r of edgesWithoutTransition) problems.push(`H6: edge ${r.edge_id} has no open transition`);
+  const dstDisagree = db.prepare("SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ? AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1").all(repoId) as { edge_id: string }[];
+  for (const r of dstDisagree) problems.push(`H6: edge ${r.edge_id} and its open transition disagree on dst_node`);
 
   // ---- I7 dispositions ----------------------------------------------------------------
   // Every disposition names an existing commit. For each commit that is the
@@ -1293,7 +1412,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -1330,8 +1449,8 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     if (!isRecord(body) || typeof body.ts !== "string" || !TS_RE.test(body.ts)) {
       problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
     }
-    if (keys[0] === "sweep") {
-      if (isRecord(body) && Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: sweep takes only \`ts\``);
+    if (keys[0] === "sweep" || keys[0] === "remint_epoch") {
+      if (isRecord(body) && Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: ${keys[0]} takes only \`ts\``);
       return;
     }
     if (!isRecord(body)) return;
@@ -1372,6 +1491,28 @@ function validateProjection(at: string, e: unknown, stepCount: number, problems:
   }
   for (const k of want) if (!Array.isArray(e[k])) problems.push(`${at}.${k}: must be an array`);
   if (Array.isArray(e.steps) && stepCount >= 0 && e.steps.length !== stepCount) problems.push(`${at}.steps: ${e.steps.length} outcomes for ${stepCount} steps`);
+}
+
+function validateEdgeTransitions(at: string, e: unknown, problems: string[]): void {
+  if (!isRecord(e) || Object.keys(e).length !== 1 || !Array.isArray(e.edge_transitions)) {
+    problems.push(`${at}: must be exactly { edge_transitions: [...] }`);
+    return;
+  }
+  e.edge_transitions.forEach((r, i) => {
+    const here = `${at}.edge_transitions[${i}]`;
+    if (!isRecord(r)) {
+      problems.push(`${here}: not an object`);
+      return;
+    }
+    const keys = Object.keys(r).sort();
+    const want = [...EDGE_TRANSITION_FIELDS].sort();
+    if (keys.length !== want.length || keys.some((k, j) => k !== want[j])) {
+      problems.push(`${here}: a row has exactly the fields ${EDGE_TRANSITION_FIELDS.join(", ")} (got ${keys.join(", ")})`);
+      return;
+    }
+    for (const k of ["edge_id", "src_doc", "predicate", "dst_kind", "dst_node", "provenance", "from_commit"]) if (typeof r[k] !== "string") problems.push(`${here}: ${k} must be a string`);
+    for (const k of ["src_block", "src_field", "anchor", "via_node", "to_commit"]) if (r[k] !== null && typeof r[k] !== "string") problems.push(`${here}: ${k} must be a string or null`);
+  });
 }
 
 function validateMigrationExpect(at: string, e: unknown, rows: string[], problems: string[]): void {
@@ -1415,7 +1556,8 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
   const requireExpect = opts.requireExpect ?? true;
   const problems: string[] = [];
   if (!isRecord(doc)) return [`${file}: not an object`];
-  const stem = file.replace(/\.json$/, "");
+  // The stem is the file's base name: a recorder suite lives under `cases/history/` (§9.5).
+  const stem = file.replace(/\.json$/, "").replace(/^.*\//, "");
   if (doc.suite !== stem) problems.push(`${file}: \`suite\` must equal the file stem '${stem}' (got ${JSON.stringify(doc.suite)})`);
   const extra = Object.keys(doc).filter((k) => !["suite", "cases"].includes(k));
   if (extra.length > 0) problems.push(`${file}: unknown top-level keys ${extra.join(", ")}`);
@@ -1442,9 +1584,9 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (!Array.isArray(c.setup) || !c.setup.every((s) => typeof s === "string")) problems.push(`${at}: \`setup\` must be an array of SQL strings`);
       if (typeof c.user_version !== "number" || !Number.isInteger(c.user_version) || c.user_version < 0) problems.push(`${at}: \`user_version\` must be a non-negative integer`);
       if (!Array.isArray(c.rows) || !c.rows.every((s) => typeof s === "string")) problems.push(`${at}: \`rows\` must be an array of table names`);
-    } else if (kind === "observe") {
+    } else if (kind === "observe" || kind === "edges") {
       if (c.config !== undefined) validateConfig(at, c.config, problems);
-      if (c.minter !== undefined && !(MINTER_KINDS as readonly unknown[]).includes(c.minter)) {
+      if (kind === "observe" && c.minter !== undefined && !(MINTER_KINDS as readonly unknown[]).includes(c.minter)) {
         problems.push(`${at}: \`minter\` must be one of ${MINTER_KINDS.map((k) => JSON.stringify(k)).join(", ")} (got ${JSON.stringify(c.minter)})`);
       }
       stepCount = validateSteps(at, c.steps, problems);
@@ -1458,6 +1600,7 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     }
     if (kind === "schema") validateFingerprint(`${at}.expect`, c.expect, problems);
     else if (kind === "migration") validateMigrationExpect(`${at}.expect`, c.expect, Array.isArray(c.rows) ? (c.rows as string[]) : [], problems);
+    else if (kind === "edges") validateEdgeTransitions(`${at}.expect`, c.expect, problems);
     else validateProjection(`${at}.expect`, c.expect, stepCount, problems);
   });
   return problems;

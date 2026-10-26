@@ -58,7 +58,7 @@ export function inboundLinksTo(store: Store, repoId: string, docId: string, docP
     .prepare(
       `SELECT DISTINCT e.src_doc AS srcDoc, d.path AS srcPath, e.src_block AS srcBlock, e.src_field AS srcField
        FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-       WHERE e.repo_id = ? AND e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL
+       WHERE e.repo_id = ? AND e.dst_node = ? AND d.deleted_at IS NULL
        ORDER BY d.path, e.src_block`,
     )
     .all(repoId, docId) as { srcDoc: string; srcPath: string; srcBlock: string | null; srcField: string | null }[];

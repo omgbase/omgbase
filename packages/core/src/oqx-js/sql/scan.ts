@@ -54,7 +54,7 @@ export function guards(target: Target, repoId: string): { sql: string; params: u
     case "docs": return { sql: "d.repo_id = ? AND d.deleted_at IS NULL", params: [repoId] };
     case "blocks": return { sql: "b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL", params: [repoId] };
     case "nodes": return { sql: "n.repo_id = ? AND d.deleted_at IS NULL", params: [repoId] };
-    case "links": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL", params: [repoId] };
+    case "links": return { sql: "e.repo_id = ? AND d.deleted_at IS NULL", params: [repoId] };
   }
 }
 
@@ -65,6 +65,6 @@ export function guardsByDoc(target: Exclude<Target, "docs">, repoId: string): { 
   switch (target) {
     case "blocks": return { sql: "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_at IS NULL AND d.deleted_at IS NULL", params: [repoId, repoId] };
     case "nodes": return { sql: "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_at IS NULL", params: [repoId, repoId] };
-    case "links": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL", params: [repoId, repoId] };
+    case "links": return { sql: "d.repo_id = ? AND +e.repo_id = ? AND d.deleted_at IS NULL", params: [repoId, repoId] };
   }
 }

@@ -76,8 +76,8 @@ describe("ingestFile", () => {
     observeBatch(store, repoId, [{ path: "b.md", content: null }], "2026-09-26T10:01:00.000Z");
     const a = observeBatch(store, repoId, [{ path: "a.md", content: "See [b](/b.md) for the full discussion.\n" }], "2026-09-26T10:02:00.000Z")[0]!;
     const aDoc = a.kind === "deleted" ? null : a.docId;
-    const edge = (): { dst_node: string; edge_id: string; from_commit: string } =>
-      store!.db.prepare("SELECT dst_node, edge_id, from_commit FROM edges WHERE src_doc = ? AND to_commit IS NULL").get(aDoc) as { dst_node: string; edge_id: string; from_commit: string };
+    const edge = (): { dst_node: string; edge_id: string } =>
+      store!.db.prepare("SELECT dst_node, edge_id FROM edges WHERE src_doc = ?").get(aDoc) as { dst_node: string; edge_id: string };
     const rollup = (): { dst_node: string; count: number }[] => store!.db.prepare("SELECT dst_node, count FROM doc_edges WHERE src_doc = ?").all(aDoc) as { dst_node: string; count: number }[];
     const before = edge();
     expect(before.dst_node).toBe("phantom:b.md");

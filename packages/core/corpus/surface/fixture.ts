@@ -589,6 +589,8 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
           // directory of the case's own, removed with it.
           history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-surface-spec-archives-")) };
           steps.push(runHistoryStep(store, repoId, step, history.ctx));
+        } else if ("remint_epoch" in step) {
+          throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;

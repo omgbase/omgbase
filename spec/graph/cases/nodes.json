@@ -66,9 +66,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -127,9 +125,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -188,9 +184,7 @@
             "dst_node": "phantom:img.png",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -260,9 +254,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -274,9 +266,7 @@
             "dst_node": "phantom:y.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -345,9 +335,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -406,9 +394,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -467,9 +453,7 @@
             "dst_node": "phantom:note",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -528,9 +512,7 @@
             "dst_node": "phantom:note|Alias",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -600,9 +582,7 @@
             "dst_node": "phantom:note",
             "anchor": "ref",
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -748,9 +728,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1076,9 +1054,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1137,9 +1113,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1211,9 +1185,7 @@
             "dst_node": "d_0",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1272,9 +1244,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1462,9 +1432,7 @@
             "dst_node": "phantom:z.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1523,9 +1491,7 @@
             "dst_node": "phantom:z.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1706,9 +1672,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1794,9 +1758,7 @@
             "dst_node": "phantom:a",
             "anchor": null,
             "provenance": "frontmatter",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           },
           {
             "edge_id": "e_1",
@@ -1808,9 +1770,7 @@
             "dst_node": "phantom:p.md",
             "anchor": null,
             "provenance": "frontmatter",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [
@@ -1886,9 +1846,7 @@
             "dst_node": "phantom:x.md",
             "anchor": null,
             "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
+            "via_node": null
           }
         ],
         "doc_edges": [

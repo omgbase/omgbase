@@ -19,7 +19,7 @@
 
 export const EXTRACTION_VERSION = "x2";
 
-export type DstKind = "document" | "block" | "external" | "collection";
+export type DstKind = "document" | "block" | "external";
 export type Provenance = "link" | "frontmatter" | "inline_field";
 
 export interface ExtractedEdge {

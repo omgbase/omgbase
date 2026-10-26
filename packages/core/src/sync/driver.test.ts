@@ -36,7 +36,7 @@ describe("reconcile driver over a non-filesystem source", () => {
     const res = await attachSource(store, "mem", null, src);
     expect(res.fileCount).toBe(2);
     expect(res.allConverged).toBe(true);
-    const edges = store.db.prepare("SELECT count(*) c FROM edges WHERE to_commit IS NULL").get() as { c: number };
+    const edges = store.db.prepare("SELECT count(*) c FROM edges").get() as { c: number };
     expect(edges.c).toBeGreaterThanOrEqual(1);
   });
 

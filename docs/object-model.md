@@ -157,7 +157,8 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
   produces a `references` **edge** (the relationship it asserts in the graph). The
   node is the thing in the block; the edge is its graph consequence.
 - **Authored, block-grain, temporal.** Edges are append-only with a validity
-  interval (`from_commit` … `to_commit`); the graph is queryable at any point in
+  interval (`from_commit` … `to_commit`) in the recorder's `edge_transitions` — the
+  `edges` table itself holds only the open relations since store 17.0; the graph's history is queryable at any point in
   history. A doc-level rollup (`doc_edges`) exists for speed.
 - **Phantom targets.** A link to a file that doesn't exist yet still creates an
   edge to a placeholder document node, so backlinks light up the moment the target
@@ -168,7 +169,7 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
   `_children`, a section node's `_children`) — and the citation graph through the link rows' reach-
   throughs (`follow _out_links { from _dst }`, `_dst` being a link's
   destination document) rather than a dedicated edge walk. (2) **Inferred** relations
-  (similarity, co-occurrence) are quarantined in a separate `inferred_edges`
+  (similarity, co-occurrence) would be quarantined in a separate table (the v1 `inferred_edges` stub was dropped in store 17.0 before anything wrote it)
   table, never mixed into the authored graph (as-built: a reserved stub).
 
 > **Surface:** `query "… follow _out_links { from _dst }"` (traverse the authored graph),

@@ -3,6 +3,7 @@ import type { Store } from "../store/store.js";
 import type { IdPrefix } from "../ids.js";
 import type { DispositionRow } from "../ingest.js";
 import type { TreeInputBlock } from "../store/writers.js";
+import type { EdgeTransitions } from "../store/edges.js";
 import type { DocsReadAtResult } from "../read/document.js";
 import type { DiffEntry, DocDiffUnified, DocVersions, NodeChange } from "../../graph/history.js";
 import type { EvaluateOptions, RetentionPlan, RetentionPolicy } from "../store/retention.js";
@@ -99,6 +100,10 @@ export interface HistoryRecorder {
   captureRevision(transition: RevisionTransition): CapturedRevision;
   /** Step 15: the reconciliation evidence — every non-`same` verdict into `dispositions` and `block_changes` (inventory-ts §2.1 row 467–488). */
   recordDispositions(commitId: string, dispositions: readonly DispositionRow[]): void;
+  /** Step 15 (17.0, 3e — M6; spec/graph §3.3): the transition's edge list — one `edge_transitions` row per opened edge (`from_commit` = this commit, `to_commit` NULL), `to_commit` = this commit on every closed one; sets the recorder's hold on the opened ids. */
+  recordEdgeTransitions(commitId: string, transitions: EdgeTransitions): void;
+  /** The core rewrote these open edges' destination in place (spec/graph §3.5 adoption, a move's re-phantoming): the open transition rows follow, so the interval record reads as 16.x's `edges` did. */
+  retargetEdges(edgeIds: readonly string[], dstNode: string): void;
 
   // (No current-state read goes THROUGH history any more: M1 retired
   // `currentFrontmatterRaw`/`movePath` in 3a; M4 retired `renderedHash`/

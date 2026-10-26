@@ -118,13 +118,19 @@ function runDoctor(cli: Cli, args: string[]): number {
       summary: "Invariant sweep: FTS rows vs live leaf blocks, head present, capture complete, SQLite integrity — exit 1 on any failure (CI-able)",
       usage: ["doctor [--json]", "doctor --size [--json]"],
       options: [
-        ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, history, search, sync — the change feed under sync) and table, the file's pages, what VACUUM would reclaim, advice"],
-        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, advice }`"],
+        ["--size", "instead of the checks: what the database is made of — bytes and rows per category (content, identity, recovery, history, search, sync — the change feed under sync) and table, the file's pages, the feed's position, what VACUUM would reclaim, advice"],
+        ["--json", "`{ ok, checks: [{ name, ok, detail }] }`; with --size `{ file, categories, same_dispositions, id_claims, archived, feed, advice }`"],
       ],
     });
   }
   const ws = cli.workspace();
-  if (values.size) return runDoctorSize(cli, sizeReport(ws.store));
+  // The size report is store-wide; its `feed` line is a repository's (spec/store
+  // §7.2, 17.0) — the selected one when the selection resolves, else the
+  // store's only one (the report decides), never an error.
+  if (values.size) {
+    const repoId = selectedRepoId(cli, ws);
+    return runDoctorSize(cli, sizeReport(ws.store, repoId === undefined ? {} : { repoId }));
+  }
   cli.repo(ws); // the selected repo must resolve (`repo_not_found` otherwise); the checks are store-wide
   const db = ws.store.db;
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
@@ -162,6 +168,17 @@ function runDoctor(cli: Cli, args: string[]): number {
     io.out(`  ${mark} ${c.name}${c.detail && !c.ok ? style.dim(`  (${c.detail})`) : ""}`);
   }
   return allOk ? EXIT_OK : EXIT_ERROR;
+}
+
+/** The selected repository's id when the selection resolves; undefined when it does not (an explicit `--repo <slug>` that fails is still the error). */
+function selectedRepoId(cli: Cli, ws: ReturnType<Cli["workspace"]>): string | undefined {
+  try {
+    return cli.repo(ws).repoId;
+  } catch (err) {
+    if (cli.flags.repo) throw err;
+    if (err instanceof EngineErrorLike && err.code === "repo_not_found") return undefined;
+    throw err;
+  }
 }
 
 // `doctor --size` (spec/cli §6, cli 4.3): the store's size report (spec/store
@@ -204,6 +221,8 @@ function runDoctorSize(cli: Cli, report: SizeReport): number {
     ["archived", `${report.archived.revisions} revisions in ${report.archived.segments} segments, ${humanBytes(report.archived.bytes)} on disk`],
     // 17.0: the identity claims (spec/store §2.1) — one row per id ever minted and still held; `identity.claims_retain_days` lets `gc` release old ones (§7.3).
     ["id claims", `${report.id_claims} ids claimed`],
+    // 17.0 (3e): the change feed's position (spec/store §7.2 `feed`, §7.4) — the report's repository's; none when the store has several and none was selected.
+    ["feed", report.feed ? `epoch ${report.feed.epoch}, ${report.feed.entries} entries, seq ${report.feed.oldest}..${report.feed.head}` : "no repository selected"],
   ];
   for (const line of columns(file)) io.out(`  ${line}`);
   for (const a of report.advice) io.out(`  ${style.dim("advice:")} ${a}`);

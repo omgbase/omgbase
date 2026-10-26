@@ -177,9 +177,9 @@ class StoreIndex implements RowIndex {
     const src2 = source === null ? "" : " AND p2.source = ?";
     const g = guards("docs", this.deps.repoId);
     const sql = `SELECT d.* FROM properties p CROSS JOIN docs d ON d.doc_id = p.doc_id
-      WHERE p.repo_id = ? AND p.key = ? AND ${typed} AND p.card = 'scalar' AND p.deleted_commit IS NULL${src}
+      WHERE p.repo_id = ? AND p.key = ? AND ${typed} AND p.card = 'scalar'${src}
         AND ${g.sql}
-        AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = ? AND p2.deleted_commit IS NULL${src2}) = 1
+        AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = ?${src2}) = 1
       ORDER BY ${ORDER.docs}`;
     const params = [this.deps.repoId, key, bound, ...(source === null ? [] : [source]), ...g.params, key, ...(source === null ? [] : [source])];
     return this.run(sql, params);

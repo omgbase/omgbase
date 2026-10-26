@@ -31,6 +31,9 @@
 // process start is measured separately as `spawn-baseline` and reported, not
 // subtracted). The size report is the store's own (spec/store §7.2): bytes per
 // category and table from dbstat, the file, the WAL, what VACUUM would reclaim.
+// Categories are read by name — the six of store 17.0 slice 3e (content,
+// identity, recovery, history, search, sync); a report from an older engine
+// lacks `identity`/`recovery` and those columns print empty.
 // Output: `<out>/<engine>-<stamp>.json` (everything) and `.md` (the tables).
 
 import { spawnSync } from "node:child_process";
@@ -178,7 +181,7 @@ function snapshot(stage, extra = {}) {
   const cats = Object.fromEntries(size.categories.map((c) => [c.name, { bytes: c.bytes, rows: c.rows }]));
   const tables = Object.fromEntries(size.categories.flatMap((c) => c.tables.map((t) => [t.name, { bytes: t.bytes, rows: t.rows }])));
   stages.push({ stage, ...extra, file: { db: bytes.db, wal: bytes.wal, grew }, categories: cats, tables, same_dispositions: size.same_dispositions ?? null, reclaimable: size.file.reclaimable });
-  console.error(`  ${stage.padEnd(16)} db ${(bytes.db / 1e6).toFixed(2)} MB wal ${(bytes.wal / 1e6).toFixed(2)} MB  grew ${(grew / 1e3).toFixed(0)} KB  history ${(cats.history.bytes / 1e6).toFixed(2)} MB content ${(cats.content.bytes / 1e6).toFixed(2)} MB`);
+  console.error(`  ${stage.padEnd(16)} db ${(bytes.db / 1e6).toFixed(2)} MB wal ${(bytes.wal / 1e6).toFixed(2)} MB  grew ${(grew / 1e3).toFixed(0)} KB  history ${(cats.history.bytes / 1e6).toFixed(2)} MB content ${(cats.content.bytes / 1e6).toFixed(2)} MB identity ${((cats.identity?.bytes ?? 0) / 1e6).toFixed(2)} MB`);
 }
 
 console.error(`engine ${engine} (${CLI.join(" ")}), ${docs} docs, ${edits} edits, seed ${seed}, workspace ${ws}`);
@@ -262,10 +265,11 @@ const final = stages[stages.length - 1];
 const imp = stages[0];
 let md = `# Baseline — ${engine} (${versions.cli}), ${files.length} docs, ${edits} edits, seed ${seed}\n\n`;
 md += `Source: ${mb(sourceBytes)} MB of Markdown. Database after import: ${mb(imp.file.db)} MB (${(imp.file.db / sourceBytes).toFixed(1)}× the source); after every workload and a gc: ${mb(final.file.db + final.file.wal)} MB (${((final.file.db + final.file.wal) / sourceBytes).toFixed(1)}×). Run ${stamp}.\n\n`;
-md += `## Growth per stage\n\n| stage | ops | db MB | wal MB | grew KB | KB / op | content MB | history MB | search MB | sync MB | same_dispositions |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
-for (const s of stages) md += `| ${s.stage} | ${s.ops ?? ""} | ${mb(s.file.db)} | ${mb(s.file.wal)} | ${(s.file.grew / 1e3).toFixed(0)} | ${s.ops ? (s.file.grew / 1e3 / s.ops).toFixed(1) : ""} | ${mb(s.categories.content.bytes)} | ${mb(s.categories.history.bytes)} | ${mb(s.categories.search.bytes)} | ${mb(s.categories.sync.bytes)} | ${s.same_dispositions ?? ""} |\n`;
-md += `\n## History tables after gc\n\n| table | MB | rows |\n| --- | --- | --- |\n`;
-for (const t of ["blobs", "tree_nodes", "dispositions", "block_changes", "revisions", "commits", "resurrection_pool", "pending_materializations", "archives"]) if (final.tables[t]) md += `| ${t} | ${mb(final.tables[t].bytes)} | ${final.tables[t].rows} |\n`;
+const cat = (s, name) => (s.categories[name] ? mb(s.categories[name].bytes) : "");
+md += `## Growth per stage\n\n| stage | ops | db MB | wal MB | grew KB | KB / op | content MB | identity MB | recovery MB | history MB | search MB | sync MB | same_dispositions |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;
+for (const s of stages) md += `| ${s.stage} | ${s.ops ?? ""} | ${mb(s.file.db)} | ${mb(s.file.wal)} | ${(s.file.grew / 1e3).toFixed(0)} | ${s.ops ? (s.file.grew / 1e3 / s.ops).toFixed(1) : ""} | ${cat(s, "content")} | ${cat(s, "identity")} | ${cat(s, "recovery")} | ${cat(s, "history")} | ${cat(s, "search")} | ${cat(s, "sync")} | ${s.same_dispositions ?? ""} |\n`;
+md += `\n## History, identity, recovery and feed tables after gc\n\n| table | MB | rows |\n| --- | --- | --- |\n`;
+for (const t of ["blobs", "tree_nodes", "dispositions", "block_changes", "revisions", "commits", "edge_transitions", "archives", "id_claims", "resurrection_pool", "pending_materializations", "edges", "feed", "feed_entries"]) if (final.tables[t]) md += `| ${t} | ${mb(final.tables[t].bytes)} | ${final.tables[t].rows} |\n`;
 md += `\n## Latency (CLI round trips, ms)\n\n| op | n | p50 | p95 | max |\n| --- | --- | --- | --- | --- |\n`;
 for (const [k, v] of Object.entries(latency)) md += `| ${k} | ${v.n} | ${v.p50.toFixed(0)} | ${v.p95.toFixed(0)} | ${v.max.toFixed(0)} |\n`;
 md += `\nThe process start (\`spawn-baseline\`, \`--version\`) is included in every row above. Workspace: a fresh temp directory, \`init --no-embedder\`, one filesystem source; no embedder, so \`search\` is FTS only.\n`;

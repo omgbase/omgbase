@@ -668,20 +668,24 @@ checks: what the workspace database is made of, and what would reclaim
 space. It is `spec/store` §7 "Size" rendered: the store measures every
 table through SQLite's `dbstat` virtual table (an index counts toward its
 table, an FTS5 table's shadow tables fold into it), groups the tables into
-the four categories the store spec assigns — `content` (the live state:
-docs, blocks, sections, nodes, edges, properties…), `history` (blobs,
-tree nodes, revisions, commits, dispositions, block changes, the id claims,
-the pool, pending materializations), `search` (the FTS tables, embeddings) and `sync`
-(repos, sources, adapters, attachments, the change feed and its entries —
-store 17.0, where `checkpoints` was — file stats, settings,
-and anything the spec does not name — `sqlite_schema` among them) — counts
-each table's rows, and derives the advice. Needs no repo (the database is
-the workspace's); exit 0 — a size report is information, not a check — and
-an unreadable database is the ordinary open error.
+the **six** categories the store spec assigns (`spec/store` §7.2; store
+17.0 — four through store 16.x) — `content` (the live state: docs, blocks,
+sections, nodes, the open edges, the rollup, external nodes, properties),
+`identity` (the id claims and the resurrection pool), `recovery` (pending
+materializations), `history` (blobs, tree nodes, revisions, commits,
+dispositions, block changes, edge transitions, archives), `search` (the
+FTS tables, embeddings) and `sync` (repos, sources, adapters, attachments,
+the change feed and its entries — where `checkpoints` was — file stats,
+settings, and anything the spec does not name — `sqlite_schema` among
+them) — counts each table's rows, and derives the advice. Needs no repo
+(the database is the workspace's; the `feed` line below is the selected
+repository's when the selection resolves, else the store's only one); exit
+0 — a size report is information, not a check — and an unreadable database
+is the ordinary open error.
 
 Human, on stdout: a header row `category  bytes  share  rows`, then per
-category (always the four, in the fixed order content, history, search,
-sync) one line `<name>  <bytes>  <share>  <rows>` followed by its three
+category (always the six, in the fixed order content, identity, recovery,
+history, search, sync) one line `<name>  <bytes>  <share>  <rows>` followed by its three
 biggest tables (by bytes desc, then name) indented two more; the bytes
 cell is the humanized size right-aligned in 9 columns (`4.0 KB`,
 `788.0 KB`, `13.1 MB`; `<n> B` under 1024, else one decimal of a
@@ -694,9 +698,13 @@ bytes, <freelist_count> free`, `reclaimable  <bytes>`
 (`freelist_count × page_size`: what a `VACUUM` returns to the filesystem),
 (cli 4.6) `archived  <n> revisions in <s> segments, <bytes> on disk`
 (`spec/store` §7 "Size" `archived`: the history already moved to archive
-segments), and (store 17.0) `id claims  <n> ids claimed` (`spec/store` §7.2
-`id_claims`: one row per id ever minted and still held, §2.1) — the keys
-padded to `reclaimable`; then one `  advice: <text>`
+segments), (store 17.0) `id claims  <n> ids claimed` (`spec/store` §7.2
+`id_claims`: one row per id ever minted and still held, §2.1), and (store
+17.0, slice 3e) `feed  epoch <ep>, <n> entries, seq <oldest>..<head>`
+(`spec/store` §7.2 `feed`: the change feed's epoch, retained rows and
+position for the report's repository; `feed  no repository selected` when
+the store has several and none resolved) — the keys padded to
+`reclaimable`; then one `  advice: <text>`
 line per advice. Without `dbstat` in the SQLite build the bytes and share cells are
 `—`, the tables order by rows, and a line `  dbstat unavailable: row counts
 only` follows the table (no fixture: both engines' builds have it).
@@ -726,12 +734,16 @@ applies.
 stream): `{ file: { path, bytes, wal_bytes, page_size, page_count,
 freelist_count, reclaimable }, categories: [{ name, bytes, share, rows,
 tables: [{ name, bytes, share, rows, indexes }] }], same_dispositions,
-id_claims, archived: { revisions, segments, bytes }, advice: [string] }`
+id_claims, archived: { revisions, segments, bytes }, feed: { epoch, oldest,
+head, entries, retain_days, retain_entries, max_entries } | null, advice:
+[string] }`
 (+ `detail: "dbstat unavailable"` in the fallback, where every `bytes`,
 `share` and `indexes` is `null`); `indexes` is the part of a table's
 `bytes` its indexes take; `share` is one decimal; `same_dispositions`
 (cli 4.5) is the `same` row count of `spec/store` §7, `0` on a 14.2 store;
 `id_claims` (store 17.0) the `id_claims` row count of `spec/store` §7.2;
+`feed` (store 17.0, slice 3e) the feed's position and effective policy
+(`spec/store` §7.2, §7.4 — `epoch` a string, the rest integers);
 every other number is an integer of bytes or rows. Exact bytes: `admin::doctor-size`,
 `doctor-size-json`, `doctor-size-jsonl`, `doctor-size-after-rm` — recorded
 by shape (§8): the sizes and shares are `<bytes>`/`<share>`/`<number>`,

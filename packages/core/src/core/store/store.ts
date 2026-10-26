@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL } from "./schema.js";
+import { ALL_DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL, EDGE_TRANSITIONS_DDL } from "./schema.js";
 import { mintId, registerIdOracle } from "../ids.js";
 import { FEED_DDL } from "./schema.js";
-import { pruneFeed } from "./feed.js";
+import { pruneFeed, remintEpoch } from "./feed.js";
 import type { Capabilities, CapabilitiesFactory } from "../capabilities/types.js";
 import { bindCapabilities } from "../capabilities/registry.js";
 import { envCapabilities } from "../capabilities/default.js";
@@ -64,7 +64,10 @@ export class Store {
   private migrate(): void {
     const current = this.db.pragma("user_version", { simple: true }) as number;
     if (current === 0) {
-      this.db.exec(DDL);
+      // spec/store §3.3 (17.0): the core bundle, then the history and semantic
+      // bundles — every bundle on every fresh database through Phase 3 (Phase 4
+      // makes the capability bundles conditional on the manifest).
+      this.db.exec(ALL_DDL);
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
       return;
     }
@@ -73,14 +76,17 @@ export class Store {
       // 3c → 3d): a database a 3a build already moved to 17 has `docs` but no
       // `id_claims` and the pool's `deleted_commit`; a 3a/3b build's still has
       // `pending_materializations.rev_id`; a 3a–3c build's has no `feed`, a
-      // `checkpoints` table and `commits.checkpoint_id`. Each part of the step
-      // is idempotent, so finish it here rather than spend a schema version on
-      // a dev-only state. (A 17 database with no `docs` table — the
+      // `checkpoints` table and `commits.checkpoint_id`; a 3a–3d build's has
+      // `edges.from_commit`/`to_commit`, `properties.created_commit` and the
+      // `collections`/`inferred_edges` tables. Each part of the step is
+      // idempotent, so finish it here rather than spend a schema version on a
+      // dev-only state. (A 17 database with no `docs` table — the
       // `already-current-is-untouched` fixture — is left exactly as it is.)
       if (this.tableExists("docs")) {
         this.migrateV17Claims();
         this.migrateV17Pending();
         this.migrateV17Feed();
+        this.migrateV17Edges();
       }
       return;
     }
@@ -99,7 +105,7 @@ export class Store {
       if (v === 11) { this.migrateV11(); continue; }
       if (v === 13) { this.migrateV13(); continue; }
       if (v === 15) { this.migrateV15(); continue; }
-      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); continue; }
+      if (v === 17) { this.migrateV17(); this.migrateV17Claims(); this.migrateV17Pending(); this.migrateV17Feed(); this.migrateV17Edges(); continue; }
       // v16 (spec/store §3.4 step 16, §4.1 "Delta nodes"): no DDL and no data
       // pass. A 15.x store holds only full (`[`-form) nodes and raw frontmatter
       // blobs, which ARE the 16.0 checkpoint forms, so every existing revision
@@ -724,6 +730,120 @@ ALTER TABLE sync_state ADD COLUMN last_batch_files INTEGER;`);
     } finally {
       db.pragma("foreign_keys = ON");
     }
+  }
+
+
+  // The edges-and-drops half of step 17 (spec/store §3.4 step 17 (10)–(12);
+  // modular-core Phase 3e-i — M6, D9). (10) `edges` becomes OPEN-ONLY: every
+  // row is first copied verbatim into the history bundle's `edge_transitions`
+  // (created here when the bundle is present — `commits` exists), then the
+  // table is rebuilt with the open rows (`to_commit IS NULL`) minus the two
+  // interval columns, `idx_edges_src`/`idx_edges_dst` without their `WHERE`,
+  // `idx_edges_temporal` gone, `rowid`s kept (the rollup's sample order); the
+  // `e` claims follow the rows — bit 1 for every id a transition names, bit 0
+  // only for the ids an open row still carries (a closed edge's claim is the
+  // recorder's alone, as the backfill rule of step (4) has it), a claim with no
+  // holder left deleted. (11) `properties` rebuilt without `created_commit`/
+  // `deleted_commit` (never read non-NULL; D9) and its four indexes without
+  // their partial predicates, `rowid`s kept. (12) `collections` and
+  // `inferred_edges` dropped (created, never written; D9). One transaction,
+  // `foreign_keys = OFF` for its duration, `PRAGMA foreign_key_check` empty at
+  // its end. Idempotent on each part: an `edges` without `from_commit`, a
+  // `properties` without `created_commit` and a missing table are nothing to do.
+  private migrateV17Edges(): void {
+    const db = this.db;
+    const cols = (t: string): { name: string }[] => (this.tableExists(t) ? (db.pragma(`table_info(${t})`) as { name: string }[]) : []);
+    const needsEdges = cols("edges").some((c) => c.name === "from_commit");
+    const needsProps = cols("properties").some((c) => c.name === "created_commit");
+    const hasCollections = this.tableExists("collections");
+    const hasInferred = this.tableExists("inferred_edges");
+    if (!needsEdges && !needsProps && !hasCollections && !hasInferred) return;
+    const hasHistory = this.tableExists("commits");
+    const hasClaims = this.tableExists("id_claims");
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        if (needsEdges) {
+          if (hasHistory) {
+            db.exec(EDGE_TRANSITIONS_DDL);
+            db.exec(`INSERT OR IGNORE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+  SELECT edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit FROM edges ORDER BY rowid`);
+          }
+          db.exec(`
+CREATE TABLE edges_v17 (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external')),
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
+               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
+  via_node    TEXT
+);
+INSERT INTO edges_v17 (rowid, edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node)
+  SELECT rowid, edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node FROM edges WHERE to_commit IS NULL ORDER BY rowid;
+DROP TABLE edges;
+ALTER TABLE edges_v17 RENAME TO edges;
+CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src_doc, predicate);
+CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst_node, predicate);`);
+          if (hasClaims) {
+            if (hasHistory) db.exec("UPDATE id_claims SET holders = holders | 2 WHERE prefix = 'e' AND id IN (SELECT edge_id FROM edge_transitions)");
+            db.exec(`UPDATE id_claims SET holders = holders & ~1 WHERE prefix = 'e' AND id NOT IN (SELECT edge_id FROM edges);
+DELETE FROM id_claims WHERE holders = 0;`);
+          }
+        }
+        if (needsProps) {
+          db.exec(`
+CREATE TABLE properties_v17 (
+  prop_id        TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  block_id       TEXT,
+  source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
+  key            TEXT NOT NULL,
+  card           TEXT NOT NULL CHECK (card IN ('scalar','list')),
+  ord            INTEGER NOT NULL DEFAULT 0,
+  val_text       TEXT,
+  val_num        REAL,
+  val_bool       INTEGER,
+  val_json       TEXT,
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json'))
+);
+INSERT INTO properties_v17 (rowid, prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, val_num, val_bool, val_json, type)
+  SELECT rowid, prop_id, repo_id, doc_id, block_id, source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties ORDER BY rowid;
+DROP TABLE properties;
+ALTER TABLE properties_v17 RENAME TO properties;
+CREATE INDEX IF NOT EXISTS idx_props_doc      ON properties(doc_id);
+CREATE INDEX IF NOT EXISTS idx_props_key_text ON properties(repo_id, key, val_text);
+CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_num);
+CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key);`);
+        }
+        db.exec("DROP TABLE IF EXISTS collections; DROP TABLE IF EXISTS inferred_edges;");
+        const violations = db.pragma("foreign_key_check") as unknown[];
+        if (violations.length > 0) throw new Error(`migration v17: ${violations.length} foreign key violation(s) after the edges step`);
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  }
+
+  /**
+   * spec/store §7.5 (17.0): re-mint the repository's epoch — a **restore** or
+   * a **rebuild-from-files** starts the feed over. Mints and claims a new `ep`
+   * at `ts`, writes it on the `repos` row, deletes the repository's `feed` and
+   * `feed_entries` rows of every epoch (a cursor of the old epoch is expired by
+   * construction; the rows are unreachable); the next commit is `seq = 1` of
+   * the new epoch. The recorder's `commits` keep their old `epoch`. Returns the
+   * new epoch. No production path calls it yet (the reference has no restore
+   * and no rebuild-from-files); it is the rule, pinned by the store fixtures'
+   * `remint_epoch` step.
+   */
+  remintEpoch(repoId: string, ts: string = new Date().toISOString()): string {
+    return this.write((db) => remintEpoch(db, repoId, ts));
   }
 
   /**

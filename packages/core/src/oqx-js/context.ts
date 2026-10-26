@@ -253,8 +253,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // rule so `==` sees a scalar only when authored scalar, and `list()` sees all.
   const docProp = (docId: string, key: string, source?: string): unknown => {
     const rows = source
-      ? all(`SELECT * FROM properties WHERE doc_id = ? AND key = ? AND source = ? AND deleted_commit IS NULL ORDER BY ord`, docId, key, source)
-      : all(`SELECT * FROM properties WHERE doc_id = ? AND key = ? AND deleted_commit IS NULL ORDER BY ord`, docId, key);
+      ? all(`SELECT * FROM properties WHERE doc_id = ? AND key = ? AND source = ? ORDER BY ord`, docId, key, source)
+      : all(`SELECT * FROM properties WHERE doc_id = ? AND key = ? ORDER BY ord`, docId, key);
     if (rows.length === 0) {
       // No exact key: omgbase flattens nested YAML/JSON maps to dotted keys
       // (`logging.level`), so a bare `logging` should reconstruct the nested
@@ -274,8 +274,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // a list-valued key).
   const docPropEntries = (docId: string, source: string | null): unknown[] => {
     const keys = (source
-      ? all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source = ? AND deleted_commit IS NULL ORDER BY key`, docId, source)
-      : all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source IN ('frontmatter', 'inline') AND deleted_commit IS NULL ORDER BY key`, docId)
+      ? all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source = ? ORDER BY key`, docId, source)
+      : all(`SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source IN ('frontmatter', 'inline') ORDER BY key`, docId)
     ).map((r) => String(r.key));
     const tops: string[] = [];
     const seen = new Set<string>();
@@ -289,8 +289,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // (undefined when there are none). Leaves are decoded property values.
   const docPropObject = (docId: string, prefix: string, source?: string): unknown => {
     const rows = source
-      ? all(`SELECT * FROM properties WHERE doc_id = ? AND key LIKE ? AND source = ? AND deleted_commit IS NULL ORDER BY ord`, docId, `${prefix}.%`, source)
-      : all(`SELECT * FROM properties WHERE doc_id = ? AND key LIKE ? AND deleted_commit IS NULL ORDER BY ord`, docId, `${prefix}.%`);
+      ? all(`SELECT * FROM properties WHERE doc_id = ? AND key LIKE ? AND source = ? ORDER BY ord`, docId, `${prefix}.%`, source)
+      : all(`SELECT * FROM properties WHERE doc_id = ? AND key LIKE ? ORDER BY ord`, docId, `${prefix}.%`);
     if (rows.length === 0) return undefined;
     const out: Record<string, unknown> = {};
     for (const r of rows) {
@@ -366,15 +366,15 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       // The linked / linking DOCUMENTS are reached through the link rows (3.0
       // follow-up, §9: the `out` / `in` relations are gone): `_out_links collect
       // distinct { from _dst }` and `_in_links collect distinct { from _doc }`.
-      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
+      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_doc = ? ORDER BY e.predicate, e.edge_id`, r.path, r.doc_id), "links"),
       _in_links: (r) => tagAll(all(
         `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-         WHERE e.dst_node = ? AND e.to_commit IS NULL AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
+         WHERE e.dst_node = ? AND d.deleted_at IS NULL ORDER BY e.predicate, e.edge_id`, r.doc_id), "links"),
     },
     blocks: {
       _children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_at IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
       _nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
-      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
+      _out_links: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "links"),
       // enclosing section node(s): md:section whose range contains this block's top ordinal.
       _section: (r) => {
         const top = topOrdinal(r);
@@ -704,7 +704,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "semantic": return { handled: true, value: semanticScore(t, r, String(args[0] ?? "")) };
       case "has_anchor": {
         requireTarget(t, "blocks", "has_anchor");
-        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE src_block = ? AND anchor IS NOT NULL AND to_commit IS NULL LIMIT 1`, r.block_id) };
+        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE src_block = ? AND anchor IS NOT NULL LIMIT 1`, r.block_id) };
       }
       case "child_count": {
         requireTarget(t, "blocks", "child_count");
@@ -718,8 +718,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
         const pred = String(args[0]);
         const srcCol = t === "blocks" ? "src_block = ?" : "src_doc = ?";
         const srcVal = t === "blocks" ? r.block_id : r.doc_id;
-        if (args.length >= 2) return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE ${srcCol} AND predicate = ? AND to_commit IS NULL AND dst_node = ? LIMIT 1`, srcVal, pred, args[1]) };
-        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE ${srcCol} AND predicate = ? AND to_commit IS NULL LIMIT 1`, srcVal, pred) };
+        if (args.length >= 2) return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE ${srcCol} AND predicate = ? AND dst_node = ? LIMIT 1`, srcVal, pred, args[1]) };
+        return { handled: true, value: !!one(`SELECT 1 FROM edges WHERE ${srcCol} AND predicate = ? LIMIT 1`, srcVal, pred) };
       }
       case "under": { requireTarget(t, "blocks", "under"); return { handled: true, value: underSubtree(r, String(args[0])) }; }
       case "under_heading": { requireTarget(t, "blocks", "under_heading"); return { handled: true, value: underHeading(r, String(args[0])) }; }

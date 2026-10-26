@@ -110,15 +110,15 @@ CREATE TABLE properties (
   val_num    REAL,
   val_bool   INTEGER,                   -- 0/1
   val_json   TEXT,                      -- objects/arrays that resist flattening (escape hatch)
-  type       TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')),
-  created_commit TEXT NOT NULL,
-  deleted_commit TEXT
+  type       TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json'))
+  -- store 17.0 (D9): no created_commit/deleted_commit — a row is live exactly while
+  -- its document's rows are (every commit rewrites the document's rows wholesale).
 );
 
-CREATE INDEX idx_props_doc      ON properties(doc_id)                          WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text)          WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num)           WHERE deleted_commit IS NULL;
-CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            WHERE deleted_commit IS NULL;
+CREATE INDEX idx_props_doc      ON properties(doc_id);
+CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text);
+CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num);
+CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key);
 ```
 
 ### Modeling decisions
@@ -200,7 +200,7 @@ operate over them — an indexed `EXISTS`/`COUNT`, not a `json_each` scan:
 ```
 "a" in list(tags)   →  EXISTS (SELECT 1 FROM properties
                                 WHERE doc_id=d.doc_id AND key='tags'
-                                  AND val_text=? AND deleted_commit IS NULL)
+                                  AND val_text=?)
 size(list(tags))    →  (SELECT COUNT(*) FROM properties WHERE … key='tags' …)
 ```
 
@@ -424,8 +424,9 @@ not an index rebuild.
   rare; the common flat case is a seek.
 
 **Non-goals / deferred**
-- Historical/temporal property queries (`as_of`) — properties carry
-  `created_commit`/`deleted_commit` for future temporal support, unused in v1.
+- Historical/temporal property queries (`as_of`) — the `created_commit`/
+  `deleted_commit` columns v1 reserved for them were never read non-NULL and
+  left in store 17.0 (D9); temporal property reads will come from the recorder.
 - Per-block property *filtering* on the blocks target — v1 is document-grain;
   `block_id` is stored for provenance but blocks-target property filtering is later.
 

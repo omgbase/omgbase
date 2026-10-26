@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Store } from "./store.js";
 import { ensureRepo } from "../attach.js";
 import { processCheckpoint } from "../../sync/checkpoint.js";
-import { DDL } from "./schema.js";
+import { ALL_DDL } from "./schema.js";
 import {
   SIZE_CATEGORIES, TABLE_CATEGORY, categoryOf, formatShare, humanBytes, shareOf, sizeAdvice, sizeReport, vacuum,
   type SizeCategoryReport, type SizeFile,
@@ -61,7 +61,7 @@ describe("humanize", () => {
 
 describe("categorization", () => {
   it("assigns every table schema.sql creates, and anything else to sync", () => {
-    const created = [...DDL.matchAll(/CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
+    const created = [...ALL_DDL.matchAll(/CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
     expect(created.length).toBeGreaterThan(25);
     for (const t of created) expect(TABLE_CATEGORY[t], t).toBeDefined();
     expect(Object.keys(TABLE_CATEGORY).sort()).toEqual([...created].sort());
@@ -70,6 +70,11 @@ describe("categorization", () => {
     expect(categoryOf("blobs")).toBe("history");
     expect(categoryOf("blocks_fts")).toBe("search");
     expect(categoryOf("blocks")).toBe("content");
+    expect(categoryOf("id_claims")).toBe("identity");
+    expect(categoryOf("resurrection_pool")).toBe("identity");
+    expect(categoryOf("pending_materializations")).toBe("recovery");
+    expect(categoryOf("edge_transitions")).toBe("history");
+    expect(categoryOf("feed")).toBe("sync");
   });
 });
 

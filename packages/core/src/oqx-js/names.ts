@@ -111,7 +111,7 @@ function authoredKeys(store: Store, repoId: string, target: Kind): string[] {
   let sql: string;
   switch (target) {
     case "docs":
-      sql = "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND deleted_commit IS NULL AND source IN ('frontmatter', 'inline') ORDER BY key";
+      sql = "SELECT DISTINCT key FROM properties WHERE repo_id = ? AND source IN ('frontmatter', 'inline') ORDER BY key";
       return (store.db.prepare(sql).all(repoId) as { key: string }[]).map((r) => r.key);
     case "blocks":
     case "nodes": {

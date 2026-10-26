@@ -474,43 +474,6 @@
             ],
             "foreign_keys": []
           },
-          "collections": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "node_id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "repo_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "name",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "spec",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": "'{}'",
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
-          },
           "commits": {
             "columns": [
               {
@@ -890,7 +853,7 @@
               }
             ]
           },
-          "edges": {
+          "edge_transitions": {
             "columns": [
               {
                 "cid": 0,
@@ -991,6 +954,99 @@
               {
                 "cid": 12,
                 "name": "to_commit",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "edges": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "edge_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "src_doc",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "src_block",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "src_field",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "predicate",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "dst_kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "dst_node",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "anchor",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "provenance",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 10,
+                "name": "via_node",
                 "type": "TEXT",
                 "notnull": 0,
                 "dflt_value": null,
@@ -1332,67 +1388,6 @@
                 "cid": 4,
                 "name": "holders",
                 "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
-          },
-          "inferred_edges": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "src_node",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "dst_node",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 2
-              },
-              {
-                "cid": 2,
-                "name": "predicate",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 3
-              },
-              {
-                "cid": 3,
-                "name": "method",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 4
-              },
-              {
-                "cid": 4,
-                "name": "score",
-                "type": "REAL",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "model_v",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "computed_at",
-                "type": "TEXT",
                 "notnull": 1,
                 "dflt_value": null,
                 "pk": 0
@@ -1797,22 +1792,6 @@
                 "name": "type",
                 "type": "TEXT",
                 "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 13,
-                "name": "created_commit",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 14,
-                "name": "deleted_commit",
-                "type": "TEXT",
-                "notnull": 0,
                 "dflt_value": null,
                 "pk": 0
               }
@@ -2281,11 +2260,21 @@
               "minted_at"
             ]
           },
+          "idx_edge_transitions_temporal": {
+            "table": "edge_transitions",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "from_commit",
+              "to_commit"
+            ]
+          },
           "idx_edges_dst": {
             "table": "edges",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "dst_node",
               "predicate"
@@ -2295,20 +2284,10 @@
             "table": "edges",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "src_doc",
               "predicate"
-            ]
-          },
-          "idx_edges_temporal": {
-            "table": "edges",
-            "unique": 0,
-            "origin": "c",
-            "partial": 0,
-            "columns": [
-              "from_commit",
-              "to_commit"
             ]
           },
           "idx_feed_ts": {
@@ -2352,7 +2331,7 @@
             "table": "properties",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "doc_id"
             ]
@@ -2361,7 +2340,7 @@
             "table": "properties",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "repo_id",
               "key",
@@ -2372,7 +2351,7 @@
             "table": "properties",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "repo_id",
               "key",
@@ -2383,7 +2362,7 @@
             "table": "properties",
             "unique": 0,
             "origin": "c",
-            "partial": 1,
+            "partial": 0,
             "columns": [
               "repo_id",
               "source",
@@ -2466,15 +2445,6 @@
               "term"
             ]
           },
-          "sqlite_autoindex_collections_1": {
-            "table": "collections",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "node_id"
-            ]
-          },
           "sqlite_autoindex_commits_1": {
             "table": "commits",
             "unique": 1,
@@ -2544,6 +2514,15 @@
             "columns": [
               "repo_id",
               "path"
+            ]
+          },
+          "sqlite_autoindex_edge_transitions_1": {
+            "table": "edge_transitions",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "edge_id"
             ]
           },
           "sqlite_autoindex_edges_1": {
@@ -2634,18 +2613,6 @@
             "partial": 0,
             "columns": [
               "id"
-            ]
-          },
-          "sqlite_autoindex_inferred_edges_1": {
-            "table": "inferred_edges",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "src_node",
-              "dst_node",
-              "predicate",
-              "method"
             ]
           },
           "sqlite_autoindex_nodes_1": {

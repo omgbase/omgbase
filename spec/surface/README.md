@@ -187,7 +187,7 @@ history, 4.7):
 | `docs` | `docs` with `deleted_at IS NULL` | `(path, doc_id)` |
 | `blocks` | live blocks of live docs | `(doc path, block_id)` |
 | `nodes` | `nodes` of live docs | `(doc path, node_id)` |
-| `links` | open `edges` rows (`to_commit IS NULL`) of live source docs — the link RELATIONS, §1.2 | `(source doc path, edge_id)` |
+| `links` | the `edges` rows of live source docs — every row is an open edge since store 17.0 (`spec/graph` 3.0; through 5.x the filter `to_commit IS NULL`) — the link RELATIONS, §1.2 | `(source doc path, edge_id)` |
 | `revisions` | (4.7) every `revisions` row of every document of the repository, joined to its commit — **deleted documents' revisions included** (history is history; the repository guard is the owning `docs` row's `repo_id`, the table carries none) | `(revisions.path, rev_id)` — the keyset order of every target, so the cursor pages it (§1.4); `order by _seq` for a document's chronology |
 
 **The repository is the root row** (2.0, with `spec/oqx` 0.18 §2). The root
@@ -400,7 +400,7 @@ decoded values; no row → the nested object rebuilt from keys under `<k>.`
 **document order**: block-less nodes first, then by the owning block's
 pre-order rank, then `span_start`, then `node_id` — §9), `_blocks` (live,
 **document order**: pre-order over the tree — §9), `_out_links` / `_in_links`
-(open edges, `(predicate, edge_id)` order). There is **no `_out` / `_in`
+(the doc's edges — every row open, `(predicate, edge_id)` order). There is **no `_out` / `_in`
 relation** (3.0 follow-up, §9): the documents a doc links TO are its link
 rows' destinations, `_out_links distinct { from _dst }`, and the
 documents linking to it their sources, `_in_links distinct { from
@@ -450,7 +450,7 @@ everywhere (before 3.0 the two shared a name and the walk's shadowed the
 block's, §9). The row itself is `$it` (`block` was its alias through 4.11);
 `_doc` is the owning doc. Relations: `_children` (live, `(ordinal,
 block_id)`), `_nodes` (nodes anchored to the block, `(span_start, node_id)`
-order), `_out_links` (open edges from the block, `(predicate, edge_id)`),
+order), `_out_links` (the edges from the block, `(predicate, edge_id)`),
 `_section` (the `md:section` nodes whose `[first_ordinal, last_ordinal]`
 contains the block's **top-level ancestor's ordinal**, by `(first_ordinal,
 node_id)`).
@@ -512,8 +512,10 @@ doc-level filter on what is linked to, and `_dst._id` / `_dst._path` read
 `reads::dst-on-links` for an external link). A link carries **no authored
 data**, so a bare name on it (`target`, `dst`) is §1.5's closed-kind error
 (the 5.0 links case of `query-links.json` reads `_dst_path`). The creating commit
-(`from_commit`) is not a field: a query sees open edges only and the commit
-is history (`blocks_history`, `changes_since`), §9.
+is not a field: the `edges` table holds the open relations alone (store
+17.0, `spec/graph` 3.0 — the commit that opened or closed an edge is the
+recorder's `edge_transitions`), and the commit is history (`blocks_history`,
+`changes_since`), §9.
 
 **revisions** (4.7)**.** History as rows: one row per `revisions` row of every
 document of the repository (`spec/store` §4 — a revision is minted by every
@@ -604,11 +606,12 @@ entry read, so the names stay bare under the 5.0 rule (§1.2):
   containing `name` or `_attrs.key == name`); `yaml_path` / `json_pointer` —
   for `yaml:`/`json:` blocks, `_attrs.key` equals the path or its leaf.
 - `has_edge(pred[, dst])` (docs and blocks): an open edge with that
-  predicate (and target) from the row; `has_anchor()` (blocks): an OPEN edge
-  from the block carrying an anchor — a link edited away closes its edge row
-  (`to_commit` set) and the block answers false (5.1 patch, 2026-10-25;
-  `reads::has-anchor-open-edges`); `child_count()`, `parent_type()`
-  (blocks).
+  predicate (and target) from the row; `has_anchor()` (blocks): an edge
+  from the block carrying an anchor — a link edited away deletes its edge
+  row (store 17.0, `spec/graph` 3.0; through 16.x the row stayed with
+  `to_commit` set and the probe filtered it since the 5.1 patch of
+  2026-10-25) and the block answers false (`reads::has-anchor-open-edges`
+  stays as the pin); `child_count()`, `parent_type()` (blocks).
 
 **Dates and durations (4.8).** Two free functions and a set of methods give
 the binding Dataview's date arithmetic without a new value kind. A **date is
@@ -2375,7 +2378,9 @@ both and runs both harnesses.
   the row. Now `AND to_commit IS NULL`, byte for byte in both engines, pinned
   by `reads::has-anchor-open-edges` (two anchored paragraphs, one rewritten
   without its link; `has_anchor()` names the other alone). No field, tool or
-  result key changed: a patch.
+  result key changed: a patch. (Store 17.0 slice 3e-i then made the filter
+  moot: `edges` holds open rows only — `spec/graph` 3.0 §3.3 — so no edges
+  reader filters an interval; the fixture stays as the pin.)
 
 ## Decisions
 
