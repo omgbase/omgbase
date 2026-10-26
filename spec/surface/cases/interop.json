@@ -3727,10 +3727,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           },
@@ -4280,10 +4283,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           }
@@ -9527,10 +9533,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           }
@@ -11235,10 +11244,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           }
@@ -14714,10 +14726,13 @@
             "profile": "<string>",
             "capabilities": {
               "history": {
-                "state": "<string>"
+                "state": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>"
               },
               "semantic": {
-                "state": "<string>"
+                "state": "<string>",
+                "model": "<null>"
               }
             },
             "epoch": "<string>"

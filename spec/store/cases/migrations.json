@@ -263,6 +263,16 @@
             "repo_id",
             "source_id"
           ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "block_changes": [
+            "block_id",
+            "commit_id",
+            "kind"
+          ],
           "capabilities": [
             "repo_id",
             "capability",
@@ -274,6 +284,42 @@
             "coverage",
             "writer_requires",
             "updated_at"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "epoch",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "ops"
+          ],
+          "dispositions": [
+            "commit_id",
+            "block_id",
+            "kind",
+            "confidence",
+            "reason",
+            "matcher_v",
+            "detail"
+          ],
+          "edge_transitions": [
+            "edge_id",
+            "repo_id",
+            "src_doc",
+            "src_block",
+            "src_field",
+            "predicate",
+            "dst_kind",
+            "dst_node",
+            "anchor",
+            "provenance",
+            "via_node",
+            "from_commit",
+            "to_commit"
           ],
           "feed": [
             "repo_id",
@@ -323,12 +369,27 @@
             "settings",
             "epoch"
           ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
           "sources": [
             "source_id",
             "name",
             "adapter",
             "config",
             "env"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
           ]
         },
         "rows": {
@@ -414,6 +475,16 @@
             "repo_id",
             "source_id"
           ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "block_changes": [
+            "block_id",
+            "commit_id",
+            "kind"
+          ],
           "capabilities": [
             "repo_id",
             "capability",
@@ -425,6 +496,42 @@
             "coverage",
             "writer_requires",
             "updated_at"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "epoch",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "ops"
+          ],
+          "dispositions": [
+            "commit_id",
+            "block_id",
+            "kind",
+            "confidence",
+            "reason",
+            "matcher_v",
+            "detail"
+          ],
+          "edge_transitions": [
+            "edge_id",
+            "repo_id",
+            "src_doc",
+            "src_block",
+            "src_field",
+            "predicate",
+            "dst_kind",
+            "dst_node",
+            "anchor",
+            "provenance",
+            "via_node",
+            "from_commit",
+            "to_commit"
           ],
           "feed": [
             "repo_id",
@@ -474,12 +581,27 @@
             "settings",
             "epoch"
           ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
           "sources": [
             "source_id",
             "name",
             "adapter",
             "config",
             "env"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
           ]
         },
         "rows": {
@@ -560,6 +682,16 @@
             "repo_id",
             "source_id"
           ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "block_changes": [
+            "block_id",
+            "commit_id",
+            "kind"
+          ],
           "capabilities": [
             "repo_id",
             "capability",
@@ -571,6 +703,42 @@
             "coverage",
             "writer_requires",
             "updated_at"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "epoch",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "ops"
+          ],
+          "dispositions": [
+            "commit_id",
+            "block_id",
+            "kind",
+            "confidence",
+            "reason",
+            "matcher_v",
+            "detail"
+          ],
+          "edge_transitions": [
+            "edge_id",
+            "repo_id",
+            "src_doc",
+            "src_block",
+            "src_field",
+            "predicate",
+            "dst_kind",
+            "dst_node",
+            "anchor",
+            "provenance",
+            "via_node",
+            "from_commit",
+            "to_commit"
           ],
           "feed": [
             "repo_id",
@@ -620,12 +788,27 @@
             "settings",
             "epoch"
           ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
           "sources": [
             "source_id",
             "name",
             "adapter",
             "config",
             "env"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
           ]
         },
         "rows": {
@@ -696,6 +879,16 @@
             "revision_count",
             "bytes"
           ],
+          "blobs": [
+            "hash",
+            "bytes",
+            "size"
+          ],
+          "block_changes": [
+            "block_id",
+            "commit_id",
+            "kind"
+          ],
           "capabilities": [
             "repo_id",
             "capability",
@@ -707,6 +900,42 @@
             "coverage",
             "writer_requires",
             "updated_at"
+          ],
+          "commits": [
+            "commit_id",
+            "repo_id",
+            "epoch",
+            "seq",
+            "ts",
+            "origin",
+            "actor",
+            "reason",
+            "batch_id",
+            "ops"
+          ],
+          "dispositions": [
+            "commit_id",
+            "block_id",
+            "kind",
+            "confidence",
+            "reason",
+            "matcher_v",
+            "detail"
+          ],
+          "edge_transitions": [
+            "edge_id",
+            "repo_id",
+            "src_doc",
+            "src_block",
+            "src_field",
+            "predicate",
+            "dst_kind",
+            "dst_node",
+            "anchor",
+            "provenance",
+            "via_node",
+            "from_commit",
+            "to_commit"
           ],
           "feed": [
             "repo_id",
@@ -755,6 +984,21 @@
             "slug",
             "settings",
             "epoch"
+          ],
+          "revisions": [
+            "rev_id",
+            "doc_id",
+            "seq",
+            "root_tree",
+            "frontmatter_blob",
+            "rendered_hash",
+            "path",
+            "commit_id",
+            "archive"
+          ],
+          "tree_nodes": [
+            "hash",
+            "entries"
           ]
         },
         "rows": {
@@ -990,6 +1234,14 @@
             "batch_id",
             "ops"
           ],
+          "doc_embeddings": [
+            "doc_id",
+            "model",
+            "input_hash",
+            "method",
+            "dim",
+            "vec"
+          ],
           "docs": [
             "doc_id",
             "repo_id",
@@ -1032,6 +1284,13 @@
             "anchor",
             "provenance",
             "via_node"
+          ],
+          "embeddings": [
+            "content_hash",
+            "ctx_hash",
+            "model",
+            "dim",
+            "vec"
           ],
           "feed": [
             "repo_id",

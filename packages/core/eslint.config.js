@@ -13,9 +13,11 @@ const siblingBoundary = {
 // by the current-state layers — `core/**`, `mutate/**`, `sync/**`, `oqx-js/**`,
 // `reconcile/**`. Only the composition layer (`mcp/server.ts`, `index.ts`, the
 // CLI package) and the capability implementations import them. The files named
-// in `import-allowlist.json` are the Phase 3/4 leftovers, each citing its
+// in `import-allowlist.json` were the Phase 3/4 leftovers, each citing its
 // inventory row; `src/dependency-direction.test.ts` checks the same list edge by
-// edge and fails when an entry stops being a live import (the list only shrinks).
+// edge and fails when an entry stops being a live import (the list only shrinks
+// — empty since Phase 4a moved the recorder's writers and collection into
+// `store/history-writers.ts` and `store/history-gc.ts`, two more bundle files).
 // Phase 2 moved the semantic bundle to `src/semantic/` and widened its importer
 // set: `mcp/**` (the tool bodies), `search/**` (FTS, fusion), `graph/**` and
 // `format/**` are free of it too (`semanticBoundary` below).
@@ -25,6 +27,8 @@ export const historyAndSemanticModules = [
   "**/store/archive.js",
   "**/store/retention.js",
   "**/store/delta.js",
+  "**/store/history-writers.js",
+  "**/store/history-gc.js",
   ...semanticModules,
   // The same modules imported from their own directory (`core/store/size.ts` →
   // `./archive.js`): `no-restricted-imports` matches the specifier, not the
@@ -33,6 +37,8 @@ export const historyAndSemanticModules = [
   "./archive.js",
   "./retention.js",
   "./delta.js",
+  "./history-writers.js",
+  "./history-gc.js",
 ];
 const capabilityBoundary = {
   group: historyAndSemanticModules,
@@ -43,7 +49,7 @@ const semanticBoundary = {
   message: "the semantic bundle (src/semantic/) is reached through SemanticProvider (src/core/capabilities/, docs/modular-core/README.md §6); only index.ts, the capability implementations and the CLI compose it.",
 };
 const allowlisted = importAllowlist.entries.map((e) => `src/${e.from}`);
-const concreteHistoryModules = ["src/graph/history.ts", "src/core/store/archive.ts", "src/core/store/retention.ts", "src/core/store/delta.ts"];
+const concreteHistoryModules = ["src/graph/history.ts", "src/core/store/archive.ts", "src/core/store/retention.ts", "src/core/store/delta.ts", "src/core/store/history-writers.ts", "src/core/store/history-gc.ts"];
 const testFiles = ["src/**/*.test.ts", "src/**/*.test.helpers.ts"];
 
 export default [

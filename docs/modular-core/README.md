@@ -466,6 +466,50 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
+## 6a. Status (2026-10-26) — Phases 1–3 complete; Phase 4 open
+
+**Phases 1–3 are complete in both engines** (store 17.0, released as
+`a91354b`): the seams (Phase 1), the semantic bundle behind
+`SemanticProvider` (Phase 2), and the on-disk slices 3a–3e-ii (heads and
+inline bytes, identity claims, self-contained recovery, the slim feed,
+open-only edges and the D9 drops, the manifest and the alert channel) —
+every current read is off the history tables, the DDL is three bundles.
+
+**Phase 4 makes capture optional**, in two slices:
+
+- **4a (this slice; TypeScript reference + spec, `spec/store` 17.1,
+  `spec/surface` 6.1, `spec/sync` 4.1, `spec/cli` 5.1):** the composition —
+  the history bundle's DDL follows the manifest (executed when a repository's
+  row becomes `enabled`; a fresh database holds the core and semantic
+  bundles), a commit hands the recorder its rows only while the repository's
+  row is `enabled` (`captureFor`); `omg history enable|disable` (`enable`
+  writes the contracts' §1.14 baseline and opens a coverage interval,
+  `disable` closes it and keeps the rows), `omg source add --no-history`;
+  `writer_requires` reachable (a composition without the module refuses an
+  enabled repository's writes outside the transaction, `writer_refused`
+  raised); capture failure rolls the member back (`capture_failed` alert and
+  envelope, retried by the next sweep — resolution 18); `version.
+  capabilities` carries `coverage_from`/`writer_requires`/`model`; the
+  history tools raise `capability_unavailable { history, disabled |
+  unavailable }` and `docs_read { at: <current head> }` is served from the
+  rows (resolution 11); no SQL outside the history bundle names a history
+  table (`history-writers.ts`, `history-gc.ts`; the dependency-direction
+  gate); `OMGBASE_CAPABILITIES=core` is the test-only override that runs the
+  engine as a core-only build (no recorder) — every fixture suite runs under
+  it, comparing the core tables. **Measured** (`baseline.md` "17.1 (Phase
+  4a)"): history OFF ends at **4.20 MB (19.2× the source) against 6.89 MB
+  (31.5×)** with capture on — the `history` category 0 B; small edits cost
+  0.6–1.2 KB instead of 1.6–3.4. The Rust twin follows as its own task; the
+  fixtures of this slice are its contract.
+- **4b (next):** the read-side coverage states (`outside_coverage`, `pruned`
+  over `id_claims.minted_at` and the coverage intervals; `docs_history`'s
+  `retained` flag — resolution 11; the `_revisions` relation's capability
+  note), `history purge` (the rows go, the recorder's holds released), `embed
+  enable|disable` owning the semantic row (the settings-following refresh
+  retires), the feed-cap alert (`feed.max_entries` reached), D2 step two (the
+  tombstoned `blocks` rows stop being written by the core), and the
+  amplification measurement on the real corpus.
+
 ## 7. Index
 
 - `docs/modular-core/inventory-ts.md` — the TypeScript engine, 170 rows

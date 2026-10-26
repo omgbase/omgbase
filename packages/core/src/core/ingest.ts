@@ -3,8 +3,8 @@ import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
 import { assignIds, type TreeInputBlock } from "./store/writers.js";
-import { requireHistory, claimsOf } from "./capabilities/registry.js";
-import { requireWriter } from "./store/manifest.js";
+import { claimsOf } from "./capabilities/registry.js";
+import { capture, clearCaptureFailed, requireWriter, writerFor } from "./store/manifest.js";
 import { appendFeedEntry, appendFeedRow, feedRowOf } from "./store/feed.js";
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
@@ -240,6 +240,9 @@ export function ingestFile(
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
+  // spec/store §5.4 step 0 (resolution 17): the refusal, OUTSIDE the transaction
+  // so the `writer_refused` alert it raises survives the refusal.
+  requireWriter(store.db, repoId, ts);
   return store.write((db): IngestResult => {
     // spec/store §5.4 step 5: the feed row (the core's; the recorder's `commits`
     // row is written under the same id inside `appendFeedRow`).
@@ -352,10 +355,12 @@ export function ingestInto(
   // fixture id hold. The core numbers and hashes nothing against a previous
   // revision (M1): the recorder is handed the accepted transition (step 15)
   // and writes its `revisions` row under this token, its tree and frontmatter
-  // deltas against its OWN previous captured revision. Legacy capture stays
-  // on for every repository through Phase 3, so `revisions.rev_id == head`.
-  requireWriter(db, repoId, ts); // spec/store §5.4 step 0 (3e-ii): a writer without the recorder refuses where the manifest requires it
-  const history = requireHistory(db);
+  // deltas against its OWN previous captured revision. Since Phase 4a the
+  // recorder is handed the transition only while the repository's manifest
+  // says `enabled` (`writerFor`: step 0's refusal, then `captureFor`); with
+  // capture off the head is minted and the feed written exactly the same and
+  // no history row appears.
+  const history = writerFor(db, repoId, ts);
   const renderedHash = sha256(content);
   const head = mintId("r");
   claims.claim("r", head, repoId, ts);
@@ -364,15 +369,10 @@ export function ingestInto(
   const feedRow = feedRowOf(db, commitId);
   const entryKind = opts.movedFrom !== undefined && opts.movedFrom !== path ? "moved" : isNew || revived ? "created" : "changed";
   appendFeedEntry(db, { repoId, epoch: feedRow.epoch, seq: feedRow.seq, docId, path, head, hash: renderedHash, kind: entryKind, fromPath: entryKind === "moved" ? opts.movedFrom! : null });
-  history.captureRevision({
-    docId,
-    head,
-    path,
-    commitId,
-    blocks: assigned,
-    frontmatterRaw: fmRaw,
-    renderedHash,
-  });
+  // Step 15's capture runs inside this transaction: a throw rolls the member
+  // back (`CaptureFailed`, resolution 18 — the transaction's owner raises the
+  // `capture_failed` alert once the rollback is done).
+  if (history) capture(path, () => history.captureRevision({ docId, head, path, commitId, blocks: assigned, frontmatterRaw: fmRaw, renderedHash }));
 
   // The timestamps the new rows carry forward (D6, step 9): the doc's previous
   // live rows (a carried block keeps `created_at`, and `updated_at` too when
@@ -555,7 +555,11 @@ export function ingestInto(
 
   // spec/store §5.4 step 15: the reconciliation evidence is the recorder's
   // (`HistoryRecorder.recordDispositions` — every non-`same` verdict, 14.2).
-  history.recordDispositions(commitId, dispositions);
+  // A capture that lands ends the path's failure condition (§5.8).
+  if (history) {
+    capture(path, () => history.recordDispositions(commitId, dispositions));
+    clearCaptureFailed(db, repoId, path, ts);
+  }
 
   // Consumed pool rows (resurrected) are removed.
   for (const id of resolved.consumedPool ?? []) {

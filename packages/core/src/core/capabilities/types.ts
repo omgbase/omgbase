@@ -64,6 +64,27 @@ export interface CapturedRevision {
 }
 
 /**
+ * A `revisions` row as the query binding reads it (spec/surface §1.1/§1.2 —
+ * `oqx-js/context.ts`): the `revisions` × `commits` columns the `revisions`
+ * root and the `_revisions` relation expose, `is_current` (= the revision is
+ * its document's `head`) and `archived` as SQLite booleans (0/1).
+ */
+export interface RevisionQueryRow {
+  rev_id: string;
+  doc_id: string;
+  seq: number;
+  rendered_hash: Buffer;
+  path: string;
+  commit_id: string;
+  ts: string;
+  origin: string;
+  actor: string | null;
+  reason: string | null;
+  is_current: number;
+  archived: number;
+}
+
+/**
  * The commit the core hands the recorder (spec/store §5.4 step 15, 17.0 —
  * the feed row's twin): the `c` id the core minted and wrote on `feed`, the
  * repository's epoch and the feed's `seq`, the row's provenance, the batch
@@ -128,11 +149,40 @@ export interface HistoryRecorder {
   docsHistory(repoId: string, opts?: { pathGlob?: string; doc?: string; includeDeleted?: boolean; limit?: number }): { docs: DocVersions[]; truncated: boolean };
   /** The disposition counts of a captured commit (`kind → n`, `same` never persisted) for a `changes_since` digest's summary — `null` when the recorder has no `commits` row for it (the feed is the core's; `core/store/feed.ts`). */
   dispositionCounts(commitId: string): { kind: string; n: number }[] | null;
+  /** The `revisions` query root (spec/surface §1.1, 4.7; Phase 4a): every captured revision of the repository's documents as the binding's rows, by (`path`, `rev_id`). */
+  revisionRows(repoId: string): RevisionQueryRow[];
+  /** The `_revisions` relation of a document (spec/surface §1.2): its captured revisions by `seq`. */
+  docRevisionRows(docId: string): RevisionQueryRow[];
+  /** Has the recorder a `revisions` row under this head token? (`docs_read { at }` on a disabled repository tells a captured revision from an uncaptured one by this; Phase 4a.) */
+  hasRevision(revId: string): boolean;
+  /** `doctor`'s "capture complete" (spec/cli §6): the live documents whose head was minted at or after `since` (within the open coverage interval) and has no `revisions` row. */
+  uncapturedHeads(repoId: string, since: string): number;
+
+  // ---- the capture lifecycle (spec/store §5.9, Phase 4a) ----
+
+  /**
+   * `history enable`'s baseline (phase-1-contracts §1.14): under `commit` — a
+   * feed row the core already appended (`origin = 'import'`, `reason =
+   * 'history enabled'`) — the `commits` row, a checkpoint `revisions` row for
+   * every live document whose head has none (`rev_id = docs.head`, the current
+   * tree and frontmatter, `seq = 1 + its greatest captured seq`), the
+   * recorder's hold on every live doc, head and block id, and the edge
+   * interval record reconciled with the open edges (a dangling open transition
+   * closed at this commit, an edge without one opened at it). Returns the
+   * revisions written.
+   */
+  baseline(commit: CommitRecord): { revisions: number };
 
   // ---- maintenance: the GC mark, retention, archives (spec/store §7) ----
 
   /** The mark: every tree node and blob a live revision reaches (M7 roots the core's half on current state in Phase 3). */
   markReachable(): { trees: Set<string>; blobs: Set<string> };
+  /** `omg gc`'s recorder half (spec/store §7): the sweep of unreachable bodies and of a 14.1 store's `same` rows; `dry` counts and deletes nothing. Runs in the caller's transaction. */
+  collect(dry: boolean): { blobsSwept: number; treeNodesSwept: number; sameDispositionsSwept: number };
+  /** `rebuild-index`'s recorder half (spec/store §7): `block_changes` re-derived from `dispositions`. Runs in the caller's transaction. */
+  rebuildProjections(): void;
+  /** The `same` rows a 14.1 store persisted (the size report's `same_dispositions`). */
+  sameDispositionCount(): number;
   /** The repo's effective retention policy (`history.retention` settings). */
   retentionPolicy(repoId: string, override?: unknown): RetentionPolicy;
   /** The retention plan: what the squash would archive (spec/store §7.1). */
@@ -251,11 +301,14 @@ export interface IdentityClaims {
 }
 
 /**
- * The capabilities a store runs with. `history`/`semantic` are `null` when the
- * capability is off (D3 `capability_unavailable` names the states) — in Phase
- * 1 the defaults are always present; through Phase 3 the core's writers still
- * require history (`requireHistory`) because legacy capture stays on for every
- * existing repository (the head token is the core's since 17.0, D1).
+ * The capabilities a store runs with — the MODULES the composition carries.
+ * `history`/`semantic` are `null` when the module is absent (D3's
+ * `unavailable`). Since Phase 4a the recorder's presence says nothing about
+ * CAPTURE: whether a commit on a repository is captured is the repository's
+ * manifest row (`core/store/manifest.ts` `captureFor` — the recorder iff the
+ * module is here AND the row is `enabled`), and a repository whose row is
+ * `enabled` with `writer_requires` refuses a writer whose composition lacks
+ * the module (`requireWriter`).
  */
 export interface Capabilities {
   history: HistoryRecorder | null;

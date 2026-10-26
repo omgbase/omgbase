@@ -1,6 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import type { CapabilityState } from "../core/capabilities/errors.js";
-import { readCapabilities, semanticProviderConfigured } from "../core/store/manifest.js";
+import { coverageFrom, readCapabilities, semanticProviderConfigured, type ManifestRow } from "../core/store/manifest.js";
 import { resolveSettings } from "./settings.js";
 
 // Capability discovery (modular-core Phase 2 → 3e-ii; phase-1-contracts §1.5,
@@ -18,8 +18,10 @@ import { resolveSettings } from "./settings.js";
 // setting for semantic — exactly what Phase 2 derived.
 
 export interface CapabilityStates {
-  history: { state: CapabilityState };
-  semantic: { state: CapabilityState };
+  /** `coverage_from`: the first coverage interval's `from` (spec/store §3.1 rule 2), null when capture never ran; `writer_requires`: the manifest flag (resolution 17). */
+  history: { state: CapabilityState; coverage_from: string | null; writer_requires: boolean };
+  /** `model`: the manifest row's `config.model`, null when none is configured. */
+  semantic: { state: CapabilityState; model: string | null };
 }
 
 /** What the host knows about a configured provider it could not start (`omg mcp`'s embedder load). */
@@ -34,7 +36,7 @@ export function semanticConfigured(store: Store, repoId: string | null): boolean
   return typeof provider === "string" && provider.trim() !== "";
 }
 
-/** The history capability's state for `repoId`: the manifest row's (`disabled` when absent); `unavailable` when the composition lacks the recorder. */
+/** The history capability's state for `repoId`: the manifest row's (`disabled` when absent); `unavailable` when the composition lacks the recorder (reachable since Phase 4a — the core-only build). */
 export function historyState(store: Store, repoId: string | null): CapabilityState {
   if (!store.capabilities.history) return "unavailable";
   if (repoId === null) return "enabled";
@@ -55,10 +57,21 @@ export function semanticState(store: Store, repoId: string | null, failed?: Sema
   return failed ? "unavailable" : "enabled";
 }
 
-/** The `version` tool's `capabilities` member (and the CLI's): both capabilities' states, from the manifest. */
+/**
+ * The `version` tool's `capabilities` member (and the CLI's, `sync_status`'s):
+ * both capabilities' states from the manifest, with (spec/surface §4 `version`,
+ * 6.1 — phase-1-contracts §2.3) `history.coverage_from` / `writer_requires`
+ * and `semantic.model`, read from the rows; without a repository `null`/`false`.
+ */
 export function capabilityStates(store: Store, repoId: string | null, failed?: SemanticHostReport | null): CapabilityStates {
+  const rows = repoId === null ? { history: null, semantic: null } : readCapabilities(store.db, repoId);
   return {
-    history: { state: historyState(store, repoId) },
-    semantic: { state: semanticState(store, repoId, failed) },
+    history: { state: historyState(store, repoId), coverage_from: coverageFrom(rows.history), writer_requires: rows.history?.writer_requires ?? false },
+    semantic: { state: semanticState(store, repoId, failed), model: modelOf(rows.semantic) },
   };
+}
+
+function modelOf(row: ManifestRow | null): string | null {
+  const m = row?.config.model;
+  return typeof m === "string" && m !== "" ? m : null;
 }

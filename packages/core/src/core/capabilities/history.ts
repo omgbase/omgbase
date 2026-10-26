@@ -1,5 +1,6 @@
+import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
-import type { CapturedRevision, CommitRecord, HistoryRecorder, RevisionTransition } from "./types.js";
+import type { CapturedRevision, CommitRecord, HistoryRecorder, RevisionQueryRow, RevisionTransition } from "./types.js";
 import type { DispositionRow } from "../ingest.js";
 import type { EdgeTransitions } from "../store/edges.js";
 import { persistsDisposition } from "../ingest.js";
@@ -7,9 +8,10 @@ import type { DocsReadAtResult } from "../read/document.js";
 import {
   isCheckpointRevision, previousRevision, recordCommit, writeBlockTree, writeFrontmatterBlob, writeRevision,
   type TreeWriteContext,
-} from "../store/writers.js";
+} from "../store/history-writers.js";
+import type { TreeInputBlock } from "../store/writers.js";
 import { TreeResolver } from "../store/delta.js";
-import { markReachable } from "../store/gc.js";
+import { collectHistory, countSameDispositions, markReachable } from "../store/history-gc.js";
 import { evaluateRetention, retentionPolicy, type EvaluateOptions, type RetentionPlan, type RetentionPolicy } from "../store/retention.js";
 import {
   archivedSummary, attachArchive, detachArchive, exportHistory, listArchives,
@@ -19,6 +21,27 @@ import {
   diffBlocks, diffUnified, docDiffUnified, docHistory, historyNode, reconstructAtRevision,
   type DiffEntry, type DocDiffUnified, type DocVersions, type NodeChange,
 } from "../../graph/history.js";
+
+const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
+const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
+
+/** The document's live body tree from the current rows (`TreeInputBlock[]`, pre-order by `parent_block` + `ordinal`) — the baseline's input; the same read `mutate/commit.ts` makes for a `docs_move`. */
+function currentTree(db: Database, docId: string): TreeInputBlock[] {
+  const rows = db
+    .prepare("SELECT block_id, parent_block, ordinal, type, attrs, raw, trivia FROM blocks WHERE doc_id = ? AND deleted_at IS NULL ORDER BY ordinal, block_id")
+    .all(docId) as { block_id: string; parent_block: string | null; ordinal: number; type: string; attrs: string; raw: string; trivia: string | null }[];
+  const ids = new Set(rows.map((r) => r.block_id));
+  const byParent = new Map<string | null, typeof rows>();
+  for (const r of rows) {
+    const parent = r.parent_block !== null && ids.has(r.parent_block) ? r.parent_block : null;
+    let list = byParent.get(parent);
+    if (!list) byParent.set(parent, (list = []));
+    list.push(r);
+  }
+  const build = (parent: string | null): TreeInputBlock[] =>
+    (byParent.get(parent) ?? []).map((r) => ({ blockId: r.block_id, type: r.type, raw: r.raw, trivia: r.trivia ?? "", attrs: JSON.parse(r.attrs) as Record<string, unknown>, children: build(r.block_id) }));
+  return build(null);
+}
 
 /**
  * The default `HistoryRecorder`: today's history code behind the interface,
@@ -189,10 +212,116 @@ export class HistoryRecorderImpl implements HistoryRecorder {
     return db.prepare("SELECT kind, count(*) AS n FROM dispositions WHERE commit_id = ? GROUP BY kind ORDER BY kind").all(commitId) as { kind: string; n: number }[];
   }
 
+  // The revisions scan (spec/surface §1.1, 4.7): every revision of every
+  // document of the repository — tombstoned documents included, history is
+  // history — with its commit, in the keyset order `(path as of the revision,
+  // rev_id)`. The `revisions` table carries no `repo_id`, so the repository
+  // guard joins `docs`. `is_current` is `docs_history`'s `isCurrent`: the
+  // revision is the document's `head`. Through Phase 3 the query binding ran
+  // this SQL itself; Phase 4a moved it behind the seam (no SQL outside the
+  // bundle names a history table).
+  revisionRows(repoId: string): RevisionQueryRow[] {
+    return this.store.db.prepare(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE d.repo_id = ? ORDER BY r.path, r.rev_id`).all(repoId) as RevisionQueryRow[];
+  }
+
+  docRevisionRows(docId: string): RevisionQueryRow[] {
+    return this.store.db.prepare(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE r.doc_id = ? ORDER BY r.seq`).all(docId) as RevisionQueryRow[];
+  }
+
+  hasRevision(revId: string): boolean {
+    return !!this.store.db.prepare("SELECT 1 FROM revisions WHERE rev_id = ?").get(revId);
+  }
+
+  uncapturedHeads(repoId: string, since: string): number {
+    return (this.store.db
+      .prepare("SELECT count(*) c FROM docs d WHERE d.repo_id = ? AND d.deleted_at IS NULL AND d.head IS NOT NULL AND d.updated_at >= ? AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)")
+      .get(repoId, since) as { c: number }).c;
+  }
+
+  // ---- the capture lifecycle ----
+
+  /**
+   * spec/store §5.9 (Phase 4a; phase-1-contracts §1.14): the baseline `history
+   * enable` writes under the feed row the core appended. The `commits` row;
+   * then, per live document whose head has no `revisions` row (one changed
+   * while capture was off, or never captured), a CHECKPOINT revision under the
+   * existing head — the current tree and frontmatter raw from the rows, `seq`
+   * = 1 + the document's greatest captured seq — so `docs_read { at: head }`
+   * reads through the recorder and H1/H3 hold for every live document; the
+   * recorder's hold on every live doc, head and block id (I7's rule: a live
+   * block has a `block_changes` row or a hold); and the edge interval record
+   * reconciled with the open edges (H6): every open transition whose edge is
+   * gone is closed at this commit, every open edge without a transition is
+   * opened at it. No dispositions (nothing was reconciled).
+   */
+  baseline(commit: CommitRecord): { revisions: number } {
+    const db = this.store.db;
+    this.recordCommit(commit);
+    const live = db
+      .prepare("SELECT doc_id, head, path, file_hash, frontmatter_raw FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid")
+      .all(commit.repoId) as { doc_id: string; head: string; path: string; file_hash: Buffer; frontmatter_raw: string | null }[];
+    let revisions = 0;
+    const held = new Set<string>();
+    for (const d of live) {
+      held.add(d.doc_id);
+      held.add(d.head);
+      for (const b of db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_at IS NULL").all(d.doc_id) as { block_id: string }[]) held.add(b.block_id);
+      if (this.hasRevision(d.head)) continue;
+      const previous = previousRevision(db, d.doc_id);
+      const seq = previous ? previous.seq + 1 : 1;
+      const rootTreeHex = writeBlockTree(db, currentTree(db, d.doc_id), { base: null, checkpoint: true });
+      const fmBlobHex = d.frontmatter_raw !== null ? writeFrontmatterBlob(db, d.frontmatter_raw, null, true) : null;
+      writeRevision(db, { revId: d.head, docId: d.doc_id, rootTreeHex, frontmatterBlobHex: fmBlobHex, renderedHash: d.file_hash, path: d.path, commitId: commit.commitId, seq });
+      revisions++;
+    }
+    this.store.capabilities.claims.hold(held);
+    // The edge record (spec/graph §3.3; H6): close what is gone, open what is missing.
+    db.prepare("UPDATE edge_transitions SET to_commit = ? WHERE repo_id = ? AND to_commit IS NULL AND edge_id NOT IN (SELECT edge_id FROM edges)").run(commit.commitId, commit.repoId);
+    const missing = db
+      .prepare(
+        `SELECT edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node FROM edges e
+         WHERE e.repo_id = ? AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY rowid`,
+      )
+      .all(commit.repoId) as { edge_id: string; repo_id: string; src_doc: string; src_block: string | null; src_field: string | null; predicate: string; dst_kind: string; dst_node: string; anchor: string | null; provenance: string; via_node: string | null }[];
+    const open = db.prepare(
+      `INSERT OR REPLACE INTO edge_transitions (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, via_node, from_commit, to_commit)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    );
+    for (const e of missing) open.run(e.edge_id, e.repo_id, e.src_doc, e.src_block, e.src_field, e.predicate, e.dst_kind, e.dst_node, e.anchor, e.provenance, e.via_node, commit.commitId);
+    this.store.capabilities.claims.hold(missing.map((e) => e.edge_id));
+    // A dangling open transition whose dst was rewritten while capture was off follows the edge now.
+    db.prepare(
+      `UPDATE edge_transitions SET dst_node = (SELECT e.dst_node FROM edges e WHERE e.edge_id = edge_transitions.edge_id)
+       WHERE repo_id = ? AND to_commit IS NULL AND dst_node != (SELECT e.dst_node FROM edges e WHERE e.edge_id = edge_transitions.edge_id)`,
+    ).run(commit.repoId);
+    return { revisions };
+  }
+
   // ---- maintenance ----
 
   markReachable(): { trees: Set<string>; blobs: Set<string> } {
     return markReachable(this.store);
+  }
+
+  collect(dry: boolean): { blobsSwept: number; treeNodesSwept: number; sameDispositionsSwept: number } {
+    return collectHistory(this.store, dry);
+  }
+
+  rebuildProjections(): void {
+    // block_changes is a pure projection of dispositions across commits
+    // (spec/store §7, 17.0): delete and re-derive it verbatim from the
+    // dispositions table (which is durable). A wholly archived commit (§7.1,
+    // 15.0: every revision of it carries `archive`) has no dispositions and,
+    // since 17.0, no block_changes either — the earliest-row exception the
+    // 15.0–16.x rebuild preserved for the mint oracle is gone: the id's
+    // `id_claims` row holds it (§2.1).
+    const db = this.store.db;
+    db.exec("DELETE FROM block_changes");
+    db.exec("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) SELECT block_id, commit_id, kind FROM dispositions");
+  }
+
+  sameDispositionCount(): number {
+    return countSameDispositions(this.store);
   }
 
   retentionPolicy(repoId: string, override?: unknown): RetentionPolicy {

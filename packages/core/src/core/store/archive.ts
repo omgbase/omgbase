@@ -5,9 +5,13 @@ import type { Store } from "./store.js";
 import { SCHEMA_VERSION } from "./schema.js";
 import { mintId } from "../ids.js";
 import { sha256 } from "../hash.js";
-import { sweepUnreachable } from "./gc.js";
+import { sweepUnreachable } from "./history-gc.js";
+
+/** The commit ids every revision of which is archived (spec/store §7 "Retention", 15.0): a commit with at least one revision and no live one. (In `rebuild.ts` through Phase 3.) */
+export const ARCHIVED_COMMITS_SQL =
+  "SELECT c.commit_id FROM commits c WHERE EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id) AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.commit_id = c.commit_id AND r.archive IS NULL)";
 import { TreeResolver, entryBlobs } from "./delta.js";
-import { putBlob, putNodeText } from "./writers.js";
+import { putBlob, putNodeText } from "./history-writers.js";
 import {
   evaluateRetention, parseSettingsJson, LAST_SEGMENT_SETTINGS_KEY, RETENTION_SETTINGS_KEY,
   type EvaluateOptions, type RetentionPlan, type RetentionPolicy,

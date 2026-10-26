@@ -15,11 +15,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { envCapabilities } from "../../src/core/capabilities/default.js";
+import { isHistoryStep, isLifecycleStep } from "../store/fixture.js";
 import { coreCapabilities } from "../../src/core/capabilities/core.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { buildServer, toolDescriptions, toolNames, TOOLS_PROFILES, type ToolsProfile } from "../../src/mcp/server.js";
 import {
-  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, validateFixtureFile,
+  carriesCorpus, coreModeQueryExpect, coreModeReadsExpect, deepEqualTol, describeChange, diffQueryExpect, loadCorpus, readCorpusFromDisk, runCursorCase, runQueryCase, runReadsCase, sortKeys, suiteKind, touchesRevisions, validateFixtureFile,
   type CursorCase, type CursorSuite, type ExamplesSuite, type FixtureFile, type LoadedCorpus, type ProfilesSuite, type QueryCase, type QuerySuite, type ReadsCase, type ReadsSuite,
 } from "./fixture.js";
 
@@ -72,6 +73,7 @@ const UPDATE = (() => {
 const CORE_MODE = envCapabilities() === coreCapabilities;
 if (CORE_MODE && UPDATE) throw new Error("SURFACE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
 const coreMapped: string[] = [];
+const coreSkipped: string[] = [];
 
 /** Nothing projected is floating point except search scores; compare within 1e-9. */
 const EPS = 1e-9;
@@ -196,6 +198,8 @@ for (const file of files) {
 // ---- per-case ------------------------------------------------------------------
 
 function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
+  // Phase 4a: a query that reaches `revisions` reads the recorder's rows — nothing on the core-only composition; skipped and counted.
+  if (CORE_MODE && touchesRevisions(c.query)) { coreSkipped.push(`${suite}::${c.name}`); return; }
   const { expect: actual, problems: runnerProblems } = runQueryCase(corpus, c);
   expect(runnerProblems, "planned and in-memory engines must agree").toEqual([]);
   let expected = c.expect;
@@ -209,11 +213,13 @@ function runQuery(corpus: LoadedCorpus, c: QueryCase, suite: string): void {
 }
 
 async function runReads(c: ReadsCase, suite: string, corpus?: Record<string, string>): Promise<void> {
+  // Phase 4a: a retention step (export, attach, plan, read_at) needs the history module; skipped and counted.
+  if (CORE_MODE && c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
   const { expect: actual, problems: runnerProblems } = await runReadsCase(c, corpus);
   expect(runnerProblems).toEqual([]);
   let expected = c.expect;
   if (CORE_MODE) {
-    const m = coreModeReadsExpect(c.expect);
+    const m = coreModeReadsExpect(c.expect, c.steps, actual.steps);
     if (m.mapped > 0) coreMapped.push(`${suite}::${c.name} (${m.mapped} step outcome${m.mapped === 1 ? "" : "s"})`);
     expected = m.expect;
   }
@@ -318,5 +324,5 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
 // instead of the fixture's full-composition outcome (none on the full run).
 afterAll(() => {
   if (!CORE_MODE) return;
-  process.stderr.write(`[surface spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} semantic case(s) mapped to capability_unavailable { semantic, disabled }:\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n`);
+  process.stderr.write(`[surface spec] OMGBASE_CAPABILITIES=core: ${coreMapped.length} case(s) mapped (semantic → capability_unavailable { semantic, disabled }; history reads → { history, unavailable }, the core history state), ${coreSkipped.length} skipped (the revisions root, retention steps):\n${coreMapped.map((c) => `  ${c}`).join("\n")}\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
 });

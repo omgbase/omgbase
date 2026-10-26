@@ -108,16 +108,17 @@ describe("the semantic row follows the settings until the Phase 4 verbs", () => 
     expect(refreshSemanticManifest(store.db, a, T2).updated_at).toBe(T1); // nothing changed: not touched
   });
 
-  it("version.capabilities is the table's rendering: enabled/enabled with a provider, semantic disabled without one", () => {
+  it("version.capabilities is the table's rendering: enabled/enabled with a provider, semantic disabled without one; coverage_from, writer_requires and model ride along (Phase 4a)", () => {
     const repoId = ensureRepo(store, "fixture", null);
-    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
-    writeWorkspaceSettings(store, { embedding: { provider: "omgbase-embedder" } });
-    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "enabled" }, semantic: { state: "enabled" } });
-    expect(capabilityStates(store, repoId, { provider: "omgbase-embedder", reason: "ENOENT" })).toEqual({ history: { state: "enabled" }, semantic: { state: "unavailable" } });
+    const history = { state: "enabled", coverage_from: T0, writer_requires: true };
+    expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
+    writeWorkspaceSettings(store, { embedding: { provider: "omgbase-embedder", model: "gte-base" } });
+    expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "enabled", model: "gte-base" } });
+    expect(capabilityStates(store, repoId, { provider: "omgbase-embedder", reason: "ENOENT" })).toEqual({ history, semantic: { state: "unavailable", model: "gte-base" } });
     writeWorkspaceSettings(store, { embedding: {} });
-    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
+    expect(capabilityStates(store, repoId)).toEqual({ history, semantic: { state: "disabled", model: null } });
     // Without a repository there is no row: the workspace layer's setting answers, as Phase 2 did.
-    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
+    expect(capabilityStates(store, null)).toEqual({ history: { state: "enabled", coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } });
   });
 });
 
@@ -130,10 +131,12 @@ describe("writer_requires (resolution 17)", () => {
   });
 
   it("refuses a writer without the history module on a repository that requires capture, and raises writer_refused", () => {
-    // A composition without the recorder — what Phase 4's core-only composition becomes. Fresh database: no migration needs it.
+    // The core-only composition (Phase 4a). A repository IT creates starts disabled; this one was enabled by a full build.
     const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s) }) });
     try {
       const repoId = ensureRepo(bare, "fixture", null);
+      expect(readCapability(bare.db, repoId, "history")!.state).toBe("disabled");
+      bare.db.prepare("UPDATE capabilities SET state = 'enabled', writer_requires = 1, coverage = ? WHERE repo_id = ? AND capability = 'history'").run(JSON.stringify([{ from: T0, to: null }]), repoId);
       expect(readCapability(bare.db, repoId, "history")!.writer_requires).toBe(true);
       let err: unknown;
       try {
@@ -160,12 +163,19 @@ describe("writer_requires (resolution 17)", () => {
     }
   });
 
-  it("a repository whose manifest does not require capture lets a recorder-less writer through", () => {
+  it("a repository whose manifest does not require capture, or whose capture is off, lets a recorder-less writer through", () => {
     const bare = new Store({ path: ":memory:", capabilities: (s) => ({ history: null, semantic: null, claims: new IdClaims(s) }) });
     try {
       const repoId = ensureRepo(bare, "fixture", null);
-      bare.db.prepare("UPDATE capabilities SET writer_requires = 0 WHERE repo_id = ? AND capability = 'history'").run(repoId);
+      // Created by a core-only build: `disabled`, no coverage, writer_requires 0 (spec/store §3.1) — and it writes.
+      expect(readCapability(bare.db, repoId, "history")).toMatchObject({ state: "disabled", coverage: [], writer_requires: false });
       expect(() => requireWriter(bare.db, repoId, T1)).not.toThrow();
+      const r = ingestFile(bare, repoId, "a.md", "# A\n\nbody\n", { ts: T1 });
+      expect(r.converged).toBe(true);
+      expect(bare.db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'revisions'").get()).toBeUndefined();
+      // Enabled best-effort (writer_requires 0): a recorder-less writer still passes.
+      bare.db.prepare("UPDATE capabilities SET state = 'enabled', writer_requires = 0, coverage = ? WHERE repo_id = ? AND capability = 'history'").run(JSON.stringify([{ from: T1, to: null }]), repoId);
+      expect(() => requireWriter(bare.db, repoId, T2)).not.toThrow();
     } finally {
       bare.close();
     }

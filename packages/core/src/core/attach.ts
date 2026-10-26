@@ -11,10 +11,22 @@ import { ensureManifest } from "./store/manifest.js";
 // freshness sweep / `observeOne` on the live path. The CLI entry point is
 // `omg source add <dir>`; there is no `omg attach` verb.
 
+export interface EnsureRepoOptions {
+  /**
+   * The new repository's history capture (spec/store §3.1 `capabilities`, Phase
+   * 4a): `true` → `enabled` from its birth with `writer_requires = 1` (the
+   * default when the composition carries the recorder), `false` → `disabled`
+   * with no coverage (`omg source add --no-history`; a fixture's `capabilities:
+   * { history: false }`). A composition without the recorder always creates a
+   * disabled repository. Ignored for a repository that already exists.
+   */
+  history?: boolean;
+}
+
 /** Create (or reuse) a repo row for `slug`, returning its id. When `rootPath` is
  *  given it is registered as an `fs` source + attachment, not stored on the repo.
  *  Pass null for a sourceless/headless repo. */
-export function ensureRepo(store: Store, slug: string, rootPath: string | null = null): string {
+export function ensureRepo(store: Store, slug: string, rootPath: string | null = null, opts: EnsureRepoOptions = {}): string {
   const existing = store.db.prepare("SELECT repo_id FROM repos WHERE slug = ?").get(slug) as
     | { repo_id: string }
     | undefined;
@@ -27,10 +39,12 @@ export function ensureRepo(store: Store, slug: string, rootPath: string | null =
   store.capabilities.claims.claim("rp", repoId, repoId, now);
   const epoch = mintEpoch(store.db, repoId, now);
   store.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES (?, ?, ?)").run(repoId, slug, epoch);
-  // spec/store §3.1 `capabilities` (17.0, 3e-ii): the manifest rows — history
-  // `enabled` with coverage from the repository's birth (`writer_requires` 1),
-  // semantic `enabled` iff `embedding.provider` resolves for it (resolution 1).
-  ensureManifest(store.db, repoId, now, now);
+  // spec/store §3.1 `capabilities` (17.0, 3e-ii; Phase 4a): the manifest rows —
+  // history `enabled` with coverage from the repository's birth (`writer_requires`
+  // 1) when the composition carries the recorder and the caller did not ask
+  // for `history: false`, else `disabled`; semantic `enabled` iff
+  // `embedding.provider` resolves for it (resolution 1).
+  ensureManifest(store.db, repoId, now, now, opts);
   if (rootPath) registerFsSource(store, repoId, slug, rootPath);
   return repoId;
 }

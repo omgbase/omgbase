@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { mintId } from "../ids.js";
-import { capabilitiesOf, claimsOf } from "../capabilities/registry.js";
+import { claimsOf } from "../capabilities/registry.js";
+import { capture, captureFor } from "./manifest.js";
 
 // Open-edge maintenance + doc_edges rollup (spec/graph §3.3–§3.5; store 17.0,
 // M6). Runs in the commit transaction. Extraction happens upstream (graph/
@@ -109,8 +110,12 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
     closed.push(r.edge_id);
   }
   const transitions: EdgeTransitions = { opened, closed };
-  // spec/store §5.4 step 15 (17.0): the recorder's half — the interval record.
-  if (opened.length > 0 || closed.length > 0) capabilitiesOf(db).history?.recordEdgeTransitions(commitId, transitions);
+  // spec/store §5.4 step 15 (17.0): the recorder's half — the interval record,
+  // while the repository's manifest says `enabled` (Phase 4a).
+  if (opened.length > 0 || closed.length > 0) {
+    const history = captureFor(db, repoId);
+    if (history) capture(null, () => history.recordEdgeTransitions(commitId, transitions));
+  }
 
   rebuildDocEdges(db, srcDoc);
   return transitions;
@@ -125,10 +130,13 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
  * `where` narrows the rows (an extra SQL predicate over `edges`, with params).
  */
 export function retargetOpenEdges(db: Database, fromDst: string, toDst: string, where = "", params: unknown[] = []): string[] {
-  const rows = db.prepare(`SELECT edge_id, src_doc FROM edges WHERE dst_node = ? ${where} ORDER BY rowid`).all(fromDst, ...params) as { edge_id: string; src_doc: string }[];
+  const rows = db.prepare(`SELECT edge_id, repo_id, src_doc FROM edges WHERE dst_node = ? ${where} ORDER BY rowid`).all(fromDst, ...params) as { edge_id: string; repo_id: string; src_doc: string }[];
   if (rows.length === 0) return [];
   db.prepare(`UPDATE edges SET dst_node = ? WHERE dst_node = ? ${where}`).run(toDst, fromDst, ...params);
-  capabilitiesOf(db).history?.retargetEdges(rows.map((r) => r.edge_id), toDst);
+  // The open transitions follow while the repository's capture is on (Phase 4a;
+  // the rows of one call belong to one repository — the destination's).
+  const history = captureFor(db, rows[0]!.repo_id);
+  if (history) capture(null, () => history.retargetEdges(rows.map((r) => r.edge_id), toDst));
   return [...new Set(rows.map((r) => r.src_doc))];
 }
 

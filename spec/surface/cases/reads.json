@@ -711,10 +711,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           },
@@ -771,10 +774,13 @@
             "profile": "<string>",
             "capabilities": {
               "history": {
-                "state": "<string>"
+                "state": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>"
               },
               "semantic": {
-                "state": "<string>"
+                "state": "<string>",
+                "model": "<null>"
               }
             },
             "epoch": "<string>"
@@ -16864,10 +16870,13 @@
             },
             "capabilities": {
               "history": {
-                "state": "enabled"
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
               },
               "semantic": {
-                "state": "disabled"
+                "state": "disabled",
+                "model": null
               }
             }
           }
@@ -17309,6 +17318,573 @@
             "truncated": false,
             "cursor": null,
             "consumer": "collect"
+          }
+        ]
+      }
+    },
+    {
+      "name": "history-disabled",
+      "notes": "§2.1 / §4 `version` (6.1; store 17.0 Phase 4a): the D3 states on the wire when a repository's capture is off. guide.md (d_0, head r_0) and notes/one.md (d_1, r_1) are captured; `history_disable` at 10:01 closes the coverage interval. The edit of guide.md (c_2, head r_2) is uncaptured: `docs_read { at: r_2 }` is served from the current rows (resolution 11 — the same bytes `docs_read` returns, `renderedHashMatch` true), `docs_read { at: r_0 }` reads what was captured, a revision that is neither — `r_9` — is `target_missing`? no: on a disabled repository an unknown token is `capability_unavailable { history, disabled, rev }` (the row may have been captured by nobody); `docs_history` lists the captured version only; `query revisions { … }` lists it with the capability `hints` line first; `version`'s history leaves read `disabled`/`<string>`/`<boolean>`; `sync_status.capabilities.history` carries the closed interval's start and `writer_requires` false. `history_enable` at 10:03 writes the baseline (`c_3`): `docs_read { at: r_2 }` now reads through the recorder, `docs_history` lists r_0 and r_2, `version` is `enabled` again, `sync_status` shows `writer_requires` true, and the `revisions` query carries no hint.",
+      "workspace": true,
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph.\n"
+              },
+              {
+                "path": "notes/one.md",
+                "source": "# One\n\nBack to [guide](/guide.md).\n"
+              }
+            ]
+          }
+        },
+        {
+          "history_disable": {
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-27T10:02:00.000Z",
+            "items": [
+              {
+                "path": "guide.md",
+                "source": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph, edited.\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "guide.md",
+              "at": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "_path": "guide.md",
+              "rev": "r_0"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "guide.md",
+              "at": "r_9"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_diff",
+            "args": {
+              "_path": "guide.md",
+              "from_rev": "r_0",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "_path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "blocks_history",
+            "args": {
+              "_id": "b_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "revisions { select _rev, _seq, _is_current where _path == \"/guide.md\" order by _seq }"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {},
+            "ts": "2026-09-27T10:02:30.000Z"
+          }
+        },
+        {
+          "history_enable": {
+            "ts": "2026-09-27T10:03:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "_path": "guide.md",
+              "at": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "_path": "guide.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "query",
+            "args": {
+              "query": "revisions { select _rev, _seq, _commit, _origin, _is_current where _path == \"/guide.md\" order by _seq }"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "changes_since",
+            "args": {
+              "cursor": 2
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "sync_status",
+            "args": {},
+            "ts": "2026-09-27T10:03:30.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "notes/one.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "history": {
+              "state": "disabled",
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": "2026-09-27T10:01:00.000Z"
+                }
+              ],
+              "writer_requires": false,
+              "changed": true
+            }
+          },
+          [
+            {
+              "path": "guide.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_2",
+            "_raw": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph, edited.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_0",
+            "_raw": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "error": "capability_unavailable",
+            "retriable": false,
+            "data": {
+              "capability": "history",
+              "state": "disabled",
+              "rev": "r_9"
+            }
+          },
+          {
+            "error": "capability_unavailable",
+            "retriable": false,
+            "data": {
+              "capability": "history",
+              "state": "disabled",
+              "rev": "r_2"
+            }
+          },
+          {
+            "docs": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "_rev": "r_0",
+                    "_seq": 1,
+                    "_commit": "c_0",
+                    "_ts": "2026-09-27T10:00:00.000Z",
+                    "_origin": "observed",
+                    "_actor": null,
+                    "_hash": "80ef774520b8b1cc8812e3ecab3859e374712d50a1157aac8c58a7d7b007fe2e",
+                    "_is_current": false,
+                    "_archived": false
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          },
+          [
+            {
+              "commitId": "c_0",
+              "seq": 1,
+              "ts": "2026-09-27T10:00:00.000Z",
+              "origin": "observed",
+              "kind": "inserted",
+              "confidence": null,
+              "reason": null
+            }
+          ],
+          {
+            "hits": [
+              {
+                "_id": "r_0",
+                "_path": "/guide.md",
+                "_rev": "r_0",
+                "_seq": 1,
+                "_is_current": false
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect",
+            "hints": [
+              "history is disabled for this repository — `revisions` lists only what was captured while it was enabled; `omg history enable` resumes capture"
+            ]
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>",
+            "capabilities": {
+              "history": {
+                "state": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>"
+              },
+              "semantic": {
+                "state": "<string>",
+                "model": "<null>"
+              }
+            },
+            "epoch": "<string>"
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 3,
+            "lastBatch": null,
+            "convergent": true,
+            "diskChecked": true,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": true
+            },
+            "capabilities": {
+              "history": {
+                "state": "disabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": false
+              },
+              "semantic": {
+                "state": "disabled",
+                "model": null
+              }
+            }
+          },
+          {
+            "history": {
+              "state": "enabled",
+              "coverage": [
+                {
+                  "from": "2000-01-01T00:00:00.000Z",
+                  "to": "2026-09-27T10:01:00.000Z"
+                },
+                {
+                  "from": "2026-09-27T10:03:00.000Z",
+                  "to": null
+                }
+              ],
+              "writer_requires": true,
+              "changed": true,
+              "baseline": {
+                "commit": "c_3",
+                "revisions": 1
+              }
+            }
+          },
+          {
+            "_id": "d_0",
+            "_path": "/guide.md",
+            "rev": "r_2",
+            "_raw": "---\ntitle: Guide\n---\n\n# Guide\n\nIntro paragraph, edited.\n",
+            "renderedHashMatch": true
+          },
+          {
+            "docs": [
+              {
+                "_id": "d_0",
+                "_path": "/guide.md",
+                "deleted": false,
+                "currentRev": "r_2",
+                "versions": [
+                  {
+                    "_rev": "r_0",
+                    "_seq": 1,
+                    "_commit": "c_0",
+                    "_ts": "2026-09-27T10:00:00.000Z",
+                    "_origin": "observed",
+                    "_actor": null,
+                    "_hash": "80ef774520b8b1cc8812e3ecab3859e374712d50a1157aac8c58a7d7b007fe2e",
+                    "_is_current": false,
+                    "_archived": false
+                  },
+                  {
+                    "_rev": "r_2",
+                    "_seq": 2,
+                    "_commit": "c_3",
+                    "_ts": "2026-09-27T10:03:00.000Z",
+                    "_origin": "import",
+                    "_actor": null,
+                    "_hash": "44d70e764d3866b09026aec8ca0d36be9cb65552744c02989c23baf5cc3cdc60",
+                    "_is_current": true,
+                    "_archived": false
+                  }
+                ]
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "_id": "r_0",
+                "_path": "/guide.md",
+                "_rev": "r_0",
+                "_seq": 1,
+                "_commit": "c_0",
+                "_origin": "observed",
+                "_is_current": false
+              },
+              {
+                "_id": "r_2",
+                "_path": "/guide.md",
+                "_rev": "r_2",
+                "_seq": 2,
+                "_commit": "c_3",
+                "_origin": "import",
+                "_is_current": true
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "digests": [
+              {
+                "commit": "c_2",
+                "seq": 3,
+                "ts": "2026-09-27T10:02:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "batch_id": "c_2",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "44d70e764d3866b09026aec8ca0d36be9cb65552744c02989c23baf5cc3cdc60",
+                    "kind": "changed"
+                  }
+                ]
+              },
+              {
+                "commit": "c_3",
+                "seq": 4,
+                "ts": "2026-09-27T10:03:00.000Z",
+                "origin": "import",
+                "actor": null,
+                "batch_id": "c_3",
+                "revisions": [
+                  {
+                    "_id": "d_0",
+                    "_path": "/guide.md",
+                    "_hash": "44d70e764d3866b09026aec8ca0d36be9cb65552744c02989c23baf5cc3cdc60",
+                    "kind": "changed"
+                  },
+                  {
+                    "_id": "d_1",
+                    "_path": "/notes/one.md",
+                    "_hash": "1c10fb5e7fbe72e34a3b5c719ba9d87c2ced06e7467719d78aa92d617ab5f630",
+                    "kind": "changed"
+                  }
+                ]
+              }
+            ],
+            "cursor": 4,
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "truncated": false
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>",
+            "profile": "<string>",
+            "capabilities": {
+              "history": {
+                "state": "<string>",
+                "coverage_from": "<string>",
+                "writer_requires": "<boolean>"
+              },
+              "semantic": {
+                "state": "<string>",
+                "model": "<null>"
+              }
+            },
+            "epoch": "<string>"
+          },
+          {
+            "epoch": "ep_0",
+            "oldest": 1,
+            "head": 4,
+            "lastBatch": null,
+            "convergent": true,
+            "diskChecked": true,
+            "disk": {
+              "changed": 0,
+              "deleted": 0,
+              "untracked": 0,
+              "checked": true
+            },
+            "capabilities": {
+              "history": {
+                "state": "enabled",
+                "coverage_from": "2000-01-01T00:00:00.000Z",
+                "writer_requires": true
+              },
+              "semantic": {
+                "state": "disabled",
+                "model": null
+              }
+            }
           }
         ]
       }

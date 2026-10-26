@@ -354,8 +354,10 @@ export const MIGRATIONS: Record<number, string> = {
 // and the identity of a repository, the change feed, the derived indexes the
 // query surfaces read, and the sync registry. Every table here is read and
 // written by the core and depends on no history or semantic table. Executed on
-// every fresh database; the two capability bundles below follow (through Phase
-// 3 unconditionally — Phase 4 makes them conditional on the manifest).
+// every fresh database — alone, since Phase 4a: the history bundle follows
+// when a repository's manifest says `enabled` (`core/store/manifest.ts`
+// `applyHistoryBundle`), the semantic bundle with the semantic module
+// (`Store.applyBundles`).
 export const DDL = /* sql */ `
 -- ---- core bundle: durable tables (spec/store 17.0 §3.1) ---------------------
 CREATE TABLE IF NOT EXISTS repos (
@@ -574,5 +576,5 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 ${DOC_EMBEDDINGS_DDL}`;
 
-/** The three bundles as one fresh database executes them (17.0: every bundle, unconditionally — Phase 4 makes the capability bundles conditional). */
+/** The three bundles concatenated — what a database with every capability on holds (the partition test; through Phase 3 what every fresh database executed. Since Phase 4a the opener executes `DDL` alone and the bundles follow the manifest/composition). */
 export const ALL_DDL = `${DDL}${HISTORY_DDL}${SEMANTIC_DDL}`;

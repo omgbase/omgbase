@@ -6,16 +6,16 @@
 // STORE_SPEC_UPDATE=1 rewrites each case's `expect` in place from its inputs
 // (inputs, notes and case order untouched) before running; the diff is
 // reviewed like code, because a changed `expect` *is* a store change.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALL_DDL, DDL, HISTORY_DDL, SCHEMA_VERSION, SEMANTIC_DDL } from "../../src/core/store/schema.js";
 import { ARCHIVE_DDL } from "../../src/core/store/archive.js";
 import {
-  deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, suiteKind, validateFixtureFile,
+  coreMode, coreModeProjection, deepEqualTol, runEdgeTransitionsCase, runMigrationCase, runObserveCase, runSchemaCase, runsUnderCore, suiteKind, validateFixtureFile,
 } from "./fixture.js";
-import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, ObserveCase, SchemaCase } from "./fixture.js";
+import type { EdgeTransitionsCase, FixtureCase, FixtureFile, MigrationCase, ObserveCase, Projection, SchemaCase, SchemaFingerprint } from "./fixture.js";
 
 // packages/core/corpus/store → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/store/", import.meta.url));
@@ -25,6 +25,26 @@ const UPDATE = (() => {
   const v = process.env.STORE_SPEC_UPDATE;
   return v !== undefined && v !== "" && v !== "0";
 })();
+
+/**
+ * The core-only run (README §9.6; modular-core Phase 4a, `OMGBASE_CAPABILITIES=core`):
+ * the stores have no recorder and no semantic module. The observation scripts
+ * run unchanged and are compared on the core tables (`coreModeProjection`);
+ * a case that needs the module is skipped and counted; `migrations.json` and
+ * `cases/history/` are skipped wholesale; the schema fingerprint is compared
+ * without the semantic bundle's tables. The fixtures are never regenerated from it.
+ */
+const CORE_MODE = coreMode();
+if (CORE_MODE && UPDATE) throw new Error("STORE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
+const coreSkipped: string[] = [];
+const coreCompared: string[] = [];
+
+/** The fingerprint without the semantic bundle (its tables and indexes), for the core-only run. */
+function withoutSemanticTables(f: SchemaFingerprint): SchemaFingerprint {
+  const tables = Object.fromEntries(Object.entries(f.tables).filter(([name]) => name !== "embeddings" && name !== "doc_embeddings"));
+  const indexes = Object.fromEntries(Object.entries(f.indexes).filter(([, ix]) => ix.table !== "embeddings" && ix.table !== "doc_embeddings"));
+  return { ...f, tables, indexes };
+}
 
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
 const EPS = 1e-9;
@@ -146,13 +166,25 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
-function runCase(suite: string, c: FixtureCase): void {
+function runCase(suite: string, c: FixtureCase, file: string): void {
+  const kind = suiteKind(suite);
+  let expected: unknown = c.expect;
+  if (CORE_MODE) {
+    const id = `${suite}::${c.name}`;
+    if (kind === "migration" || kind === "edges" || file.startsWith("history/") || (kind === "observe" && !runsUnderCore(c as ObserveCase))) {
+      coreSkipped.push(id);
+      return;
+    }
+    if (kind === "schema") expected = withoutSemanticTables(c.expect as SchemaFingerprint);
+    if (kind === "observe") expected = coreModeProjection(c.expect as Projection);
+    coreCompared.push(id);
+  }
   const { expect: actual, problems: invariantProblems } = evaluate(suite, c);
   expect(invariantProblems).toEqual([]);
-  const diff = deepEqualTol(actual, c.expect, EPS);
+  const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) {
     // Beyond tolerance: let vitest print the structural diff (key order sorted).
-    expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+    expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
   }
 }
 
@@ -226,8 +258,14 @@ describe("store spec fixtures (spec/store/cases)", () => {
     const stem = stemOf(file);
     describe(stem, () => {
       for (const c of fixture.cases) {
-        it(`${stem}::${c.name}`, () => runCase(stem, c));
+        it(`${stem}::${c.name}`, () => runCase(stem, c, file));
       }
     });
   }
+});
+
+// The core-only run's ledger (README §9.6): what ran against the core projection and what needed the module.
+afterAll(() => {
+  if (!CORE_MODE) return;
+  process.stderr.write(`[store spec] OMGBASE_CAPABILITIES=core: ${coreCompared.length} case(s) compared on the core tables, ${coreSkipped.length} skipped (need the history module):\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
 });

@@ -4,7 +4,7 @@ import { MutationError } from "../mutate/tree.js";
 import { RevisionNotFound } from "../graph/history.js";
 import { RevisionArchived } from "../core/store/archive.js";
 import { WriterLockTimeout } from "../sync/writer-lock.js";
-import { CapabilityUnavailable } from "../core/capabilities/errors.js";
+import { CapabilityUnavailable, CaptureFailed } from "../core/capabilities/errors.js";
 import { ExpiredCursor } from "../core/store/feed.js";
 
 // Error codes (06 §5). Shape: { error, message, data?, retriable }. Codes are
@@ -28,6 +28,7 @@ export type ErrorCode =
   | "plan_unknown"
   // modular-core Phase 2 (phase-1-contracts §2.1, D3): a capability the store does not run with — `data: { capability, state, fix? }`, retriable only for `unavailable`
   | "capability_unavailable"
+  | "capture_failed"
   // spec/surface 6.0 / spec/store 17.0 (D7): a `changes_since` cursor the feed no longer serves — another epoch, past the head, behind the oldest retained row — `data: { epoch, oldest, head }`, never retriable: the consumer rescans (spec/sync §6)
   | "expired_cursor";
 
@@ -79,6 +80,8 @@ export interface ErrorBody {
 export function errorBody(err: unknown): ErrorBody {
   if (err instanceof EngineError) return { error: err.code, message: err.message, ...(err.data !== undefined ? { data: err.data } : {}), retriable: err.retriable };
   if (err instanceof CapabilityUnavailable) return { error: "capability_unavailable", message: err.message, data: err.data(), retriable: err.retriable };
+  // spec/store §5.4 step 15 (resolution 18; Phase 4a): the recorder threw, the write was rolled back and is retried.
+  if (err instanceof CaptureFailed) return { error: "capture_failed", message: err.message, data: err.data(), retriable: true };
   if (err instanceof ExpiredCursor) return { error: "expired_cursor", message: err.message, data: err.data(), retriable: false };
   if (err instanceof FilterInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint, ...(err.fix !== undefined ? { fix: err.fix } : {}) }, retriable: false };
   if (err instanceof CursorInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason ?? `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };

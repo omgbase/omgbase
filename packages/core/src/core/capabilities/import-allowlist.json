@@ -1,17 +1,4 @@
 {
-  "$comment": "modular-core Phase 1 (docs/modular-core/README.md §5 'Dependency-direction check'). The production imports from a core/mutate/sync/oqx-js/reconcile module into a concrete history/semantic module that Phase 1 leaves in place. Every entry cites the inventory row (docs/modular-core/inventory-ts.md) and the mechanism that retires it; the list only shrinks — `dependency-direction.test.ts` fails when an entry is no longer a live import, and `eslint.config.js` exempts exactly these files from the rule.",
-  "entries": [
-    {
-      "from": "core/store/writers.ts",
-      "to": "core/store/delta.ts",
-      "inventory": "inventory-ts §2.2 rows `writeList` 92–107, `isCheckpointRevision` 75–77, `writeFrontmatterBlob` 121–125, `previousRevision` 172–176 (both/3, archival/4); README §2.4 row 1 (M5), §3 M1",
-      "note": "The tree, blob and revision writers encode the recorder's delta nodes; the file is the recorder's own and moves under it when the capture half is extracted (Phase 4). `assignIds`/`TreeInputBlock` are the current-state parts that stay."
-    },
-    {
-      "from": "core/store/gc.ts",
-      "to": "core/store/delta.ts",
-      "inventory": "inventory-ts §2.2 rows `markReachable` 28–40 (both/3), `explicitWalker` 50–67 (archival/none), `sweepUnreachable` 74–89 (both/3); README §2.3 row 3 (M7, D10)",
-      "note": "`explicitWalker` parses the recorder's node forms for the mark the retention squash and `ReachMarker` share; M7 roots the core's half on current state and leaves the walk to the recorder (Phase 3). `sweepUnreachable` already takes the mark through `HistoryRecorder.markReachable`."
-    }
-  ]
+  "$comment": "modular-core Phase 1 (docs/modular-core/README.md §5 'Dependency-direction check'). The production imports from a core/mutate/sync/oqx-js/reconcile module into a concrete history/semantic module that the program still leaves in place. Every entry cites the inventory row (docs/modular-core/inventory-ts.md) and the mechanism that retires it; the list only shrinks — `dependency-direction.test.ts` fails when an entry is no longer a live import, and `eslint.config.js` exempts exactly these files from the rule. EMPTY since Phase 4a: `writers.ts → delta.ts` and `gc.ts → delta.ts` left when the recorder's writers and collection moved into the bundle (`core/store/history-writers.ts`, `core/store/history-gc.ts`).",
+  "entries": []
 }

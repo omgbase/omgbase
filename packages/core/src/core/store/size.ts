@@ -1,8 +1,8 @@
 import { statSync } from "node:fs";
 import type { Store } from "./store.js";
-import { requireHistory, semanticOf } from "../capabilities/registry.js";
+import { semanticOf } from "../capabilities/registry.js";
 import { feedStatus, repoFeedPolicy } from "./feed.js";
-import { coverageFrom, readCapabilities } from "./manifest.js";
+import { captureFor, coverageFrom, readCapabilities } from "./manifest.js";
 
 // The size report (spec/store §7.2 "Size", 14.1; the six categories 17.0 —
 // D9): what the database is made of, table by table through SQLite's `dbstat`
@@ -350,18 +350,23 @@ export function sizeReport(store: Store, opts: SizeReportOptions = {}): SizeRepo
     return { name, bytes, share: bytes === null ? null : shareOf(bytes, total), rows: tables.reduce((n, t) => n + t.rows, 0), tables };
   });
 
-  const same_dispositions = (db.prepare("SELECT count(*) AS c FROM dispositions WHERE kind = 'same'").get() as { c: number }).c;
+  // The recorder's lines (Phase 4a: through the seam, and only when the store
+  // carries the module and the bundle's tables exist — a database no
+  // repository of which ever captured has `0` everywhere here).
+  const history = captureFor(db, null);
+  const same_dispositions = history?.sameDispositionCount() ?? 0;
   const id_claims = store.capabilities.claims.count();
-  const history = requireHistory(store.db);
-  const archived = history.archivedSummary();
+  const archived = history?.archivedSummary() ?? { revisions: 0, segments: 0, bytes: 0 };
   // The retention plan of every repository under its effective policy (the
   // report is store-wide; the policy is a repository's) at one clock.
   const now = opts.now ?? new Date().toISOString();
   const retention: SizeRetention = { revisions: 0, bytes: 0 };
-  for (const r of db.prepare("SELECT repo_id FROM repos ORDER BY repo_id").all() as { repo_id: string }[]) {
-    const plan = history.evaluateRetention(r.repo_id, { now, policy: history.retentionPolicy(r.repo_id) });
-    retention.revisions += plan.totals.archive;
-    retention.bytes += plan.totals.bytes;
+  if (history) {
+    for (const r of db.prepare("SELECT repo_id FROM repos ORDER BY repo_id").all() as { repo_id: string }[]) {
+      const plan = history.evaluateRetention(r.repo_id, { now, policy: history.retentionPolicy(r.repo_id) });
+      retention.revisions += plan.totals.archive;
+      retention.bytes += plan.totals.bytes;
+    }
   }
   // 17.0: the feed's position and policy — a repository's (§7.4); the report
   // is store-wide, so it is the named repository's, else the only one's.

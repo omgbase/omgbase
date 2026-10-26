@@ -12,6 +12,8 @@ import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js
 import { SQLiteQueryPlanner } from "./planner.js";
 import { REPO_REMOVED_MESSAGE, ROOTS, bareTargetMessage, pastRootMessage, unknownTargetMessage } from "./root-row.js";
 import { checkNames, type UnknownNames } from "./names.js";
+import { rootTarget } from "./planner.js";
+import { historyState } from "../sync/capability-state.js";
 import { DATE_FUNCTIONS, DATE_METHODS, dateFunction, dateMethod } from "./dates.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
@@ -499,10 +501,24 @@ export function oqxRunQuery(store: Store, repoId: string, raw: Query, opts: OqxO
   // spec/mutate's `target_missing` / absent value, not an unknown name.
   const own = { ...raw, select: raw.select.filter((it) => !RESERVED_ALIAS_PREFIXES.some((p) => it.name.startsWith(p))) };
   const hints = checkNames(store, repoId, own, opts.unknownNames ?? "refuse");
+  // spec/surface §1.5 (Phase 4a; phase-1-contracts §2.2): a query whose root
+  // is `revisions` on a repository whose history is not `enabled` carries a
+  // capability note first — the root lists what was captured, never an error.
+  const note = rootTarget(raw.source) === null && raw.source.kind === "ident" && raw.source.name === "revisions" ? revisionsHint(store, repoId) : null;
+  if (note !== null) hints.unshift(note);
   const result = runResolved(store, repoId, raw, opts);
   // `hints` is the last member, present only when there is something to say.
   return hints.length === 0 ? result : { ...result, hints };
 }
+
+/** The `revisions` root's capability note (spec/surface §1.5, byte for byte in both engines), or null when the repository's history is `enabled`. */
+export function revisionsHint(store: Store, repoId: string): string | null {
+  const state = historyState(store, repoId);
+  if (state === "enabled") return null;
+  return state === "unavailable" ? REVISIONS_UNAVAILABLE_HINT : REVISIONS_DISABLED_HINT;
+}
+export const REVISIONS_DISABLED_HINT = "history is disabled for this repository — `revisions` lists only what was captured while it was enabled; `omg history enable` resumes capture";
+export const REVISIONS_UNAVAILABLE_HINT = "history is unavailable in this build — `revisions` is empty; run an engine with the history module to read it";
 
 function runResolved(store: Store, repoId: string, raw: Query, opts: OqxOptions): OqxResult {
   // The query's `select` aliases are resolved HERE, once, before the runner

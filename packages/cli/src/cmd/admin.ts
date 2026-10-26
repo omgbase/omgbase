@@ -15,6 +15,9 @@ import {
   liveLeafCount,
   sizeReport,
   activeAlerts,
+  readCapability,
+  openCoverageFrom,
+  captureFor,
   vacuum,
   reclaimableBytes,
   humanBytes,
@@ -147,13 +150,23 @@ function runDoctor(cli: Cli, args: string[]): number {
   const leaves = liveLeafCount(db);
   checks.push({ name: "fts rows == live leaf blocks", ok: ftsCount === leaves, detail: `fts=${ftsCount} leaves=${leaves}` });
 
-  // Store 17.0 (D1): every live document has a head token, and while legacy
-  // capture is on the recorder's `revisions` row agrees with it (spec/store §8
-  // H1 — the check `doctor` used to call "no dangling current_rev").
+  // Store 17.0 (D1): every live document has a head token, and while capture
+  // is on the recorder's `revisions` row agrees with it (spec/store §8 H1 —
+  // the check `doctor` used to call "no dangling current_rev"). Phase 4a: the
+  // check reads the repository's manifest — a head minted within the open
+  // coverage interval owes a revision; a repository whose capture is off (or a
+  // build without the module) owes none and the check says so in its detail.
   const headless = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NULL").get() as { c: number }).c;
   checks.push({ name: "head present", ok: headless === 0, detail: `${headless} without a head` });
-  const uncaptured = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_at IS NULL AND d.head IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.head)").get() as { c: number }).c;
-  checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `${uncaptured} heads without a revision` });
+  const manifest = readCapability(db, repo.repoId, "history");
+  const since = openCoverageFrom(manifest);
+  const recorder = captureFor(db, repo.repoId);
+  if (recorder && since !== null) {
+    const uncaptured = recorder.uncapturedHeads(repo.repoId, since);
+    checks.push({ name: "capture complete", ok: uncaptured === 0, detail: `${uncaptured} heads without a revision` });
+  } else {
+    checks.push({ name: "capture complete", ok: true, detail: manifest?.state === "enabled" ? "history unavailable in this build" : `history disabled${manifest && manifest.coverage.length > 0 ? ` (captured ${manifest.coverage.map((i) => `${i.from}..${i.to ?? "now"}`).join(", ")})` : ""}` });
+  }
 
   // Store 17.0 (3e-ii): the alert channel (spec/store §3.1 `alerts`) — the
   // conditions the engine raised for a human on the selected repository; any

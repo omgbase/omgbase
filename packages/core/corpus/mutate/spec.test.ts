@@ -8,12 +8,13 @@
 // MUTATE_SPEC_UPDATE=1 rewrites each case's `expect` in place from its inputs
 // (inputs, notes and case order untouched) before running; the diff is
 // reviewed like code, because a changed `expect` *is* a mutation change.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deepEqualTol, runCase, validateFixtureFile } from "./fixture.js";
-import type { FixtureCase, FixtureFile } from "./fixture.js";
+import type { FixtureCase, FixtureFile, Projection } from "./fixture.js";
+import { coreMode, isHistoryStep, isLifecycleStep } from "../store/fixture.js";
 
 // packages/core/corpus/mutate → repo root is four levels up.
 const SPEC_DIR = fileURLToPath(new URL("../../../../spec/mutate/", import.meta.url));
@@ -23,6 +24,23 @@ const UPDATE = (() => {
   const v = process.env.MUTATE_SPEC_UPDATE;
   return v !== undefined && v !== "" && v !== "0";
 })();
+
+/**
+ * The core-only run (spec/store README §9.6; modular-core Phase 4a,
+ * `OMGBASE_CAPABILITIES=core`): the stores have no recorder, so every api
+ * commit lands uncaptured. The same scripts run; the projection is compared on
+ * the core tables (`commits`, `revisions`, `dispositions` are `[]` on both
+ * sides); a case with a retention or lifecycle step is skipped and counted.
+ * The fixtures are never regenerated from it.
+ */
+const CORE_MODE = coreMode();
+if (CORE_MODE && UPDATE) throw new Error("MUTATE_SPEC_UPDATE under OMGBASE_CAPABILITIES=core would record the core-only composition's answers; run it on the full one");
+const coreSkipped: string[] = [];
+
+/** The projection the core-only run compares: the history tables emptied. */
+function coreModeProjection(p: Projection): Projection {
+  return { ...p, commits: [], revisions: [], dispositions: [] };
+}
 
 /** Nothing projected is floating point except `confidence`; compare within 1e-9 as spec/reconcile does. */
 const EPS = 1e-9;
@@ -116,13 +134,18 @@ function sortKeys(v: unknown): unknown {
   return v;
 }
 
-function run(c: FixtureCase): void {
+function run(c: FixtureCase, suite: string): void {
+  let expected: Projection = c.expect;
+  if (CORE_MODE) {
+    if (c.steps.some((s) => isHistoryStep(s) || isLifecycleStep(s))) { coreSkipped.push(`${suite}::${c.name}`); return; }
+    expected = coreModeProjection(c.expect);
+  }
   const { expect: actual, problems: invariantProblems } = runCase(c);
   expect(invariantProblems).toEqual([]);
-  const diff = deepEqualTol(actual, c.expect, EPS);
+  const diff = deepEqualTol(actual, expected, EPS);
   if (diff !== null) {
     // Beyond tolerance: let vitest print the structural diff (key order sorted).
-    expect(sortKeys(actual), diff).toEqual(sortKeys(c.expect));
+    expect(sortKeys(actual), diff).toEqual(sortKeys(expected));
   }
 }
 
@@ -155,8 +178,14 @@ describe("mutate spec fixtures (spec/mutate/cases)", () => {
     const stem = file.replace(/\.json$/, "");
     describe(stem, () => {
       for (const c of fixture.cases) {
-        it(`${stem}::${c.name}`, () => run(c));
+        it(`${stem}::${c.name}`, () => run(c, stem));
       }
     });
   }
+});
+
+// The core-only run's ledger (spec/store README §9.6): what needed the history module.
+afterAll(() => {
+  if (!CORE_MODE) return;
+  process.stderr.write(`[mutate spec] OMGBASE_CAPABILITIES=core: compared on the core tables; ${coreSkipped.length} skipped (need the history module):\n${coreSkipped.map((c) => `  skip ${c}`).join("\n")}\n`);
 });

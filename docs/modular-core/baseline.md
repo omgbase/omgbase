@@ -859,6 +859,60 @@ moved with the machine (the same session's TS run shows the spawn at twice
 its 3e-ii value). Against the TS release-prep run the picture is the one
 every round shows (writes 346–407 / 390–446 there, spawn 339 / 672).
 
+### 17.1 (Phase 4a), TS — capture optional: history ON vs history OFF (`ts-2026-10-26T09-07-08`, `ts-history-off-2026-10-26T09-08-54`)
+
+The same harness over the Phase 4a reference (store 17.1: the history bundle
+follows the manifest, a commit hands the recorder its rows only while the
+repository's `history` row is `enabled`), TS CLI, node 24, the same seeded
+corpus (0.22 MB of Markdown, 201 documents). Two rows: **history ON** (the
+default — capture from the first commit, as every run above) and **history
+OFF** (`--history off`: the harness runs `source add <dir> --repo bench -y
+--no-history`, so the repository is born `disabled`, the import itself is
+uncaptured, no history table is ever created). The 17.0 release-prep TS row
+(`ts-2026-10-26T07-17-32`) is the comparison for the ON row.
+
+| stage | ops | OFF db MB | OFF grew KB | OFF KB / op | ON db MB | ON KB / op | 17.0 db MB / KB / op | OFF content | OFF identity | OFF history | OFF search | OFF sync KB | ON history MB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 3.95 | 3,953 | 19.7 / doc | 6.20 | 30.8 / doc | 6.17 / 30.0 | 3.11 | 0.37 | 0 | 0.24 | 232 | 2.24 |
+| frontmatter hot update | 50 | 4.01 | 57 | 1.1 | 6.30 | 2.1 | 6.28 / 2.1 | 3.12 | 0.38 | 0 | 0.24 | 256 | 2.29 |
+| block edit | 50 | 4.05 | 37 | 0.7 | 6.43 | 2.6 | 6.41 / 2.6 | 3.12 | 0.39 | 0 | 0.24 | 284 | 2.38 |
+| rolling journal | 50 | 4.11 | 61 | 1.2 | 6.60 | 3.4 | 6.58 / 3.4 | 3.14 | 0.41 | 0 | 0.24 | 300 | 2.49 |
+| task churn | 50 | 4.14 | 33 | 0.7 | 6.68 | 1.6 | 6.66 / 1.6 | 3.14 | 0.42 | 0 | 0.24 | 324 | 2.54 |
+| link churn | 50 | 4.17 | 29 | 0.6 | 6.78 | 2.0 | 6.75 / 1.8 | 3.14 | 0.43 | 0 | 0.24 | 340 | 2.60 |
+| delete / recreate | 20 | 4.20 | 33 | 1.6 | 6.89 | 5.7 | 6.88 / 6.2 | 3.15 | 0.45 | 0 | 0.24 | 352 | 2.70 |
+| gc (default sweep) | | 4.20 | 0 | | 6.89 | | 6.88 / 0 | 3.15 | 0.45 | 0 | 0.24 | 352 | 2.70 |
+
+**History off is the number the program exists for: 4.20 MB at the end
+against 6.89 MB with capture on — 19.2× the source against 31.5×, −2.69 MB
+(−39 %), and the `history` category reads 0 B / 0 rows at every stage (no
+table exists).** The import is 3.95 MB (18.1×) against 6.20 (28.3×) — the
+2.24 MB the recorder wrote at import in the ON run is exactly the gap. Per
+operation the small edits cost a third to a quarter: frontmatter 2.1 → 1.1
+KB, block edit 2.6 → 0.7, journal 3.4 → 1.2, task churn 1.6 → 0.7, link
+churn 2.0 → 0.6, delete/recreate 5.7 → 1.6 — what remains is the core's own
+growth: `content` 3.11 → 3.15 MB (identical in both runs: the rows are the
+same), `identity` 0.37 → 0.45 (`id_claims` 5,715 rows, 438 KB — the same
+count: every id is minted and claimed with capture off too, with bit 0
+alone), `sync` 232 → 352 KB (the feed: 471 rows + 471 entries, identical),
+`search` 0.24. The ON row is the 17.0 row to within the seed's noise
+(6.20 / 6.89 vs 6.17 / 6.88 MB; `history` 2.24 → 2.70 both; the recorder's
+rows identical: `blobs` 3,218, `tree_nodes` 1,000, `dispositions` /
+`block_changes` 3,824, `revisions` 461, `commits` 471, `edge_transitions`
+955) — making capture conditional cost nothing when it is on: `captureFor`
+is one manifest read per commit. No `commits`/`revisions`/`blobs`/
+`tree_nodes`/`dispositions`/`block_changes`/`edge_transitions`/`archives`
+table exists in the OFF database; `doctor --size` lists the `history`
+category empty.
+
+Latency (p50 / p95 ms, the process start 220 / 263 OFF, 207 / 258 ON): OFF
+import 1,088; one write 269–313 / 310–355 (frontmatter 313 / 355, block edit
+276 / 320, journal 280 / 322, task churn 274 / 310, link churn 293 / 330,
+recreate 269 / 314); `query` docs 312; ON import 1,209, writes 244–296 /
+292–332. The machine of the day was faster than the 17.0 run's (spawn 207–220
+vs 339); OFF and ON are within each other's noise — the recorder's share of
+a small write was never the latency's bulk. Reproduce: `node
+scripts/baseline/modular-core-baseline.mjs --engine ts --history off`.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |
@@ -918,6 +972,7 @@ was the harness's.
 cargo build -p omgbase && pnpm --filter omgbase build        # both CLIs
 node scripts/baseline/modular-core-baseline.mjs --engine rust   # → docs/modular-core/baseline/rust-<stamp>.{json,md}
 node scripts/baseline/modular-core-baseline.mjs --engine ts
+node scripts/baseline/modular-core-baseline.mjs --engine ts --history off   # Phase 4a: the repository born with capture off (source add --no-history)
 <cli> -C <workspace> doctor --size --json                       # a real workspace, read-only
 ```
 

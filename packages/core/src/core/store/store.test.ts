@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "./store.js";
 import { SCHEMA_VERSION } from "./schema.js";
+import { applyHistoryBundle } from "./manifest.js";
+import { ensureRepo } from "../attach.js";
 
 let store: Store | undefined;
 afterEach(() => {
@@ -26,13 +28,16 @@ describe("Store — schema & config", () => {
     expect(store.pragma("user_version")).toBe(SCHEMA_VERSION);
   });
 
-  it("creates all durable + derived tables", () => {
+  it("creates the core + semantic tables on a fresh database; the history bundle follows the first enabled repository (Phase 4a)", () => {
     store = new Store({ path: ":memory:" });
-    const names = (
-      store.db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        .all() as { name: string }[]
-    ).map((r) => r.name);
+    const tables = (): string[] => (store!.db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
+    const fresh = tables();
+    for (const t of ["repos", "docs", "blocks", "edges", "external_nodes", "feed", "feed_entries", "resurrection_pool", "sections", "doc_edges", "embeddings", "blocks_fts", "file_stats", "capabilities", "alerts"]) {
+      expect(fresh, `missing table ${t}`).toContain(t);
+    }
+    for (const t of ["blobs", "tree_nodes", "revisions", "commits", "dispositions", "block_changes", "edge_transitions", "archives"]) expect(fresh, `${t} on a fresh database`).not.toContain(t);
+    ensureRepo(store, "s", null);
+    const names = tables();
     for (const t of [
       "repos", "docs", "blocks", "blobs", "tree_nodes", "revisions",
       "commits", "dispositions", "edges", "external_nodes", "edge_transitions",
@@ -118,6 +123,7 @@ describe("Store — schema & config", () => {
   it("enforces CHECK constraints (commit origin enum)", () => {
     store = new Store({ path: ":memory:" });
     store.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1','s','ep_1')").run();
+    applyHistoryBundle(store.db);
     expect(() =>
       store!.db
         .prepare(

@@ -4,6 +4,8 @@ import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver, prepareReconcile, loadOldMatchBlocks, loadPool, type PreparedReconcile } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
 import { tombstoneObservedDeletion } from "./tombstone.js";
+import { CaptureFailed } from "../core/capabilities/errors.js";
+import { raiseCaptureFailed, requireWriter } from "../core/store/manifest.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
 import { crossDocMatch, applyCrossDocMatches, type PerDocUnmatched } from "../reconcile/crossdoc.js";
 import type { DocReconcileResult } from "../reconcile/reconcile.js";
@@ -57,7 +59,7 @@ export interface BatchItem {
   content: string | null;
 }
 
-/** Outcome of one batch member: an observation (echo or commit) or a deletion. */
+/** Outcome of one batch member: an observation (echo or commit), a deletion, or (Phase 4a) a member rolled back because its capture failed. */
 export type BatchOutcome =
   | ({ kind: "observed" } & ObserveOneResult)
   | {
@@ -68,6 +70,15 @@ export type BatchOutcome =
       /** the tombstone's commit (17.0, 3d — the feed row), or null for a no-op. */
       commitId: string | null;
       oldHashHex: string | null;
+    }
+  | {
+      /** spec/store §5.4 step 15 (resolution 18): the recorder threw inside the member's transaction — nothing of the member landed, the `capture_failed` alert is raised, the next sweep retries it. */
+      kind: "failed";
+      path: string;
+      /** the live doc at the path before the attempt, or null for a new path. */
+      docId: string | null;
+      commitId: null;
+      error: string;
     };
 
 // Pass-1 state per non-echo member. `clearPending`: the member's bytes
@@ -184,32 +195,52 @@ export function observeBatch(
   // The batch id (spec/store §5.4 step 5, D4): the first committing member's
   // commit id; every later member's feed row carries it. An echo commits
   // nothing and names none.
+  // spec/store §5.4 step 0 (resolution 17), once for the batch and OUTSIDE any
+  // transaction, so the `writer_refused` alert survives the refusal: a writer
+  // without the history module on a repository that requires capture commits
+  // nothing (the echoes above wrote nothing either — pass 1 only reads).
+  if (pending.some((p) => p.kind !== "echo")) requireWriter(db, repoId, ts);
   const out: BatchOutcome[] = [];
   const batch: { id: string | null } = { id: null };
   const joined = (commitId: string | null): void => {
     if (batch.id === null && commitId !== null) batch.id = commitId;
   };
+  // A member whose capture threw (step 15, resolution 18): its transaction
+  // rolled back with the throw, so nothing of it landed; the alert is raised
+  // here, after the rollback, and the batch goes on — the member stays a
+  // candidate for the next sweep (its stat is not recorded).
+  const failed = (path: string, docId: string | null, e: CaptureFailed): void => {
+    raiseCaptureFailed(db, repoId, e.at(path), ts);
+    out.push({ kind: "failed", path, docId, commitId: null, error: e.message });
+  };
   for (const p of pending) {
     if (p.kind === "echo") {
       out.push(p.outcome);
-    } else if (p.kind === "gone") {
-      const commitId = p.docId ? tombstoneObservedDeletion(store, repoId, p.docId, ts, batch.id) : null;
-      joined(commitId);
-      out.push({ kind: "deleted", path: p.path, docId: p.docId, commitId, oldHashHex: p.oldHashHex });
-    } else if (p.clearPending) {
-      // File wins (spec/store §5.7): the pending row and the observed commit
-      // that supersedes it go together.
-      const r = store.write((db) => {
+      continue;
+    }
+    try {
+      if (p.kind === "gone") {
+        const commitId = p.docId ? tombstoneObservedDeletion(store, repoId, p.docId, ts, batch.id) : null;
+        joined(commitId);
+        out.push({ kind: "deleted", path: p.path, docId: p.docId, commitId, oldHashHex: p.oldHashHex });
+      } else if (p.clearPending) {
+        // File wins (spec/store §5.7): the pending row and the observed commit
+        // that supersedes it go together.
+        const r = store.write((db) => {
+          const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex, batch.id);
+          deletePending(db, repoId, p.prepared.path);
+          return r;
+        });
+        joined(r.commitId);
+        out.push({ kind: "observed", ...r });
+      } else {
         const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex, batch.id);
-        deletePending(db, repoId, p.prepared.path);
-        return r;
-      });
-      joined(r.commitId);
-      out.push({ kind: "observed", ...r });
-    } else {
-      const r = commitPrepared(store, repoId, p.prepared, ts, p.oldHashHex, p.newHashHex, batch.id);
-      joined(r.commitId);
-      out.push({ kind: "observed", ...r });
+        joined(r.commitId);
+        out.push({ kind: "observed", ...r });
+      }
+    } catch (e) {
+      if (!(e instanceof CaptureFailed)) throw e;
+      failed(p.kind === "gone" ? p.path : p.prepared.path, p.kind === "gone" ? p.docId : p.prepared.docId, e);
     }
   }
   return out;

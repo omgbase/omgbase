@@ -9,7 +9,10 @@ import { effectiveSettingsOf } from "./settings.js";
 // default 10 — the api path owes the working tree files it has not been able
 // to write), a REPLAY FAILURE (`materialization_failed`: a pending row's replay
 // threw — the row is intact and retried forever, resolution 18), a WRITER
-// REFUSED by `writer_requires` (`writer_refused`, `core/store/manifest.ts`).
+// REFUSED by `writer_requires` (`writer_refused`, `core/store/manifest.ts`),
+// a CAPTURE that threw inside a commit (`capture_failed`, Phase 4a —
+// resolution 18: the member was rolled back and the next sweep retries;
+// `raiseCaptureFailed`/`clearCaptureFailed` in `manifest.ts`).
 // Every MCP tool response carries the ACTIVE alerts of the call's repository in
 // a top-level `alerts` member when there are any (as a query result carries
 // `hints`), the CLI prints `alert[<severity>] <code>: <message>` lines to

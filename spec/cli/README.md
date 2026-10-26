@@ -665,9 +665,14 @@ holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
 live leaf blocks of `spec/search` §1.1: live rows no live row names as
 `parent_block`; detail `fts=<n> leaves=<n>`), `head present` (every live
 document has a `docs.head`; detail `<n> without a head`), `capture complete`
-(every live head has its `revisions` row — legacy capture agrees with the
-head, `spec/store` §8 H1; detail `<n> heads without a revision`; through
-store 16.x the one check `no dangling current_rev`), `alerts` (store 17.0,
+(every live head minted within the open coverage interval has its
+`revisions` row — capture agrees with the head, `spec/store` §8 H1; detail
+`<n> heads without a revision`; since cli 5.1 (store 17.1 Phase 4a) the
+check reads the repository's manifest: with capture off it passes with the
+detail `history disabled (captured <from>..<to>[, …])` (`history disabled`
+when nothing was ever captured), on a build without the module `history
+unavailable in this build`; through store 16.x the one check `no dangling
+current_rev`), `alerts` (store 17.0,
 slice 3e-ii: the selected repository's ACTIVE alerts, `spec/store` §3.1
 `alerts` / §5.8 — `ok` iff there is none; detail `none active`, else every
 active alert as `<code>[<severity>]: <message>` joined by `; `), `sqlite
@@ -893,17 +898,55 @@ line; `--ids` the same array (a change carries no id).
 
 ### `history`
 
-`history plan [--before <ts>] [--policy <json|@file>]` ·
+`history enable [--best-effort]` · `history disable` (cli 5.1, store 17.1
+Phase 4a) · `history plan [--before <ts>] [--policy <json|@file>]` ·
 `history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]` ·
 `history attach <file|dir>` · `history detach <segment_id|path>` ·
-`history list` — (cli 4.6) the operator surface of history retention
-(`spec/store` §7.1, 15.0): which revisions the policy would move to an
-archive segment, writing the segment, squashing the store, and the segment
-registry. Needs a repo (`repo_not_found` on a workspace without one, as
-every repo verb); not `--server`; a bare `history`, `history help` and
-`--help` print the card (§5); an unknown subcommand is
-`usage: unknown history subcommand '<x>' (plan|export|attach|detach|list)`
-with the card as hint. `--policy` is a JSON object merged over the
+`history list` — the operator surface of history CAPTURE (`spec/store`
+§5.9: `enable`/`disable` switch the selected repository's capture through
+its manifest row) and of history RETENTION ((cli 4.6) `spec/store` §7.1,
+15.0: which revisions the policy would move to an archive segment, writing
+the segment, squashing the store, and the segment registry). Needs a repo
+(`repo_not_found` on a workspace without one, as every repo verb); not
+`--server`; a bare `history`, `history help` and `--help` print the card
+(§5); an unknown subcommand is `usage: unknown history subcommand '<x>'
+(enable|disable|plan|export|attach|detach|list)` with the card as hint.
+
+**`enable`** turns capture on (`spec/store` §5.9): the history bundle's DDL
+when absent, the **baseline** commit — one `import` feed row, `reason`
+`history enabled`, a `changed` entry per live document under its existing
+head, a checkpoint revision for every head the recorder does not hold — and
+the manifest row `enabled` with a new open coverage interval and
+`writer_requires` 1 (`--best-effort`: 0 — a writer without the history
+module may still write). Under the writer lock. Stderr `  history enabled
+since <ts> (baseline <commit>: <n> revision(s))`; on a repository already
+enabled nothing changes: `  history already enabled since <ts>` (`<ts>` the
+open interval's start). `--json` `{ state, coverage: [{ from, to }], writer_requires,
+changed, baseline?: { commit, revisions } }` — the row's capture state,
+`baseline` when the enable wrote one. On a build without the history module
+(the `OMGBASE_CAPABILITIES=core` override) it is `error[capability_unavailable]`
+`{ history, unavailable }`. **`disable`** turns capture off: the open
+interval closes at the process clock, `writer_requires` 0; the rows stay
+and what was captured stays readable; later writes record nothing but the
+feed (`log` shows them without disposition counts). Stderr `  history
+disabled (captured <from>..<to>[, …])`; already off: `  history already
+disabled (captured …)` (`  history already disabled` when nothing was ever
+captured). `--json` the same shape without `baseline`. Needs no module.
+Exact bytes under the fixture clock (every interval boundary is the clock):
+`history::history-enable-already`, `history-disable-then-write` (the
+writes after a disable — `meta`, `update` — commit, `log` lists them bare,
+`hist` lists a block's captured changes only, `diff` compares the captured
+revisions, `doctor`'s `capture complete` reads `history disabled (captured
+…)`, `version --json` by shape), `history-enable-after-disable` (the
+baseline as `#22 import import(?): … — changed` for every document, the
+next edit captured, `diff` and `history plan` over the baseline's
+revision), `history-enable-best-effort`, `history-core-build-writer-
+refused` (under `env: { OMGBASE_CAPABILITIES: "core" }`: a write on the
+alchemy repository is `error[capability_unavailable]` with the
+`writer_requires` message and the `writer_refused` alert raised; `version
+--json` reports `unavailable`; `hist` is refused; `history disable` turns
+capture off; the same write then lands and clears the alert; `history
+enable` is refused). `--policy` is a JSON object merged over the
 repository's effective `history.retention` settings for the run
 (`@<file>` reads it from a file); not JSON →
 `usage: --policy: not JSON (pass an object, or @file)`; a malformed key →
@@ -1320,13 +1363,19 @@ an array; `--jsonl` one object per line; `--ids` the same as `--json`.
 ### `source`
 
 `source <add|list|attach|detach|rm> …` — the source registry of `spec/sync`
-§2. `add <dir> [--repo <slug>] [--name <n>] [-y]`: `<dir>` must exist
+§2. `add <dir> [--repo <slug>] [--name <n>] [-y] [--no-history]`: `<dir>` must exist
 (`target_missing: no such directory: <abs>`); the repo is `--repo` or the
 directory's basename, the source `--name` or `<slug>-fs` (an existing name is
-`path_taken: a source named '<n>' already exists`); it creates the repo,
+`path_taken: a source named '<n>' already exists`); it creates the repo —
+with capture on from its birth, or **off** with `--no-history` (cli 5.1,
+store 17.1 Phase 4a, `spec/store` §5.9: the manifest row `disabled`, no
+coverage, no history table; the import itself writes no history row;
+`omg history enable` turns it on later) —
 registers and attaches the source, runs the initial freshness sweep and
 rebuilds the stat cache; stdout `  * <slug> ← <abs> <n> files`; `--json`
-`{ repo, repoId, source, root, ingested }`. Without `-y` a TTY prompts (with
+`{ repo, repoId, source, root, ingested }`. `admin::source-add-no-history`
+pins the flag (`doctor --size --json` with an empty `history` category and
+the `disabled` manifest row, `version --json`, `log`, `doctor`). Without `-y` a TTY prompts (with
 a live file count — unpinned); a non-TTY is the usage error
 `usage: refusing without -y (would ingest files under <abs>)` with the hint
 `there is no TTY to confirm on; pass -y to consent to the ingest`, exit 2,
@@ -1369,7 +1418,12 @@ checkout or not), so both modes record them as `<string|null>`. A human
 value cell's type is the tool leaf's, decided by its key (`—` → `<null>`,
 `schema` → `<number>`, else `<string>`), not read off the text. The keys are
 aligned to the widest (`version`/`runtime`, 7). The `--version` flag (§2.5)
-stays the one-line form.
+stays the one-line form. Since cli 5.1 (surface 6.1) the `capabilities`
+member of `--json` is the SELECTED repository's manifest rendering
+(`coverage_from`, `writer_requires`, `model` — by shape, so `coverage_from`
+reads `<string>` on a repository that ever captured and `<null>` on one that
+never did), the workspace layer's when none selects; the human rendering is
+unchanged.
 
 ### `status`
 
@@ -1565,7 +1619,9 @@ prompt the batch runner reads everything first.
 ```
 
 Suites: `invoke.json` (the invocation model, help, seams), `read.json`,
-`query.json` (with `run`), `history.json` (`log`, `hist`, `diff`, `links`, `history`),
+`query.json` (with `run`), `history.json` (`log`, `hist`, `diff`, `links`, `history`
+— since cli 5.1 the capture verbs too, one case under `env: {
+OMGBASE_CAPABILITIES: "core" }` driving the core-only override),
 `mutate.json`, `docs.json`, `shell.json`, `sync.json`, `admin.json` (`init`,
 `source`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`).
 
@@ -1983,6 +2039,26 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-26, cli 5.1 (store 17.1 Phase 4a, surface 6.1, sync 4.1): `history`
+  gains `enable [--best-effort]` / `disable` (§6), `source add` gains
+  `--no-history`, `doctor`'s `capture complete` reads the manifest, `version
+  --json`'s `capabilities` carries the selected repository's row with the
+  6.1 keys, `sync --json`/`status --json` carry the batch result's `failed`
+  list (sync 4.1) and `sync_status`'s capability keys. Fixtures moved,
+  all by those shapes: `read::version-json`, `read::status-json`, `read::
+  status-ids-is-json`, `sync::up-to-date-json`, `sync::up-to-date-ids-is-
+  json`, `sync::out-of-band-edit`, `sync::out-of-band-new-file`, `sync::out-
+  of-band-delete`, `sync::sourceless`, `admin::source-add`, `admin::doctor-
+  after-observed-delete`, `docs::rm-doc`, `invoke::ambiguous-repo`, `shell::
+  global-flags-per-line` (`status --json`'s `sync.capabilities` / `failed`),
+  `history::history-unknown-sub` (the subcommand list), the help cards
+  `invoke::help-bare`, `help-flag`, `help-command`, `help-card-source`,
+  `help-card-source-bare`, `help-card-history`, `help-card-history-bare`,
+  `help-card-history-word` (the `history` summary line, the `source add`
+  usage, the card). New: `history::history-enable-already`,
+  `history-disable-then-write`, `history-enable-after-disable`,
+  `history-enable-best-effort`, `history-core-build-writer-refused`,
+  `admin::source-add-no-history`.
 - 2026-10-25, cli — store 17.0 slice 3d (`spec/surface` 6.0, `spec/sync` 4.0;
   no cli version move — the verbs' argv is unchanged, their renderings
   follow the specs they render): `log` gains `--epoch` and renders the

@@ -103,81 +103,6 @@
               }
             ]
           },
-          "archives": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "segment_id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "repo_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "path",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "seq_lo",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "seq_hi",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "created_at",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "revision_count",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 7,
-                "name": "bytes",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": [
-              {
-                "from": "repo_id",
-                "table": "repos",
-                "to": "repo_id"
-              }
-            ]
-          },
           "attachments": {
             "columns": [
               {
@@ -209,64 +134,6 @@
                 "to": "repo_id"
               }
             ]
-          },
-          "blobs": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "hash",
-                "type": "BLOB",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "bytes",
-                "type": "BLOB",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "size",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
-          },
-          "block_changes": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "block_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "commit_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 2
-              },
-              {
-                "cid": 2,
-                "name": "kind",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 3
-              }
-            ],
-            "foreign_keys": []
           },
           "blocks": {
             "columns": [
@@ -632,164 +499,6 @@
               }
             ]
           },
-          "commits": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "commit_id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "repo_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "epoch",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "seq",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "ts",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "origin",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "actor",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 7,
-                "name": "reason",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 8,
-                "name": "batch_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 9,
-                "name": "ops",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": [
-              {
-                "from": "repo_id",
-                "table": "repos",
-                "to": "repo_id"
-              }
-            ]
-          },
-          "dispositions": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "commit_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "block_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 2
-              },
-              {
-                "cid": 2,
-                "name": "kind",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 3
-              },
-              {
-                "cid": 3,
-                "name": "confidence",
-                "type": "REAL",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "reason",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "matcher_v",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "detail",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": "'{}'",
-                "pk": 0
-              }
-            ],
-            "foreign_keys": [
-              {
-                "from": "commit_id",
-                "table": "commits",
-                "to": "commit_id"
-              }
-            ]
-          },
           "doc_edges": {
             "columns": [
               {
@@ -1010,115 +719,6 @@
                 "to": "repo_id"
               }
             ]
-          },
-          "edge_transitions": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "edge_id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "repo_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "src_doc",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "src_block",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "src_field",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "predicate",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "dst_kind",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 7,
-                "name": "dst_node",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 8,
-                "name": "anchor",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 9,
-                "name": "provenance",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 10,
-                "name": "via_node",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 11,
-                "name": "from_commit",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 12,
-                "name": "to_commit",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
           },
           "edges": {
             "columns": [
@@ -2070,94 +1670,6 @@
             ],
             "foreign_keys": []
           },
-          "revisions": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "rev_id",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "doc_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 2,
-                "name": "seq",
-                "type": "INTEGER",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 3,
-                "name": "root_tree",
-                "type": "BLOB",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 4,
-                "name": "frontmatter_blob",
-                "type": "BLOB",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 5,
-                "name": "rendered_hash",
-                "type": "BLOB",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 6,
-                "name": "path",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 7,
-                "name": "commit_id",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              },
-              {
-                "cid": 8,
-                "name": "archive",
-                "type": "TEXT",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": [
-              {
-                "from": "commit_id",
-                "table": "commits",
-                "to": "commit_id"
-              },
-              {
-                "from": "doc_id",
-                "table": "docs",
-                "to": "doc_id"
-              }
-            ]
-          },
           "sections": {
             "columns": [
               {
@@ -2323,27 +1835,6 @@
             ],
             "foreign_keys": []
           },
-          "tree_nodes": {
-            "columns": [
-              {
-                "cid": 0,
-                "name": "hash",
-                "type": "BLOB",
-                "notnull": 0,
-                "dflt_value": null,
-                "pk": 1
-              },
-              {
-                "cid": 1,
-                "name": "entries",
-                "type": "TEXT",
-                "notnull": 1,
-                "dflt_value": null,
-                "pk": 0
-              }
-            ],
-            "foreign_keys": []
-          },
           "workspace_settings": {
             "columns": [
               {
@@ -2405,16 +1896,6 @@
             "columns": [
               "repo_id",
               "type"
-            ]
-          },
-          "idx_edge_transitions_temporal": {
-            "table": "edge_transitions",
-            "unique": 0,
-            "origin": "c",
-            "partial": 0,
-            "columns": [
-              "from_commit",
-              "to_commit"
             ]
           },
           "idx_edges_dst": {
@@ -2535,15 +2016,6 @@
               "code"
             ]
           },
-          "sqlite_autoindex_archives_1": {
-            "table": "archives",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "segment_id"
-            ]
-          },
           "sqlite_autoindex_attachments_1": {
             "table": "attachments",
             "unique": 1,
@@ -2552,26 +2024,6 @@
             "columns": [
               "repo_id",
               "source_id"
-            ]
-          },
-          "sqlite_autoindex_blobs_1": {
-            "table": "blobs",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "hash"
-            ]
-          },
-          "sqlite_autoindex_block_changes_1": {
-            "table": "block_changes",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "block_id",
-              "commit_id",
-              "kind"
             ]
           },
           "sqlite_autoindex_blocks_1": {
@@ -2612,37 +2064,6 @@
               "capability"
             ]
           },
-          "sqlite_autoindex_commits_1": {
-            "table": "commits",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "commit_id"
-            ]
-          },
-          "sqlite_autoindex_commits_2": {
-            "table": "commits",
-            "unique": 1,
-            "origin": "u",
-            "partial": 0,
-            "columns": [
-              "repo_id",
-              "epoch",
-              "seq"
-            ]
-          },
-          "sqlite_autoindex_dispositions_1": {
-            "table": "dispositions",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "commit_id",
-              "block_id",
-              "kind"
-            ]
-          },
           "sqlite_autoindex_doc_edges_1": {
             "table": "doc_edges",
             "unique": 1,
@@ -2681,15 +2102,6 @@
             "columns": [
               "repo_id",
               "path"
-            ]
-          },
-          "sqlite_autoindex_edge_transitions_1": {
-            "table": "edge_transitions",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "edge_id"
             ]
           },
           "sqlite_autoindex_edges_1": {
@@ -2856,25 +2268,6 @@
               "block_id"
             ]
           },
-          "sqlite_autoindex_revisions_1": {
-            "table": "revisions",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "rev_id"
-            ]
-          },
-          "sqlite_autoindex_revisions_2": {
-            "table": "revisions",
-            "unique": 1,
-            "origin": "u",
-            "partial": 0,
-            "columns": [
-              "doc_id",
-              "seq"
-            ]
-          },
           "sqlite_autoindex_sections_1": {
             "table": "sections",
             "unique": 1,
@@ -2912,15 +2305,6 @@
               "repo_id",
               "source_id",
               "path"
-            ]
-          },
-          "sqlite_autoindex_tree_nodes_1": {
-            "table": "tree_nodes",
-            "unique": 1,
-            "origin": "pk",
-            "partial": 0,
-            "columns": [
-              "hash"
             ]
           }
         }

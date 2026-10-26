@@ -1924,7 +1924,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: unknown history subcommand 'prune' (plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
+        "stderr": "usage: unknown history subcommand 'prune' (enable|disable|plan|export|attach|detach|list)\n  hint: run 'omg history --help'\n"
       }
     },
     {
@@ -1970,6 +1970,394 @@
         "stdout": "",
         "stderr": "usage: --server is not supported for 'history' — it needs local ref resolution or a working tree; run it against a local workspace\n"
       }
+    },
+    {
+      "name": "history-enable-already",
+      "notes": "§6 `history enable` (cli 5.2; store 17.0 Phase 4a): the alchemy repository was created with capture on, so `enable` is a no-op — `already enabled since <the fixture clock, its birth>`; `--json` is the manifest's capture state with `changed: false` and no baseline.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history already enabled since 2026-09-27T00:00:00.000Z\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--json"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"enabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"writer_requires\":true,\"changed\":false}\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-disable-then-write",
+      "notes": "§6 `history disable` then writes (Phase 4a; spec/store §5.9): `disable` closes the coverage interval at the fixture clock and prints it; a second `disable` is `already disabled`; `--json` carries the closed interval and `writer_requires` false. The writes after it are the core's alone: `meta --set` and `update` commit (the feed grows — `log` shows #21/#22 with no disposition counts, since the recorder holds neither commit), `hist` of the block just edited lists only its captured change (the uncaptured edit is nowhere in the log), `diff` of the document defaults to its captured revisions — one, so the diff is empty (the uncaptured head is no revision; `docs_read { at: <head> }` serves it from the rows), `doctor` passes with `capture complete` reading `history disabled (captured <interval>)`, and `version --json` reports the selected repository's manifest by shape (`coverage_from` a string: the closed interval's start).",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history already disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "disable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"disabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"}],\"writer_requires\":false,\"changed\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Edited with capture off."
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "19"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#20 observed observed: /timeline/review.md — created — 6 inserted\n#21 api      api(human:brendan.baldwin): /texts/mutus-liber.md — changed\n#22 api      api(human:brendan.baldwin): /texts/mutus-liber.md — changed\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"head present\",\"ok\":true,\"detail\":\"0 without a head\"},{\"name\":\"capture complete\",\"ok\":true,\"detail\":\"history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\"},{\"name\":\"alerts\",\"ok\":true,\"detail\":\"none active\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-enable-after-disable",
+      "notes": "§6 `history enable` after a disabled interval (Phase 4a; spec/store §5.9): the baseline commit — one `import` feed row `reason 'history enabled'` with a `changed` entry per live document under its existing head, a checkpoint revision for the documents edited while capture was off — then capture resumes: `log` shows the baseline as #22 (every document `changed`, no disposition counts) and the next edit as #23 with its counts; `diff` of the edited document works again (the baseline's revision → the new one); `history plan` counts the baseline's revision; `--json` of the enable carries `changed: true` and the baseline's commit and revision count; a second `enable` is a no-op.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"enabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"},{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"writer_requires\":true,\"changed\":true,\"baseline\":{\"commit\":\"c_21\",\"revisions\":1}}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history already enabled since 2026-09-27T00:00:00.000Z\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Edited with capture back on."
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n    set markdown of paragraph b_309 in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "20"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#21 api      api(human:brendan.baldwin): /texts/mutus-liber.md — changed\n#22 import   import(?): /index.md — changed; /lab/2026-01-notes.md — changed; /lab/2026-02-notes.md — changed; /practitioners/jabir-ibn-hayyan.md — changed; /practitioners/maria-prophetissa.md — changed; /practitioners/newton.md — changed; /practitioners/paracelsus.md — changed; /processes/calcination.md — changed; /processes/coagulation.md — changed; /processes/dissolution.md — changed; /processes/magnum-opus.md — changed; /substances/mercury.md — changed; /substances/philosophers-stone.md — changed; /substances/prima-materia.md — changed; /substances/salt.md — changed; /substances/sulphur.md — changed; /texts/emerald-tablet.md — changed; /texts/mutus-liber.md — changed; /timeline/kickoff.md — changed; /timeline/review.md — changed\n#23 api      api(human:brendan.baldwin): /texts/mutus-liber.md — changed — 1 edited\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "/texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -27,8 +27,7 @@\n \n ## Status of these notes\n \n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Edited with capture back on.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "plan"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  nothing to archive: 22 revisions, all kept\n  policy  {\"keep_days\":30,\"ladder\":[{\"after_days\":30,\"keep\":\"one per day\"},{\"after_days\":365,\"keep\":\"one per month\"}],\"per_doc_max\":200,\"keep_origins\":[\"api\"],\"overrides\":[]}\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-enable-best-effort",
+      "notes": "§6 `history enable --best-effort` (Phase 4a): capture resumes with `writer_requires` 0 — a writer without the history module may still write on this repository.",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "history",
+            "disable",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"disabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"}],\"writer_requires\":false,\"changed\":true}\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable",
+            "--best-effort",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"state\":\"enabled\",\"coverage\":[{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":\"2026-09-27T00:00:00.000Z\"},{\"from\":\"2026-09-27T00:00:00.000Z\",\"to\":null}],\"writer_requires\":false,\"changed\":true,\"baseline\":{\"commit\":\"c_20\",\"revisions\":0}}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "history-core-build-writer-refused",
+      "notes": "§6 (Phase 4a; spec/store §5.4 step 0, resolution 17): under `OMGBASE_CAPABILITIES=core` — the test-only override that runs the engine as a core-only build, without the history module — a write on the alchemy repository (capture on, `writer_requires` 1) is refused with `capability_unavailable { history, unavailable }` (retriable) and the `writer_refused` alert is raised; `version --json` reports history `unavailable` (the repository's `coverage_from` still a string); a history read is `capability_unavailable { history, unavailable }`; `history disable` needs no module and turns capture off (the standing alert is printed after it); the same write then lands and, passing, clears the alert; `cat` reads the patched document; `history enable` needs the module and is refused.",
+      "workspace": "alchemy",
+      "env": {
+        "OMGBASE_CAPABILITIES": "core"
+      },
+      "steps": [
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: history capture is required on this repository (writer_requires) and this engine runs without the history module — write through an engine that carries it, or run omg history disable\n  {\n    \"capability\": \"history\",\n    \"state\": \"unavailable\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<string>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: history is unavailable in this build — run an engine with the history module to read it\n  {\n    \"capability\": \"history\",\n    \"state\": \"unavailable\"\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "disable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  history disabled (captured 2026-09-27T00:00:00.000Z..2026-09-27T00:00:00.000Z)\nalert[error] writer_refused: a writer without the history module was refused: this repository requires capture (writer_requires) — write through an engine that carries the history module, or run omg history disable\n"
+          }
+        },
+        {
+          "argv": [
+            "meta",
+            "/texts/mutus-liber.md",
+            "--set",
+            "layer=draft"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched /texts/mutus-liber.md\n    set _frontmatter.layer = \"draft\" in /texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "/texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "history",
+            "enable"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[capability_unavailable]: history is unavailable in this build — run an engine with the history module to read it\n  {\n    \"capability\": \"history\",\n    \"state\": \"unavailable\"\n  }\n"
+          }
+        }
+      ]
     }
   ]
 }

@@ -24,6 +24,7 @@ import { referencePath, storagePath } from "../core/paths.js";
 import { FilterInvalid } from "../core/filter-invalid.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { semanticOf } from "../core/capabilities/registry.js";
+import { historyReader } from "../core/store/manifest.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
 import type { SemanticScorer, SemanticVec } from "../core/capabilities/types.js";
 import { dateFunction, dateMethod } from "./dates.js";
@@ -106,11 +107,11 @@ export const ATTRIBUTES: Readonly<Record<Kind, ReadonlySet<string>>> = {
 // its commit, in the keyset order `(path as of the revision, rev_id)`. The
 // `revisions` table carries no `repo_id`, so the repository guard joins `docs`.
 // `is_current` is `docs_history`'s `isCurrent`: the revision is the document's
-// `head`.
-// seam: HistoryRecorder.revisions — the `revisions` root and `_revisions` relation stay archival reads that return the rows
-// that exist plus a `hints` line once the capability may be off (D3; inventory-ts §2.6 rows 239–240, 247).
-const REVISION_COLS = "r.rev_id, r.doc_id, r.seq, r.rendered_hash, r.path, r.commit_id, c.ts, c.origin, c.actor, c.reason, (d.head = r.rev_id) AS is_current, (r.archive IS NOT NULL) AS archived";
-const REVISION_FROM = "revisions r JOIN docs d ON d.doc_id = r.doc_id JOIN commits c ON c.commit_id = r.commit_id";
+// `head`. The rows come from the recorder (`HistoryRecorder.revisionRows` /
+// `docRevisionRows`, Phase 4a — no SQL here names a history table): a store
+// without the module, or a database nothing was ever captured in, lists
+// nothing; a repository whose capture is off lists what it captured earlier
+// (spec/surface §1.1 — never an error; the `hints` line is `run.ts`'s).
 /** The source handles of a document (§1.2): `_data` is the merged authored view
  * (frontmatter + inline), the other two one source each. */
 export const SOURCE_HANDLES: ReadonlySet<string> = new Set(["_data", "_frontmatter", "_inline"]);
@@ -163,14 +164,14 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // this repo, ordered for a stable (path, id) default; the revisions scan is
   // its own statement above, in the same (path, id) keyset order) -------------
   const scan = (t: Kind): Row[] => {
-    if (t === "revisions") return tagAll(all(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE d.repo_id = ? ORDER BY r.path, r.rev_id`, repoId), t);
+    if (t === "revisions") return tagAll((historyReader(db)?.revisionRows(repoId) ?? []) as unknown as Row[], t);
     const g = guards(t, repoId);
     return tagAll(all(`SELECT ${COLS[t]} FROM ${FROM[t]} WHERE ${g.sql} ORDER BY ${ORDER[t]}`, ...g.params), t);
   };
   // A document's revisions (the `revisions` relation of a docs row, §1.2, 4.7):
   // oldest first, as `docs_history` lists them.
   const docRevisions = (docId: unknown): Row[] =>
-    tagAll(all(`SELECT ${REVISION_COLS} FROM ${REVISION_FROM} WHERE r.doc_id = ? ORDER BY r.seq`, docId), "revisions");
+    tagAll((historyReader(db)?.docRevisionRows(String(docId)) ?? []) as unknown as Row[], "revisions");
 
   // A root scan is handed out LAZILY: an array (a `Proxy` over one — `Array.isArray`,
   // iteration, indexing, `length`, rendering all see a plain array of tagged

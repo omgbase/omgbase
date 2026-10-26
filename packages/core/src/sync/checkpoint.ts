@@ -31,6 +31,8 @@ export interface BatchResult {
   suppressed: string[]; // echo-suppressed paths (hash already matched)
   deleted: string[]; // paths gone from disk
   conflicted: string[]; // paths flagged with git conflict markers
+  /** paths whose member was rolled back because its history capture failed (spec/store §5.4 step 15, resolution 18; Phase 4a) — retried by the next sweep */
+  failed: string[];
 }
 
 /** The name the result carried through spec/sync 3.x (`checkpointId` then; `batchId` since 4.0). */
@@ -78,8 +80,13 @@ export function finishCheckpoint(
   const suppressed: string[] = [];
   const deleted: string[] = [];
   const conflicted: string[] = [];
+  const failed: string[] = [];
 
   for (const o of outcomes) {
+    if (o.kind === "failed") {
+      failed.push(o.path);
+      continue;
+    }
     if (o.kind === "deleted") {
       if (o.docId) deleted.push(o.path);
       continue;
@@ -94,7 +101,7 @@ export function finishCheckpoint(
     sweepResurrectionPool(store, opts.ts);
   });
 
-  return { batchId, ingested, suppressed, deleted, conflicted };
+  return { batchId, ingested, suppressed, deleted, conflicted, failed };
 }
 
 /** The repository's status row (spec/sync §4.1; spec/store §3.1 `sync_state`): `(repo_id, '', '')` with the last batch's `ts`, `batch_id` and member count. */

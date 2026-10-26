@@ -37,7 +37,7 @@ import { createExternalSource } from "../../src/sync/external-source.js";
 import type { SyncFs } from "../../src/sync/fs-util.js";
 import type { SourceWatch, SyncSource } from "../../src/sync/plugin.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, TS_RE, checkInvariants, projectStore, type Row, type Projection as StoreProjection } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, TS_RE, checkInvariants, createFixtureRepo, projectStore, type Row, type Projection as StoreProjection } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 
@@ -350,7 +350,7 @@ export function runCheckpointCase(c: Omit<CheckpointCase, "expect">): Checkpoint
   return withFixtureMinter(() => {
     const store = new Store({ path: ":memory:" });
     try {
-      const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, null);
       const fs = new MemoryFs();
       // The bytes the store is supposed to hold per live path (I1): refreshed
       // from the filesystem for every path an ingesting step touched.

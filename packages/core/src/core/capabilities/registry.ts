@@ -26,14 +26,16 @@ export function capabilitiesOf(db: Database): Capabilities {
 }
 
 /**
- * The history recorder, which every write entry point still needs: the head
- * token is the recorder's revision id (D1) until Phase 3 mints it in the core.
- * The error is unreachable while every composition installs the recorder; it
- * is the hook `capability_unavailable { capability: history }` (D3) grows from.
+ * The history MODULE, or `capability_unavailable { history, unavailable }`
+ * (phase-1-contracts §2.1) when the composition lacks it — what the retention
+ * verbs (`history plan|export|attach|detach|list`) and the 16.x → 17 migration
+ * need: the module itself, whatever a repository's manifest says. A COMMIT
+ * asks `captureFor` (`core/store/manifest.ts`) instead — the recorder only
+ * while the repository's capture is on (Phase 4a).
  */
 export function requireHistory(db: Database): HistoryRecorder {
   const h = capabilitiesOf(db).history;
-  if (!h) throw new Error("the history capability is not enabled on this store");
+  if (!h) throw CapabilityUnavailable.historyUnavailable();
   return h;
 }
 

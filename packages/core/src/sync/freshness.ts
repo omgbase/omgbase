@@ -166,15 +166,18 @@ export function freshnessSweep(
     { fs, ...(opts.ts !== undefined ? { ts: opts.ts } : {}) },
   );
 
-  // Refresh stat cache for everything we touched (ingested or echo-suppressed).
-  for (const path of plan.changed) recordStat(store, repoId, path, fs.stat(rootPath, path), plan.hashes.get(path)!);
-  for (const path of plan.deletions) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(repoId, path);
+  // Refresh stat cache for everything we touched (ingested or echo-suppressed)
+  // — not for a member whose capture failed (Phase 4a, resolution 18): it was
+  // rolled back and must stay a candidate for the next sweep.
+  const failed = new Set(result.failed);
+  for (const path of plan.changed) if (!failed.has(path)) recordStat(store, repoId, path, fs.stat(rootPath, path), plan.hashes.get(path)!);
+  for (const path of plan.deletions) if (!failed.has(path)) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(repoId, path);
 
   return {
     ...result,
     scanned: snapshot.length,
     candidates: plan.candidates.length,
-    changed: result.ingested.length > 0 || result.deleted.length > 0 || result.conflicted.length > 0,
+    changed: result.ingested.length > 0 || result.deleted.length > 0 || result.conflicted.length > 0 || result.failed.length > 0,
     materialized,
   };
 }

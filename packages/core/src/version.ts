@@ -167,7 +167,7 @@ export function versionInfo(store?: Store | null, host?: HostInfo, profile: Tool
     // Without a repository the semantic state is the workspace layer's (`omg
     // version` outside a repo; the surface runner's fixtures); without a store,
     // nothing is configured and no module runs: both `disabled`.
-    capabilities: capabilities ?? (store ? capabilityStates(store, null) : { history: { state: "disabled" satisfies CapabilityState }, semantic: { state: "disabled" } }),
+    capabilities: capabilities ?? (store ? capabilityStates(store, null) : { history: { state: "disabled" satisfies CapabilityState, coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } }),
     epoch,
   };
 }

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolveRef, historyNode, type NodeChange } from "@omgbase/core";
+import { resolveRef, requireHistoryReader, type NodeChange } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -34,7 +34,8 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
     const repo = cli.repo(ws);
     const resolved = resolveRef(ws.store, repo.repoId, ref);
     if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `hist needs a block id; got ${ref}`);
-    changes = historyNode(ws.store, resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
+    // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured.
+    changes = requireHistoryReader(ws.store.db).blocksHistory(resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
   }
 
   // A change carries no id of its own, so `--ids` is the `--json` document.

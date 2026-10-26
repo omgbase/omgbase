@@ -23,7 +23,6 @@
 // fixture minter installed and a pinned commit clock, and re-expresses the
 // results so two engines can be compared.
 import { Store } from "../../src/core/store/store.js";
-import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
 import { reconstructContent } from "../../src/core/read/document.js";
@@ -45,7 +44,7 @@ import type { Opset } from "../../src/mutate/opset.js";
 import { applyEffects, canonicalJson, executeByDigest, executePlan, planEffects, type Plan, type Receipt } from "../../src/mutate/plan.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
-  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, isHistoryStep, projectStore, runExecStep, runGcStep, toOutcome, validateSteps,
+  FIXTURE_REPO_SLUG, TS_RE, checkInvariants, createFixtureRepo, isHistoryStep, isLifecycleStep, projectStore, runExecStep, runGcStep, runLifecycleStep, toOutcome, validateSteps,
   type ExtraStepValidator, type JsonRow, type Row, type Step as StoreStep, type StepOutcome as StoreStepOutcome,
 } from "../store/fixture.js";
 
@@ -442,7 +441,7 @@ export function runCase(c: FixtureCaseInput): Evaluation {
   return withFixtureMinter(() => {
     const store = new Store({ path: ":memory:" });
     try {
-      const r: Runner = { store, repoId: ensureRepo(store, FIXTURE_REPO_SLUG, null), docStore: new MemoryDocStore(), pendingDisk: new Set(), config: toReconcileConfig(c.config), plans: new Map() };
+      const r: Runner = { store, repoId: createFixtureRepo(store, FIXTURE_REPO_SLUG, null), docStore: new MemoryDocStore(), pendingDisk: new Set(), config: toReconcileConfig(c.config), plans: new Map() };
       const steps: StepOutcome[] = [];
       const problems: string[] = [];
       c.steps.forEach((step, i) => {
@@ -498,6 +497,8 @@ function runStep(r: Runner, step: Step, index = -1): StepOutcome {
     return { json, digest: sha256(json).toString("hex") };
   }
   if ("remint_epoch" in step) throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
+  // spec/store §9.4 (Phase 4a): `history_enable` / `history_disable` / the fault device, shared with the store runner.
+  if (isLifecycleStep(step)) return runLifecycleStep(r.store, r.repoId, step);
   return runPlan(r, step.plan);
 }
 

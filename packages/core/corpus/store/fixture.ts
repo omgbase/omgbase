@@ -29,12 +29,17 @@ import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/
 import { runGc, sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { attachArchive, detachArchive, exportHistory, RevisionArchived, segmentBasename, ARCHIVE_SUFFIX } from "../../src/core/store/archive.js";
 import { evaluateRetention, retentionPolicy, type RetentionPlan } from "../../src/core/store/retention.js";
-import { ARCHIVED_COMMITS_SQL } from "../../src/core/store/rebuild.js";
+import { ARCHIVED_COMMITS_SQL } from "../../src/core/store/archive.js";
 import {
   DeltaError, TreeResolver, byteLength, encodeBodyDelta, encodeFrontmatterDelta, entryText, explicitEntries, fullNodeText, isCheckpointSeq, parseFrontmatterBlob, parseNodeText,
   type ResolvedList,
 } from "../../src/core/store/delta.js";
 import { observeBatch, type BatchOutcome } from "../../src/sync/observe.js";
+import { disableHistory, enableHistory, historyBundlePresent, historyReader, readCapability, type CoverageInterval } from "../../src/core/store/manifest.js";
+import { bindCapabilities } from "../../src/core/capabilities/registry.js";
+import { envCapabilities } from "../../src/core/capabilities/default.js";
+import { coreCapabilities } from "../../src/core/capabilities/core.js";
+import type { Capabilities, HistoryRecorder } from "../../src/core/capabilities/types.js";
 import { CONFIG_KEYS, toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 
 export { deepEqualTol };
@@ -121,6 +126,12 @@ export type Step =
   | { history_attach: { segment: string } }
   /** README §9.4 (15.0): detach a segment by id → `{ detached }` */
   | { history_detach: { segment: string } }
+  /** README §9.4 (Phase 4a; §5.9): `history enable` at `ts` (`writer_requires` default true) → `{ history: { state, coverage, writer_requires, changed, baseline? } }` */
+  | { history_enable: { ts: string; writer_requires?: boolean } }
+  /** README §9.4 (Phase 4a; §5.9): `history disable` at `ts` → `{ history: { state, coverage, writer_requires, changed } }` */
+  | { history_disable: { ts: string } }
+  /** README §9.4 (Phase 4a; §5.4 step 15, resolution 18): the recorder fault device — `fail: true` makes every capture throw until `fail: false` → `{ fault: boolean }` */
+  | { recorder_fault: { fail: boolean } }
   /** README §9.4 (15.0): reconstruct at a revision (§6.2, through a segment when archived) → `{ raw, rendered_hash_match }` or the error */
   | { read_at: { doc: string; rev: string } }
   /** README §9.4 (17.0, §7.5): the epoch re-mint of a restore / rebuild-from-files at `ts` — a new `ep`, the feed emptied → `{ epoch }` */
@@ -140,6 +151,13 @@ export interface GoneOutcome {
   path: string;
   deleted: boolean;
   doc: string | null;
+}
+/** README §9.4 (Phase 4a): a member rolled back because its capture failed (resolution 18) — the `failing_recorder` device is what produces one. */
+export interface FailedOutcome {
+  path: string;
+  failed: true;
+  doc: string | null;
+  error: string;
 }
 export interface GcOutcome {
   gc: { blobs: number; tree_nodes: number; same_dispositions: number; claims_released: number; feed_pruned: number };
@@ -165,7 +183,11 @@ export type ReadAtOutcome =
   | { raw: string; rendered_hash_match: boolean }
   | { error: "revision_archived"; rev: string; archive: string; path?: string }
   | { error: "target_missing" };
-export type StepOutcome = (ObservedOutcome | GoneOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string };
+/** README §9.4 (Phase 4a): a `history_enable`/`history_disable` step's outcome — the manifest row's capture state after the verb. */
+export interface LifecycleOutcome {
+  history: { state: "enabled" | "disabled"; coverage: CoverageInterval[]; writer_requires: boolean; changed: boolean; baseline?: { commit: string; revisions: number } };
+}
+export type StepOutcome = (ObservedOutcome | GoneOutcome | FailedOutcome)[] | { swept: number } | GcOutcome | { changes: number } | PlanOutcome | ExportOutcome | AttachOutcome | DetachOutcome | ReadAtOutcome | { epoch: string } | LifecycleOutcome | { fault: boolean };
 
 /** README §9.4 (15.0): where a case's segments are written — a temporary directory, `<dest>` in every projected path. */
 export interface HistoryContext {
@@ -282,6 +304,8 @@ export interface ObserveCase {
   notes?: string;
   config?: FixtureConfig;
   minter?: MinterKind;
+  /** README §9.4 (Phase 4a): the case's composition — `{ history: false }` creates the repository with capture off (`disabled`, no coverage, `writer_requires 0`), as a core-only build or `omg source add --no-history` would; the default is on. */
+  capabilities?: { history: boolean };
   steps: Step[];
   expect: Projection;
 }
@@ -306,7 +330,7 @@ export function suiteKind(suite: string): CaseKind {
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   schema: ["name", "notes", "expect"],
   migration: ["name", "notes", "setup", "user_version", "rows", "expect"],
-  observe: ["name", "notes", "config", "minter", "steps", "expect"],
+  observe: ["name", "notes", "config", "minter", "capabilities", "steps", "expect"],
   edges: ["name", "notes", "config", "steps", "expect"],
 };
 
@@ -387,6 +411,27 @@ function withFixtureMinter<T>(body: () => T, kind: MinterKind = "sequential"): T
     return body();
   } finally {
     setIdMinter(null);
+  }
+}
+
+/**
+ * README §9.4 (Phase 4a): the instant every fixture repository is born — the
+ * runner creates it under this clock, before any authored `ts`, so the
+ * manifest's coverage (`[{ from: <birth>, to: null }]`) covers the whole
+ * script and the history invariants apply to every captured document; it is
+ * also what `sync_status.capabilities.coverage_from` reads on the wire
+ * (`spec/surface` §6). The `rp`/`ep` claims minted here are omitted from the
+ * projection, as before.
+ */
+export const FIXTURE_BIRTH = "2000-01-01T00:00:00.000Z";
+
+/** `ensureRepo` under the fixture birth clock (every runner that checks the §8 invariants or records the manifest creates its repository through this). */
+export function createFixtureRepo(store: Store, slug: string, rootPath: string | null, opts: { history?: boolean } = {}): string {
+  const restore = pinClock(FIXTURE_BIRTH);
+  try {
+    return ensureRepo(store, slug, rootPath, opts);
+  } finally {
+    restore();
   }
 }
 
@@ -508,8 +553,9 @@ export interface ObserveEvaluation {
 }
 
 /** One `observeBatch` outcome as the fixture records it (README §9.4 "Expect": `steps`). Exported for the specs that reuse the observation-script shape (graph, search, …). */
-export function toOutcome(o: BatchOutcome): ObservedOutcome | GoneOutcome {
+export function toOutcome(o: BatchOutcome): ObservedOutcome | GoneOutcome | FailedOutcome {
   if (o.kind === "deleted") return { path: o.path, deleted: o.docId !== null, doc: o.docId };
+  if (o.kind === "failed") return { path: o.path, failed: true, doc: o.docId, error: o.error };
   const dispositions: Record<string, number> = {};
   for (const d of o.dispositions) dispositions[d.kind] = d.count;
   return { path: o.path, echo: o.echo, doc: o.docId, commit: o.commitId, rev: o.rev, converged: o.converged, conflicted: o.conflicted, dispositions };
@@ -531,7 +577,7 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
     const history: { ctx: HistoryContext | null } = { ctx: null };
     const ctx = (): HistoryContext => (history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-store-spec-archives-")) });
     try {
-      const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, null, c.capabilities ? { history: c.capabilities.history } : {});
       const { steps, problems } = runSteps(store, repoId, c.steps, config, ctx);
       const tables = { ...projectStore(store.db, repoId), id_claims: projectClaims(store.db, repoId) };
       // Emit the tables in PROJECTED_TABLES order (README §9.4), `id_claims` in its place.
@@ -561,7 +607,10 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
     } else if ("observe" in step) {
       const items = step.observe.items.map((it) => ({ path: it.path, content: it.source }));
       const outcomes = observeBatch(store, repoId, items, step.observe.ts, { config });
+      // A member rolled back by a capture failure (Phase 4a) left the store as it was: its source is not what the rows hold.
+      const failed = new Set(outcomes.filter((o) => o.kind === "failed").map((o) => o.path));
       for (const it of step.observe.items) {
+        if (failed.has(it.path)) continue;
         if (it.source === null) lastSource.delete(it.path);
         else lastSource.set(it.path, it.source);
       }
@@ -577,12 +626,109 @@ function runSteps(store: Store, repoId: string, stepsIn: Step[], config: ReturnT
       // invariants hold on the new epoch (C4 with an empty feed, F1 vacuous).
       steps.push({ epoch: store.remintEpoch(repoId, step.remint_epoch.ts) });
       for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
+    } else if (isLifecycleStep(step)) {
+      // README §5.9 (Phase 4a): `history enable` (the baseline commit and the open
+      // interval; every invariant holds after it), `history disable`, the fault device.
+      steps.push(runLifecycleStep(store, repoId, step));
+      if (!("recorder_fault" in step)) for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`after step ${i}: ${p}`);
     } else {
       steps.push(runExecStep(store, step.exec.sql));
     }
   });
   for (const p of checkInvariants(store, repoId, lastSource)) problems.push(`at end: ${p}`);
   return { steps, problems };
+}
+
+// ---- the capture lifecycle steps (README §9.4, §5.9 — Phase 4a) ---------------------------
+
+export type LifecycleStep = Extract<Step, { history_enable: unknown } | { history_disable: unknown } | { recorder_fault: unknown }>;
+
+export function isLifecycleStep(step: object): step is LifecycleStep {
+  return "history_enable" in step || "history_disable" in step || "recorder_fault" in step;
+}
+
+/** `history_enable` / `history_disable` through the production verbs, the fault device through the test seam; shared with every observation-script runner. */
+export function runLifecycleStep(store: Store, repoId: string, step: LifecycleStep): LifecycleOutcome | { fault: boolean } {
+  if ("history_enable" in step) {
+    const r = enableHistory(store.db, repoId, { now: step.history_enable.ts, ...(step.history_enable.writer_requires !== undefined ? { writerRequires: step.history_enable.writer_requires } : {}) });
+    return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed, ...(r.baseline ? { baseline: r.baseline } : {}) } };
+  }
+  if ("history_disable" in step) {
+    const r = disableHistory(store.db, repoId, { now: step.history_disable.ts });
+    return { history: { state: r.row.state, coverage: r.row.coverage, writer_requires: r.row.writer_requires, changed: r.changed } };
+  }
+  return { fault: setRecorderFault(store, step.recorder_fault.fail) };
+}
+
+// ---- the recorder fault device (README §9.4, Phase 4a) -----------------------------------
+//
+// `{ recorder_fault: { fail: true } }` wraps the store's recorder so that every
+// capture call (`recordCommit`, `captureRevision`, `recordDispositions`,
+// `recordEdgeTransitions`) throws; the next `observe` step then pins resolution
+// 18 — the member is rolled back (`{ path, failed: true, doc, error }`), the
+// feed and every table stay as they were, the next observe after `{ fail:
+// false }` lands it. Test seam only: the composition is rebound on the connection.
+
+const CAPTURE_METHODS = new Set<PropertyKey>(["recordCommit", "captureRevision", "recordDispositions", "recordEdgeTransitions", "retargetEdges"]);
+const originalRecorder = new WeakMap<Store, HistoryRecorder | null>();
+
+/** The fault's message, verbatim in the member's `error` (after `history capture of <path> failed: `). */
+export const RECORDER_FAULT_REASON = "recorder fault (fixture device)";
+
+function setRecorderFault(store: Store, fail: boolean): boolean {
+  const current = store.capabilities;
+  if (!originalRecorder.has(store)) originalRecorder.set(store, current.history);
+  const original = originalRecorder.get(store) ?? null;
+  const history = fail && original
+    ? new Proxy(original, { get(target, key, receiver) { if (CAPTURE_METHODS.has(key)) return () => { throw new Error(RECORDER_FAULT_REASON); }; return Reflect.get(target, key, receiver) as unknown; } })
+    : original;
+  const caps: Capabilities = { ...current, history };
+  (store as { capabilities: Capabilities }).capabilities = caps;
+  bindCapabilities(store.db, caps);
+  return fail && original !== null;
+}
+
+// ---- the core-only run (README §9.6, Phase 4a — `OMGBASE_CAPABILITIES=core`) -------------
+//
+// Under the core-only composition the runner opens stores with no recorder: a
+// case's repository starts with history `disabled`, no history table exists
+// and no history row is written. The SAME observation scripts run, the core
+// invariants (C*, F*, A1) are checked, and the projection is compared on the
+// core tables alone — `commits`, `revisions`, `blobs`, `tree_nodes`,
+// `dispositions`, `block_changes`, `archives` are `[]` on both sides and the
+// `id_claims` `holders` are compared with the recorder's bit masked off. A case
+// that needs the module — a retention or lifecycle step, a `gc` (its counts are
+// the recorder's and the claims prune sees the recorder's holds), an `exec`
+// (which may name a history table), the fault device — is skipped and
+// reported; `cases/history/` and `migrations.json` are skipped wholesale (a
+// core-only build neither captures nor upgrades a 16.x database).
+
+/** Is this process the core-only run? */
+export function coreMode(): boolean {
+  return envCapabilities() === coreCapabilities;
+}
+
+/** The tables whose projection the core-only run compares. */
+export const CORE_PROJECTED_TABLES: readonly (typeof PROJECTED_TABLES)[number][] = ["docs", "feed", "feed_entries", "blocks", "resurrection_pool", "id_claims", "sections", "pending_materializations"];
+
+/** Does the case run under the core-only composition (README §9.6)? */
+export function runsUnderCore(c: { steps: Step[] }): boolean {
+  return c.steps.every((s) => "observe" in s || "sweep" in s || "remint_epoch" in s);
+}
+
+/**
+ * A projection reduced to what the core-only run compares: the core tables,
+ * `id_claims` with bit 1 masked (a claim the recorder alone held — `holders
+ * = 2` — drops out, since the core-only store never wrote it), and the
+ * history tables emptied.
+ */
+export function coreModeProjection(p: Projection): Projection {
+  const out = { ...p } as Projection;
+  for (const t of PROJECTED_TABLES) if (!CORE_PROJECTED_TABLES.includes(t)) (out as unknown as Record<string, unknown>)[t] = [];
+  out.id_claims = p.id_claims
+    .map((r) => ({ ...r, holders: (r.holders as number) & 1 }))
+    .filter((r) => (r.holders as number) !== 0);
+  return out;
 }
 
 export type EdgeTransitionsCaseInput = Omit<EdgeTransitionsCase, "expect">;
@@ -609,7 +755,7 @@ export function runEdgeTransitionsCase(c: EdgeTransitionsCaseInput): EdgeTransit
     const history: { ctx: HistoryContext | null } = { ctx: null };
     const ctx = (): HistoryContext => (history.ctx ??= { dest: mkdtempSync(join(tmpdir(), "omgbase-store-spec-archives-")) });
     try {
-      const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, null);
       const { problems } = runSteps(store, repoId, c.steps, config, ctx);
       const db = store.db;
       const commitSeq = new Map((db.prepare("SELECT commit_id FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string }[]).map((r, i) => [r.commit_id, i] as const));
@@ -709,13 +855,16 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
     .all(repoId) as Record<string, unknown>[]).map(toRow);
   const docIds = docs.map((d) => d.doc_id as string);
 
+  // Phase 4a: a database no repository of which ever enabled capture has no
+  // history table — every history projection is `[]` then.
+  const history = historyBundlePresent(db);
+  const rows = (sql: string, ...params: unknown[]): Record<string, unknown>[] => (history ? (db.prepare(sql).all(...params) as Record<string, unknown>[]) : []);
+
   // `commits` by (`ts`, `seq`) — the same order as by `seq` while one epoch
   // exists (I4), and the chronological one across an epoch re-mint (§7.5),
   // whose commits restart at `seq = 1`; the rank in this list orders the
   // dispositions and block_changes by commit.
-  const commits = (db
-    .prepare("SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ? ORDER BY ts, seq")
-    .all(repoId) as Record<string, unknown>[]).map(toRow);
+  const commits = rows("SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ? ORDER BY ts, seq", repoId).map(toRow);
   const commitSeq = new Map(commits.map((c, i) => [c.commit_id as string, i]));
   const seqOf = (commitId: string): number => commitSeq.get(commitId) ?? Number.MAX_SAFE_INTEGER;
 
@@ -729,20 +878,19 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
     .prepare("SELECT epoch, seq, doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ? ORDER BY seq, rowid")
     .all(repoId) as Record<string, unknown>[]).map(toRow);
 
-  const revisions = (db
-    .prepare(
-      `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
+  const revisions = rows(
+    `SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
        FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?`,
-    )
-    .all(repoId) as Record<string, unknown>[])
+    repoId,
+  )
     .map(toRow)
     .sort((a, b) => cmp(a.doc_id as string, b.doc_id as string) || (a.seq as number) - (b.seq as number));
 
   // blobs / tree_nodes are not repo-scoped; a fixture database holds one repo.
-  const blobs = (db.prepare("SELECT hash, size, bytes FROM blobs").all() as { hash: Buffer; size: number; bytes: Buffer }[])
+  const blobs = (rows("SELECT hash, size, bytes FROM blobs") as unknown as { hash: Buffer; size: number; bytes: Buffer }[])
     .map((b) => ({ hash: hex(b.hash)!, size: b.size, bytes: b.bytes.toString("utf8") }))
     .sort((a, b) => cmp(a.hash, b.hash));
-  const tree_nodes = (db.prepare("SELECT hash, entries FROM tree_nodes").all() as { hash: Buffer; entries: string }[])
+  const tree_nodes = (rows("SELECT hash, entries FROM tree_nodes") as unknown as { hash: Buffer; entries: string }[])
     .map((t) => ({ hash: hex(t.hash)!, entries: t.entries }))
     .sort((a, b) => cmp(a.hash, b.hash));
 
@@ -752,18 +900,15 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
   const byCommitBlockKind = (a: JsonRow, b: JsonRow): number =>
     seqOf(a.commit_id as string) - seqOf(b.commit_id as string) || cmp(a.block_id as string, b.block_id as string) || cmp(a.kind as string, b.kind as string);
 
-  const dispositions = (db
-    .prepare(
-      `SELECT x.commit_id, x.block_id, x.kind, x.confidence, x.reason, x.matcher_v, x.detail
+  const dispositions = rows(
+    `SELECT x.commit_id, x.block_id, x.kind, x.confidence, x.reason, x.matcher_v, x.detail
        FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?`,
-    )
-    .all(repoId) as Record<string, unknown>[])
+    repoId,
+  )
     .map((r): JsonRow => ({ ...toRow({ ...r, detail: null }), detail: JSON.parse(r.detail as string) as Record<string, unknown> }))
     .sort(byCommitBlockKind);
 
-  const block_changes = (db
-    .prepare("SELECT bc.block_id, bc.commit_id, bc.kind FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?")
-    .all(repoId) as Record<string, unknown>[])
+  const block_changes = rows("SELECT bc.block_id, bc.commit_id, bc.kind FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?", repoId)
     .map(toRow)
     .sort(byCommitBlockKind);
 
@@ -785,9 +930,7 @@ export function projectStore(db: Db, repoId: string): Omit<Projection, "steps" |
 
   // 15.0: the recorded segments, `path` reduced to its file name (the directory
   // is the run's) and `bytes` omitted (a page layout, not a behavior).
-  const archives = (db
-    .prepare("SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ? ORDER BY seq_lo, segment_id")
-    .all(repoId) as Record<string, unknown>[])
+  const archives = rows("SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ? ORDER BY seq_lo, segment_id", repoId)
     .map((r) => toRow({ segment_id: r.segment_id, file: segmentBasename(r.path as string), seq_lo: r.seq_lo, seq_hi: r.seq_hi, created_at: r.created_at, revision_count: r.revision_count }));
 
   return { docs, commits, feed, feed_entries, revisions, blobs, tree_nodes, blocks, dispositions, block_changes, resurrection_pool, sections, pending_materializations, archives };
@@ -845,22 +988,40 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
   }
 
-  const blobRows = db.prepare("SELECT hash, bytes, size FROM blobs").all() as { hash: Buffer; bytes: Buffer; size: number }[];
+  // ---- the composition and the coverage (README §8, Phase 4a) -------------------------------
+  // The history invariants are checked when the store carries the module and the
+  // bundle's tables exist (`reader`); within them, what capture promised is
+  // bounded by the repository's COVERAGE intervals (spec/store §3.1
+  // `capabilities.coverage`): a document whose head was minted outside coverage
+  // owes no revision (H1/H3 skip it unless the baseline captured it), a feed row
+  // outside coverage owes no `commits` row (H4), `commits.seq` is dense only
+  // when capture was never off (I4), and the edge record agrees with the open
+  // edges only while capture is on (H6). A core-only run checks C*, F* and A1 alone.
+  const reader = historyReader(db);
+  const manifest = readCapability(db, repoId, "history");
+  const coverage = manifest?.coverage ?? [];
+  const captureOn = manifest?.state === "enabled";
+  const inCoverage = (ts: string): boolean => coverage.some((i) => i.from <= ts && (i.to === null || ts < i.to));
+  const neverOff = coverage.length === 1 && coverage[0]!.to === null && coverage[0]!.from <= FIXTURE_BIRTH;
+
+  const blobRows = reader ? (db.prepare("SELECT hash, bytes, size FROM blobs").all() as { hash: Buffer; bytes: Buffer; size: number }[]) : [];
   const blobHashes = new Set(blobRows.map((b) => b.hash.toString("hex")));
   const blobText = new Map(blobRows.map((b) => [b.hash.toString("hex"), b.bytes.toString("utf8")] as const));
-  const treeRows = db.prepare("SELECT hash, entries FROM tree_nodes").all() as { hash: Buffer; entries: string }[];
+  const treeRows = reader ? (db.prepare("SELECT hash, entries FROM tree_nodes").all() as { hash: Buffer; entries: string }[]) : [];
   const treeHashes = new Set(treeRows.map((t) => t.hash.toString("hex")));
   const nodeTexts = new Map(treeRows.map((t) => [t.hash.toString("hex"), t.entries] as const));
-  // 16.0: nodes resolve in revision context (README §4.1 "Delta nodes", §6).
-  const resolver = new TreeResolver(db);
-  const commits = db.prepare("SELECT commit_id, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; seq: number; ts: string }[];
+  // 16.0: nodes resolve in revision context (README §4.1 "Delta nodes", §6) — the resolver prepares its statements on the bundle's tables, so only with the module.
+  const resolver = reader ? new TreeResolver(db) : null;
+  const commits = reader ? (db.prepare("SELECT commit_id, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; seq: number; ts: string }[]) : [];
   const commitById = new Map(commits.map((c) => [c.commit_id, c]));
   const docs = db
     .prepare("SELECT doc_id, path, head, file_hash, frontmatter_raw, created_at, updated_at, deleted_at FROM docs WHERE repo_id = ? ORDER BY path")
     .all(repoId) as { doc_id: string; path: string; head: string | null; file_hash: Buffer | null; frontmatter_raw: string | null; created_at: string; updated_at: string; deleted_at: string | null }[];
-  const revisions = db
-    .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
-    .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; rendered_hash: Buffer; path: string; commit_id: string; archive: string | null }[];
+  const revisions = reader
+    ? (db
+      .prepare("SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?")
+      .all(repoId) as { rev_id: string; doc_id: string; seq: number; root_tree: Buffer | null; frontmatter_blob: Buffer | null; rendered_hash: Buffer; path: string; commit_id: string; archive: string | null }[])
+    : [];
   const revById = new Map(revisions.map((r) => [r.rev_id, r]));
 
   // ---- I9 archived revisions (15.0) ---------------------------------------------------
@@ -923,7 +1084,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
     if (checkpoint && fmIsDelta) problems.push(`I10: checkpoint revision ${r.rev_id} (seq ${r.seq}) has a delta frontmatter`);
     try {
-      const tree = resolver.tree(r.doc_id, r.seq, rootHex);
+      const tree = resolver!.tree(r.doc_id, r.seq, rootHex);
       resolvedTrees.set(r.rev_id, tree);
       if (checkpoint && !tree.root.selfContained) problems.push(`I10: checkpoint revision ${r.rev_id} (seq ${r.seq}) root is not self-contained`);
       // The never-larger rule, over every list of the tree.
@@ -937,7 +1098,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       for (const [block, list] of tree.byBlock) check(list, `children of ${block} in ${r.rev_id}`);
       // A delta at a non-checkpoint is the Myers script against the base, exactly.
       if (rootIsDelta && prev?.root_tree) {
-        const base = resolver.tree(r.doc_id, prev.seq, prev.root_tree.toString("hex"));
+        const base = resolver!.tree(r.doc_id, prev.seq, prev.root_tree.toString("hex"));
         const want = encodeBodyDelta(base.root.texts, tree.root.texts);
         if (want !== rootText) problems.push(`I10: delta root of ${r.rev_id} is not the §4.1 encoding against revision ${prev.seq}`);
       }
@@ -947,11 +1108,11 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     }
     if (fmHex) {
       try {
-        const raw = resolver.frontmatter(r.doc_id, r.seq, fmHex);
+        const raw = resolver!.frontmatter(r.doc_id, r.seq, fmHex);
         resolvedFrontmatter.set(r.rev_id, raw);
         if (fmIsDelta && byteLength(fmText!) >= byteLength(raw)) problems.push(`I10: frontmatter delta of ${r.rev_id} is not smaller than the raw`);
         if (fmIsDelta && prev?.frontmatter_blob) {
-          const baseRaw = resolver.frontmatter(r.doc_id, prev.seq, prev.frontmatter_blob.toString("hex"));
+          const baseRaw = resolver!.frontmatter(r.doc_id, prev.seq, prev.frontmatter_blob.toString("hex"));
           if (encodeFrontmatterDelta(baseRaw, raw) !== fmText) problems.push(`I10: frontmatter delta of ${r.rev_id} is not the §4.1 encoding against revision ${prev.seq}`);
         }
       } catch (e) {
@@ -1037,12 +1198,16 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       if (!d.file_hash || !d.file_hash.equals(want)) problems.push(`C1: ${at} file_hash != sha256(source)`);
       if (reconstructContent(db, d.doc_id) !== source) problems.push(`C1: ${at} reconstruct(doc) != source`);
     }
-    // H1: with legacy capture on, the head IS a captured revision — same path,
-    // same bytes, the same commit instant as `updated_at` — and reconstruct at it
-    // reproduces the source.
+    // H1: with capture on, the head IS a captured revision — same path, same
+    // bytes, the same commit instant as `updated_at` — and reconstruct at it
+    // reproduces the source. Phase 4a: owed only for a head minted within
+    // coverage (a head minted while capture was off has a row only when the
+    // baseline of a later `history enable` wrote one — then the row's commit is
+    // the baseline's, not the head's, so the instant is not compared); without
+    // the module nothing is owed.
     const rev = revById.get(d.head);
     if (!rev) {
-      problems.push(`H1: ${at} head ${d.head} has no revisions row (capture disagrees with the head)`);
+      if (reader && inCoverage(d.updated_at)) problems.push(`H1: ${at} head ${d.head} has no revisions row (capture disagrees with the head)`);
       continue;
     }
     if (rev.root_tree === null) {
@@ -1052,7 +1217,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if (rev.path !== d.path) problems.push(`H1: ${at} revision ${d.head} carries path ${rev.path}`);
     if (d.file_hash && !rev.rendered_hash.equals(d.file_hash)) problems.push(`H1: ${at} revision ${d.head} rendered_hash != file_hash`);
     const headCommit = commitById.get(rev.commit_id);
-    if (headCommit && headCommit.ts !== d.updated_at) problems.push(`C7: ${at} updated_at ${d.updated_at} != the head commit's ts ${headCommit.ts}`);
+    if (headCommit && inCoverage(d.updated_at) && headCommit.ts !== d.updated_at) problems.push(`C7: ${at} updated_at ${d.updated_at} != the head commit's ts ${headCommit.ts}`);
     if (source !== undefined) {
       const atRev = readDocumentAtRevision(store, d.doc_id, d.head);
       if (!atRev) problems.push(`H1: ${at} reconstruct at ${d.head} returned nothing`);
@@ -1174,28 +1339,38 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
       if (row && row.ts !== d.updated_at) problems.push(`C7: doc ${d.doc_id} updated_at ${d.updated_at} != the ts ${row.ts} of the feed row carrying its head`);
     }
   }
-  // H4: the recorder's `commits` agree with the feed on every retained seq.
-  const commitRows = db.prepare("SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; epoch: string; seq: number; batch_id: string }[];
-  const commitBySeq = new Map(commitRows.map((c) => [c.seq, c]));
+  // H4: the recorder's `commits` agree with the feed on every retained seq
+  // WITHIN COVERAGE (Phase 4a: a feed row written while capture was off has no
+  // log row), and every log row of the current epoch at or after the oldest
+  // retained row IS a feed row (the log is a subsequence of the feed).
+  const commitRows = reader ? (db.prepare("SELECT commit_id, epoch, seq, ts, batch_id FROM commits WHERE repo_id = ? ORDER BY seq").all(repoId) as { commit_id: string; epoch: string; seq: number; ts: string; batch_id: string }[]) : [];
+  const commitBySeq = new Map(commitRows.filter((c) => c.epoch === epoch).map((c) => [c.seq, c]));
   for (const r of feedBySeq) {
     const c = commitBySeq.get(r.seq);
-    if (!c) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
-    else if (c.commit_id !== r.commit_id || c.epoch !== r.epoch || c.batch_id !== r.batch_id) problems.push(`H4: commits row at seq ${r.seq} (${c.commit_id}, ${c.epoch}, ${c.batch_id}) disagrees with the feed (${r.commit_id}, ${r.epoch}, ${r.batch_id})`);
+    if (!c) {
+      if (reader && inCoverage(r.ts)) problems.push(`H4: feed row ${r.commit_id} (seq ${r.seq}) has no commits row`);
+    } else if (c.commit_id !== r.commit_id || c.epoch !== r.epoch || c.batch_id !== r.batch_id) problems.push(`H4: commits row at seq ${r.seq} (${c.commit_id}, ${c.epoch}, ${c.batch_id}) disagrees with the feed (${r.commit_id}, ${r.epoch}, ${r.batch_id})`);
   }
+  const feedByCommit = new Map(feedBySeq.map((r) => [r.commit_id, r]));
+  for (const c of commitRows) if (c.epoch === epoch && c.seq >= oldest && !feedByCommit.has(c.commit_id)) problems.push(`H4: commits row ${c.commit_id} (seq ${c.seq}) is within the retained feed but has no feed row`);
   // A commit of an earlier epoch is a re-mint's (§7.5): its epoch must still be a claimed `ep` of the repository.
   const epochClaim = db.prepare("SELECT 1 FROM id_claims WHERE id = ? AND prefix = 'ep' AND repo_id = ?");
   for (const c of commitRows) if (c.epoch !== epoch && !epochClaim.get(c.epoch, repoId)) problems.push(`H4: commit ${c.commit_id} carries epoch ${c.epoch}, which is neither the repository's nor a claimed earlier one`);
 
-  // ---- I4 dense sequences (per epoch since 17.0: a re-mint restarts the seq) ------------
+  // ---- I4 sequences (per epoch since 17.0: a re-mint restarts the seq) -----------------
+  // `commits.seq` is strictly increasing in (ts, seq) order per epoch, and
+  // dense `1..n` when capture was never off (Phase 4a: a disabled interval
+  // leaves the feed's seqs of that span out of the log).
   const commitsByEpoch = new Map<string, typeof commits>();
-  for (const c of db.prepare("SELECT commit_id, epoch, seq, ts FROM commits WHERE repo_id = ? ORDER BY ts, seq").all(repoId) as { commit_id: string; epoch: string; seq: number; ts: string }[]) {
+  for (const c of commitRows.slice().sort((a, b) => cmp(a.ts, b.ts) || a.seq - b.seq)) {
     let list = commitsByEpoch.get(c.epoch);
     if (!list) commitsByEpoch.set(c.epoch, (list = []));
     list.push(c);
   }
   for (const [ep, list] of commitsByEpoch) {
     list.forEach((c, i) => {
-      if (c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order of epoch ${ep}`);
+      if (neverOff && c.seq !== i + 1) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} at position ${i + 1} in (ts, seq) order of epoch ${ep}`);
+      if (i > 0 && c.seq <= list[i - 1]!.seq) problems.push(`I4: commit ${c.commit_id} has seq ${c.seq} after seq ${list[i - 1]!.seq} in (ts, seq) order of epoch ${ep}`);
     });
   }
   for (const d of docs) {
@@ -1203,8 +1378,9 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     revs.forEach((r, i) => {
       if (r.seq !== i + 1) problems.push(`I4: revision ${r.rev_id} of ${d.doc_id} has seq ${r.seq}, expected ${i + 1}`);
     });
-    if (revs.length > 0 && d.head !== revs[revs.length - 1]!.rev_id) problems.push(`I4: doc ${d.doc_id} head ${d.head} is not its greatest-seq revision`);
-    if (revs.length === 0 && d.head !== null) problems.push(`I4: doc ${d.doc_id} has head but no revisions`);
+    // Phase 4a: a head minted while capture was off is newer than every captured revision (until a baseline captures it).
+    if (revs.length > 0 && d.deleted_at === null && inCoverage(d.updated_at) && d.head !== revs[revs.length - 1]!.rev_id) problems.push(`I4: doc ${d.doc_id} head ${d.head} is not its greatest-seq revision`);
+    if (revs.length === 0 && d.head !== null && reader && inCoverage(d.updated_at)) problems.push(`I4: doc ${d.doc_id} has head but no revisions`);
   }
 
   // ---- I5 nothing to collect -----------------------------------------------------------
@@ -1274,7 +1450,7 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     if (!r.id.startsWith(`${r.prefix}_`)) problems.push(`C5: claim ${r.id} is filed under prefix ${r.prefix}`);
     if (!TS_RE.test(r.minted_at)) problems.push(`C5: claim ${r.id} minted_at ${r.minted_at} is not a §2.4 timestamp`);
   }
-  const unheld = db
+  const unheld = !reader ? [] : db
     .prepare(
       `SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ? AND bc.block_id != 'DOC'
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
@@ -1290,13 +1466,19 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
     )
     .all(repoId, repoId, repoId, repoId, repoId) as { id: string }[];
   for (const r of unheld) problems.push(`H6: ${r.id} is named by a history row but its claim lacks the recorder's bit`);
-  // H6 (17.0, M6): the open transitions and the edges agree — same ids, same destination.
-  const openOnlyInTransitions = db.prepare("SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ? AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1").all(repoId) as { edge_id: string }[];
-  for (const r of openOnlyInTransitions) problems.push(`H6: open transition ${r.edge_id} has no edges row`);
-  const edgesWithoutTransition = db.prepare("SELECT e.edge_id FROM edges e WHERE e.repo_id = ? AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1").all(repoId) as { edge_id: string }[];
-  for (const r of edgesWithoutTransition) problems.push(`H6: edge ${r.edge_id} has no open transition`);
-  const dstDisagree = db.prepare("SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ? AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1").all(repoId) as { edge_id: string }[];
-  for (const r of dstDisagree) problems.push(`H6: edge ${r.edge_id} and its open transition disagree on dst_node`);
+  // Without the module nothing below applies: the dispositions, the projection and the archive rule are the recorder's.
+  if (!reader) return problems;
+  // H6 (17.0, M6): the open transitions and the edges agree — same ids, same
+  // destination — while capture is on (Phase 4a: the edges move freely while
+  // it is off; the baseline of the next `history enable` reconciles them).
+  if (reader && captureOn) {
+    const openOnlyInTransitions = db.prepare("SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ? AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1").all(repoId) as { edge_id: string }[];
+    for (const r of openOnlyInTransitions) problems.push(`H6: open transition ${r.edge_id} has no edges row`);
+    const edgesWithoutTransition = db.prepare("SELECT e.edge_id FROM edges e WHERE e.repo_id = ? AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1").all(repoId) as { edge_id: string }[];
+    for (const r of edgesWithoutTransition) problems.push(`H6: edge ${r.edge_id} has no open transition`);
+    const dstDisagree = db.prepare("SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ? AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1").all(repoId) as { edge_id: string }[];
+    for (const r of dstDisagree) problems.push(`H6: edge ${r.edge_id} and its open transition disagree on dst_node`);
+  }
 
   // ---- I7 dispositions ----------------------------------------------------------------
   // Every disposition names an existing commit. For each commit that is the
@@ -1339,12 +1521,13 @@ export function checkInvariants(store: Store, repoId: string, lastSource: Readon
   for (const x of dispositions) if (x.kind === "same") problems.push(`I7: disposition ${x.block_id} of ${x.commit_id} is a persisted \`same\``);
   const unchanged = db
     .prepare(
-      `SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_at IS NULL
+      `SELECT b.block_id, b.created_at FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ? AND b.deleted_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id)
          AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = b.block_id AND (ic.holders & 2) != 0) ORDER BY b.block_id`,
     )
-    .all(repoId) as { block_id: string }[];
-  for (const r of unchanged) problems.push(`I7: live block ${r.block_id} has no block_changes row and no recorder hold on its claim`);
+    .all(repoId) as { block_id: string; created_at: string }[];
+  // Phase 4a: a block born while capture was off has neither until a baseline holds it.
+  for (const r of unchanged) if (inCoverage(r.created_at)) problems.push(`I7: live block ${r.block_id} has no block_changes row and no recorder hold on its claim`);
 
   // ---- I8 rebuild equivalence -------------------------------------------------------
   for (const d of docs) {
@@ -1445,7 +1628,7 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
-  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
+  const kinds = ["observe", "sweep", "gc", "exec", "remint_epoch", "history_enable", "history_disable", "recorder_fault", ...HISTORY_STEP_KINDS, ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -1470,6 +1653,23 @@ export function validateSteps(at: string, steps: unknown, problems: string[], ex
     }
     if ((HISTORY_STEP_KINDS as readonly string[]).includes(keys[0]!)) {
       validateHistoryStep(keys[0]!, body, here, problems);
+      return;
+    }
+    if (keys[0] === "history_enable") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts" && k !== "writer_requires")) problems.push(`${here}: history_enable takes \`ts\` and an optional \`writer_requires\``);
+      else {
+        if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+        if (body.writer_requires !== undefined && typeof body.writer_requires !== "boolean") problems.push(`${here}: \`writer_requires\` must be a boolean`);
+      }
+      return;
+    }
+    if (keys[0] === "history_disable") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "ts")) problems.push(`${here}: history_disable takes only \`ts\``);
+      else if (typeof body.ts !== "string" || !TS_RE.test(body.ts)) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
+      return;
+    }
+    if (keys[0] === "recorder_fault") {
+      if (!isRecord(body) || Object.keys(body).some((k) => k !== "fail") || typeof body.fail !== "boolean") problems.push(`${here}: recorder_fault takes only a boolean \`fail\``);
       return;
     }
     if (keys[0] === "exec") {
@@ -1621,6 +1821,9 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (c.config !== undefined) validateConfig(at, c.config, problems);
       if (kind === "observe" && c.minter !== undefined && !(MINTER_KINDS as readonly unknown[]).includes(c.minter)) {
         problems.push(`${at}: \`minter\` must be one of ${MINTER_KINDS.map((k) => JSON.stringify(k)).join(", ")} (got ${JSON.stringify(c.minter)})`);
+      }
+      if (kind === "observe" && c.capabilities !== undefined && (!isRecord(c.capabilities) || Object.keys(c.capabilities).some((k) => k !== "history") || typeof c.capabilities.history !== "boolean")) {
+        problems.push(`${at}: \`capabilities\` is exactly { history: boolean } (README §9.4, Phase 4a)`);
       }
       stepCount = validateSteps(at, c.steps, problems);
     }

@@ -31,7 +31,10 @@ const RESTRICTED_IMPORTERS = ["core", "mutate", "sync", "oqx-js", "reconcile"];
 /** Who must not import the semantic bundle: the history importers plus every engine layer a tool body or a lexical search runs through. */
 const SEMANTIC_FREE_IMPORTERS = [...RESTRICTED_IMPORTERS, "mcp", "search", "graph", "format"];
 const SEAM_DIR = "core/capabilities";
-const HISTORY_MODULES = ["graph/history.ts", "core/store/archive.ts", "core/store/retention.ts", "core/store/delta.ts"];
+const HISTORY_MODULES = ["graph/history.ts", "core/store/archive.ts", "core/store/retention.ts", "core/store/delta.ts", "core/store/history-writers.ts", "core/store/history-gc.ts"];
+/** Where SQL may name a history table (Phase 4a): the bundle, the recorder, the DDL, and the migration's backfill (`store.ts`, which reads the 16.x tables it upgrades from). */
+const HISTORY_SQL_ALLOWED = [...HISTORY_MODULES, "core/capabilities/history.ts", "core/store/schema.ts", "core/store/store.ts"];
+const HISTORY_TABLES = ["commits", "revisions", "blobs", "tree_nodes", "dispositions", "block_changes", "edge_transitions", "archives"];
 /** The semantic modules the seam must implement over (the ones the Phase 1 list named, at their Phase 2 paths, plus the indexer). */
 const SEMANTIC_MODULES = ["semantic/embeddings.ts", "semantic/vector.ts", "semantic/tasks.ts", "semantic/indexer.ts"];
 const SEMANTIC_DIRS = ["semantic", "search/cel"];
@@ -140,6 +143,19 @@ describe("dependency direction (modular-core Phase 1)", () => {
     const offenders = walk(SRC).map(rel).filter((f) => !isTest(f) && !isSemanticTarget(f) && f !== "core/store/schema.ts")
       .filter((f) => SQL_ON_VECTORS.test(readFileSync(join(SRC, f), "utf8")));
     // `schema.ts` holds the DDL (the split is the store 17 major); `size.ts` only categorizes the names (spec/store §7.5) and `sqlite_master` walks them.
+    expect(offenders).toEqual([]);
+  });
+
+  it("the core writes and reads no history table: no SQL outside the history bundle names one (Phase 4a; the Rust `tests/boundaries.rs` is the model)", () => {
+    // A statement that reads or writes a history table: the table name after FROM/INTO/UPDATE/JOIN/TABLE. `schema.ts`
+    // holds the DDL, `store.ts` the migration that reads the 16.x tables it upgrades from (and tolerates their absence);
+    // `size.ts` only categorizes the names (spec/store §7.5) and walks `sqlite_master`; `manifest.ts` executes the
+    // bundle's DDL text, which is `schema.ts`'s.
+    // Case-sensitive on purpose: every statement of this codebase spells its keywords in upper case, and a comment
+    // saying "re-derived from dispositions" is prose, not SQL (the Rust twin strips comments instead).
+    const SQL_ON_HISTORY = new RegExp(`\\b(FROM|INTO|UPDATE|JOIN|TABLE)\\s+(${HISTORY_TABLES.join("|")})\\b`);
+    const offenders = walk(SRC).map(rel).filter((f) => !isTest(f) && !HISTORY_SQL_ALLOWED.includes(f))
+      .filter((f) => SQL_ON_HISTORY.test(readFileSync(join(SRC, f), "utf8")));
     expect(offenders).toEqual([]);
   });
 

@@ -965,7 +965,16 @@ by`, `limit`, `offset`, each nested block's clauses where the block stands —
 `hits`/`truncated`/`cursor`/`consumer` and the scalar members, and **absent
 when empty** (never `[]`). It rides on every result shape: hits, `bare` hits,
 `values`, `count`, `exists`, `none`. It is not the error envelope's `data.hint`
-(which names a grammar).
+(which names a grammar). **The capability note (6.1, store 17.1 Phase 4a;
+`phase-1-contracts.md` §2.2).** A query whose **root** is `revisions` on a
+repository whose `history` state is not `enabled` carries one more hint,
+emitted **first**: `disabled` → `` history is disabled for this repository —
+`revisions` lists only what was captured while it was enabled; `omg history
+enable` resumes capture ``; `unavailable` (the build has no history module)
+→ `` history is unavailable in this build — `revisions` is empty; run an
+engine with the history module to read it ``. The rows are still returned —
+the root lists what the recorder holds, never an error (§1.1). The
+`_revisions` relation and `^revisions` carry no note yet (Phase 4b).
 
 **The vocabulary.** Per (repository, kind), read from the store the first time
 a judged bare name is not already known:
@@ -1107,7 +1116,17 @@ result shape; the 5.0 case `unknown-engine-name-is-loud`); the moved cases of
   (`spec/properties`) and the authored bag is not yet recomputable from the
   bytes in one call of the format layer, so the read carries nothing it would
   have to guess at (a client wanting the frontmatter as of a revision parses
-  `_raw`). `include_ids` together with `at` is `filter_invalid` "`include_ids`
+  `_raw`). **What `at` can read (6.1, store 17.1 Phase 4a — resolution 11,
+  `phase-1-contracts.md` §2.1):** the document's **current head** is served
+  from the current rows whatever the capture state — the same bytes
+  `docs_read` returns, `renderedHashMatch: true`, `_path` the current path;
+  a **captured** revision reads through the recorder; a token that is neither
+  is `capability_unavailable { capability: "history", state: "disabled",
+  rev }` (`retriable: false`, the pinned message) when the repository's
+  capture is off — the token may be a head minted while it was — and
+  `{ history, unavailable }` (retriable) when the build has no history
+  module; on an enabled repository it stays `target_missing` as before
+  (`outside_coverage`/`pruned` arrive with Phase 4b). `include_ids` together with `at` is `filter_invalid` "`include_ids`
   is not available with `at` (docs_read takes _id?, _path?, at?, include_ids?,
   repo?)" — `data.hint` `"arguments"`, raised after the locator (a missing
   document is `doc_missing` first), since each argument is valid on its own
@@ -1309,6 +1328,25 @@ keep the reference's **camelCase** (`hasSource`, `currentRev`,
   unpinned); `blocks_history` lists the live `block_changes` rows only — a
   block's earliest row survives the squash, every later row of a wholly
   archived commit is in the segment and not read back in this round.
+- **The history tools under optional capture (6.1, store 17.1 Phase 4a;
+  `phase-1-contracts.md` §2.1).** `blocks_history`, `docs_diff`,
+  `docs_diff_unified`, `docs_history` and `docs_read { at }`/`docs_read_at`
+  decide, before any row is read: a build without the history module →
+  `capability_unavailable { history, unavailable }` (retriable); a database
+  nothing was ever captured in (the history bundle absent, `spec/store`
+  §3.1) → `{ history, disabled }`; otherwise the rows that exist — a
+  repository whose capture is **off** reads what it captured (`docs_history`
+  lists the captured versions, `blocks_history` the captured changes,
+  `docs_diff`/`docs_diff_unified` diff captured revisions — and a revision
+  they are asked for that the recorder does not hold is `{ history,
+  disabled, rev }` on such a repository, `target_missing` on an enabled one;
+  `docs_diff_unified`'s default pair is the two latest CAPTURED revisions,
+  so on a disabled repository it never reaches the uncaptured head). The
+  `changes_since` summary appends disposition counts only to a commit the
+  recorder holds, as before. `reads::history-disabled` pins the round:
+  disable, write, every read above, `version`, `sync_status`, enable (the
+  baseline's `import` commit in the feed, `_origin: "import"` on the
+  baseline revision), the reads again.
 
 ## 4. The MCP tool catalog
 
@@ -1329,8 +1367,26 @@ alike by both engines and pinned, `reads::plan-memory`), `expired_cursor`
 (6.0: a `changes_since` cursor the feed no longer serves — another epoch,
 past the head, behind the oldest retained row — `data: { epoch, oldest,
 head }`, never retriable, the message pinned, §3; the consumer rescans,
-`spec/sync` §6; `reads::changes-since-epoch-and-expiry`). Any other
-failure is `repo_not_found` with the message (§9).
+`spec/sync` §6; `reads::changes-since-epoch-and-expiry`), `capability_unavailable`
+(5.1 for `semantic`; 6.1, store 17.1 Phase 4a, for `history` — `phase-1-
+contracts.md` §2.1: `data: { capability: "history", state, rev? }` with
+`state: "unavailable"` on a build without the history module — retriable,
+the message `history is unavailable in this build — run an engine with the
+history module to read it`; also the WRITER's refusal on a repository whose
+manifest requires capture, `spec/store` §5.4 step 0, with the message
+`history capture is required on this repository (writer_requires) and this
+engine runs without the history module — write through an engine that
+carries it, or run omg history disable` — and `state: "disabled"`, never
+retriable, the message `` history is disabled for this repository — enable
+it with `omg history enable` (reads of what was captured earlier still
+work) ``, `rev` the revision asked for when one was; `outside_coverage` and
+`pruned` arrive with Phase 4b; every message spelled alike by both engines
+and pinned), `capture_failed` (6.1, store 17.1 — `spec/store` §5.4 step 15,
+resolution 18: the recorder threw inside a write's transaction, the write
+was rolled back; `data: { path?, reason }`, retriable, the message
+`history capture of <path | a commit> failed: <reason> — the write was
+rolled back and is retried by the next sweep; fix the recorder or run omg
+history disable`). Any other failure is `repo_not_found` with the message (§9).
 
 **Arguments (3.0, normative; 5.0 spelling).** A tool's prefix names the row
 kind it addresses — `docs_`, `blocks_`, `nodes_`, `links_` — and an argument
@@ -1604,7 +1660,7 @@ identity consequences the 3.x result carried are the Plan's
 | `docs_diff` / `docs_diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 (`diff` / `diff_unified` before 3.0; `docs_read_at` is `docs_read { at }`'s sugar since 4.7, §2) |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 (3.0; 6.0 with sync 4.0): `repos_status` names the repository `{ _id, slug, rootPath, docs, blocks, feed: { epoch, oldest, head }, openEdges, disk }` (the root row's `_id`, §1.1; `slug` and the rest roles; `feed` replaces the `commits` count, `unconverged` — identically zero under I1 — is gone); `sync_status` is `{ epoch, oldest, head, lastBatch: { ts, batchId, files } \| null, convergent, diskChecked, disk, capabilities }` (`lastCommitSeq`/`lastCheckpoint` through 5.x; `convergent` = `diskChecked && no drift`; `capabilities` as `version` reports them) |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
-| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2; since 6.0 read from the store's `capabilities` manifest — §4 "Alerts") `{ history: { state }, semantic: { state } }`; `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`; `profile` (4.3) the catalog profile served, `"full"` or `"minimal"` (§4 "Profiles"); `capabilities` (5.1, modular-core Phase 2; since 6.0 read from the store's `capabilities` manifest — §4 "Alerts"; 6.1, store 17.1 Phase 4a: `phase-1-contracts.md` §2.3's keys) `{ history: { state, coverage_from: "<ts>" \| null, writer_requires: boolean }, semantic: { state, model: "<string>" \| null } }` — `coverage_from` the manifest row's first coverage interval's `from` (`spec/store` §3.1 rule 2; null when capture never ran, or without a repository), `writer_requires` its flag (false without a repository), `model` the semantic row's `config.model` (null when none is configured); the keys always present, in that order, so the shape is pinned (the CLI's `version` reads the SELECTED repository's row, the MCP server its default repository's); `epoch` (6.0, the last key) the default repository's feed epoch (`spec/store` §3.1 `repos.epoch` — the first half of a `changes_since` cursor), `null` without a repository. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 `plan` never triggers the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -1686,9 +1742,11 @@ state (`unavailable` when the composition lacks the recorder — no 17.0
 composition does), `semantic.state` the row's state overlaid with the host's
 report (`unavailable` when a configured provider failed to start; `disabled`
 when the store runs without the module); without a repository the
-composition and the workspace layer's setting answer as before. The wire
-shape is unchanged — `coverage_from` and `writer_requires` join it with
-Phase 4's verbs. `reads::alerts` pins the member end to end (a backlog
+composition and the workspace layer's setting answer as before. Since 6.1
+(store 17.1, Phase 4a) `history.state` is `unavailable` on a build without
+the module — reachable now — and the member carries `coverage_from`,
+`writer_requires` and `model` (the `version` row above); the alert codes
+gain `capture_failed` (`spec/store` §5.4 step 15). `reads::alerts` pins the member end to end (a backlog
 raised, carried on `query` and `docs_read`, absent on an error, cleared by
 recovery); the Rust twin must spell the same bytes.
 
@@ -1754,7 +1812,9 @@ necessary.
   `root-id-is-underscored`, `entries-of-root-unchanged`,
   `reads::bare-id-argument-has-fix`, a `query-links.json` case reading
   `_dst_path` and a `query-revisions.json` case reading `_seq`/`_actor`.
-- **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
+- **`reads.json`**: observation scripts (`spec/store` §9.4 — since 6.1 the
+  lifecycle steps `history_enable`/`history_disable` too, with their store
+  outcomes: `reads::history-disabled` is the D3 round) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
   values name the engine and the release; objects keep their keys and arrays
@@ -1893,9 +1953,12 @@ A case runs in a fresh temporary directory `W`:
 
 1. The harness writes the suite's `corpus` into `W` as files, bytes
    verbatim (`W/<path>`), and bootstraps the database `W/.omgbase/omgbase.db`
-   with **its own engine** under the fixture minter: `ensure_repo("fixture",
-   W)` of `spec/sync` §2 — repo `rp_0` (slug `fixture`) attached to the `fs`
-   source `fixture-fs` (`src_0`) rooted at `W`; **no documents**. The two
+   with **its own engine** under the fixture minter and (6.1) the **fixture
+   birth clock** `2000-01-01T00:00:00.000Z` (`spec/store` §9.4 — the
+   manifest's coverage starts there, and `sync_status.capabilities.
+   coverage_from` is recorded literally): `ensure_repo("fixture", W)` of
+   `spec/sync` §2 — repo `rp_0` (slug `fixture`) attached to the `fs` source
+   `fixture-fs` (`src_0`) rooted at `W`; **no documents**; capture on. The two
    engines' `ensure_repo` write the same rows (the sync fixtures pin them), so
    the bootstrap is not part of what interop compares, and no `d`/`b`/`c`/`r`
    prefix has been minted when the writer starts.
@@ -2003,7 +2066,18 @@ every `provider_unavailable` outcome of a case's `expect.writes` and
 `expect.reads` is replaced by that envelope before the comparison, the
 runner reports which pairings it mapped, and the fixture is never
 regenerated from that run (the reference refuses `SURFACE_SPEC_UPDATE`
-under it). Every other outcome must hold unchanged. The Rust harness
+under it). **Since 6.1 (store 17.1, Phase 4a) the core composition has no history
+module either**, and the mapping grows with it, still in the runner, keyed on
+the composition and on what the run answered: a step the run answered
+`capability_unavailable { history, unavailable }` (every history tool — the
+repository the harness created is born `disabled`, the recorder absent) is
+accepted as such; a `sync_status` reads the core history state `{ state:
+"unavailable", coverage_from: null, writer_requires: false }`; a `version`
+shape reads `coverage_from` as `"<null>"`; a `query` reaching `revisions`/
+`_revisions` is accepted as the run gave it (the rows are the recorder's);
+and a `reads.json` case with a retention or lifecycle step, or a query case
+whose query reaches `revisions`, is skipped and reported. The fixtures are
+never regenerated from that run. Every other outcome must hold unchanged. The Rust harness
 mirrors the rule for the composition its binary is built or run with; a
 peer that does not honor the variable fails its pairs, as a divergence
 should. `apply`'s file-CAS holds in the writing
@@ -2440,6 +2514,26 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-26, surface 6.1 (store 17.1, Phase 4a of `docs/modular-core/`;
+  the contracts `phase-1-contracts.md` §2.1, §2.2, §2.3, §7 resolutions 11,
+  17, 18): **the history tools under optional capture.** `version.
+  capabilities` carries `coverage_from`/`writer_requires`/`model` always
+  (§4 — the contracts pin the shape; the three `reads`/`examples` cases
+  recording the member moved: `orientation`, `changes-since-epoch-and-
+  expiry` with `sync_status`'s literal rendering — `coverage_from` the
+  fixture birth clock `2000-01-01T00:00:00.000Z`, `spec/store` §9.4 —
+  `ladders` with `version`'s shape); `docs_read { at }` serves the current
+  head from the rows whatever the capture state (resolution 11) and the
+  history tools raise `capability_unavailable { history, disabled |
+  unavailable }` as §2 and §3 say; the `revisions` root carries the
+  capability note (§1.5) — the root alone, the relation's note is 4b's;
+  `capture_failed` joins the codes. Decided here: a revision the recorder
+  does not hold on a DISABLED repository is `disabled` (with `rev`), on an
+  enabled one `target_missing` as before — `outside_coverage`/`pruned`
+  (claims-aware) are 4b's; `docs_diff_unified`'s default pair stays "the
+  two latest captured revisions", so on a disabled repository it never
+  compares the uncaptured head (a client that wants it passes `to_rev` and
+  gets the `disabled` envelope). `reads::history-disabled` new.
 - 2026-10-25, surface 6.0 (store 17.0 slice 3d — `docs/modular-core/`
   D7/M5, D4; the contracts `phase-1-contracts.md` §2.3, §2.4, §2.7, §7
   resolutions 3, 5, 6, 16): **`changes_since` reads the core's feed and its

@@ -3,8 +3,8 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile, ingestInto, type IngestResult } from "../core/ingest.js";
 import { deletePending, insertPending, materializeRow, readPending, supersede, type PendingRow } from "./materialize.js";
-import { requireHistory } from "../core/capabilities/registry.js";
-import { requireWriter } from "../core/store/manifest.js";
+import { CaptureFailed } from "../core/capabilities/errors.js";
+import { capture, captureFor, raiseCaptureFailed, requireWriter } from "../core/store/manifest.js";
 import { mintId } from "../core/ids.js";
 import { claimsOf } from "../core/capabilities/registry.js";
 import { appendFeedEntry, appendFeedRow } from "../core/store/feed.js";
@@ -364,6 +364,15 @@ export function runPhases(store: Store, repoId: string, head: CommitHead, effect
     });
   } catch (err) {
     if (err instanceof ConflictSignal) return { conflict: err.conflict };
+    // spec/store §5.4 step 15 (resolution 18): the recorder threw inside the
+    // transaction — it is rolled back (no member of the request landed), the
+    // `capture_failed` alert is raised now that the rollback is done, and the
+    // request fails with the envelope; the client retries once the recorder is fixed.
+    if (err instanceof CaptureFailed) {
+      const first = touchedPaths(effects)[0];
+      raiseCaptureFailed(store.db, repoId, first !== undefined ? err.at(first) : err, ts);
+      throw err;
+    }
     throw err;
   }
 
@@ -526,15 +535,12 @@ function movePath(db: Database, repoId: string, e: Extract<Effect, { kind: "move
     // The feed entry (spec/store §5.4 step 5; D11): `moved`, `from_path` the
     // old path, the new head, the unchanged bytes.
     appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: e.docId, path: e.to, head, hash: doc.file_hash, kind: "moved", fromPath: e.from });
-    requireHistory(db).captureRevision({
-      docId: e.docId,
-      head,
-      path: e.to,
-      commitId: commit.commitId,
-      blocks: currentTreeInput(db, e.docId),
-      frontmatterRaw: doc.frontmatter_raw,
-      renderedHash: doc.file_hash,
-    });
+    // Captured while the repository's manifest says `enabled` (Phase 4a).
+    const history = captureFor(db, repoId);
+    if (history) {
+      const transition = { docId: e.docId, head, path: e.to, commitId: commit.commitId, blocks: currentTreeInput(db, e.docId), frontmatterRaw: doc.frontmatter_raw, renderedHash: doc.file_hash };
+      capture(e.to, () => history.captureRevision(transition));
+    }
   } else {
     db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(e.to, e.docId);
   }

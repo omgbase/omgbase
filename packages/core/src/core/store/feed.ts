@@ -1,7 +1,8 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "./store.js";
 import { mintId } from "../ids.js";
-import { capabilitiesOf, claimsOf } from "../capabilities/registry.js";
+import { claimsOf } from "../capabilities/registry.js";
+import { capture, captureFor, historyReader } from "./manifest.js";
 import { referencePath } from "../paths.js";
 import { effectiveSettingsOf } from "./settings.js";
 
@@ -82,7 +83,8 @@ export interface FeedRow {
  * repo's feed rows of the current epoch, insert the row with `batch_id` (the
  * given batch's id, else this commit's own), then hand the recorder its
  * `commits` row (`HistoryRecorder.recordCommit` — the same id, epoch and seq;
- * skipped when the store runs without the recorder) and enforce the cap
+ * skipped when the store runs without the recorder or the repository's
+ * manifest has capture off, Phase 4a) and enforce the cap
  * (`feed.max_entries`, §7.4) inside the same transaction. Runs in the caller's
  * transaction on `db`.
  */
@@ -96,18 +98,24 @@ export function appendFeedRow(db: Database, input: NewFeedRowInput): FeedRow {
     `INSERT INTO feed (repo_id, epoch, seq, commit_id, ts, origin, actor, reason, batch_id, plan_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(input.repoId, epoch, seq, commitId, input.ts, input.origin, input.actor ?? null, input.reason ?? null, batchId, input.planId ?? null);
-  capabilitiesOf(db).history?.recordCommit({
-    commitId,
-    repoId: input.repoId,
-    epoch,
-    seq,
-    ts: input.ts,
-    origin: input.origin,
-    actor: input.actor ?? null,
-    reason: input.reason ?? null,
-    batchId,
-    ops: input.ops ?? null,
-  });
+  // Step 15's commit row — only while the repository's manifest says `enabled`
+  // (Phase 4a: `captureFor`); a throw is `CaptureFailed` for the owner of the
+  // transaction (the member's path is its to name).
+  const history = captureFor(db, input.repoId);
+  if (history) {
+    capture(null, () => history.recordCommit({
+      commitId,
+      repoId: input.repoId,
+      epoch,
+      seq,
+      ts: input.ts,
+      origin: input.origin,
+      actor: input.actor ?? null,
+      reason: input.reason ?? null,
+      batchId,
+      ops: input.ops ?? null,
+    }));
+  }
   enforceFeedCap(db, input.repoId, epoch);
   return { commitId, epoch, seq, batchId };
 }
@@ -349,7 +357,7 @@ export function changesSince(store: Store, repoId: string, opts: ChangesSinceOpt
   const truncated = rows.length > limit;
   const page = rows.slice(0, limit);
   const entriesOf = db.prepare("SELECT doc_id, path, head, hash, kind, from_path FROM feed_entries WHERE repo_id = ? AND epoch = ? AND seq = ? ORDER BY rowid");
-  const history = capabilitiesOf(db).history;
+  const history = historyReader(db);
   const digests: CommitDigest[] = page.map((r) => {
     const entries = entriesOf.all(repoId, status.epoch, r.seq) as { doc_id: string; path: string; head: string | null; hash: Buffer | null; kind: FeedEntryKind; from_path: string | null }[];
     // Every path in a digest — the entries' and the summary's — is the reference form (spec/surface §1 "Paths").

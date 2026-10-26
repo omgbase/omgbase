@@ -36,7 +36,7 @@ function help(cli: Cli): number {
     summary: "Where a repo's bytes come from (a filesystem directory today; git/S3/… via adapters later)",
     usage: "source <add|list|attach|detach|rm> …",
     options: [
-      ["add <dir> [--repo <slug>] [--name <n>] [-y]", "point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt)"],
+      ["add <dir> [--repo <slug>] [--name <n>] [-y] [--no-history]", "point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt; --no-history creates it with history capture off — omg history enable turns it on later)"],
       ["list", "list sources and which repos they feed"],
       ["attach <name> [--repo <slug>]", "attach an existing source to a repo"],
       ["detach <name> [--repo <slug>]", "detach a source from a repo"],
@@ -104,7 +104,7 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { name: { type: "string" }, yes: { type: "boolean", short: "y" }, help: { type: "boolean" } },
+    options: { name: { type: "string" }, yes: { type: "boolean", short: "y" }, "no-history": { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) return help(cli);
   const dir = positionals[0];
@@ -138,7 +138,9 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   // A repo owns identity; register its fs source, then run the initial sync
   // through the ordinary freshness path (the same reconcile every later sync
   // uses). ensureRepo(…, null) mints identity only — the source is explicit.
-  const repoId = ensureRepo(ws.store, slug, null);
+  // `--no-history` (store 17.0 Phase 4a, spec/store §3.1): the repository
+  // starts with capture off, so the import itself writes no history row.
+  const repoId = ensureRepo(ws.store, slug, null, values["no-history"] ? { history: false } : {});
   ensureFsAdapter(ws.store);
   const sourceId = createSource(ws.store, { name: sourceName, adapter: FS_ADAPTER, config: { root: abs } });
   attachSourceToRepo(ws.store, repoId, sourceId);

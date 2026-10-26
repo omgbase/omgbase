@@ -10,6 +10,16 @@
 //   node scripts/baseline/modular-core-baseline.mjs --engine rust [--docs 200] [--edits 50] [--out docs/modular-core/baseline]
 //   node scripts/baseline/modular-core-baseline.mjs --engine ts
 //   node scripts/baseline/modular-core-baseline.mjs --bin /path/to/omg   # any CLI that speaks the same verbs
+//   node scripts/baseline/modular-core-baseline.mjs --engine ts --history off   # Phase 4a: capture off from the first byte
+//
+// `--history off` (store 17.0 Phase 4a — THE number the modular-core program
+// exists for) creates the repository with history capture off: the stage
+// `import` runs `source add <dir> --repo bench -y --no-history`, so the import
+// itself and every workload after it write no history row — the manifest's
+// `history` row is `disabled` from the repository's birth, the history bundle's
+// tables are never created, and the `history` category reads 0 bytes. The
+// run's files are named `<engine>-history-off-<stamp>`. The default (`on`) is
+// the 17.0 behaviour: capture from the first commit.
 //
 // The corpus is synthetic and seeded (`--seed`), so two runs over two engines
 // see byte-identical files: N documents in three folders, six frontmatter keys,
@@ -55,6 +65,8 @@ const seed = Number(opt("seed", "1"));
 const out = resolve(ROOT, opt("out", "docs/modular-core/baseline"));
 const keep = args.includes("--keep");
 const bin = opt("bin", null);
+const history = opt("history", "on");
+if (history !== "on" && history !== "off") throw new Error(`--history on|off (got ${history})`);
 
 /** The CLI as argv prefix: the Rust binary, or node + the TS CLI's main. */
 function cliFor() {
@@ -181,7 +193,7 @@ function snapshot(stage, extra = {}) {
   const cats = Object.fromEntries(size.categories.map((c) => [c.name, { bytes: c.bytes, rows: c.rows }]));
   const tables = Object.fromEntries(size.categories.flatMap((c) => c.tables.map((t) => [t.name, { bytes: t.bytes, rows: t.rows }])));
   stages.push({ stage, ...extra, file: { db: bytes.db, wal: bytes.wal, grew }, categories: cats, tables, same_dispositions: size.same_dispositions ?? null, reclaimable: size.file.reclaimable });
-  console.error(`  ${stage.padEnd(16)} db ${(bytes.db / 1e6).toFixed(2)} MB wal ${(bytes.wal / 1e6).toFixed(2)} MB  grew ${(grew / 1e3).toFixed(0)} KB  history ${(cats.history.bytes / 1e6).toFixed(2)} MB content ${(cats.content.bytes / 1e6).toFixed(2)} MB identity ${((cats.identity?.bytes ?? 0) / 1e6).toFixed(2)} MB`);
+  console.error(`  ${stage.padEnd(16)} db ${(bytes.db / 1e6).toFixed(2)} MB wal ${(bytes.wal / 1e6).toFixed(2)} MB  grew ${(grew / 1e3).toFixed(0)} KB  history ${((cats.history?.bytes ?? 0) / 1e6).toFixed(2)} MB content ${(cats.content.bytes / 1e6).toFixed(2)} MB identity ${((cats.identity?.bytes ?? 0) / 1e6).toFixed(2)} MB`);
 }
 
 console.error(`engine ${engine} (${CLI.join(" ")}), ${docs} docs, ${edits} edits, seed ${seed}, workspace ${ws}`);
@@ -191,7 +203,7 @@ for (let i = 0; i < 10; i++) time("spawn-baseline", () => spawnSync(CLI[0], [...
 
 // import
 time("init", () => spawnSync(CLI[0], [...CLI.slice(1), "init", ws, "--yes", "--no-embedder"], { encoding: "utf8" }));
-omg(ws, ["source", "add", src, "--repo", "bench", "-y"], "import");
+omg(ws, ["source", "add", src, "--repo", "bench", "-y", ...(history === "off" ? ["--no-history"] : [])], "import");
 snapshot("import", { docs: files.length, sourceBytes });
 
 const target = files[1].path; // a document with the full shape
@@ -255,15 +267,15 @@ snapshot("gc");
 
 const latency = Object.fromEntries(Object.entries(timings).map(([k, v]) => [k, stats(v)]));
 const versions = { cli: spawnSync(CLI[0], [...CLI.slice(1), "--version"], { encoding: "utf8" }).stdout.trim(), node: process.version };
-const report = { engine, cli: CLI.join(" "), versions, seed, docs: files.length, edits, sourceBytes, stamp, stages, latency };
+const report = { engine, history, cli: CLI.join(" "), versions, seed, docs: files.length, edits, sourceBytes, stamp, stages, latency };
 mkdirSync(out, { recursive: true });
-const base = join(out, `${engine}-${stamp}`);
+const base = join(out, `${engine}-${history === "off" ? "history-off-" : ""}${stamp}`);
 writeFileSync(`${base}.json`, JSON.stringify(report, null, 2) + "\n");
 
 const mb = (b) => (b / 1e6).toFixed(2);
 const final = stages[stages.length - 1];
 const imp = stages[0];
-let md = `# Baseline — ${engine} (${versions.cli}), ${files.length} docs, ${edits} edits, seed ${seed}\n\n`;
+let md = `# Baseline — ${engine} (${versions.cli}), ${files.length} docs, ${edits} edits, seed ${seed}${history === "off" ? ", history OFF (`source add --no-history`)" : ""}\n\n`;
 md += `Source: ${mb(sourceBytes)} MB of Markdown. Database after import: ${mb(imp.file.db)} MB (${(imp.file.db / sourceBytes).toFixed(1)}× the source); after every workload and a gc: ${mb(final.file.db + final.file.wal)} MB (${((final.file.db + final.file.wal) / sourceBytes).toFixed(1)}×). Run ${stamp}.\n\n`;
 const cat = (s, name) => (s.categories[name] ? mb(s.categories[name].bytes) : "");
 md += `## Growth per stage\n\n| stage | ops | db MB | wal MB | grew KB | KB / op | content MB | identity MB | recovery MB | history MB | search MB | sync MB | same_dispositions |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n`;

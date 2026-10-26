@@ -2,8 +2,11 @@ import type { Database } from "better-sqlite3";
 import { sha256 } from "../hash.js";
 import { effectiveSettingsOf } from "./settings.js";
 import { capabilitiesOf } from "../capabilities/registry.js";
-import { CapabilityUnavailable, type CapabilityName } from "../capabilities/errors.js";
+import { CapabilityUnavailable, CaptureFailed, captureFailedMessage, type CapabilityName } from "../capabilities/errors.js";
+import type { CommitRecord, HistoryRecorder } from "../capabilities/types.js";
 import { clearAlert, raiseAlert } from "./alerts.js";
+import { HISTORY_DDL } from "./schema.js";
+import { appendFeedEntry, appendFeedRow } from "./feed.js";
 
 // The capability manifest (spec/store §3.1 `capabilities`, 17.0 — modular-core
 // Phase 3e-ii; phase-1-contracts §1.5, §1.14, §1.16 step 11, §7 resolutions 1
@@ -14,20 +17,29 @@ import { clearAlert, raiseAlert } from "./alerts.js";
 //
 // Who writes it. `ensure_repo` (`core/attach.ts`) writes both rows for a new
 // repository — history `enabled` with coverage from the repository's birth and
-// `writer_requires = 1` (resolution 17: a writer without the recorder refuses),
+// `writer_requires = 1` (resolution 17: a writer without the recorder refuses)
+// WHEN the composition carries the recorder, `disabled` with no coverage when
+// it does not (a core-only build creates repositories it can write; Phase 4a);
 // semantic `enabled` iff `embedding.provider` resolves for the repository
 // (resolution 1: vectors are never consulted) — and migration 17 does the same
 // for every existing repository (coverage from its first commit). Until the
-// Phase 4 verbs (`history enable|disable|purge`, `embed enable|disable`) exist,
-// the semantic row FOLLOWS the setting: every settings write re-derives it
-// (`refreshSemanticManifest`, called by `sync/settings.ts`), opening or closing
-// a coverage interval when the state flips. The history row is flipped by
-// nothing in 17.0 (3e-ii): every composition carries the recorder.
+// `embed` verbs (Phase 4b) exist, the semantic row FOLLOWS the setting: every
+// settings write re-derives it (`refreshSemanticManifest`, called by
+// `sync/settings.ts`), opening or closing a coverage interval when the state
+// flips. The history row is flipped by `history enable|disable` below (Phase
+// 4a; spec/store §5.9).
 //
 // Who reads it. `version.capabilities` and `capability_unavailable`'s state
 // (`sync/capability-state.ts`), `doctor --size`'s `capabilities` member and
-// the `history`/`semantic` file lines (`core/store/size.ts`), and every writer
-// through `requireWriter` below.
+// the `history`/`semantic` file lines (`core/store/size.ts`), every writer
+// through `requireWriter`/`writerFor` below — and, since Phase 4a, every
+// commit: `captureFor(db, repoId)` is the recorder iff the composition carries
+// the module AND the repository's row is `enabled`; otherwise the commit
+// writes no history row. The history bundle's DDL follows the manifest: it is
+// executed when a repository's row becomes `enabled` (`ensure_repo`, `history
+// enable`, the opener for a database some repository of which is enabled), so
+// a database no repository of which ever enabled capture has no history table
+// (spec/store §3.1 "The three bundles").
 
 /** The history capability's interface version (phase-1-contracts §1.5: history 1). */
 export const HISTORY_INTERFACE_V = 1;
@@ -147,20 +159,185 @@ function writeRow(db: Database, repoId: string, w: WriteInput): void {
 }
 
 /**
- * The history row a repository gets when capture starts (`ensure_repo`,
- * migration 17): `enabled`, interface/data 1, `config {}`, one open coverage
- * interval from `from`, `writer_requires` per `writerRequires` (default 1 —
- * resolution 17). Idempotent: an existing row is left alone (the manifest is
- * engine state, never re-derived from elsewhere).
+ * The history row a repository gets at `ensure_repo` / migration 17: when the
+ * composition carries the recorder and the caller did not ask for `history:
+ * false` (`omg source add --no-history`), `enabled`, interface/data 1, `config
+ * {}`, one open coverage interval from `from`, `writer_requires` per
+ * `writerRequires` (default 1 — resolution 17), and the history bundle's DDL
+ * executed; otherwise (a core-only build, Phase 4a, or the explicit opt-out)
+ * `disabled` with no coverage and `writer_requires = 0` — a build that cannot
+ * capture does not require what it cannot do, and `history enable` through a
+ * full build turns it on later. Idempotent: an existing row is left alone (the
+ * manifest is engine state, never re-derived from elsewhere).
  */
-export function ensureHistoryManifest(db: Database, repoId: string, from: string, now: string, writerRequires = true): ManifestRow {
+export function ensureHistoryManifest(db: Database, repoId: string, from: string, now: string, opts: { history?: boolean; writerRequires?: boolean } = {}): ManifestRow {
   const existing = readCapability(db, repoId, "history");
   if (existing) return existing;
+  const writerRequires = opts.writerRequires ?? true;
+  const enabled = capabilitiesOf(db).history !== null && opts.history !== false;
+  if (enabled) applyHistoryBundle(db);
   writeRow(db, repoId, {
-    capability: "history", state: "enabled", interfaceV: HISTORY_INTERFACE_V, dataV: HISTORY_DATA_V, config: {},
-    coverage: [{ from, to: null }], writerRequires, now,
+    capability: "history", state: enabled ? "enabled" : "disabled", interfaceV: HISTORY_INTERFACE_V, dataV: HISTORY_DATA_V, config: {},
+    coverage: enabled ? [{ from, to: null }] : [], writerRequires: enabled && writerRequires, now,
   });
   return readCapability(db, repoId, "history")!;
+}
+
+// ---- the history bundle's presence (spec/store §3.1 "The three bundles", Phase 4a) ----
+
+const bundlePresent = new WeakMap<Database, true>();
+
+/** Do the history bundle's tables exist on this connection? (Probed once per connection, then remembered — `applyHistoryBundle` is the only way they appear.) */
+export function historyBundlePresent(db: Database): boolean {
+  if (bundlePresent.get(db)) return true;
+  const present = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'commits'").get();
+  if (present) bundlePresent.set(db, true);
+  return present;
+}
+
+/** Execute the history bundle's DDL (`schema-history.sql`; every statement `IF NOT EXISTS`) — `history enable`, `ensure_repo` with the recorder, the opener. */
+export function applyHistoryBundle(db: Database): void {
+  if (historyBundlePresent(db)) return;
+  db.exec(HISTORY_DDL);
+  bundlePresent.set(db, true);
+}
+
+/** Is any repository's history row `enabled` (the opener's rule for executing the bundle's DDL: one database holds every repository)? */
+export function anyHistoryEnabled(db: Database): boolean {
+  if (!manifestTableExists(db)) return false;
+  return !!db.prepare("SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' LIMIT 1").get();
+}
+
+/**
+ * The recorder a commit on `repoId` captures through (spec/store §5.4 step
+ * 15, Phase 4a): the composition's module when the repository's manifest row
+ * is `enabled`, else null — the capture is simply skipped and no history row
+ * is written. With `repoId` null (a store-wide maintenance path — `gc`,
+ * `rebuild-index`): the module when the bundle's tables exist.
+ */
+export function captureFor(db: Database, repoId: string | null): HistoryRecorder | null {
+  const history = capabilitiesOf(db).history;
+  if (!history) return null;
+  if (repoId === null) return historyBundlePresent(db) ? history : null;
+  const row = readCapability(db, repoId, "history");
+  if (!row || row.state !== "enabled") return null;
+  return history;
+}
+
+/**
+ * The recorder a READ goes through (`docs_read { at }`, `docs_diff*`,
+ * `docs_history`, `blocks_history`, the `revisions` query root): the module
+ * when the bundle's tables exist — what was captured is readable whatever the
+ * repository's current state (spec/surface §2.1: a disabled repository reads
+ * what it captured earlier) — else null (nothing was ever captured in this
+ * database, or the build has no module).
+ */
+export function historyReader(db: Database): HistoryRecorder | null {
+  const history = capabilitiesOf(db).history;
+  return history && historyBundlePresent(db) ? history : null;
+}
+
+/**
+ * Run one of the recorder's capture calls (spec/store §5.4 step 15, resolution
+ * 18): a throw becomes `CaptureFailed` for the transaction's owner to roll back
+ * on, name the member and raise the alert after. `path` is the member when the
+ * caller knows it (null for the batch's commit row).
+ */
+export function capture<T>(path: string | null, body: () => T): T {
+  try {
+    return body();
+  } catch (e) {
+    if (e instanceof CaptureFailed) throw e;
+    throw new CaptureFailed(path, e);
+  }
+}
+
+// ---- the capture lifecycle: `history enable` / `history disable` (spec/store §5.9, Phase 4a) ----
+
+export interface HistoryLifecycleResult {
+  /** The row as it now is. */
+  row: ManifestRow;
+  /** Whether anything changed (`false`: the verb was a no-op — already in that state). */
+  changed: boolean;
+  /** `enable`: the baseline commit's id and the revisions it wrote (null when nothing changed). */
+  baseline: { commit: string; revisions: number } | null;
+}
+
+/**
+ * `history enable` (spec/store §5.9; phase-1-contracts §1.14): in one
+ * transaction — the bundle's DDL when absent; the BASELINE: one feed row
+ * (`origin = 'import'`, `reason = 'history enabled'`, its own batch) with one
+ * `changed` entry per live document under its EXISTING head (no head is
+ * minted, so every `_rev` a client holds stays valid), handed to the recorder
+ * as `HistoryRecorder.baseline` — the `commits` row, a checkpoint revision for
+ * every live document whose head has none, the recorder's holds, the edge
+ * record reconciled; then the manifest row: `state = 'enabled'`, `coverage +=
+ * { from: ts, to: null }`, `writer_requires` per `writerRequires` (default 1,
+ * resolution 17). Idempotent: an `enabled` row is returned unchanged (even
+ * when `writerRequires` differs — the flag is the enable's, not a setting).
+ * Refuses on a composition without the recorder (`capability_unavailable {
+ * history, unavailable }`: nothing can capture here). The caller holds the
+ * writer lock and no transaction (the baseline is one of its own).
+ */
+export function enableHistory(db: Database, repoId: string, opts: { now?: string; writerRequires?: boolean } = {}): HistoryLifecycleResult {
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
+  const now = opts.now ?? new Date().toISOString();
+  const existing = readCapability(db, repoId, "history");
+  if (existing && existing.state === "enabled") return { row: existing, changed: false, baseline: null };
+  return db.transaction((): HistoryLifecycleResult => {
+    applyHistoryBundle(db);
+    const commit = appendFeedRow(db, { repoId, ts: now, origin: "import", reason: HISTORY_ENABLED_REASON });
+    const live = db.prepare("SELECT doc_id, path, head, file_hash FROM docs WHERE repo_id = ? AND deleted_at IS NULL AND head IS NOT NULL ORDER BY rowid").all(repoId) as { doc_id: string; path: string; head: string; file_hash: Buffer }[];
+    for (const d of live) appendFeedEntry(db, { repoId, epoch: commit.epoch, seq: commit.seq, docId: d.doc_id, path: d.path, head: d.head, hash: d.file_hash, kind: "changed" });
+    const record: CommitRecord = { commitId: commit.commitId, repoId, epoch: commit.epoch, seq: commit.seq, ts: now, origin: "import", actor: null, reason: HISTORY_ENABLED_REASON, batchId: commit.batchId, ops: null };
+    const { revisions } = history.baseline(record);
+    const coverage = [...(existing?.coverage ?? []), { from: now, to: null }];
+    writeRow(db, repoId, {
+      capability: "history", state: "enabled", interfaceV: existing?.interface_v ?? HISTORY_INTERFACE_V, dataV: existing?.data_v ?? HISTORY_DATA_V, config: existing?.config ?? {},
+      coverage, writerRequires: opts.writerRequires ?? true, now,
+    });
+    return { row: readCapability(db, repoId, "history")!, changed: true, baseline: { commit: commit.commitId, revisions } };
+  })();
+}
+
+/** The feed row's `reason` on the baseline commit, byte for byte in both engines. */
+export const HISTORY_ENABLED_REASON = "history enabled";
+
+/**
+ * `history disable` (spec/store §5.9): the open coverage interval closes
+ * (`to = ts`), `state = 'disabled'`, `writer_requires = 0`. The rows stay
+ * (`history purge`, Phase 4b, is what removes them); reads of what was
+ * captured keep working; step 15 stops for this repository from the next
+ * commit on, in this process and every other (every commit reads the row).
+ * Idempotent: a `disabled` or absent row is a no-op. Needs no recorder: a
+ * core-only build may switch capture off on a repository it cannot write.
+ */
+export function disableHistory(db: Database, repoId: string, opts: { now?: string } = {}): HistoryLifecycleResult {
+  const now = opts.now ?? new Date().toISOString();
+  const existing = readCapability(db, repoId, "history");
+  if (!existing || existing.state === "disabled") {
+    const row = existing ?? ensureHistoryManifestDisabled(db, repoId, now);
+    return { row, changed: false, baseline: null };
+  }
+  const coverage = existing.coverage.map((i, idx) => (idx === existing.coverage.length - 1 && i.to === null ? { from: i.from, to: now } : i));
+  writeRow(db, repoId, {
+    capability: "history", state: "disabled", interfaceV: existing.interface_v, dataV: existing.data_v, config: existing.config, coverage, writerRequires: false, now,
+  });
+  return { row: readCapability(db, repoId, "history")!, changed: true, baseline: null };
+}
+
+/** A `disabled` history row for a repository that has none (rule 1 made explicit by a `disable` on a row-less repository). */
+function ensureHistoryManifestDisabled(db: Database, repoId: string, now: string): ManifestRow {
+  writeRow(db, repoId, { capability: "history", state: "disabled", interfaceV: HISTORY_INTERFACE_V, dataV: HISTORY_DATA_V, config: {}, coverage: [], writerRequires: false, now });
+  return readCapability(db, repoId, "history")!;
+}
+
+/** The open coverage interval's `from` (the current capture's start), or null when capture is off. */
+export function openCoverageFrom(row: ManifestRow | null): string | null {
+  if (!row || row.coverage.length === 0) return null;
+  const last = row.coverage[row.coverage.length - 1]!;
+  return last.to === null ? last.from : null;
 }
 
 /** Is `embedding.provider` configured for the repository (the workspace layer with the repo's own over it)? */
@@ -221,8 +398,8 @@ export function refreshSemanticManifest(db: Database, repoId: string, now: strin
  * from `from` (its birth at `ensure_repo`; its first commit's `ts` on
  * migration) and the semantic row from the settings. Idempotent.
  */
-export function ensureManifest(db: Database, repoId: string, from: string, now: string): void {
-  ensureHistoryManifest(db, repoId, from, now);
+export function ensureManifest(db: Database, repoId: string, from: string, now: string, opts: { history?: boolean } = {}): void {
+  ensureHistoryManifest(db, repoId, from, now, opts);
   refreshSemanticManifest(db, repoId, now);
 }
 
@@ -237,15 +414,17 @@ export function refreshSemanticManifests(db: Database, now: string): void {
 export const WRITER_REFUSED_ALERT = "writer_refused";
 
 /**
- * spec/store §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer without the
- * history module must refuse to write on a repository whose manifest says
- * `history` is `enabled` with `writer_requires = 1`. The refusal is
- * `capability_unavailable { capability: "history", state: "unavailable" }`
- * (retriable: the right engine can) and raises the `writer_refused` alert so
- * the stall is visible where the user works; a write that passes clears it.
- * Through 17.0 every composition carries the recorder, so the refusal is
- * unreachable in production — the check and its shape are pinned here for
- * Phase 4, when the core-only composition drops the recorder.
+ * spec/store §5.4 step 0 (17.0, 3e-ii — resolution 17; reachable since Phase
+ * 4a): a writer without the history module must refuse to write on a
+ * repository whose manifest says `history` is `enabled` with `writer_requires
+ * = 1`. The refusal is `capability_unavailable { capability: "history", state:
+ * "unavailable" }` (retriable: the right engine can) and raises the
+ * `writer_refused` alert so the stall is visible where the user works; a write
+ * that passes clears it (through an engine with the module, or because capture
+ * was switched off). A repository whose row is `disabled` writes freely and
+ * captures nothing. Call it OUTSIDE the write transaction (the alert must
+ * survive the refusal): `ingestFile`, `observeBatch`, `runPhases` do; the
+ * check inside `ingestInto` is the guard for a caller that did not.
  */
 export function requireWriter(db: Database, repoId: string, now: string = new Date().toISOString()): void {
   const row = readCapability(db, repoId, "history");
@@ -255,7 +434,55 @@ export function requireWriter(db: Database, repoId: string, now: string = new Da
     raiseAlert(db, repoId, { code: WRITER_REFUSED_ALERT, severity: "error", message: WRITER_REFUSED_MESSAGE, detail: { capability: "history" } }, now);
     throw CapabilityUnavailable.historyWriterRequired();
   }
-  if (present) clearAlert(db, repoId, WRITER_REFUSED_ALERT, now);
+  // A write that passes ends the condition — through an engine with the module, or because capture was turned off.
+  clearAlert(db, repoId, WRITER_REFUSED_ALERT, now);
+}
+
+/** Step 0 then step 15's recorder: the refusal check, then the recorder a commit on `repoId` captures through (null = uncaptured). */
+export function writerFor(db: Database, repoId: string, now: string): HistoryRecorder | null {
+  requireWriter(db, repoId, now);
+  return captureFor(db, repoId);
+}
+
+/** The alert a failed capture raises (spec/store §5.8; resolution 18). */
+export const CAPTURE_FAILED_ALERT = "capture_failed";
+
+/**
+ * Raise `capture_failed` for the member whose capture threw (after the
+ * rollback — the transaction's owner calls this): `error`, detail `{ path,
+ * reason }`. The row is retried by the next sweep; a later capture of the same
+ * path clears it (`clearCaptureFailed`).
+ */
+export function raiseCaptureFailed(db: Database, repoId: string, failure: CaptureFailed, now: string): void {
+  const path = failure.path === null ? null : alertPath(failure.path);
+  raiseAlert(db, repoId, {
+    code: CAPTURE_FAILED_ALERT, severity: "error", message: captureFailedMessage(path, failure.reason),
+    detail: { ...(path !== null ? { path } : {}), reason: failure.reason },
+  }, now);
+}
+
+/** A successful capture of `path` ends its failure condition: the active `capture_failed` alert about this path is cleared. Runs in the commit's transaction. */
+export function clearCaptureFailed(db: Database, repoId: string, path: string, now: string): void {
+  db.prepare("UPDATE alerts SET cleared_at = ? WHERE repo_id = ? AND code = ? AND cleared_at IS NULL AND json_extract(detail, '$.path') = ?").run(now, repoId, CAPTURE_FAILED_ALERT, alertPath(path));
+}
+
+/** An alert names a path in the reference form (`/a.md`), as the materialization alerts do. */
+function alertPath(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+/**
+ * The recorder a history TOOL reads through, or the refusal (spec/surface §2.1;
+ * Phase 4a): `capability_unavailable { history, unavailable }` on a composition
+ * without the module, `{ history, disabled }` when nothing was ever captured in
+ * this database (no bundle) — the reads of a repository whose capture is off
+ * but whose rows exist go through (what was captured stays readable).
+ */
+export function requireHistoryReader(db: Database): HistoryRecorder {
+  const history = capabilitiesOf(db).history;
+  if (!history) throw CapabilityUnavailable.historyUnavailable();
+  if (!historyBundlePresent(db)) throw CapabilityUnavailable.historyDisabled();
+  return history;
 }
 
 /** The `writer_refused` alert's message, byte for byte in both engines. */

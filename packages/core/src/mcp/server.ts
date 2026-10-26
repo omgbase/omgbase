@@ -4,7 +4,10 @@ import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, type DocsReadAtResult } from "../core/read/document.js";
-import { requireHistory, semanticOf } from "../core/capabilities/registry.js";
+import { semanticOf } from "../core/capabilities/registry.js";
+import { historyReader, readCapability, requireHistoryReader } from "../core/store/manifest.js";
+import { reconstructContent } from "../core/read/document.js";
+import { RevisionNotFound } from "../graph/history.js";
 import { CapabilityUnavailable } from "../core/capabilities/errors.js";
 import { capabilityStates, type SemanticHostReport } from "../sync/capability-state.js";
 import { activeAlerts } from "../core/store/alerts.js";
@@ -415,18 +418,53 @@ export function buildServer(ctx: ServerContext): McpServer {
     }
     return (byId ?? byPath)!.docId;
   }
+  // The history tools reach the store's history capability through the seam
+  // (modular-core Phase 4a; phase-1-contracts §2.1 — D3): `historyTools(repoId)`
+  // is the recorder when the composition carries the module and something was
+  // ever captured in this database, else the refusal — `capability_unavailable
+  // { history, unavailable }` (no module, retriable) or `{ history, disabled }`
+  // (nothing captured). A repository whose capture is off but whose rows exist
+  // reads what it captured (spec/store §5.9 "disable").
+  function historyTools(): ReturnType<typeof requireHistoryReader> {
+    return requireHistoryReader(store.db);
+  }
+  // A revision the recorder does not hold, asked of a repository whose capture
+  // is off (`docs_diff`, `docs_diff_unified`): `capability_unavailable { history,
+  // disabled, rev }` rather than `target_missing` — the token may well be a head
+  // minted while capture was off (spec/surface §2.1; Phase 4a).
+  function unlessDisabled<T>(repoId: string, body: () => T): T {
+    try {
+      return body();
+    } catch (e) {
+      if (e instanceof RevisionNotFound) {
+        const row = readCapability(store.db, repoId, "history");
+        if (!row || row.state !== "enabled") throw CapabilityUnavailable.historyDisabled(e.rev);
+      }
+      throw e;
+    }
+  }
   // `docs_read { at }` and its sugar `docs_read_at` (spec/surface §2, 4.7): the
-  // document AS OF a revision, `spec/store` §6.2 reconstruct; a revision that is
-  // not the document's is `target_missing`.
-  // The history tools reach the store's history capability (modular-core Phase 1,
-  // `core/capabilities/`): `history` is the recorder the store was opened with —
-  // never null while the defaults are installed; D3's `capability_unavailable`
-  // is where a disabled recorder will surface.
-  const history = requireHistory(store.db);
-  function docsReadAt(docId: string, rev: string): DocsReadAtResult {
-    const res = history.readAtRevision(docId, rev);
-    if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(rev)} for document ${docId}`, { data: { doc: docId, rev } });
-    return res;
+  // document AS OF a revision, `spec/store` §6.2 reconstruct. Resolution 11:
+  // the CURRENT head is served from the current rows whatever the capture
+  // state — `{ _id, _path, rev, _raw, renderedHashMatch: true }`, the same
+  // bytes `docs_read` returns; a captured revision reads through the recorder;
+  // a revision that is neither is `capability_unavailable { history, disabled
+  // | unavailable }` when the repository's capture is off or the build has no
+  // module (Phase 4a — `outside_coverage`/`pruned` arrive with 4b), else
+  // `target_missing` as before.
+  function docsReadAt(repoId: string, docId: string, rev: string): DocsReadAtResult {
+    const reader = historyReader(store.db);
+    const captured = reader?.readAtRevision(docId, rev) ?? null;
+    if (captured) return captured;
+    const doc = store.db.prepare("SELECT path, head, deleted_at FROM docs WHERE doc_id = ?").get(docId) as { path: string; head: string | null; deleted_at: string | null } | undefined;
+    if (doc && doc.head === rev && doc.deleted_at === null) {
+      const raw = reconstructContent(store.db, docId);
+      if (raw !== null) return { _id: docId, _path: referencePath(doc.path), rev, _raw: raw, renderedHashMatch: true };
+    }
+    if (!store.capabilities.history) throw CapabilityUnavailable.historyUnavailable();
+    const row = readCapability(store.db, repoId, "history");
+    if (!row || row.state !== "enabled") throw CapabilityUnavailable.historyDisabled(rev);
+    throw new EngineError("target_missing", `no revision ${JSON.stringify(rev)} for document ${docId}`, { data: { doc: docId, rev } });
   }
   // The owning document of a block id (`blocks_read`): the block must be live.
   function docOfBlock(blockId: string): string {
@@ -649,7 +687,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           // code path, so the two return the same bytes. Block ids at a past
           // revision are a later question: `include_ids` is refused with `at`.
           if (args.include_ids) throw argumentError("docs_read", "`include_ids` is not available with `at`", shape);
-          return ok(docsReadAt(docId, args.at));
+          return ok(docsReadAt(repoId, docId, args.at));
         }
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
         if (!res) throw new EngineError("doc_missing", `no document with id or path ${JSON.stringify(args._id ?? args._path)}`, { data: { _id: docId } });
@@ -1590,7 +1628,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(history.blocksHistory(args._id, args.limit !== undefined ? { limit: args.limit } : {}));
+        return ok(historyTools().blocksHistory(args._id, args.limit !== undefined ? { limit: args.limit } : {}));
       } catch (e) {
         return fail(e);
       }
@@ -1611,7 +1649,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // misleading-empty trap. locateDoc throws doc_missing when the ref
         // names no document.
         const docId = locateDoc(repoId, "docs_diff", registry.get("docs_diff")!.shape, args);
-        return ok(history.diffBlocks(docId, args.from_rev, args.to_rev));
+        return ok(unlessDisabled(repoId, () => historyTools().diffBlocks(docId, args.from_rev, args.to_rev)));
       } catch (e) {
         return fail(e);
       }
@@ -1629,11 +1667,11 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_diff_unified", registry.get("docs_diff_unified")!.shape, args);
-        return ok(history.docDiffUnified(docId, {
+        return ok(unlessDisabled(repoId, () => historyTools().docDiffUnified(docId, {
           ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
           ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
           label: JSON.stringify(args._id ?? args._path),
-        }));
+        })));
       } catch (e) {
         return fail(e);
       }
@@ -1651,7 +1689,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = locateDoc(repoId, "docs_read_at", registry.get("docs_read_at")!.shape, args);
-        return ok(docsReadAt(docId, args.rev));
+        return ok(docsReadAt(repoId, docId, args.rev));
       } catch (e) {
         return fail(e);
       }
@@ -1688,7 +1726,7 @@ export function buildServer(ctx: ServerContext): McpServer {
             : undefined;
           doc = tomb ? tomb.doc_id : locateDoc(repoId, "docs_history", registry.get("docs_history")!.shape, args);
         }
-        return ok(history.docsHistory(repoId, {
+        return ok(historyTools().docsHistory(repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(doc ? { doc } : {}),
           ...(args.include_deleted !== undefined ? { includeDeleted: args.include_deleted } : {}),

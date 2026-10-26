@@ -348,7 +348,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"notes\",\"rootPath\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2},\"openEdges\":1,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\"},\"semantic\":{\"state\":\"disabled\"}}},\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"_id\":\"rp_0\",\"slug\":\"notes\",\"rootPath\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2},\"openEdges\":1,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2,\"lastBatch\":{\"ts\":\"2026-09-27T00:00:00.000Z\",\"batchId\":null,\"files\":0},\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"capabilities\":{\"history\":{\"state\":\"enabled\",\"coverage_from\":\"2026-09-27T00:00:00.000Z\",\"writer_requires\":true},\"semantic\":{\"state\":\"disabled\",\"model\":null}}},\"watcher\":\"none\",\"embedQueue\":0}\n"
           }
         },
         {
@@ -1223,7 +1223,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"batchId\":\"c_20\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
+            "stdout": "{\"batchId\":\"c_20\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"/texts/mutus-liber.md\"],\"conflicted\":[],\"failed\":[],\"scanned\":19,\"candidates\":0,\"changed\":true,\"materialized\":[]}\n"
           }
         },
         {
@@ -1910,6 +1910,81 @@
           "expect": {
             "exit": 0,
             "stdout": "[{\"_id\":\"b_289\",\"locator\":\"/texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}]\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-add-no-history",
+      "notes": "§6 `source add --no-history` (Phase 4a; spec/store §3.1): the repository is created with capture off, so the import itself writes no history row — `doctor --size --json` reports a `history` category with no tables and `capabilities[0]` `disabled` with `coverage_from` null; `version --json` says `disabled`; `log` shows the import's feed rows as before.",
+      "workspace": "empty",
+      "files": {
+        "vault/a.md": "# A\n\nA paragraph.\n",
+        "vault/b.md": "# B\n\nAnother.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "<workspace>/vault",
+            "--repo",
+            "vault",
+            "-y",
+            "--no-history"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  * vault ← <workspace>/vault  2 files\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--size",
+            "--json",
+            "--repo",
+            "vault"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"file\":{\"path\":\"<workspace>/.omgbase/omgbase.db\",\"bytes\":\"<number>\",\"wal_bytes\":\"<number>\",\"page_size\":\"<number>\",\"page_count\":\"<number>\",\"freelist_count\":\"<number>\",\"reclaimable\":\"<number>\"},\"categories\":[{\"name\":\"content\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":12,\"tables\":[{\"name\":\"blocks\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":4,\"indexes\":\"<number>\"},{\"name\":\"properties\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"docs\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"external_nodes\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"doc_edges\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"sections\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"}]},{\"name\":\"identity\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":13,\"tables\":[{\"name\":\"id_claims\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":13,\"indexes\":\"<number>\"},{\"name\":\"resurrection_pool\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"recovery\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"tables\":[{\"name\":\"pending_materializations\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"history\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"tables\":[]},{\"name\":\"search\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":6,\"tables\":[{\"name\":\"blocks_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":4,\"indexes\":\"<number>\"},{\"name\":\"nodes_fts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"doc_embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"embeddings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"}]},{\"name\":\"sync\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":90,\"tables\":[{\"name\":\"sqlite_schema\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":76,\"indexes\":\"<number>\"},{\"name\":\"feed\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"repos\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"sources\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"adapters\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"alerts\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":0,\"indexes\":\"<number>\"},{\"name\":\"attachments\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"capabilities\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"feed_entries\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"file_stats\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":2,\"indexes\":\"<number>\"},{\"name\":\"sync_state\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"},{\"name\":\"workspace_settings\",\"bytes\":\"<number>\",\"share\":\"<number>\",\"rows\":1,\"indexes\":\"<number>\"}]}],\"same_dispositions\":0,\"id_claims\":13,\"archived\":{\"revisions\":0,\"segments\":0,\"bytes\":\"<number>\"},\"feed\":{\"epoch\":\"ep_0\",\"oldest\":1,\"head\":2,\"entries\":2,\"retain_days\":10,\"retain_entries\":10000,\"max_entries\":100000},\"capabilities\":[{\"capability\":\"history\",\"state\":\"disabled\",\"coverage_from\":null,\"config\":{}},{\"capability\":\"semantic\",\"state\":\"disabled\",\"coverage_from\":null,\"config\":{}}],\"advice\":[\"nothing to reclaim\"]}\n"
+          }
+        },
+        {
+          "argv": [
+            "version",
+            "--json",
+            "--repo",
+            "vault"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\",\"profile\":\"<string>\",\"capabilities\":{\"history\":{\"state\":\"<string>\",\"coverage_from\":\"<null>\",\"writer_requires\":\"<boolean>\"},\"semantic\":{\"state\":\"<string>\",\"model\":\"<null>\"}},\"epoch\":\"<string>\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--repo",
+            "vault"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#1 observed observed: /a.md — created\n#2 observed observed: /b.md — created\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--repo",
+            "vault"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok fts rows == live leaf blocks\n  ok head present\n  ok capture complete\n  ok alerts\n  ok sqlite integrity\n"
           }
         }
       ]

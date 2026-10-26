@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "./store.js";
-import { assignIds, writeBlockTree, putBlob, putTreeNode, writeRevision } from "./writers.js";
+import { assignIds } from "./writers.js";
+import { writeBlockTree, putBlob, putTreeNode, writeRevision } from "./history-writers.js";
 import { appendFeedRow } from "./feed.js";
+import { ensureRepo } from "../attach.js";
 import { parseTree } from "../parse/tree.js";
 import { sha256 } from "../hash.js";
 import type { TreeInputBlock } from "./writers.js";
@@ -12,9 +14,12 @@ afterEach(() => {
   store = undefined;
 });
 
+// A repository through `ensureRepo` (Phase 4a): its manifest row is `enabled`, so the recorder's tables exist and
+// `appendFeedRow` hands the recorder its `commits` row — a bare `repos` row would have neither.
+let repoId = "";
 function fresh(): Store {
   const s = new Store({ path: ":memory:" });
-  s.db.prepare("INSERT INTO repos (repo_id, slug, epoch) VALUES ('rp_1','s','ep_1')").run();
+  repoId = ensureRepo(s, "s", null);
   return s;
 }
 
@@ -76,16 +81,16 @@ describe("content-addressed writers", () => {
 describe("commit & revision sequencing", () => {
   it("assigns per-repo commit seq and per-doc revision seq", () => {
     store = fresh();
-    store.db.prepare("INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_1','rp_1','a.md','t1','t1')").run();
+    store.db.prepare("INSERT INTO docs (doc_id, repo_id, path, created_at, updated_at) VALUES ('d_1',?,'a.md','t1','t1')").run(repoId);
 
     store.write((db) => {
-      const c1 = appendFeedRow(db, { repoId: "rp_1", ts: "t1", origin: "observed" });
+      const c1 = appendFeedRow(db, { repoId, ts: "t1", origin: "observed" });
       expect(c1.seq).toBe(1);
       const root = writeBlockTree(db, assignIds(parseTree("# A\n").children));
       const r1 = writeRevision(db, { revId: "r_1", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c1.commitId });
       expect(r1.seq).toBe(1);
 
-      const c2 = appendFeedRow(db, { repoId: "rp_1", ts: "t2", origin: "observed" });
+      const c2 = appendFeedRow(db, { repoId, ts: "t2", origin: "observed" });
       expect(c2.seq).toBe(2);
       const r2 = writeRevision(db, { revId: "r_2", docId: "d_1", rootTreeHex: root, frontmatterBlobHex: null, renderedHash: sha256("# A\n"), path: "a.md", commitId: c2.commitId });
       expect(r2.seq).toBe(2);

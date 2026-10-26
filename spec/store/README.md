@@ -291,10 +291,25 @@ H1–H6); the **semantic bundle** (`schema-semantic.sql`) — `embeddings`,
 `doc_embeddings` — is `spec/search`'s, reached only through the semantic
 provider. `changes_since` reads `feed`/`feed_entries` and never
 `commits`/`revisions`; the recorder touches `id_claims` in one way: it sets
-bit 1 on the claims its capture names (§2.1). Through Phase 3 every bundle
-is created on every database (§1) and capture is on for every repository;
-the manifest that says so per repository is `capabilities` (3e-ii), and
-Phase 4 reads it to make the two capability bundles conditional.
+bit 1 on the claims its capture names (§2.1). **Which bundles a database
+holds (17.1, Phase 4a).** The core bundle is executed on every fresh
+database — alone. The **history bundle follows the manifest**: its DDL is
+executed at the moment a repository's `history` row becomes `enabled` —
+`ensure_repo` with the recorder present (§1), `history enable` (§5.9) — and
+by the opener as a safety net when **any** repository of the database has
+`history.state = 'enabled'` and the tables are absent (one database holds
+every repository, so one enabled repository brings the bundle for all; the
+tables are harmless when present and unused — a disabled repository's
+commits never write them). A database no repository of which ever enabled
+capture has no history table; a repository whose capture was switched off
+keeps its rows until `history purge` (Phase 4b). The **semantic bundle
+follows the composition**, not the manifest: its DDL is executed on every
+open by an engine that carries the semantic module (the module's reads —
+the `available` gate, the vector cache, `omg status`'s stale count — probe
+the tables without consulting the manifest, so the tables exist iff the
+module is loaded); a core-only build creates none. Hence a fresh database's
+fingerprint (`cases/schema.json`) is the core bundle plus the semantic
+bundle: the history tables appear with the first enabled repository.
 
 ### 3.2 Derived tables
 
@@ -321,9 +336,12 @@ capability bundle's tables reference the core's (`commits.repo_id →
 repos`, `revisions.doc_id → docs`), never the other way. Both
 implementations embed the three texts and test that each embedded copy
 equals its file byte for byte (the crate skips that test when built outside
-the monorepo, like the other conformance tests). Through Phase 3 the opener
-executes all three on a fresh database; Phase 4 executes a capability's
-file only for a repository that enables it. The FTS5 extension must be
+the monorepo, like the other conformance tests). Since 17.1 (Phase 4a) the
+opener executes `schema.sql` alone on a fresh database and the two bundle
+files as §3.1 "Which bundles a database holds" says — `schema-history.sql`
+when a repository's `history` row becomes `enabled` (and when any is, on
+open), `schema-semantic.sql` on every open by an engine with the semantic
+module. The FTS5 extension must be
 compiled into the SQLite the engine links (both `better-sqlite3` and
 `rusqlite`'s `bundled` feature include it).
 
@@ -677,11 +695,22 @@ An echo emits its outcome. A gone member with a live doc runs §5.6.
 Otherwise the member commits as follows (the reference: `ingestFile` with the
 prepared result):
 
-0. **Nothing to read (17.0).** The core numbers and hashes the head without
-   a previous revision (M1): 16.0's step 0 — the previous revision, its
-   resolved tree and raw as the delta bases, the checkpoint rule — is the
-   recorder's own, run inside step 15 from **its** previous captured
-   revision.
+0. **Nothing to read (17.0); the refusal (17.1, Phase 4a — resolution 17).**
+   The core numbers and hashes the head without a previous revision (M1):
+   16.0's step 0 — the previous revision, its resolved tree and raw as the
+   delta bases, the checkpoint rule — is the recorder's own, run inside step
+   15 from **its** previous captured revision. Before anything is written,
+   the writer checks the repository's manifest (§3.1 `capabilities`): a
+   repository whose `history` row is `enabled` with `writer_requires = 1`
+   **refuses** a writer whose composition carries no history module —
+   `capability_unavailable { capability: "history", state: "unavailable" }`
+   (retriable: an engine with the module can) with the `writer_refused`
+   alert raised (§5.8); the check runs **outside** the member's transaction
+   so the alert survives the refusal (the reference: once per batch before
+   pass 2 commits anything, once per api request, once per `ingest_file`),
+   and a write that passes clears the alert. A repository whose row is
+   `disabled` (or `enabled` best-effort, `writer_requires = 0`) is written
+   by any composition.
 1. **Frontmatter.** `frontmatter_raw` = the frontmatter block's `raw`
    (fences included), or `NULL` without one — a current value on the doc
    row (step 2), never a delta. The recorder's delta encoding of it (16.0
@@ -817,10 +846,30 @@ prepared result):
     the head and the document (the `revisions` row), every block a
     `block_changes` row names, every opened edge (§2.1; `UPDATE id_claims
     SET holders = holders | 2 WHERE id = ?`, an id with no claim row left
-    alone). A failure inside the recorder rolls the
-    whole transaction back. Legacy capture is **on for every repository**
-    through Phase 3 (the manifest that switches it is Phase 3e), so
-    `revisions.rev_id == docs.head` on every live document (§8 H1).
+    alone). **Conditional since 17.1 (Phase 4a):** the recorder is handed
+    the transition — and the `commits` row of step 5, the edge transitions
+    of step 9c — only while the repository's `history` row is `enabled`
+    (`capture_for(repo)`: the module when the row says so, else nothing);
+    with capture off the head is minted, the feed row and its entry written,
+    the blocks, pool, claims (bit 0 alone), properties and edges maintained
+    exactly as above, and **no history row appears** — the `revisions`/
+    `commits`/`blobs`/`tree_nodes`/`dispositions`/`block_changes`/
+    `edge_transitions` tables are untouched (and may not exist, §3.1). **A
+    failure inside the recorder rolls the member back (resolution 18):** the
+    recorder's throw aborts the member's transaction — nothing of the member
+    lands, not the feed row, not the head — the transaction's owner then
+    raises the **`capture_failed`** alert (`error`; detail `{ path, reason }`,
+    the path in the reference form; §5.8) and the member is **retried by the
+    next sweep** (its stat is not recorded, so it stays a candidate); on the
+    observe path the batch goes on with its other members (the failed one's
+    outcome is `{ path, failed: true, doc, error }`), on the api path the
+    request fails with the envelope `capture_failed { path, reason }`
+    (`retriable: true`). The next capture that lands for that path clears the
+    alert. Nothing is ever written without its capture; a persistently
+    failing recorder makes a file un-ingestable until the recorder is fixed
+    or `history disable` is run — the alert says so. While capture is on,
+    `revisions.rev_id == docs.head` on every live document whose head was
+    minted within coverage (§8 H1).
 
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
 conflicted, dispositions: kind → count over this commit }`. The counts are
@@ -937,7 +986,9 @@ leave a pooled, half-tombstoned doc):
    (D11: a delete is no revision).
 
 4. Capture (step 15) receives the transition with `kind = 'deleted'`: the
-   recorder writes the commit and no revision (D11: a delete mints none).
+   recorder writes the commit and no revision (D11: a delete mints none) —
+   while the repository's capture is on (17.1); off, the feed row alone
+   records the deletion.
 
 No revision, no dispositions. The doc's `sections` rows are left in place
 (§10). The blocks are pooled because a vanished file
@@ -1131,6 +1182,69 @@ engine runs without the history module, the write is refused with
 raised; a write that passes with the module present clears it. The check
 is trivially true on every 17.0 composition and pinned by the reference's
 unit tests for Phase 4.
+
+### 5.9 The capture lifecycle (17.1, Phase 4a)
+
+Per repository, capture is switched by two verbs over the manifest row
+(§3.1 `capabilities`; `phase-1-contracts.md` §1.14; `omg history
+enable|disable`, `spec/cli`). Both are idempotent and run under the writer
+lock, outside any member transaction.
+
+**`history enable`**, in one transaction: (1) execute the history bundle's
+DDL when absent (§3.3); (2) write the **baseline** — one feed row (§5.4
+step 5) with `origin = 'import'`, `reason = 'history enabled'`, `actor =
+NULL`, its own `batch_id`, and one entry `(doc_id, path, head, hash =
+file_hash, kind = 'changed')` per **live** document under its EXISTING head
+(no head is minted: every `_rev` a client holds stays valid, `docs_read {
+at: <head> }` works at once, the interop tokens hold); (3) hand the recorder
+the baseline: the `commits` row of that feed row; for every live document
+whose head has **no** `revisions` row — one changed while capture was off,
+or never captured — a **checkpoint** revision under the existing head
+(`rev_id = head`, `seq = 1 + the document's greatest captured seq`, the
+current body tree and `frontmatter_raw` read from the rows, every node full
+and the frontmatter raw, `rendered_hash = file_hash`, `path = docs.path`,
+`commit_id` = the baseline's); the recorder's hold (bit 1) on every live
+document, head and live block id; and the **edge record reconciled** with
+the open edges (§8 H6): every open `edge_transitions` row whose edge no
+longer exists is closed at the baseline commit (`to_commit`), every open
+edge without an open transition gets one from it (`from_commit`), an open
+transition whose `dst_node` was rewritten while capture was off follows the
+edge. No dispositions (nothing was reconciled); a tombstoned document gets
+no entry and no revision. (4) The manifest row: `state = 'enabled'`,
+`coverage += { from: ts, to: null }`, `writer_requires` per the flag
+(default 1 — resolution 17; `--best-effort` writes 0). An already `enabled`
+row is returned unchanged — no second baseline, and the flag is the
+enable's, not a setting. A composition without the history module refuses
+(`capability_unavailable { history, unavailable }`): nothing could capture.
+The outcome is the row and, when something changed, `{ commit, revisions }`
+of the baseline.
+
+**`history disable`**: the open interval closes — `coverage[last].to = ts`
+— `state = 'disabled'`, `writer_requires = 0`. **The rows stay** (`history
+purge`, Phase 4b, removes them); reads of what was captured keep working
+(§6.2, `docs_history`, the `revisions` root — `spec/surface` §2.1: a
+disabled repository lists what it captured); step 15 stops for this
+repository from the next commit on, in this process and every other (every
+commit reads the row). A `disabled` or absent row is a no-op (an absent one
+is written `disabled` with no coverage, rule 1 made explicit). Needs no
+module: a core-only build may switch capture off on a repository it cannot
+write.
+
+**Who creates a repository with capture off.** `ensure_repo` (§1) writes
+the `history` row `enabled` with coverage from the repository's birth and
+`writer_requires = 1` when the composition carries the recorder and the
+caller did not opt out; `disabled` with `coverage = []` and `writer_requires
+= 0` when the composition has no module (a build that cannot capture does
+not require what it cannot do) or the caller asked (`omg source add
+--no-history`; a fixture's `capabilities: { history: false }`, §9.4).
+
+**What the composition means (test override).** The TypeScript engine always
+carries both modules; `OMGBASE_CAPABILITIES=core` is a **test-only
+override** that runs it as a core-only build — no recorder, no semantic
+module — so every fixture suite can run its observation scripts with
+history off and assert the core invariants alone (§9.6). It is not a
+production switch: in production whether a repository's commits are
+captured is its manifest row, flipped by the two verbs above.
 
 ## 6. Reads this spec pins
 
@@ -1646,12 +1760,34 @@ vacuum returns 0.
 
 A runner checks these on the database after every observe step and at the
 end of every case; an implementation may assert them in its own tests.
-Since 17.0 they come in two groups: the **core** invariants (C1–C7) hold on
-the current rows alone, and the **history** invariants (H1–H3 and I2, I4–I10
-as restated) say the recorder's capture **agrees** with the head — legacy
-capture being on for every repository, every runner checks both; the
-compositions that switch capture off are Phase 3e's (`docs/modular-core/
-phase-1-contracts.md` §6).
+Since 17.0 they come in two groups: the **core** invariants (C1–C8, F1–F3,
+A1) hold on the current rows alone, under every composition; the
+**history** invariants (H1–H6 and I2, I4–I10 as restated) say the
+recorder's capture **agrees** with the head and are checked when the
+composition carries the history module and the bundle's tables exist — and
+(17.1, Phase 4a) **within the repository's coverage**: what capture
+promised is bounded by the manifest's `coverage` intervals (§3.1). Reading
+the H*/I* family under optional capture, with `in_coverage(ts)` = some
+interval has `from ≤ ts` and (`to IS NULL` or `ts < to`): **H1/H3** are
+owed for a live document whose head was minted within coverage
+(`updated_at` in coverage); a head minted while capture was off has a row
+only when a later `history enable`'s baseline wrote one — then the row's
+commit is the baseline's, so C7's "`updated_at` equals the head commit's
+`ts`" is not compared for it (its `updated_at` is outside coverage).
+**H4**: a retained feed row owes a `commits` row only when its `ts` is in
+coverage; every `commits` row of the current epoch at or after the oldest
+retained feed row IS a feed row (the log is a subsequence of the feed).
+**I4**: `commits.seq` is strictly increasing in (`ts`, `seq`) order per
+epoch, and dense `1..n` only when capture was never off (one open interval
+from the repository's birth); `revisions.seq` stays `1..k` per document; a
+live document's head is its greatest-seq revision when its `updated_at` is
+in coverage; "a head with no revision" is a problem only in coverage. **H6**
+(the edges agree with the open transitions) holds while capture is on —
+the edges move freely while it is off and the next baseline reconciles them
+(§5.9). **I7**'s "a live block has a `block_changes` row or the recorder's
+hold" is owed for a block born in coverage (a baseline holds every live
+block). Under a core-only composition (§5.9, §9.6) only C*, F* and A1 are
+checked. (`docs/modular-core/phase-1-contracts.md` §1.15 is the source.)
 
 - **C1 Convergence.** For every live doc: `docs.file_hash == sha256(last
   observed source)` and `reconstruct(doc) == source` (§6.1) — from the rows
@@ -1841,9 +1977,12 @@ recorder alone: `edge-transitions.json` (projecting `edge_transitions`),
 and since slice 3e-ii the observation scripts `garbage.json` (the GC
 sweep), `delta.json` (16.0: the measurement scenarios of §10 as
 observation scripts) and `retention.json` (the archive squash), moved
-there with the §9.4 projection they always had. Case ids are
-`<suite>::<name>` (the suite is the file's base name, the directory is
-not part of it).
+there with the §9.4 projection they always had, and (17.1, Phase 4a)
+`capture.json` — the capture lifecycle (§5.9): capture switched off and
+writes that record nothing but the feed, a repository born disabled and the
+baseline an `enable` writes, the edge record reconciled, a recorder that
+throws rolling the member back. Case ids are `<suite>::<name>` (the suite
+is the file's base name, the directory is not part of it).
 
 ### 9.2 Schema fingerprint
 
@@ -1992,7 +2131,24 @@ unchanged.
   `<dest>` named `…-<segment>.omgarchive.db`), `read_at { doc, rev }` (§6.2,
   through a segment when the revision is archived). `remint_epoch { ts }`
   (17.0, §7.5) re-mints the repository's epoch at `ts` → `{ epoch: "<ep>"
-  }`. `expect.steps` has one entry per step.
+  }`. **The lifecycle steps (17.1, Phase 4a; §5.9):** `history_enable { ts,
+  writer_requires? }` and `history_disable { ts }` run the two verbs at `ts`
+  → `{ history: { state, coverage, writer_requires, changed, baseline?:
+  { commit, revisions } } }` (the manifest row's capture state after the
+  verb; `baseline` on an `enable` that changed something); `recorder_fault
+  { fail }` is the runner's **fault device** (§5.4 step 15, resolution 18):
+  `fail: true` makes every capture call of the store's recorder throw until
+  `fail: false` → `{ fault: boolean }` — the next `observe` then records a
+  rolled-back member as `{ path, failed: true, doc, error }` (`error` the
+  `capture_failed` message with the fixture's reason `recorder fault
+  (fixture device)`), and the ids that member minted before the rollback
+  are consumed (the minter is a process counter). `expect.steps` has one
+  entry per step.
+- `capabilities` (optional, 17.1): the case's composition — `{ history:
+  false }` creates the repository with capture off (`disabled`, no coverage,
+  `writer_requires 0`, no history table), as a core-only build or `omg
+  source add --no-history` would; absent, capture is on from the
+  repository's birth as before.
 - `config` overrides any subset of `spec/reconcile` §6 for every observe step
   of the case (the store passes it through).
 
@@ -2068,12 +2224,19 @@ unchanged.
   encoding, not an interpretation), and a frontmatter delta is a `blobs`
   row like any other.
 - Tables outside §3.1/§3.2's pinned set are not projected; neither are
-  `capabilities` and `alerts` (3e-ii) — the manifest's coverage is anchored
-  on the runner's own clock at `ensure_repo`, like the `rp`/`ep` claims it
-  omits, and an observation script raises no alert (the §8 A1 check runs
-  over an empty channel). `migrations.json` projects both (§9.3), the
-  surface fixtures pin the channel on the wire (`spec/surface` §6
-  `reads::alerts`).
+  `capabilities` and `alerts` (3e-ii) — the lifecycle steps project the
+  manifest's capture state in their outcomes, and an observation script's
+  only alerts are advisory (`capture_failed` after the fault device; the §8
+  A1 check runs over them). **The fixture birth clock (17.1):** the runner
+  creates the case's repository under the pinned clock
+  `2000-01-01T00:00:00.000Z`, before every authored `ts`, so the manifest's
+  first coverage interval covers the whole script and the history
+  invariants apply to every captured document (the `rp`/`ep` claims minted
+  then are omitted as before; `coverage[0].from` reads that instant in a
+  `history_disable` outcome). `migrations.json` projects both tables (§9.3),
+  the surface fixtures pin the channel on the wire (`spec/surface` §6
+  `reads::alerts`). A history table that does not exist (a repository born
+  disabled, never enabled) projects as `[]`.
 
 **Runner checks, per case**: after each observe step and at the end, the
 invariants of §8; then the projection deep-equals `expect` (numbers exactly —
@@ -2118,7 +2281,34 @@ full §9.4 projection they always had** (their core tables are the context
 the recorder's rows are read against; moving them changed no `expect`): a
 runner for a composition without the history bundle skips the whole
 directory, and a composition with it runs them exactly as §9.4. The capture
-lifecycle's own suite (`history enable|disable|purge`) arrives with Phase 4.
+lifecycle's suite is `capture.json` (17.1, §9.1; `history purge` arrives
+with Phase 4b).
+
+### 9.6 The core-only run (17.1, Phase 4a)
+
+Every observation-script runner must be able to run the SAME scripts on a
+composition without the history module and assert the core invariants
+alone. The reference does it under `OMGBASE_CAPABILITIES=core` (§5.9 — the
+test-only override: no recorder, no semantic module): a case's repository
+is then born `disabled`, no history table exists, no history row is
+written. The runner (1) runs the cases whose steps are `observe` / `sweep`
+/ `remint_epoch` only and **skips** — reporting them — the ones that need
+the module (a retention step, a lifecycle step, the fault device, a `gc`
+whose counts and claims prune see the recorder's holds, an `exec` that may
+name a history table); (2) checks C*, F*, A1 (§8); (3) compares the
+projection on the **core tables** — `docs`, `feed`, `feed_entries`,
+`blocks`, `resurrection_pool`, `sections`, `pending_materializations`,
+`steps` — with the history tables `[]` on both sides and `id_claims`
+compared with bit 1 masked off (a claim the recorder alone held drops out);
+(4) skips `migrations.json` (a core-only build does not upgrade a 16.x
+database — its frontmatter deltas resolve through the recorder; the opener
+refuses with "upgraded by an engine that carries the history module") and
+`cases/history/` wholesale; (5) compares the schema fingerprint without the
+semantic bundle's tables and indexes (§3.1: the semantic bundle follows the
+composition). `STORE_SPEC_UPDATE` is refused under the override: the
+fixtures are the full composition's. The `spec/mutate` runner does the same
+over its projection (`commits`/`revisions`/`dispositions` emptied); the
+`spec/surface` runner maps the history tools' answers (`spec/surface` §7.3).
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
@@ -2126,6 +2316,35 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Changed (17.1, Phase 4a) — capture is optional: the bundle follows the
+  manifest, `history enable|disable`, the reachable refusal, the rollback.**
+  (`docs/modular-core/` Phase 4a; `phase-1-contracts.md` §1.14, §1.15,
+  §2.1, §2.3, §7 resolutions 17 and 18.) §3.1 "Which bundles a database
+  holds" (the history DDL executed when a repository's row becomes
+  `enabled`; the semantic DDL with the module); §5.4 step 0 (the refusal,
+  outside the transaction) and step 15 (capture only while `enabled`; a
+  recorder's throw rolls the member back under `capture_failed`); §5.9 (the
+  two verbs, the baseline, who creates a repository disabled, the test
+  override); §8 (the H*/I* family within coverage); §9.4 (`capabilities`,
+  the lifecycle steps, the fault device, the birth clock); §9.6 (the
+  core-only run). Fixtures: `schema::fresh` loses the history tables (a
+  fresh database holds the core and semantic bundles); `migrations::v12-to-
+  v13-*` ×3 and `v13-to-v14-pending-materializations` gain the history
+  tables (their repositories' rows are written `enabled`, and the bundle
+  follows), `v16-to-v17-heads-inline-bytes-time` gains `embeddings`/
+  `doc_embeddings` (the module's tables on open); `capture.json` new. **The
+  baseline is kept from the contracts** (§1.14) rather than dropped: without
+  it the edge record and the holds would disagree with the rows after a
+  disabled interval (H6, I7), and the invariants would need a per-row
+  coverage clause instead of one per family. **No baseline is written when
+  nothing changed while capture was off** — the enable still writes its
+  feed row and `commits` row (`revisions: 0`), so the log records the
+  switch. **Ids minted by a rolled-back member are consumed** (the minter is
+  a process counter; the fixture's `recorder-fault-rolls-the-member-back`
+  shows `c_1`/`c_2` skipped). **The fixture birth clock**
+  `2000-01-01T00:00:00.000Z` is what makes coverage cover an authored script
+  (§9.4) — a runner anchoring the repository's birth on its wall clock would
+  find every authored `ts` outside coverage and check nothing.
 - **Changed (17.0, slice 3e-ii) — the capability manifest, the alert
   channel, the recorder suites' move** (`docs/modular-core/`, Phase 3e-ii —
   the last Phase 3 slice; `phase-1-contracts.md` §1.5, §1.14, §1.16 step
@@ -2472,6 +2691,20 @@ brought to it).
 
 ## Decisions
 
+- 2026-10-26, store 17.1 (Phase 4a of `docs/modular-core/`): **capture is
+  optional.** A procedure minor — no DDL changes; which bundles a database
+  holds and when a commit writes a history row do. The decisions were
+  Brendan's (resolution 17: `writer_requires` defaults to required;
+  resolution 18: a failed capture rolls the member back, retried forever,
+  surfaced through `capture_failed`); decided in the implementation: the
+  history bundle's DDL follows the manifest while the semantic bundle's
+  follows the composition (its reads probe the tables unguarded — §3.1 says
+  why); `OMGBASE_CAPABILITIES=core` is a test-only override and a repository
+  it creates starts disabled; the baseline of §1.14 is written on `enable`
+  (§10 says why it was kept); the refusal runs outside the member
+  transaction so its alert survives. Phase 4b inherits `history purge`, the
+  `outside_coverage`/`pruned` read states, `embed enable|disable`, the
+  feed-cap alert and `docs_history`'s `retained` flag (resolution 11).
 - 2026-10-25, store 17.0 (Phase 3a of `docs/modular-core/`): **the current
   state is self-contained.** The decisions were Brendan's (`docs/modular-core/
   README.md` §4: D1 the head token is the `r_` id minted by the core; D6

@@ -26,13 +26,17 @@ export function defaultCapabilities(store: Store): Capabilities {
 export const CAPABILITIES_ENV = "OMGBASE_CAPABILITIES";
 
 /**
- * The composition the environment names (modular-core Phase 2 gate): `core`
- * → `coreCapabilities` (no semantic module); unset, empty or `full` → the
- * defaults. Anything else is a configuration error. The fixture runners and
+ * The composition the environment names: `core` → `coreCapabilities` (no
+ * history module, no semantic module — a core-only build, Phase 4a); unset,
+ * empty or `full` → the defaults. Anything else is a configuration error.
+ * `OMGBASE_CAPABILITIES=core` is a TEST-ONLY override, not a production
+ * mechanism: in production the composition is the build's (the TypeScript
+ * engine always carries both modules) and whether a repository's commits are
+ * captured is its MANIFEST (`history enable|disable`). The fixture runners and
  * every `omg` verb open their stores through this, so `OMGBASE_CAPABILITIES=
  * core pnpm --filter @omgbase/core exec vitest run corpus/store corpus/mutate
- * corpus/surface/spec.test.ts` is the "core boots and passes with the provider
- * absent" run.
+ * corpus/surface/spec.test.ts` is the "a core-only build boots, writes with
+ * history disabled, passes the core invariants" run.
  */
 export function envCapabilities(env: NodeJS.ProcessEnv = process.env): CapabilitiesFactory {
   const v = (env[CAPABILITIES_ENV] ?? "").trim();

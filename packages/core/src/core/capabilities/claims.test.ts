@@ -34,7 +34,7 @@ function claim(id: string): { prefix: string; repo_id: string | null; minted_at:
 /** One observed file through the reconciling path (`observeBatch`, spec/store §5): the carry/pool/resurrection semantics `ingestFile` alone has not. */
 function observe(path: string, source: string | null, ts: string): { docId: string; rev: string | null } {
   const [o] = observeBatch(store, repoId, [{ path, content: source }], ts);
-  if (!o || o.kind === "deleted") return { docId: o?.docId ?? "", rev: null };
+  if (!o || o.kind !== "observed") return { docId: o?.docId ?? "", rev: null };
   return { docId: o.docId, rev: o.rev };
 }
 // The feed (3d) keeps a claim on every retained entry's head and every retained

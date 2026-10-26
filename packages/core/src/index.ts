@@ -35,7 +35,7 @@ export { recoverRepo, type RecoveryResult } from "./sync/recovery.js";
 export { withWriterLock, withWriterLockAsync, writerLockFree, writerLockHeld, setWriterLockDefaults, writerLockDefaults, WriterLockTimeout, type WriterLockOptions } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
 export { ingestDirectory, type IngestDirResult } from "./sync/attach.js";
-export { ensureRepo } from "./core/attach.js";
+export { ensureRepo, type EnsureRepoOptions } from "./core/attach.js";
 export { walkMarkdown, walkMarkdownAsync, nodeFs, type SyncFs, type FileStat } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
 // External sync-adapter seam (sync-plugins): a SyncSource is the in-engine
@@ -125,9 +125,12 @@ export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from
 export { capabilityStates, historyState, semanticState, semanticConfigured, type CapabilityStates, type SemanticHostReport } from "./sync/capability-state.js";
 // The capability manifest and the alert channel (spec/store §3.1 `capabilities` / `alerts`, 17.0 — modular-core Phase 3e-ii).
 export {
-  readCapability, readCapabilities, coverageFrom, ensureManifest, refreshSemanticManifest, refreshSemanticManifests, requireWriter, configHash, canonicalConfigJson,
+  readCapability, readCapabilities, coverageFrom, openCoverageFrom, ensureManifest, refreshSemanticManifest, refreshSemanticManifests, requireWriter, writerFor, configHash, canonicalConfigJson,
   HISTORY_INTERFACE_V, HISTORY_DATA_V, SEMANTIC_INTERFACE_V, SEMANTIC_DATA_V, WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE,
-  type ManifestRow, type ManifestState, type CoverageInterval,
+  // The capture lifecycle and the composition rule (spec/store §5.9, §3.1 — modular-core Phase 4a).
+  enableHistory, disableHistory, HISTORY_ENABLED_REASON, captureFor, historyReader, requireHistoryReader, historyBundlePresent, applyHistoryBundle, anyHistoryEnabled,
+  capture, CAPTURE_FAILED_ALERT, raiseCaptureFailed, clearCaptureFailed,
+  type ManifestRow, type ManifestState, type CoverageInterval, type HistoryLifecycleResult,
 } from "./core/store/manifest.js";
 export {
   activeAlerts, listActiveAlerts, raiseAlert, clearAlert, refreshBacklogAlert, alertAfterMinutes, materializationBacklogMessage, materializationFailedMessage,
@@ -265,7 +268,8 @@ export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/f
 // the default implementations the composition layer names (`StoreOptions.capabilities`), and the registry.
 export {
   defaultCapabilities, coreCapabilities, envCapabilities, CAPABILITIES_ENV, capabilitiesOf, requireHistory, requireSemantic, semanticOf, HistoryRecorderImpl, SemanticProviderImpl, IdClaims,
-  CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage,
+  CapabilityUnavailable, SEMANTIC_DISABLED_MESSAGE, SEMANTIC_DISABLED_FIX, semanticUnavailableMessage, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_DISABLED_MESSAGE,
+  CaptureFailed, captureFailedMessage,
   type Capabilities, type CapabilitiesFactory, type HistoryRecorder, type SemanticProvider, type SemanticScorer, type SemanticFreshness, type SemanticDrainOptions, type IdentityClaims, type RevisionTransition, type CapturedRevision, type SemanticVec,
-  type CapabilityName, type CapabilityState,
+  type CapabilityName, type CapabilityState, type RevisionQueryRow,
 } from "./core/capabilities/index.js";

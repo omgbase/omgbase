@@ -37,7 +37,7 @@ import { hybridSearch, type HybridHit } from "../../src/search/rrf.js";
 import { resolve as resolveSearch } from "../../src/search/resolve.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
 import {
-  FIXTURE_REPO_SLUG, isHistoryStep, runExecStep, runGcStep, toOutcome, validateSteps,
+  FIXTURE_REPO_SLUG, isHistoryStep, isLifecycleStep, runExecStep, runGcStep, toOutcome, validateSteps,
   type Step as StoreStep, type StepOutcome as StoreStepOutcome,
 } from "../store/fixture.js";
 
@@ -313,8 +313,8 @@ export async function runObserveCase(c: ObserveCaseInput): Promise<Evaluation> {
         // README §1.1 / §7: 'delete-all' then every live leaf of every live doc.
         rebuildIndex(store, step.rebuild);
         steps.push({ rebuilt: step.rebuild });
-      } else if ("remint_epoch" in step) {
-        throw new Error("remint_epoch (spec/store §9.4) is run by the store runner only");
+      } else if ("remint_epoch" in step || isLifecycleStep(step)) {
+        throw new Error("remint_epoch and the lifecycle steps (spec/store §9.4) are run by the store runner only");
       } else {
         steps.push(await runResolve(store, repoId, provider, step.resolve));
       }

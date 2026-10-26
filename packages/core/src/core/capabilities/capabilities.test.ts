@@ -129,18 +129,23 @@ describe("the core-only composition (OMGBASE_CAPABILITIES=core)", () => {
     expect(() => envCapabilities({ OMGBASE_CAPABILITIES: "history" })).toThrow(/not a composition/);
   });
 
-  it("boots without the semantic module: no provider, no cosine UDF, and reads/writes work", () => {
+  it("boots without either module: no provider, no cosine UDF, no recorder; a repository it creates runs with history disabled and reads/writes work (Phase 4a)", () => {
     const { store, repoId } = openCore();
     expect(store.capabilities.semantic).toBeNull();
     expect(semanticOf(store.db)).toBeNull();
-    expect(store.capabilities.history).toBeInstanceOf(HistoryRecorderImpl);
+    expect(store.capabilities.history).toBeNull();
+    expect(() => requireHistory(store.db)).toThrow(CapabilityUnavailable);
     // The `cosine` SQL function is the semantic bundle's to register.
     expect(() => store.db.prepare("SELECT cosine(zeroblob(8), zeroblob(8))").get()).toThrow(/no such function: cosine/);
     const r1 = ingestFile(store, repoId, "a.md", `# A\n\n${LONG}\n`);
     const r2 = ingestFile(store, repoId, "a.md", `# A\n\n${LONG} edited\n`);
     expect(docsRead(store, r1.docId)?._raw).toContain("edited");
-    expect(requireHistory(store.db).docsHistory(repoId, { doc: r1.docId }).docs[0]?.versions.length).toBe(2);
     expect(r2.revId).not.toBe(r1.revId);
+    // No history table exists and none was written: the feed alone records the two commits.
+    expect(store.db.prepare("SELECT 1 FROM sqlite_master WHERE name IN ('revisions', 'commits', 'blobs')").all()).toEqual([]);
+    expect((store.db.prepare("SELECT count(*) c FROM feed").get() as { c: number }).c).toBe(2);
+    expect(readDocumentAtRevision(store, r1.docId, r2.revId)).toBeNull();
+    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "unavailable", coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } });
     // text() stays the core's.
     expect(oqxRun(store, repoId, 'blocks { where text("paragraph") }').hits.length).toBe(1);
     // The size report walks every table but prints no vector advice.
@@ -182,13 +187,14 @@ describe("the core-only composition (OMGBASE_CAPABILITIES=core)", () => {
 
   it("the manifest is derived from the provider configuration, never from vectors (resolution 1)", () => {
     const { store, repoId } = openCore();
-    // Core-only: disabled whatever the settings say.
+    // Core-only: disabled whatever the settings say; history is `unavailable` (no module, Phase 4a).
     writeWorkspaceSettings(store, { embedding: { provider: "omgbase-embedder" } });
-    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
+    expect(capabilityStates(store, repoId)).toEqual({ history: { state: "unavailable", coverage_from: null, writer_requires: false }, semantic: { state: "disabled", model: null } });
     store.close();
 
     const full = open();
-    expect(capabilityStates(full.store, full.repoId)).toEqual({ history: { state: "enabled" }, semantic: { state: "disabled" } });
+    expect(capabilityStates(full.store, full.repoId)).toMatchObject({ history: { state: "enabled", writer_requires: true }, semantic: { state: "disabled", model: null } });
+    expect(capabilityStates(full.store, full.repoId).history.coverage_from).toMatch(/^\d{4}-/);
     // Vectors alone do not enable it.
     const r = ingestFile(full.store, full.repoId, "c.md", DOC);
     full.store.db.prepare("INSERT INTO doc_embeddings (doc_id, model, input_hash, method, dim, vec) VALUES (?, 'm', zeroblob(32), 'whole', 2, zeroblob(8))").run(r.docId);
@@ -207,8 +213,11 @@ describe("the core-only composition (OMGBASE_CAPABILITIES=core)", () => {
     expect(Object.keys(v).slice(-3)).toEqual(["profile", "capabilities", "epoch"]);
     expect(v.epoch).toBe("ep_x");
     expect(versionInfo(null).epoch).toBeNull();
-    expect(v.capabilities).toEqual({ history: { state: "enabled" }, semantic: { state: "enabled" } });
-    expect(JSON.stringify(versionInfo(null).capabilities)).toBe('{"history":{"state":"disabled"},"semantic":{"state":"disabled"}}');
+    expect(v.capabilities).toMatchObject({ history: { state: "enabled", writer_requires: true }, semantic: { state: "enabled", model: null } });
+    // The wire shape (spec/surface §4 `version`, 6.1): the key order both engines pin.
+    expect(Object.keys(v.capabilities.history)).toEqual(["state", "coverage_from", "writer_requires"]);
+    expect(Object.keys(v.capabilities.semantic)).toEqual(["state", "model"]);
+    expect(JSON.stringify(versionInfo(null).capabilities)).toBe('{"history":{"state":"disabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}');
     full.store.close();
   });
 });

@@ -1,6 +1,6 @@
 import type { Store } from "./store.js";
 import { referencePath } from "../paths.js";
-import { explicitWalker } from "./gc.js";
+import { explicitWalker } from "./history-gc.js";
 import { effectiveSettings, parseSettingsJson } from "./settings.js";
 
 // History retention (spec/store §7 "Retention: plan, export, squash", 15.0).

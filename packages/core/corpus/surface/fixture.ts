@@ -26,7 +26,6 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
-import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { pinClock, withClock } from "../../src/core/clock.js";
 import { CursorInvalid, decodeCursor, encodeCursor } from "../../src/core/cursor.js";
@@ -38,7 +37,7 @@ import { FilterInvalid } from "../../src/search/cel/parser.js";
 import { CapabilityUnavailable, SEMANTIC_DISABLED_FIX } from "../../src/core/capabilities/errors.js";
 import { buildServer, type ServerContext } from "../../src/mcp/server.js";
 import { deepEqualTol } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, TS_RE, isHistoryStep, runExecStep, runGcStep, runHistoryStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, TS_RE, createFixtureRepo, isHistoryStep, isLifecycleStep, runExecStep, runGcStep, runHistoryStep, runLifecycleStep, toOutcome, validateSteps, type ExtraStepValidator, type HistoryContext, type Step as StoreStep, type StepOutcome as StoreStepOutcome } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 
@@ -294,7 +293,7 @@ export function loadCorpus(corpus: Record<string, string>): LoadedCorpus {
   setIdMinter(sequentialMinter());
   try {
     const store = new Store({ path: ":memory:" });
-    const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, null);
+    const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, null);
     const items = Object.keys(corpus).sort(cmpBytes).map((path) => ({ path, content: corpus[path]! }));
     observeBatch(store, repoId, items, CORPUS_TS);
     return { store, repoId };
@@ -420,21 +419,58 @@ export function coreModeQueryExpect(expect: OqxResult | QueryErrorExpect): { exp
  * error — the mapping lives in the RUNNER, keyed on the composition it runs
  * under, never in the fixture, exactly as `coreModeReadsExpect` does for `reads.json`.
  */
-export function coreModeInteropExpect(expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }): { expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }; mapped: number } {
-  const w = coreModeReadsExpect({ steps: expect.writes });
-  const r = coreModeReadsExpect({ steps: expect.reads });
+export function coreModeInteropExpect(expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }, steps: { writes: Step[]; reads: Step[] } = { writes: [], reads: [] }, actual: { writes: ReadOutcome[]; reads: ReadOutcome[] } = { writes: [], reads: [] }): { expect: { writes: ReadOutcome[]; reads: ReadOutcome[] }; mapped: number } {
+  const w = coreModeReadsExpect({ steps: expect.writes }, steps.writes, actual.writes);
+  const r = coreModeReadsExpect({ steps: expect.reads }, steps.reads, actual.reads);
   return { expect: { writes: w.expect.steps, reads: r.expect.steps }, mapped: w.mapped + r.mapped };
 }
 
-/** A reads case's expectation under the core-only run: every `provider_unavailable` step outcome becomes the capability error. */
-export function coreModeReadsExpect(expect: { steps: StepOutcome[] }): { expect: { steps: StepOutcome[] }; mapped: number } {
+/** The history capability's `version`/`sync_status` answer on the core-only composition (Phase 4a): no module, so `unavailable`; a repository it created has no coverage and requires nothing. */
+export const CORE_HISTORY_STATE = { state: "unavailable", coverage_from: null, writer_requires: false };
+
+/** Does the query text reach the `revisions` root or the `_revisions` relation (whose rows are the recorder's)? */
+export function touchesRevisions(query: string): boolean {
+  return /revisions\b/.test(query);
+}
+
+/** Is the outcome a history read refused by the core-only composition (`capability_unavailable { history, unavailable }`)? */
+function isHistoryUnavailable(o: unknown): boolean {
+  return isRecord(o) && o.error === "capability_unavailable" && isRecord(o.data) && o.data.capability === "history" && o.data.state === "unavailable";
+}
+
+/**
+ * A reads case's expectation under the core-only run, step by step against
+ * what the run answered: every `provider_unavailable` outcome becomes the
+ * semantic capability error (Phase 2); and (Phase 4a — the composition has no
+ * recorder) a step the run answered `capability_unavailable { history,
+ * unavailable }` is accepted as such, a `sync_status` reads the core history
+ * state, a `version` shape reads `coverage_from` as `<null>`, and a `query`
+ * that reaches `revisions` is accepted when the run returned no rows (the
+ * root lists what the recorder holds — nothing here). `steps` is the case's
+ * step list (to know each read's tool), `actual` the run's outcomes.
+ */
+export function coreModeReadsExpect(expect: { steps: StepOutcome[] }, steps: Step[] = [], actual: StepOutcome[] = []): { expect: { steps: StepOutcome[] }; mapped: number } {
   let mapped = 0;
   const map = (o: unknown): unknown => {
     if (Array.isArray(o)) return o.map(map);
     if (isRecord(o) && o.error === "provider_unavailable") { mapped++; return CORE_SEMANTIC_OUTCOME; }
     return o;
   };
-  return { expect: { steps: expect.steps.map(map) as StepOutcome[] }, mapped };
+  const out = expect.steps.map((o, i) => {
+    const step = steps[i];
+    const got = actual[i];
+    const read = step !== undefined && isRecord(step) && "read" in step ? (step as ReadStep).read : null;
+    if (read && isHistoryUnavailable(got)) { mapped++; return got; }
+    if (read?.tool === "sync_status" && isRecord(o) && isRecord(o.capabilities)) { mapped++; return { ...o, capabilities: { ...o.capabilities, history: CORE_HISTORY_STATE } }; }
+    if (read?.tool === "version" && isRecord(o) && isRecord(o.capabilities) && isRecord(o.capabilities.history)) {
+      mapped++;
+      return { ...o, capabilities: { ...o.capabilities, history: { ...o.capabilities.history, coverage_from: "<null>" } } };
+    }
+    // A query reaching `revisions`/`_revisions`: the rows (or the relation's rows inside a document row) are the recorder's — a successful answer is accepted as the run gave it.
+    if (read?.tool === "query" && typeof read.args.query === "string" && touchesRevisions(read.args.query) && isRecord(got) && Array.isArray(got.hits)) { mapped++; return got; }
+    return map(o);
+  });
+  return { expect: { steps: out as StepOutcome[] }, mapped };
 }
 
 // ---- §2–§4 reads cases -----------------------------------------------------------------
@@ -555,7 +591,7 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
     let client: Client | null = null;
     let server: ReturnType<typeof buildServer> | null = null;
     try {
-      const repoId = ensureRepo(store, FIXTURE_REPO_SLUG, dir);
+      const repoId = createFixtureRepo(store, FIXTURE_REPO_SLUG, dir);
       if (corpus) {
         // An examples suite (README §6, 4.3): the alchemy corpus observed as one
         // batch in bytewise path order at CORPUS_TS (so `d_0` is index.md, as in
@@ -619,6 +655,9 @@ export async function runReadsCase(c: ReadsCaseInput, corpus?: Record<string, st
           } finally {
             restore();
           }
+        } else if (isLifecycleStep(step)) {
+          // spec/store §9.4 (Phase 4a): `history_disable` / `history_enable` around the reads — the D3 states on the wire.
+          steps.push(runLifecycleStep(store, repoId, step));
         } else {
           const { tool, args, ts } = step.read;
           const cl = client;

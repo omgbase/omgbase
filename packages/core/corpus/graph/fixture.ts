@@ -22,7 +22,7 @@ import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
 import { toReconcileConfig, deepEqualTol, type FixtureConfig } from "../reconcile/fixture.js";
-import { FIXTURE_REPO_SLUG, isHistoryStep, runExecStep, runGcStep, validateSteps, type Step } from "../store/fixture.js";
+import { FIXTURE_REPO_SLUG, isHistoryStep, isLifecycleStep, runExecStep, runGcStep, validateSteps, type Step } from "../store/fixture.js";
 
 export { deepEqualTol, FIXTURE_REPO_SLUG };
 export type { Step };
@@ -328,8 +328,8 @@ export function runCase(c: FixtureCaseInput): Evaluation {
           sweepResurrectionPool(store, step.sweep.ts);
         } else if ("gc" in step) {
           runGcStep(store);
-        } else if (isHistoryStep(step) || "remint_epoch" in step) {
-          throw new Error("retention and epoch steps (spec/store §9.4) are not run by the graph runner");
+        } else if (isHistoryStep(step) || isLifecycleStep(step) || "remint_epoch" in step) {
+          throw new Error("retention, lifecycle and epoch steps (spec/store §9.4) are not run by the graph runner");
         } else {
           runExecStep(store, step.exec.sql);
         }

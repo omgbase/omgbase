@@ -3,29 +3,37 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   evaluateRetention, retentionPolicy, exportHistory, attachArchive, detachArchive, listArchives, humanBytes, withWriterLock,
+  enableHistory, disableHistory, openCoverageFrom,
   RetentionPolicyError, NotASegment, StaleSegment, ARCHIVE_DIR,
-  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace,
+  type RetentionPlan, type ExportResult, type ArchiveListing, type Workspace, type HistoryLifecycleResult,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { columns } from "../render.js";
 
-// `omg history <plan|export|attach|detach|list>` (spec/cli §6 `history`, cli
-// 4.6): the operator surface of history retention (spec/store §7 "Retention",
-// 15.0). `plan` evaluates the policy and prints what would move; `export`
-// writes one archive segment (and with `--prune` squashes the store); `attach`
-// / `detach` / `list` manage the segment registry. No MCP tool: the catalog's
-// only trace is the `revisions.archived` attribute and `revision_archived`.
+// `omg history <enable|disable|plan|export|attach|detach|list>` (spec/cli §6
+// `history`, cli 4.6; `enable|disable` cli 5.2 — store 17.0 Phase 4a): the
+// operator surface of history CAPTURE (spec/store §5.9: `enable` turns the
+// repository's capture on with a baseline commit and opens a coverage interval,
+// `disable` closes it — the rows stay, reads of what was captured keep working)
+// and of history RETENTION (spec/store §7 "Retention", 15.0: `plan` evaluates
+// the policy and prints what would move; `export` writes one archive segment
+// and with `--prune` squashes the store; `attach` / `detach` / `list` manage
+// the segment registry). No MCP tool: the catalog's traces are
+// `version.capabilities.history`, the `revisions.archived` attribute,
+// `capability_unavailable` and `revision_archived`.
 
-const SUBCOMMANDS = ["plan", "export", "attach", "detach", "list"] as const;
+const SUBCOMMANDS = ["enable", "disable", "plan", "export", "attach", "detach", "list"] as const;
 type Sub = (typeof SUBCOMMANDS)[number];
 
 function renderCard(cli: Cli): number {
   return renderHelp(cli, {
     name: "history",
-    summary: "History retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+    summary: "History capture (enable/disable per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
     usage: [
+      "history enable [--best-effort]",
+      "history disable",
       "history plan [--before <ts>] [--policy <json|@file>]",
       "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
       "history attach <file|dir>",
@@ -33,6 +41,9 @@ function renderCard(cli: Cli): number {
       "history list",
     ],
     options: [
+      ["enable", "turn capture on for the repository: one baseline commit (origin import) records every live document's current head, a coverage interval opens, every later write is captured; idempotent"],
+      ["disable", "turn capture off: the coverage interval closes, later writes record no history (the feed still does); what was captured stays readable; idempotent"],
+      ["--best-effort", "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)"],
       ["plan", "per document: revisions kept / to archive and the bytes only they reach; the policy in effect"],
       ["export", "write ONE new segment file (default dest .omgbase/archives/) holding the archived revisions' bodies; --prune then squashes the store and records the segment"],
       ["attach <path>", "record a segment file (or every segment of a directory that belongs to this repo) so reads at its revisions work again"],
@@ -208,6 +219,51 @@ function runList(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
+/** A coverage interval's `from..to` as the human lines print it. */
+function interval(i: { from: string; to: string | null }): string {
+  return `${i.from}..${i.to ?? "now"}`;
+}
+
+/**
+ * The `enable`/`disable` rendering: `--json` the manifest row's capture state
+ * `{ state, coverage, writer_requires, changed, baseline? }` (`baseline` the
+ * commit and the revisions it wrote, on an `enable` that changed something);
+ * human one stderr line — `  history enabled since <ts>` / `  history already
+ * enabled since <ts>` / `  history disabled (captured <from>..<to>[, …])` /
+ * `  history already disabled`.
+ */
+function renderLifecycle(cli: Cli, verb: "enable" | "disable", r: HistoryLifecycleResult): number {
+  const row = r.row;
+  if (cli.flags.mode !== "human") {
+    return emitMachine(cli, { state: row.state, coverage: row.coverage, writer_requires: row.writer_requires, changed: r.changed, ...(r.baseline ? { baseline: r.baseline } : {}) });
+  }
+  const { io, style } = cli;
+  if (verb === "enable") {
+    const since = openCoverageFrom(row);
+    io.err(style.dim(`  history ${r.changed ? "enabled" : "already enabled"}${since ? ` since ${since}` : ""}${r.baseline ? ` (baseline ${r.baseline.commit}: ${plural(r.baseline.revisions, "revision")})` : ""}`));
+  } else {
+    io.err(style.dim(r.changed || row.coverage.length > 0 ? `  history ${r.changed ? "disabled" : "already disabled"} (captured ${row.coverage.map(interval).join(", ")})` : "  history already disabled"));
+  }
+  return EXIT_OK;
+}
+
+function runEnable(cli: Cli, args: string[]): number {
+  const { values } = parseArgs({ args, allowPositionals: false, options: { "best-effort": { type: "boolean" } } });
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  // A write (the baseline commit): under the workspace writer lock like every other.
+  const result = withWriterLock(ws.omgbaseDir, () => enableHistory(ws.store.db, repo.repoId, { writerRequires: !values["best-effort"] }));
+  return renderLifecycle(cli, "enable", result);
+}
+
+function runDisable(cli: Cli, args: string[]): number {
+  parseArgs({ args, allowPositionals: false, options: {} });
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+  const result = withWriterLock(ws.omgbaseDir, () => disableHistory(ws.store.db, repo.repoId));
+  return renderLifecycle(cli, "disable", result);
+}
+
 function runHistory(cli: Cli, args: string[]): number {
   const [sub, ...rest] = args;
   if (sub === undefined || sub === "--help" || sub === "-h" || sub === "help" || rest.includes("--help") || rest.includes("-h")) return renderCard(cli);
@@ -215,6 +271,8 @@ function runHistory(cli: Cli, args: string[]): number {
     throw new CliUsageError(`unknown history subcommand '${sub}' (${SUBCOMMANDS.join("|")})`, `run '${cli.prog} history --help'`);
   }
   switch (sub as Sub) {
+    case "enable": return runEnable(cli, rest);
+    case "disable": return runDisable(cli, rest);
     case "plan": return runPlan(cli, rest);
     case "export": return runExport(cli, rest);
     case "attach": return runAttach(cli, rest);
@@ -223,4 +281,4 @@ function runHistory(cli: Cli, args: string[]): number {
   }
 }
 
-export const cmdHistory: Command = { name: "history", summary: "Retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };
+export const cmdHistory: Command = { name: "history", summary: "Capture: enable/disable per repository; retention: plan/export archive segments, attach/detach/list", run: (cli, a) => runHistory(cli, a) };

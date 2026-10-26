@@ -122,8 +122,12 @@ committing member's commit id, which every member's feed row carries
 `last_batch_files` = the member count; and the resurrection pool is swept at
 `ts` (`spec/store` §5.5) — the row and the sweep in one transaction (2.1; 2.0
 ran them as two autocommits). The result is `{ batch_id, ingested,
-suppressed (echoes), deleted (gone members that had a live doc), conflicted
-}` in batch order. **No `cp` is minted**: the batch's identity is the feed's
+suppressed (echoes), deleted (gone members that had a live doc), conflicted,
+failed }` in batch order — `failed` (4.1, store 17.1 Phase 4a) the paths of
+the members rolled back because their history capture threw (`spec/store`
+§5.4 step 15, resolution 18): nothing of such a member landed, the
+`capture_failed` alert stands, the member is not counted as ingested, and
+the next sweep retries it. **No `cp` is minted**: the batch's identity is the feed's
 `batch_id`, so a consumer of `changes_since` groups an observed batch's
 commits by it (what a history strategy needs from batches, D4). The 3.x
 `files` and `git_head` columns are gone (D9: written by every sweep, read by
@@ -175,10 +179,12 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
 3. `process_checkpoint(changed ++ deletions)` as one batch.
 4. Refresh the cache for every changed path (`record_file_stat`: `INSERT …
    ON CONFLICT DO UPDATE` with the fresh stat and the hash; a path that
-   vanished meanwhile deletes its row) and delete the rows of the deletions.
+   vanished meanwhile deletes its row) and delete the rows of the deletions
+   — except a `failed` member's (4.1): it was rolled back and stays a
+   candidate for the next sweep.
 
 Result: the batch result plus `{ scanned, candidates, changed:
-ingested or deleted or conflicted non-empty, materialized }`; a sweep with nothing to do
+ingested or deleted or conflicted or failed non-empty, materialized }`; a sweep with nothing to do
 still writes the status row (`batch_id` NULL). `file_stats` is derived: a
 rebuild deletes the repo's rows, then re-stats and re-hashes every walked
 file **that has a live doc** (one whose `file_hash` is null matches nothing)
@@ -595,6 +601,13 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 ## Decisions
 
+- 2026-10-26, sync 4.1 (store 17.1 Phase 4a of `docs/modular-core/`,
+  resolution 18): the batch result and the sweep result gain **`failed`** —
+  the members a throwing recorder rolled back (§4.1, §4.3); `sync_status.
+  capabilities` follows `version`'s 6.1 shape (`spec/surface` §4). A
+  `writer_requires` refusal (`spec/store` §5.4 step 0) is checked once per
+  batch before any member commits, outside the member transactions, so the
+  `writer_refused` alert survives it; the batch commits nothing.
 - 2026-10-25, sync 4.0 (store 17.0 slice 3d — `docs/modular-core/` D4, D7;
   the contracts `phase-1-contracts.md` §1.6, §4.1–§4.5, §7 resolutions 4,
   6, 7): **`checkpoints` leaves; the feed cursor gains `epoch`.** The batch's

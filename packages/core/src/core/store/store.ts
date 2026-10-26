@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { ALL_DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL, EDGE_TRANSITIONS_DDL, CAPABILITIES_DDL, ALERTS_DDL } from "./schema.js";
-import { ensureManifest, manifestTableExists } from "./manifest.js";
+import { DDL, SEMANTIC_DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL, ARCHIVES_DDL, EDGE_TRANSITIONS_DDL, CAPABILITIES_DDL, ALERTS_DDL } from "./schema.js";
+import { anyHistoryEnabled, applyHistoryBundle, ensureManifest, manifestTableExists } from "./manifest.js";
 import { mintId, registerIdOracle } from "../ids.js";
 import { FEED_DDL } from "./schema.js";
 import { pruneFeed, remintEpoch } from "./feed.js";
@@ -54,6 +54,7 @@ export class Store {
     this.capabilities = (opts.capabilities ?? envCapabilities())(this);
     bindCapabilities(this.db, this.capabilities);
     this.migrate();
+    this.applyBundles();
     // Registered after the migration so every table the oracle reads exists.
     // (A migration's own mints — v13's `src_` per repo — are checked only
     // against the process's issued set; they land in tables that were empty.)
@@ -65,10 +66,11 @@ export class Store {
   private migrate(): void {
     const current = this.db.pragma("user_version", { simple: true }) as number;
     if (current === 0) {
-      // spec/store §3.3 (17.0): the core bundle, then the history and semantic
-      // bundles — every bundle on every fresh database through Phase 3 (Phase 4
-      // makes the capability bundles conditional on the manifest).
-      this.db.exec(ALL_DDL);
+      // spec/store §3.3 (17.0, Phase 4a): the CORE bundle alone on a fresh
+      // database; the capability bundles follow in `applyBundles` — the
+      // history bundle when a repository's manifest says so, the semantic
+      // bundle with the module.
+      this.db.exec(DDL);
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
       return;
     }
@@ -119,6 +121,27 @@ export class Store {
       this.db.exec(ddl);
     }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  }
+
+  /**
+   * The capability bundles (spec/store §3.1 "The three bundles", Phase 4a),
+   * after the migration, on every open: the SEMANTIC bundle's DDL whenever the
+   * composition carries the semantic module — its reads (`staleCount` for
+   * `omg status`, the `available` gate, the vector cache) probe the tables
+   * without consulting the manifest, so the module's tables exist iff the
+   * module is loaded; the HISTORY bundle's DDL when any repository of the
+   * database has history `enabled` (one database holds every repository; the
+   * tables are harmless when present and unused) — `history enable` and
+   * `ensure_repo` execute it at the moment a row becomes `enabled`, so this is
+   * the safety net for a database written by another engine. Every statement
+   * is `CREATE … IF NOT EXISTS`.
+   */
+  private applyBundles(): void {
+    // A database with no `docs` table (the `already-current-is-untouched`
+    // fixture) is left exactly as it is, as the 17-finishing step leaves it.
+    if (!this.tableExists("docs")) return;
+    if (this.capabilities.semantic) this.db.exec(SEMANTIC_DDL);
+    if (this.capabilities.history && anyHistoryEnabled(this.db)) applyHistoryBundle(this.db);
   }
 
   private tableExists(name: string): boolean {
@@ -312,7 +335,7 @@ CREATE TABLE docs_v17 (
   UNIQUE (repo_id, path)
 );`);
         const history = this.capabilities.history;
-        if (!history) throw new Error("migration v17: the history recorder is needed to resolve the 16.x frontmatter deltas");
+        if (!history) throw new Error("migration v17: a 16.x database is upgraded by an engine that carries the history module (its frontmatter deltas resolve through the recorder); this build has none");
         const revOf = db.prepare("SELECT doc_id, seq, frontmatter_blob, commit_id FROM revisions WHERE rev_id = ?");
         const firstRev = db.prepare("SELECT commit_id FROM revisions WHERE doc_id = ? AND seq = 1");
         const insDoc = db.prepare(

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { findDoc, docDiffUnified, diffBlocks, type DocDiffUnified, type DiffEntry } from "@omgbase/core";
+import { findDoc, requireHistoryReader, type DocDiffUnified, type DiffEntry } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -43,7 +43,8 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     const repo = cli.repo(ws);
     const info = ref.startsWith("d_") ? findDoc(ws.store, { docId: ref }) : findDoc(ws.store, { repoId: repo.repoId, path: ref });
     if (!info) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
-    result = docDiffUnified(ws.store, info.docId, {
+    // Through the recorder seam (Phase 4a): `capability_unavailable { history, unavailable | disabled }` when the build has no module or nothing was ever captured.
+    result = requireHistoryReader(ws.store.db).docDiffUnified(info.docId, {
       ...(values.from ? { fromRev: values.from } : {}),
       ...(values.to ? { toRev: values.to } : {}),
       label: ref,
@@ -55,7 +56,7 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     // Block-grain over the same resolved revision pair.
     let entries: DiffEntry[];
     if (cli.flags.server) entries = await remoteCall<DiffEntry[]>(cli, "docs_diff", { ...docLocator(ref), from_rev: result.from, to_rev: result.to });
-    else entries = diffBlocks(cli.workspace().store, result._id, result.from, result.to);
+    else entries = requireHistoryReader(cli.workspace().store.db).diffBlocks(result._id, result.from, result.to);
     if (cli.flags.mode !== "human") return emitMachine(cli, entries, { items: entries, ids: entries.map((e) => e._id) });
     if (entries.length === 0) {
       io.err(style.dim("  no changes"));

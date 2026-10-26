@@ -3,7 +3,7 @@
 // (writer, reader) pair in {ts, rust}²:
 //
 //   1. a fresh temp dir W gets the suite's corpus as files and a database at
-//      W/.omgbase/omgbase.db bootstrapped by THIS engine (`ensureRepo("fixture", W)`
+//      W/.omgbase/omgbase.db bootstrapped by THIS engine (`ensureRepo("fixture", W)` under the fixture birth clock
 //      under the fixture minter; no documents) — §7.2 step 1;
 //   2. the writer is spawned as an MCP server over stdio on W under the §7.1
 //      seams, `observe_many` seeds the corpus (bytewise path order), the case's
@@ -29,7 +29,7 @@ import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/s
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { Store } from "../../src/core/store/store.js";
-import { ensureRepo } from "../../src/core/attach.js";
+import { createFixtureRepo } from "../store/fixture.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import { coreCapabilities, envCapabilities } from "../../src/core/capabilities/index.js";
 import {
@@ -310,7 +310,8 @@ function bootstrap(W: string): void {
   withIdMinter(sequentialMinter(), () => {
     const store = new Store({ path: join(W, ".omgbase", "omgbase.db") });
     try {
-      ensureRepo(store, FIXTURE_REPO_SLUG, W);
+      // Under the fixture birth clock (spec/store §9.4; spec/surface §7.2): `sync_status.capabilities.coverage_from` is recorded literally.
+      createFixtureRepo(store, FIXTURE_REPO_SLUG, W);
     } finally {
       store.close();
     }
@@ -430,7 +431,8 @@ describe("surface interop (spec/surface §7, cases/interop.json)", () => {
         const context = (): string => `\n--- writer (${w}) stderr ---\n${clip(run.stderr.writer, 3000)}\n--- reader (${r}) stderr ---\n${clip(run.stderr.reader, 3000)}`;
         let expected = c.expect;
         if (CORE_MODE) {
-          const mapped = coreModeInteropExpect(c.expect);
+          const asSteps = (calls: InteropCall[] | undefined) => (calls ?? []).map((k) => ("tool" in k ? { read: { tool: k.tool, args: k.args } } : { read: { tool: k.method, args: {} } }));
+          const mapped = coreModeInteropExpect(c.expect, { writes: asSteps(c.writes), reads: asSteps(c.reads) }, { writes: run.writes, reads: run.reads });
           if (mapped.mapped > 0) coreMapped.push(`${name} (${mapped.mapped} outcome${mapped.mapped === 1 ? "" : "s"})`);
           expected = mapped.expect;
         }

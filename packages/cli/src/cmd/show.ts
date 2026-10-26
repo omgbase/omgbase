@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolveRef, nodesGet, docsRead, docLinks, historyNode, docPropertiesMerged } from "@omgbase/core";
+import { resolveRef, nodesGet, docsRead, docLinks, historyReader, docPropertiesMerged } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -40,7 +40,8 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
-  const history = include.includes("history") ? historyNode(ws.store, resolved.blockId!, { limit: 5 }) : undefined;
+  // `--include history` on a store with nothing captured (Phase 4a): the card simply carries no history.
+  const history = include.includes("history") ? historyReader(ws.store.db)?.blocksHistory(resolved.blockId!, { limit: 5 }) ?? [] : undefined;
   return { payload: { ...node, ...(history ? { history } : {}) }, render: () => renderBlockCard(cli, node, history) };
 }
 
