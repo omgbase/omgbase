@@ -4,6 +4,11 @@ All notable changes to `@omgbase/oqx-syntax` are recorded here. The format follo
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.9.0] - 2026-10-26
+
+### Minor
+- OQX 0.28 — comments. `//` runs to the end of the line, `/* … */` across lines (no nesting); both are whitespace to the lexer, so they may stand wherever whitespace may (between tokens, inside a block, inside a template's `${ … }`), are not recognised inside a string literal or a template's text, and are dropped by the canonical printer (the tree records no trivia). An unterminated `/*` is the lex error `unterminated comment at <offset>`; a single `/` is still division; `#` is still a lex error. New fixture suite `spec/oqx/cases/comments.json`; both engines; `@omgbase/oqx-syntax` highlights comments in every grammar and the editor configuration gains the `comments` key (line and block toggling); the `query_syntax` manual notes the syntax.
+
 ## [0.8.2] - 2026-10-23
 
 ### Patch

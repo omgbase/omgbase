@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-graph"
-version = "2.0.1"
+version = "3.0.0"
 description = "omgbase graph: semantic node projection and authored-edge extraction over Markdown blocks (links, wikilinks, tasks, anchors, inline fields, sections; URI normalization; path resolution) — Rust implementation"
 keywords = ["markdown", "graph", "links", "wikilinks", "omgbase"]
 categories = ["parser-implementations", "text-processing"]
