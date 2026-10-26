@@ -104,9 +104,9 @@ pub mod semantic;
 pub(crate) use self::core::effects;
 pub use self::core::{
     alerts, capabilities, claims, codec, derived, doc_store, docs_ops, effects_plan, fault, feed,
-    graph, history_shapes, ids, links, macros, manifest, materialize, mint, mutate, observe,
-    order_key, plan, properties, read, semantic_shapes, settings, size, sugar, text_search, time,
-    writers, yaml_emit,
+    graph, history_shapes, ids, legacy_bytes, links, macros, manifest, materialize, mint, mutate,
+    observe, order_key, plan, properties, read, semantic_shapes, settings, size, sugar,
+    text_search, time, writers, yaml_emit,
 };
 pub use self::history::{archive, delta, edit_script, gc, retention, tree};
 pub use self::semantic::search;
@@ -166,6 +166,11 @@ pub use history_shapes::{
     RetentionPolicy, RetentionTotals, SegmentInfo, SquashResult, SweptBodies,
 };
 pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
+pub use legacy_bytes::{
+    LEGACY_BYTES_ALERT, LEGACY_BYTES_SAMPLE, UnreproducibleDoc, legacy_bytes_active,
+    legacy_bytes_detail, legacy_bytes_message, legacy_bytes_suspected, refresh_legacy_bytes_alert,
+    unreproducible_docs,
+};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
 pub use manifest::{
@@ -222,7 +227,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.3";
+pub const SPEC_VERSION: &str = "17.4";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

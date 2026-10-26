@@ -5,6 +5,8 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::capabilities::HistoryRecorder;
+use crate::core::derived;
+use crate::core::legacy_bytes::{legacy_bytes_suspected, refresh_legacy_bytes_alert};
 use crate::core::time::POOL_TTL_MS;
 use crate::error::{Error, Result};
 use crate::mint::{IdSource, Mint};
@@ -215,6 +217,7 @@ pub(crate) fn migrate(
             migrate_v17_edges(conn)?;
             migrate_v17_manifest(conn, history.is_some(), now)?;
             migrate_v17_tombstones(conn)?;
+            migrate_v17_legacy_bytes(conn, false, now)?;
         }
         return Ok(());
     }
@@ -250,6 +253,7 @@ pub(crate) fn migrate(
             migrate_v17_edges(conn)?;
             migrate_v17_manifest(conn, history.is_some(), now)?;
             migrate_v17_tombstones(conn)?;
+            migrate_v17_legacy_bytes(conn, true, now)?;
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -692,6 +696,16 @@ CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)         
 CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
 CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);",
     )?;
+    // The FTS index rebuilt over the new rows (§3.4 step 17 (2), 17.4 —
+    // qualification finding F2): a 16.x index may hold every block
+    // (containers and tombstones included — the rule before `spec/search`
+    // 1.2) and `doctor`'s `fts rows == live leaf blocks` would fail on the
+    // migrated database until a `rebuild-index --fts`. The rows keep their
+    // `rowid`s, so the external-content index stays keyed the same way; the
+    // rebuild makes it hold exactly the live leaves of the live documents.
+    if table_exists(db, "blocks_fts")? {
+        derived::fts_rebuild(db)?;
+    }
 
     // ---- resurrection_pool ----
     rebuild_pool_v17(db, clock)?;
@@ -1392,6 +1406,54 @@ fn migrate_v17_tombstones(conn: &Connection) -> Result<()> {
         }
     }
     tx.execute("DELETE FROM blocks WHERE deleted_at IS NOT NULL", [])?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// `spec/store` §3.4 step 17 (16) / §5.11 (17.4, modular-core Phase 5a-ii —
+/// qualification finding F1): the FIDELITY CHECK. Migration 17 copies a
+/// block's bytes from the recorder's blobs as they are, so a document ingested
+/// before block trivia was stored (pre-v6 rows: NULL `trivia_hash` on every
+/// block; pre-v7: a frontmatter with no `frontmatter_trivia`) comes out with
+/// rows that do not reproduce its `file_hash` — the same bytes the 16.x reader
+/// produced, the file and the hash being right all along. Per repository, for
+/// every live document: `sha256(reconstruct(doc)) == file_hash`; the
+/// mismatches raise the `legacy_bytes` alert (`warning`; detail `{ docs,
+/// sample }`), which `omg sync` works off by repairing the rows from the files
+/// (`omgbase_sync::legacy_bytes`) and `doctor` lists as `bytes reproducible`.
+/// At the 16 → 17 entry point (`full`) the check runs over every live document
+/// — a one-time cost of the migration. At the on-open entry point (a
+/// 17.0–17.3 database a released 17.x engine already migrated, or any later
+/// open) it runs only for a repository that carries the cheap SIGNATURE of
+/// legacy rows ([`legacy_bytes_suspected`]: a top-level block with NULL trivia
+/// and a later sibling, or a frontmatter without its separator — rows the
+/// current ingest never writes), so a healthy database pays a metadata scan of
+/// `blocks` per open and never hashes its bytes; a repository without the
+/// signature and with an active alert is left to the sweep and `doctor`,
+/// which re-derive the full set. Runs after the manifest step (the `alerts`
+/// table exists) and the tombstone step. Idempotent: the raise refreshes an
+/// active row in place, the clear is a no-op on none.
+fn migrate_v17_legacy_bytes(conn: &Connection, full: bool, clock: &str) -> Result<()> {
+    for t in ["repos", "alerts", "docs", "blocks"] {
+        if !table_exists(conn, t)? {
+            return Ok(());
+        }
+    }
+    if has_column(conn, "docs", "head")? != Some(true) {
+        return Ok(());
+    }
+    let repos: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY rowid")?;
+        let it = stmt.query_map([], |r| r.get(0))?;
+        it.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    let tx = conn.unchecked_transaction()?;
+    for repo_id in &repos {
+        if !full && !legacy_bytes_suspected(&tx, repo_id)? {
+            continue;
+        }
+        refresh_legacy_bytes_alert(&tx, repo_id, clock, None)?;
+    }
     tx.commit()?;
     Ok(())
 }

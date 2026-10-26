@@ -111,26 +111,29 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
     // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
     let rooted =
         |paths: &[String]| -> Vec<String> { paths.iter().map(|p| reference_path(p)).collect() };
-    let (ingested, suppressed, deleted, conflicted, failed, materialized) = (
+    let (ingested, suppressed, deleted, conflicted, failed, materialized, repaired) = (
         rooted(&cp.ingested),
         rooted(&cp.suppressed),
         rooted(&cp.deleted),
         rooted(&cp.conflicted),
         rooted(&cp.failed),
         rooted(&result.materialized),
+        rooted(&result.repaired),
     );
     if cli.machine() {
         // The `SweepResult` as the reference spells it (camelCase); since
         // spec/cli 3.1 with step 0's `materialized` (spec/sync §4.3, 2.2);
         // `batchId` (spec/sync 4.0) the first committing member's commit id,
         // null for an empty sweep; `failed` (spec/sync 4.1, Phase 4a) the
-        // members rolled back by a capture failure. The human rendering does
-        // not show the id.
+        // members rolled back by a capture failure; `repaired` (spec/sync 4.4,
+        // §4.3 step 5) the legacy documents whose separator bytes the sweep
+        // repaired from their files. The human rendering does not show the id.
         cli.io.out(&js_json(&json!({
             "batchId": cp.batch_id, "ingested": ingested, "suppressed": suppressed,
             "deleted": deleted, "conflicted": conflicted, "failed": failed,
             "scanned": result.scanned, "candidates": result.candidates,
             "changed": result.changed, "materialized": materialized,
+            "repaired": repaired,
         })));
         return Ok(EXIT_OK);
     }
@@ -170,6 +173,18 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
         ));
         for p in &conflicted {
             cli.io.out(&format!("      {}", style.warn(p)));
+        }
+    }
+    // spec/sync §4.3 step 5 (4.4): the legacy documents whose separator bytes
+    // were repaired from their files (spec/store §5.11) — no commit, no revision.
+    if !repaired.is_empty() {
+        cli.io.out(&format!(
+            "  {} repaired  {}",
+            style.ok(g.ok),
+            repaired.len()
+        ));
+        for p in &repaired {
+            cli.io.out(&format!("      {}", style.accent(p)));
         }
     }
     if !result.changed {

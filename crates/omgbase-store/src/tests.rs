@@ -5788,3 +5788,169 @@ fn a_reopened_17x_database_loses_its_tombstoned_block_rows_and_their_fts_entries
     store.close().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---- legacy bytes (spec/store §3.4 step 17 (16), §5.11; 17.4 — qualification finding F1) ----
+// Mirrors `packages/core/src/core/store/legacy-bytes.test.ts`'s store half:
+// rows that do not reproduce their `file_hash` are named by the `legacy_bytes`
+// alert on open (behind the cheap signature); the repair is the sync layer's
+// (`omgbase-sync`'s `legacy_bytes` tests).
+
+const LEGACY_A: &str = "# A\n\nAlpha paragraph about apples.\n\n- one\n- two\n";
+const LEGACY_B: &str = "# B\n\nBeta paragraph about bees.\n";
+const LEGACY_C: &str = "# C\n\nGamma paragraph about goats.\n";
+
+fn legacy_file_store() -> (std::path::PathBuf, std::path::PathBuf, String) {
+    let dir = std::env::temp_dir().join(format!("omgbase-store-legacy-{}", ids::random_suffix()));
+    let path = dir.join("omgbase.db");
+    let mut store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let repo = store.create_repo("fixture").unwrap();
+    observe(&mut store, &repo, "a.md", LEGACY_A, T0);
+    observe(&mut store, &repo, "b.md", LEGACY_B, T0);
+    observe(&mut store, &repo, "c.md", LEGACY_C, T0);
+    store.close().unwrap();
+    (dir, path, repo)
+}
+
+fn doc_id_of(store: &Store, path: &str) -> String {
+    store
+        .conn()
+        .query_row(
+            "SELECT doc_id FROM docs WHERE path = ?1 AND deleted_at IS NULL",
+            params![path],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// The pre-v6 rows: every block of the document loses its separator (what a
+/// 16 → 17 migration of such rows produces).
+fn erase_separators(store: &Store, doc_id: &str) {
+    store
+        .conn()
+        .execute(
+            "UPDATE blocks SET trivia = NULL, trivia_hash = NULL WHERE doc_id = ?1",
+            params![doc_id],
+        )
+        .unwrap();
+}
+
+#[test]
+fn the_legacy_bytes_message_is_pinned_byte_for_byte() {
+    assert_eq!(
+        legacy_bytes_message(115),
+        "115 document(s) carry bytes the engine cannot reproduce from its rows (imported before block trivia was stored); omg sync repairs them from the files"
+    );
+    assert_eq!(LEGACY_BYTES_ALERT, "legacy_bytes");
+    assert_eq!(LEGACY_BYTES_SAMPLE, 20);
+}
+
+#[test]
+fn a_healthy_database_has_no_signature_nothing_unreproducible_and_no_alert_after_a_reopen() {
+    let (dir, path, repo) = legacy_file_store();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    assert!(!legacy_bytes_suspected(store.conn(), &repo).unwrap());
+    assert!(unreproducible_docs(store.conn(), &repo).unwrap().is_empty());
+    assert!(list_active_alerts(store.conn(), &repo).unwrap().is_empty());
+    assert_eq!(count(&store, "alerts"), 0, "a quiet open writes nothing");
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn rows_without_their_separators_do_not_reproduce_the_file_and_the_on_open_finish_step_names_them()
+{
+    let (dir, path, repo) = legacy_file_store();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let a = doc_id_of(&store, "a.md");
+    erase_separators(&store, &a);
+    assert_ne!(store.reconstruct(&a).unwrap().as_deref(), Some(LEGACY_A));
+    assert!(legacy_bytes_suspected(store.conn(), &repo).unwrap());
+    assert_eq!(
+        unreproducible_docs(store.conn(), &repo).unwrap(),
+        [UnreproducibleDoc {
+            doc_id: a.clone(),
+            path: "a.md".to_owned()
+        }]
+    );
+    store.close().unwrap();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let alerts = list_active_alerts(store.conn(), &repo).unwrap();
+    assert_eq!(
+        alerts.iter().map(|x| x.code.as_str()).collect::<Vec<_>>(),
+        [LEGACY_BYTES_ALERT]
+    );
+    assert_eq!(alerts[0].severity, AlertSeverity::Warning);
+    assert_eq!(alerts[0].message, legacy_bytes_message(1));
+    assert_eq!(
+        serde_json::Value::Object(alerts[0].detail.clone()),
+        serde_json::json!({ "docs": 1, "sample": [a] })
+    );
+    let since = alerts[0].since.clone();
+    // Idempotent: another open refreshes the same row, `since` kept.
+    store.close().unwrap();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let again = list_active_alerts(store.conn(), &repo).unwrap();
+    assert_eq!(again.len(), 1);
+    assert_eq!(again[0].since, since);
+    assert_eq!(count(&store, "alerts"), 1);
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_one_block_document_with_a_lost_trailing_newline_carries_no_signature_the_full_check_names_it()
+{
+    let (dir, path, repo) = legacy_file_store();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    let c = doc_id_of(&store, "c.md");
+    // Only the LAST top-level block loses its separator: nothing distinguishes
+    // the rows from a file without a trailing newline.
+    store
+        .conn()
+        .execute(
+            "UPDATE blocks SET trivia = NULL, trivia_hash = NULL WHERE doc_id = ?1 AND ordinal = (SELECT max(ordinal) FROM blocks WHERE doc_id = ?1 AND parent_block IS NULL)",
+            params![c],
+        )
+        .unwrap();
+    assert!(!legacy_bytes_suspected(store.conn(), &repo).unwrap());
+    store.close().unwrap();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    assert!(list_active_alerts(store.conn(), &repo).unwrap().is_empty());
+    // `doctor`'s full re-derivation names it and writes the alert.
+    let named = refresh_legacy_bytes_alert(store.conn(), &repo, T1, None).unwrap();
+    assert_eq!(
+        named,
+        [UnreproducibleDoc {
+            doc_id: c.clone(),
+            path: "c.md".to_owned()
+        }]
+    );
+    let alerts = list_active_alerts(store.conn(), &repo).unwrap();
+    assert_eq!(
+        serde_json::Value::Object(alerts[0].detail.clone()),
+        serde_json::json!({ "docs": 1, "sample": [c] })
+    );
+    assert_eq!(alerts[0].since, T1);
+    // A caller that computed the set hands it over; an empty set clears.
+    refresh_legacy_bytes_alert(store.conn(), &repo, T1, Some(Vec::new())).unwrap();
+    assert!(!legacy_bytes_active(store.conn(), &repo).unwrap());
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_frontmatter_without_its_separator_is_the_other_signature() {
+    let (dir, path, repo) = legacy_file_store();
+    let store = Store::open_with_minter(&path, Box::new(SequentialMinter::new())).unwrap();
+    assert!(!legacy_bytes_suspected(store.conn(), &repo).unwrap());
+    store
+        .conn()
+        .execute(
+            "UPDATE docs SET frontmatter_raw = '---\nk: v\n---', frontmatter_trivia = NULL WHERE path = 'b.md'",
+            [],
+        )
+        .unwrap();
+    assert!(legacy_bytes_suspected(store.conn(), &repo).unwrap());
+    store.close().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}

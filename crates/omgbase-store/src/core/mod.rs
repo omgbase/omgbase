@@ -29,6 +29,7 @@ pub mod feed;
 pub mod graph;
 pub mod history_shapes;
 pub mod ids;
+pub mod legacy_bytes;
 pub mod links;
 pub mod macros;
 pub mod manifest;

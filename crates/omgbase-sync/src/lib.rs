@@ -40,6 +40,7 @@ pub mod error;
 pub mod external;
 pub mod freshness;
 pub mod fs;
+pub mod legacy_bytes;
 pub mod lock;
 pub mod mcp_client;
 pub mod pipe;
@@ -65,6 +66,7 @@ pub use freshness::{
     rebuild_file_stats, record_file_stat, sweep_plan,
 };
 pub use fs::{FileStat, FileSystem, MemFileSystem, RealFileSystem, is_ignored_dir};
+pub use legacy_bytes::{LegacyRepairOutcome, repair_legacy_bytes};
 pub use lock::{WatchLease, WriterLock, WriterLockOptions, pid_alive, with_writer_lock};
 pub use mcp_client::{EngineSpec, McpEngineClient, ToolResult, parse_engine_spec};
 pub use omgbase_store::{
@@ -89,7 +91,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.3";
+pub const SPEC_VERSION: &str = "4.4";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

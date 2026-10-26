@@ -8,7 +8,7 @@ use omgbase_search::{EmbeddingProvider, create_external_provider};
 use omgbase_store::{
     Error as StoreError, LIVE_LEAF_SQL, ManifestState, RebuildTarget, SemanticLifecycleResult,
     SizeCapability, SizeReport, active_alerts, format_share, human_bytes, open_coverage_from,
-    read_capability, semantic_provider_of,
+    read_capability, refresh_legacy_bytes_alert, semantic_provider_of,
 };
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings_at,
@@ -210,7 +210,7 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let now = cli.now();
     let store = cli.store()?;
     let conn = store.conn();
-    let mut checks: Vec<Check> = Vec::with_capacity(5);
+    let mut checks: Vec<Check> = Vec::with_capacity(6);
 
     // The index holds exactly the live leaf blocks (`spec/search` §1.1),
     // counted from FTS5's shadow table — a `count(*)` on the
@@ -244,6 +244,24 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
         ok: headless == 0,
         detail: format!("{headless} without a head"),
     });
+
+    // Store 17.4 (Phase 5a-ii; `spec/store` §5.11, §8 C9): every live
+    // document's rows reproduce its `file_hash` — the fidelity check the
+    // migration runs, re-derived here in full for the selected repository,
+    // and the `legacy_bytes` alert written to match (raised with the count and
+    // a sample of ids, or cleared), so the `alerts` check below sees the
+    // current condition. A document ingested before block trivia was stored
+    // fails it until `omg sync` repairs its rows from the file.
+    let legacy = refresh_legacy_bytes_alert(conn, &repo.repo_id, &now, None)?;
+    checks.push(Check {
+        name: "bytes reproducible",
+        ok: legacy.is_empty(),
+        detail: format!(
+            "{} document(s) not reproducible from their rows",
+            legacy.len()
+        ),
+    });
+
     let manifest = read_capability(conn, &repo.repo_id, "history")?;
     let since = open_coverage_from(manifest.as_ref());
     let recorder = store.capture_for(Some(&repo.repo_id))?;

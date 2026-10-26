@@ -2339,6 +2339,33 @@ fn check_invariants(
                         ));
                     }
                 }
+                // 17.4 (§5.11, C9): a `legacy_bytes` alert names the live
+                // documents whose rows do not reproduce their `file_hash` —
+                // `detail.docs` is their count and every id of `detail.sample`
+                // is one of them.
+                if code == omgbase_store::legacy_bytes::LEGACY_BYTES_ALERT {
+                    let d: Json = serde_json::from_str(detail).unwrap_or(Json::Null);
+                    let docs = omgbase_store::legacy_bytes::unreproducible_docs(conn, repo_id)
+                        .unwrap_or_default();
+                    if d.get("docs").and_then(Json::as_u64) != Some(docs.len() as u64) {
+                        problems.push(format!(
+                            "A1: legacy_bytes counts {} documents, {} are not reproducible",
+                            d.get("docs").cloned().unwrap_or(Json::Null),
+                            docs.len()
+                        ));
+                    }
+                    let ids: HashSet<&str> = docs.iter().map(|x| x.doc_id.as_str()).collect();
+                    let sample_ok = d.get("sample").and_then(Json::as_array).is_some_and(|s| {
+                        s.iter()
+                            .all(|id| id.as_str().is_some_and(|id| ids.contains(id)))
+                    });
+                    if !sample_ok {
+                        problems.push(format!(
+                            "A1: legacy_bytes sample {} names a reproducible document",
+                            d.get("sample").cloned().unwrap_or(Json::Null)
+                        ));
+                    }
+                }
             }
         }
     }
@@ -3222,6 +3249,36 @@ fn check_invariants(
         }
     }
 
+    // ---- C9 bytes reproducible, or named (17.4, §5.11) --------------------------------------
+    // Every live document's rows reproduce its `file_hash`, or the repository's
+    // active `legacy_bytes` alert names it (A1 above checks the count and sample).
+    let unreproducible =
+        omgbase_store::legacy_bytes::unreproducible_docs(conn, repo_id).unwrap_or_default();
+    let legacy_active =
+        omgbase_store::legacy_bytes::legacy_bytes_active(conn, repo_id).unwrap_or(false);
+    if !unreproducible.is_empty() && !legacy_active {
+        problems.push(format!(
+            "C9: {} live document(s) do not reproduce their file_hash and no legacy_bytes alert names them: {}",
+            unreproducible.len(),
+            unreproducible
+                .iter()
+                .map(|d| d.path.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    // A document the active alert names is a LEGACY document until the sweep
+    // repairs it (§5.11): C1's reconstruct clause is what C9 relaxes for it,
+    // and H3's trivia clause is not owed — its capture is the 16.x one. (The
+    // fixtures reach the state through the `sql` device, which erases the
+    // rows' separators and leaves the recorder's tree whole; on a real legacy
+    // document the tree names no trivia either.)
+    let legacy_named: HashSet<&str> = if legacy_active {
+        unreproducible.iter().map(|d| d.doc_id.as_str()).collect()
+    } else {
+        HashSet::new()
+    };
+
     // ---- C1 convergence from the rows; H1/H3 the recorder's capture agrees with the head ----
     for d in &docs {
         let (Some(head), None) = (&d.head, &d.deleted_at) else {
@@ -3238,7 +3295,10 @@ fn check_invariants(
                 if d.file_hash.as_deref() != Some(&want[..]) {
                     problems.push(format!("C1: {at} file_hash != sha256(source)"));
                 }
-                if store.reconstruct(&d.doc_id).ok().flatten().as_deref() != Some(source.as_str()) {
+                if !legacy_named.contains(d.doc_id.as_str())
+                    && store.reconstruct(&d.doc_id).ok().flatten().as_deref()
+                        != Some(source.as_str())
+                {
                     problems.push(format!("C1: {at} reconstruct(doc) != source"));
                 }
             }
@@ -3348,6 +3408,7 @@ fn check_invariants(
             at: &str,
             children: &BTreeMap<Option<String>, Vec<&Json>>,
             resolved: &ResolvedTree,
+            legacy: bool,
             problems: &mut Vec<String>,
         ) {
             let parent_id = parent.map(|p| str_of(p, "block_id").to_owned());
@@ -3394,7 +3455,7 @@ fn check_invariants(
                         "H3: {where_}[{i}]: raw_hash differs from the tree entry"
                     ));
                 }
-                if r["trivia_hash"].as_str() != e.trivia_hash_hex.as_deref() {
+                if !legacy && r["trivia_hash"].as_str() != e.trivia_hash_hex.as_deref() {
                     problems.push(format!(
                         "H3: {where_}[{i}]: trivia_hash differs from the tree entry"
                     ));
@@ -3431,6 +3492,7 @@ fn check_invariants(
                     at,
                     children,
                     resolved,
+                    legacy,
                     problems,
                 );
             }
@@ -3450,6 +3512,7 @@ fn check_invariants(
             &at,
             &children,
             resolved,
+            legacy_named.contains(d.doc_id.as_str()),
             &mut problems,
         );
     }

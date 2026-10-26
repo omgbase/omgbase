@@ -13,6 +13,7 @@ use omgbase_format::text::{
     join_texts, normalize_text, normalize_visible_text, uses_children_text,
 };
 use omgbase_reconcile::{MatchBlock, PoolEntry};
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::Result;
@@ -57,7 +58,7 @@ pub fn current_frontmatter_raw(conn: &Connection, doc_id: &str) -> Result<Option
 /// — nothing resolves and no history table is read). `None` for a tombstoned
 /// or unknown doc.
 pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
-    let doc: Option<(String, Option<String>, Option<String>)> = conn
+    let doc: Option<(SqlValue, Option<String>, SqlValue)> = conn
         .query_row(
             "SELECT leading_trivia, frontmatter_raw, frontmatter_trivia FROM docs
              WHERE doc_id = ?1 AND deleted_at IS NULL",
@@ -68,7 +69,8 @@ pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
     let Some((leading, fm_raw, fm_trivia)) = doc else {
         return Ok(None);
     };
-    let mut out = leading;
+    let fm_trivia = separator_text(fm_trivia);
+    let mut out = separator_text(leading).unwrap_or_default();
     // The frontmatter block followed by its exact stored separator: ingest
     // always captures `frontmatter_trivia` whenever a frontmatter block
     // exists, so the `unwrap_or("")` is just a guard.
@@ -85,16 +87,30 @@ pub fn reconstruct(conn: &Connection, doc_id: &str) -> Result<Option<String>> {
          ORDER BY order_key",
     )?;
     let rows = stmt.query_map(params![doc_id], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+        Ok((r.get::<_, String>(0)?, r.get::<_, SqlValue>(1)?))
     })?;
     for row in rows {
         let (raw, trivia) = row?;
         out.push_str(&raw);
-        if let Some(t) = trivia {
+        if let Some(t) = separator_text(trivia) {
             out.push_str(&t);
         }
     }
     Ok(Some(out))
+}
+
+/// A separator column's text: the TEXT it is, or — a 16.x pre-state authored
+/// with a blob literal (`migrations::v16-to-v17-heads-inline-bytes-time`'s
+/// `frontmatter_trivia` X'0a'), which the reference concatenates as the
+/// Buffer's UTF-8 — a BLOB's bytes decoded; `None` for NULL.
+fn separator_text(v: SqlValue) -> Option<String> {
+    match v {
+        SqlValue::Text(s) => Some(s),
+        SqlValue::Blob(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+        SqlValue::Null => None,
+        SqlValue::Integer(i) => Some(i.to_string()),
+        SqlValue::Real(f) => Some(f.to_string()),
+    }
 }
 
 /// A live block's raw source bytes — its own row's `raw` (17.0, D10; through

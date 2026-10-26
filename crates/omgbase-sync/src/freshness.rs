@@ -8,12 +8,16 @@ use std::path::Path;
 use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
 use omgbase_store::Store;
-use rusqlite::params;
+use omgbase_store::legacy_bytes::{
+    UnreproducibleDoc, legacy_bytes_active, refresh_legacy_bytes_alert, unreproducible_docs,
+};
+use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
 use crate::checkpoint::{BatchResult, process_checkpoint};
 use crate::error::Result;
 use crate::fs::{FileStat, FileSystem};
+use crate::legacy_bytes::{LegacyRepairOutcome, repair_legacy_bytes};
 
 /// A `file_stats` row.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,8 +181,12 @@ pub struct SweepResult {
     pub scanned: usize,
     /// Stat-mismatched (or new) files hashed.
     pub candidates: usize,
-    /// `ingested`, `deleted`, `conflicted` or `failed` non-empty.
+    /// `ingested`, `deleted`, `conflicted`, `failed` or `repaired` non-empty.
     pub changed: bool,
+    /// Step 5 (`spec/sync` §4.3, 4.4; `spec/store` §5.11): the legacy
+    /// documents whose separator bytes this sweep repaired from their files
+    /// — only while the repository's `legacy_bytes` alert is active.
+    pub repaired: Vec<String>,
 }
 
 impl SweepResult {
@@ -189,6 +197,7 @@ impl SweepResult {
         v["scanned"] = Value::from(self.scanned);
         v["candidates"] = Value::from(self.candidates);
         v["changed"] = Value::from(self.changed);
+        v["repaired"] = Value::from(self.repaired.clone());
         v
     }
 }
@@ -199,7 +208,9 @@ impl SweepResult {
 /// so the walk below sees them as echoes rather than stale files; then plan
 /// over the cache and the snapshot, refresh touched-not-edited stats,
 /// batch `changed ++ deletions` at `ts` (the status row, 4.0), refresh the
-/// cache for the changed paths and drop the deletions' rows.
+/// cache for the changed paths and drop the deletions' rows; then step 5
+/// (4.4): while the repository's `legacy_bytes` alert is active, repair the
+/// legacy documents from their files ([`repair_legacy`]).
 pub fn freshness_sweep(
     store: &mut Store,
     repo_id: &str,
@@ -240,17 +251,76 @@ pub fn freshness_sweep(
             params![repo_id, path],
         )?;
     }
+    // Step 5 (4.4; `spec/store` §5.11 — qualification finding F1): while the
+    // repository's `legacy_bytes` alert is active, re-derive the documents
+    // whose rows do not reproduce their `file_hash` (a changed candidate above
+    // was re-ingested from its file and reproduces now) and repair, from the
+    // file, every one whose file is present and hashes to `file_hash` — the
+    // bytes the store already agrees with; a missing or diverged file leaves
+    // its document listed. Then the alert follows the remainder: cleared when
+    // none is left.
+    let repaired = if legacy_bytes_active(store.conn(), repo_id)? {
+        repair_legacy(store, repo_id, fs, root, ts)?
+    } else {
+        Vec::new()
+    };
     let changed = !batch.ingested.is_empty()
         || !batch.deleted.is_empty()
         || !batch.conflicted.is_empty()
-        || !batch.failed.is_empty();
+        || !batch.failed.is_empty()
+        || !repaired.is_empty();
     Ok(SweepResult {
         materialized,
         batch,
         scanned: disk.len(),
         candidates: plan.candidates.len(),
         changed,
+        repaired,
     })
+}
+
+/// `spec/sync` §4.3 step 5: the repair pass over the alert's documents;
+/// returns the repaired paths in path order.
+fn repair_legacy(
+    store: &Store,
+    repo_id: &str,
+    fs: &dyn FileSystem,
+    root: &Path,
+    ts: &str,
+) -> Result<Vec<String>> {
+    let listed = unreproducible_docs(store.conn(), repo_id)?;
+    let mut repaired = Vec::new();
+    let mut remaining: Vec<UnreproducibleDoc> = Vec::new();
+    for d in listed {
+        let bytes = fs.read(root, &d.path)?;
+        let want: Option<Vec<u8>> = store
+            .conn()
+            .query_row(
+                "SELECT file_hash FROM docs WHERE doc_id = ?1",
+                params![d.doc_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let agrees = match (&bytes, &want) {
+            (Some(b), Some(w)) => sha256(b.as_bytes())[..] == w[..],
+            _ => false,
+        };
+        if agrees
+            && repair_legacy_bytes(
+                store,
+                &d.doc_id,
+                &d.path,
+                bytes.as_deref().unwrap_or_default(),
+            )? == LegacyRepairOutcome::Repaired
+        {
+            repaired.push(d.path);
+        } else {
+            remaining.push(d);
+        }
+    }
+    refresh_legacy_bytes_alert(store.conn(), repo_id, ts, Some(remaining))?;
+    Ok(repaired)
 }
 
 /// §4.3 step 0 (store 14.0): [`Store::materialize_pending_at`] through the
