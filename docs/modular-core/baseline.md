@@ -1204,7 +1204,8 @@ Workspace B's blocks all predate block-trivia storage (`trivia_hash` NULL throug
 lacked the newlines between blocks while the files and `file_hash` were right; the migration now names such documents
 (`legacy_bytes`) and the next `omg sync` repairs their trivia from the files with no new head (spec/store §5.11). Both
 copies: CAS stale-refused / fresh-accepted, recovery a no-op, FTS rows == live leaves, `doctor` ok, every composition's
-reads equal.
+reads equal; the Rust 0.29 binary (`--rust-bin`) opens each migrated copy with the same schema, a clean `doctor` and
+reads byte-identical to the TypeScript engine's, while the 0.27.3 binary refuses it.
 
 The four compositions, each clone VACUUMed after its maintenance (`history disable` + `history purge`, `embed disable`
 — which keeps the vectors by design; `embed drain --prune` is the only vector drop):
