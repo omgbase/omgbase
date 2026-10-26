@@ -164,6 +164,79 @@ impl From<omgbase_store::Error> for SurfaceError {
                     Value::Object(data),
                 )
             }
+            // `spec/surface` §3's decision table (6.2, store 17.2 Phase 4b):
+            // a token minted while capture was off — `{ history,
+            // outside_coverage, rev, coverage_from, fix? }`, not retriable.
+            e @ omgbase_store::Error::HistoryOutsideCoverage { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::HistoryOutsideCoverage {
+                    rev,
+                    coverage_from,
+                    fix,
+                } = e
+                else {
+                    unreachable!("matched above");
+                };
+                let mut data = Map::new();
+                data.insert("capability".to_owned(), json!("history"));
+                data.insert("state".to_owned(), json!("outside_coverage"));
+                data.insert("rev".to_owned(), Value::String(rev));
+                data.insert("coverage_from".to_owned(), Value::String(coverage_from));
+                if let Some(f) = fix {
+                    data.insert("fix".to_owned(), Value::String(f));
+                }
+                Self::with_data("capability_unavailable", message, Value::Object(data))
+            }
+            // … a token minted inside coverage whose row `history purge`
+            // removed — `{ history, pruned, rev, fix? }`, not retriable.
+            e @ omgbase_store::Error::HistoryPruned { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::HistoryPruned { rev, fix } = e else {
+                    unreachable!("matched above");
+                };
+                let mut data = Map::new();
+                data.insert("capability".to_owned(), json!("history"));
+                data.insert("state".to_owned(), json!("pruned"));
+                data.insert("rev".to_owned(), Value::String(rev));
+                if let Some(f) = fix {
+                    data.insert("fix".to_owned(), Value::String(f));
+                }
+                Self::with_data("capability_unavailable", message, Value::Object(data))
+            }
+            // … a token nobody minted here, or another document's —
+            // `target_missing { doc?, rev }` (the 4a answer, kept).
+            e @ omgbase_store::Error::TargetMissingRevision { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::TargetMissingRevision { rev, doc } = e else {
+                    unreachable!("matched above");
+                };
+                let mut data = Map::new();
+                if let Some(d) = doc {
+                    data.insert("doc".to_owned(), Value::String(d));
+                }
+                data.insert("rev".to_owned(), Value::String(rev));
+                Self::with_data("target_missing", message, Value::Object(data))
+            }
+            // `spec/store` §5.10 (Phase 4b): the semantic row switched off by
+            // `omg embed disable` with a provider configured —
+            // `capability_unavailable { semantic, disabled, fix: "omg embed
+            // enable" }`, not retriable, the message pinned.
+            omgbase_store::Error::SemanticSwitchedOff => Self::with_data(
+                "capability_unavailable",
+                omgbase_store::SEMANTIC_SWITCHED_OFF_MESSAGE,
+                json!({
+                    "capability": "semantic",
+                    "state": "disabled",
+                    "fix": omgbase_store::SEMANTIC_SWITCHED_OFF_FIX,
+                }),
+            ),
+            // `embed enable` with no provider configured (§5.10): nothing to
+            // enable — `provider_unavailable` with the pinned message (the CLI
+            // renders it as a usage error naming `--provider`).
+            omgbase_store::Error::SemanticProviderMissing => Self::new(
+                "provider_unavailable",
+                omgbase_store::SEMANTIC_PROVIDER_MISSING_MESSAGE,
+            ),
             // `spec/store` §5.4 step 15 (resolution 18; Phase 4a): the recorder
             // failed, the write was rolled back and is retried —
             // `capture_failed { path?, reason }`, retriable.

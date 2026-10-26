@@ -1,9 +1,10 @@
-//! `history <enable|disable|plan|export|attach|detach|list>` (`spec/cli` §6
-//! `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1 Phase 4a): the
-//! operator surface of history CAPTURE (`spec/store` §5.9: `enable` turns the
-//! repository's capture on with a baseline commit and opens a coverage
-//! interval, `disable` closes it — the rows stay, reads of what was captured
-//! keep working) and of history RETENTION (`spec/store` §7.1, 15.0: `plan`
+//! `history <enable|disable|purge|plan|export|attach|detach|list>` (`spec/cli`
+//! §6 `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1 Phase 4a;
+//! `purge` cli 5.2 — store 17.2 Phase 4b): the operator surface of history
+//! CAPTURE (`spec/store` §5.9: `enable` turns the repository's capture on with
+//! a baseline commit and opens a coverage interval, `disable` closes it — the
+//! rows stay, reads of what was captured keep working; §7.6: `purge` removes
+//! the rows) and of history RETENTION (`spec/store` §7.1, 15.0: `plan`
 //! evaluates the policy and prints what would move; `export` writes one
 //! archive segment and with `--prune` squashes the store; `attach` / `detach`
 //! / `list` manage the segment registry). No MCP tool: the catalog's traces
@@ -15,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 use omgbase_store::{
     ARCHIVE_DIR, ArchiveListing, CoverageInterval, Error as StoreError, ExportOptions,
-    ExportResult, HistoryLifecycleResult, RetentionOptions, RetentionPlan, RetentionPolicy,
-    SegmentInfo, human_bytes, open_coverage_from,
+    ExportResult, HistoryLifecycleResult, HistoryPurgeResult, RetentionOptions, RetentionPlan,
+    RetentionPolicy, SegmentInfo, human_bytes, open_coverage_from,
 };
 use omgbase_sync::with_writer_lock;
 use serde_json::{Value as Json, json};
@@ -30,8 +31,8 @@ use crate::cli::seams::canonical_instant;
 
 use super::machine_out;
 
-const SUBCOMMANDS: [&str; 7] = [
-    "enable", "disable", "plan", "export", "attach", "detach", "list",
+const SUBCOMMANDS: [&str; 8] = [
+    "enable", "disable", "purge", "plan", "export", "attach", "detach", "list",
 ];
 
 pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -55,6 +56,7 @@ pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
     match sub {
         "enable" => enable(cli, rest),
         "disable" => disable(cli, rest),
+        "purge" => purge(cli, rest),
         "plan" => plan(cli, rest),
         "export" => export(cli, rest),
         "attach" => attach(cli, rest),
@@ -204,6 +206,63 @@ fn disable(cli: &mut Cli, args: &[String]) -> Result<i32> {
             .map_err(omgbase_sync::Error::from)
     })?;
     render_lifecycle(cli, "disable", &result)
+}
+
+/// `history purge [--before <ts>]` (`spec/store` §7.6, Phase 4b): the receipt
+/// `{ purged: { <table>: n }, claims_released, coverage, tables_dropped }`
+/// under `--json`; human one stderr line — `  purged <c> commit(s), <r>
+/// revision(s), <d> disposition(s), <b> block change(s), <e> edge
+/// transition(s), <s> segment(s); swept <x> blob(s), <y> tree node(s);
+/// released <n> id claim(s)` — then `  history tables dropped` when the
+/// bundle left, or `  nothing to purge` when every count is zero. Coverage
+/// is untouched (it records when capture was on; a purged token reads
+/// `pruned`).
+fn render_purge(cli: &mut Cli, r: &HistoryPurgeResult) -> Result<i32> {
+    let doc = r.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let style = cli.style;
+    let p = &r.purged;
+    if p.total() + r.claims_released == 0 && !r.tables_dropped {
+        cli.io.err(&style.dim("  nothing to purge"));
+        return Ok(EXIT_OK);
+    }
+    cli.io.err(&style.dim(&format!(
+        "  purged {}, {}, {}, {}, {}, {}; swept {}, {}; released {}",
+        plural_s(p.commits, "commit"),
+        plural_s(p.revisions, "revision"),
+        plural_s(p.dispositions, "disposition"),
+        plural_s(p.block_changes, "block change"),
+        plural_s(p.edge_transitions, "edge transition"),
+        plural_s(p.archives, "segment"),
+        plural_s(p.blobs, "blob"),
+        plural_s(p.tree_nodes, "tree node"),
+        plural_s(r.claims_released, "id claim"),
+    )));
+    if r.tables_dropped {
+        cli.io.err(&style.dim("  history tables dropped"));
+    }
+    Ok(EXIT_OK)
+}
+
+/// `history purge [--before <ts>]`: a write under the workspace writer lock.
+fn purge(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[Opt::value("before")])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let before = parse_before(a.value("before"))?;
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    let result = with_writer_lock(&ws.omgbase_dir, lock, || {
+        store
+            .purge_history(&repo.repo_id, before.as_deref())
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    render_purge(cli, &result)
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {

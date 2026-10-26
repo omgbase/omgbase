@@ -195,6 +195,64 @@ pub struct GcResult {
     pub feed_pruned: usize,
 }
 
+/// What `history purge` removed, per history table (`spec/store` §7.6 — the
+/// receipt's `purged`, 17.2 Phase 4b), in the order the receipt lists them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PurgedCounts {
+    pub commits: usize,
+    pub revisions: usize,
+    pub blobs: usize,
+    pub tree_nodes: usize,
+    pub dispositions: usize,
+    pub block_changes: usize,
+    pub edge_transitions: usize,
+    pub archives: usize,
+}
+
+impl PurgedCounts {
+    /// `{ commits, revisions, blobs, tree_nodes, dispositions, block_changes,
+    /// edge_transitions, archives }`, in that key order (both engines).
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        let mut m = serde_json::Map::new();
+        m.insert("commits".to_owned(), Json::from(self.commits));
+        m.insert("revisions".to_owned(), Json::from(self.revisions));
+        m.insert("blobs".to_owned(), Json::from(self.blobs));
+        m.insert("tree_nodes".to_owned(), Json::from(self.tree_nodes));
+        m.insert("dispositions".to_owned(), Json::from(self.dispositions));
+        m.insert("block_changes".to_owned(), Json::from(self.block_changes));
+        m.insert(
+            "edge_transitions".to_owned(),
+            Json::from(self.edge_transitions),
+        );
+        m.insert("archives".to_owned(), Json::from(self.archives));
+        Json::Object(m)
+    }
+
+    /// Every count summed.
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.commits
+            + self.revisions
+            + self.blobs
+            + self.tree_nodes
+            + self.dispositions
+            + self.block_changes
+            + self.edge_transitions
+            + self.archives
+    }
+}
+
+/// [`HistoryRecorder::purge`]'s outcome (`spec/store` §7.6): the rows removed
+/// per table, the recorder's holds released (claims left with no holder
+/// deleted), whether the bundle's tables were dropped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HistoryPurgeOutcome {
+    pub purged: PurgedCounts,
+    pub claims_released: usize,
+    pub tables_dropped: bool,
+}
+
 /// The history figures of the size report (`spec/store` §7 "Size", 14.2 and
 /// 15.0): the `same` rows, the archived history, the retention plans' totals.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -323,6 +381,29 @@ pub trait HistoryRecorder {
     /// opened at it). Returns the revisions written. Runs in the caller's
     /// transaction.
     fn baseline(&self, tx: &Connection, commit: &CommitRecord<'_>) -> Result<usize>;
+
+    /// `history purge`'s recorder half (`spec/store` §7.6, 17.2 Phase 4b):
+    /// the repository's history rows — every commit, or those with `ts <
+    /// before` — removed except, while `protect_heads` (the core's word that
+    /// capture is on for the repository), a live head's revision and its
+    /// commit; the retained revisions whose base went re-checkpointed first;
+    /// the interval record trimmed to the cut (a transition closed before it
+    /// goes, one open across it is re-anchored at the earliest retained
+    /// commit); the segments nothing names detached; the unreachable bodies
+    /// swept; then the recorder's hold released on every claim no history row
+    /// names (a claim with no holder deleted — while `protect_heads` the live
+    /// set keeps its hold, as a baseline would leave it); then, when
+    /// `drop_if_empty` (the core's word that no repository is enabled) and
+    /// every history table is empty, the bundle's tables dropped. Runs in the
+    /// caller's transaction; the manifest is the core's.
+    fn purge(
+        &self,
+        tx: &Connection,
+        repo_id: &str,
+        before: Option<&str>,
+        drop_if_empty: bool,
+        protect_heads: bool,
+    ) -> Result<HistoryPurgeOutcome>;
 
     // ---- the projection, the mark and the sweep -------------------------------------
 

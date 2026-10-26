@@ -381,8 +381,23 @@ fn core_only() -> bool {
 /// script; what `sync_status.capabilities.coverage_from` reads on the wire.
 const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
 
-/// `spec/store` §9.4 (Phase 4a): the lifecycle steps a reads script may carry.
-const LIFECYCLE_STEP_KINDS: [&str; 3] = ["history_enable", "history_disable", "recorder_fault"];
+/// `spec/store` §9.4 (Phase 4a/4b): the lifecycle steps a reads script may carry.
+const LIFECYCLE_STEP_KINDS: [&str; 4] = [
+    "history_enable",
+    "history_disable",
+    "history_purge",
+    "recorder_fault",
+];
+
+/// README §6 (6.2 — `spec/store` §5.10, Phase 4b): the surface's own `embed`
+/// lifecycle devices: `embed_enable { ts, provider? }` sets
+/// `embedding.provider` at the workspace layer when given (directly, as the
+/// fixture's device — no settings-write refresh) then runs `embed enable` at
+/// `ts`; `embed_disable { ts }` runs `embed disable`. Outcome `{ semantic: {
+/// state, coverage, provider, changed } }` or `{ error: "provider_unavailable",
+/// message }` for an enable with no provider. Need the semantic module:
+/// skipped on the core-only run.
+const EMBED_STEP_KINDS: [&str; 2] = ["embed_enable", "embed_disable"];
 
 /// The history capability's `version`/`sync_status` answer on the core-only
 /// composition (Phase 4a): no module, so `unavailable`; a repository it
@@ -984,11 +999,77 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
                         .map_err(|e| format!("step {i}: {e}"))?;
                     json!({ "history": r.to_json() })
                 }
+                // `spec/store` §9.4 (Phase 4b; §7.6): `history purge [--before]` → the receipt.
+                "history_purge" => {
+                    let ts = body["ts"].as_str().ok_or("history_purge.ts")?;
+                    *clock.borrow_mut() = ts.to_owned();
+                    let before = body.get("before").and_then(Json::as_str);
+                    let r = surface
+                        .store_mut()
+                        .purge_history(&repo_id, before)
+                        .map_err(|e| format!("step {i}: {e}"))?;
+                    json!({ "purge": r.to_json() })
+                }
                 _ => {
                     return Err(format!(
                         "step {i}: the recorder fault device (spec/store §9.4) is the store runner's"
                     ));
                 }
+            };
+            steps.push(out);
+        } else if let Some(kind) = EMBED_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
+            let body = &step[*kind];
+            let ts = body["ts"].as_str().ok_or("embed step ts")?;
+            *clock.borrow_mut() = ts.to_owned();
+            let store = surface.store_mut();
+            let outcome = |r: omgbase_store::SemanticLifecycleResult| -> Result<Json, String> {
+                let provider = omgbase_store::semantic_provider_of(store.conn(), &repo_id)
+                    .map_err(|e| e.to_string())?;
+                Ok(json!({ "semantic": r.to_json(provider.as_deref()) }))
+            };
+            let out = if *kind == "embed_enable" {
+                if let Some(provider) = body.get("provider").and_then(Json::as_str) {
+                    // The device writes the workspace layer directly: a settings
+                    // write would refresh the row at the wall clock.
+                    let current: Option<String> =
+                        rusqlite::OptionalExtension::optional(store.conn().query_row(
+                            "SELECT settings FROM workspace_settings WHERE id = 0",
+                            [],
+                            |r| r.get::<_, String>(0),
+                        ))
+                        .map_err(|e| e.to_string())?;
+                    let mut settings = current
+                        .and_then(|t| serde_json::from_str::<Json>(&t).ok())
+                        .and_then(|v| v.as_object().cloned())
+                        .unwrap_or_default();
+                    let mut embedding = settings
+                        .get("embedding")
+                        .and_then(Json::as_object)
+                        .cloned()
+                        .unwrap_or_default();
+                    embedding.insert("provider".to_owned(), json!(provider));
+                    settings.insert("embedding".to_owned(), Json::Object(embedding));
+                    store
+                        .conn()
+                        .execute(
+                            "INSERT INTO workspace_settings (id, settings) VALUES (0, ?1) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings",
+                            [Json::Object(settings).to_string()],
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+                match store.enable_semantic(&repo_id, ts) {
+                    Ok(r) => outcome(r)?,
+                    Err(e @ omgbase_store::Error::SemanticProviderMissing) => {
+                        json!({ "error": "provider_unavailable", "message": e.to_string() })
+                    }
+                    Err(e) => return Err(format!("step {i}: {e}")),
+                }
+            } else {
+                outcome(
+                    store
+                        .disable_semantic(&repo_id, ts)
+                        .map_err(|e| format!("step {i}: {e}"))?,
+                )?
             };
             steps.push(out);
         } else if let Some(observe) = step.get("observe") {
@@ -1104,7 +1185,7 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             } }));
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at, history_enable, history_disable"
+                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at, history_enable, history_disable, history_purge, embed_enable, embed_disable"
             ));
         }
     }
@@ -1283,6 +1364,7 @@ fn check(c: &SpecCase, suite: &SuiteState<'_>) -> Result<(), String> {
                     HISTORY_STEP_KINDS
                         .iter()
                         .chain(LIFECYCLE_STEP_KINDS.iter())
+                        .chain(EMBED_STEP_KINDS.iter())
                         .any(|k| s.get(*k).is_some())
                 })
             {

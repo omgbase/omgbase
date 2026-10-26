@@ -1230,7 +1230,10 @@ fn run_parsed(
     // query whose root is `revisions` on a repository whose history is not
     // `enabled` carries a capability note first — the root lists what was
     // captured, never an error.
-    if root_target(&raw.source) == Some(Target::Revisions)
+    // Phase 4b (the contracts' §2.2): the same note when the scope chain
+    // reaches the rows through the `_revisions` relation (`docs { _revisions
+    // { … } }`, `^revisions`, `_doc._revisions`).
+    if (root_target(&raw.source) == Some(Target::Revisions) || reaches_revisions(raw))
         && let Some(note) = revisions_hint(engine.store, engine.repo_id)
     {
         hints.insert(0, note.to_owned());
@@ -1239,6 +1242,20 @@ fn run_parsed(
     // `hints` is the last member, present only when there is something to say.
     result.hints = hints;
     Ok(result)
+}
+
+/// Does the query read `revisions` rows through a relation or scope
+/// reference — a name path with a `_revisions` segment, or a `^revisions`
+/// scope (`spec/surface` §1.5, Phase 4b)? Judged over the raw tree's
+/// references, as the unknown-name check is.
+#[must_use]
+pub fn reaches_revisions(raw: &Query) -> bool {
+    oqx::references(raw).iter().any(|r| {
+        r.name.split('.').any(|seg| seg == "_revisions")
+            || (r.name == "revisions" && r.scope.steps.is_empty())
+            || (!r.scope.steps.is_empty()
+                && crate::names::kind_of_scope(&r.scope.steps) == Some(Target::Revisions))
+    })
 }
 
 /// The `revisions` root's capability note (`spec/surface` §1.5, byte for byte

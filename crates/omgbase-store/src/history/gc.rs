@@ -14,8 +14,11 @@ use omgbase_format::hash::hex;
 use rusqlite::{Connection, OptionalExtension, params};
 
 pub use crate::core::capabilities::GcResult;
+use crate::core::capabilities::PurgedCounts;
+use crate::core::claims::HOLDER_RECORDER;
 use crate::core::codec::from_hex;
 use crate::error::Result;
+use crate::history::archive::checkpoint_dependents;
 use crate::history::delta::{explicit_entries, parse_node_text};
 
 /// §7 rebuild: `block_changes` is a pure projection of `dispositions` across
@@ -215,4 +218,229 @@ pub fn run_gc_in(tx: &Connection) -> Result<GcResult> {
         claims_released: 0,
         feed_pruned: 0,
     })
+}
+
+// ---- `history purge` (`spec/store` §7.6, 17.2 Phase 4b; phase-1-contracts §1.14, D2 step two) ----
+
+/// The history bundle's tables, in the order the purge counts and the drop
+/// removes them.
+pub const HISTORY_TABLES: [&str; 8] = [
+    "commits",
+    "revisions",
+    "blobs",
+    "tree_nodes",
+    "dispositions",
+    "block_changes",
+    "edge_transitions",
+    "archives",
+];
+
+/// The temporary table the purge collects its victims in (one transaction;
+/// dropped at the end): a list of commit ids a `WHERE commit_id IN (SELECT …)`
+/// reads, so a purge of any size stays under SQLite's bound-parameter limit.
+const VICTIMS: &str = "temp.omg_purge_victims";
+
+/// The recorder's half of `history purge` (`spec/store` §7.6): remove the
+/// repository's history rows — every commit (`before` `None`) or every commit
+/// with `ts < before` — EXCEPT, while `protect_heads` (capture is on), the
+/// commit a live document's head revision belongs to (the head's row is never
+/// purged: H1 holds and `docs_history` keeps the head retained, so an enabled
+/// repository can trim its past without losing its present; a disabled one
+/// owes nothing and purges all). In one order, inside the caller's
+/// transaction: (1) the retained revisions whose base is purged are re-written
+/// in checkpoint form while the base is still readable
+/// ([`checkpoint_dependents`], the squash's rule); (2) the purged commits'
+/// `revisions`, `dispositions` and `block_changes` rows go; (3)
+/// `edge_transitions`: a row whose `to_commit` is purged goes (an interval
+/// that closed before the cut), a row whose `from_commit` is purged but which
+/// is open or closes after the cut is RE-ANCHORED at the earliest retained
+/// commit of the repository (the interval was already open at the cut — what
+/// `history enable`'s baseline does for an edge it finds open), and every row
+/// goes when no commit remains; (4) the `commits` rows go; (5) an `archives`
+/// row no revision names any more goes (the segment is detached, its file
+/// untouched); (6) the unreachable bodies are swept
+/// ([`sweep_unreachable`]). Returns the rows removed per table.
+pub fn purge_history_rows(
+    conn: &Connection,
+    repo_id: &str,
+    before: Option<&str>,
+    protect_heads: bool,
+) -> Result<PurgedCounts> {
+    let mut purged = PurgedCounts::default();
+    let candidates: Vec<String> = match before {
+        None => {
+            let mut stmt =
+                conn.prepare("SELECT commit_id FROM commits WHERE repo_id = ?1 ORDER BY ts, seq")?;
+            let it = stmt.query_map(params![repo_id], |r| r.get(0))?;
+            it.collect::<std::result::Result<_, _>>()?
+        }
+        Some(before) => {
+            let mut stmt = conn.prepare(
+                "SELECT commit_id FROM commits WHERE repo_id = ?1 AND ts < ?2 ORDER BY ts, seq",
+            )?;
+            let it = stmt.query_map(params![repo_id, before], |r| r.get(0))?;
+            it.collect::<std::result::Result<_, _>>()?
+        }
+    };
+    // While capture is on, the live heads' commits stay (their revision is the
+    // present, not the past — H1 holds); a disabled repository owes nothing.
+    let protected: HashSet<String> = if protect_heads {
+        let mut stmt = conn.prepare(
+            "SELECT r.commit_id FROM revisions r JOIN docs d ON d.doc_id = r.doc_id AND d.head = r.rev_id WHERE d.repo_id = ?1 AND d.deleted_at IS NULL",
+        )?;
+        let it = stmt.query_map(params![repo_id], |r| r.get::<_, String>(0))?;
+        it.collect::<std::result::Result<_, _>>()?
+    } else {
+        HashSet::new()
+    };
+    let victims: Vec<&String> = candidates
+        .iter()
+        .filter(|c| !protected.contains(c.as_str()))
+        .collect();
+    if victims.is_empty() {
+        return Ok(purged);
+    }
+    conn.execute_batch(&format!(
+        "DROP TABLE IF EXISTS {VICTIMS}; CREATE TEMP TABLE omg_purge_victims (commit_id TEXT PRIMARY KEY);"
+    ))?;
+    {
+        let mut ins =
+            conn.prepare_cached(&format!("INSERT INTO {VICTIMS} (commit_id) VALUES (?1)"))?;
+        for v in &victims {
+            ins.execute(params![v])?;
+        }
+    }
+    let in_victims = format!("IN (SELECT commit_id FROM {VICTIMS})");
+
+    // (1) Re-checkpoint the survivors whose base goes.
+    let purged_revs: HashSet<String> = {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT rev_id FROM revisions WHERE commit_id {in_victims}"
+        ))?;
+        let it = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        it.collect::<std::result::Result<_, _>>()?
+    };
+    checkpoint_dependents(conn, &purged_revs)?;
+
+    // (2) The purged commits' revisions and evidence.
+    purged.revisions = conn.execute(
+        &format!("DELETE FROM revisions WHERE commit_id {in_victims}"),
+        [],
+    )?;
+    purged.dispositions = conn.execute(
+        &format!("DELETE FROM dispositions WHERE commit_id {in_victims}"),
+        [],
+    )?;
+    purged.block_changes = conn.execute(
+        &format!("DELETE FROM block_changes WHERE commit_id {in_victims}"),
+        [],
+    )?;
+
+    // (3) The interval record, trimmed to the cut.
+    let anchor: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT commit_id FROM commits WHERE repo_id = ?1 AND commit_id NOT {in_victims} ORDER BY ts, seq LIMIT 1"
+            ),
+            params![repo_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match anchor {
+        Some(anchor) => {
+            purged.edge_transitions = conn.execute(
+                &format!(
+                    "DELETE FROM edge_transitions WHERE repo_id = ?1 AND to_commit {in_victims}"
+                ),
+                params![repo_id],
+            )?;
+            conn.execute(
+                &format!(
+                    "UPDATE edge_transitions SET from_commit = ?1 WHERE repo_id = ?2 AND from_commit {in_victims}"
+                ),
+                params![anchor, repo_id],
+            )?;
+        }
+        None => {
+            purged.edge_transitions = conn.execute(
+                "DELETE FROM edge_transitions WHERE repo_id = ?1",
+                params![repo_id],
+            )?;
+        }
+    }
+
+    // (4) The commits; (5) the segments nothing names; (6) the bodies.
+    purged.commits = conn.execute(
+        &format!("DELETE FROM commits WHERE commit_id {in_victims}"),
+        [],
+    )?;
+    purged.archives = conn.execute(
+        "DELETE FROM archives WHERE repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.archive = archives.segment_id)",
+        params![repo_id],
+    )?;
+    conn.execute_batch(&format!("DROP TABLE IF EXISTS {VICTIMS};"))?;
+    let (blobs, tree_nodes) = sweep_unreachable(conn)?;
+    purged.blobs = blobs;
+    purged.tree_nodes = tree_nodes;
+    Ok(purged)
+}
+
+/// Release the recorder's hold (bit 1) on every claim of the repository that
+/// no history row names any more (`spec/store` §7.6 step 7):
+/// `revisions.rev_id`/`doc_id`, `block_changes.block_id`,
+/// `dispositions.block_id`, `edge_transitions.edge_id`, `commits.commit_id`.
+/// While capture is on (`keep_live`) the hold also SURVIVES on every id a
+/// live core row names — a live document, its head, a live block, an open
+/// edge — exactly the set a baseline holds (§5.9), so I7/H6 keep holding
+/// after a trim; with capture off every unreferenced hold goes. A claim left
+/// with no holder is deleted. Returns the holds released. Runs in the
+/// caller's transaction; the core's hold (bit 0) is never touched here (§7.3).
+pub fn release_recorder_holds(conn: &Connection, repo_id: &str, keep_live: bool) -> Result<usize> {
+    let live = if keep_live {
+        "AND NOT EXISTS (SELECT 1 FROM docs WHERE repo_id = ?1 AND deleted_at IS NULL AND (doc_id = id_claims.id OR head = id_claims.id))
+         AND NOT EXISTS (SELECT 1 FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND d.deleted_at IS NULL AND b.deleted_at IS NULL AND b.block_id = id_claims.id)
+         AND NOT EXISTS (SELECT 1 FROM edges WHERE repo_id = ?1 AND edge_id = id_claims.id)"
+    } else {
+        ""
+    };
+    let released = conn.execute(
+        &format!(
+            "UPDATE id_claims SET holders = holders & ~{HOLDER_RECORDER}
+             WHERE repo_id = ?1 AND (holders & {HOLDER_RECORDER}) != 0
+               AND NOT EXISTS (SELECT 1 FROM revisions WHERE rev_id = id_claims.id OR doc_id = id_claims.id)
+               AND NOT EXISTS (SELECT 1 FROM block_changes WHERE block_id = id_claims.id)
+               AND NOT EXISTS (SELECT 1 FROM dispositions WHERE block_id = id_claims.id)
+               AND NOT EXISTS (SELECT 1 FROM edge_transitions WHERE edge_id = id_claims.id)
+               AND NOT EXISTS (SELECT 1 FROM commits WHERE commit_id = id_claims.id)
+               {live}"
+        ),
+        params![repo_id],
+    )?;
+    if released > 0 {
+        conn.execute("DELETE FROM id_claims WHERE holders = 0", [])?;
+    }
+    Ok(released)
+}
+
+/// Is every history table empty (the drop's precondition, `spec/store` §7.6)?
+pub fn history_tables_empty(conn: &Connection) -> Result<bool> {
+    for t in HISTORY_TABLES {
+        let any = conn
+            .query_row(&format!("SELECT 1 FROM {t} LIMIT 1"), [], |_| Ok(()))
+            .optional()?;
+        if any.is_some() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Drop the history bundle's tables (`spec/store` §7.6: only when no
+/// repository is enabled and every table is empty — the caller decides).
+/// Indexes go with their tables.
+pub fn drop_history_bundle(conn: &Connection) -> Result<()> {
+    for t in HISTORY_TABLES {
+        conn.execute_batch(&format!("DROP TABLE IF EXISTS {t};"))?;
+    }
+    Ok(())
 }

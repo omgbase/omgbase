@@ -318,10 +318,15 @@ pub fn resolve_doc_row(
 }
 
 /// §3 `docs_history`: `{ docs: [{ _id, _path, deleted, currentRev, versions }],
-/// truncated }` — each version a `revisions` row under the row's own names
-/// (§1.2, 5.0): `_rev _seq _commit _ts _origin _actor _hash _is_current
-/// _archived` (through 4.11 `rev seq commit updated_at origin actor hash
-/// isCurrent archived`).
+/// truncated, coverage }` — each version a `revisions` row under the row's
+/// own names (§1.2, 5.0): `_rev _seq _commit _ts _origin _actor _hash
+/// _is_current _archived` (through 4.11 `rev seq commit updated_at origin
+/// actor hash isCurrent archived`), plus `retained` (6.2, resolution 11): the
+/// current head is ALWAYS listed — `retained: false` with `_seq` null and the
+/// feed row's commit/ts/origin/actor when the recorder has no row for it
+/// (minted while capture was off, or purged); `coverage` the repository's
+/// history coverage intervals. Answers on a database without the bundle too
+/// (every head unretained). The reference's `docHistory`.
 pub fn docs_history(
     store: &Store,
     repo_id: &str,
@@ -373,31 +378,79 @@ pub fn docs_history(
     };
     let truncated = doc_rows.len() > limit;
     doc_rows.truncate(limit);
-    let mut rev_stmt = conn.prepare(
-        "SELECT r.rev_id, r.seq, r.commit_id, r.rendered_hash, c.ts, c.origin, c.actor, r.archive
-         FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
-         WHERE r.doc_id = ?1 ORDER BY r.seq ASC",
+    // The captured versions — the recorder's rows, when the bundle exists (a
+    // repository nothing was ever captured in has no history table; Phase 4b).
+    let bundle = omgbase_store::history_bundle_present(conn)?;
+    let mut rev_stmt = if bundle {
+        Some(conn.prepare(
+            "SELECT r.rev_id, r.seq, r.commit_id, r.rendered_hash, c.ts, c.origin, c.actor, r.archive
+             FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
+             WHERE r.doc_id = ?1 ORDER BY r.seq ASC",
+        )?)
+    } else {
+        None
+    };
+    // An unretained head's commit, from the feed row that minted it (the
+    // core's record; null once the feed pruned it).
+    let mut head_feed = conn.prepare(
+        "SELECT f.commit_id, f.ts, f.origin, f.actor FROM feed_entries e JOIN feed f ON f.repo_id = e.repo_id AND f.epoch = e.epoch AND f.seq = e.seq
+         WHERE e.head = ?1 ORDER BY e.rowid DESC LIMIT 1",
     )?;
+    let mut head_row = conn.prepare("SELECT file_hash, updated_at FROM docs WHERE doc_id = ?1")?;
     let mut docs = Vec::new();
     for (doc_id, path, head, deleted_at) in doc_rows {
-        let versions: Vec<Json> = rev_stmt
-            .query_map(params![doc_id], |r| {
-                let rev: String = r.get(0)?;
-                let hash: Vec<u8> = r.get(3)?;
-                Ok(json!({
-                    "_rev": rev,
-                    "_seq": r.get::<_, i64>(1)?,
-                    "_commit": r.get::<_, String>(2)?,
-                    "_ts": r.get::<_, String>(4)?,
-                    "_origin": r.get::<_, String>(5)?,
-                    "_actor": r.get::<_, Option<String>>(6)?,
-                    "_hash": hex(&hash),
-                    "_is_current": head.as_deref() == Some(rev.as_str()),
-                    // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
-                    "_archived": r.get::<_, Option<String>>(7)?.is_some(),
-                }))
-            })?
-            .collect::<std::result::Result<_, _>>()?;
+        let mut versions: Vec<Json> = match rev_stmt.as_mut() {
+            Some(stmt) => stmt
+                .query_map(params![doc_id], |r| {
+                    let rev: String = r.get(0)?;
+                    let hash: Vec<u8> = r.get(3)?;
+                    Ok(json!({
+                        "_rev": rev,
+                        "_seq": r.get::<_, i64>(1)?,
+                        "_commit": r.get::<_, String>(2)?,
+                        "_ts": r.get::<_, String>(4)?,
+                        "_origin": r.get::<_, String>(5)?,
+                        "_actor": r.get::<_, Option<String>>(6)?,
+                        "_hash": hex(&hash),
+                        "_is_current": head.as_deref() == Some(rev.as_str()),
+                        // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
+                        "_archived": r.get::<_, Option<String>>(7)?.is_some(),
+                        "retained": true,
+                    }))
+                })?
+                .collect::<std::result::Result<_, _>>()?,
+            None => Vec::new(),
+        };
+        // Resolution 11 (Phase 4b): the current head is ALWAYS listed —
+        // unretained when the recorder has no row for it (minted while
+        // capture was off, or purged), with what the core knows: the feed row
+        // that minted it, the document's `file_hash` and `updated_at`.
+        if let Some(h) = &head
+            && !versions
+                .iter()
+                .any(|v| v.get("_rev").and_then(Json::as_str) == Some(h.as_str()))
+        {
+            type FeedHead = (String, String, String, Option<String>);
+            let feed: Option<FeedHead> = head_feed
+                .query_row(params![h], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .optional()?;
+            let (file_hash, updated_at): (Vec<u8>, String) =
+                head_row.query_row(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            versions.push(json!({
+                "_rev": h,
+                "_seq": Json::Null,
+                "_commit": feed.as_ref().map(|f| f.0.clone()),
+                "_ts": feed.as_ref().map_or(updated_at, |f| f.1.clone()),
+                "_origin": feed.as_ref().map(|f| f.2.clone()),
+                "_actor": feed.as_ref().and_then(|f| f.3.clone()),
+                "_hash": hex(&file_hash),
+                "_is_current": true,
+                "_archived": false,
+                "retained": false,
+            }));
+        }
         let mut m = Map::new();
         m.insert("_id".to_owned(), json!(doc_id));
         m.insert("_path".to_owned(), json!(reference_path(&path)));
@@ -406,7 +459,13 @@ pub fn docs_history(
         m.insert("versions".to_owned(), Json::Array(versions));
         docs.push(Json::Object(m));
     }
-    Ok(json!({ "docs": docs, "truncated": truncated }))
+    let coverage: Vec<Json> = omgbase_store::read_capability(conn, repo_id, "history")?
+        .map(|r| r.coverage)
+        .unwrap_or_default()
+        .iter()
+        .map(|i| json!({ "from": i.from, "to": i.to }))
+        .collect();
+    Ok(json!({ "docs": docs, "truncated": truncated, "coverage": coverage }))
 }
 
 // spec/surface §3 `docs_diff_unified`. The expected strings below are copied

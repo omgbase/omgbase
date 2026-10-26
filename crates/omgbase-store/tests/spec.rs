@@ -94,7 +94,12 @@ const HISTORY_STEP_KINDS: [&str; 5] = [
 const DEST_TOKEN: &str = "<dest>";
 
 /// README §9.4 (17.1, Phase 4a): the lifecycle steps and the fault device.
-const LIFECYCLE_STEP_KINDS: [&str; 3] = ["history_enable", "history_disable", "recorder_fault"];
+const LIFECYCLE_STEP_KINDS: [&str; 4] = [
+    "history_enable",
+    "history_disable",
+    "history_purge",
+    "recorder_fault",
+];
 
 /// README §9.4 (17.1): the instant every fixture repository is born — the
 /// runner creates it under this clock, before any authored `ts`, so the
@@ -1185,6 +1190,17 @@ impl omgbase_store::HistoryRecorder for FaultyRecorder {
     ) -> omgbase_store::Result<usize> {
         self.inner.baseline(tx, commit)
     }
+    fn purge(
+        &self,
+        tx: &Connection,
+        repo_id: &str,
+        before: Option<&str>,
+        drop_if_empty: bool,
+        protect_heads: bool,
+    ) -> omgbase_store::Result<omgbase_store::HistoryPurgeOutcome> {
+        self.inner
+            .purge(tx, repo_id, before, drop_if_empty, protect_heads)
+    }
     fn rebuild_projection(&self, tx: &Connection) -> omgbase_store::Result<()> {
         self.inner.rebuild_projection(tx)
     }
@@ -1303,6 +1319,15 @@ fn run_lifecycle_step(
                 .map_err(|e| e.to_string())?;
             Ok(json!({ "history": r.to_json() }))
         }
+        // README §9.4 (Phase 4b; §7.6): `history purge [--before]` → the receipt.
+        "history_purge" => {
+            body["ts"].as_str().ok_or("history_purge.ts")?;
+            let before = body.get("before").and_then(Json::as_str);
+            let r = store
+                .purge_history(repo_id, before)
+                .map_err(|e| e.to_string())?;
+            Ok(json!({ "purge": r.to_json() }))
+        }
         _ => {
             let fail = body["fail"].as_bool().ok_or("recorder_fault.fail")?;
             Ok(json!({ "fault": set_recorder_fault(store, fail, fault) }))
@@ -1340,6 +1365,26 @@ fn validate_lifecycle_body(here: &str, kind: &str, body: &Json, problems: &mut V
                 problems.push(format!(
                     "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
                 ));
+            }
+        }
+        "history_purge" => {
+            if b.keys().any(|k| k != "ts" && k != "before") {
+                problems.push(format!(
+                    "{here}: history_purge takes `ts` and an optional `before`"
+                ));
+            } else {
+                if !b.get("ts").and_then(Json::as_str).is_some_and(is_spec_ts) {
+                    problems.push(format!(
+                        "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                    ));
+                }
+                if b.get("before")
+                    .is_some_and(|v| !v.as_str().is_some_and(is_spec_ts))
+                {
+                    problems.push(format!(
+                        "{here}: `before` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+                    ));
+                }
             }
         }
         _ => {
@@ -1463,7 +1508,7 @@ fn run_steps(
             steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at, history_enable, history_disable, recorder_fault"
+                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at, history_enable, history_disable, history_purge, recorder_fault"
             ));
         }
     }
@@ -2909,8 +2954,11 @@ fn check_invariants(
     }
     // H4: the recorder's `commits` agree with the feed on every retained seq
     // WITHIN COVERAGE (Phase 4a: a feed row written while capture was off has
-    // no log row), and every log row of the current epoch at or after the
-    // oldest retained row IS a feed row (the log is a subsequence of the feed).
+    // no log row) and AT OR AFTER THE LOG'S OLDEST ROW of the epoch (Phase 4b:
+    // a `history purge` trims the log's head — a feed row older than every
+    // retained commit owes none; a repository with no commit owes none), and
+    // every log row of the current epoch at or after the oldest retained feed
+    // row IS a feed row (the log is a subsequence of the feed).
     let commit_rows: Vec<(String, String, i64, String)> = if reader {
         all_rows(
             conn,
@@ -2926,10 +2974,11 @@ fn check_invariants(
         .filter(|c| c.1 == epoch)
         .map(|c| (c.2, c))
         .collect();
+    let oldest_log_seq = commit_by_seq.keys().copied().min().unwrap_or(i64::MAX);
     for r in &feed_by_seq {
         match commit_by_seq.get(&r.1) {
             None => {
-                if reader && in_coverage(&r.3) {
+                if reader && in_coverage(&r.3) && r.1 >= oldest_log_seq {
                     problems.push(format!(
                         "H4: feed row {} (seq {}) has no commits row",
                         r.2, r.1
@@ -3309,8 +3358,10 @@ fn check_invariants(
 
     // ---- I4 sequences (per epoch since 17.0: a re-mint restarts the seq) -----------------
     // `commits.seq` is strictly increasing in (ts, seq) order per epoch, and
-    // dense `1..n` when capture was never off (Phase 4a: a disabled interval
-    // leaves the feed's seqs of that span out of the log).
+    // dense from the oldest retained row when capture was never off (Phase 4a:
+    // a disabled interval leaves the feed's seqs of that span out of the log;
+    // Phase 4b: a purge trims the log's head, so the run starts where the log
+    // does).
     type EpochCommit = (String, i64, String);
     let commits_by_epoch: Vec<EpochCommit> = if reader {
         all_rows(
@@ -3331,10 +3382,11 @@ fn check_invariants(
     }
     for (ep, list) in &per_epoch {
         for (i, (commit_id, seq, _)) in list.iter().enumerate() {
-            if never_off && *seq != i as i64 + 1 {
+            if never_off && *seq != list[0].1 + i as i64 {
                 problems.push(format!(
-                    "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order of epoch {ep}",
-                    i + 1
+                    "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order of epoch {ep} (the log begins at seq {})",
+                    i + 1,
+                    list[0].1
                 ));
             }
             if i > 0 && *seq <= list[i - 1].1 {
@@ -3348,14 +3400,17 @@ fn check_invariants(
     for d in &docs {
         let mut revs: Vec<&Rev> = revisions.iter().filter(|r| r.doc_id == d.doc_id).collect();
         revs.sort_by_key(|r| r.seq);
+        // Per document the retained revisions' seqs are consecutive; they
+        // begin at 1 unless a purge trimmed the document's history (Phase 4b).
+        let first_seq = revs.first().map_or(1, |r| r.seq);
         for (i, r) in revs.iter().enumerate() {
-            if r.seq != i as i64 + 1 {
+            if r.seq != first_seq + i as i64 {
                 problems.push(format!(
                     "I4: revision {} of {} has seq {}, expected {}",
                     r.rev_id,
                     d.doc_id,
                     r.seq,
-                    i + 1
+                    first_seq + i as i64
                 ));
             }
         }

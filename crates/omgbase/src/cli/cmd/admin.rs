@@ -6,13 +6,15 @@
 
 use omgbase_search::{EmbeddingProvider, create_external_provider};
 use omgbase_store::{
-    LIVE_LEAF_SQL, ManifestState, RebuildTarget, SizeCapability, SizeReport, active_alerts,
-    format_share, human_bytes, open_coverage_from, read_capability,
+    Error as StoreError, LIVE_LEAF_SQL, ManifestState, RebuildTarget, SemanticLifecycleResult,
+    SizeCapability, SizeReport, active_alerts, format_share, human_bytes, open_coverage_from,
+    read_capability, semantic_provider_of,
 };
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings_at,
     write_workspace_settings_at,
 };
+use omgbase_sync::with_writer_lock;
 use serde_json::{Map, Value as Json, json};
 
 use crate::cli::argv::{Opt, parse_args};
@@ -735,7 +737,9 @@ fn embedder_failed(provider: &str, reason: &str) -> CliError {
     )
 }
 
-/// `embed [status]` · `embed drain [--verbose] [--prune]` — the embedding queue.
+/// `embed [status]` · `embed enable [--provider <p>]` · `embed disable` ·
+/// `embed drain [--verbose] [--prune]` — semantic indexing: its switch per
+/// repository (`spec/store` §5.10, Phase 4b) and the embedding queue.
 pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let sub = args
         .iter()
@@ -743,6 +747,10 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .map(String::as_str);
     if args.iter().any(|a| a == "--help" || a == "-h") || sub == Some("help") {
         return render_help_for(cli, "embed");
+    }
+    if let Some(verb @ ("enable" | "disable")) = sub {
+        let rest: Vec<String> = args.iter().filter(|a| *a != verb).cloned().collect();
+        return embed_lifecycle(cli, verb, &rest);
     }
     let prune = args.iter().any(|a| a == "--prune");
     cli.workspace()?;
@@ -752,6 +760,12 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let Some(cfg) = cli.discover_semantic()? else {
         return no_provider(cli);
     };
+    // `status`/`drain` are the explicit semantic verbs: a row switched off by
+    // `embed disable` while the provider stays configured refuses them
+    // (`spec/store` §5.10, Phase 4b) rather than reporting nothing.
+    if cli.store()?.semantic_switched_off(&repo.repo_id)? {
+        return Err(StoreError::SemanticSwitchedOff.into());
+    }
     let provider_name = cfg.provider.clone().unwrap_or_default();
     let provider: Box<dyn EmbeddingProvider> = match create_external_provider(&cfg) {
         Ok(Some(p)) => p,
@@ -920,6 +934,138 @@ pub fn embed(cli: &mut Cli, args: &[String]) -> Result<i32> {
             foreign.blocks, foreign.docs
         )));
     }
+    Ok(EXIT_OK)
+}
+
+/// A semantic coverage interval's `from..to` as the human lines print it.
+fn semantic_interval(i: &omgbase_store::CoverageInterval) -> String {
+    format!("{}..{}", i.from, i.to.as_deref().unwrap_or("now"))
+}
+
+/// `embed enable [--provider <p>]` / `embed disable` (`spec/store` §5.10,
+/// Phase 4b): the semantic manifest row is the verbs'. `enable` with
+/// `--provider` first writes `embedding.provider` at the WORKSPACE layer (as
+/// `init --embedder` does — one vector space per workspace; that write
+/// re-derives every repository's row whose provider changed), then sets the
+/// selected repository's row `enabled` with an open coverage interval;
+/// without a configured provider it is a usage error. `disable` closes the
+/// interval and sets `disabled` — the provider setting and the vectors stay.
+/// Stderr `  semantic enabled since <ts> (provider <p>)` / `  semantic
+/// already enabled since <ts> (provider <p>)` / `  semantic disabled
+/// (embedded <from>..<to>[, …])` / `  semantic already disabled`; `--json` `{
+/// state, coverage, provider, changed }`. Under the writer lock (a manifest
+/// write). The reference's `runEmbedLifecycle`.
+fn embed_lifecycle(cli: &mut Cli, verb: &str, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[Opt::value("provider")])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let provider_flag = a.value("provider").map(str::to_owned);
+    if verb == "disable" && provider_flag.is_some() {
+        return Err(CliError::usage("--provider goes with embed enable"));
+    }
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    // `--provider`'s settings write may itself flip the row (a provider change
+    // re-derives it): the verb reports `changed` when the state moved either way.
+    let state_before = read_capability(store.conn(), &repo.repo_id, "semantic")?
+        .map_or(ManifestState::Disabled, |r| r.state);
+    let result: SemanticLifecycleResult = with_writer_lock(&ws.omgbase_dir, lock, || {
+        if verb == "enable" {
+            if let Some(p) = &provider_flag {
+                if p.trim().is_empty() {
+                    return Err(omgbase_sync::Error::Other(
+                        "usage: --provider needs a <command|url>".to_owned(),
+                    ));
+                }
+                let mut current = workspace_settings(store)?;
+                let mut embedding = current
+                    .get("embedding")
+                    .and_then(Json::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                embedding.insert("provider".to_owned(), json!(p));
+                current.insert("embedding".to_owned(), Json::Object(embedding));
+                write_workspace_settings_at(store, &current, &now)?;
+            }
+            // A core-only build cannot enable what it does not carry
+            // (`capability_unavailable { semantic, disabled }`).
+            if store.semantic().is_none() {
+                return Err(omgbase_sync::Error::Other(
+                    "semantic module absent".to_owned(),
+                ));
+            }
+            store
+                .enable_semantic(&repo.repo_id, &now)
+                .map_err(omgbase_sync::Error::from)
+        } else {
+            store
+                .disable_semantic(&repo.repo_id, &now)
+                .map_err(omgbase_sync::Error::from)
+        }
+    })
+    .map_err(|e| match e {
+        omgbase_sync::Error::Store(StoreError::SemanticProviderMissing) => {
+            CliError::usage(omgbase_store::SEMANTIC_PROVIDER_MISSING_MESSAGE)
+        }
+        omgbase_sync::Error::Other(m) if m == "usage: --provider needs a <command|url>" => {
+            CliError::usage("--provider needs a <command|url>")
+        }
+        omgbase_sync::Error::Other(m) if m == "semantic module absent" => CliError::engine_data(
+            "capability_unavailable",
+            omgbase_surface::SEMANTIC_DISABLED_MESSAGE,
+            json!({
+                "capability": "semantic",
+                "state": "disabled",
+                "fix": omgbase_surface::SEMANTIC_DISABLED_FIX,
+            }),
+        ),
+        other => other.into(),
+    })?;
+    let row = &result.row;
+    let changed = result.changed || row.state != state_before;
+    let provider = semantic_provider_of(store.conn(), &repo.repo_id)?;
+    let mut doc = result.to_json(provider.as_deref());
+    doc["changed"] = json!(changed);
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let style = cli.style;
+    let line = if verb == "enable" {
+        let since =
+            open_coverage_from(Some(row)).map_or_else(String::new, |s| format!(" since {s}"));
+        let with = provider
+            .as_deref()
+            .map_or_else(String::new, |p| format!(" (provider {p})"));
+        format!(
+            "  semantic {}{since}{with}",
+            if changed {
+                "enabled"
+            } else {
+                "already enabled"
+            }
+        )
+    } else if changed || !row.coverage.is_empty() {
+        format!(
+            "  semantic {} (embedded {})",
+            if changed {
+                "disabled"
+            } else {
+                "already disabled"
+            },
+            row.coverage
+                .iter()
+                .map(semantic_interval)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        "  semantic already disabled".to_owned()
+    };
+    cli.io.err(&style.dim(&line));
     Ok(EXIT_OK)
 }
 

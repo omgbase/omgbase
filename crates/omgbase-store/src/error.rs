@@ -96,6 +96,36 @@ pub enum Error {
         /// The revision asked for.
         rev: Option<String>,
     },
+    /// `spec/surface` §3's decision table (17.2, Phase 4b — `outside_coverage`):
+    /// a revision token whose claim's `minted_at` falls in no coverage
+    /// interval of the repository — capture was off when it was minted.
+    /// `coverage_from` is the first interval's start; `fix` the current
+    /// document (`docs_read {"_id":…}`) when the caller was `docs_read { at }`.
+    /// The surface's `capability_unavailable { history, outside_coverage,
+    /// rev, coverage_from, fix? }`, not retriable; the message pinned.
+    HistoryOutsideCoverage {
+        rev: String,
+        coverage_from: String,
+        fix: Option<String>,
+    },
+    /// `spec/surface` §3 `pruned` (17.2, Phase 4b): a token minted inside a
+    /// coverage interval whose `revisions` row is gone — `history purge`
+    /// removed it (`spec/store` §7.6). `fix` as [`Error::HistoryOutsideCoverage`].
+    HistoryPruned { rev: String, fix: Option<String> },
+    /// A revision token the recorder does not hold for the document asked
+    /// about — nobody minted it here, or it is another document's (`spec/surface`
+    /// §3; the surface's `target_missing { doc?, rev }`).
+    TargetMissingRevision { rev: String, doc: Option<String> },
+    /// `spec/store` §5.10 (17.2, Phase 4b): the repository's semantic row was
+    /// switched off by `omg embed disable` while a provider stays configured —
+    /// `semantic()`, `blocks_resolve`'s vector leg and the drain refuse. The
+    /// surface's `capability_unavailable { semantic, disabled, fix: "omg embed
+    /// enable" }`, not retriable; the message pinned.
+    SemanticSwitchedOff,
+    /// `embed enable` with no `embedding.provider` configured (`spec/store`
+    /// §5.10): nothing to enable — the CLI renders it as a usage error with
+    /// the `--provider` hint.
+    SemanticProviderMissing,
     /// `spec/store` §5.4 step 15 (17.1, Phase 4a — resolution 18): the
     /// recorder failed inside a commit, so the member's transaction was
     /// rolled back — nothing is written without its capture — and the
@@ -164,6 +194,27 @@ impl fmt::Display for Error {
             }
             Error::HistoryDisabled { .. } => {
                 f.write_str(crate::core::manifest::HISTORY_DISABLED_MESSAGE)
+            }
+            Error::HistoryOutsideCoverage {
+                rev, coverage_from, ..
+            } => f.write_str(&crate::core::manifest::history_outside_coverage_message(
+                rev,
+                coverage_from,
+            )),
+            Error::HistoryPruned { rev, .. } => {
+                f.write_str(&crate::core::manifest::history_pruned_message(rev))
+            }
+            Error::TargetMissingRevision { rev, doc } => write!(
+                f,
+                "no revision {} for document {}",
+                serde_json::Value::String(rev.clone()),
+                doc.as_deref().unwrap_or("?")
+            ),
+            Error::SemanticSwitchedOff => {
+                f.write_str(crate::core::manifest::SEMANTIC_SWITCHED_OFF_MESSAGE)
+            }
+            Error::SemanticProviderMissing => {
+                f.write_str(crate::core::manifest::SEMANTIC_PROVIDER_MISSING_MESSAGE)
             }
             Error::CaptureFailed { path, reason } => f.write_str(
                 &crate::core::manifest::capture_failed_message(path.as_deref(), reason),

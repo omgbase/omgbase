@@ -131,8 +131,9 @@ pub use archive::{
 };
 pub use capabilities::{
     CAPABILITIES_ENV, Capabilities, CapabilityState, DispositionRow, DocEmbedStats, EmbedStats,
-    ForeignVectors, GcResult, HistoryRecorder, HistorySizeFigures, IdentityClaims,
-    RecordedRevision, RevisionQueryRow, RevisionRead, RevisionTransition, SemanticProvider,
+    ForeignVectors, GcResult, HistoryPurgeOutcome, HistoryRecorder, HistorySizeFigures,
+    IdentityClaims, PurgedCounts, RecordedRevision, RevisionQueryRow, RevisionRead,
+    RevisionTransition, SemanticProvider,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -147,9 +148,10 @@ pub use edit_script::{EditOp, myers_script};
 pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
 pub use feed::{
-    ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor, FeedEntryKind,
-    FeedPolicy, FeedRow, FeedStatus, NewFeedRow, feed_policy, feed_status, prune_feed,
-    remint_epoch, render_summary, repo_epoch, repo_feed_policy,
+    ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor,
+    FEED_CAPPED_ALERT, FeedEntryKind, FeedPolicy, FeedRow, FeedStatus, NewFeedRow,
+    feed_capped_message, feed_policy, feed_status, prune_feed, remint_epoch, render_summary,
+    repo_epoch, repo_feed_policy,
 };
 pub use gc::ARCHIVED_COMMITS_SQL;
 pub use graph::{EdgeRow, EdgeTransitions, ResolvedEdge};
@@ -165,13 +167,17 @@ pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
 pub use manifest::{
     CoverageInterval, HISTORY_DATA_V, HISTORY_DISABLED_MESSAGE, HISTORY_ENABLED_REASON,
     HISTORY_INTERFACE_V, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_WRITER_REQUIRED_MESSAGE,
-    HistoryLifecycleResult, ManifestRow, ManifestState, SEMANTIC_DATA_V, SEMANTIC_INTERFACE_V,
-    WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE, any_history_enabled, apply_history_bundle,
-    canonical_config_json, capture, capture_failed_message, capture_for, clear_capture_failed,
-    config_hash, coverage_from, disable_history, enable_history, ensure_manifest,
-    history_bundle_present, history_reader, open_coverage_from, raise_capture_failed,
-    read_capabilities, read_capability, refresh_semantic_manifest, refresh_semantic_manifests,
-    require_history_reader, require_writer, writer_for,
+    HistoryLifecycleResult, HistoryPurgeResult, ManifestRow, ManifestState, SEMANTIC_DATA_V,
+    SEMANTIC_INTERFACE_V, SEMANTIC_PROVIDER_MISSING_MESSAGE, SEMANTIC_SWITCHED_OFF_FIX,
+    SEMANTIC_SWITCHED_OFF_MESSAGE, SemanticLifecycleResult, WRITER_REFUSED_ALERT,
+    WRITER_REFUSED_MESSAGE, any_history_enabled, apply_history_bundle, canonical_config_json,
+    capture, capture_failed_message, capture_for, claim_minted_at, clear_capture_failed,
+    config_hash, coverage_from, disable_history, disable_semantic, enable_history, enable_semantic,
+    ensure_manifest, history_bundle_present, history_outside_coverage_message,
+    history_pruned_message, history_read_refusal, history_reader, in_coverage, open_coverage_from,
+    purge_history, raise_capture_failed, read_capabilities, read_capability,
+    refresh_semantic_manifest, refresh_semantic_manifests, require_history_reader, require_writer,
+    semantic_provider_of, semantic_switched_off, writer_for,
 };
 pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
@@ -201,9 +207,9 @@ pub use semantic_shapes::{
     VectorHit,
 };
 pub use size::{
-    SIZE_CATEGORIES, SizeArchived, SizeCapability, SizeCategory, SizeFeed, SizeFile, SizeReport,
-    SizeRetention, SizeTable, TABLE_CATEGORY, VacuumResult, category_of, format_share, human_bytes,
-    share_of, size_advice,
+    FeedCapAdvice, SIZE_CATEGORIES, SizeArchived, SizeCapability, SizeCategory, SizeFeed, SizeFile,
+    SizeReport, SizeRetention, SizeTable, TABLE_CATEGORY, VacuumResult, category_of, format_share,
+    human_bytes, share_of, size_advice,
 };
 pub use sugar::Sugar;
 pub use text_search::{TextHit, TextSearchResult};
@@ -212,7 +218,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.1";
+pub const SPEC_VERSION: &str = "17.2";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -450,6 +456,65 @@ impl Store {
     /// `spec/store` §5.9 `history disable` ([`manifest::disable_history`]) at `now`.
     pub fn disable_history(&self, repo_id: &str, now: &str) -> Result<HistoryLifecycleResult> {
         manifest::disable_history(&self.conn, repo_id, now)
+    }
+
+    /// `spec/store` §7.6 `history purge [--before <ts>]`
+    /// ([`manifest::purge_history`], 17.2 Phase 4b): the repository's
+    /// captured history leaves the store — every commit, or those with `ts <
+    /// before`; a live head's revision stays while capture is on; the
+    /// recorder's holds are released; the bundle's tables are dropped when no
+    /// repository is enabled and nothing is left. Coverage is untouched. The
+    /// caller holds the writer lock.
+    pub fn purge_history(&self, repo_id: &str, before: Option<&str>) -> Result<HistoryPurgeResult> {
+        manifest::purge_history(&self.conn, self.history.as_deref(), repo_id, before)
+    }
+
+    /// `spec/surface` §3's read-state decision table
+    /// ([`manifest::history_read_refusal`], Phase 4b) for a revision token the
+    /// recorder holds no row for: the error to answer with.
+    #[must_use]
+    pub fn history_read_refusal(
+        &self,
+        repo_id: &str,
+        rev: &str,
+        doc_id: Option<&str>,
+        read_fix: bool,
+    ) -> Error {
+        manifest::history_read_refusal(
+            &self.conn,
+            self.history.as_deref(),
+            repo_id,
+            rev,
+            doc_id,
+            read_fix,
+        )
+    }
+
+    /// `spec/store` §5.10 `embed enable` ([`manifest::enable_semantic`], Phase
+    /// 4b) at `now`: needs the module and a configured provider. The caller
+    /// holds the writer lock.
+    pub fn enable_semantic(&self, repo_id: &str, now: &str) -> Result<SemanticLifecycleResult> {
+        manifest::enable_semantic(&self.conn, self.semantic_module_present(), repo_id, now)
+    }
+
+    /// `spec/store` §5.10 `embed disable` ([`manifest::disable_semantic`]) at `now`.
+    pub fn disable_semantic(&self, repo_id: &str, now: &str) -> Result<SemanticLifecycleResult> {
+        manifest::disable_semantic(&self.conn, repo_id, now)
+    }
+
+    /// `spec/store` §5.10: is the repository's semantic row switched off while
+    /// a provider is configured ([`manifest::semantic_switched_off`]) — the
+    /// state only `omg embed disable` leaves? The semantic paths then refuse
+    /// with [`Error::SemanticSwitchedOff`].
+    pub fn semantic_switched_off(&self, repo_id: &str) -> Result<bool> {
+        manifest::semantic_switched_off(&self.conn, self.semantic_module_present(), repo_id)
+    }
+
+    /// Does the composition carry the semantic MODULE — installed, or
+    /// configured but failed to start (the host's fault, `unavailable`)? A
+    /// core-only build has neither.
+    fn semantic_module_present(&self) -> bool {
+        self.semantic.is_some() || self.semantic_fault.is_some()
     }
 
     /// The semantic capability this store opened with, if any — the one way

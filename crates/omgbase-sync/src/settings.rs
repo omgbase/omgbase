@@ -2,8 +2,12 @@
 //! `workspace_settings` singleton (defaults) and `repos.settings`
 //! (overrides) — resolved by a deep merge.
 
+use std::collections::HashSet;
+
 use omgbase_store::Store;
-use omgbase_store::manifest::{refresh_semantic_manifest, refresh_semantic_manifests};
+use omgbase_store::manifest::{
+    refresh_semantic_manifest, refresh_semantic_manifests, semantic_provider_of,
+};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value};
 
@@ -46,12 +50,16 @@ pub fn repo_own_settings(store: &Store, repo_id: &str) -> Result<Settings> {
     Ok(parse(text))
 }
 
-// Every settings write re-derives the semantic manifest row (`spec/store`
-// §3.1 `capabilities`, 17.0 3e-ii — resolution 1: `enabled` iff
-// `embedding.provider` resolves): the workspace layer touches every
-// repository's row, a repo's own layer that repository's. The Phase 4 `embed
-// enable|disable` verbs take this over; until then the manifest follows the
-// setting, in the same transaction.
+// A settings write that CHANGES a repository's effective `embedding.provider`
+// re-derives its semantic manifest row (`spec/store` §3.1 `capabilities`,
+// §5.10 — resolution 1: `enabled` iff a provider resolves): the workspace
+// layer may touch every repository's row, a repo's own layer that
+// repository's. A write that leaves the provider as it was moves the row's
+// config (`model`/`dim`) and keeps its STATE — so `omg embed disable` (Phase
+// 4b) is sticky across unrelated settings writes and `omg embed enable` is the
+// way back; a provider set or unset still flips the row, the simple path `omg
+// init --embedder` and `omg config set embedding.provider` rely on. In the
+// same transaction.
 
 /// Replace the workspace blob (at the wall clock; the CLI passes its pinned
 /// clock through [`write_workspace_settings_at`]).
@@ -64,12 +72,27 @@ pub fn write_workspace_settings(store: &Store, settings: &Settings) -> Result<()
 pub fn write_workspace_settings_at(store: &Store, settings: &Settings, now: &str) -> Result<()> {
     let conn = store.conn();
     let tx = conn.unchecked_transaction()?;
+    let repos: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT repo_id FROM repos ORDER BY rowid")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
+    let before: Vec<Option<String>> = repos
+        .iter()
+        .map(|id| semantic_provider_of(&tx, id))
+        .collect::<std::result::Result<_, _>>()?;
     tx.execute(
         "INSERT INTO workspace_settings (id, settings) VALUES (0, ?1)
          ON CONFLICT(id) DO UPDATE SET settings = excluded.settings",
         params![Value::Object(settings.clone()).to_string()],
     )?;
-    refresh_semantic_manifests(&tx, now)?;
+    let mut flipped: HashSet<String> = HashSet::new();
+    for (id, was) in repos.iter().zip(&before) {
+        if semantic_provider_of(&tx, id)? != *was {
+            flipped.insert(id.clone());
+        }
+    }
+    refresh_semantic_manifests(&tx, now, Some(&flipped))?;
     tx.commit()?;
     Ok(())
 }
@@ -88,11 +111,13 @@ pub fn write_repo_settings_at(
 ) -> Result<()> {
     let conn = store.conn();
     let tx = conn.unchecked_transaction()?;
+    let before = semantic_provider_of(&tx, repo_id)?;
     tx.execute(
         "UPDATE repos SET settings = ?1 WHERE repo_id = ?2",
         params![Value::Object(settings.clone()).to_string(), repo_id],
     )?;
-    refresh_semantic_manifest(&tx, repo_id, now)?;
+    let flip = semantic_provider_of(&tx, repo_id)? != before;
+    refresh_semantic_manifest(&tx, repo_id, now, flip)?;
     tx.commit()?;
     Ok(())
 }

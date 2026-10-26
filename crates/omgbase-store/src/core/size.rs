@@ -18,9 +18,11 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde_json::{Map, Value as Json, json};
 
+use crate::core::alerts::list_active_alerts;
 use crate::core::capabilities::{HistoryRecorder, IdentityClaims, SemanticProvider};
-use crate::core::feed::{feed_status, repo_feed_policy};
+use crate::core::feed::{FEED_CAPPED_ALERT, feed_status, repo_feed_policy};
 use crate::core::manifest::{ManifestRow, ManifestState, coverage_from, read_capabilities};
+use crate::core::time::parse_ms;
 use crate::error::Result;
 
 /// The six categories, in the report's fixed order.
@@ -349,11 +351,23 @@ impl SizeReport {
     }
 }
 
+/// What the feed-cap advice line prints (`spec/store` §7.2, 17.2 Phase 4b):
+/// the feed's entries, the days its retained rows span, the floors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FeedCapAdvice {
+    pub entries: u64,
+    pub days: i64,
+    pub retain_entries: i64,
+    pub retain_days: i64,
+}
+
 /// §7: the advice lines, in this order; `nothing to reclaim` when none applies.
 /// `same_dispositions` (14.2) is the report's count of `same` rows;
 /// `retention` (15.0) what the policy would archive now; `semantic_tables`
 /// the tables the semantic bundle owns ([`SemanticProvider::tables`]) — the
-/// embeddings line is theirs, and a store without the bundle never emits it.
+/// embeddings line is theirs, and a store without the bundle never emits it;
+/// `feed_cap` (17.2, Phase 4b — the contracts' §7.5) the feed-cap line's
+/// figures when the report's repository has an active `feed_capped` alert.
 #[must_use]
 pub fn size_advice(
     file: &SizeFile,
@@ -361,6 +375,7 @@ pub fn size_advice(
     same_dispositions: u64,
     retention: SizeRetention,
     semantic_tables: &[&str],
+    feed_cap: Option<&FeedCapAdvice>,
 ) -> Vec<String> {
     let mut advice = Vec::new();
     let logical = file.page_count * file.page_size;
@@ -442,6 +457,18 @@ pub fn size_advice(
                 format_share(share)
             ));
         }
+    }
+    // Phase 4b (contracts §7.5): the write-time cap pruned rows the floors
+    // promised — the `feed_capped` alert is active for the report's repository.
+    if let Some(cap) = feed_cap {
+        advice.push(format!(
+            "the feed holds {} entries over {} day{} (floors {} / {}): raise feed.max_entries or shorten the sync interval",
+            cap.entries,
+            cap.days,
+            if cap.days == 1 { "" } else { "s" },
+            cap.retain_entries,
+            cap.retain_days
+        ));
     }
     if advice.is_empty() {
         advice.push("nothing to reclaim".to_owned());
@@ -726,12 +753,42 @@ pub fn size_report_at(
         None => None,
     };
     let semantic_tables: &[&str] = semantic.map_or(&[], |s| s.tables());
+    // Phase 4b: the feed-cap line reads the alert channel of the report's repository.
+    let feed_cap = match (feed_repo, &feed) {
+        (Some(r), Some(f))
+            if list_active_alerts(conn, r)?
+                .iter()
+                .any(|a| a.code == FEED_CAPPED_ALERT) =>
+        {
+            let (lo, hi): (Option<String>, Option<String>) = conn.query_row(
+                "SELECT MIN(ts), MAX(ts) FROM feed WHERE repo_id = ?1 AND epoch = ?2",
+                rusqlite::params![r, f.epoch],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            let days = match (lo, hi) {
+                (Some(lo), Some(hi)) => {
+                    // `Math.ceil(span / 1 day)` as the reference computes it.
+                    let span = (parse_ms(&hi)? - parse_ms(&lo)?).max(0);
+                    (span + 86_399_999) / 86_400_000
+                }
+                _ => 0,
+            };
+            Some(FeedCapAdvice {
+                entries: f.entries,
+                days,
+                retain_entries: f.retain_entries,
+                retain_days: f.retain_days,
+            })
+        }
+        _ => None,
+    };
     let advice = size_advice(
         &file,
         &categories,
         same_dispositions,
         retention,
         semantic_tables,
+        feed_cap.as_ref(),
     );
     Ok(SizeReport {
         file,
@@ -871,7 +928,8 @@ mod tests {
                 &[cat("content", 60, 100, &[]), cat("history", 40, 100, &[])],
                 0,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             none
         );
@@ -881,7 +939,14 @@ mod tests {
             f.reclaimable = 200 * 4096;
         });
         assert_eq!(
-            size_advice(&small, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
+            size_advice(
+                &small,
+                &[],
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES,
+                None
+            ),
             none
         );
         let thin = file_of(|f| {
@@ -890,7 +955,14 @@ mod tests {
             f.reclaimable = 300 * 4096;
         });
         assert_eq!(
-            size_advice(&thin, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
+            size_advice(
+                &thin,
+                &[],
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES,
+                None
+            ),
             none
         );
         let fat = file_of(|f| {
@@ -898,7 +970,14 @@ mod tests {
             f.reclaimable = 300 * 4096;
         });
         assert_eq!(
-            size_advice(&fat, &[], 0, SizeRetention::default(), SEMANTIC_TABLES),
+            size_advice(
+                &fat,
+                &[],
+                0,
+                SizeRetention::default(),
+                SEMANTIC_TABLES,
+                None
+            ),
             vec!["run `omg gc --vacuum` to return 1.2 MB of free pages to the filesystem"]
         );
         // History past 50 %, embeddings past 25 %, in order.
@@ -913,7 +992,8 @@ mod tests {
                 &cats,
                 0,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             vec![
                 "history dominates (57.0%): blobs, tree nodes and dispositions grow with every commit — enable gc (`omg config set gc.enabled true`) and run `omg gc --vacuum`",
@@ -932,7 +1012,8 @@ mod tests {
                 &edge,
                 0,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             none
         );
@@ -949,7 +1030,8 @@ mod tests {
                 &[blind],
                 0,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             none
         );
@@ -976,6 +1058,7 @@ mod tests {
                 same,
                 SizeRetention::default(),
                 SEMANTIC_TABLES,
+                None,
             )
         };
         assert_eq!(
@@ -1009,7 +1092,8 @@ mod tests {
                 std::slice::from_ref(&blind),
                 3,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             vec![
                 "3 same dispositions are history nothing reads (store 14.2): `omg gc` removes them, `--vacuum` reclaims the pages"
@@ -1021,7 +1105,8 @@ mod tests {
                 &[blind],
                 2,
                 SizeRetention::default(),
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             none
         );
@@ -1046,6 +1131,7 @@ mod tests {
                 bytes: 6,
             },
             SEMANTIC_TABLES,
+            None,
         );
         assert_eq!(lines.len(), 3);
         assert_eq!(
@@ -1062,7 +1148,8 @@ mod tests {
                     revisions: 1,
                     bytes: 5
                 },
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             )
             .len(),
             2
@@ -1076,7 +1163,8 @@ mod tests {
                     revisions: 0,
                     bytes: 60
                 },
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             )
             .len(),
             2
@@ -1097,7 +1185,8 @@ mod tests {
                     revisions: 9,
                     bytes: 900
                 },
-                SEMANTIC_TABLES
+                SEMANTIC_TABLES,
+                None
             ),
             vec!["nothing to reclaim".to_owned()]
         );

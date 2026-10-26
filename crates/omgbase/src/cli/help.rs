@@ -470,11 +470,12 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "history" => spec(
             s(
-                "History capture (enable/disable per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+                "History capture (enable/disable/purge per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
             ),
             vec![
                 s("history enable [--best-effort]"),
                 s("history disable"),
+                s("history purge [--before <ts>]"),
                 s("history plan [--before <ts>] [--policy <json|@file>]"),
                 s(
                     "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
@@ -495,6 +496,10 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 (
                     "--best-effort",
                     "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)",
+                ),
+                (
+                    "purge",
+                    "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left",
                 ),
                 (
                     "plan",
@@ -518,7 +523,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
                 (
                     "--before <ts>",
-                    "only revisions committed before this RFC 3339 instant are candidates",
+                    "(plan/export/purge) only revisions committed before this RFC 3339 instant are candidates",
                 ),
                 (
                     "--policy <p>",
@@ -990,13 +995,30 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "embed" => spec(
             s(
-                "The embedding queue: report the provider + what is queued, or drain it to embed now",
+                "Semantic indexing: switch it on or off per repository, report the provider + what is queued, or drain the queue to embed now",
             ),
-            vec![s("embed [status]"), s("embed drain [--verbose] [--prune]")],
+            vec![
+                s("embed [status]"),
+                s("embed enable [--provider <command|url>]"),
+                s("embed disable"),
+                s("embed drain [--verbose] [--prune]"),
+            ],
             opts(&[
                 (
                     "status",
                     "(default) provider, model, and how many blocks/docs are embeddable but not yet embedded",
+                ),
+                (
+                    "enable",
+                    "switch semantic indexing on for the repository (needs a provider: --provider sets embedding.provider at the workspace layer); idempotent",
+                ),
+                (
+                    "disable",
+                    "switch it off: semantic() and the drain refuse until enable; the provider setting and the vectors stay; idempotent",
+                ),
+                (
+                    "--provider <p>",
+                    "(enable) the embedder command or http(s) URL to configure first",
                 ),
                 (
                     "drain",
@@ -1009,7 +1031,7 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 ),
             ]),
             vec![format!(
-                "needs embedding.provider (`{prog} config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off."
+                "needs embedding.provider (`{prog} config set embedding.provider omgbase-embedder --repo \"\"`, or `{prog} embed enable --provider omgbase-embedder`); without one, semantic search is simply off."
             )],
         ),
         "version" => spec(

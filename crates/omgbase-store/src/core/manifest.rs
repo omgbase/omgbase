@@ -16,12 +16,16 @@
 //! --no-history`; Phase 4a), semantic `enabled` iff `embedding.provider`
 //! resolves for the repository (resolution 1: vectors are never consulted) —
 //! and migration 17 step (13) does the same for every existing repository
-//! (coverage from its first commit). Until the `embed` verbs (Phase 4b)
-//! exist, the semantic row FOLLOWS the setting: every settings write
-//! re-derives it ([`refresh_semantic_manifest`], called by `omgbase-sync`'s
-//! settings writers), opening or closing a coverage interval when the state
-//! flips. The history row is flipped by [`enable_history`] /
-//! [`disable_history`] (Phase 4a; `spec/store` §5.9).
+//! (coverage from its first commit). The semantic row is the verbs'
+//! ([`enable_semantic`] / [`disable_semantic`], `omg embed enable|disable` —
+//! `spec/store` §5.10, Phase 4b) and follows a CHANGE of the effective
+//! `embedding.provider` (a settings write re-derives it through
+//! [`refresh_semantic_manifest`] only when the provider moved, so `embed
+//! disable` is sticky across unrelated writes; through 17.1 every settings
+//! write re-derived it). The history row is flipped by [`enable_history`] /
+//! [`disable_history`] (Phase 4a; `spec/store` §5.9) and left alone by
+//! [`purge_history`] (§7.6: coverage records when capture was ON — the
+//! record `spec/surface` §3's `pruned` rests on, [`history_read_refusal`]).
 //!
 //! Who reads it. `version.capabilities` and `capability_unavailable`'s state
 //! (`omgbase-sync`'s `capability_state`), `doctor --size`'s `capabilities`
@@ -39,10 +43,12 @@ use omgbase_format::hash::sha256;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
+use std::collections::HashSet;
+
 use crate::core::alerts::{
     AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, clear_alert, raise_alert,
 };
-use crate::core::capabilities::HistoryRecorder;
+use crate::core::capabilities::{HistoryRecorder, PurgedCounts};
 use crate::core::codec::canonical_json;
 use crate::core::feed::{
     FeedEntryKind, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
@@ -421,6 +427,146 @@ pub fn require_history_reader<'a>(
     Ok(history)
 }
 
+// ---- the read-state decision table (`spec/surface` §3; 17.2 Phase 4b, D3) -----------------
+
+/// `spec/surface` §3 `outside_coverage` (Phase 4b), byte for byte in both engines.
+#[must_use]
+pub fn history_outside_coverage_message(rev: &str, coverage_from: &str) -> String {
+    format!(
+        "revision {} was minted outside this repository's history coverage (capture started {coverage_from})",
+        Json::String(rev.to_owned())
+    )
+}
+
+/// `spec/surface` §3 `pruned` (Phase 4b), byte for byte in both engines.
+#[must_use]
+pub fn history_pruned_message(rev: &str) -> String {
+    format!(
+        "revision {} was captured but its history has been purged",
+        Json::String(rev.to_owned())
+    )
+}
+
+/// `spec/store` §3.1 `coverage`: does some interval hold `ts` — `from ≤ ts`
+/// and (`to` null or `ts < to`)?
+#[must_use]
+pub fn in_coverage(coverage: &[CoverageInterval], ts: &str) -> bool {
+    coverage
+        .iter()
+        .any(|i| i.from.as_str() <= ts && i.to.as_deref().is_none_or(|to| ts < to))
+}
+
+/// Does `ts` lie after the last interval's end (or is there no interval at
+/// all)? — the `disabled` state's condition (`spec/surface` §3).
+fn after_coverage(coverage: &[CoverageInterval], ts: &str) -> bool {
+    match coverage.last() {
+        None => true,
+        Some(last) => last.to.as_deref().is_some_and(|to| ts >= to),
+    }
+}
+
+/// The claim's `minted_at` for an id (`spec/store` §2.1 `id_claims`), `None`
+/// when no claim exists (never minted here, or pruned under
+/// `identity.claims_retain_days`).
+pub fn claim_minted_at(conn: &Connection, id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT minted_at FROM id_claims WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// The history read states, decided in the spec's order (`spec/surface` §3's
+/// table; phase-1-contracts §2.1, D3 — Phase 4b) for a revision token `rev`
+/// the recorder holds NO row for, on a repository whose current head `rev` is
+/// not (the head is served from the rows, resolution 11). The error returned:
+///   - [`Error::HistoryUnavailable`] — no module (retriable);
+///   - [`Error::HistoryDisabled`] `{ rev }` — the row is absent or `disabled`
+///     and the token was minted after the last coverage interval (or there is
+///     none), or the token is no claim at all (nothing says it was ever minted
+///     here);
+///   - [`Error::HistoryOutsideCoverage`] `{ rev, coverage_from, fix? }` — the
+///     claim's `minted_at` falls in no interval: capture was off when it was
+///     minted;
+///   - [`Error::HistoryPruned`] `{ rev, fix? }` — minted within coverage, no
+///     row: the history was purged (`spec/store` §7.6);
+///   - [`Error::TargetMissingRevision`] — an unclaimed token on an enabled
+///     repository (the 4a answer, kept: the token is nobody's).
+///
+/// A token the recorder DOES hold — another document's revision — is
+/// `target_missing` on every composition, as before. `doc_id` names the
+/// document asked about (the `target_missing` data); `read_fix` adds the
+/// current document (`docs_read {"_id":"<id>"}`) as the `fix` of
+/// `outside_coverage`/`pruned` — the caller is `docs_read { at }` /
+/// `docs_read_at`. A failing read of the manifest or the claims is returned
+/// as that failure. The reference's `historyReadRefusal`.
+pub fn history_read_refusal(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    repo_id: &str,
+    rev: &str,
+    doc_id: Option<&str>,
+    read_fix: bool,
+) -> Error {
+    let decide = || -> Result<Error> {
+        let Some(module) = history else {
+            return Ok(Error::HistoryUnavailable);
+        };
+        let target_missing = || Error::TargetMissingRevision {
+            rev: rev.to_owned(),
+            doc: doc_id.map(str::to_owned),
+        };
+        if let Some(reader) = history_reader(conn, Some(module))?
+            && reader.has_revision(conn, rev)?
+        {
+            return Ok(target_missing());
+        }
+        let row = read_capability(conn, repo_id, "history")?;
+        let enabled = row
+            .as_ref()
+            .is_some_and(|r| r.state == ManifestState::Enabled);
+        let Some(minted_at) = claim_minted_at(conn, rev)? else {
+            if enabled {
+                return Ok(target_missing());
+            }
+            return Ok(Error::HistoryDisabled {
+                rev: Some(rev.to_owned()),
+            });
+        };
+        let coverage: &[CoverageInterval] = row.as_ref().map_or(&[], |r| &r.coverage);
+        if !enabled && after_coverage(coverage, &minted_at) {
+            return Ok(Error::HistoryDisabled {
+                rev: Some(rev.to_owned()),
+            });
+        }
+        let fix = match doc_id {
+            Some(id) if read_fix => Some(format!("docs_read {}", json!({ "_id": id }))),
+            _ => None,
+        };
+        if !in_coverage(coverage, &minted_at) {
+            let Some(first) = coverage.first() else {
+                return Ok(Error::HistoryDisabled {
+                    rev: Some(rev.to_owned()),
+                });
+            };
+            return Ok(Error::HistoryOutsideCoverage {
+                rev: rev.to_owned(),
+                coverage_from: first.from.clone(),
+                fix,
+            });
+        }
+        Ok(Error::HistoryPruned {
+            rev: rev.to_owned(),
+            fix,
+        })
+    };
+    match decide() {
+        Ok(e) | Err(e) => e,
+    }
+}
+
 /// Step 0 then step 15's recorder: the refusal check ([`require_writer`]),
 /// then the recorder a commit on `repo_id` captures through
 /// ([`capture_for`]; `None` = uncaptured).
@@ -707,6 +853,97 @@ pub fn disable_history(
     })
 }
 
+/// What `history purge` returns (`spec/store` §7.6): the rows removed per
+/// history table, the recorder's holds released (claims left with no holder
+/// deleted), the manifest's coverage — unchanged by a purge: coverage records
+/// when capture was ON, not what is retained — and whether the bundle's
+/// tables were dropped (no repository enabled and every history table empty
+/// after the purge).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryPurgeResult {
+    pub purged: PurgedCounts,
+    pub claims_released: usize,
+    pub coverage: Vec<CoverageInterval>,
+    pub tables_dropped: bool,
+}
+
+impl HistoryPurgeResult {
+    /// The receipt `{ purged: { <table>: n }, claims_released, coverage,
+    /// tables_dropped }` (`spec/cli` §6 `--json`; the fixture runners'
+    /// `purge` outcome), in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        let mut m = Map::new();
+        m.insert("purged".to_owned(), self.purged.to_json());
+        m.insert(
+            "claims_released".to_owned(),
+            Json::from(self.claims_released),
+        );
+        m.insert(
+            "coverage".to_owned(),
+            Json::Array(
+                self.coverage
+                    .iter()
+                    .map(CoverageInterval::to_json)
+                    .collect(),
+            ),
+        );
+        m.insert("tables_dropped".to_owned(), Json::Bool(self.tables_dropped));
+        Json::Object(m)
+    }
+}
+
+/// `history purge [--before <ts>]` (`spec/store` §7.6, Phase 4b;
+/// phase-1-contracts §1.14, D2 step two): in one transaction — the recorder
+/// removes the repository's history rows ([`HistoryRecorder::purge`]: every
+/// commit, or those before `before`, never a live head's revision while
+/// capture is on), the recorder's hold (bit 1) is released on every claim no
+/// history row names any more (a claim with no holder left is deleted), and —
+/// when NO repository is `enabled` and every history table is empty — the
+/// bundle's tables are dropped (a workspace-wide decision taken automatically
+/// and reported as `tables_dropped`, so a database that purged its last
+/// history is a core database again; the next `history enable` re-executes
+/// the DDL). The manifest's `coverage` and `state` are NOT touched: coverage
+/// is the record of when capture was on, which a purge does not change — it
+/// is what tells a purged token (`pruned`) from one minted while capture was
+/// off (`outside_coverage`), `spec/surface` §3. Needs the module
+/// ([`Error::HistoryUnavailable`] otherwise); a database without the bundle
+/// has nothing to purge (every count 0). The caller holds the writer lock and
+/// no transaction.
+pub fn purge_history(
+    conn: &Connection,
+    history: Option<&dyn HistoryRecorder>,
+    repo_id: &str,
+    before: Option<&str>,
+) -> Result<HistoryPurgeResult> {
+    let Some(history) = history else {
+        return Err(Error::HistoryUnavailable);
+    };
+    let row = read_capability(conn, repo_id, "history")?;
+    let coverage = row.as_ref().map(|r| r.coverage.clone()).unwrap_or_default();
+    if !history_bundle_present(conn)? {
+        return Ok(HistoryPurgeResult {
+            purged: PurgedCounts::default(),
+            claims_released: 0,
+            coverage,
+            tables_dropped: false,
+        });
+    }
+    let tx = conn.unchecked_transaction()?;
+    let drop_if_empty = !any_history_enabled(&tx)?;
+    let protect_heads = row
+        .as_ref()
+        .is_some_and(|r| r.state == ManifestState::Enabled);
+    let outcome = history.purge(&tx, repo_id, before, drop_if_empty, protect_heads)?;
+    tx.commit()?;
+    Ok(HistoryPurgeResult {
+        purged: outcome.purged,
+        claims_released: outcome.claims_released,
+        coverage,
+        tables_dropped: outcome.tables_dropped,
+    })
+}
+
 /// The open coverage interval's `from` (the current capture's start), or
 /// `None` when capture is off.
 #[must_use]
@@ -816,25 +1053,34 @@ pub fn semantic_config_of(conn: &Connection, repo_id: &str) -> Result<Map<String
 /// now, to: null }`) or the open one closes (`to = now`); when only the
 /// config changed the config and its hash move; an unchanged row is not
 /// touched (its `updated_at` stands). Returns the row as it now is. Called by
-/// `create_repo`, migration 17 and every settings write until the Phase 4
-/// `embed` verbs own it.
+/// `create_repo`, migration 17 and the settings writers. `flip` (`spec/store`
+/// §5.10, Phase 4b) is the caller's word that the effective provider CHANGED:
+/// once the row exists, a write with `flip` false leaves the STATE alone —
+/// `omg embed disable` is sticky across unrelated settings writes — and
+/// moves the config when it changed; a missing row is always derived.
 pub fn refresh_semantic_manifest(
     conn: &Connection,
     repo_id: &str,
     now: &str,
+    flip: bool,
 ) -> Result<ManifestRow> {
     if !manifest_table_exists(conn)? {
         return Err(Error::Other(
             "the capabilities table is missing — open the store through Store first".to_owned(),
         ));
     }
-    let state = if semantic_provider_configured(conn, repo_id)? {
+    let derived = if semantic_provider_configured(conn, repo_id)? {
         ManifestState::Enabled
     } else {
         ManifestState::Disabled
     };
     let config = semantic_config_of(conn, repo_id)?;
-    let Some(existing) = read_capability(conn, repo_id, "semantic")? else {
+    let existing = read_capability(conn, repo_id, "semantic")?;
+    let state = match &existing {
+        Some(e) if !flip => e.state,
+        _ => derived,
+    };
+    let Some(existing) = existing else {
         let open = [CoverageInterval {
             from: now.to_owned(),
             to: None,
@@ -906,13 +1152,21 @@ pub fn ensure_manifest(
     enable_history: bool,
 ) -> Result<()> {
     ensure_history_manifest(conn, repo_id, from, now, enable_history, true)?;
-    refresh_semantic_manifest(conn, repo_id, now)?;
+    // An existing semantic row keeps its state (`spec/store` §5.10: the verbs
+    // and a provider change flip it, not a re-open).
+    refresh_semantic_manifest(conn, repo_id, now, false)?;
     Ok(())
 }
 
 /// Every repository's semantic row re-derived (a WORKSPACE-layer settings
-/// write touches them all).
-pub fn refresh_semantic_manifests(conn: &Connection, now: &str) -> Result<()> {
+/// write touches them all); `flipped` names the repositories whose effective
+/// provider changed (`spec/store` §5.10) — the others keep their state;
+/// `None` flips every row.
+pub fn refresh_semantic_manifests(
+    conn: &Connection,
+    now: &str,
+    flipped: Option<&HashSet<String>>,
+) -> Result<()> {
     if !manifest_table_exists(conn)? {
         return Ok(());
     }
@@ -922,9 +1176,235 @@ pub fn refresh_semantic_manifests(conn: &Connection, now: &str) -> Result<()> {
         rows.collect::<std::result::Result<_, _>>()?
     };
     for repo_id in &repos {
-        refresh_semantic_manifest(conn, repo_id, now)?;
+        let flip = flipped.is_none_or(|f| f.contains(repo_id));
+        refresh_semantic_manifest(conn, repo_id, now, flip)?;
     }
     Ok(())
+}
+
+// ---- the semantic lifecycle: `embed enable` / `embed disable` (`spec/store` §5.10, Phase 4b) ----
+
+/// `spec/store` §5.10 (Phase 4b), byte for byte in both engines: the semantic
+/// row switched off by `omg embed disable` with a provider still configured.
+pub const SEMANTIC_SWITCHED_OFF_MESSAGE: &str = "semantic search is disabled for this repository — enable it with `omg embed enable` (the embedding provider stays configured)";
+/// The `fix` that goes with [`SEMANTIC_SWITCHED_OFF_MESSAGE`].
+pub const SEMANTIC_SWITCHED_OFF_FIX: &str = "omg embed enable";
+/// `embed enable` without a configured provider (`spec/store` §5.10), byte for byte in both engines.
+pub const SEMANTIC_PROVIDER_MISSING_MESSAGE: &str = "no embedding provider configured — pass --provider <command|url>, or set one with omg config set embedding.provider <command|url>";
+
+/// What `embed enable` / `embed disable` return: the row as it now is and
+/// whether anything changed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SemanticLifecycleResult {
+    pub row: ManifestRow,
+    pub changed: bool,
+}
+
+impl SemanticLifecycleResult {
+    /// The `--json` shape `{ state, coverage, provider, changed }` (`spec/cli`
+    /// §6; the surface runner's `semantic` outcome), in that key order —
+    /// `provider` the effective `embedding.provider` ([`semantic_provider_of`]).
+    #[must_use]
+    pub fn to_json(&self, provider: Option<&str>) -> Json {
+        let mut m = Map::new();
+        m.insert(
+            "state".to_owned(),
+            Json::String(self.row.state.as_str().to_owned()),
+        );
+        m.insert(
+            "coverage".to_owned(),
+            Json::Array(
+                self.row
+                    .coverage
+                    .iter()
+                    .map(CoverageInterval::to_json)
+                    .collect(),
+            ),
+        );
+        m.insert("provider".to_owned(), json!(provider));
+        m.insert("changed".to_owned(), Json::Bool(self.changed));
+        Json::Object(m)
+    }
+}
+
+/// `embed enable` (`spec/store` §5.10, Phase 4b; phase-1-contracts §1.14): the
+/// semantic row is the verb's to flip. Needs the module (`semantic_present`
+/// — [`crate::core::capabilities::unavailable`]`("semantic")` otherwise; the
+/// surface renders `capability_unavailable { semantic, disabled }`) and a
+/// configured provider ([`Error::SemanticProviderMissing`] — the CLI passes
+/// `--provider` to set one first); sets `state = 'enabled'`, opens a coverage
+/// interval, writes the config `{ model?, dim? }` from the effective
+/// settings. An `enabled` row is returned unchanged (a config change moves
+/// the config alone). Idempotent.
+pub fn enable_semantic(
+    conn: &Connection,
+    semantic_present: bool,
+    repo_id: &str,
+    now: &str,
+) -> Result<SemanticLifecycleResult> {
+    if !semantic_present {
+        return Err(crate::core::capabilities::unavailable("semantic"));
+    }
+    if !semantic_provider_configured(conn, repo_id)? {
+        return Err(Error::SemanticProviderMissing);
+    }
+    let existing = read_capability(conn, repo_id, "semantic")?;
+    let config = semantic_config_of(conn, repo_id)?;
+    if let Some(existing) = existing
+        .as_ref()
+        .filter(|e| e.state == ManifestState::Enabled)
+    {
+        if existing.config_hash == config_hash(&config) {
+            return Ok(SemanticLifecycleResult {
+                row: existing.clone(),
+                changed: false,
+            });
+        }
+        write_row(
+            conn,
+            repo_id,
+            &WriteInput {
+                capability: "semantic",
+                state: ManifestState::Enabled,
+                interface_v: existing.interface_v,
+                data_v: existing.data_v,
+                config: &config,
+                coverage: &existing.coverage,
+                writer_requires: existing.writer_requires,
+                now,
+            },
+        )?;
+        return Ok(SemanticLifecycleResult {
+            row: read_written(conn, repo_id, "semantic")?,
+            changed: true,
+        });
+    }
+    let mut coverage = existing
+        .as_ref()
+        .map(|e| e.coverage.clone())
+        .unwrap_or_default();
+    coverage.push(CoverageInterval {
+        from: now.to_owned(),
+        to: None,
+    });
+    write_row(
+        conn,
+        repo_id,
+        &WriteInput {
+            capability: "semantic",
+            state: ManifestState::Enabled,
+            interface_v: existing
+                .as_ref()
+                .map_or(SEMANTIC_INTERFACE_V, |e| e.interface_v),
+            data_v: existing.as_ref().map_or(SEMANTIC_DATA_V, |e| e.data_v),
+            config: &config,
+            coverage: &coverage,
+            writer_requires: existing.as_ref().is_some_and(|e| e.writer_requires),
+            now,
+        },
+    )?;
+    Ok(SemanticLifecycleResult {
+        row: read_written(conn, repo_id, "semantic")?,
+        changed: true,
+    })
+}
+
+/// `embed disable` (`spec/store` §5.10): `coverage[last].to = now`, `state =
+/// 'disabled'`; the vectors stay (`embed drain --prune` is the vectors'
+/// purge), the provider setting stays — `semantic()`, `blocks_resolve`'s
+/// vector leg and the drain then refuse with [`Error::SemanticSwitchedOff`].
+/// Idempotent: a `disabled` row is a no-op, an absent one is written
+/// `disabled` with no coverage. Needs no module.
+pub fn disable_semantic(
+    conn: &Connection,
+    repo_id: &str,
+    now: &str,
+) -> Result<SemanticLifecycleResult> {
+    let existing = read_capability(conn, repo_id, "semantic")?;
+    let Some(existing) = existing.filter(|e| e.state == ManifestState::Enabled) else {
+        let row = match read_capability(conn, repo_id, "semantic")? {
+            Some(row) => row,
+            None => {
+                write_row(
+                    conn,
+                    repo_id,
+                    &WriteInput {
+                        capability: "semantic",
+                        state: ManifestState::Disabled,
+                        interface_v: SEMANTIC_INTERFACE_V,
+                        data_v: SEMANTIC_DATA_V,
+                        config: &semantic_config_of(conn, repo_id)?,
+                        coverage: &[],
+                        writer_requires: false,
+                        now,
+                    },
+                )?;
+                read_written(conn, repo_id, "semantic")?
+            }
+        };
+        return Ok(SemanticLifecycleResult {
+            row,
+            changed: false,
+        });
+    };
+    let mut coverage = existing.coverage.clone();
+    if let Some(last) = coverage.last_mut()
+        && last.to.is_none()
+    {
+        last.to = Some(now.to_owned());
+    }
+    write_row(
+        conn,
+        repo_id,
+        &WriteInput {
+            capability: "semantic",
+            state: ManifestState::Disabled,
+            interface_v: existing.interface_v,
+            data_v: existing.data_v,
+            config: &existing.config,
+            coverage: &coverage,
+            writer_requires: existing.writer_requires,
+            now,
+        },
+    )?;
+    Ok(SemanticLifecycleResult {
+        row: read_written(conn, repo_id, "semantic")?,
+        changed: true,
+    })
+}
+
+/// `spec/store` §5.10 (Phase 4b): is the repository's semantic row switched
+/// OFF while a provider is configured — the state only `omg embed disable`
+/// leaves (a row born `disabled` has no provider, and a provider change
+/// re-derives the row)? `semantic_present` is whether the composition carries
+/// the module (a host whose configured provider failed to start still does);
+/// without it the answer is `false` — the semantic paths refuse with the
+/// module's own state. When true they refuse with [`Error::SemanticSwitchedOff`].
+pub fn semantic_switched_off(
+    conn: &Connection,
+    semantic_present: bool,
+    repo_id: &str,
+) -> Result<bool> {
+    if !semantic_present {
+        return Ok(false);
+    }
+    let Some(row) = read_capability(conn, repo_id, "semantic")? else {
+        return Ok(false);
+    };
+    Ok(row.state == ManifestState::Disabled && semantic_provider_configured(conn, repo_id)?)
+}
+
+/// The effective `embedding.provider` of a repository (the string, or `None`)
+/// — what a settings write compares before and after (`spec/store` §5.10).
+pub fn semantic_provider_of(conn: &Connection, repo_id: &str) -> Result<Option<String>> {
+    let settings = effective_settings(conn, repo_id)?;
+    Ok(settings
+        .get("embedding")
+        .and_then(Json::as_object)
+        .and_then(|e| e.get("provider"))
+        .and_then(Json::as_str)
+        .filter(|p| !p.trim().is_empty())
+        .map(str::to_owned))
 }
 
 /// The alert a refused writer raises (spec/store §3.1 `alerts`; §7 resolution 17).
@@ -1065,7 +1545,7 @@ mod tests {
                 json!({ "embedding": { "provider": "omgbase-embedder", "model": "m1", "dim": 768 } }),
             ),
         );
-        let row = refresh_semantic_manifest(store.conn(), &repo, T1).unwrap();
+        let row = refresh_semantic_manifest(store.conn(), &repo, T1, true).unwrap();
         assert_eq!(row.state, ManifestState::Enabled);
         assert_eq!(
             row.coverage,
@@ -1090,7 +1570,7 @@ mod tests {
             &store,
             &settings(json!({ "embedding": { "provider": "omgbase-embedder", "model": "m2" } })),
         );
-        let row = refresh_semantic_manifest(store.conn(), &repo, T2).unwrap();
+        let row = refresh_semantic_manifest(store.conn(), &repo, T2, true).unwrap();
         assert_eq!(row.state, ManifestState::Enabled);
         assert_eq!(row.coverage[0].to, None);
         assert_eq!(row.config, settings(json!({ "model": "m2" })));
@@ -1100,15 +1580,15 @@ mod tests {
         );
         // Unchanged: not touched.
         assert_eq!(
-            refresh_semantic_manifest(store.conn(), &repo, "2026-09-26T13:00:00.000Z")
+            refresh_semantic_manifest(store.conn(), &repo, "2026-09-26T13:00:00.000Z", true)
                 .unwrap()
                 .updated_at,
             T2
         );
         // The provider gone: the interval closes.
         write_workspace(&store, &Map::new());
-        let row =
-            refresh_semantic_manifest(store.conn(), &repo, "2026-09-26T13:00:00.000Z").unwrap();
+        let row = refresh_semantic_manifest(store.conn(), &repo, "2026-09-26T13:00:00.000Z", true)
+            .unwrap();
         assert_eq!(row.state, ManifestState::Disabled);
         assert_eq!(
             row.coverage,

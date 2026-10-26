@@ -39,7 +39,8 @@ use omgbase_store::delta::{
     parse_frontmatter_blob, parse_node_text,
 };
 use omgbase_store::{
-    BatchItem, BatchOutcome, DocOpContext, NullDocStore, Origin, SequentialMinter, Store, TreeEntry,
+    ARCHIVED_COMMITS_SQL, BatchItem, BatchOutcome, DocOpContext, NullDocStore, Origin,
+    SequentialMinter, Store, TreeEntry,
 };
 use omgbase_sync::engine::{DocBytes, EngineClient, FileBytes, InProcessEngineClient};
 use omgbase_sync::freshness::{CacheRow, DiskEntry};
@@ -55,6 +56,8 @@ use omgbase_sync::{
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map as JsonMap, Value as Json, json};
+
+use omgbase_store::manifest::{history_bundle_present, read_capability};
 
 const SPEC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/sync");
 const CASES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/sync/cases");
@@ -963,8 +966,44 @@ fn load() -> Loaded {
 
 // ---- helpers ----------------------------------------------------------------------
 
+/// A store under the composition the environment names (`spec/store` §9.6,
+/// `spec/sync` §8 — `OMGBASE_CAPABILITIES=core` opens without the recorder).
 fn fresh_store() -> Store {
-    Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).expect("in-memory store")
+    Store::open_in_memory_with_capabilities(
+        Box::new(SequentialMinter::new()),
+        omgbase_store::Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
+    )
+    .expect("in-memory store")
+}
+
+/// Is this the core-only run (`spec/sync` §8; `spec/store` §9.6)?
+fn core_only() -> bool {
+    std::env::var(omgbase_store::CAPABILITIES_ENV).is_ok_and(|v| v == "core")
+}
+
+/// `spec/sync` §8 "The core-only run" (4.2): the history tables a checkpoint
+/// case's expectation is compared with EMPTIED under `OMGBASE_CAPABILITIES=core`.
+const CORE_EMPTIED_TABLES: [&str; 7] = [
+    "commits",
+    "revisions",
+    "blobs",
+    "tree_nodes",
+    "dispositions",
+    "block_changes",
+    "archives",
+];
+
+/// The checkpoint cases compared with the history tables emptied (the ledger).
+static CORE_MAPPED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn core_mode_checkpoint_expect(expect: &Json) -> Json {
+    let mut out = expect.clone();
+    if let Some(o) = out.as_object_mut() {
+        for t in CORE_EMPTIED_TABLES {
+            o.insert(t.to_owned(), Json::Array(Vec::new()));
+        }
+    }
+    out
 }
 
 fn strings_of(v: Option<&Json>) -> Vec<String> {
@@ -2041,7 +2080,17 @@ fn check(c: &SpecCase) -> Result<(), String> {
     if !problems.is_empty() {
         return Err(clip(format!("problems: {}", problems.join("; "))));
     }
-    match deep_eq_tol(&actual, &c.case["expect"], "expect", EPS) {
+    // `spec/sync` §8 (4.2; `spec/store` §9.6): under the core-only run a
+    // checkpoint case's expectation is compared with its history tables
+    // emptied — nothing is skipped; the step outcomes, the core tables,
+    // `sync_state` and `file_stats` compare as recorded.
+    let expected = if core_only() && c.kind == Kind::Checkpoint {
+        CORE_MAPPED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        core_mode_checkpoint_expect(&c.case["expect"])
+    } else {
+        c.case["expect"].clone()
+    };
+    match deep_eq_tol(&actual, &expected, "expect", EPS) {
         None => Ok(()),
         Some(diff) => Err(clip(diff)),
     }
@@ -2180,6 +2229,20 @@ fn spec() {
             ""
         }
     );
+    if core_only() {
+        assert!(
+            !update_requested(),
+            "SYNC_SPEC_UPDATE under {}=core would record the core-only composition's answers; run it on the full one",
+            omgbase_store::CAPABILITIES_ENV
+        );
+        // The core-only run's ledger (`spec/sync` §8): which cases were
+        // compared with the history tables emptied.
+        eprintln!(
+            "spec: {}=core: {} checkpoint case(s) compared with the history tables emptied",
+            omgbase_store::CAPABILITIES_ENV,
+            CORE_MAPPED.load(std::sync::atomic::Ordering::SeqCst)
+        );
+    }
     assert!(
         all_ids.len() == passing.len() + failing.len(),
         "case ids are unique across files"
@@ -2430,8 +2493,17 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .map(|d| str_of(d, "doc_id").to_owned())
         .collect();
 
-    let commits = query_rows(
-        conn,
+    // Phase 4a/4b: a database no repository of which ever enabled capture has
+    // no history table — every history projection is `[]` then (`spec/sync` §8).
+    let history = history_bundle_present(conn).expect("sqlite_master reads");
+    let rows = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> Vec<Json> {
+        if history {
+            query_rows(conn, sql, params)
+        } else {
+            Vec::new()
+        }
+    };
+    let commits = rows(
         "SELECT commit_id, epoch, seq, ts, origin, actor, reason, batch_id, ops FROM commits WHERE repo_id = ?1 ORDER BY seq",
         &[&repo_id],
     );
@@ -2453,8 +2525,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         &[&repo_id],
     );
 
-    let mut revisions = query_rows(
-        conn,
+    let mut revisions = rows(
         "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
          FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
         &[&repo_id],
@@ -2466,7 +2537,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
             .then(int_of(a, "seq").cmp(&int_of(b, "seq")))
     });
 
-    let mut blobs: Vec<Json> = {
+    let mut blobs: Vec<Json> = if history {
         let mut stmt = conn
             .prepare("SELECT hash, size, bytes FROM blobs")
             .expect("valid SQL");
@@ -2479,9 +2550,11 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
         .expect("query runs")
         .map(|r| r.expect("row reads"))
         .collect()
+    } else {
+        Vec::new()
     };
     blobs.sort_by(|a, b| str_of(a, "hash").cmp(str_of(b, "hash")));
-    let mut tree_nodes = query_rows(conn, "SELECT hash, entries FROM tree_nodes", &[]);
+    let mut tree_nodes = rows("SELECT hash, entries FROM tree_nodes", &[]);
     tree_nodes.sort_by(|a, b| str_of(a, "hash").cmp(str_of(b, "hash")));
 
     let mut blocks = Vec::new();
@@ -2505,8 +2578,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
                     .cmp(str_of(b, "kind").as_bytes()),
             )
     };
-    let mut dispositions: Vec<Json> = query_rows(
-        conn,
+    let mut dispositions: Vec<Json> = rows(
         "SELECT x.commit_id, x.block_id, x.kind, x.confidence, x.reason, x.matcher_v, x.detail
          FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?1",
         &[&repo_id],
@@ -2515,8 +2587,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     .map(|r| with_json_column(r, "detail"))
     .collect();
     dispositions.sort_by(by_commit_block_kind);
-    let mut block_changes = query_rows(
-        conn,
+    let mut block_changes = rows(
         "SELECT bc.block_id, bc.commit_id, bc.kind FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1",
         &[&repo_id],
     );
@@ -2552,8 +2623,7 @@ fn project_store(conn: &Connection, repo_id: &str) -> Vec<(String, Json)> {
     );
     // `spec/store` §9.4 (15.0): the recorded segments by `(seq_lo,
     // segment_id)`, `path` as its file name, `bytes` omitted.
-    let archives: Vec<Json> = query_rows(
-        conn,
+    let archives: Vec<Json> = rows(
         "SELECT segment_id, path, seq_lo, seq_hi, created_at, revision_count FROM archives WHERE repo_id = ?1 ORDER BY seq_lo, segment_id",
         &[&repo_id],
     )
@@ -2700,19 +2770,57 @@ fn check_invariants(
         }
     }
 
-    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> =
+    // ---- the composition and the coverage (README §8, Phase 4a) -------------------------------
+    // The history invariants are checked when the store carries the module
+    // and the bundle's tables exist (`reader`); within them, what capture
+    // promised is bounded by the repository's COVERAGE intervals (§3.1
+    // `capabilities.coverage`): a document whose head was minted outside
+    // coverage owes no revision (H1/H3 skip it unless the baseline captured
+    // it), a feed row outside coverage owes no `commits` row (H4),
+    // `commits.seq` is dense only when capture was never off (I4), and the
+    // edge record agrees with the open edges only while capture is on (H6).
+    // A core-only run checks C*, F* and A1 alone.
+    let reader = store.history_reader().ok().flatten().is_some();
+    let manifest = read_capability(conn, repo_id, "history").ok().flatten();
+    let coverage: Vec<(String, Option<String>)> = manifest
+        .as_ref()
+        .map(|m| {
+            m.coverage
+                .iter()
+                .map(|i| (i.from.clone(), i.to.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let capture_on = manifest
+        .as_ref()
+        .is_some_and(|m| m.state == omgbase_store::ManifestState::Enabled);
+    let in_coverage = |ts: &str| -> bool {
+        coverage
+            .iter()
+            .any(|(from, to)| from.as_str() <= ts && to.as_deref().is_none_or(|t| ts < t))
+    };
+    let never_off =
+        coverage.len() == 1 && coverage[0].1.is_none() && coverage[0].0.as_str() <= FIXTURE_BIRTH;
+
+    let blob_rows: Vec<(Vec<u8>, Vec<u8>, i64)> = if reader {
         all_rows(conn, "SELECT hash, bytes, size FROM blobs", &[], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let blob_hashes: HashSet<String> = blob_rows.iter().map(|b| hex(&b.0)).collect();
     let blob_text: HashMap<String, String> = blob_rows
         .iter()
         .map(|b| (hex(&b.0), String::from_utf8_lossy(&b.1).into_owned()))
         .collect();
-    let tree_rows: Vec<(Vec<u8>, String)> =
+    let tree_rows: Vec<(Vec<u8>, String)> = if reader {
         all_rows(conn, "SELECT hash, entries FROM tree_nodes", &[], |r| {
             Ok((r.get(0)?, r.get(1)?))
-        });
+        })
+    } else {
+        Vec::new()
+    };
     let tree_hashes: HashSet<String> = tree_rows.iter().map(|t| hex(&t.0)).collect();
     let node_texts: HashMap<String, &str> = tree_rows
         .iter()
@@ -2720,12 +2828,16 @@ fn check_invariants(
         .collect();
     // 16.0: a node is a `[`-form list or a `{"d":…}` delta (§4.1 "Delta nodes").
     let mut nodes: HashMap<String, Node> = HashMap::new();
-    let commits: Vec<(String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    );
+    let commits: Vec<(String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, seq, ts FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    } else {
+        Vec::new()
+    };
     let commit_by_id: HashMap<&str, &(String, i64, String)> =
         commits.iter().map(|c| (c.0.as_str(), c)).collect();
     let docs: Vec<Doc> = all_rows(
@@ -2745,35 +2857,46 @@ fn check_invariants(
             })
         },
     );
-    let revisions: Vec<Rev> = all_rows(
-        conn,
-        "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
-         FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
-        &[&repo_id],
-        |r| {
-            Ok(Rev {
-                rev_id: r.get(0)?,
-                doc_id: r.get(1)?,
-                seq: r.get(2)?,
-                root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
-                frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
-                rendered_hash: r.get(5)?,
-                path: r.get(6)?,
-                commit_id: r.get(7)?,
-                archive: r.get(8)?,
-            })
-        },
-    );
-    // I9 (`spec/store` 15.0): `archive IS NOT NULL` ⇔ `root_tree IS NULL`.
+    let revisions: Vec<Rev> = if reader {
+        all_rows(
+            conn,
+            "SELECT r.rev_id, r.doc_id, r.seq, r.root_tree, r.frontmatter_blob, r.rendered_hash, r.path, r.commit_id, r.archive
+             FROM revisions r JOIN docs d ON d.doc_id = r.doc_id WHERE d.repo_id = ?1",
+            &[&repo_id],
+            |r| {
+                Ok(Rev {
+                    rev_id: r.get(0)?,
+                    doc_id: r.get(1)?,
+                    seq: r.get(2)?,
+                    root_tree: r.get::<_, Option<Vec<u8>>>(3)?.map(|h| hex(&h)),
+                    frontmatter_blob: r.get::<_, Option<Vec<u8>>>(4)?.map(|h| hex(&h)),
+                    rendered_hash: r.get(5)?,
+                    path: r.get(6)?,
+                    commit_id: r.get(7)?,
+                    archive: r.get(8)?,
+                })
+            },
+        )
+    } else {
+        Vec::new()
+    };
+    let rev_by_id: HashMap<&str, &Rev> = revisions.iter().map(|r| (r.rev_id.as_str(), r)).collect();
+
+    // ---- I9 archived revisions (15.0) ----------------------------------------------------
+    // `archive IS NOT NULL` ⇔ `root_tree IS NULL`, and an archived revision
+    // has no frontmatter blob either: the bodies moved to the segment, the
+    // row stayed.
     for r in &revisions {
-        if r.archive.is_some() != r.root_tree.is_none() {
+        if r.archive.is_some() && (r.root_tree.is_some() || r.frontmatter_blob.is_some()) {
             problems.push(format!(
-                "I9: revision {} archive/root_tree disagree",
+                "I9: archived revision {} still carries a root_tree or frontmatter_blob",
                 r.rev_id
             ));
         }
+        if r.archive.is_none() && r.root_tree.is_none() {
+            problems.push(format!("I9: live revision {} has no root_tree", r.rev_id));
+        }
     }
-    let rev_by_id: HashMap<&str, &Rev> = revisions.iter().map(|r| (r.rev_id.as_str(), r)).collect();
 
     // ---- I2 hash integrity ------------------------------------------------------------
     for (hash, bytes, size) in &blob_rows {
@@ -3306,10 +3429,11 @@ fn check_invariants(
         }
         last_kind_of_doc.insert(doc_id.as_str(), kind.as_str());
     }
-    // F1: every head still within retention has its entry. When nothing was
-    // pruned (oldest ≤ 1) every live doc's head and every tombstone's deletion
-    // appear; after a prune only the documents whose last change is younger
-    // than the oldest retained row are checked.
+    // F1: every head still within the retained feed has its entry: every live
+    // doc's head and every tombstone's deletion whose last change is not older
+    // than the oldest retained row (a prune takes rows from the front; an epoch
+    // re-mint, §7.5, empties the feed — the documents committed before it have
+    // no entry and none is owed).
     let oldest_ts: Option<&str> = feed_by_seq.first().map(|r| r.3.as_str());
     let heads_in_feed: HashSet<&str> = entries.iter().filter_map(|e| e.4.as_deref()).collect();
     let deleted_in_feed: HashSet<&str> = entries
@@ -3318,7 +3442,7 @@ fn check_invariants(
         .map(|e| e.2.as_str())
         .collect();
     for d in &docs {
-        let within = oldest <= 1 || oldest_ts.is_some_and(|t| d.updated_at.as_str() > t);
+        let within = oldest_ts.is_some_and(|t| d.updated_at.as_str() >= t);
         if !within {
             continue;
         }
@@ -3353,21 +3477,39 @@ fn check_invariants(
             ));
         }
     }
-    // H4: the recorder's `commits` agree with the feed on every retained seq.
-    let commit_rows: Vec<(String, String, i64, String)> = all_rows(
-        conn,
-        "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
-        &[&repo_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    );
-    let commit_by_seq: HashMap<i64, &(String, String, i64, String)> =
-        commit_rows.iter().map(|c| (c.2, c)).collect();
+    // H4: the recorder's `commits` agree with the feed on every retained seq
+    // WITHIN COVERAGE (Phase 4a: a feed row written while capture was off has
+    // no log row) and AT OR AFTER THE LOG'S OLDEST ROW of the epoch (Phase 4b:
+    // a `history purge` trims the log's head — a feed row older than every
+    // retained commit owes none; a repository with no commit owes none), and
+    // every log row of the current epoch at or after the oldest retained feed
+    // row IS a feed row (the log is a subsequence of the feed).
+    let commit_rows: Vec<(String, String, i64, String)> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, epoch, seq, batch_id FROM commits WHERE repo_id = ?1 ORDER BY seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+    } else {
+        Vec::new()
+    };
+    let commit_by_seq: HashMap<i64, &(String, String, i64, String)> = commit_rows
+        .iter()
+        .filter(|c| c.1 == epoch)
+        .map(|c| (c.2, c))
+        .collect();
+    let oldest_log_seq = commit_by_seq.keys().copied().min().unwrap_or(i64::MAX);
     for r in &feed_by_seq {
         match commit_by_seq.get(&r.1) {
-            None => problems.push(format!(
-                "H4: feed row {} (seq {}) has no commits row",
-                r.2, r.1
-            )),
+            None => {
+                if reader && in_coverage(&r.3) && r.1 >= oldest_log_seq {
+                    problems.push(format!(
+                        "H4: feed row {} (seq {}) has no commits row",
+                        r.2, r.1
+                    ));
+                }
+            }
             Some(c) if c.0 != r.2 || c.1 != r.0 || c.3 != r.5 => problems.push(format!(
                 "H4: commits row at seq {} ({}, {}, {}) disagrees with the feed ({}, {}, {})",
                 r.1, c.0, c.1, c.3, r.2, r.0, r.5
@@ -3375,9 +3517,33 @@ fn check_invariants(
             Some(_) => {}
         }
     }
+    let feed_commits: HashSet<&str> = feed_by_seq.iter().map(|r| r.2.as_str()).collect();
     for c in &commit_rows {
-        if c.1 != epoch {
-            problems.push(format!("H4: commit {} carries epoch {}", c.0, c.1));
+        if c.1 == epoch && c.2 >= oldest && !feed_commits.contains(c.0.as_str()) {
+            problems.push(format!(
+                "H4: commits row {} (seq {}) is within the retained feed but has no feed row",
+                c.0, c.2
+            ));
+        }
+    }
+    // A commit of an earlier epoch is a re-mint's (§7.5): its epoch must still
+    // be a claimed `ep` of the repository.
+    let epoch_claimed = |ep: &str| -> bool {
+        conn.query_row(
+            "SELECT 1 FROM id_claims WHERE id = ?1 AND prefix = 'ep' AND repo_id = ?2",
+            params![ep, repo_id],
+            |_| Ok(()),
+        )
+        .optional()
+        .expect("query runs")
+        .is_some()
+    };
+    for c in &commit_rows {
+        if c.1 != epoch && !epoch_claimed(&c.1) {
+            problems.push(format!(
+                "H4: commit {} carries epoch {}, which is neither the repository's nor a claimed earlier one",
+                c.0, c.1
+            ));
         }
     }
 
@@ -3504,13 +3670,19 @@ fn check_invariants(
                 }
             }
         }
-        // H1: with legacy capture on, the head IS a captured revision — same
-        // path, same bytes, the same commit instant as `updated_at` — and
-        // reconstruct at it reproduces the source.
+        // H1: with capture on, the head IS a captured revision — same path,
+        // same bytes, the same commit instant as `updated_at` — and
+        // reconstruct at it reproduces the source. Phase 4a: owed only for a
+        // head minted within coverage (a head minted while capture was off
+        // has a row only when the baseline of a later `history enable` wrote
+        // one — then the row's commit is the baseline's, not the head's, so
+        // the instant is not compared); without the module nothing is owed.
         let Some(rev) = rev_by_id.get(head.as_str()) else {
-            problems.push(format!(
-                "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
-            ));
+            if reader && in_coverage(&d.updated_at) {
+                problems.push(format!(
+                    "H1: {at} head {head} has no revisions row (capture disagrees with the head)"
+                ));
+            }
             continue;
         };
         let Some(root_tree) = rev.root_tree.as_deref() else {
@@ -3531,6 +3703,7 @@ fn check_invariants(
             ));
         }
         if let Some((_, _, ts)) = commit_by_id.get(rev.commit_id.as_str())
+            && in_coverage(&d.updated_at)
             && *ts != d.updated_at
         {
             problems.push(format!(
@@ -3708,37 +3881,78 @@ fn check_invariants(
         );
     }
 
-    // ---- I4 dense sequences ------------------------------------------------------------
-    for (i, (commit_id, seq, _)) in commits.iter().enumerate() {
-        if *seq != i as i64 + 1 {
-            problems.push(format!(
-                "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order",
-                i + 1
-            ));
+    // ---- I4 sequences (per epoch since 17.0: a re-mint restarts the seq) -----------------
+    // `commits.seq` is strictly increasing in (ts, seq) order per epoch, and
+    // dense from the oldest retained row when capture was never off (Phase 4a:
+    // a disabled interval leaves the feed's seqs of that span out of the log;
+    // Phase 4b: a purge trims the log's head, so the run starts where the log
+    // does).
+    type EpochCommit = (String, i64, String);
+    let commits_by_epoch: Vec<EpochCommit> = if reader {
+        all_rows(
+            conn,
+            "SELECT commit_id, seq, epoch FROM commits WHERE repo_id = ?1 ORDER BY ts, seq",
+            &[&repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    } else {
+        Vec::new()
+    };
+    let mut per_epoch: Vec<(String, Vec<&EpochCommit>)> = Vec::new();
+    for c in &commits_by_epoch {
+        match per_epoch.iter_mut().find(|(ep, _)| *ep == c.2) {
+            Some((_, list)) => list.push(c),
+            None => per_epoch.push((c.2.clone(), vec![c])),
+        }
+    }
+    for (ep, list) in &per_epoch {
+        for (i, (commit_id, seq, _)) in list.iter().enumerate() {
+            if never_off && *seq != list[0].1 + i as i64 {
+                problems.push(format!(
+                    "I4: commit {commit_id} has seq {seq} at position {} in (ts, seq) order of epoch {ep} (the log begins at seq {})",
+                    i + 1,
+                    list[0].1
+                ));
+            }
+            if i > 0 && *seq <= list[i - 1].1 {
+                problems.push(format!(
+                    "I4: commit {commit_id} has seq {seq} after seq {} in (ts, seq) order of epoch {ep}",
+                    list[i - 1].1
+                ));
+            }
         }
     }
     for d in &docs {
         let mut revs: Vec<&Rev> = revisions.iter().filter(|r| r.doc_id == d.doc_id).collect();
         revs.sort_by_key(|r| r.seq);
+        // Per document the retained revisions' seqs are consecutive; they
+        // begin at 1 unless a purge trimmed the document's history (Phase 4b).
+        let first_seq = revs.first().map_or(1, |r| r.seq);
         for (i, r) in revs.iter().enumerate() {
-            if r.seq != i as i64 + 1 {
+            if r.seq != first_seq + i as i64 {
                 problems.push(format!(
                     "I4: revision {} of {} has seq {}, expected {}",
                     r.rev_id,
                     d.doc_id,
                     r.seq,
-                    i + 1
+                    first_seq + i as i64
                 ));
             }
         }
+        // Phase 4a: a head minted while capture was off is newer than every
+        // captured revision (until a baseline captures it).
         match revs.last() {
-            Some(last) if d.head.as_deref() != Some(last.rev_id.as_str()) => {
+            Some(last)
+                if d.deleted_at.is_none()
+                    && in_coverage(&d.updated_at)
+                    && d.head.as_deref() != Some(last.rev_id.as_str()) =>
+            {
                 problems.push(format!(
                     "I4: doc {} head {:?} is not its greatest-seq revision",
                     d.doc_id, d.head
                 ));
             }
-            None if d.head.is_some() => {
+            None if d.head.is_some() && reader && in_coverage(&d.updated_at) => {
                 problems.push(format!("I4: doc {} has head but no revisions", d.doc_id));
             }
             _ => {}
@@ -3746,6 +3960,7 @@ fn check_invariants(
     }
 
     // ---- I5 nothing to collect ------------------------------------------------------------
+    // 15.0: the mark walks the LIVE revisions; an archived one's bodies are its segment's.
     let mut marked_trees: HashSet<String> = HashSet::new();
     let mut marked_blobs: HashSet<String> = HashSet::new();
     let mut stack: Vec<String> = revisions
@@ -3777,13 +3992,15 @@ fn check_invariants(
     for h in &tree_hashes {
         if !marked_trees.contains(h) {
             problems.push(format!(
-                "I5: tree_node {h} is unreachable from every revision"
+                "I5: tree_node {h} is unreachable from every live revision"
             ));
         }
     }
     for h in &blob_hashes {
         if !marked_blobs.contains(h) {
-            problems.push(format!("I5: blob {h} is unreachable from every revision"));
+            problems.push(format!(
+                "I5: blob {h} is unreachable from every live revision"
+            ));
         }
     }
     if let Ok(dry) = store.gc_dry_run()
@@ -3795,7 +4012,7 @@ fn check_invariants(
         ));
     }
 
-    // ---- I6 pool -------------------------------------------------------------------------
+    // ---- C6 pool (17.0; I6 restated over the row's own `deleted_at`) -----------------------
     let live_doc_of = |block_id: &str| -> Option<String> {
         conn.query_row(
             "SELECT doc_id FROM blocks WHERE block_id = ?1 AND deleted_at IS NULL",
@@ -3805,7 +4022,6 @@ fn check_invariants(
         .optional()
         .expect("query runs")
     };
-    // C6 (17.0; I6 restated over the row's own `deleted_at`).
     let pool: Vec<(String, String, String, String)> = all_rows(
         conn,
         "SELECT block_id, created_at, deleted_at, expires_ts FROM resurrection_pool WHERE repo_id = ?1",
@@ -3813,7 +4029,7 @@ fn check_invariants(
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     );
     for (block_id, created_at, deleted_at, expires_ts) in &pool {
-        if omgbase_store::time::parse_ms(deleted_at).is_err() {
+        if !is_spec_ts(deleted_at) {
             problems.push(format!(
                 "C6: pool row {block_id} deleted_at {deleted_at} is not a §2.4 timestamp"
             ));
@@ -3926,7 +4142,10 @@ fn check_invariants(
             ));
         }
     }
-    let unheld: Vec<String> = all_rows(
+    let unheld: Vec<String> = if !reader {
+        Vec::new()
+    } else {
+        all_rows(
         conn,
         "SELECT DISTINCT bc.block_id AS id FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE c.repo_id = ?1 AND bc.block_id != 'DOC'
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = bc.block_id AND (ic.holders & 2) != 0)
@@ -3936,21 +4155,62 @@ fn check_invariants(
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = r.doc_id AND (ic.holders & 2) != 0)
          UNION SELECT c.commit_id FROM commits c WHERE c.repo_id = ?1
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = c.commit_id AND (ic.holders & 2) != 0)
+         UNION SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = t.edge_id AND (ic.holders & 2) != 0)
          ORDER BY 1",
         &[&repo_id],
         |r| r.get(0),
-    );
+    )
+    };
     for id in unheld {
         problems.push(format!(
             "H6: {id} is named by a history row but its claim lacks the recorder's bit"
         ));
     }
+    // Without the module nothing below applies: the dispositions, the
+    // projection and the archive rule are the recorder's.
+    if !reader {
+        return problems;
+    }
+    // H6 (17.0, M6): the open transitions and the edges agree — same ids,
+    // same destination — while capture is on (Phase 4a: the edges move freely
+    // while it is off; the baseline of the next `history enable` reconciles them).
+    if capture_on {
+        for id in all_rows(
+            conn,
+            "SELECT t.edge_id FROM edge_transitions t WHERE t.repo_id = ?1 AND t.to_commit IS NULL AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.edge_id = t.edge_id) ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!("H6: open transition {id} has no edges row"));
+        }
+        for id in all_rows(
+            conn,
+            "SELECT e.edge_id FROM edges e WHERE e.repo_id = ?1 AND NOT EXISTS (SELECT 1 FROM edge_transitions t WHERE t.edge_id = e.edge_id AND t.to_commit IS NULL) ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!("H6: edge {id} has no open transition"));
+        }
+        for id in all_rows(
+            conn,
+            "SELECT e.edge_id FROM edges e JOIN edge_transitions t ON t.edge_id = e.edge_id WHERE e.repo_id = ?1 AND t.to_commit IS NULL AND t.dst_node != e.dst_node ORDER BY 1",
+            &[&repo_id],
+            |r| r.get::<_, String>(0),
+        ) {
+            problems.push(format!(
+                "H6: edge {id} and its open transition disagree on dst_node"
+            ));
+        }
+    }
 
     // ---- I7 dispositions ------------------------------------------------------------------
-    // Every disposition names an existing commit. For each live doc's CURRENT
-    // commit, a disposition on a block that survives the commit (every kind
-    // but `deleted` / `merged_into`) names a live row of that doc, and a
-    // `deleted` / `merged_into` one names no live row of that doc.
+    // Every disposition names an existing commit. For each commit that is
+    // the CURRENT commit of at least one live doc, over the live docs whose
+    // current revision it wrote: a disposition on a block that survives the
+    // commit (every kind but `deleted` / `merged_into`) names a live row of
+    // one of those docs, and a `deleted` / `merged_into` one names no live
+    // row of any of them.
     let dispositions: Vec<(String, String, String)> = all_rows(
         conn,
         "SELECT x.commit_id, x.block_id, x.kind FROM dispositions x JOIN commits c ON c.commit_id = x.commit_id WHERE c.repo_id = ?1",
@@ -3964,6 +4224,10 @@ fn check_invariants(
             ));
         }
     }
+    // The live docs whose current revision each commit wrote: one on the
+    // observe path, N for an `api` changeset (spec/store §5.4 "The api
+    // path", 13.7).
+    let mut current_docs_of: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for d in &docs {
         let (Some(head), None) = (&d.head, &d.deleted_at) else {
             continue;
@@ -3971,30 +4235,39 @@ fn check_invariants(
         let Some(rev) = rev_by_id.get(head.as_str()) else {
             continue;
         };
+        current_docs_of
+            .entry(rev.commit_id.as_str())
+            .or_default()
+            .insert(d.doc_id.as_str());
+    }
+    for (commit, doc_ids) in &current_docs_of {
+        let label = doc_ids.iter().copied().collect::<Vec<_>>().join(",");
         for (commit_id, block_id, kind) in &dispositions {
-            if *commit_id != rev.commit_id || block_id == "DOC" {
+            if commit_id != commit || block_id == "DOC" {
                 continue;
             }
             let row = live_doc_of(block_id);
+            let live_here = row.as_deref().is_some_and(|d| doc_ids.contains(d));
             let gone = kind == "deleted" || kind == "merged_into";
-            if gone && row.as_deref() == Some(d.doc_id.as_str()) {
+            if gone && live_here {
                 problems.push(format!(
                     "I7: {kind} block {block_id} of {commit_id} is still live in {}",
-                    d.doc_id
+                    row.as_deref().unwrap_or("")
                 ));
             }
-            if !gone && row.as_deref() != Some(d.doc_id.as_str()) {
+            if !gone && !live_here {
                 problems.push(format!(
-                    "I7: {kind} block {block_id} of {commit_id} is not live in {}",
-                    d.doc_id
+                    "I7: {kind} block {block_id} of {commit_id} is not live in {label}"
                 ));
             }
         }
     }
-    // 14.2: `same` is never persisted (`spec/store` §5.4 step 10; the §7
-    // sweep removes a 14.1 store's), and a block's rows are its own history —
-    // so every live block has at least one (its `inserted`, lineage or
-    // resurrection row).
+    // 14.2: `same` is never persisted (§5.4 step 10; the §7 sweep removes a
+    // 14.1 store's), and a block's rows are its own history — so every live
+    // block has at least one (its `inserted`, lineage or resurrection row)
+    // UNLESS the commit that wrote it is wholly archived (17.0: the squash
+    // empties a wholly archived commit's rows; the recorder's hold on the
+    // id's claim is what remains of them, H6).
     for (commit_id, block_id, kind) in &dispositions {
         if kind == "same" {
             problems.push(format!(
@@ -4002,20 +4275,21 @@ fn check_invariants(
             ));
         }
     }
-    // 17.0: qualified by H6 — a block whose commit was wholly archived has no
-    // row left; the recorder's hold on its claim is what remains.
-    let unchanged: Vec<String> = all_rows(
+    let unchanged: Vec<(String, String)> = all_rows(
         conn,
-        "SELECT b.block_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL
+        "SELECT b.block_id, b.created_at FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE d.repo_id = ?1 AND b.deleted_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM block_changes bc WHERE bc.block_id = b.block_id)
            AND NOT EXISTS (SELECT 1 FROM id_claims ic WHERE ic.id = b.block_id AND (ic.holders & 2) != 0) ORDER BY b.block_id",
         &[&repo_id],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     );
-    for block_id in unchanged {
-        problems.push(format!(
-            "I7: live block {block_id} has no block_changes row and no recorder hold on its claim"
-        ));
+    // Phase 4a: a block born while capture was off has neither until a baseline holds it.
+    for (block_id, created_at) in unchanged {
+        if in_coverage(&created_at) {
+            problems.push(format!(
+                "I7: live block {block_id} has no block_changes row and no recorder hold on its claim"
+            ));
+        }
     }
 
     // ---- I8 rebuild equivalence -----------------------------------------------------------
@@ -4056,6 +4330,10 @@ fn check_invariants(
             ));
         }
     }
+    // 17.0: `block_changes` is exactly the projection of `dispositions` over
+    // every commit — a wholly archived commit has neither (the squash deletes
+    // both; 15.0–16.x kept each block's earliest row for the mint oracle,
+    // which the claims table replaced).
     let bc_have = query_rows(
         conn,
         "SELECT block_id, commit_id, kind FROM block_changes ORDER BY block_id, commit_id, kind",
@@ -4074,6 +4352,34 @@ fn check_invariants(
     ) {
         problems.push(format!(
             "I8: block_changes differ from a rebuild out of dispositions ({diff})"
+        ));
+    }
+    let archived_disp: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM dispositions WHERE commit_id IN ({ARCHIVED_COMMITS_SQL})"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .expect("query runs");
+    if archived_disp > 0 {
+        problems.push(format!(
+            "I9: {archived_disp} disposition rows of wholly archived commits remain"
+        ));
+    }
+    let archived_bc: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM block_changes WHERE commit_id IN ({ARCHIVED_COMMITS_SQL})"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .expect("query runs");
+    if archived_bc > 0 {
+        problems.push(format!(
+            "I9: {archived_bc} block_changes rows of wholly archived commits remain"
         ));
     }
     problems

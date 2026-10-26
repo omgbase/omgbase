@@ -336,6 +336,13 @@ impl Cli {
         let Some(cfg) = self.embedding_settings(repo_id)? else {
             return Ok(None);
         };
+        // The row switched off by `omg embed disable` while the provider stays
+        // configured (`spec/store` §5.10, Phase 4b): nothing is spawned — an
+        // opportunistic caller (`find`) is FTS-only, an explicit one (`query`
+        // with `semantic()`) is refused by the surface's gate with the fix.
+        if self.store()?.semantic_switched_off(repo_id)? {
+            return Ok(None);
+        }
         match create_external_provider(&cfg) {
             Ok(Some(p)) => Ok(Some(p)),
             Ok(None) => Ok(None),

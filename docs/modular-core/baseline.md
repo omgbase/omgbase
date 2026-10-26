@@ -1036,6 +1036,63 @@ in both. Nothing moved.
 | delete / recreate | 20 | 6.91 | 135 | 6.8 | 3.16 | 0.44 | 0.01 | 2.70 | 0.23 | 0.36 | 0 |
 | gc | — | 6.91 | 0 | — | 3.16 | 0.44 | 0.01 | 2.70 | 0.23 | 0.36 | 0 |
 
+### 17.2 (Phase 4b), Rust — history on, no regression, the twin (`rust-2026-10-26T15-37-41`)
+
+The Rust twin of Phase 4b (`crates/omgbase-store` 17.2: `history purge`,
+the semantic lifecycle, the `feed_capped` alert, the read-state table —
+none of which this workload exercises), release build of the `omgbase`
+crate 0.28.0 + the working tree, the same seeded corpus (0.22 MB of
+Markdown, 201 documents), capture on from the first commit. The comparison
+rows: the TS 4b run (`ts-2026-10-26T11-42-15`) and the Rust 4a run
+(`rust-2026-10-26T10-46-00`, 6.20 / 6.92 MB).
+
+| stage | ops | db MB | grew KB | KB / op | content | identity | recovery | history | search | sync | TS 4b (db MB / KB / op / history MB) | Rust 4a (db MB / KB / op) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| import | 201 docs | 6.22 | 6,222 | 31.0 / doc | 3.12 | 0.39 | 0.01 | 2.24 | 0.23 | 0.24 | 6.20 / 30.9 / 2.23 | 6.20 / 30.9 |
+| frontmatter hot update | 50 | 6.32 | 98 | 2.0 | 3.12 | 0.39 | 0.01 | 2.29 | 0.23 | 0.27 | 6.31 / 2.2 / 2.29 | 6.30 / 2.0 |
+| block edit | 50 | 6.43 | 111 | 2.2 | 3.12 | 0.40 | 0.01 | 2.37 | 0.23 | 0.29 | 6.44 / 2.6 / 2.38 | 6.42 / 2.3 |
+| rolling journal | 50 | 6.62 | 188 | 3.8 | 3.14 | 0.41 | 0.01 | 2.50 | 0.25 | 0.31 | 6.62 / 3.4 / 2.49 | 6.61 / 3.8 |
+| task churn | 50 | 6.68 | 66 | 1.3 | 3.14 | 0.42 | 0.01 | 2.54 | 0.23 | 0.34 | 6.68 / 1.4 / 2.54 | 6.68 / 1.5 |
+| link churn | 50 | 6.77 | 86 | 1.7 | 3.14 | 0.43 | 0.01 | 2.60 | 0.24 | 0.35 | 6.78 / 1.9 / 2.60 | 6.77 / 1.9 |
+| delete / recreate | 20 | 6.91 | 139 | 7.0 | 3.15 | 0.45 | 0.01 | 2.70 | 0.24 | 0.36 | 6.91 / 6.8 / 2.70 | 6.92 / 7.2 |
+| gc (default sweep) | | 6.91 | 0 | | 3.15 | 0.45 | 0.01 | 2.70 | 0.24 | 0.36 | 6.91 / 0 / 2.70 | 6.92 / 0 |
+
+**Nothing moved.** Against the Rust 4a run: import 6.22 vs 6.20 MB, the
+end 6.91 vs 6.92 MB (+20 KB / −8 KB, within the page noise of the 17.0
+rows), `history` 2.70 MB at the end in both; every per-op cost within a
+tenth of a KB except the recreate (7.0 vs 7.2 — the page split again).
+Against the TS 4b run: 6.22 / 6.91 vs 6.20 / 6.91 MB, `history` 2.70 in
+both, the per-op costs within the two engines' usual spread (frontmatter
+2.0 vs 2.2, block edit 2.2 vs 2.6, journal 3.8 vs 3.4, task 1.3 vs 1.4,
+link 1.7 vs 1.9, recreate 7.0 vs 6.8). Row for row after gc the Rust run
+is the Rust 4a run exactly — `blobs` 3,218, `tree_nodes` 1,000,
+`dispositions` / `block_changes` 3,824, `revisions` 461, `commits` 471,
+`edge_transitions` 955, `edges` 803, `id_claims` 5,715, `feed` /
+`feed_entries` 471, `blocks` 3,454, `properties` 1,606 — and the TS 4a
+run's too (`ts-2026-10-26T09-07-08`: the same counts). The TS 4b run alone
+reads `dispositions` / `block_changes` 3,822 and `tree_nodes` 1,001 from
+the task-churn stage on (3,652 / 959 against 3,654 / 957 at that stage;
+`history` 13,750 rows against 13,753 at the end) — two verdicts and one
+sibling list, a difference that the Rust twin does not reproduce and that
+no fixture pins (every `spec/store`, `spec/mutate` and `spec/surface` case
+is byte-identical between the engines, interop 8/8 in both compositions);
+recorded here as a harness observation for the TS side to look at, not as a
+divergence of this twin. Bytes a page apart here and there as before
+(`blobs` 634,880 vs 630,784, `dispositions` 344,064 vs 348,160,
+`block_changes` 290,816 vs 294,912, `edge_transitions` 163,840 vs 159,744,
+`id_claims` 438,272 vs 434,176; `tree_nodes` 974,848, `revisions` 110,592,
+`commits` 172,032, `feed` 139,264 / `feed_entries` 86,016 byte-identical).
+
+Latency (p50 / p95 ms, the process start 5 / 521 included — the p95 the one
+cold first spawn of ten): import 830; one write 22–28 / 29–36 (frontmatter
+25 / 30, block edit 27 / 32, journal 27 / 35, task churn 27 / 36, link churn
+28 / 32, recreate 22 / 29); `query` docs 14 / 17, blocks filter 13 / 18,
+`text("furnace")` 77 / 100, links 10 / 13; `outline` 11 / 12; `gc` 16 —
+within the Rust 4a run's noise (writes 24 / 27–34; queries 13–14 / 16–17,
+text 69 / 94); the run was alone on the machine. The read-state table costs
+a read nothing: `docs_read` of a captured revision and the current head are
+the 4a paths; the table is consulted only for a token the recorder lacks.
+
 ### Latency (CLI round trips, p50 / p95 ms)
 
 | op | Rust 0.27.3 (release build) | TS 0.26.3 (node 24) |
@@ -1107,6 +1164,30 @@ prints no path and no content):
 ```
 node scripts/baseline/real-corpus.mjs --source /path/to/notes --embedder "node $PWD/packages/embedder/dist/src/bin.js"
 ```
+
+**The Rust twin, same harness** (`--engine rust --bin target/release/omgbase`;
+release build of the `omgbase` crate 0.28.0 + the Phase 4b working tree,
+the same `@omgbase/embedder`; run `real-corpus-rust-2026-10-26T15-45-55`).
+The corpus is this repository's `docs/` again, one Markdown file larger
+than the TS run's (the 4b Rust baseline report under
+`docs/modular-core/baseline/` had landed in between — 43 files, 0.92 MB,
+4,083 blocks).
+
+| composition | docs | blocks | Markdown MB | database MB | × source | content | identity | recovery | history | search | sync |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| history on, embedder off | 43 | 4083 | 0.92 | 9.52 | 10.4× | 5.08 (53.4 %) | 0.36 | 0.01 | 3.33 (35.0 %) | 0.59 (6.2 %) | 0.15 |
+| history off, embedder off | 43 | 4083 | 0.92 | 6.14 | 6.7× | 5.07 (82.6 %) | 0.33 | 0.01 | 0.00 (0.0 %) | 0.59 (9.5 %) | 0.14 |
+| history on, embedder on | 43 | 4083 | 0.92 | 15.11 | 16.4× | 5.09 (33.7 %) | 0.36 | 0.01 | 3.34 (22.1 %) | 6.17 (40.8 %) | 0.15 |
+| history off, embedder on | 43 | 4083 | 0.92 | 11.75 | 12.8× | 5.09 (43.3 %) | 0.33 | 0.01 | 0.00 (0.0 %) | 6.18 (52.6 %) | 0.14 |
+
+The same shape as the reference's row for row: history off saves 3.38 MB
+(36 % of the history-on database, 10.4× → 6.7× the Markdown — the TS run
+−3.38 MB, −36 %), the embedder adds 5.60 / 5.61 MB of vectors (TS 5.55),
+the four compositions span 6.7× – 16.4× (TS 6.7× – 16.5×); `content` 5.08
+vs 5.04 MB and `history` 3.33 vs 3.29 MB on a corpus 0.01 MB larger. Import
+0.5–0.9 s (TS 2.0–2.2 s — the process start, mostly); the drain of 4,083
+blocks + 43 documents 218–221 s on this machine (TS ≈ 270 s for 4,009) —
+the embedder's time, not the engine's.
 
 ## 4. What the baseline says for the plan
 

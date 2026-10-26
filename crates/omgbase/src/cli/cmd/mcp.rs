@@ -301,7 +301,15 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
 
     // Connect the configured embedder once (if any) for `semantic()`; a
     // configured-but-broken embedder is reported, never fatal.
-    let embedding = embedding_settings(cli.store()?, &repo.repo_id);
+    // (`spec/store` §5.10, Phase 4b) a repository whose semantic row was
+    // switched off by `omg embed disable` loads no embedder: `semantic()`
+    // answers `capability_unavailable { semantic, disabled, fix }` from the
+    // surface's gate, `blocks_resolve` is FTS-only.
+    let switched_off = cli
+        .store()?
+        .semantic_switched_off(&repo.repo_id)
+        .unwrap_or(false);
+    let embedding = embedding_settings(cli.store()?, &repo.repo_id).filter(|_| !switched_off);
     let (provider, embedder_fault) = match embedding.as_ref().map(embedding_provider) {
         Some(Ok(p)) => (p, None),
         Some(Err(reason)) => (None, Some(reason)),

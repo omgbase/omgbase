@@ -1833,6 +1833,15 @@ impl<'a> StoreContext<'a> {
                 "semantic(...) cannot score: this store has no semantic capability",
             ));
         };
+        // `spec/store` §5.10 (Phase 4b): the row switched off by `omg embed
+        // disable` with a provider configured refuses before anything scores
+        // (the catalog's gate answers with the typed envelope first; this is
+        // the binding's own guard).
+        if omgbase_store::semantic_switched_off(self.conn, true, &self.repo_id)
+            .map_err(|e| OqxError::eval(e.to_string()))?
+        {
+            return Err(OqxError::eval(omgbase_store::SEMANTIC_SWITCHED_OFF_MESSAGE));
+        }
         // Through the capability (`SemanticProvider`), never the tables: the
         // document's vector under the model, or — for a block — the row for
         // its current `(raw_hash, ctx_hash)` only (`spec/search` §3, 1.1): a

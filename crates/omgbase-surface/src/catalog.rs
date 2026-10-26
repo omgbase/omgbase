@@ -1273,10 +1273,12 @@ impl Surface {
     /// current rows whatever the capture state — `{ _id, _path, rev, _raw,
     /// renderedHashMatch: true }`, the same bytes `docs_read` returns; a
     /// captured revision reads through the recorder; a revision that is
-    /// neither is `capability_unavailable { history, disabled | unavailable
-    /// }` when the repository's capture is off or the build has no module
-    /// (`outside_coverage`/`pruned` arrive with 4b), else `target_missing {
-    /// doc, rev }` as before. The reference's `docsReadAt`.
+    /// neither is the §3 decision table's answer (6.2, Phase 4b):
+    /// `capability_unavailable { history, unavailable | disabled |
+    /// outside_coverage | pruned }` — the last two carrying `fix: docs_read
+    /// {"_id":…}`, the current document — or `target_missing { doc, rev }` for
+    /// an unclaimed token on an enabled repository. The reference's
+    /// `docsReadAt`.
     fn docs_read_at(&self, repo_id: &str, doc_id: &str, rev: &str) -> Result<Json> {
         if let Some(captured) = read::docs_read_at(&self.store, doc_id, rev)? {
             return Ok(captured);
@@ -1302,31 +1304,10 @@ impl Surface {
                 "renderedHashMatch": true,
             }));
         }
-        if self.store.history().is_none() {
-            return Err(omgbase_store::Error::HistoryUnavailable.into());
-        }
-        if !self.history_enabled(repo_id)? {
-            return Err(omgbase_store::Error::HistoryDisabled {
-                rev: Some(rev.to_owned()),
-            }
-            .into());
-        }
-        Err(SurfaceError::with_data(
-            "target_missing",
-            format!(
-                "no revision {} for document {doc_id}",
-                Json::String(rev.to_owned())
-            ),
-            json!({ "doc": doc_id, "rev": rev }),
-        ))
-    }
-
-    /// Is the repository's manifest row `enabled` (`spec/store` §3.1)?
-    fn history_enabled(&self, repo_id: &str) -> Result<bool> {
-        Ok(
-            omgbase_store::read_capability(self.store.conn(), repo_id, "history")?
-                .is_some_and(|r| r.state == omgbase_store::ManifestState::Enabled),
-        )
+        Err(self
+            .store
+            .history_read_refusal(repo_id, rev, Some(doc_id), true)
+            .into())
     }
 
     /// The history tools reach the store's history capability through the
@@ -1341,12 +1322,19 @@ impl Surface {
         Ok(self.store.require_history_reader()?)
     }
 
-    /// A revision the recorder does not hold, asked of a repository whose
-    /// capture is off (`docs_diff`, `docs_diff_unified`): `capability_unavailable
-    /// { history, disabled, rev }` rather than `target_missing` — the token
-    /// may well be a head minted while capture was off (`spec/surface` §2.1;
-    /// Phase 4a).
-    fn unless_disabled<T>(&self, repo_id: &str, body: impl FnOnce() -> Result<T>) -> Result<T> {
+    /// A revision the recorder does not hold, asked of `docs_diff` /
+    /// `docs_diff_unified`: the `spec/surface` §3 decision table (Phase 4b —
+    /// `disabled` / `outside_coverage` / `pruned` by the token's claim and
+    /// the repository's coverage, `target_missing` for an unclaimed token on
+    /// an enabled repository) rather than a bare `target_missing`: the token
+    /// may well be a head minted while capture was off. The reference's
+    /// `unlessDisabled`.
+    fn unless_disabled<T>(
+        &self,
+        repo_id: &str,
+        doc_id: &str,
+        body: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
         match body() {
             Err(e) if e.code == "target_missing" => {
                 let rev = e
@@ -1356,10 +1344,11 @@ impl Surface {
                     .and_then(Json::as_str)
                     .map(str::to_owned);
                 match rev {
-                    Some(rev) if !self.history_enabled(repo_id)? => {
-                        Err(omgbase_store::Error::HistoryDisabled { rev: Some(rev) }.into())
-                    }
-                    _ => Err(e),
+                    Some(rev) => Err(self
+                        .store
+                        .history_read_refusal(repo_id, &rev, Some(doc_id), false)
+                        .into()),
+                    None => Err(e),
                 }
             }
             other => other,
@@ -1469,7 +1458,23 @@ impl Surface {
     /// as the contracts put it: `capability_unavailable` is "the module is
     /// not here", `provider_unavailable` "the module is here and has nothing
     /// to score with".
-    fn require_semantic_capability(&self) -> Result<()> {
+    ///
+    /// Step 1b (6.2, `spec/store` §5.10 — Phase 4b): the repository's semantic
+    /// row switched off by `omg embed disable` while a provider stays
+    /// configured → `capability_unavailable { semantic, disabled, fix: "omg
+    /// embed enable" }`, decided after the module check and before the
+    /// host's provider state (the reference's `semanticGate`).
+    fn require_semantic_capability(&self, repo_id: &str) -> Result<()> {
+        if self.store.semantic_state() == CapabilityState::Disabled {
+            return Err(semantic_capability_unavailable(
+                CapabilityState::Disabled,
+                self.provider_name.as_deref(),
+                self.store.semantic_fault(),
+            ));
+        }
+        if self.store.semantic_switched_off(repo_id)? {
+            return Err(omgbase_store::Error::SemanticSwitchedOff.into());
+        }
         match self.store.semantic_state() {
             CapabilityState::Enabled => Ok(()),
             state => Err(semantic_capability_unavailable(
@@ -1818,7 +1823,7 @@ impl Surface {
     ) -> Result<HashMap<String, crate::context::SemanticVec>> {
         let phrases = crate::query::collect_semantic_phrases(select);
         if !phrases.is_empty() {
-            self.require_semantic_capability()?;
+            self.require_semantic_capability(repo_id)?;
         }
         if self.provider.is_none() && !phrases.is_empty() {
             return Err(provider_unavailable());
@@ -2056,7 +2061,7 @@ impl Surface {
                 // runner itself reports `filter_invalid`, §9).
                 let semantic = !crate::query::collect_semantic_phrases(&source).is_empty();
                 if semantic {
-                    self.require_semantic_capability()?;
+                    self.require_semantic_capability(&repo)?;
                 }
                 if self.provider.is_none() && semantic {
                     return Err(provider_unavailable());
@@ -2099,7 +2104,7 @@ impl Surface {
                         .is_empty()
                 });
                 if semantic {
-                    self.require_semantic_capability()?;
+                    self.require_semantic_capability(&repo)?;
                 }
                 if self.provider.is_none() && semantic {
                     return Err(provider_unavailable());
@@ -2138,6 +2143,9 @@ impl Surface {
                 // open point 13: it degrades, never errors).
                 let hits = match &self.provider {
                     None if self.store.semantic_state() == CapabilityState::Unavailable => {
+                        // The gate as the reference runs it when the host
+                        // reports a fault: the switched-off row first (§5.10).
+                        self.require_semantic_capability(&repo)?;
                         return Err(semantic_capability_unavailable(
                             CapabilityState::Unavailable,
                             self.provider_name.as_deref(),
@@ -2145,7 +2153,7 @@ impl Surface {
                         ));
                     }
                     Some(p) => {
-                        self.require_semantic_capability()?;
+                        self.require_semantic_capability(&repo)?;
                         let vector = QueryVector {
                             model: p.model().to_owned(),
                             vec: p
@@ -2825,7 +2833,7 @@ impl Surface {
                 self.history_tools()?;
                 let from_rev = arg_string(args, "from_rev")?;
                 let to_rev = arg_string(args, "to_rev")?;
-                self.unless_disabled(&repo, || {
+                self.unless_disabled(&repo, &doc_id, || {
                     history::diff_blocks(&self.store, &doc_id, &from_rev, &to_rev)
                 })
             }
@@ -2860,7 +2868,7 @@ impl Surface {
                         |r| r.get(0),
                     )
                     .optional()?;
-                let diff = self.unless_disabled(&repo, || {
+                let diff = self.unless_disabled(&repo, &doc_id, || {
                     history::diff_unified_text(&self.store, &doc_id, &from, &to)
                 })?;
                 Ok(
@@ -2887,7 +2895,13 @@ impl Surface {
                     ));
                 }
                 let include_deleted = arg_bool(args, "include_deleted")?.unwrap_or(false);
-                self.history_tools()?;
+                // Resolution 11 (Phase 4b): `docs_history` is never `disabled`
+                // — a repository nothing was captured in lists every head
+                // unretained; only a build without the module refuses
+                // (`unavailable`).
+                if self.store.history().is_none() {
+                    return Err(omgbase_store::Error::HistoryUnavailable.into());
+                }
                 // A live document resolves through the locator; with
                 // include_deleted a tombstoned one is looked up by the same attribute.
                 let doc: Option<String> = if id.is_some() || path.is_some() {

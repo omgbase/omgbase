@@ -177,7 +177,15 @@ mod tests {
             WORKSPACE_ENABLED,
             "the workspace layer has no row"
         );
-        // A settings write re-derives the row.
+        // A settings write that leaves the effective provider as it was keeps
+        // the row's state (`spec/store` §5.10, Phase 4b: `embed disable` is
+        // sticky across unrelated writes) …
+        write_repo_settings(&store, &repo, &Settings::new()).unwrap();
+        assert_eq!(states(&store, Some(&repo)), disabled);
+        // … and a provider CHANGE re-derives it — the repo layer naming
+        // another provider, then handing back to the workspace's.
+        write_repo_settings(&store, &repo, &provider("other-embedder")).unwrap();
+        assert_eq!(states(&store, Some(&repo)), enabled);
         write_repo_settings(&store, &repo, &Settings::new()).unwrap();
         assert_eq!(states(&store, Some(&repo)), enabled);
         // The host's fault: unavailable where the row is enabled, disabled

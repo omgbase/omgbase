@@ -1146,8 +1146,13 @@ fn squash(
 /// its tree and frontmatter, put the checkpoint forms, repoint the row. In
 /// `rev_id` order, each dependent once. Returns how many rows changed (a
 /// revision already in checkpoint form changes nothing). Runs inside the
-/// squash transaction, before the bases lose their bodies.
-fn checkpoint_dependents(conn: &Connection, archiving: &HashSet<String>) -> Result<usize> {
+/// squash transaction, before the bases lose their bodies — and inside
+/// `history purge`'s ([`crate::history::gc::purge_history_rows`]), before the
+/// purged bases go.
+pub(crate) fn checkpoint_dependents(
+    conn: &Connection,
+    archiving: &HashSet<String>,
+) -> Result<usize> {
     /// `(rev_id, root_tree, frontmatter_blob)` of the dependent revision.
     type NextRow = (String, Option<Vec<u8>>, Option<Vec<u8>>);
     let mut rev_row = conn.prepare("SELECT doc_id, seq FROM revisions WHERE rev_id = ?1")?;

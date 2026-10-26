@@ -13,8 +13,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
 use crate::core::capabilities::{
-    DispositionRow, GcResult, HistoryRecorder, HistorySizeFigures, RecordedRevision,
-    RevisionQueryRow, RevisionRead, RevisionTransition,
+    DispositionRow, GcResult, HistoryPurgeOutcome, HistoryRecorder, HistorySizeFigures,
+    RecordedRevision, RevisionQueryRow, RevisionRead, RevisionTransition,
 };
 use crate::core::claims;
 use crate::core::graph::EdgeTransitions;
@@ -498,6 +498,30 @@ impl HistoryRecorder for Recorder {
             params![commit.repo_id],
         )?;
         Ok(revisions)
+    }
+
+    /// `spec/store` §7.6 (Phase 4b): the rows, the holds, then the drop when
+    /// the core allows it and nothing is left.
+    fn purge(
+        &self,
+        tx: &Connection,
+        repo_id: &str,
+        before: Option<&str>,
+        drop_if_empty: bool,
+        protect_heads: bool,
+    ) -> Result<HistoryPurgeOutcome> {
+        let purged = gc::purge_history_rows(tx, repo_id, before, protect_heads)?;
+        let claims_released = gc::release_recorder_holds(tx, repo_id, protect_heads)?;
+        let mut tables_dropped = false;
+        if drop_if_empty && gc::history_tables_empty(tx)? {
+            gc::drop_history_bundle(tx)?;
+            tables_dropped = true;
+        }
+        Ok(HistoryPurgeOutcome {
+            purged,
+            claims_released,
+            tables_dropped,
+        })
     }
 
     fn rebuild_projection(&self, tx: &Connection) -> Result<()> {

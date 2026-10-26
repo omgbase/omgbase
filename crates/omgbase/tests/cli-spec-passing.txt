@@ -21,11 +21,14 @@ admin::doctor-alert
 admin::doctor-json
 admin::doctor-size
 admin::doctor-size-after-rm
+admin::doctor-size-feed-capped
 admin::doctor-size-json
 admin::doctor-size-jsonl
 admin::embed-broken-provider
 admin::embed-drain-no-provider
 admin::embed-drain-no-provider-json
+admin::embed-enable-disable
+admin::embed-enable-no-provider
 admin::embed-help-word
 admin::embed-help-word-needs-workspace
 admin::embed-no-provider
@@ -155,6 +158,8 @@ history::history-plan-not-json
 history::history-plan-nothing
 history::history-plan-nothing-json
 history::history-plan-policy-file
+history::history-purge-before-enabled
+history::history-purge-disabled
 history::history-server-rejected
 history::history-unknown-sub
 history::links

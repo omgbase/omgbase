@@ -20,6 +20,7 @@ use omgbase_format::hash::hex;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
+use crate::core::alerts::{AlertInput, AlertSeverity, clear_alert, raise_alert};
 use crate::core::capabilities::HistoryRecorder;
 use crate::core::manifest::capture;
 use crate::core::mint::Mint;
@@ -183,7 +184,7 @@ pub fn append_feed_row(
             ),
         )?;
     }
-    enforce_feed_cap(conn, input.repo_id, &epoch)?;
+    enforce_feed_cap(conn, input.repo_id, &epoch, input.ts)?;
     Ok(FeedRow {
         commit_id,
         epoch,
@@ -409,11 +410,50 @@ fn prune_beyond(
 }
 
 /// The cap (§7.4): enforced in the transaction that appended a row — a feed
-/// never exceeds `max_entries + 1` rows.
-fn enforce_feed_cap(conn: &Connection, repo_id: &str, epoch: &str) -> Result<()> {
+/// never exceeds `max_entries + 1` rows. When it prunes, the `feed_capped`
+/// alert is raised (§5.8, 17.2 Phase 4b): rows younger than the floors
+/// promise are leaving because the cap is too low for the write rate; detail
+/// `{ pruned, oldest, head }` — the rows this write pruned and the feed's
+/// position after.
+fn enforce_feed_cap(conn: &Connection, repo_id: &str, epoch: &str, now: &str) -> Result<()> {
     let policy = repo_feed_policy(conn, repo_id)?;
-    prune_beyond(conn, repo_id, epoch, policy.max_entries, None)?;
+    let pruned = prune_beyond(conn, repo_id, epoch, policy.max_entries, None)?;
+    if pruned > 0 {
+        raise_feed_capped(conn, repo_id, pruned, now)?;
+    }
     Ok(())
+}
+
+/// The alert the write-time cap raises (`spec/store` §5.8, Phase 4b).
+pub const FEED_CAPPED_ALERT: &str = "feed_capped";
+
+/// The `feed_capped` message, byte for byte in both engines.
+#[must_use]
+pub fn feed_capped_message(pruned: usize, max_entries: i64) -> String {
+    format!(
+        "the feed reached feed.max_entries ({max_entries}) and pruned {pruned} row{} a consumer may not have read: raise feed.max_entries or shorten the sync interval",
+        if pruned == 1 { "" } else { "s" }
+    )
+}
+
+fn raise_feed_capped(conn: &Connection, repo_id: &str, pruned: usize, now: &str) -> Result<()> {
+    let status = feed_status(conn, repo_id)?;
+    let policy = repo_feed_policy(conn, repo_id)?;
+    let mut detail = Map::new();
+    detail.insert("pruned".to_owned(), Json::from(pruned));
+    detail.insert("oldest".to_owned(), Json::from(status.oldest));
+    detail.insert("head".to_owned(), Json::from(status.head));
+    raise_alert(
+        conn,
+        repo_id,
+        &AlertInput {
+            code: FEED_CAPPED_ALERT,
+            severity: AlertSeverity::Warning,
+            message: &feed_capped_message(pruned, policy.max_entries),
+            detail: Some(&detail),
+        },
+        now,
+    )
 }
 
 /// The feed prune `gc` runs (§7.4): for every repository, the rows of its
@@ -431,7 +471,16 @@ pub fn prune_feed(conn: &Connection, now: &str) -> Result<usize> {
         let policy = repo_feed_policy(conn, repo_id)?;
         let cutoff = plus_ms(now, -(policy.retain_days.saturating_mul(DAY_MS)))?;
         pruned += prune_beyond(conn, repo_id, epoch, policy.retain_entries, Some(&cutoff))?;
-        pruned += prune_beyond(conn, repo_id, epoch, policy.max_entries, None)?;
+        let capped = prune_beyond(conn, repo_id, epoch, policy.max_entries, None)?;
+        pruned += capped;
+        // §5.8 (Phase 4b): a gc whose cap prunes nothing ends the condition —
+        // the feed is within the cap again (the floors did the work, or the
+        // cap was raised).
+        if capped > 0 {
+            raise_feed_capped(conn, repo_id, capped, now)?;
+        } else {
+            clear_alert(conn, repo_id, FEED_CAPPED_ALERT, now)?;
+        }
     }
     Ok(pruned)
 }
