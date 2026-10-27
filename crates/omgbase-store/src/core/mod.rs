@@ -57,5 +57,5 @@ pub use capabilities::{
 pub use claims::{ClaimScope, IdClaims};
 pub use fault::{
     ArmedFault, FAULT_ENV, FAULT_SITES, FaultSite, armed_fault, fault_passes, fault_point,
-    injected_fault_message, parse_fault, reset_faults,
+    injected_fault_message, parse_fault, reset_faults, set_armed_fault,
 };

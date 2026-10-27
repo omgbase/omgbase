@@ -656,3 +656,40 @@ fn the_stripper_keeps_code_and_drops_comments_and_strings() {
         .collect();
     assert_eq!(lines, [3, 4]);
 }
+
+/// Phase 6a (`spec/store` §5.12): the core knows the git history provider by
+/// name alone — nothing under `src/` names `omgbase_git_adapter`, and the
+/// crate's `[dependencies]` do not list it (the runner's path-only
+/// dev-dependency is the composition layer of the test process, which
+/// `cargo publish` strips).
+#[test]
+fn the_store_imports_nothing_of_the_git_adapter() {
+    let mut found = Vec::new();
+    for file in rust_files(&src_dir()) {
+        let text = fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+        if strip(&text).contains("omgbase_git_adapter") {
+            found.push(file.display().to_string());
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "the store names the git adapter: {}",
+        found.join(", ")
+    );
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+        .expect("Cargo.toml");
+    let mut section = String::new();
+    for line in manifest.lines() {
+        let t = line.trim();
+        if t.starts_with('[') && t.ends_with(']') {
+            section = t.to_owned();
+            continue;
+        }
+        if section == "[dependencies]" {
+            assert!(
+                !t.starts_with("omgbase-git-adapter"),
+                "omgbase-git-adapter is a dependency of the store: {t}"
+            );
+        }
+    }
+}

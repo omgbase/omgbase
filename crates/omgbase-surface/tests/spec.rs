@@ -33,8 +33,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use omgbase_git_adapter::{GitHistoryProvider, fixture_identity};
 use omgbase_reconcile::Config;
 use omgbase_store::Composition;
+use omgbase_store::manifest::{NATIVE_PROVIDER, provider_config_of, read_capability};
 use omgbase_store::{
     BatchItem, BatchOutcome, Capabilities, ExportOptions, RetentionOptions, SequentialMinter, Store,
 };
@@ -364,11 +366,26 @@ fn load() -> Loaded {
 /// A fresh store with the capabilities `OMGBASE_CAPABILITIES` names (Phase
 /// 2's gate: `core` runs every case without the semantic bundle).
 fn fresh_store() -> Store {
-    Store::open_in_memory_with_capabilities(
-        Box::new(SequentialMinter::new()),
-        Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES"),
-    )
-    .expect("in-memory store")
+    fresh_store_with(None)
+}
+
+/// [`fresh_store`] with the git history provider attached over `git_root`
+/// (README §7.3, Phase 6a): on a composition that attaches it (`full`, `git`)
+/// a case that drives the provider gets it under the fixture identity
+/// `omgbase <omgbase@fixture>` (`spec/store` §9.4), so every sha the outcomes
+/// carry is pinned.
+fn fresh_store_with(git_root: Option<&Path>) -> Store {
+    let mut capabilities = Capabilities::standard_from_env().expect("OMGBASE_CAPABILITIES");
+    if let Some(root) = git_root
+        && composition().has_git_provider()
+    {
+        capabilities = capabilities.with_provider(Box::new(GitHistoryProvider::new(
+            root.to_path_buf(),
+            fixture_identity(),
+        )));
+    }
+    Store::open_in_memory_with_capabilities(Box::new(SequentialMinter::new()), capabilities)
+        .expect("in-memory store")
 }
 
 // ---- the composition ledger (README §7.3, `spec/store` §9.6; modular-core Phase 5a) --------------------
@@ -498,13 +515,35 @@ fn composition_query_case(case: &Json, flags: Flags) -> (Json, bool) {
 /// script; what `sync_status.capabilities.coverage_from` reads on the wire.
 const FIXTURE_BIRTH: &str = "2000-01-01T00:00:00.000Z";
 
-/// `spec/store` §9.4 (Phase 4a/4b): the lifecycle steps a reads script may carry.
-const LIFECYCLE_STEP_KINDS: [&str; 4] = [
+/// `spec/store` §9.4 (Phase 4a/4b): the lifecycle steps a reads script may
+/// carry; (Phase 6a) the git provider's steps.
+const LIFECYCLE_STEP_KINDS: [&str; 8] = [
     "history_enable",
     "history_disable",
     "history_purge",
     "recorder_fault",
+    "git_checkpoint",
+    "git_log",
+    "git_tree",
+    "git_fault",
 ];
+
+/// README §7.3 (6.4, Phase 6a): does the case drive the git history provider
+/// (a `history_enable` naming `provider: "git"`, a `git_*` step) — run on
+/// `full` and `git` as recorded, skipped elsewhere?
+fn is_git_case(c: &Json) -> bool {
+    c["steps"].as_array().is_some_and(|steps| {
+        steps.iter().any(|s| {
+            ["git_checkpoint", "git_log", "git_tree", "git_fault"]
+                .iter()
+                .any(|k| s.get(*k).is_some())
+                || s.get("history_enable")
+                    .and_then(|e| e.get("provider"))
+                    .and_then(Json::as_str)
+                    .is_some_and(|p| p != NATIVE_PROVIDER)
+        })
+    })
+}
 
 /// README §6 (6.2 — `spec/store` §5.10, Phase 4b): the surface's own `embed`
 /// lifecycle devices: `embed_enable { ts, provider? }` sets
@@ -520,7 +559,7 @@ const EMBED_STEP_KINDS: [&str; 2] = ["embed_enable", "embed_disable"];
 /// without the history module (Phase 4a): no module, so `unavailable`; a
 /// repository it created has no coverage and requires nothing.
 fn core_history_state() -> Json {
-    json!({ "state": "unavailable", "coverage_from": null, "writer_requires": false })
+    json!({ "state": "unavailable", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every" })
 }
 
 /// Does the query text reach the `revisions` root or the `_revisions`
@@ -1041,12 +1080,38 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
 fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json, String> {
     let config = config_from(c.get("config"))?;
     let workspace = c.get("workspace").and_then(Json::as_bool).unwrap_or(false);
-    let mut store = fresh_store();
-    let repo_id = store
-        .create_repo_at(FIXTURE_REPO_SLUG, FIXTURE_BIRTH)
-        .map_err(|e| e.to_string())?;
     let name = c["name"].as_str().unwrap_or("case");
     let temp = workspace.then(|| TempDir::new(name));
+    // Phase 6a: a case that drives the git provider needs a workspace directory
+    // for its bare repository — the working tree's `.omgbase` when there is
+    // one (the shape of a real workspace), else a directory of its own.
+    let git_root: Option<TempDir> =
+        (is_git_case(c) && !workspace).then(|| TempDir::new(&format!("{name}-git")));
+    let git_dir: Option<&Path> = if is_git_case(c) {
+        Some(
+            temp.as_ref()
+                .or(git_root.as_ref())
+                .map(|t| t.0.as_path())
+                .expect("a git root"),
+        )
+    } else {
+        None
+    };
+    if let Some(root) = git_dir {
+        fs::create_dir_all(root.join(".omgbase")).map_err(|e| e.to_string())?;
+    }
+    let mut store = fresh_store_with(git_dir);
+    // README §6 (6.4): `capabilities: { history: false }` creates the repository
+    // with capture off (as `spec/store` §9.4's), the state a `history_enable {
+    // provider: "git" }` needs on the full composition.
+    let history = c
+        .get("capabilities")
+        .and_then(|caps| caps.get("history"))
+        .and_then(Json::as_bool)
+        .unwrap_or(true);
+    let repo_id = store
+        .create_repo_with(FIXTURE_REPO_SLUG, FIXTURE_BIRTH, history)
+        .map_err(|e| e.to_string())?;
     if let Some(dir) = &temp {
         omgbase_sync::registry::register_fs_source(
             &mut store,
@@ -1114,11 +1179,30 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
                         .get("writer_requires")
                         .and_then(Json::as_bool)
                         .unwrap_or(true);
-                    let r = surface
-                        .store_mut()
-                        .enable_history(&repo_id, ts, writer_requires)
-                        .map_err(|e| format!("step {i}: {e}"))?;
-                    json!({ "history": r.to_json() })
+                    // `spec/store` §9.4 (Phase 6a): `provider: "git"` with `branch?` / `cadence?`.
+                    let provider = body
+                        .get("provider")
+                        .and_then(Json::as_str)
+                        .filter(|p| *p != NATIVE_PROVIDER);
+                    let mut options = JsonMap::new();
+                    for k in ["branch", "cadence"] {
+                        if let Some(v) = body.get(k) {
+                            options.insert(k.to_owned(), v.clone());
+                        }
+                    }
+                    match surface.store_mut().enable_history_with(
+                        &repo_id,
+                        ts,
+                        writer_requires,
+                        provider,
+                        &options,
+                    ) {
+                        Ok(r) => json!({ "history": r.to_json() }),
+                        Err(e @ omgbase_store::Error::HistoryProviderConflict { .. }) => {
+                            json!({ "history": { "error": e.to_string() } })
+                        }
+                        Err(e) => return Err(format!("step {i}: {e}")),
+                    }
                 }
                 "history_disable" => {
                     let ts = body["ts"].as_str().ok_or("history_disable.ts")?;
@@ -1127,18 +1211,76 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
                         .store_mut()
                         .disable_history(&repo_id, ts)
                         .map_err(|e| format!("step {i}: {e}"))?;
-                    json!({ "history": r.to_json() })
+                    json!({ "history": {
+                        "state": r.row.state.as_str(),
+                        "coverage": r.row.coverage.iter().map(|c| json!({ "from": c.from, "to": c.to })).collect::<Vec<_>>(),
+                        "writer_requires": r.row.writer_requires,
+                        "changed": r.changed,
+                    } })
                 }
-                // `spec/store` §9.4 (Phase 4b; §7.6): `history purge [--before]` → the receipt.
+                // `spec/store` §9.4 (Phase 4b; §7.6): `history purge [--before]` → the receipt;
+                // (Phase 6a) `provider: { name, removed }` on a git-provider repository.
                 "history_purge" => {
                     let ts = body["ts"].as_str().ok_or("history_purge.ts")?;
                     *clock.borrow_mut() = ts.to_owned();
                     let before = body.get("before").and_then(Json::as_str);
                     let r = surface
                         .store_mut()
-                        .purge_history(&repo_id, before)
+                        .purge_history_at(&repo_id, before, ts)
                         .map_err(|e| format!("step {i}: {e}"))?;
-                    json!({ "purge": r.to_json() })
+                    let mut out = r.to_json();
+                    if let Some(p) = &r.provider {
+                        out["provider"] = json!({ "name": p.name, "removed": p.removed });
+                    }
+                    json!({ "purge": out })
+                }
+                // `spec/store` §9.4 (Phase 6a; §5.12): the worker once — the receipt or its error.
+                "git_checkpoint" => {
+                    let ts = body["ts"].as_str().ok_or("git_checkpoint.ts")?;
+                    *clock.borrow_mut() = ts.to_owned();
+                    match surface.store().history_checkpoint(&repo_id, ts) {
+                        Ok(r) => json!({ "checkpoint": r.to_json() }),
+                        Err(e) => json!({ "checkpoint": { "error": e.to_string() } }),
+                    }
+                }
+                "git_log" | "git_tree" => {
+                    let store = surface.store();
+                    let row = read_capability(store.conn(), &repo_id, "history")
+                        .map_err(|e| format!("step {i}: {e}"))?;
+                    let branch = row
+                        .as_ref()
+                        .and_then(|r| r.config.get("branch"))
+                        .and_then(Json::as_str)
+                        .unwrap_or("omgbase")
+                        .to_owned();
+                    let attached = store.providers().iter().any(|p| p.name() == "git");
+                    let git = match (&row, git_dir) {
+                        (Some(row), Some(root)) if attached => Some(
+                            GitHistoryProvider::new(root.to_path_buf(), fixture_identity())
+                                .git_repo(&provider_config_of(row)),
+                        ),
+                        _ => None,
+                    };
+                    let text = |args: &[&str]| -> Result<String, String> {
+                        match &git {
+                            Some(g) if g.exists() => g.text(args).map_err(|e| e.to_string()),
+                            _ => Ok(String::new()),
+                        }
+                    };
+                    if *kind == "git_log" {
+                        json!({ "git_log": text(&["log", "--reverse", "--format=%H%n%s%n%(trailers)", &format!("refs/heads/{branch}")])? })
+                    } else {
+                        json!({ "git_tree": text(&["ls-tree", "-r", &format!("refs/heads/{branch}")])? })
+                    }
+                }
+                "git_fault" => {
+                    let fail = body["fail"].as_bool().ok_or("git_fault.fail")?;
+                    omgbase_store::set_armed_fault(fail.then_some(omgbase_store::ArmedFault {
+                        site: omgbase_store::FaultSite::GitCommit,
+                        nth: 1,
+                    }));
+                    omgbase_store::reset_faults();
+                    json!({ "fault": fail })
                 }
                 _ => {
                     return Err(format!(
@@ -1315,11 +1457,13 @@ fn run_reads_case(c: &Json, corpus: Option<&[(String, String)]>) -> Result<Json,
             } }));
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at, history_enable, history_disable, history_purge, embed_enable, embed_disable"
+                "step {i}: none of observe, sweep, gc, exec, read, recover, history_*, read_at, history_enable, history_disable, history_purge, git_checkpoint, git_log, git_tree, git_fault, embed_enable, embed_disable"
             ));
         }
     }
+    omgbase_store::set_armed_fault(None);
     drop(archives);
+    drop(git_root);
     Ok(json!({ "steps": steps }))
 }
 
@@ -1492,6 +1636,20 @@ fn check(c: &SpecCase, suite: &SuiteState<'_>, ledger: &mut Ledger) -> Result<()
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
         Kind::Reads | Kind::Examples => {
+            // README §7.3 (6.4, Phase 6a): a case driving the git provider runs
+            // where the provider is attached (`full`, `git`) and is compared as
+            // recorded — no composition mapping.
+            if is_git_case(&c.case) {
+                if !ledger.composition.has_git_provider() {
+                    ledger.skip(&c.id, "needs the git history provider");
+                    return Ok(());
+                }
+                let corpus = (c.kind == Kind::Examples).then_some(suite.corpus);
+                let actual = run_reads_case(&c.case, corpus)?;
+                ledger.record(&c.id, None);
+                return deep_eq_tol(&actual, &c.case["expect"], "expect", EPS)
+                    .map_or(Ok(()), |d| Err(clip(d)));
+            }
             // Phase 4a: a retention or lifecycle step needs the history
             // module; the embed steps the semantic one. Skipped and counted.
             let steps = c.case["steps"].as_array().cloned().unwrap_or_default();

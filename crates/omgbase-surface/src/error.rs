@@ -217,6 +217,37 @@ impl From<omgbase_store::Error> for SurfaceError {
                 data.insert("rev".to_owned(), Value::String(rev));
                 Self::with_data("target_missing", message, Value::Object(data))
             }
+            // `spec/surface` §3 `unsupported` (6.4, Phase 6a): the repository's
+            // provider records no block lineage — `{ history, unsupported,
+            // provider, fix }`, not retriable, the message pinned.
+            e @ omgbase_store::Error::HistoryUnsupported { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::HistoryUnsupported { provider, fix, .. } = e else {
+                    unreachable!("matched above");
+                };
+                Self::with_data(
+                    "capability_unavailable",
+                    message,
+                    json!({ "capability": "history", "state": "unsupported", "provider": provider, "fix": fix }),
+                )
+            }
+            // `spec/store` §5.12 (Phase 6a): the provider the manifest names
+            // cannot run here — `{ history, unavailable, provider, reason }`,
+            // retriable (writes continue; the next checkpoint catches up).
+            e @ omgbase_store::Error::HistoryProviderUnavailable { .. } => {
+                let message = e.to_string();
+                let omgbase_store::Error::HistoryProviderUnavailable { provider, reason } = e
+                else {
+                    unreachable!("matched above");
+                };
+                let mut e = Self::with_data(
+                    "capability_unavailable",
+                    message,
+                    json!({ "capability": "history", "state": "unavailable", "provider": provider, "reason": reason }),
+                );
+                e.retriable = true;
+                e
+            }
             // `spec/store` §5.10 (Phase 4b): the semantic row switched off by
             // `omg embed disable` with a provider configured —
             // `capability_unavailable { semantic, disabled, fix: "omg embed

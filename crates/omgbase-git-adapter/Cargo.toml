@@ -1,0 +1,35 @@
+[package]
+name = "omgbase-git-adapter"
+version = "0.1.0"
+description = "omgbase git history provider: the checkpoint worker that builds commits in a bare repository from the change feed, the git-backed history reader and the git plumbing wrapper (spec/store §5.12) — Rust implementation of @omgbase/git-adapter"
+keywords = ["markdown", "git", "history", "sqlite", "omgbase"]
+categories = ["database-implementations", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-git-adapter#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The seams this crate implements (`HistoryProvider`, `HistoryReader`), the
+# change feed it consumes (`changes_since`), the bytes it commits
+# (`reconstruct`), the manifest and alert helpers, the `git.commit` fault site.
+omgbase-store = { version = "17.4.0", path = "../omgbase-store" }
+# `sha256`/`hex`: a version's `_hash` is the blob's sha256 (never git's sha1).
+omgbase-format = { version = "0.2.4", path = "../omgbase-format" }
+# The store's connection: the cursor row, the feed and docs reads.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# The manifest config and the cursor JSON. `preserve_order`: the config's
+# canonical form is the store's to write; the keys here are read, not hashed.
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+# The end-to-end tests (`tests/provider.rs`) drive the store through a
+# reconciling observe (`Config`) and read the states the sync layer renders.
+omgbase-reconcile = { path = "../omgbase-reconcile" }
+omgbase-sync = { path = "../omgbase-sync" }
+
+[lints]
+workspace = true

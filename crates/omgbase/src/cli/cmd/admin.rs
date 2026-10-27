@@ -6,9 +6,10 @@
 
 use omgbase_search::{EmbeddingProvider, create_external_provider};
 use omgbase_store::{
-    Error as StoreError, LIVE_LEAF_SQL, ManifestState, RebuildTarget, SemanticLifecycleResult,
-    SizeCapability, SizeReport, active_alerts, format_share, human_bytes, open_coverage_from,
-    read_capability, refresh_legacy_bytes_alert, semantic_provider_of,
+    Error as StoreError, LIVE_LEAF_SQL, ManifestState, NATIVE_PROVIDER, RebuildTarget,
+    SemanticLifecycleResult, SizeCapability, SizeReport, active_alerts, format_share,
+    history_provider_of, human_bytes, open_coverage_from, read_capability,
+    refresh_legacy_bytes_alert, semantic_provider_of,
 };
 use omgbase_sync::settings::{
     Settings, repo_own_settings, resolve_settings, workspace_settings, write_repo_settings_at,
@@ -265,7 +266,30 @@ pub fn doctor(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let manifest = read_capability(conn, &repo.repo_id, "history")?;
     let since = open_coverage_from(manifest.as_ref());
     let recorder = store.capture_for(Some(&repo.repo_id))?;
+    let provider = history_provider_of(manifest.as_ref()).to_owned();
     match (recorder, since) {
+        // Phase 6a (`spec/cli` §6, 5.5): a git-provider repository's capture is
+        // the worker's — the check reads how far the branch tip lags the heads;
+        // `provider git: <n> heads not yet checkpointed`, or `unavailable` when
+        // the provider cannot run.
+        (_, Some(since)) if provider != NATIVE_PROVIDER => {
+            let counted = store
+                .require_history_reader(Some(&repo.repo_id))
+                .and_then(|reader| reader.uncaptured_heads(conn, &repo.repo_id, since));
+            match counted {
+                Ok(uncaptured) => checks.push(Check {
+                    name: "capture complete",
+                    ok: uncaptured == 0,
+                    detail: format!("provider {provider}: {uncaptured} heads not yet checkpointed"),
+                }),
+                Err(StoreError::HistoryProviderUnavailable { reason, .. }) => checks.push(Check {
+                    name: "capture complete",
+                    ok: false,
+                    detail: format!("provider {provider}: unavailable ({reason})"),
+                }),
+                Err(e) => return Err(e.into()),
+            }
+        }
         (Some(recorder), Some(since)) => {
             let uncaptured = recorder.uncaptured_heads(conn, &repo.repo_id, since)?;
             checks.push(Check {
@@ -534,9 +558,15 @@ fn capability_line(capabilities: Option<&[SizeCapability]>, name: &str) -> Strin
         return "disabled".to_owned();
     };
     if name == "history" {
+        // Phase 6a: a provider row says which — `enabled since <ts> (git)`.
+        let provider = c
+            .config
+            .get("provider")
+            .and_then(Json::as_str)
+            .map_or_else(String::new, |p| format!(" ({p})"));
         return match &c.coverage_from {
-            Some(from) => format!("enabled since {from}"),
-            None => "enabled".to_owned(),
+            Some(from) => format!("enabled since {from}{provider}"),
+            None => format!("enabled{provider}"),
         };
     }
     match c.config.get("model").and_then(Json::as_str) {

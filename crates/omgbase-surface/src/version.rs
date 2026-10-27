@@ -105,7 +105,8 @@ pub fn semantic_configured(store: &Store, repo_id: Option<&str>) -> bool {
 
 /// The capability manifest as `version` reports it (`spec/surface` §4, 6.1;
 /// byte for byte the reference's `capabilityStates`): `{ history: { state,
-/// coverage_from, writer_requires }, semantic: { state, model } }` — since
+/// provider, coverage_from, writer_requires, completeness }, semantic: {
+/// state, model } }` (6.4 added `provider` and `completeness`) — since
 /// store 17.0 (3e-ii) read from the repository's `capabilities` rows
 /// (`omgbase_store::manifest`): `history` the row's state (`unavailable`
 /// when the composition lacks the recorder — a core-only build, Phase 4a),
@@ -240,7 +241,7 @@ mod tests {
         assert_eq!(
             none["capabilities"],
             json!({
-                "history": { "state": "disabled", "coverage_from": null, "writer_requires": false },
+                "history": { "state": "disabled", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every" },
                 "semantic": { "state": "disabled", "model": null },
             })
         );
@@ -268,10 +269,10 @@ mod tests {
             }
             serde_json::to_string(&json!({ "capabilities": caps })).unwrap()
         };
-        const DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":"<birth>","writer_requires":true},"semantic":{"state":"disabled","model":null}}}"#;
-        const ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":"<birth>","writer_requires":true},"semantic":{"state":"enabled","model":null}}}"#;
-        const WS_DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}}"#;
-        const WS_ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"enabled","model":null}}}"#;
+        const DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#;
+        const ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every"},"semantic":{"state":"enabled","model":null}}}"#;
+        const WS_DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#;
+        const WS_ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"enabled","model":null}}}"#;
         // The module installed, nothing configured: disabled.
         let mut store = Store::open_in_memory().unwrap();
         let repo = store.create_repo("r").unwrap();
@@ -330,7 +331,7 @@ mod tests {
         let bare = core.create_repo("bare").unwrap();
         assert_eq!(
             literal(&core, Some(&bare)),
-            r#"{"capabilities":{"history":{"state":"unavailable","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}}"#
+            r#"{"capabilities":{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#
         );
     }
 }

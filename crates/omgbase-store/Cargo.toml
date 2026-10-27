@@ -48,6 +48,12 @@ serde_json = { version = "1", features = ["preserve_order"] }
 getrandom = "0.3"
 
 [dev-dependencies]
+# The git history provider (`spec/store` §5.12, Phase 6a) for the store's spec runner: the
+# runner is the composition layer of its process and attaches the provider
+# under the fixture identity — a path-only dev-dependency (never a dependency:
+# the core imports nothing of it; `tests/boundaries.rs` pins that), so the
+# cycle is cargo's permitted dev-dependency cycle and `cargo publish` strips it.
+omgbase-git-adapter = { path = "../omgbase-git-adapter" }
 # `trace`: the transaction-hygiene tests watch the statement stream
 # (`Connection::trace_v2`) to prove each write lands between a BEGIN and its
 # COMMIT. Tests only; the published crate's features are unchanged.

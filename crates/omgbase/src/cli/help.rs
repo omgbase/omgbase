@@ -470,12 +470,15 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
         ),
         "history" => spec(
             s(
-                "History capture (enable/disable/purge per repository) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
+                "History capture (enable/disable/purge per repository; native or git provider) and retention: plan what the policy would archive, export it to a segment, attach/detach/list segments",
             ),
             vec![
-                s("history enable [--best-effort]"),
+                s(
+                    "history enable [--best-effort] [--provider native|git] [--branch <b>] [--cadence every|<ms>]",
+                ),
                 s("history disable"),
                 s("history purge [--before <ts>]"),
+                s("history checkpoint"),
                 s("history plan [--before <ts>] [--policy <json|@file>]"),
                 s(
                     "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
@@ -498,8 +501,24 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                     "(enable) do not require capture: a writer without the history module may still write (default: such a writer is refused — writer_requires)",
                 ),
                 (
+                    "--provider <p>",
+                    "(enable) who keeps the history: native (the store's own tables, captured in every commit — the default) or git (a bare repository at .omgbase/git, committed from the rows by the checkpoint worker); one provider per repository — switch with disable, then enable --provider",
+                ),
+                (
+                    "--branch <b>",
+                    "(enable --provider git) the branch the commits go on (default omgbase)",
+                ),
+                (
+                    "--cadence <c>",
+                    "(enable --provider git) every: one commit per feed row (default); <ms>: the rows pending when the worker runs fold into one commit",
+                ),
+                (
+                    "checkpoint",
+                    "(git provider) run the checkpoint worker once: the feed rows since the branch tip become commits; prints { committed, from_seq, to_seq, tip, rescanned }",
+                ),
+                (
                     "purge",
-                    "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left",
+                    "delete the repository's captured history — every commit, or with --before those before an instant (a live head's revision stays while capture is on); the recorder's id holds are released; the history tables are dropped when no repository is enabled and nothing is left; on a git-provider repository the bare repository and the worker's cursor are removed",
                 ),
                 (
                     "plan",

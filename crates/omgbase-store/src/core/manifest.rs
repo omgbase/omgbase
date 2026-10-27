@@ -46,13 +46,16 @@ use serde_json::{Map, Value as Json, json};
 use std::collections::HashSet;
 
 use crate::core::alerts::{
-    AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, clear_alert, raise_alert,
+    AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
+    clear_alert, raise_alert,
 };
-use crate::core::capabilities::{HistoryRecorder, PurgedCounts};
+use crate::core::capabilities::{
+    CheckpointResult, HistoryProvider, HistoryReader, HistoryRecorder, PurgedCounts,
+};
 use crate::core::codec::canonical_json;
 use crate::core::fault::{FaultSite, fault_point};
 use crate::core::feed::{
-    FeedEntryKind, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
+    FeedEntryKind, FeedRow, NewFeedEntry, NewFeedRow, append_feed_entry, append_feed_row,
 };
 use crate::core::mint::Mint;
 use crate::core::settings::effective_settings;
@@ -353,15 +356,16 @@ pub fn apply_history_bundle(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Is any repository's history row `enabled` (the opener's rule for executing
-/// the bundle's DDL: one database holds every repository)?
+/// Is any repository's history row `enabled` under the NATIVE provider (the
+/// opener's rule for executing the bundle's DDL: one database holds every
+/// repository; a `provider: git` row needs no table — Phase 6a)?
 pub fn any_history_enabled(conn: &Connection) -> Result<bool> {
     if !manifest_table_exists(conn)? {
         return Ok(false);
     }
     Ok(conn
         .query_row(
-            "SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' LIMIT 1",
+            "SELECT 1 FROM capabilities WHERE capability = 'history' AND state = 'enabled' AND json_extract(config, '$.provider') IS NULL LIMIT 1",
             [],
             |_| Ok(()),
         )
@@ -387,8 +391,13 @@ pub fn capture_for<'a>(
         return Ok(history_bundle_present(conn)?.then_some(history));
     };
     let row = read_capability(conn, repo_id, "history")?;
+    // Phase 6a: a repository kept by an attached provider is captured by the
+    // provider's own worker, never inside the commit — no recorder here.
     Ok(row
-        .is_some_and(|r| r.state == ManifestState::Enabled)
+        .as_ref()
+        .is_some_and(|r| {
+            r.state == ManifestState::Enabled && history_provider_of(Some(r)) == NATIVE_PROVIDER
+        })
         .then_some(history))
 }
 
@@ -408,24 +417,336 @@ pub fn history_reader<'a>(
     }
 }
 
-/// The recorder a history TOOL reads through, or the refusal (`spec/surface`
+/// The reader a history TOOL reads through, or the refusal (`spec/surface`
 /// §2.1; Phase 4a): [`Error::HistoryUnavailable`] (`capability_unavailable {
 /// history, unavailable }`) on a composition without the module,
 /// [`Error::HistoryDisabled`] (`{ history, disabled }`) when nothing was ever
 /// captured in this database (no bundle) — the reads of a repository whose
 /// capture is off but whose rows exist go through (what was captured stays
-/// readable).
+/// readable). Phase 6a: with a `repo_id`, a repository kept by an attached
+/// provider reads through it (or its refusal — [`history_reader_for`]).
 pub fn require_history_reader<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-) -> Result<&'a dyn HistoryRecorder> {
+    providers: &'a [Box<dyn HistoryProvider>],
+    repo_id: Option<&str>,
+    now: &str,
+) -> Result<HistoryReaderRef<'a>> {
+    if let Some(repo_id) = repo_id {
+        let row = read_capability(conn, repo_id, "history")?;
+        if history_provider_of(row.as_ref()) != NATIVE_PROVIDER {
+            return history_reader_for(conn, history, providers, repo_id, now)?
+                .ok_or_else(|| Error::Other("a provider repository always has a reader".into()));
+        }
+    }
     let Some(history) = history else {
         return Err(Error::HistoryUnavailable);
     };
     if !history_bundle_present(conn)? {
         return Err(Error::HistoryDisabled { rev: None });
     }
-    Ok(history)
+    Ok(HistoryReaderRef::Native(history))
+}
+
+// ---- the history provider (`spec/store` §5.12, 17.5 — modular-core Phase 6a) ---------------
+//
+// A repository's history is kept by ONE provider: the native recorder (the
+// history bundle's tables — the row's `config` is `{}`) or an alternative the
+// composition layer attached (`Capabilities::providers`, by name — the git
+// provider of `omgbase-git-adapter`, `config.provider = "git"`). The two are
+// exclusive per repository: `history enable --provider <other>` on an enabled
+// row is refused; switching is `history disable` then `enable --provider`.
+
+/// The native provider's name — what a row without `config.provider` reads.
+pub const NATIVE_PROVIDER: &str = "native";
+
+/// The history provider a manifest row names (`config.provider`; absent or
+/// empty → native).
+#[must_use]
+pub fn history_provider_of(row: Option<&ManifestRow>) -> &str {
+    row.and_then(|r| r.config.get("provider"))
+        .and_then(Json::as_str)
+        .filter(|p| !p.is_empty())
+        .unwrap_or(NATIVE_PROVIDER)
+}
+
+/// The row's `config` as a provider config (`provider` filled in).
+#[must_use]
+pub fn provider_config_of(row: &ManifestRow) -> Map<String, Json> {
+    let mut config = row.config.clone();
+    config.insert(
+        "provider".to_owned(),
+        Json::String(history_provider_of(Some(row)).to_owned()),
+    );
+    config
+}
+
+/// The attached provider named `name`, or `None` when the composition
+/// attached none of that name.
+#[must_use]
+pub fn attached_provider<'a>(
+    providers: &'a [Box<dyn HistoryProvider>],
+    name: &str,
+) -> Option<&'a dyn HistoryProvider> {
+    providers
+        .iter()
+        .find(|p| p.name() == name)
+        .map(AsRef::as_ref)
+}
+
+/// `spec/store` §5.12 (Phase 6a), byte for byte in both engines: the provider a repository's manifest names cannot run here.
+#[must_use]
+pub fn history_provider_unavailable_message(provider: &str, reason: &str) -> String {
+    format!(
+        "the {provider} history provider is unavailable: {reason} — history reads of this repository fail until it is; writes continue and are checkpointed by the next run"
+    )
+}
+
+/// `spec/store` §5.12 (Phase 6a): the composition never attached the provider the manifest names (a build without the adapter).
+#[must_use]
+pub fn history_provider_not_attached_message(provider: &str) -> String {
+    format!(
+        "this build attaches no {} history provider",
+        Json::String(provider.to_owned())
+    )
+}
+
+/// `spec/surface` §3 `unsupported` (Phase 6a), byte for byte in both engines.
+#[must_use]
+pub fn history_unsupported_message(provider: &str, tool: &str, fix: &str) -> String {
+    format!(
+        "{tool} is not available on a repository whose history is kept by the {provider} provider (it records whole documents, not block lineage) — use {fix}"
+    )
+}
+
+/// `spec/store` §5.12: one provider per repository, byte for byte in both engines.
+#[must_use]
+pub fn history_provider_conflict_message(current: &str, requested: &str) -> String {
+    format!(
+        "history is already enabled with the {current} provider — run omg history disable first, then omg history enable{}",
+        if requested == NATIVE_PROVIDER {
+            String::new()
+        } else {
+            format!(" --provider {requested}")
+        }
+    )
+}
+
+/// Raise the `history_provider_unavailable` alert (`spec/store` §5.8, §5.12):
+/// `error`, detail `{ provider, reason }`; nothing without an `alerts` table.
+pub fn raise_provider_unavailable(
+    conn: &Connection,
+    repo_id: &str,
+    provider: &str,
+    reason: &str,
+    now: &str,
+) -> Result<()> {
+    let has_alerts = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alerts'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_alerts {
+        return Ok(());
+    }
+    let mut detail = Map::new();
+    detail.insert("provider".to_owned(), Json::String(provider.to_owned()));
+    detail.insert("reason".to_owned(), Json::String(reason.to_owned()));
+    raise_alert(
+        conn,
+        repo_id,
+        &AlertInput {
+            code: HISTORY_PROVIDER_UNAVAILABLE_ALERT,
+            severity: AlertSeverity::Error,
+            message: &history_provider_unavailable_message(provider, reason),
+            detail: Some(&detail),
+        },
+        now,
+    )
+}
+
+/// A checkpoint that ran ends the condition: the active
+/// `history_provider_unavailable` alert is cleared.
+pub fn clear_provider_unavailable(conn: &Connection, repo_id: &str, now: &str) -> Result<()> {
+    clear_alert(conn, repo_id, HISTORY_PROVIDER_UNAVAILABLE_ALERT, now).map(|_| ())
+}
+
+/// The provider a repository's row names, or the refusal:
+/// [`Error::HistoryProviderUnavailable`] (`capability_unavailable { history,
+/// unavailable, provider, reason }`) when the composition never attached it
+/// or it cannot run here (`available()` not ok — then also the
+/// `history_provider_unavailable` alert at `now`; a later checkpoint clears
+/// it). Reads fail with it; writes continue (§5.12).
+pub fn require_provider<'a>(
+    conn: &Connection,
+    providers: &'a [Box<dyn HistoryProvider>],
+    repo_id: &str,
+    name: &str,
+    now: &str,
+) -> Result<&'a dyn HistoryProvider> {
+    let Some(p) = attached_provider(providers, name) else {
+        return Err(Error::HistoryProviderUnavailable {
+            provider: name.to_owned(),
+            reason: history_provider_not_attached_message(name),
+        });
+    };
+    match p.available() {
+        crate::core::capabilities::ProviderAvailability::Available { .. } => Ok(p),
+        crate::core::capabilities::ProviderAvailability::Unavailable { reason } => {
+            raise_provider_unavailable(conn, repo_id, name, &reason, now)?;
+            Err(Error::HistoryProviderUnavailable {
+                provider: name.to_owned(),
+                reason,
+            })
+        }
+    }
+}
+
+/// The reader a repository's history is read through (Phase 6a): the native
+/// recorder borrowed from the composition, or a provider's reader built for
+/// the call over the row's `config`. Derefs to the [`HistoryReader`] trait.
+pub enum HistoryReaderRef<'a> {
+    Native(&'a dyn HistoryRecorder),
+    Provider(Box<dyn HistoryReader + 'a>),
+}
+
+impl<'a> std::ops::Deref for HistoryReaderRef<'a> {
+    type Target = dyn HistoryReader + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            HistoryReaderRef::Native(r) => *r,
+            HistoryReaderRef::Provider(b) => b.as_ref(),
+        }
+    }
+}
+
+/// The reader a repository's history is read through (`spec/surface` §3;
+/// Phase 6a): the native recorder when the row names no provider and the
+/// bundle's tables exist (what was captured is readable whatever the row's
+/// state — [`history_reader`]), the attached provider's reader when it names
+/// one (its storage is readable after a `disable` too; `history purge` removes
+/// it). `None` when nothing was ever captured natively;
+/// [`Error::HistoryProviderUnavailable`] when the named provider is not
+/// attached or cannot run (never for native — a missing module is the
+/// caller's `unavailable`).
+pub fn history_reader_for<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    providers: &'a [Box<dyn HistoryProvider>],
+    repo_id: &str,
+    now: &str,
+) -> Result<Option<HistoryReaderRef<'a>>> {
+    let row = read_capability(conn, repo_id, "history")?;
+    let provider = history_provider_of(row.as_ref());
+    if provider == NATIVE_PROVIDER {
+        return Ok(history_reader(conn, history)?.map(HistoryReaderRef::Native));
+    }
+    let p = require_provider(conn, providers, repo_id, provider, now)?;
+    let config = row.as_ref().map(provider_config_of).unwrap_or_default();
+    Ok(Some(HistoryReaderRef::Provider(p.reader(repo_id, &config))))
+}
+
+/// [`history_reader_for`] by a document (the `_revisions` relation,
+/// `read_at_revision`): the reader of the document's repository, `None` for
+/// an unknown document.
+pub fn history_reader_for_doc<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    providers: &'a [Box<dyn HistoryProvider>],
+    doc_id: &str,
+    now: &str,
+) -> Result<Option<HistoryReaderRef<'a>>> {
+    let repo: Option<String> = conn
+        .query_row(
+            "SELECT repo_id FROM docs WHERE doc_id = ?1",
+            params![doc_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match repo {
+        Some(repo_id) => history_reader_for(conn, history, providers, &repo_id, now),
+        None => Ok(None),
+    }
+}
+
+/// [`history_reader_for`] that never refuses: `None` when the provider cannot
+/// run (the `revisions` query root lists what exists and is never an error).
+pub fn history_reader_if_available<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    providers: &'a [Box<dyn HistoryProvider>],
+    repo_id: &str,
+    now: &str,
+) -> Result<Option<HistoryReaderRef<'a>>> {
+    match history_reader_for(conn, history, providers, repo_id, now) {
+        Err(Error::HistoryProviderUnavailable { .. }) => Ok(None),
+        other => other,
+    }
+}
+
+/// `docs_history`'s reader (resolution 11; Phase 6a): never `disabled` — the
+/// native module lists every head unretained on a database without the
+/// bundle; a build without the module refuses (`unavailable`); a provider
+/// repository reads through its provider (or its refusal).
+pub fn docs_history_reader<'a>(
+    conn: &Connection,
+    history: Option<&'a dyn HistoryRecorder>,
+    providers: &'a [Box<dyn HistoryProvider>],
+    repo_id: &str,
+    now: &str,
+) -> Result<HistoryReaderRef<'a>> {
+    let row = read_capability(conn, repo_id, "history")?;
+    if history_provider_of(row.as_ref()) != NATIVE_PROVIDER {
+        return history_reader_for(conn, history, providers, repo_id, now)?
+            .ok_or_else(|| Error::Other("a provider repository always has a reader".into()));
+    }
+    history
+        .map(HistoryReaderRef::Native)
+        .ok_or(Error::HistoryUnavailable)
+}
+
+/// The `completeness` of a repository's capture (`spec/surface` §4 `version`,
+/// 6.4): `checkpoints` only for a provider row whose `cadence` is a debounce
+/// object; `every` otherwise (the native recorder; the git provider under
+/// cadence `every`).
+#[must_use]
+pub fn history_completeness(row: Option<&ManifestRow>) -> &'static str {
+    match row.and_then(|r| r.config.get("cadence")) {
+        Some(Json::Object(_)) => "checkpoints",
+        _ => "every",
+    }
+}
+
+/// `history checkpoint` (`spec/store` §5.12, Phase 6a): the attached
+/// provider's worker, once, at `now`. The repository's row must name a
+/// provider and be `enabled`: a native repository is "the repository's history
+/// is not the git provider's", a disabled one "history is disabled for this
+/// repository" (the messages the fixture runners record; the CLI checks before
+/// and renders usage errors).
+pub fn history_checkpoint(
+    conn: &Connection,
+    providers: &[Box<dyn HistoryProvider>],
+    repo_id: &str,
+    now: &str,
+) -> Result<CheckpointResult> {
+    let row = read_capability(conn, repo_id, "history")?;
+    let provider = history_provider_of(row.as_ref()).to_owned();
+    let Some(row) = row.filter(|_| provider != NATIVE_PROVIDER) else {
+        return Err(Error::Other(
+            "the repository's history is not the git provider's".to_owned(),
+        ));
+    };
+    if row.state != ManifestState::Enabled {
+        return Err(Error::Other(
+            "history is disabled for this repository".to_owned(),
+        ));
+    }
+    let p = require_provider(conn, providers, repo_id, &provider, now)?;
+    p.checkpoint(conn, repo_id, &provider_config_of(&row), now)
 }
 
 // ---- the read-state decision table (`spec/surface` §3; 17.2 Phase 4b, D3) -----------------
@@ -503,28 +824,36 @@ pub fn claim_minted_at(conn: &Connection, id: &str) -> Result<Option<String>> {
 /// `outside_coverage`/`pruned` — the caller is `docs_read { at }` /
 /// `docs_read_at`. A failing read of the manifest or the claims is returned
 /// as that failure. The reference's `historyReadRefusal`.
+#[allow(clippy::too_many_arguments)]
 pub fn history_read_refusal(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
+    providers: &[Box<dyn HistoryProvider>],
     repo_id: &str,
     rev: &str,
     doc_id: Option<&str>,
     read_fix: bool,
+    now: &str,
 ) -> Error {
     let decide = || -> Result<Error> {
-        let Some(module) = history else {
+        let row = read_capability(conn, repo_id, "history")?;
+        // Phase 6a: a repository kept by an attached provider decides a token
+        // of its own form (a git sha) in its reader; here the token is one the
+        // provider did not hold — a head token (`r_`), decided by the claim
+        // and the coverage below.
+        let provider = history_provider_of(row.as_ref());
+        if provider == NATIVE_PROVIDER && history.is_none() {
             return Ok(Error::HistoryUnavailable);
-        };
+        }
         let target_missing = || Error::TargetMissingRevision {
             rev: rev.to_owned(),
             doc: doc_id.map(str::to_owned),
         };
-        if let Some(reader) = history_reader(conn, Some(module))?
+        if let Some(reader) = history_reader_for(conn, history, providers, repo_id, now)?
             && reader.has_revision(conn, rev)?
         {
             return Ok(target_missing());
         }
-        let row = read_capability(conn, repo_id, "history")?;
         let enabled = row
             .as_ref()
             .is_some_and(|r| r.state == ManifestState::Enabled);
@@ -574,10 +903,11 @@ pub fn history_read_refusal(
 pub fn writer_for<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
+    providers: &[Box<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<Option<&'a dyn HistoryRecorder>> {
-    require_writer(conn, history.is_some(), repo_id, now)?;
+    require_writer(conn, history.is_some(), providers, repo_id, now)?;
     capture_for(conn, history, Some(repo_id))
 }
 
@@ -623,12 +953,22 @@ pub struct HistoryLifecycleResult {
     pub changed: bool,
     /// `enable`: `(commit id, revisions written)` of the baseline; `None` when nothing changed.
     pub baseline: Option<(String, usize)>,
+    /// `enable --provider git` (Phase 6a): the branch tip after the baseline
+    /// commit; `None` on every other outcome.
+    pub tip: Option<String>,
 }
 
 impl HistoryLifecycleResult {
+    /// The row's history provider ([`history_provider_of`]).
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        history_provider_of(Some(&self.row))
+    }
+
     /// The `--json` shape `{ state, coverage, writer_requires, changed,
-    /// baseline?: { commit, revisions } }` (`spec/cli` §6; the fixture
-    /// runners' `history` outcome), in that key order.
+    /// provider?, baseline?: { commit, revisions }, tip? }` (`spec/cli` §6;
+    /// the fixture runners' `history` outcome), in that key order — `provider`
+    /// when the row names one (Phase 6a), `tip` on a provider enable.
     #[must_use]
     pub fn to_json(&self) -> Json {
         let mut m = Map::new();
@@ -651,11 +991,20 @@ impl HistoryLifecycleResult {
             Json::Bool(self.row.writer_requires),
         );
         m.insert("changed".to_owned(), Json::Bool(self.changed));
+        if self.provider() != NATIVE_PROVIDER {
+            m.insert(
+                "provider".to_owned(),
+                Json::String(self.provider().to_owned()),
+            );
+        }
         if let Some((commit, revisions)) = &self.baseline {
             m.insert(
                 "baseline".to_owned(),
                 json!({ "commit": commit, "revisions": revisions }),
             );
+        }
+        if let Some(tip) = &self.tip {
+            m.insert("tip".to_owned(), Json::String(tip.clone()));
         }
         Json::Object(m)
     }
@@ -675,34 +1024,113 @@ impl HistoryLifecycleResult {
 /// not a setting). Refuses on a composition without the recorder
 /// ([`Error::HistoryUnavailable`]: nothing can capture here). The caller
 /// holds the writer lock and no transaction (the baseline is one of its own).
+#[allow(clippy::too_many_arguments)]
 pub fn enable_history(
     conn: &Connection,
     mint: &mut Mint<'_>,
     history: Option<&dyn HistoryRecorder>,
+    providers: &[Box<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
     writer_requires: bool,
+    provider: Option<&str>,
+    provider_options: &Map<String, Json>,
 ) -> Result<HistoryLifecycleResult> {
-    let Some(history) = history else {
-        return Err(Error::HistoryUnavailable);
-    };
+    let requested = provider.unwrap_or(NATIVE_PROVIDER);
     let existing = read_capability(conn, repo_id, "history")?;
     if let Some(row) = existing
         .as_ref()
         .filter(|r| r.state == ManifestState::Enabled)
     {
+        // Phase 6a (`spec/store` §5.12): one provider per repository —
+        // switching is `disable` then `enable --provider`.
+        let current = history_provider_of(Some(row));
+        if current != requested {
+            return Err(Error::HistoryProviderConflict {
+                current: current.to_owned(),
+                requested: requested.to_owned(),
+            });
+        }
         return Ok(HistoryLifecycleResult {
             row: row.clone(),
             changed: false,
             baseline: None,
+            tip: None,
         });
     }
+    if requested != NATIVE_PROVIDER {
+        return enable_provider_history(
+            conn,
+            mint,
+            providers,
+            repo_id,
+            requested,
+            existing.as_ref(),
+            now,
+            writer_requires,
+            provider_options,
+        );
+    }
+    let Some(history) = history else {
+        return Err(Error::HistoryUnavailable);
+    };
     let tx = conn.unchecked_transaction()?;
     apply_history_bundle(&tx)?;
-    // The feed row is the core's; the row is still `disabled` here, so no
-    // recorder is handed to it — the `commits` row is the baseline's own.
-    let commit = append_feed_row(
+    let commit = append_baseline_row(&tx, mint, repo_id, now)?;
+    let revisions = history.baseline(&tx, &baseline_record(&commit, repo_id, now))?;
+    let mut coverage = existing
+        .as_ref()
+        .map(|e| e.coverage.clone())
+        .unwrap_or_default();
+    coverage.push(CoverageInterval {
+        from: now.to_owned(),
+        to: None,
+    });
+    // A re-enable under the native provider leaves a previous provider's
+    // config behind: the row is native again (`{}`).
+    let empty = Map::new();
+    let config = match existing.as_ref() {
+        Some(e) if history_provider_of(Some(e)) == NATIVE_PROVIDER => &e.config,
+        _ => &empty,
+    };
+    write_row(
         &tx,
+        repo_id,
+        &WriteInput {
+            capability: "history",
+            state: ManifestState::Enabled,
+            interface_v: existing
+                .as_ref()
+                .map_or(HISTORY_INTERFACE_V, |e| e.interface_v),
+            data_v: existing.as_ref().map_or(HISTORY_DATA_V, |e| e.data_v),
+            config,
+            coverage: &coverage,
+            writer_requires,
+            now,
+        },
+    )?;
+    let row = read_written(&tx, repo_id, "history")?;
+    tx.commit()?;
+    Ok(HistoryLifecycleResult {
+        row,
+        changed: true,
+        baseline: Some((commit.commit_id, revisions)),
+        tip: None,
+    })
+}
+
+/// §5.9 step (2): the baseline feed row — `origin = 'import'`, `reason =
+/// 'history enabled'`, one `changed` entry per live document under its
+/// existing head. The row is still `disabled` here, so no recorder is handed
+/// to the feed — the `commits` row is the baseline's own.
+fn append_baseline_row(
+    tx: &Connection,
+    mint: &mut Mint<'_>,
+    repo_id: &str,
+    now: &str,
+) -> Result<FeedRow> {
+    let commit = append_feed_row(
+        tx,
         mint,
         None,
         &NewFeedRow {
@@ -727,7 +1155,7 @@ pub fn enable_history(
     };
     for (doc_id, path, head, hash) in &live {
         append_feed_entry(
-            &tx,
+            tx,
             &NewFeedEntry {
                 repo_id,
                 epoch: &commit.epoch,
@@ -741,52 +1169,82 @@ pub fn enable_history(
             },
         )?;
     }
-    let revisions = history.baseline(
+    Ok(commit)
+}
+
+/// The baseline feed row as the `CommitRecord` the recorder or the provider receives.
+fn baseline_record<'a>(commit: &'a FeedRow, repo_id: &'a str, now: &'a str) -> CommitRecord<'a> {
+    CommitRecord {
+        commit_id: &commit.commit_id,
+        repo_id,
+        epoch: &commit.epoch,
+        seq: commit.seq,
+        ts: now,
+        origin: Origin::Import,
+        actor: None,
+        reason: Some(HISTORY_ENABLED_REASON),
+        batch_id: &commit.batch_id,
+        ops: None,
+    }
+}
+
+/// `history enable --provider <name>` (`spec/store` §5.12, Phase 6a): the
+/// attached provider — [`Error::HistoryProviderUnavailable`] when none is
+/// attached or it cannot run — initialises its storage and writes its
+/// BASELINE (the full current tree) under the baseline feed row the core
+/// appends exactly as for native (§5.9 step 2), inside one transaction with
+/// the manifest row: `state = 'enabled'`, `config` = the provider's,
+/// `coverage += { from: now, to: null }`, `writer_requires` per the flag. The
+/// native bundle's DDL is NOT executed: a provider repository writes no
+/// history table.
+#[allow(clippy::too_many_arguments)]
+fn enable_provider_history(
+    conn: &Connection,
+    mint: &mut Mint<'_>,
+    providers: &[Box<dyn HistoryProvider>],
+    repo_id: &str,
+    name: &str,
+    existing: Option<&ManifestRow>,
+    now: &str,
+    writer_requires: bool,
+    options: &Map<String, Json>,
+) -> Result<HistoryLifecycleResult> {
+    let provider = require_provider(conn, providers, repo_id, name, now)?;
+    let tx = conn.unchecked_transaction()?;
+    let commit = append_baseline_row(&tx, mint, repo_id, now)?;
+    let enabled = provider.enable(
         &tx,
-        &CommitRecord {
-            commit_id: &commit.commit_id,
-            repo_id,
-            epoch: &commit.epoch,
-            seq: commit.seq,
-            ts: now,
-            origin: Origin::Import,
-            actor: None,
-            reason: Some(HISTORY_ENABLED_REASON),
-            batch_id: &commit.batch_id,
-            ops: None,
-        },
+        repo_id,
+        &baseline_record(&commit, repo_id, now),
+        options,
     )?;
-    let mut coverage = existing
-        .as_ref()
-        .map(|e| e.coverage.clone())
-        .unwrap_or_default();
+    let mut coverage = existing.map(|e| e.coverage.clone()).unwrap_or_default();
     coverage.push(CoverageInterval {
         from: now.to_owned(),
         to: None,
     });
-    let empty = Map::new();
     write_row(
         &tx,
         repo_id,
         &WriteInput {
             capability: "history",
             state: ManifestState::Enabled,
-            interface_v: existing
-                .as_ref()
-                .map_or(HISTORY_INTERFACE_V, |e| e.interface_v),
-            data_v: existing.as_ref().map_or(HISTORY_DATA_V, |e| e.data_v),
-            config: existing.as_ref().map_or(&empty, |e| &e.config),
+            interface_v: existing.map_or(HISTORY_INTERFACE_V, |e| e.interface_v),
+            data_v: existing.map_or(HISTORY_DATA_V, |e| e.data_v),
+            config: &enabled.config,
             coverage: &coverage,
             writer_requires,
             now,
         },
     )?;
+    clear_provider_unavailable(&tx, repo_id, now)?;
     let row = read_written(&tx, repo_id, "history")?;
     tx.commit()?;
     Ok(HistoryLifecycleResult {
         row,
         changed: true,
-        baseline: Some((commit.commit_id, revisions)),
+        baseline: Some((commit.commit_id, enabled.revisions)),
+        tip: enabled.tip,
     })
 }
 
@@ -829,6 +1287,7 @@ pub fn disable_history(
             row,
             changed: false,
             baseline: None,
+            tip: None,
         });
     };
     let mut coverage = existing.coverage.clone();
@@ -855,6 +1314,7 @@ pub fn disable_history(
         row: read_written(conn, repo_id, "history")?,
         changed: true,
         baseline: None,
+        tip: None,
     })
 }
 
@@ -870,12 +1330,23 @@ pub struct HistoryPurgeResult {
     pub claims_released: usize,
     pub coverage: Vec<CoverageInterval>,
     pub tables_dropped: bool,
+    /// Phase 6a: on a repository kept by an attached provider, what the purge
+    /// removed — the provider's storage and its cursor (`spec/store` §5.12).
+    pub provider: Option<ProviderPurgeOutcome>,
+}
+
+/// What `history purge` removed on a provider repository: `{ name, removed, path }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderPurgeOutcome {
+    pub name: String,
+    pub removed: bool,
+    pub path: String,
 }
 
 impl HistoryPurgeResult {
     /// The receipt `{ purged: { <table>: n }, claims_released, coverage,
-    /// tables_dropped }` (`spec/cli` §6 `--json`; the fixture runners'
-    /// `purge` outcome), in that key order.
+    /// tables_dropped, provider?: { name, removed, path } }` (`spec/cli` §6
+    /// `--json`), in that key order.
     #[must_use]
     pub fn to_json(&self) -> Json {
         let mut m = Map::new();
@@ -894,6 +1365,12 @@ impl HistoryPurgeResult {
             ),
         );
         m.insert("tables_dropped".to_owned(), Json::Bool(self.tables_dropped));
+        if let Some(p) = &self.provider {
+            m.insert(
+                "provider".to_owned(),
+                json!({ "name": p.name, "removed": p.removed, "path": p.path }),
+            );
+        }
         Json::Object(m)
     }
 }
@@ -918,20 +1395,47 @@ impl HistoryPurgeResult {
 pub fn purge_history(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
+    providers: &[Box<dyn HistoryProvider>],
     repo_id: &str,
     before: Option<&str>,
+    now: &str,
 ) -> Result<HistoryPurgeResult> {
+    let row = read_capability(conn, repo_id, "history")?;
+    let coverage = row.as_ref().map(|r| r.coverage.clone()).unwrap_or_default();
+    // Phase 6a (`spec/store` §5.12): a provider repository's purge is the
+    // provider's — its storage and its cursor leave, whole (`--before` has no
+    // meaning: a git history is one line of commits; the CLI refuses the
+    // flag). The manifest row keeps its state, config and coverage, as for
+    // native.
+    let name = history_provider_of(row.as_ref()).to_owned();
+    if name != NATIVE_PROVIDER {
+        let provider = require_provider(conn, providers, repo_id, &name, now)?;
+        let config = row.as_ref().map(provider_config_of).unwrap_or_default();
+        let tx = conn.unchecked_transaction()?;
+        let outcome = provider.purge(&tx, repo_id, &config)?;
+        tx.commit()?;
+        return Ok(HistoryPurgeResult {
+            purged: PurgedCounts::default(),
+            claims_released: 0,
+            coverage,
+            tables_dropped: false,
+            provider: Some(ProviderPurgeOutcome {
+                name,
+                removed: outcome.removed,
+                path: outcome.path,
+            }),
+        });
+    }
     let Some(history) = history else {
         return Err(Error::HistoryUnavailable);
     };
-    let row = read_capability(conn, repo_id, "history")?;
-    let coverage = row.as_ref().map(|r| r.coverage.clone()).unwrap_or_default();
     if !history_bundle_present(conn)? {
         return Ok(HistoryPurgeResult {
             purged: PurgedCounts::default(),
             claims_released: 0,
             coverage,
             tables_dropped: false,
+            provider: None,
         });
     }
     let tx = conn.unchecked_transaction()?;
@@ -946,6 +1450,7 @@ pub fn purge_history(
         claims_released: outcome.claims_released,
         coverage,
         tables_dropped: outcome.tables_dropped,
+        provider: None,
     })
 }
 
@@ -1432,18 +1937,29 @@ pub const HISTORY_WRITER_REQUIRED_MESSAGE: &str = "history capture is required o
 /// write that passes clears it (through an engine with the module, or
 /// because capture was switched off). A repository whose row is `disabled`
 /// writes freely and captures nothing. `history_present` is whether this
-/// store runs with the recorder. Call it OUTSIDE the write transaction (the
-/// alert must survive the refusal): `commit_ingest`, `observe_batch` and
-/// `commit_effects` do.
+/// store runs with the recorder; `providers` the attached alternative
+/// providers (Phase 6a: the module the row's PROVIDER needs — the recorder
+/// for native, the attached provider otherwise). Call it OUTSIDE the write
+/// transaction (the alert must survive the refusal): `commit_ingest`,
+/// `observe_batch` and `commit_effects` do.
 pub fn require_writer(
     conn: &Connection,
     history_present: bool,
+    providers: &[Box<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<()> {
     let row = read_capability(conn, repo_id, "history")?;
-    let required = row.is_some_and(|r| r.state == ManifestState::Enabled && r.writer_requires);
-    if required && !history_present {
+    let required = row
+        .as_ref()
+        .is_some_and(|r| r.state == ManifestState::Enabled && r.writer_requires);
+    let provider = history_provider_of(row.as_ref());
+    let present = if provider == NATIVE_PROVIDER {
+        history_present
+    } else {
+        attached_provider(providers, provider).is_some()
+    };
+    if required && !present {
         let mut detail = Map::new();
         detail.insert("capability".to_owned(), Json::String("history".to_owned()));
         raise_alert(
@@ -1631,7 +2147,7 @@ mod tests {
                     .unwrap()
                     .writer_requires
             );
-            require_writer(full.conn(), true, &repo, T1).unwrap();
+            require_writer(full.conn(), true, &[], &repo, T1).unwrap();
             full.observe_batch(&repo, &items, T1, &crate::Config::default())
                 .unwrap();
             assert!(list_active_alerts(full.conn(), &repo).unwrap().is_empty());
@@ -1644,7 +2160,7 @@ mod tests {
             Capabilities::core_only(),
         )
         .unwrap();
-        let err = require_writer(bare.conn(), false, &repo, T1).unwrap_err();
+        let err = require_writer(bare.conn(), false, &[], &repo, T1).unwrap_err();
         assert!(matches!(err, Error::HistoryWriterRequired));
         assert_eq!(err.to_string(), HISTORY_WRITER_REQUIRED_MESSAGE);
         let active = list_active_alerts(bare.conn(), &repo).unwrap();
@@ -1667,12 +2183,12 @@ mod tests {
         assert!(matches!(refused, Error::HistoryWriterRequired));
         // The same repository written through an engine that carries the
         // recorder passes and clears the alert.
-        require_writer(bare.conn(), true, &repo, T2).unwrap();
+        require_writer(bare.conn(), true, &[], &repo, T2).unwrap();
         assert!(list_active_alerts(bare.conn(), &repo).unwrap().is_empty());
         // `history disable` needs no module: capture off, the interval
         // closed, and the recorder-less writer goes through — writing the
         // feed and the head, no history row.
-        let err = require_writer(bare.conn(), false, &repo, T2).unwrap_err();
+        let err = require_writer(bare.conn(), false, &[], &repo, T2).unwrap_err();
         assert!(matches!(err, Error::HistoryWriterRequired));
         let r = bare.disable_history(&repo, T2).unwrap();
         assert!(r.changed);

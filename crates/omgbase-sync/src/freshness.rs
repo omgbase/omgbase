@@ -7,10 +7,11 @@ use std::path::Path;
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
-use omgbase_store::Store;
 use omgbase_store::legacy_bytes::{
     UnreproducibleDoc, legacy_bytes_active, refresh_legacy_bytes_alert, unreproducible_docs,
 };
+use omgbase_store::manifest::{NATIVE_PROVIDER, history_provider_of, read_capability};
+use omgbase_store::{CheckpointResult, ManifestState, Store};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
@@ -264,6 +265,13 @@ pub fn freshness_sweep(
     } else {
         Vec::new()
     };
+    // Step 6 (4.5, Phase 6a; `spec/store` §5.12): a repository whose history
+    // is kept by an attached provider is checkpointed by the sweep — the
+    // provider's worker runs once over the feed rows this sweep (and every
+    // write since the last run) appended. Best effort: a provider that cannot
+    // run leaves its alert and the rows wait for the next run; the sweep
+    // itself never fails for it.
+    run_provider_checkpoint(store, repo_id, ts)?;
     let changed = !batch.ingested.is_empty()
         || !batch.deleted.is_empty()
         || !batch.conflicted.is_empty()
@@ -277,6 +285,30 @@ pub fn freshness_sweep(
         changed,
         repaired,
     })
+}
+
+/// `spec/sync` §4.3 step 6 (4.5, Phase 6a): run the attached provider's
+/// checkpoint for a repository whose manifest names one and is `enabled`
+/// (`None` otherwise); a provider that is not attached or cannot run is
+/// `capability_unavailable` (its alert raised by the store) and swallowed
+/// here — writes continue, the next run catches up.
+pub fn run_provider_checkpoint(
+    store: &Store,
+    repo_id: &str,
+    now: &str,
+) -> Result<Option<CheckpointResult>> {
+    let row = read_capability(store.conn(), repo_id, "history")?;
+    let Some(row) = row.filter(|r| r.state == ManifestState::Enabled) else {
+        return Ok(None);
+    };
+    if history_provider_of(Some(&row)) == NATIVE_PROVIDER {
+        return Ok(None);
+    }
+    match store.history_checkpoint(repo_id, now) {
+        Ok(r) => Ok(Some(r)),
+        Err(omgbase_store::Error::HistoryProviderUnavailable { .. }) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// `spec/sync` §4.3 step 5: the repair pass over the alert's documents;

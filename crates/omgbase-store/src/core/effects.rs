@@ -334,14 +334,18 @@ impl Store {
         }
         let expires = pool_expiry(ts)?;
         let Store {
-            conn, ids, history, ..
+            conn,
+            ids,
+            history,
+            providers,
+            ..
         } = self;
         // `spec/store` §5.4 step 0 (17.0, 3e-ii — resolution 17): a writer
         // without the recorder refuses on a repository whose manifest
         // requires capture — OUTSIDE the transaction, so the alert survives;
         // then step 15's recorder: the module while the repository's manifest
         // says `enabled` (Phase 4a).
-        require_writer(conn, history.is_some(), repo_id, ts)?;
+        require_writer(conn, history.is_some(), providers, repo_id, ts)?;
         let history = capture_for(conn, history.as_deref(), Some(repo_id))?;
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
         #[cfg(test)]

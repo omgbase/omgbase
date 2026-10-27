@@ -581,6 +581,7 @@ name = "omgbase"
 version = "0.30.0"
 dependencies = [
  "libc",
+ "omgbase-git-adapter",
  "omgbase-properties",
  "omgbase-search",
  "omgbase-store",
@@ -608,6 +609,18 @@ name = "omgbase-fs-adapter"
 version = "0.1.0"
 dependencies = [
  "notify",
+ "serde_json",
+]
+
+[[package]]
+name = "omgbase-git-adapter"
+version = "0.1.0"
+dependencies = [
+ "omgbase-format",
+ "omgbase-reconcile",
+ "omgbase-store",
+ "omgbase-sync",
+ "rusqlite",
  "serde_json",
 ]
 
@@ -677,6 +690,7 @@ version = "17.4.0"
 dependencies = [
  "getrandom 0.3.4",
  "omgbase-format",
+ "omgbase-git-adapter",
  "omgbase-graph",
  "omgbase-mutate",
  "omgbase-properties",
@@ -692,6 +706,7 @@ name = "omgbase-surface"
 version = "6.3.0"
 dependencies = [
  "omgbase-format",
+ "omgbase-git-adapter",
  "omgbase-graph",
  "omgbase-mutate",
  "omgbase-properties",

@@ -42,7 +42,7 @@ use std::rc::Rc;
 use crate::error::SurfaceError;
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
-use omgbase_store::{HistoryRecorder, RevisionQueryRow, SemanticProvider};
+use omgbase_store::{HistoryReader, RevisionQueryRow, SemanticProvider};
 use oqx::semantics::{builtin_function, builtin_method_with, make_range, string_form};
 use oqx::{
     CompiledRegex, DataContext, Object, OqxError, RegexDialect, RowIndex, Value, compile_regex,
@@ -325,12 +325,14 @@ pub struct StoreContext<'a> {
     /// runner installed none — then a resolved phrase has nothing to score
     /// against.
     provider: Option<&'a dyn SemanticProvider>,
-    /// The store's history READER ([`Store::history_reader`]: the module when
-    /// the bundle's tables exist — Phase 4a), the one way the `revisions`
-    /// root and the `_revisions` relation reach a row; `None` lists nothing
-    /// (a store without the module, or a database nothing was ever captured
-    /// in — `spec/surface` §1.1: never an error).
-    history: Option<&'a dyn HistoryRecorder>,
+    /// The repository's history READER (`Store::history_reader_if_available`:
+    /// the module when the bundle's tables exist — Phase 4a; the attached
+    /// provider's reader for a `provider: git` repository — Phase 6a), the one
+    /// way the `revisions` root and the `_revisions` relation reach a row;
+    /// `None` lists nothing (a store without the module, a database nothing
+    /// was ever captured in, a provider that cannot run — `spec/surface` §1.1:
+    /// never an error).
+    history: Option<&'a dyn HistoryReader>,
     /// A store failure inside [`DataContext::root`], the one read the
     /// engine's seam cannot fail through (see the module doc).
     root_failure: RefCell<Option<OqxError>>,
@@ -592,10 +594,10 @@ impl<'a> StoreContext<'a> {
     }
 
     /// The history reader the `revisions` root and `_revisions` relation read
-    /// through (Phase 4a): the runner installs the store's
-    /// ([`Store::history_reader`]); without one they list nothing.
+    /// through (Phase 4a; Phase 6a the repository's — recorder or provider):
+    /// the runner installs the store's; without one they list nothing.
     #[must_use]
-    pub fn with_history_reader(mut self, history: Option<&'a dyn HistoryRecorder>) -> Self {
+    pub fn with_history_reader(mut self, history: Option<&'a dyn HistoryReader>) -> Self {
         self.history = history;
         self
     }
@@ -628,12 +630,12 @@ impl<'a> StoreContext<'a> {
         o
     }
 
-    /// The recorder's rows ([`HistoryRecorder::revision_rows`] /
-    /// [`HistoryRecorder::doc_revision_rows`]) tagged as revisions; empty
+    /// The reader's rows ([`HistoryReader::revision_rows`] /
+    /// [`HistoryReader::doc_revision_rows`]) tagged as revisions; empty
     /// without a reader.
     fn revision_rows(
         &self,
-        read: impl FnOnce(&dyn HistoryRecorder) -> omgbase_store::Result<Vec<RevisionQueryRow>>,
+        read: impl FnOnce(&dyn HistoryReader) -> omgbase_store::Result<Vec<RevisionQueryRow>>,
     ) -> oqx::Result<Value> {
         let Some(history) = self.history else {
             return Ok(Value::Array(Vec::new()));
@@ -909,7 +911,7 @@ impl<'a> StoreContext<'a> {
                  WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND d.deleted_at IS NULL
                  ORDER BY d.path, e.edge_id"
             }
-            // The history (4.7): the recorder's rows ([`HistoryRecorder::
+            // The history (4.7): the recorder's rows ([`HistoryReader::
             // revision_rows`], Phase 4a — no SQL here names a history table),
             // in the same `(path, id)` keyset order as every target — `(path
             // as of the revision, rev_id)`; nothing without a reader.
@@ -923,7 +925,7 @@ impl<'a> StoreContext<'a> {
 
     /// A document's revisions (the `_revisions` relation of a docs row, §1.2,
     /// 4.7): oldest first, as `docs_history` lists them — the recorder's rows
-    /// ([`HistoryRecorder::doc_revision_rows`], Phase 4a).
+    /// ([`HistoryReader::doc_revision_rows`], Phase 4a).
     fn doc_revisions(&self, doc_id: &str) -> oqx::Result<Value> {
         self.revision_rows(|h| h.doc_revision_rows(self.conn, doc_id))
     }

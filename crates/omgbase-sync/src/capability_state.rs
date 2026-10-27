@@ -1,8 +1,9 @@
 //! The capability states as `version` and `sync_status` report them
 //! (`spec/surface` §4, 5.1/6.0/6.1; modular-core Phase 2 → 3e-ii → 4a;
 //! `docs/modular-core/phase-1-contracts.md` §1.5, §2.3 and §7 resolution 1):
-//! `{ history: { state, coverage_from, writer_requires }, semantic: { state,
-//! model } }`, in that key order. Port of
+//! `{ history: { state, provider, coverage_from, writer_requires,
+//! completeness }, semantic: { state, model } }`, in that key order (6.4 added
+//! `provider` and `completeness` — Phase 6a). Port of
 //! `packages/core/src/sync/capability-state.ts`. Since store 17.0 (3e-ii) the
 //! states are READ FROM THE MANIFEST — the `capabilities` table
 //! (`omgbase_store::manifest`): `history` is its row's state (`unavailable`
@@ -18,10 +19,10 @@
 //! semantic — exactly what Phase 2 derived.
 
 use omgbase_store::manifest::{
-    ManifestRow, ManifestState, coverage_from, read_capabilities, read_capability,
-    semantic_provider_configured,
+    ManifestRow, ManifestState, NATIVE_PROVIDER, coverage_from, history_provider_of,
+    read_capabilities, read_capability, semantic_provider_configured,
 };
-use omgbase_store::{CapabilityState, Store};
+use omgbase_store::{CapabilityState, ProviderAvailability, Store};
 use serde_json::{Value as Json, json};
 
 use crate::settings::resolve_settings;
@@ -42,20 +43,47 @@ pub fn semantic_configured(store: &Store, repo_id: Option<&str>) -> bool {
 
 /// The history capability's state for `repo_id`: the manifest row's
 /// (`disabled` when absent); `unavailable` when the composition lacks the
-/// recorder (reachable since Phase 4a — the core-only build); `enabled` for
-/// the workspace layer alone.
+/// module the row's PROVIDER needs — the recorder for a native row (reachable
+/// since Phase 4a — the core-only build), the attached provider for a
+/// `provider: git` row, or one that is attached but cannot run here (`git`
+/// not on PATH; Phase 6a); `enabled` for the workspace layer alone when the
+/// recorder is here.
 #[must_use]
 pub fn history_state(store: &Store, repo_id: Option<&str>) -> CapabilityState {
-    if store.history().is_none() {
-        return CapabilityState::Unavailable;
-    }
     let Some(repo_id) = repo_id else {
-        return CapabilityState::Enabled;
+        return if store.history().is_some() {
+            CapabilityState::Enabled
+        } else {
+            CapabilityState::Unavailable
+        };
     };
-    match read_capability(store.conn(), repo_id, "history") {
-        Ok(Some(row)) if row.state == ManifestState::Enabled => CapabilityState::Enabled,
+    let row = read_capability(store.conn(), repo_id, "history")
+        .ok()
+        .flatten();
+    let row_state = |row: &Option<ManifestRow>| match row {
+        Some(r) if r.state == ManifestState::Enabled => CapabilityState::Enabled,
         _ => CapabilityState::Disabled,
+    };
+    let provider = history_provider_of(row.as_ref());
+    if provider == NATIVE_PROVIDER {
+        if store.history().is_none() {
+            return CapabilityState::Unavailable;
+        }
+        return row_state(&row);
     }
+    match store.provider(provider).map(|p| p.available()) {
+        Some(ProviderAvailability::Available { .. }) => row_state(&row),
+        _ => CapabilityState::Unavailable,
+    }
+}
+
+/// The `completeness` of a repository's capture (`spec/surface` §4 `version`,
+/// 6.4 — Phase 6a): `every` — one version per feed row (the native recorder;
+/// the git provider under cadence `every`); `checkpoints` — the rows pending
+/// when the worker runs fold into one commit (a `debounce_ms` cadence).
+#[must_use]
+pub fn history_completeness(row: Option<&ManifestRow>) -> &'static str {
+    omgbase_store::manifest::history_completeness(row)
 }
 
 /// The semantic capability's state for `repo_id`: `disabled` when the store
@@ -106,8 +134,10 @@ pub fn capability_states(store: Option<&Store>, repo_id: Option<&str>) -> Json {
     json!({
         "history": {
             "state": history.as_str(),
+            "provider": history_provider_of(history_row.as_ref()),
             "coverage_from": coverage_from(history_row.as_ref()),
             "writer_requires": history_row.as_ref().is_some_and(|r| r.writer_requires),
+            "completeness": history_completeness(history_row.as_ref()),
         },
         "semantic": {
             "state": semantic.as_str(),
@@ -149,14 +179,14 @@ mod tests {
             .clone();
         // The wire shape (`spec/surface` §4 `version`, 6.1): the key order both engines pin.
         let disabled = format!(
-            r#"{{"history":{{"state":"enabled","coverage_from":"{birth}","writer_requires":true}},"semantic":{{"state":"disabled","model":null}}}}"#
+            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every"}},"semantic":{{"state":"disabled","model":null}}}}"#
         );
         let enabled = format!(
-            r#"{{"history":{{"state":"enabled","coverage_from":"{birth}","writer_requires":true}},"semantic":{{"state":"enabled","model":null}}}}"#
+            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every"}},"semantic":{{"state":"enabled","model":null}}}}"#
         );
         // Without a repository: the workspace layer's states, `null`/`false`.
-        const WORKSPACE_DISABLED: &str = r#"{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}"#;
-        const WORKSPACE_ENABLED: &str = r#"{"history":{"state":"enabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"enabled","model":null}}"#;
+        const WORKSPACE_DISABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#;
+        const WORKSPACE_ENABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"enabled","model":null}}"#;
         assert_eq!(states(&store, Some(&repo)), disabled);
         assert_eq!(states(&store, None), WORKSPACE_DISABLED);
         write_workspace_settings(&store, &provider("omgbase-embedder")).unwrap();
@@ -200,7 +230,7 @@ mod tests {
         assert_eq!(states(&store, None), WORKSPACE_DISABLED);
         assert_eq!(
             capability_states(None, None).to_string(),
-            r#"{"history":{"state":"disabled","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}"#
+            r#"{"history":{"state":"disabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#
         );
         // A model configured: `semantic.model` reads it from the row.
         let mut with_model = provider("omgbase-embedder");
@@ -223,7 +253,7 @@ mod tests {
         let bare = core.create_repo("bare").unwrap();
         assert_eq!(
             states(&core, Some(&bare)),
-            r#"{"history":{"state":"unavailable","coverage_from":null,"writer_requires":false},"semantic":{"state":"disabled","model":null}}"#
+            r#"{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#
         );
     }
 }

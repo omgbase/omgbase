@@ -1317,9 +1317,11 @@ impl Surface {
     /// `capability_unavailable { history, unavailable }` (no module,
     /// retriable) or `{ history, disabled }` (nothing captured). A repository
     /// whose capture is off but whose rows exist reads what it captured
-    /// (`spec/store` §5.9 "disable").
-    fn history_tools(&self) -> Result<&dyn omgbase_store::HistoryRecorder> {
-        Ok(self.store.require_history_reader()?)
+    /// (`spec/store` §5.9 "disable"). Phase 6a: a repository kept by an
+    /// attached provider (the git history provider) reads through it — or its
+    /// refusal (`{ history, unavailable, provider }`).
+    fn history_tools(&self, repo_id: &str) -> Result<omgbase_store::HistoryReaderRef<'_>> {
+        Ok(self.store.require_history_reader(Some(repo_id))?)
     }
 
     /// A revision the recorder does not hold, asked of `docs_diff` /
@@ -2820,21 +2822,45 @@ impl Surface {
                 )
             }
             "blocks_history" => {
-                self.history_tools()?;
-                history::blocks_history(
-                    &self.store,
-                    &arg_string(args, "_id")?,
-                    arg_i64(args, "limit")?,
-                )
+                let block_id = arg_string(args, "_id")?;
+                // Not repo-scoped (block ids are global): the history is the
+                // owning document's repository's; an unknown block reads the
+                // default repository's (its reader answers nothing for it).
+                let owner: Option<String> = self
+                    .store
+                    .conn()
+                    .query_row(
+                        "SELECT d.repo_id FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
+                        params![block_id],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                let repo = owner.unwrap_or_else(|| self.default_repo.clone());
+                let reader = self.history_tools(&repo)?;
+                let changes =
+                    reader.blocks_history(self.store.conn(), &block_id, arg_i64(args, "limit")?)?;
+                Ok(Json::Array(
+                    changes
+                        .iter()
+                        .map(omgbase_store::BlockChange::to_json)
+                        .collect(),
+                ))
             }
             "docs_diff" => {
                 let (repo, _) = self.scope(args)?;
                 let doc_id = self.locate_doc(&repo, name, args)?;
-                self.history_tools()?;
+                let reader = self.history_tools(&repo)?;
                 let from_rev = arg_string(args, "from_rev")?;
                 let to_rev = arg_string(args, "to_rev")?;
                 self.unless_disabled(&repo, &doc_id, || {
-                    history::diff_blocks(&self.store, &doc_id, &from_rev, &to_rev)
+                    let entries =
+                        reader.diff_blocks(self.store.conn(), &doc_id, &from_rev, &to_rev)?;
+                    Ok(Json::Array(
+                        entries
+                            .iter()
+                            .map(omgbase_store::DiffEntry::to_json)
+                            .collect(),
+                    ))
                 })
             }
             "docs_diff_unified" => {
@@ -2844,8 +2870,8 @@ impl Surface {
                     .unwrap_or_default()
                     .to_owned();
                 let doc_id = self.locate_doc(&repo, name, args)?;
-                self.history_tools()?;
-                let revs = history::recent_revs(self.store.conn(), &doc_id)?;
+                let reader = self.history_tools(&repo)?;
+                let revs = reader.latest_revisions(self.store.conn(), &doc_id)?;
                 let to_rev = arg_str(args, "to_rev")
                     .map(str::to_owned)
                     .or_else(|| revs.first().cloned());
@@ -2869,7 +2895,7 @@ impl Surface {
                     )
                     .optional()?;
                 let diff = self.unless_disabled(&repo, &doc_id, || {
-                    history::diff_unified_text(&self.store, &doc_id, &from, &to)
+                    Ok(reader.diff_unified(self.store.conn(), &doc_id, &from, &to)?)
                 })?;
                 Ok(
                     json!({ "_id": doc_id, "_path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
@@ -2936,12 +2962,12 @@ impl Surface {
                 // Resolution 11 (Phase 4b): `docs_history` is never `disabled`
                 // — a repository nothing was captured in lists every head
                 // unretained; only a build without the module refuses
-                // (`unavailable`).
-                if self.store.history().is_none() {
-                    return Err(omgbase_store::Error::HistoryUnavailable.into());
-                }
+                // (`unavailable`). Phase 6a: a provider repository lists
+                // through its provider.
+                let reader = self.store.docs_history_reader(&repo)?;
                 history::docs_history(
                     &self.store,
+                    &*reader,
                     &repo,
                     glob,
                     doc.as_deref(),

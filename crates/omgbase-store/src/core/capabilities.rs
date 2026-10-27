@@ -35,7 +35,7 @@
 use std::path::Path;
 
 use rusqlite::Connection;
-use serde_json::Value as Json;
+use serde_json::{Map, Value as Json};
 
 use crate::core::claims::ClaimScope;
 use crate::core::graph::EdgeTransitions;
@@ -263,11 +263,217 @@ pub struct HistorySizeFigures {
     pub retention: SizeRetention,
 }
 
+/// One change of a block's biography (`spec/surface` §3 `blocks_history`):
+/// the commit, its feed seq and instant, the provenance, the verdict and the
+/// matcher's confidence and reason.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockChange {
+    pub commit_id: String,
+    pub seq: i64,
+    pub ts: String,
+    pub origin: String,
+    pub kind: String,
+    pub confidence: Option<f64>,
+    pub reason: Option<String>,
+}
+
+impl BlockChange {
+    /// `{ commitId, seq, ts, origin, kind, confidence, reason }`, in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        serde_json::json!({
+            "commitId": self.commit_id,
+            "seq": self.seq,
+            "ts": self.ts,
+            "origin": self.origin,
+            "kind": self.kind,
+            "confidence": self.confidence,
+            "reason": self.reason,
+        })
+    }
+}
+
+/// One block-grain diff entry (`spec/surface` §3 `docs_diff`): the block's
+/// `_id` and its raw `before`/`after` as applicable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffEntry {
+    Removed {
+        id: String,
+        before: String,
+    },
+    Changed {
+        id: String,
+        before: String,
+        after: String,
+    },
+    Added {
+        id: String,
+        after: String,
+    },
+}
+
+impl DiffEntry {
+    /// `{ kind, _id, before?, after? }`, in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        match self {
+            DiffEntry::Removed { id, before } => {
+                serde_json::json!({ "kind": "removed", "_id": id, "before": before })
+            }
+            DiffEntry::Changed { id, before, after } => {
+                serde_json::json!({ "kind": "changed", "_id": id, "before": before, "after": after })
+            }
+            DiffEntry::Added { id, after } => {
+                serde_json::json!({ "kind": "added", "_id": id, "after": after })
+            }
+        }
+    }
+}
+
+/// One version of a document as `docs_history` lists it (`spec/surface` §3,
+/// 6.2 — resolution 11): a RETAINED version the history holds (`seq` and
+/// `commit` set), or the current head UNRETAINED (`seq` null, the feed row
+/// that minted it — null once pruned).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocVersion {
+    pub rev: String,
+    pub seq: Option<i64>,
+    pub commit: Option<String>,
+    pub ts: String,
+    pub origin: Option<String>,
+    pub actor: Option<String>,
+    /// The content hash as hex.
+    pub hash: String,
+    pub is_current: bool,
+    pub archived: bool,
+    pub retained: bool,
+}
+
+impl DocVersion {
+    /// `{ _rev, _seq, _commit, _ts, _origin, _actor, _hash, _is_current, _archived, retained }`.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        serde_json::json!({
+            "_rev": self.rev,
+            "_seq": self.seq,
+            "_commit": self.commit,
+            "_ts": self.ts,
+            "_origin": self.origin,
+            "_actor": self.actor,
+            "_hash": self.hash,
+            "_is_current": self.is_current,
+            "_archived": self.archived,
+            "retained": self.retained,
+        })
+    }
+}
+
+/// The READ half of history (modular-core Phase 6a; `spec/surface` §3): what
+/// the surface's history tools, the `revisions` query root and `doctor` ask
+/// of whatever holds a repository's history. The native recorder implements
+/// it over its own tables ([`HistoryRecorder`] extends it); an alternative
+/// provider — the git history provider, `spec/store` §5.12 — implements it
+/// over its own storage and attaches NO recorder (a `provider: git`
+/// repository is captured asynchronously by a checkpoint worker, never
+/// inside the commit transaction). The core reaches a repository's reader
+/// through [`history_reader_for`](crate::core::manifest::history_reader_for),
+/// which picks by the manifest row's `config.provider`. Every method runs
+/// against the connection it is given.
+pub trait HistoryReader {
+    /// `spec/store` §6.2: the bytes at a revision (`docs_read { at }`);
+    /// `None` when the token names no retained version of the document. A
+    /// provider decides a token of its own form (a git sha) here — the
+    /// `spec/surface` §3 table's `pruned` / `outside_coverage` /
+    /// `target_missing` rows are its errors.
+    fn read_at_revision(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+        rev_id: &str,
+    ) -> Result<Option<RevisionRead>>;
+
+    /// `blocks_history`: a block's biography, newest first (`limit` default
+    /// 100). A provider without block lineage answers
+    /// [`Error::HistoryUnsupported`].
+    fn blocks_history(
+        &self,
+        conn: &Connection,
+        block_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<BlockChange>>;
+
+    /// `docs_diff`: the block-grain diff between two revisions — `removed`,
+    /// `changed`, `added` in that order; an unknown revision is
+    /// [`Error::TargetMissingRevision`]. [`Error::HistoryUnsupported`] on a
+    /// provider without block identities.
+    fn diff_blocks(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+        from_rev: &str,
+        to_rev: &str,
+    ) -> Result<Vec<DiffEntry>>;
+
+    /// `docs_diff_unified`'s text: the unified diff of two revisions'
+    /// reconstructed bytes ([`unified_diff`](crate::history::diff::unified_diff));
+    /// an unknown revision is [`Error::TargetMissingRevision`].
+    fn diff_unified(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+        from_rev: &str,
+        to_rev: &str,
+    ) -> Result<String>;
+
+    /// The document's two most recent revision tokens, newest first — what
+    /// `docs_diff_unified` defaults `to_rev` / `from_rev` to (the native
+    /// recorder's rev ids; a provider's commit shas).
+    fn latest_revisions(&self, conn: &Connection, doc_id: &str) -> Result<Vec<String>>;
+
+    /// `docs_history`: the retained versions of one document, oldest first
+    /// (`head` the document's current head, for `is_current`). The caller
+    /// appends the unretained head (resolution 11) when none names it.
+    fn doc_versions(
+        &self,
+        conn: &Connection,
+        doc_id: &str,
+        head: Option<&str>,
+    ) -> Result<Vec<DocVersion>>;
+
+    /// The disposition counts of a captured commit (`kind → n` in `kind`
+    /// order, `same` never persisted) for a `changes_since` digest's summary
+    /// — `None` when this history holds none for it.
+    fn disposition_counts(
+        &self,
+        conn: &Connection,
+        commit_id: &str,
+    ) -> Result<Option<Vec<(String, i64)>>>;
+
+    /// The `revisions` query root (`spec/surface` §1.1, 4.7; Phase 4a): every
+    /// retained version of the repository's documents — tombstoned documents
+    /// included, history is history — as the binding's rows, in the keyset
+    /// order `(path as of the revision, rev_id)`.
+    fn revision_rows(&self, conn: &Connection, repo_id: &str) -> Result<Vec<RevisionQueryRow>>;
+
+    /// The `_revisions` relation of a document (`spec/surface` §1.2): its
+    /// retained versions by `seq`.
+    fn doc_revision_rows(&self, conn: &Connection, doc_id: &str) -> Result<Vec<RevisionQueryRow>>;
+
+    /// Does this history hold a version under this token? (`docs_read { at }`
+    /// tells a retained version from an unknown token by this; Phase 4a.)
+    fn has_revision(&self, conn: &Connection, rev_id: &str) -> Result<bool>;
+
+    /// `doctor`'s "capture complete" (`spec/cli` §6): the live documents whose
+    /// head was minted at or after `since` and has no retained version.
+    fn uncaptured_heads(&self, conn: &Connection, repo_id: &str, since: &str) -> Result<i64>;
+}
+
 /// The history capability: what the current-state core hands the recorder
-/// per committed transition, and the history reads the store exposes. Every
-/// method runs against the connection (or the open transaction) it is given;
-/// the recorder keeps no state of its own.
-pub trait HistoryRecorder {
+/// per committed transition, and the history reads the store exposes
+/// ([`HistoryReader`], the read half — Phase 6a). Every method runs against
+/// the connection (or the open transaction) it is given; the recorder keeps
+/// no state of its own.
+pub trait HistoryRecorder: HistoryReader {
     // ---- the accepted transition ----------------------------------------------------
 
     /// `spec/store` §5.4 step 15 (17.0, 3d): the `commits` row — the log's
@@ -315,58 +521,19 @@ pub trait HistoryRecorder {
     /// follow, so the interval record reads as 16.x's `edges` did.
     fn retarget_edges(&self, tx: &Connection, edge_ids: &[&str], dst_node: &str) -> Result<()>;
 
-    // ---- the reads the store exposes ------------------------------------------------
-
-    /// `spec/store` §6.2: the bytes at a revision (`docs_read { at }`; the
-    /// materializer's `bytes_for` through 16.x — it renders from the current
-    /// rows since 17.0).
-    fn read_at_revision(
-        &self,
-        conn: &Connection,
-        doc_id: &str,
-        rev_id: &str,
-    ) -> Result<Option<RevisionRead>>;
+    // ---- the surface's reads: `HistoryReader` (`spec/surface` §3) ---------------------
 
     /// A captured revision's frontmatter raw, resolved through the recorder's
     /// own delta chain (`spec/store` §6.2 "Resolving"); `None` when it has
     /// none or the row is unknown. Migration 17's backfill reads it once per
-    /// live head (§3.4 step 17).
+    /// live head (§3.4 step 17). The recorder's alone: a provider has no
+    /// delta chain.
     fn frontmatter_at_revision(&self, conn: &Connection, rev_id: &str) -> Result<Option<String>>;
 
     // (No current-state read goes THROUGH history any more: M1 retired
     // `current_frontmatter_raw`/`record_move` in 3a; M4 retired
     // `rendered_hash`/`previous_rendered_hash` in 3c — the pending row carries
     // `prior_hash` and the materializer renders from the current rows.)
-
-    /// The disposition counts of a captured commit (`kind → n` in `kind`
-    /// order, `same` never persisted) for a `changes_since` digest's summary
-    /// — `None` when the recorder has no `commits` row for it (the feed is the
-    /// core's; `core::feed`).
-    fn disposition_counts(
-        &self,
-        conn: &Connection,
-        commit_id: &str,
-    ) -> Result<Option<Vec<(String, i64)>>>;
-
-    /// The `revisions` query root (`spec/surface` §1.1, 4.7; Phase 4a): every
-    /// captured revision of the repository's documents — tombstoned documents
-    /// included, history is history — as the binding's rows, in the keyset
-    /// order `(path as of the revision, rev_id)`.
-    fn revision_rows(&self, conn: &Connection, repo_id: &str) -> Result<Vec<RevisionQueryRow>>;
-
-    /// The `_revisions` relation of a document (`spec/surface` §1.2): its
-    /// captured revisions by `seq`.
-    fn doc_revision_rows(&self, conn: &Connection, doc_id: &str) -> Result<Vec<RevisionQueryRow>>;
-
-    /// Has the recorder a `revisions` row under this head token? (`docs_read {
-    /// at }` on a disabled repository tells a captured revision from an
-    /// uncaptured one by this; Phase 4a.)
-    fn has_revision(&self, conn: &Connection, rev_id: &str) -> Result<bool>;
-
-    /// `doctor`'s "capture complete" (`spec/cli` §6): the live documents whose
-    /// head was minted at or after `since` (within the open coverage
-    /// interval) and has no `revisions` row.
-    fn uncaptured_heads(&self, conn: &Connection, repo_id: &str, since: &str) -> Result<i64>;
 
     // ---- the capture lifecycle (`spec/store` §5.9, Phase 4a) ------------------------
 
@@ -476,6 +643,122 @@ pub trait HistoryRecorder {
         repo_id: &str,
         dest: Option<&Path>,
     ) -> Result<Vec<ArchiveListing>>;
+}
+
+// ---- the alternative history provider (`spec/store` §5.12, 17.5 — Phase 6a) -------------
+
+/// Can the provider run on this host? (`git` on PATH for the git provider.)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProviderAvailability {
+    /// Usable; `detail` the version line or alike.
+    Available { detail: String },
+    /// Not usable here; `reason` the one-line why.
+    Unavailable { reason: String },
+}
+
+/// `history enable --provider <name>`'s receipt from the provider: the
+/// `config` the manifest row stores, the documents the baseline committed
+/// and the branch tip after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderEnabled {
+    pub config: Map<String, Json>,
+    pub revisions: usize,
+    pub tip: Option<String>,
+}
+
+/// `history purge` on a provider repository: what left (`spec/store` §5.12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderPurge {
+    pub removed: bool,
+    /// The storage's path (the bare repository's).
+    pub path: String,
+}
+
+/// `history checkpoint`'s receipt (`spec/store` §5.12, `spec/cli` §6): the
+/// commits written, the feed span they cover, the branch tip, whether the
+/// run was a rescan.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckpointResult {
+    pub committed: usize,
+    pub from_seq: i64,
+    pub to_seq: i64,
+    pub tip: Option<String>,
+    pub rescanned: bool,
+}
+
+impl CheckpointResult {
+    /// `{ committed, from_seq, to_seq, tip, rescanned }`, in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        serde_json::json!({
+            "committed": self.committed,
+            "from_seq": self.from_seq,
+            "to_seq": self.to_seq,
+            "tip": self.tip,
+            "rescanned": self.rescanned,
+        })
+    }
+}
+
+/// An alternative history provider (modular-core Phase 6a — "one alternative
+/// strategy through the documented contract"; `spec/store` §5.12): what the
+/// composition layer attaches for a history that is NOT the recorder's
+/// tables. The core knows it by name — the manifest row's `config.provider`
+/// — and reaches it through [`Capabilities::providers`]; it imports nothing
+/// of the implementation (`omgbase-git-adapter`). A `provider: <name>`
+/// repository has no recorder (`capture_for` is `None` — its commits write
+/// the feed alone) and reads through [`HistoryProvider::reader`]; capture is
+/// the provider's own asynchronous worker ([`HistoryProvider::checkpoint`]),
+/// run by `omg history checkpoint` and by the freshness sweep.
+pub trait HistoryProvider {
+    /// The provider's name — the manifest row's `config.provider`.
+    fn name(&self) -> &str;
+
+    /// Is the provider usable here? Not → `capability_unavailable { history,
+    /// unavailable, provider, reason }` on every read and the
+    /// `history_provider_unavailable` alert; WRITES CONTINUE.
+    fn available(&self) -> ProviderAvailability;
+
+    /// The read half for a repository whose manifest names this provider,
+    /// over the row's `config`.
+    fn reader<'a>(
+        &'a self,
+        repo_id: &str,
+        config: &Map<String, Json>,
+    ) -> Box<dyn HistoryReader + 'a>;
+
+    /// `history enable --provider <name>`: initialise the provider's storage
+    /// and write its BASELINE — the full current tree under the baseline
+    /// feed row the core appended (`commit`) — inside the core's enable
+    /// transaction (`tx`); the manifest row is written after it returns.
+    /// `options` are the verb's (`branch`, `cadence` for git).
+    fn enable(
+        &self,
+        tx: &Connection,
+        repo_id: &str,
+        commit: &CommitRecord<'_>,
+        options: &Map<String, Json>,
+    ) -> Result<ProviderEnabled>;
+
+    /// `history purge` on a repository of this provider: delete its storage
+    /// and its cursor (`spec/store` §7.6, §5.12). Runs in the caller's
+    /// transaction.
+    fn purge(
+        &self,
+        tx: &Connection,
+        repo_id: &str,
+        config: &Map<String, Json>,
+    ) -> Result<ProviderPurge>;
+
+    /// The checkpoint worker, once: read the feed from the cursor and write
+    /// the provider's commits (`spec/store` §5.12) at `now`.
+    fn checkpoint(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        config: &Map<String, Json>,
+        now: &str,
+    ) -> Result<CheckpointResult>;
 }
 
 // ---- the semantic provider ------------------------------------------------------------
@@ -708,6 +991,11 @@ pub struct Capabilities {
     /// `disabled`.
     pub semantic_fault: Option<String>,
     pub claims: Box<dyn IdentityClaims>,
+    /// The alternative history providers the composition layer attached
+    /// (Phase 6a — the git provider in production), by [`HistoryProvider::name`];
+    /// empty when none. The `full` and `git` compositions attach them, the
+    /// three reduced 5a compositions attach none.
+    pub providers: Vec<Box<dyn HistoryProvider>>,
 }
 
 impl std::fmt::Debug for Capabilities {
@@ -716,6 +1004,10 @@ impl std::fmt::Debug for Capabilities {
             .field("history", &self.history.is_some())
             .field("semantic", &self.semantic.is_some())
             .field("semantic_fault", &self.semantic_fault)
+            .field(
+                "providers",
+                &self.providers.iter().map(|p| p.name()).collect::<Vec<_>>(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -733,22 +1025,26 @@ impl std::fmt::Debug for Capabilities {
 /// row (`history enable|disable`, `spec/store` §5.9).
 pub const CAPABILITIES_ENV: &str = "OMGBASE_CAPABILITIES";
 
-/// The four compositions of the modular-core plan (§5): what
-/// [`CAPABILITIES_ENV`] accepts. `full` is the default.
+/// The compositions of the modular-core plan (§5; Phase 6a added `git`):
+/// what [`CAPABILITIES_ENV`] accepts. `full` is the default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Composition {
     Core,
     History,
     Semantic,
     Full,
+    /// The core + the registered git history provider, no native recorder,
+    /// no semantic module (`spec/store` §9.6's fifth composition, 17.5).
+    Git,
 }
 
 /// Every composition, in the reference's order (`COMPOSITIONS`).
-pub const COMPOSITIONS: [Composition; 4] = [
+pub const COMPOSITIONS: [Composition; 5] = [
     Composition::Core,
     Composition::History,
     Composition::Semantic,
     Composition::Full,
+    Composition::Git,
 ];
 
 impl Composition {
@@ -761,6 +1057,7 @@ impl Composition {
             Composition::History => "history",
             Composition::Semantic => "semantic",
             Composition::Full => "full",
+            Composition::Git => "git",
         }
     }
 
@@ -780,6 +1077,14 @@ impl Composition {
     #[must_use]
     pub const fn has_semantic(self) -> bool {
         matches!(self, Composition::Full | Composition::Semantic)
+    }
+
+    /// Does the composition attach the registered alternative history
+    /// providers — the git provider (Phase 6a)? `full` and `git`; the three
+    /// reduced 5a compositions attach none.
+    #[must_use]
+    pub const fn has_git_provider(self) -> bool {
+        matches!(self, Composition::Full | Composition::Git)
     }
 
     /// The composition a value of [`CAPABILITIES_ENV`] names: unset or empty
@@ -833,7 +1138,21 @@ impl Capabilities {
             semantic: None,
             semantic_fault: None,
             claims: Box::new(crate::core::claims::IdClaims),
+            providers: Vec::new(),
         }
+    }
+
+    /// This set with an alternative history provider attached (Phase 6a):
+    /// what the composition layer does for the `full` and `git` compositions
+    /// before any store opens (the `omgbase` binary registers the git
+    /// provider of `omgbase-git-adapter`; the fixture runners the same under
+    /// the fixture identity). A provider of the same name replaces the
+    /// earlier one.
+    #[must_use]
+    pub fn with_provider(mut self, provider: Box<dyn HistoryProvider>) -> Self {
+        self.providers.retain(|p| p.name() != provider.name());
+        self.providers.push(provider);
+        self
     }
 
     /// This set without the semantic bundle (`disabled`).
@@ -866,13 +1185,14 @@ impl Capabilities {
         self
     }
 
-    /// [`CAPABILITIES_ENV`] applied to `standard` (the plan's four
-    /// compositions, Phase 5a — `spec/store` §9.6): unset / empty / `full` →
-    /// `standard`; `history` → `standard` without the semantic module;
-    /// `semantic` → `standard` without the history module; `core` →
+    /// [`CAPABILITIES_ENV`] applied to `standard` (the plan's compositions,
+    /// Phase 5a — `spec/store` §9.6): unset / empty / `full` → `standard`;
+    /// `history` → `standard` without the semantic module; `semantic` →
+    /// `standard` without the history module; `core` and `git` →
     /// [`Capabilities::core_only`] — a core-only build (Phase 4a: no
-    /// recorder, no semantic module). Any other value is a configuration
-    /// error naming the four.
+    /// recorder, no semantic module; `git` then gets the git provider from
+    /// the composition layer, Phase 6a). Any other value is a configuration
+    /// error naming the five.
     pub fn from_env(standard: impl FnOnce() -> Self) -> Result<Self> {
         Ok(Self::for_composition(Composition::from_env()?, standard))
     }
@@ -884,7 +1204,9 @@ impl Capabilities {
             Composition::Full => standard(),
             Composition::History => standard().without_semantic(),
             Composition::Semantic => standard().without_history(),
-            Composition::Core => Self::core_only(),
+            // The providers are the composition layer's to attach
+            // (`with_provider`): the core knows none by itself.
+            Composition::Core | Composition::Git => Self::core_only(),
         }
     }
 }
@@ -915,4 +1237,37 @@ pub fn require_history(history: Option<&dyn HistoryRecorder>) -> Result<&dyn His
 /// The provider, or [`unavailable`]`("semantic")`.
 pub fn require_semantic(semantic: Option<&dyn SemanticProvider>) -> Result<&dyn SemanticProvider> {
     semantic.ok_or_else(|| unavailable("semantic"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The five compositions (`spec/store` §9.6; Phase 6a added `git`): the
+    /// names, what each carries, and the configuration error naming them all.
+    #[test]
+    fn the_five_compositions_and_what_they_carry() {
+        assert_eq!(COMPOSITIONS.len(), 5);
+        assert_eq!(Composition::parse("git"), Some(Composition::Git));
+        assert_eq!(
+            Composition::from_env_value(Some("git")).unwrap(),
+            Composition::Git
+        );
+        assert_eq!(
+            Composition::from_env_value(None).unwrap(),
+            Composition::Full
+        );
+        assert!(Composition::Git.has_git_provider() && Composition::Full.has_git_provider());
+        assert!(!Composition::History.has_git_provider() && !Composition::Core.has_git_provider());
+        assert!(!Composition::Git.has_history() && !Composition::Git.has_semantic());
+        let e = Composition::from_env_value(Some("none"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            e,
+            "OMGBASE_CAPABILITIES=\"none\" is not a composition; use one of \"core\", \"history\", \"semantic\", \"full\", \"git\" (the default is \"full\")"
+        );
+        let caps = Capabilities::for_composition(Composition::Git, Capabilities::core_only);
+        assert!(caps.history.is_none() && caps.semantic.is_none() && caps.providers.is_empty());
+    }
 }

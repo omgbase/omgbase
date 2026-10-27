@@ -109,6 +109,10 @@ pub const MATERIALIZATION_FAILED_ALERT: &str = "materialization_failed";
 pub const CAPTURE_FAILED_ALERT: &str = "capture_failed";
 pub const SEGMENT_DETACHED_ALERT: &str = "segment_detached";
 pub const RECORDER_SCHEMA_UNKNOWN_ALERT: &str = "recorder_schema_unknown";
+/// The alert a repository whose history provider cannot run raises
+/// (`spec/store` §5.8, §5.12 — 17.5, Phase 6a): `git` not on PATH, or the
+/// provider the manifest names not attached by this composition.
+pub const HISTORY_PROVIDER_UNAVAILABLE_ALERT: &str = "history_provider_unavailable";
 
 /// `recovery.alert_after_minutes`: how old a pending row may be before the
 /// backlog alert is raised.

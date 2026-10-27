@@ -1156,9 +1156,16 @@ impl Runner<'_> {
     /// `'static` context a `Plan` carries.
     fn run(&self, q: &Query) -> Result<oqx::OqxResult> {
         let conn = self.store.conn();
+        // The repository's reader (Phase 6a): the recorder, or the attached
+        // provider its manifest names — never an error (a provider that
+        // cannot run lists nothing).
+        let reader = self
+            .store
+            .history_reader_if_available(self.repo_id)
+            .unwrap_or(None);
         let ctx = StoreContext::new(conn, self.repo_id, self.semantic.clone())
             .with_semantic_provider(self.store.semantic())
-            .with_history_reader(self.store.history_reader().unwrap_or(None))
+            .with_history_reader(reader.as_deref())
             .with_now_ms(self.now_ms);
         let plan = if self.planned {
             SqlitePlanner::new(conn, self.repo_id)

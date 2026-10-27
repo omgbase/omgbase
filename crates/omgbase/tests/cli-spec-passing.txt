@@ -131,6 +131,7 @@ history::history-attach-dir
 history::history-attach-missing
 history::history-attach-no-arg
 history::history-attach-not-a-segment
+history::history-checkpoint-on-native
 history::history-core-build-writer-refused
 history::history-detach-attach
 history::history-detach-no-arg
@@ -138,7 +139,10 @@ history::history-detach-unknown
 history::history-disable-then-write
 history::history-enable-after-disable
 history::history-enable-already
+history::history-enable-bad-cadence
+history::history-enable-bad-provider
 history::history-enable-best-effort
+history::history-enable-cadence-without-git
 history::history-export
 history::history-export-dest
 history::history-export-dry-run
@@ -146,6 +150,10 @@ history::history-export-nothing
 history::history-export-prune
 history::history-export-prune-json
 history::history-export-reuses-pending
+history::history-git-debounce-cadence
+history::history-git-doctor-size
+history::history-git-enable-checkpoint-purge
+history::history-git-refused-when-native-enabled
 history::history-list-empty
 history::history-no-repo
 history::history-no-workspace

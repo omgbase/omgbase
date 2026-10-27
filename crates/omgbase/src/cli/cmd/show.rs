@@ -77,8 +77,14 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
                 "blocks_read",
                 json!({ "_id": block_id, "resolution": "full" }),
             )?;
+            // `--include history` on a store with nothing captured (Phase 4a),
+            // or on a git-provider repository with no block lineage (Phase 6a):
+            // the card simply carries no history — the same empty list.
             let history = if include_history {
-                Some(cli.call("blocks_history", json!({ "_id": block_id, "limit": 5 }))?)
+                Some(
+                    cli.call("blocks_history", json!({ "_id": block_id, "limit": 5 }))
+                        .unwrap_or_else(|_| Json::Array(Vec::new())),
+                )
             } else {
                 None
             };

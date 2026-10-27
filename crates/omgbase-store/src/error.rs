@@ -116,6 +116,28 @@ pub enum Error {
     /// about — nobody minted it here, or it is another document's (`spec/surface`
     /// §3; the surface's `target_missing { doc?, rev }`).
     TargetMissingRevision { rev: String, doc: Option<String> },
+    /// `spec/surface` §3 `unsupported` (17.5, Phase 6a): the repository's
+    /// history provider does not record what the tool asks for — the git
+    /// provider keeps whole documents, so `blocks_history` and `docs_diff`
+    /// have nothing to answer from. `fix` names the tool that does work. The
+    /// surface's `capability_unavailable { history, unsupported, provider,
+    /// fix }`, not retriable; the message pinned.
+    HistoryUnsupported {
+        provider: String,
+        tool: String,
+        fix: String,
+    },
+    /// `spec/store` §5.12 (17.5, Phase 6a): the history provider a
+    /// repository's manifest names cannot run here — the composition never
+    /// attached it, or `git` is not on PATH. Reads fail with it, WRITES
+    /// CONTINUE. The surface's `capability_unavailable { history,
+    /// unavailable, provider, reason }`, retriable; the message pinned.
+    HistoryProviderUnavailable { provider: String, reason: String },
+    /// `spec/store` §5.12: `history enable --provider <b>` on a repository
+    /// enabled under provider `<a>` — one provider per repository; the switch
+    /// is `history disable` then `enable --provider`. The CLI renders it as
+    /// a usage error; the message pinned.
+    HistoryProviderConflict { current: String, requested: String },
     /// `spec/store` §5.10 (17.2, Phase 4b): the repository's semantic row was
     /// switched off by `omg embed disable` while a provider stays configured —
     /// `semantic()`, `blocks_resolve`'s vector leg and the drain refuse. The
@@ -219,6 +241,19 @@ impl fmt::Display for Error {
                 "no revision {} for document {}",
                 serde_json::Value::String(rev.clone()),
                 doc.as_deref().unwrap_or("?")
+            ),
+            Error::HistoryUnsupported {
+                provider,
+                tool,
+                fix,
+            } => f.write_str(&crate::core::manifest::history_unsupported_message(
+                provider, tool, fix,
+            )),
+            Error::HistoryProviderUnavailable { provider, reason } => f.write_str(
+                &crate::core::manifest::history_provider_unavailable_message(provider, reason),
+            ),
+            Error::HistoryProviderConflict { current, requested } => f.write_str(
+                &crate::core::manifest::history_provider_conflict_message(current, requested),
             ),
             Error::SemanticSwitchedOff => {
                 f.write_str(crate::core::manifest::SEMANTIC_SWITCHED_OFF_MESSAGE)

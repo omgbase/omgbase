@@ -245,7 +245,7 @@ fn parses_site_and_nth_refuses_an_unknown_site_or_a_bad_count_and_is_unarmed_whe
     );
     let e = parse_fault("feed.append:0").unwrap_err().to_string();
     assert!(e.contains("positive integer"), "{e}");
-    assert_eq!(FAULT_SITES.len(), 5);
+    assert_eq!(FAULT_SITES.len(), 6);
 }
 
 #[test]

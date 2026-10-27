@@ -50,8 +50,11 @@
 //!   host side ([`mutate`], [`doc_store`], [`macros`], [`links`], [`sugar`],
 //!   [`docs_ops`], [`yaml_emit`], [`plan`], `effects`, [`effects_plan`]),
 //!   [`materialize`] (§5.7) and [`size`] (§7 "Size") — and the seams,
-//!   [`capabilities`]: [`HistoryRecorder`], [`SemanticProvider`],
-//!   [`IdentityClaims`], bundled as [`Capabilities`].
+//!   [`capabilities`]: [`HistoryRecorder`] (its read half [`HistoryReader`]),
+//!   [`SemanticProvider`], [`IdentityClaims`] and — Phase 6a — the
+//!   [`HistoryProvider`] seam an alternative history (the git provider of
+//!   `omgbase-git-adapter`, `spec/store` §5.12) is attached through, bundled
+//!   as [`Capabilities`].
 //! - [`history`] — the recorder: [`history::writers`] (blobs, tree nodes,
 //!   revisions, the commit log — the feed row's twin), [`tree`] (§4.1
 //!   encodings), [`delta`] (§4.1 "Delta nodes", §4.4, §6 over
@@ -108,7 +111,7 @@ pub use self::core::{
     observe, order_key, plan, properties, read, semantic_shapes, settings, size, sugar,
     text_search, time, writers, yaml_emit,
 };
-pub use self::history::{archive, delta, edit_script, gc, retention, tree};
+pub use self::history::{archive, delta, diff, edit_script, gc, retention, tree};
 pub use self::semantic::search;
 
 use std::path::Path;
@@ -118,8 +121,8 @@ use rusqlite::{Connection, Transaction, params};
 pub use self::history::writers::{NewRevision, PreviousRevision, TreeWriteContext};
 pub use self::semantic::{Provider, cosine_bytes};
 pub use alerts::{
-    Alert, AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, MATERIALIZATION_BACKLOG_ALERT,
-    MATERIALIZATION_FAILED_ALERT, RECORDER_SCHEMA_UNKNOWN_ALERT,
+    Alert, AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
+    MATERIALIZATION_BACKLOG_ALERT, MATERIALIZATION_FAILED_ALERT, RECORDER_SCHEMA_UNKNOWN_ALERT,
     RECOVERY_ALERT_AFTER_MINUTES_DEFAULT, SEGMENT_DETACHED_ALERT, active_alerts,
     active_alerts_json, alert_after_minutes, clear_alert, list_active_alerts,
     materialization_backlog_message, materialization_failed_message, raise_alert,
@@ -130,10 +133,12 @@ pub use archive::{
     read_manifest, segment_basename, segment_file_name,
 };
 pub use capabilities::{
-    CAPABILITIES_ENV, COMPOSITIONS, Capabilities, CapabilityState, Composition, DispositionRow,
-    DocEmbedStats, EmbedStats, ForeignVectors, GcResult, HistoryPurgeOutcome, HistoryRecorder,
-    HistorySizeFigures, IdentityClaims, PurgedCounts, RecordedRevision, RevisionQueryRow,
-    RevisionRead, RevisionTransition, SemanticProvider,
+    BlockChange, CAPABILITIES_ENV, COMPOSITIONS, Capabilities, CapabilityState, CheckpointResult,
+    Composition, DiffEntry, DispositionRow, DocEmbedStats, DocVersion, EmbedStats, ForeignVectors,
+    GcResult, HistoryProvider, HistoryPurgeOutcome, HistoryReader, HistoryRecorder,
+    HistorySizeFigures, IdentityClaims, ProviderAvailability, ProviderEnabled, ProviderPurge,
+    PurgedCounts, RecordedRevision, RevisionQueryRow, RevisionRead, RevisionTransition,
+    SemanticProvider,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -149,7 +154,7 @@ pub use effects_plan::{EffectsOutcome, PlanContext, Receipt};
 pub use error::{Error, Result};
 pub use fault::{
     ArmedFault, FAULT_ENV, FAULT_SITES, FaultSite, armed_fault, fault_passes, fault_point,
-    injected_fault_message, parse_fault, reset_faults,
+    injected_fault_message, parse_fault, reset_faults, set_armed_fault,
 };
 pub use feed::{
     ChangesPage, ChangesSinceOptions, CommitDigest, DigestRevision, ExpiredCursor,
@@ -176,17 +181,22 @@ pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
 pub use manifest::{
     CoverageInterval, HISTORY_DATA_V, HISTORY_DISABLED_MESSAGE, HISTORY_ENABLED_REASON,
     HISTORY_INTERFACE_V, HISTORY_UNAVAILABLE_MESSAGE, HISTORY_WRITER_REQUIRED_MESSAGE,
-    HistoryLifecycleResult, HistoryPurgeResult, ManifestRow, ManifestState, SEMANTIC_DATA_V,
-    SEMANTIC_INTERFACE_V, SEMANTIC_PROVIDER_MISSING_MESSAGE, SEMANTIC_SWITCHED_OFF_FIX,
-    SEMANTIC_SWITCHED_OFF_MESSAGE, SemanticLifecycleResult, WRITER_REFUSED_ALERT,
-    WRITER_REFUSED_MESSAGE, any_history_enabled, apply_history_bundle, canonical_config_json,
-    capture, capture_failed_message, capture_for, claim_minted_at, clear_capture_failed,
-    config_hash, coverage_from, disable_history, disable_semantic, enable_history, enable_semantic,
-    ensure_manifest, history_bundle_present, history_outside_coverage_message,
-    history_pruned_message, history_read_refusal, history_reader, in_coverage, open_coverage_from,
-    purge_history, raise_capture_failed, read_capabilities, read_capability,
-    refresh_semantic_manifest, refresh_semantic_manifests, require_history_reader, require_writer,
-    semantic_provider_of, semantic_switched_off, writer_for,
+    HistoryLifecycleResult, HistoryPurgeResult, HistoryReaderRef, ManifestRow, ManifestState,
+    NATIVE_PROVIDER, ProviderPurgeOutcome, SEMANTIC_DATA_V, SEMANTIC_INTERFACE_V,
+    SEMANTIC_PROVIDER_MISSING_MESSAGE, SEMANTIC_SWITCHED_OFF_FIX, SEMANTIC_SWITCHED_OFF_MESSAGE,
+    SemanticLifecycleResult, WRITER_REFUSED_ALERT, WRITER_REFUSED_MESSAGE, any_history_enabled,
+    apply_history_bundle, attached_provider, canonical_config_json, capture,
+    capture_failed_message, capture_for, claim_minted_at, clear_capture_failed,
+    clear_provider_unavailable, config_hash, coverage_from, disable_history, disable_semantic,
+    docs_history_reader, enable_history, enable_semantic, ensure_manifest, history_bundle_present,
+    history_checkpoint, history_completeness, history_outside_coverage_message,
+    history_provider_conflict_message, history_provider_not_attached_message, history_provider_of,
+    history_provider_unavailable_message, history_pruned_message, history_read_refusal,
+    history_reader, history_reader_for, history_reader_for_doc, history_reader_if_available,
+    history_unsupported_message, in_coverage, open_coverage_from, provider_config_of,
+    purge_history, raise_capture_failed, raise_provider_unavailable, read_capabilities,
+    read_capability, refresh_semantic_manifest, refresh_semantic_manifests, require_history_reader,
+    require_provider, require_writer, semantic_provider_of, semantic_switched_off, writer_for,
 };
 pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
@@ -227,7 +237,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.4";
+pub const SPEC_VERSION: &str = "17.5";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -247,6 +257,9 @@ pub struct Store {
     /// Why `semantic` is `None` although one is configured (the
     /// `unavailable` state); `None` with no provider is `disabled`.
     semantic_fault: Option<String>,
+    /// The alternative history providers the composition layer attached
+    /// (Phase 6a), by name.
+    providers: Vec<Box<dyn HistoryProvider>>,
     /// Test seam: runs inside [`Store::commit_effects`](effects) right after
     /// its `BEGIN IMMEDIATE`, before the validation — a test interleaves a
     /// second connection against the held write lock here.
@@ -348,6 +361,7 @@ impl Store {
             semantic,
             semantic_fault,
             claims,
+            providers,
         } = capabilities;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -366,6 +380,7 @@ impl Store {
             history,
             semantic,
             semantic_fault,
+            providers,
             #[cfg(test)]
             after_begin: None,
         })
@@ -419,12 +434,80 @@ impl Store {
         manifest::history_reader(&self.conn, self.history.as_deref())
     }
 
-    /// The recorder a history TOOL reads through, or the refusal
+    /// The reader a history TOOL reads through, or the refusal
     /// ([`manifest::require_history_reader`]: [`Error::HistoryUnavailable`]
     /// without the module, [`Error::HistoryDisabled`] when nothing was ever
-    /// captured in this database).
-    pub fn require_history_reader(&self) -> Result<&dyn HistoryRecorder> {
-        manifest::require_history_reader(&self.conn, self.history.as_deref())
+    /// captured in this database; with a `repo_id`, a provider repository's
+    /// reader or [`Error::HistoryProviderUnavailable`] — Phase 6a).
+    pub fn require_history_reader(&self, repo_id: Option<&str>) -> Result<HistoryReaderRef<'_>> {
+        manifest::require_history_reader(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            repo_id,
+            &time::now_ts(),
+        )
+    }
+
+    /// The alternative history providers this store opened with (Phase 6a).
+    #[must_use]
+    pub fn providers(&self) -> &[Box<dyn HistoryProvider>] {
+        &self.providers
+    }
+
+    /// The attached provider named `name`, if any.
+    #[must_use]
+    pub fn provider(&self, name: &str) -> Option<&dyn HistoryProvider> {
+        manifest::attached_provider(&self.providers, name)
+    }
+
+    /// The reader a repository's history is read through
+    /// ([`manifest::history_reader_for`], Phase 6a): the recorder when the
+    /// row names no provider and the bundle exists, the attached provider's
+    /// reader when it names one (or its refusal).
+    pub fn history_reader_for(&self, repo_id: &str) -> Result<Option<HistoryReaderRef<'_>>> {
+        manifest::history_reader_for(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            repo_id,
+            &time::now_ts(),
+        )
+    }
+
+    /// [`Store::history_reader_for`] that never refuses
+    /// ([`manifest::history_reader_if_available`]): the `revisions` root.
+    pub fn history_reader_if_available(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<HistoryReaderRef<'_>>> {
+        manifest::history_reader_if_available(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            repo_id,
+            &time::now_ts(),
+        )
+    }
+
+    /// `docs_history`'s reader ([`manifest::docs_history_reader`]): never
+    /// `disabled`; `unavailable` without the module; a provider repository's
+    /// reader or its refusal.
+    pub fn docs_history_reader(&self, repo_id: &str) -> Result<HistoryReaderRef<'_>> {
+        manifest::docs_history_reader(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            repo_id,
+            &time::now_ts(),
+        )
+    }
+
+    /// `spec/store` §5.12 `history checkpoint` ([`manifest::history_checkpoint`],
+    /// Phase 6a): the attached provider's worker, once, at `now`. The caller
+    /// holds the writer lock.
+    pub fn history_checkpoint(&self, repo_id: &str, now: &str) -> Result<CheckpointResult> {
+        manifest::history_checkpoint(&self.conn, &self.providers, repo_id, now)
     }
 
     /// TEST SEAM (the fixture runners' `recorder_fault` device, `spec/store`
@@ -449,16 +532,37 @@ impl Store {
         now: &str,
         writer_requires: bool,
     ) -> Result<HistoryLifecycleResult> {
+        self.enable_history_with(repo_id, now, writer_requires, None, &serde_json::Map::new())
+    }
+
+    /// [`Store::enable_history`] with the provider named (`spec/store` §5.12,
+    /// Phase 6a): `history enable --provider <name>` with the verb's options
+    /// (`branch`, `cadence`); `None` is the native recorder.
+    pub fn enable_history_with(
+        &mut self,
+        repo_id: &str,
+        now: &str,
+        writer_requires: bool,
+        provider: Option<&str>,
+        provider_options: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<HistoryLifecycleResult> {
         let Store {
-            conn, ids, history, ..
+            conn,
+            ids,
+            history,
+            providers,
+            ..
         } = self;
         manifest::enable_history(
             conn,
             &mut ids.at(conn),
             history.as_deref(),
+            providers,
             repo_id,
             now,
             writer_requires,
+            provider,
+            provider_options,
         )
     }
 
@@ -475,7 +579,25 @@ impl Store {
     /// repository is enabled and nothing is left. Coverage is untouched. The
     /// caller holds the writer lock.
     pub fn purge_history(&self, repo_id: &str, before: Option<&str>) -> Result<HistoryPurgeResult> {
-        manifest::purge_history(&self.conn, self.history.as_deref(), repo_id, before)
+        self.purge_history_at(repo_id, before, &time::now_ts())
+    }
+
+    /// [`Store::purge_history`] with the alert channel's clock pinned (a
+    /// provider that cannot run raises `history_provider_unavailable` at `now`).
+    pub fn purge_history_at(
+        &self,
+        repo_id: &str,
+        before: Option<&str>,
+        now: &str,
+    ) -> Result<HistoryPurgeResult> {
+        manifest::purge_history(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            repo_id,
+            before,
+            now,
+        )
     }
 
     /// `spec/surface` §3's read-state decision table
@@ -492,10 +614,12 @@ impl Store {
         manifest::history_read_refusal(
             &self.conn,
             self.history.as_deref(),
+            &self.providers,
             repo_id,
             rev,
             doc_id,
             read_fix,
+            &time::now_ts(),
         )
     }
 
@@ -722,11 +846,19 @@ impl Store {
     }
 
     /// §6.2: the bytes at a revision, from its Merkle root
-    /// ([`HistoryRecorder::read_at_revision`]) — through the history reader
-    /// (Phase 4a): `None` when the composition has no module or nothing was
-    /// ever captured in this database, as for a revision the recorder lacks.
+    /// ([`HistoryReader::read_at_revision`]) — through the reader of the
+    /// document's repository (Phase 4a; Phase 6a: the recorder, or the
+    /// attached provider its manifest names): `None` when the composition has
+    /// no module or nothing was ever captured in this database, as for a
+    /// revision the reader lacks.
     pub fn read_at_revision(&self, doc_id: &str, rev_id: &str) -> Result<Option<RevisionRead>> {
-        match self.history_reader()? {
+        match manifest::history_reader_for_doc(
+            &self.conn,
+            self.history.as_deref(),
+            &self.providers,
+            doc_id,
+            &time::now_ts(),
+        )? {
             Some(h) => h.read_at_revision(&self.conn, doc_id, rev_id),
             None => Ok(None),
         }
@@ -1023,6 +1155,7 @@ impl Capabilities {
             semantic: Some(Box::new(Provider)),
             semantic_fault: None,
             claims: Box::new(IdClaims),
+            providers: Vec::new(),
         }
     }
 

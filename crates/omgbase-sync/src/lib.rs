@@ -51,7 +51,9 @@ pub mod source;
 pub mod workspace;
 
 pub use admin::{DiskStatus, RepoStatus, SyncStatus, repos_status, sync_status};
-pub use capability_state::{capability_states, history_state, semantic_configured, semantic_state};
+pub use capability_state::{
+    capability_states, history_completeness, history_state, semantic_configured, semantic_state,
+};
 pub use checkpoint::{
     BatchResult, CheckpointResult, LastBatch, batch_id_of, finish_checkpoint, last_batch,
     process_checkpoint, write_status_row,
@@ -63,7 +65,7 @@ pub use error::{Error, Result};
 pub use external::ExternalSource;
 pub use freshness::{
     DiskDrift, SweepPlan, SweepResult, detect_disk_drift, freshness_sweep, materialize_pending,
-    rebuild_file_stats, record_file_stat, sweep_plan,
+    rebuild_file_stats, record_file_stat, run_provider_checkpoint, sweep_plan,
 };
 pub use fs::{FileStat, FileSystem, MemFileSystem, RealFileSystem, is_ignored_dir};
 pub use legacy_bytes::{LegacyRepairOutcome, repair_legacy_bytes};
@@ -91,7 +93,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "4.4";
+pub const SPEC_VERSION: &str = "4.5";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

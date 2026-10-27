@@ -1202,6 +1202,7 @@ provider keeps are not in the database. This repository's `docs/` again (44 Mark
 | history on, embedder off | 44 | 4204 | 0.96 | 9.83 | 10.3× | 5.28 (53.7 %) | 0.37 | 0.01 | 3.44 (35.0 %) | 0.58 (5.9 %) | 0.15 | — |
 | history off, embedder off | 44 | 4204 | 0.96 | 6.43 | 6.7× | 5.27 (82.0 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.58 (9.0 %) | 0.14 | — |
 | git history, embedder off | 44 | 4204 | 0.96 | 6.38 | 6.7× | 5.28 (82.7 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.61 (9.6 %) | 0.15 | 0.35 (1 commit) |
+| git history, embedder off — **Rust** (the twin, `--engine rust`, `target/debug/omgbase` at store 17.5; `docs/` as of the twin: 44 files, 0.97 MB, 4,218 blocks) | 44 | 4218 | 0.97 | 6.43 | 6.7× | 5.32 (82.8 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.61 (9.5 %) | 0.15 | 0.35 (1 commit, 48 objects) |
 
 The import under the git provider is one baseline commit of 44 blobs: **0.35 MB of packed objects** beside a 6.38 MB
 database (database + git 6.73 MB, 7.0× the Markdown) against **3.44 MB** of native history rows for the same import —
@@ -1210,6 +1211,13 @@ block lineage, `blocks_history` and `docs_diff`, none of which the git provider 
 history-off database (the git row writes no history table). The enable + checkpoint took 1.9 s (44 `hash-object` spawns
 and one commit); the import itself 2.4 s as before. Growth per edit is one commit object + one blob per touched document
 + the tree objects on the path; the synthetic workload's per-edit comparison with native history is a 6b item.
+
+The Rust twin (2026-10-26, the same harness with `--engine rust`) lands on the same shape: **0.35 MB** of packed objects (1
+commit, 48 objects — 44 blobs, the tree objects, the commit) beside a 6.43 MB database (database + git 6.78 MB, 7.0× the
+Markdown) against 3.44 MB of native history rows; the enable + checkpoint took 1.7 s. The baseline commit's sha is the
+same as the TypeScript CLI's on an identical workspace under the conformance seams (`spec/store` §9.4's identity and
+clock) — the two engines were driven side by side through enable, `meta`/`new`/`append`/`mv`/`rm`, checkpoint, the
+`git.commit` fault and its replay, and their `git log --format=%H%n%s%n%(trailers)` outputs are byte-identical.
 
 ### Qualification of two local 16.x workspaces (2026-10-26, `scripts/qualify/migrate-copy.mjs`)
 

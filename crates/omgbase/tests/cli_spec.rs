@@ -1136,7 +1136,7 @@ fn report(title: &str, lines: &[String]) {
     }
 }
 
-// ---- the four compositions (spec/cli §8 "The four compositions"; modular-core Phase 5a) ----
+// ---- the compositions (spec/cli §8 "The four compositions", "The fifth composition, `git`"; modular-core Phase 5a, 6a) ----
 //
 // `OMGBASE_CAPABILITIES=core|history|semantic|full` reaches every spawned
 // binary (`spawn_omg`), so the SAME cases run against the composition named.
@@ -1157,6 +1157,8 @@ const HISTORY_FLAGS: [&str; 2] = ["--history", "--at"];
 const SEMANTIC_VERBS: [&str; 2] = ["embed", "find"];
 /// Words of the history module's wire: its tables in a size report, the recorder's disposition summary, its capability state and the doctor's capture check.
 const HISTORY_TEXT: &str = r#"(?-u:\b)(commits|revisions|dispositions|block_changes|tree_nodes|blobs|edge_transitions|archives)(?-u:\b)|"history":\{"state":"enabled|history\s+enabled|"coverage_from":"([0-9]|<string>)|"writer_requires":true|capture complete| — [0-9]+ (inserted|edited|deleted|moved|resurrected|same|split|merged)|history unavailable|writer_refused|capability_unavailable|revision"#;
+/// Words that bind a GIT case to the native module too (spec/cli §8, 5.5): the provider conflict, `checkpoint` refused on a native repository, a native provider in a size report.
+const NATIVE_TEXT: &str = r#"with the native provider|history is native|"provider":"native""#;
 /// Words of the semantic module's wire: the embed queue, the vector tables, its capability state, the provider.
 const SEMANTIC_TEXT: &str = r#"(?-u:\b)queued(?-u:\b)|"embedQueue":[1-9]|(?-u:\b)doc_embeddings(?-u:\b)|(?-u:\b)embeddings(?-u:\b)|"semantic":\{"state":"enabled|embedding|provider_unavailable|capability_unavailable|semantic\("#;
 
@@ -1191,9 +1193,40 @@ fn case_text(c: &Case) -> (Vec<&str>, String) {
     (argv, text)
 }
 
+/// A GIT case (spec/cli §8, 5.5): a step names `--provider git` or `history checkpoint`.
+fn is_git_case(argv: &[&str]) -> bool {
+    argv.contains(&"checkpoint")
+        || argv
+            .windows(2)
+            .any(|w| w[0] == "--provider" && w[1] == "git")
+}
+
 /// Why the case is skipped under this composition, or `None` when it must pass as recorded.
 fn skip_reason(c: &Case, composition: Composition) -> Option<&'static str> {
     let (argv, text) = case_text(c);
+    // spec/cli §8 "The five compositions" (5.5, Phase 6a): a git case runs where
+    // the provider is attached (`full`, `git`); on `git` — no native module — it
+    // is skipped only when it also needs the native provider (NATIVE_TEXT), not
+    // for the history wire its own outputs carry.
+    if is_git_case(&argv) {
+        if !composition.has_git_provider() {
+            return Some("needs the git history provider");
+        }
+        if !composition.has_history()
+            && regex::Regex::new(NATIVE_TEXT)
+                .expect("native wire regex")
+                .is_match(&text)
+        {
+            return Some("needs the history module");
+        }
+        if !composition.has_semantic() {
+            let semantic_text = regex::Regex::new(SEMANTIC_TEXT).expect("semantic wire regex");
+            if argv.iter().any(|a| SEMANTIC_VERBS.contains(a)) || semantic_text.is_match(&text) {
+                return Some("needs the semantic module");
+            }
+        }
+        return None;
+    }
     if !composition.has_history() {
         let history_text = regex::Regex::new(HISTORY_TEXT).expect("history wire regex");
         if argv

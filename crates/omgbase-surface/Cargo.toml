@@ -38,5 +38,12 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Results and arguments are JSON at the wire.
 serde_json = { version = "1", features = ["preserve_order"] }
 
+[dev-dependencies]
+# The git history provider (`spec/store` §5.12, Phase 6a) for the surface's spec runner: the
+# runner is the composition layer of its process and attaches the provider
+# under the fixture identity — a path-only dev-dependency (never a dependency:
+# the core imports nothing of it), so `cargo publish` strips it.
+omgbase-git-adapter = { path = "../omgbase-git-adapter" }
+
 [lints]
 workspace = true

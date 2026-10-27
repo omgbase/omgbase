@@ -23,11 +23,13 @@
 //! | `commit.after-commit` | after the api path's transaction committed, before any file is written | the rows are durable, the pending rows owe the files; `recover_repo` replays them |
 //! | `materialize.before-write` | inside the materializer, before a file is written | the pending row stays; the next replay writes it |
 //! | `materialize.after-write` | inside the materializer, after the file was written, before its row is deleted | the next replay finds the bytes and clears the row |
+//! | `git.commit` | (17.5, Phase 6a) inside the git history provider's checkpoint worker, after the blobs, the tree and the commit object are written and before `update-ref` moves the branch | the tip is unchanged, the objects dangle; the next run resumes from the tip's `omgbase-seq` trailer and writes the same commit byte for byte |
 //!
 //! Counting is per site and per process: `OMGBASE_FAULT=feed.append:2`
 //! raises on the second feed row this process appends. [`reset_faults`]
 //! restarts the counts (tests).
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::{Error, Result};
@@ -35,7 +37,7 @@ use crate::error::{Error, Result};
 /// The environment variable that arms a site.
 pub const FAULT_ENV: &str = "OMGBASE_FAULT";
 
-/// The five sites, in the reference's order.
+/// The six sites, in the reference's order (`git.commit` since 17.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FaultSite {
     RecorderCapture,
@@ -43,15 +45,17 @@ pub enum FaultSite {
     CommitAfterCommit,
     MaterializeBeforeWrite,
     MaterializeAfterWrite,
+    GitCommit,
 }
 
 /// Every site, in the reference's order (`FAULT_SITES`).
-pub const FAULT_SITES: [FaultSite; 5] = [
+pub const FAULT_SITES: [FaultSite; 6] = [
     FaultSite::RecorderCapture,
     FaultSite::FeedAppend,
     FaultSite::CommitAfterCommit,
     FaultSite::MaterializeBeforeWrite,
     FaultSite::MaterializeAfterWrite,
+    FaultSite::GitCommit,
 ];
 
 impl FaultSite {
@@ -64,6 +68,7 @@ impl FaultSite {
             FaultSite::CommitAfterCommit => "commit.after-commit",
             FaultSite::MaterializeBeforeWrite => "materialize.before-write",
             FaultSite::MaterializeAfterWrite => "materialize.after-write",
+            FaultSite::GitCommit => "git.commit",
         }
     }
 
@@ -80,6 +85,7 @@ impl FaultSite {
             FaultSite::CommitAfterCommit => 2,
             FaultSite::MaterializeBeforeWrite => 3,
             FaultSite::MaterializeAfterWrite => 4,
+            FaultSite::GitCommit => 5,
         }
     }
 }
@@ -145,16 +151,37 @@ pub fn parse_fault(raw: &str) -> Result<Option<ArmedFault>> {
     Ok(Some(ArmedFault { site, nth }))
 }
 
-/// The fault the environment arms: `None` when `OMGBASE_FAULT` is unset or
-/// empty.
+/// The in-process twin of the variable (a test seam): a fixture runner whose
+/// threads read the environment concurrently cannot set it safely, so it arms
+/// the site here instead — consulted before `OMGBASE_FAULT`.
+static OVERRIDE: Mutex<Option<ArmedFault>> = Mutex::new(None);
+
+/// Arm (or disarm, with `None`) a site for this process without touching the
+/// environment; wins over `OMGBASE_FAULT` while set. The pass counts are the
+/// caller's to restart ([`reset_faults`]).
+pub fn set_armed_fault(fault: Option<ArmedFault>) {
+    *OVERRIDE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = fault;
+}
+
+/// The fault the environment (or [`set_armed_fault`]) arms: `None` when
+/// `OMGBASE_FAULT` is unset or empty and nothing was armed in-process.
 pub fn armed_fault() -> Result<Option<ArmedFault>> {
+    if let Some(f) = *OVERRIDE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        return Ok(Some(f));
+    }
     match std::env::var(FAULT_ENV) {
         Ok(v) => parse_fault(&v),
         Err(_) => Ok(None),
     }
 }
 
-static PASSES: [AtomicUsize; 5] = [
+static PASSES: [AtomicUsize; 6] = [
+    AtomicUsize::new(0),
     AtomicUsize::new(0),
     AtomicUsize::new(0),
     AtomicUsize::new(0),
@@ -217,7 +244,7 @@ mod tests {
         let e = parse_fault("recorder").unwrap_err().to_string();
         assert_eq!(
             e,
-            "OMGBASE_FAULT=\"recorder\": unknown fault site \"recorder\"; the sites are recorder.capture, feed.append, commit.after-commit, materialize.before-write, materialize.after-write"
+            "OMGBASE_FAULT=\"recorder\": unknown fault site \"recorder\"; the sites are recorder.capture, feed.append, commit.after-commit, materialize.before-write, materialize.after-write, git.commit"
         );
         let e = parse_fault("feed.append:0").unwrap_err().to_string();
         assert_eq!(
@@ -225,7 +252,7 @@ mod tests {
             "OMGBASE_FAULT=\"feed.append:0\": the count after ':' must be a positive integer"
         );
         assert!(parse_fault("feed.append:x").is_err());
-        assert_eq!(FAULT_SITES.len(), 5);
+        assert_eq!(FAULT_SITES.len(), 6);
         for s in FAULT_SITES {
             assert_eq!(FaultSite::parse(s.as_str()), Some(s));
         }

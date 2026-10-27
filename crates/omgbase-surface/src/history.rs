@@ -1,14 +1,14 @@
-//! History (`spec/surface/README.md` §3): `blocks_history`, the block-grain
-//! `diff`, the Myers unified `docs_diff_unified` over the two revisions'
-//! reconstructed files (§3; positional before 1.1, §9), `docs_history`. Port
-//! of `packages/core/src/graph/history.ts`; `changes_since` is the store's.
-
-use std::collections::HashMap;
+//! History (`spec/surface/README.md` §3): `docs_history` composed over the
+//! repository's [`HistoryReader`] — the native recorder's rows, or an attached
+//! provider's (the git history provider, 6.4 — Phase 6a) — and the unified
+//! diff both engines pin byte for byte (re-exported from the store, where the
+//! recorder and the git provider diff with it). `blocks_history`, `docs_diff`
+//! and `docs_diff_unified` are the reader's own methods since Phase 6a
+//! (`omgbase_store::HistoryReader`); `changes_since` is the store's. Port of
+//! `packages/core/src/graph/history.ts`.
 
 use omgbase_format::hash::hex;
-use omgbase_store::delta::TreeResolver;
-use omgbase_store::tree::from_hex;
-use omgbase_store::{Store, is_id_ref};
+use omgbase_store::{HistoryReader, Store, is_id_ref};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
@@ -16,268 +16,11 @@ use crate::error::Result;
 use crate::paths::{reference_path, storage_path};
 use crate::read::find_doc_by_ref;
 
-/// §3 `blocks_history`: `[{ commitId, seq, ts, origin, kind, confidence, reason }]`,
-/// newest first.
-pub fn blocks_history(store: &Store, block_id: &str, limit: Option<i64>) -> Result<Json> {
-    let limit = limit.unwrap_or(100);
-    let mut stmt = store.conn().prepare(
-        "SELECT bc.commit_id, c.seq, c.ts, c.origin, bc.kind, d.confidence, d.reason
-         FROM block_changes bc
-         JOIN commits c ON c.commit_id = bc.commit_id
-         LEFT JOIN dispositions d ON d.commit_id = bc.commit_id AND d.block_id = bc.block_id AND d.kind = bc.kind
-         WHERE bc.block_id = ?1
-         ORDER BY c.seq DESC
-         LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(params![block_id, limit], |r| {
-        Ok(json!({
-            "commitId": r.get::<_, String>(0)?,
-            "seq": r.get::<_, i64>(1)?,
-            "ts": r.get::<_, String>(2)?,
-            "origin": r.get::<_, String>(3)?,
-            "kind": r.get::<_, String>(4)?,
-            "confidence": r.get::<_, Option<f64>>(5)?,
-            "reason": r.get::<_, Option<String>>(6)?,
-        }))
-    })?;
-    Ok(Json::Array(
-        rows.collect::<std::result::Result<Vec<_>, _>>()?,
-    ))
-}
-
-/// §9: an unknown revision is `target_missing` (never an empty tree or an
-/// empty file). One constructor so `diff` and `docs_diff_unified` report it with
-/// the same message and `data`.
-fn unknown_revision(doc_id: &str, rev_id: &str) -> crate::error::SurfaceError {
-    crate::error::SurfaceError::with_data(
-        "target_missing",
-        format!(
-            "no revision {} for document {doc_id}",
-            Json::String(rev_id.to_owned())
-        ),
-        json!({ "doc": doc_id, "rev": rev_id }),
-    )
-}
-
-/// The (block id → raw) map of a document at a revision, walking the Merkle
-/// tree to every depth (insertion order = tree order, roots first). The
-/// block grain of `diff`; not a rendering of the file (a container's raw
-/// already holds its children's).
-fn blocks_at_revision(
-    conn: &Connection,
-    doc_id: &str,
-    rev_id: &str,
-) -> Result<Vec<(String, String)>> {
-    match blocks_at_known_revision(conn, doc_id, rev_id)? {
-        Some(rows) => Ok(rows),
-        None => Err(unknown_revision(doc_id, rev_id)),
-    }
-}
-
-/// `None` when `rev_id` is not one of the doc's revisions (§9: an unknown
-/// revision is `target_missing`, not an empty tree). An archived revision
-/// (`spec/store` §7.1, 15.0) walks its segment's tables — `prefix` is the
-/// attached alias; `revision_archived` when the segment is unavailable.
-fn blocks_at_known_revision(
-    conn: &Connection,
-    doc_id: &str,
-    rev_id: &str,
-) -> Result<Option<Vec<(String, String)>>> {
-    let Some(rev) = omgbase_store::archive::revision_body(conn, rev_id, Some(doc_id))? else {
-        return Ok(None);
-    };
-    // Every list resolved in the revision's context (`spec/store` §6, 16.0: a
-    // delta node walks back to the previous revisions' same list; a segment
-    // holds checkpoint forms only).
-    let tree = TreeResolver::with_prefix(conn, &rev.prefix).tree(
-        &rev.doc_id,
-        rev.seq,
-        &hex(&rev.root_tree),
-    )?;
-    let mut out: Vec<(String, String)> = Vec::new();
-    fn walk(
-        conn: &Connection,
-        prefix: &str,
-        entries: &[omgbase_store::TreeEntry],
-        tree: &omgbase_store::ResolvedTree,
-        out: &mut Vec<(String, String)>,
-    ) -> Result<()> {
-        for e in entries {
-            let raw = omgbase_store::read::blob_text_at(conn, prefix, &from_hex(&e.raw_hash_hex)?)?;
-            match out.iter_mut().find(|(id, _)| *id == e.block_id) {
-                Some(slot) => slot.1 = raw,
-                None => out.push((e.block_id.clone(), raw)),
-            }
-            if let Some(children) = tree.by_block.get(&e.block_id) {
-                walk(conn, prefix, &children.entries, tree, out)?;
-            }
-        }
-        Ok(())
-    }
-    walk(conn, &rev.prefix, &tree.root.entries, &tree, &mut out)?;
-    Ok(Some(out))
-}
-
-/// §3 `diff`: `removed`, `changed`, `added` entries in that order.
-pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) -> Result<Json> {
-    let before = blocks_at_revision(store.conn(), doc_id, from_rev)?;
-    let after = blocks_at_revision(store.conn(), doc_id, to_rev)?;
-    let after_map: HashMap<&str, &str> = after
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    let before_map: HashMap<&str, &str> = before
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-    let mut entries = Vec::new();
-    for (id, raw) in &before {
-        match after_map.get(id.as_str()) {
-            None => entries.push(json!({ "kind": "removed", "_id": id, "before": raw })),
-            Some(a) if *a != raw => {
-                entries.push(json!({ "kind": "changed", "_id": id, "before": raw, "after": a }));
-            }
-            Some(_) => {}
-        }
-    }
-    for (id, raw) in &after {
-        if !before_map.contains_key(id.as_str()) {
-            entries.push(json!({ "kind": "added", "_id": id, "after": raw }));
-        }
-    }
-    Ok(Json::Array(entries))
-}
-
-/// §3 `docs_diff_unified`: a unified diff of the two revisions' reconstructed
-/// files — what `docs_read_at` returns (`spec/store` §6.2: leading trivia,
-/// the revision's frontmatter, then each top-level block's raw and trivia,
-/// children not walked since a container's raw already holds them) — via
-/// [`unified_diff`]. Diffing the block map instead (the rendering this
-/// replaced: every live raw at every depth joined by `\n`) repeated each
-/// list item once inside its container's raw and once as its own block, so
-/// an appended bullet showed up twice, in two hunks. An unknown revision is
-/// `target_missing` (§9), exactly as `diff` reports it.
-pub fn diff_unified_text(
-    store: &Store,
-    doc_id: &str,
-    from_rev: &str,
-    to_rev: &str,
-) -> Result<String> {
-    let file_at = |rev: &str| -> Result<String> {
-        store
-            .read_at_revision(doc_id, rev)?
-            .map(|r| r.content)
-            .ok_or_else(|| unknown_revision(doc_id, rev))
-    };
-    Ok(unified_diff(&file_at(from_rev)?, &file_at(to_rev)?))
-}
-
-// ---- unified diff (spec/surface §3) ------------------------------------------
-// A line-grain unified diff with a deterministic Myers script, so both engines
-// (this port and the reference `packages/core/src/graph/history.ts`) produce
-// the same bytes for the same two texts. Pure, so the unit tests pin it.
-
-/// How a text becomes lines: `split('\n')` exactly — no trimming, no dropping
-/// of a trailing empty element (a raw ending in `\n` yields one) — with a single
-/// special case: the empty text has *no* lines (an empty file is zero lines,
-/// not one empty line), so a diff from/to nothing is `@@ -0,0 +1,n @@`.
-pub fn diff_lines(text: &str) -> Vec<&str> {
-    if text.is_empty() {
-        Vec::new()
-    } else {
-        text.split('\n').collect()
-    }
-}
-
-const DIFF_CONTEXT: usize = 3;
-
-// The edit script lives in `omgbase_store::edit_script` (shared with the
-// store's delta nodes, `spec/store` §4.1, 16.0); re-exported here for the
-// surface and its tests, which pin the textbook tie case both crates share.
-pub use omgbase_store::edit_script::{EditOp, myers_script};
-
-/// The unified diff of two texts (spec/surface §3): hunks of `DIFF_CONTEXT`
-/// (3) lines of context; a change group extends to include the next change
-/// when fewer than `2 * DIFF_CONTEXT + 1` unchanged lines separate them (the
-/// two contexts touch or overlap). Each hunk is `@@ -a,b +c,d @@` (1-based
-/// start and length; a length of 1 is written as the start alone; a length of
-/// 0 as `a,0` with `a` the line before the insertion point, `0` at the very
-/// top) followed by its lines prefixed `-`, `+` or a space with nothing after
-/// the sign; hunks joined by `\n`; no file header; identical texts → `""`.
-pub fn unified_diff(old_text: &str, new_text: &str) -> String {
-    let ops = myers_script(&diff_lines(old_text), &diff_lines(new_text));
-    // Old/new line counts consumed before each op (0-based positions).
-    let mut old_pos = Vec::with_capacity(ops.len() + 1);
-    let mut new_pos = Vec::with_capacity(ops.len() + 1);
-    let (mut o, mut nn) = (0usize, 0usize);
-    for op in &ops {
-        old_pos.push(o);
-        new_pos.push(nn);
-        if !matches!(op, EditOp::Insert(_)) {
-            o += 1;
-        }
-        if !matches!(op, EditOp::Delete(_)) {
-            nn += 1;
-        }
-    }
-    old_pos.push(o);
-    new_pos.push(nn);
-
-    let changes: Vec<usize> = (0..ops.len())
-        .filter(|&i| !matches!(ops[i], EditOp::Keep(_)))
-        .collect();
-    if changes.is_empty() {
-        return String::new();
-    }
-
-    let range = |pos: usize, len: usize| -> String {
-        let start = if len == 0 { pos } else { pos + 1 };
-        if len == 1 {
-            start.to_string()
-        } else {
-            format!("{start},{len}")
-        }
-    };
-    let mut hunks: Vec<String> = Vec::new();
-    let mut g = 0;
-    while g < changes.len() {
-        let first = changes[g];
-        let mut last = first;
-        // Merge rule: the next change joins this hunk iff the unchanged lines
-        // between them number at most 2 * DIFF_CONTEXT.
-        while g + 1 < changes.len() && changes[g + 1] - last - 1 <= 2 * DIFF_CONTEXT {
-            g += 1;
-            last = changes[g];
-        }
-        g += 1;
-        let start = first.saturating_sub(DIFF_CONTEXT);
-        let end = (last + DIFF_CONTEXT).min(ops.len() - 1);
-        let old_len = old_pos[end + 1] - old_pos[start];
-        let new_len = new_pos[end + 1] - new_pos[start];
-        let mut lines = vec![format!(
-            "@@ -{} +{} @@",
-            range(old_pos[start], old_len),
-            range(new_pos[start], new_len)
-        )];
-        for op in &ops[start..=end] {
-            lines.push(match op {
-                EditOp::Keep(l) => format!(" {l}"),
-                EditOp::Delete(l) => format!("-{l}"),
-                EditOp::Insert(l) => format!("+{l}"),
-            });
-        }
-        hunks.push(lines.join("\n"));
-    }
-    hunks.join("\n")
-}
-
-/// The two most recent revisions of a doc, newest first.
-pub fn recent_revs(conn: &Connection, doc_id: &str) -> Result<Vec<String>> {
-    let mut stmt =
-        conn.prepare("SELECT rev_id FROM revisions WHERE doc_id = ?1 ORDER BY seq DESC LIMIT 2")?;
-    let rows = stmt.query_map(params![doc_id], |r| r.get::<_, String>(0))?;
-    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-}
+// The unified diff (spec/surface §3): a line-grain diff over a deterministic
+// Myers script, so both engines produce the same bytes for the same two texts.
+// It lives in the store since Phase 6a (the git provider diffs two blobs with
+// it); re-exported here so the surface and its tests pin it as before.
+pub use omgbase_store::diff::{EditOp, diff_lines, myers_script, unified_diff};
 
 /// A `docs` row: `(doc_id, path, head, deleted_at)`.
 pub type DocRow = (String, String, Option<String>, Option<String>);
@@ -323,12 +66,16 @@ pub fn resolve_doc_row(
 /// _is_current _archived` (through 4.11 `rev seq commit updated_at origin
 /// actor hash isCurrent archived`), plus `retained` (6.2, resolution 11): the
 /// current head is ALWAYS listed — `retained: false` with `_seq` null and the
-/// feed row's commit/ts/origin/actor when the recorder has no row for it
-/// (minted while capture was off, or purged); `coverage` the repository's
-/// history coverage intervals. Answers on a database without the bundle too
-/// (every head unretained). The reference's `docHistory`.
+/// feed row's commit/ts/origin/actor when the reader has no version for it
+/// (minted while capture was off, purged, or — Phase 6a — not yet
+/// checkpointed by a provider's worker); `coverage` the repository's history
+/// coverage intervals. The versions are the `reader`'s
+/// ([`HistoryReader::doc_versions`]): the recorder's rows (answering on a
+/// database without the bundle too — every head unretained), or the git
+/// provider's commits. The reference's `docHistory`.
 pub fn docs_history(
     store: &Store,
+    reader: &dyn HistoryReader,
     repo_id: &str,
     path_glob: Option<&str>,
     doc: Option<&str>,
@@ -378,18 +125,6 @@ pub fn docs_history(
     };
     let truncated = doc_rows.len() > limit;
     doc_rows.truncate(limit);
-    // The captured versions — the recorder's rows, when the bundle exists (a
-    // repository nothing was ever captured in has no history table; Phase 4b).
-    let bundle = omgbase_store::history_bundle_present(conn)?;
-    let mut rev_stmt = if bundle {
-        Some(conn.prepare(
-            "SELECT r.rev_id, r.seq, r.commit_id, r.rendered_hash, c.ts, c.origin, c.actor, r.archive
-             FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
-             WHERE r.doc_id = ?1 ORDER BY r.seq ASC",
-        )?)
-    } else {
-        None
-    };
     // An unretained head's commit, from the feed row that minted it (the
     // core's record; null once the feed pruned it).
     let mut head_feed = conn.prepare(
@@ -399,32 +134,16 @@ pub fn docs_history(
     let mut head_row = conn.prepare("SELECT file_hash, updated_at FROM docs WHERE doc_id = ?1")?;
     let mut docs = Vec::new();
     for (doc_id, path, head, deleted_at) in doc_rows {
-        let mut versions: Vec<Json> = match rev_stmt.as_mut() {
-            Some(stmt) => stmt
-                .query_map(params![doc_id], |r| {
-                    let rev: String = r.get(0)?;
-                    let hash: Vec<u8> = r.get(3)?;
-                    Ok(json!({
-                        "_rev": rev,
-                        "_seq": r.get::<_, i64>(1)?,
-                        "_commit": r.get::<_, String>(2)?,
-                        "_ts": r.get::<_, String>(4)?,
-                        "_origin": r.get::<_, String>(5)?,
-                        "_actor": r.get::<_, Option<String>>(6)?,
-                        "_hash": hex(&hash),
-                        "_is_current": head.as_deref() == Some(rev.as_str()),
-                        // 4.9: the bodies live in an archive segment (`spec/store` §7.1).
-                        "_archived": r.get::<_, Option<String>>(7)?.is_some(),
-                        "retained": true,
-                    }))
-                })?
-                .collect::<std::result::Result<_, _>>()?,
-            None => Vec::new(),
-        };
+        let mut versions: Vec<Json> = reader
+            .doc_versions(conn, &doc_id, head.as_deref())?
+            .iter()
+            .map(omgbase_store::DocVersion::to_json)
+            .collect();
         // Resolution 11 (Phase 4b): the current head is ALWAYS listed —
-        // unretained when the recorder has no row for it (minted while
-        // capture was off, or purged), with what the core knows: the feed row
-        // that minted it, the document's `file_hash` and `updated_at`.
+        // unretained when the reader has no version for it (minted while
+        // capture was off, purged, or not yet checkpointed), with what the
+        // core knows: the feed row that minted it, the document's `file_hash`
+        // and `updated_at`.
         if let Some(h) = &head
             && !versions
                 .iter()
@@ -468,9 +187,6 @@ pub fn docs_history(
     Ok(json!({ "docs": docs, "truncated": truncated, "coverage": coverage }))
 }
 
-// spec/surface §3 `docs_diff_unified`. The expected strings below are copied
-// verbatim from packages/core/src/graph/history.test.ts so the two engines pin
-// each other byte for byte.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -625,7 +341,10 @@ mod tests {
             assert_eq!(read.content, source);
             assert!(read.rendered_hash_match);
         }
-        let diff = diff_unified_text(&store, &doc_id, &revs[1], &revs[2]).unwrap();
+        let reader = store.history().unwrap();
+        let diff = reader
+            .diff_unified(store.conn(), &doc_id, &revs[1], &revs[2])
+            .unwrap();
         assert_eq!(diff, unified_diff(REV2, REV3));
         // Exactly one hunk, one `+` line, no `-` lines, the bullet once and
         // after the previous last item.
@@ -644,14 +363,18 @@ mod tests {
         assert_eq!(fifth, fourth + 1, "{diff}");
         assert_eq!(diff, "@@ -8,4 +8,5 @@\n \n - third\n - fourth\n+- fifth\n ");
         // The first append (a tight pair onto a loose list) reads the same way.
-        let first = diff_unified_text(&store, &doc_id, &revs[0], &revs[1]).unwrap();
+        let first = reader
+            .diff_unified(store.conn(), &doc_id, &revs[0], &revs[1])
+            .unwrap();
         assert_eq!(first, unified_diff(REV1, REV2));
         assert_eq!(first.matches("- third").count(), 1, "{first}");
         assert_eq!(first.matches("- fourth").count(), 1, "{first}");
         assert_eq!(first.matches("@@").count(), 2, "one hunk header: {first}");
         // Same revision on both sides: nothing.
         assert_eq!(
-            diff_unified_text(&store, &doc_id, &revs[2], &revs[2]).unwrap(),
+            reader
+                .diff_unified(store.conn(), &doc_id, &revs[2], &revs[2])
+                .unwrap(),
             ""
         );
     }
@@ -659,7 +382,12 @@ mod tests {
     #[test]
     fn diff_unified_unknown_revision_is_target_missing_like_diff() {
         let (store, doc_id, revs) = log_doc_store();
-        let err = diff_unified_text(&store, &doc_id, &revs[0], "rv_nope").unwrap_err();
+        let reader = store.history().unwrap();
+        let err = crate::error::SurfaceError::from(
+            reader
+                .diff_unified(store.conn(), &doc_id, &revs[0], "rv_nope")
+                .unwrap_err(),
+        );
         assert_eq!(err.code, "target_missing");
         assert_eq!(
             err.message,
@@ -667,7 +395,11 @@ mod tests {
         );
         assert_eq!(err.data, Some(json!({ "doc": doc_id, "rev": "rv_nope" })));
         // Byte-identical to what the block-grain `diff` reports.
-        let block_err = diff_blocks(&store, &doc_id, &revs[0], "rv_nope").unwrap_err();
+        let block_err = crate::error::SurfaceError::from(
+            reader
+                .diff_blocks(store.conn(), &doc_id, &revs[0], "rv_nope")
+                .unwrap_err(),
+        );
         assert_eq!(err, block_err);
     }
 

@@ -1206,7 +1206,13 @@ impl Store {
         // capture commits nothing (the echoes wrote nothing either — pass 1
         // only reads).
         if pending.iter().any(|p| !matches!(p, Pending::Echo(_))) {
-            require_writer(&self.conn, self.history.is_some(), repo_id, ts)?;
+            require_writer(
+                &self.conn,
+                self.history.is_some(),
+                &self.providers,
+                repo_id,
+                ts,
+            )?;
         }
         let mut out = Vec::with_capacity(pending.len());
         let mut batch_id: Option<String> = None;
@@ -1552,7 +1558,13 @@ impl Store {
         // recorder refuses where the manifest requires capture — OUTSIDE the
         // transaction, so the alert survives; then step 15's recorder: the
         // module while the repository's manifest says `enabled` (Phase 4a).
-        require_writer(&self.conn, self.history.is_some(), repo_id, ts)?;
+        require_writer(
+            &self.conn,
+            self.history.is_some(),
+            &self.providers,
+            repo_id,
+            ts,
+        )?;
         let history = capture_for(&self.conn, self.history.as_deref(), Some(repo_id))?;
         let tx = self.conn.unchecked_transaction()?;
         let committed = {
@@ -1598,7 +1610,13 @@ impl Store {
         expires: &str,
         batch_id: Option<&str>,
     ) -> Result<String> {
-        require_writer(&self.conn, self.history.is_some(), repo_id, ts)?; // §5.4 step 0 (3e-ii)
+        require_writer(
+            &self.conn,
+            self.history.is_some(),
+            &self.providers,
+            repo_id,
+            ts,
+        )?; // §5.4 step 0 (3e-ii)
         let history = capture_for(&self.conn, self.history.as_deref(), Some(repo_id))?;
         let tx = self.conn.unchecked_transaction()?;
         let commit_id = {

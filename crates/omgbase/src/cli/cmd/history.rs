@@ -1,6 +1,8 @@
-//! `history <enable|disable|purge|plan|export|attach|detach|list>` (`spec/cli`
-//! §6 `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1 Phase 4a;
-//! `purge` cli 5.2 — store 17.2 Phase 4b): the operator surface of history
+//! `history <enable|disable|purge|checkpoint|plan|export|attach|detach|list>`
+//! (`spec/cli` §6 `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1
+//! Phase 4a; `purge` cli 5.2 — store 17.2 Phase 4b; `enable --provider git`,
+//! `checkpoint` and `purge` on a git repository cli 5.5 — store 17.5 Phase
+//! 6a, `spec/store` §5.12): the operator surface of history
 //! CAPTURE (`spec/store` §5.9: `enable` turns the repository's capture on with
 //! a baseline commit and opens a coverage interval, `disable` closes it — the
 //! rows stay, reads of what was captured keep working; §7.6: `purge` removes
@@ -14,10 +16,12 @@
 
 use std::path::{Path, PathBuf};
 
+use omgbase_git_adapter::{GIT_PROVIDER, parse_cadence};
 use omgbase_store::{
-    ARCHIVE_DIR, ArchiveListing, CoverageInterval, Error as StoreError, ExportOptions,
-    ExportResult, HistoryLifecycleResult, HistoryPurgeResult, RetentionOptions, RetentionPlan,
-    RetentionPolicy, SegmentInfo, human_bytes, open_coverage_from,
+    ARCHIVE_DIR, ArchiveListing, CheckpointResult, CoverageInterval, Error as StoreError,
+    ExportOptions, ExportResult, HistoryLifecycleResult, HistoryPurgeResult, ManifestState,
+    NATIVE_PROVIDER, RetentionOptions, RetentionPlan, RetentionPolicy, SegmentInfo,
+    history_provider_of, human_bytes, open_coverage_from, read_capability,
 };
 use omgbase_sync::with_writer_lock;
 use serde_json::{Value as Json, json};
@@ -31,9 +35,19 @@ use crate::cli::seams::canonical_instant;
 
 use super::machine_out;
 
-const SUBCOMMANDS: [&str; 8] = [
-    "enable", "disable", "purge", "plan", "export", "attach", "detach", "list",
+const SUBCOMMANDS: [&str; 9] = [
+    "enable",
+    "disable",
+    "purge",
+    "checkpoint",
+    "plan",
+    "export",
+    "attach",
+    "detach",
+    "list",
 ];
+/// `--provider`'s values (`spec/cli` §6, 5.5).
+const PROVIDERS: [&str; 2] = [NATIVE_PROVIDER, GIT_PROVIDER];
 
 pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let sub = args.first().map(String::as_str);
@@ -57,6 +71,7 @@ pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
         "enable" => enable(cli, rest),
         "disable" => disable(cli, rest),
         "purge" => purge(cli, rest),
+        "checkpoint" => checkpoint(cli, rest),
         "plan" => plan(cli, rest),
         "export" => export(cli, rest),
         "attach" => attach(cli, rest),
@@ -120,10 +135,12 @@ fn interval(i: &CoverageInterval) -> String {
 }
 
 /// The `enable`/`disable` rendering: `--json` the manifest row's capture
-/// state `{ state, coverage, writer_requires, changed, baseline? }`
-/// (`baseline` the commit and the revisions it wrote, on an `enable` that
-/// changed something); human one stderr line — `  history enabled since
-/// <ts>` / `  history already enabled since <ts>` / `  history disabled
+/// state `{ state, coverage, writer_requires, changed, provider?, baseline?,
+/// tip? }` (`baseline` the commit and the revisions it wrote, on an `enable`
+/// that changed something; the git provider's enable — `spec/cli` §6, 5.5 —
+/// adds `provider` and the branch `tip` of its baseline commit); human one
+/// stderr line — `  history enabled since <ts>[ via git][ (baseline …)]` /
+/// `  history already enabled since <ts>[ via git]` / `  history disabled
 /// (captured <from>..<to>[, …])` / `  history already disabled`.
 fn render_lifecycle(cli: &mut Cli, verb: &str, r: &HistoryLifecycleResult) -> Result<i32> {
     let doc = r.to_json();
@@ -132,6 +149,7 @@ fn render_lifecycle(cli: &mut Cli, verb: &str, r: &HistoryLifecycleResult) -> Re
     }
     let style = cli.style;
     let row = &r.row;
+    let provider = r.provider();
     let line = if verb == "enable" {
         let state = if r.changed {
             "enabled"
@@ -140,13 +158,28 @@ fn render_lifecycle(cli: &mut Cli, verb: &str, r: &HistoryLifecycleResult) -> Re
         };
         let since =
             open_coverage_from(Some(row)).map_or_else(String::new, |s| format!(" since {s}"));
+        let via = if provider == NATIVE_PROVIDER {
+            String::new()
+        } else {
+            format!(" via {provider}")
+        };
         let baseline = r
             .baseline
             .as_ref()
             .map_or_else(String::new, |(commit, revisions)| {
-                format!(" (baseline {commit}: {})", plural_s(*revisions, "revision"))
+                if provider == NATIVE_PROVIDER {
+                    format!(" (baseline {commit}: {})", plural_s(*revisions, "revision"))
+                } else {
+                    format!(
+                        " (baseline {commit}: {}{})",
+                        plural_s(*revisions, "document"),
+                        r.tip
+                            .as_deref()
+                            .map_or_else(String::new, |t| format!(", tip {t}"))
+                    )
+                }
             });
-        format!("  history {state}{since}{baseline}")
+        format!("  history {state}{since}{via}{baseline}")
     } else if r.changed || !row.coverage.is_empty() {
         format!(
             "  history {} (captured {})",
@@ -168,12 +201,44 @@ fn render_lifecycle(cli: &mut Cli, verb: &str, r: &HistoryLifecycleResult) -> Re
     Ok(EXIT_OK)
 }
 
-/// `history enable [--best-effort]` (`spec/store` §5.9): a write (the
-/// baseline commit) under the workspace writer lock like every other.
+/// `history enable [--best-effort] [--provider native|git] [--branch <b>]
+/// [--cadence every|<ms>]` (`spec/store` §5.9; §5.12 for the git provider): a
+/// write (the baseline commit) under the workspace writer lock like every
+/// other. One provider per repository: the conflict is a usage error.
 fn enable(cli: &mut Cli, args: &[String]) -> Result<i32> {
-    let a = parse_args(args, &[Opt::flag("best-effort")])?;
+    let a = parse_args(
+        args,
+        &[
+            Opt::flag("best-effort"),
+            Opt::value("provider"),
+            Opt::value("branch"),
+            Opt::value("cadence"),
+        ],
+    )?;
     if let Some(p) = a.pos(0) {
         return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let provider = a.value("provider").unwrap_or(NATIVE_PROVIDER).to_owned();
+    if !PROVIDERS.contains(&provider.as_str()) {
+        return Err(CliError::usage(format!(
+            "--provider must be one of {} (got {})",
+            PROVIDERS.join("|"),
+            js_json(&Json::String(provider))
+        )));
+    }
+    if provider == NATIVE_PROVIDER && (a.value("branch").is_some() || a.value("cadence").is_some())
+    {
+        return Err(CliError::usage(
+            "--branch and --cadence go with --provider git",
+        ));
+    }
+    let mut options = serde_json::Map::new();
+    if let Some(branch) = a.value("branch") {
+        options.insert("branch".to_owned(), Json::String(branch.to_owned()));
+    }
+    if let Some(cadence) = a.value("cadence") {
+        let c = parse_cadence(cadence).map_err(CliError::usage)?;
+        options.insert("cadence".to_owned(), c.to_json());
     }
     let ws = cli.workspace()?;
     let repo = cli.repo()?;
@@ -181,12 +246,20 @@ fn enable(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let writer_requires = !a.flag("best-effort");
     let lock = cli.seams.lock_options();
     let store = cli.store_mut()?;
+    let provider_arg = (provider != NATIVE_PROVIDER).then_some(provider.as_str());
     let result = with_writer_lock(&ws.omgbase_dir, lock, || {
         store
-            .enable_history(&repo.repo_id, &now, writer_requires)
+            .enable_history_with(&repo.repo_id, &now, writer_requires, provider_arg, &options)
             .map_err(omgbase_sync::Error::from)
-    })?;
-    render_lifecycle(cli, "enable", &result)
+    });
+    match result {
+        Ok(r) => render_lifecycle(cli, "enable", &r),
+        // `spec/store` §5.12: one provider per repository — the switch is `disable` then `enable --provider`.
+        Err(omgbase_sync::Error::Store(e @ StoreError::HistoryProviderConflict { .. })) => {
+            Err(CliError::usage(e.to_string()))
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// `history disable` (`spec/store` §5.9): needs no module.
@@ -216,13 +289,28 @@ fn disable(cli: &mut Cli, args: &[String]) -> Result<i32> {
 /// released <n> id claim(s)` — then `  history tables dropped` when the
 /// bundle left, or `  nothing to purge` when every count is zero. Coverage
 /// is untouched (it records when capture was on; a purged token reads
-/// `pruned`).
+/// `pruned`). The git provider (`spec/cli` §6, 5.5): the bare repository and
+/// the worker's cursor leave — `  purged the git history (<path> removed,
+/// cursor cleared)` / `  nothing to purge (<path> is already gone)`, the
+/// receipt with `provider: { name, removed, path }`.
 fn render_purge(cli: &mut Cli, r: &HistoryPurgeResult) -> Result<i32> {
     let doc = r.to_json();
     if let Some(code) = machine_out(cli, &doc, None, None) {
         return code;
     }
     let style = cli.style;
+    if let Some(p) = &r.provider {
+        let line = if p.removed {
+            format!(
+                "  purged the {} history ({} removed, cursor cleared)",
+                p.name, p.path
+            )
+        } else {
+            format!("  nothing to purge ({} is already gone)", p.path)
+        };
+        cli.io.err(&style.dim(&line));
+        return Ok(EXIT_OK);
+    }
     let p = &r.purged;
     if p.total() + r.claims_released == 0 && !r.tables_dropped {
         cli.io.err(&style.dim("  nothing to purge"));
@@ -255,14 +343,83 @@ fn purge(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let ws = cli.workspace()?;
     let repo = cli.repo()?;
     let before = parse_before(a.value("before"))?;
+    let now = cli.now();
     let lock = cli.seams.lock_options();
     let store = cli.store()?;
+    // A git history is one line of commits: `--before` has no meaning there (`spec/cli` §6, 5.5).
+    if before.is_some() {
+        let row = read_capability(store.conn(), &repo.repo_id, "history")?;
+        if history_provider_of(row.as_ref()) != NATIVE_PROVIDER {
+            return Err(CliError::usage(
+                "--before has no meaning for the git provider: history purge removes the whole bare repository",
+            ));
+        }
+    }
     let result = with_writer_lock(&ws.omgbase_dir, lock, || {
         store
-            .purge_history(&repo.repo_id, before.as_deref())
+            .purge_history_at(&repo.repo_id, before.as_deref(), &now)
             .map_err(omgbase_sync::Error::from)
     })?;
     render_purge(cli, &result)
+}
+
+/// `history checkpoint` (`spec/cli` §6, 5.5; `spec/store` §5.12): the git
+/// provider's worker, once, under the writer lock; `--json` the receipt `{
+/// committed, from_seq, to_seq, tip, rescanned }`, human `  checkpointed <n>
+/// commit(s) (seq <from>..<to>), tip <sha>` / `  nothing to checkpoint (tip
+/// <sha>)` / `  rescanned: 1 commit at seq <head>, tip <sha>`. On a native
+/// repository it is a usage error: the recorder captures in every commit.
+fn checkpoint(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let now = cli.now();
+    let prog = cli.prog.clone();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    let row = read_capability(store.conn(), &repo.repo_id, "history")?;
+    let provider = history_provider_of(row.as_ref()).to_owned();
+    if provider == NATIVE_PROVIDER {
+        return Err(CliError::usage_hint(
+            "history checkpoint is the git provider's: this repository's history is native (captured in every commit)",
+            format!(
+                "run '{prog} history enable --provider git' after '{prog} history disable' to switch"
+            ),
+        ));
+    }
+    if !row.is_some_and(|r| r.state == ManifestState::Enabled) {
+        return Err(CliError::usage(format!(
+            "history is disabled for this repository — enable it with '{prog} history enable --provider {provider}'"
+        )));
+    }
+    let result: CheckpointResult = with_writer_lock(&ws.omgbase_dir, lock, || {
+        store
+            .history_checkpoint(&repo.repo_id, &now)
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    let doc = result.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let style = cli.style;
+    let tip = result.tip.as_deref().unwrap_or("none");
+    let line = if result.rescanned {
+        format!("  rescanned: 1 commit at seq {}, tip {tip}", result.to_seq)
+    } else if result.committed == 0 {
+        format!("  nothing to checkpoint (tip {tip})")
+    } else {
+        format!(
+            "  checkpointed {} (seq {}..{}), tip {tip}",
+            plural_s(result.committed, "commit"),
+            result.from_seq,
+            result.to_seq
+        )
+    };
+    cli.io.err(&style.dim(&line));
+    Ok(EXIT_OK)
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {

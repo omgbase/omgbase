@@ -19,11 +19,13 @@
 //! ([`super::context::Cli::call`]) and `mcp`'s tool boundary.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use omgbase_git_adapter::{GitHistoryProvider, default_identity, fixture_identity};
 use omgbase_search::EmbeddingSettings;
-use omgbase_store::{Capabilities, IdMinter, RandomMinter, SequentialMinter, Store};
+use omgbase_store::{Capabilities, Composition, IdMinter, RandomMinter, SequentialMinter, Store};
 use omgbase_sync::WriterLockOptions;
 
 use super::output::{CliError, js_string};
@@ -69,13 +71,24 @@ impl Seams {
     }
 }
 
+/// Under either conformance seam the git history provider commits as the
+/// fixture identity `omgbase <omgbase@fixture>` (`spec/store` §9.4), so the
+/// shas the fixtures pin follow from the inputs alone; set once at the entry
+/// point ([`read_env_seams`]) and read by every store this process opens.
+static GIT_FIXTURE_IDENTITY: AtomicBool = AtomicBool::new(false);
+
 /// Read the seams from the process environment (§2.6).
 pub fn read_env_seams() -> Result<Seams, CliError> {
-    read_seams(
+    let seams = read_seams(
         std::env::var(SPEC_MINTER_ENV).ok().as_deref(),
         std::env::var(SPEC_CLOCK_ENV).ok().as_deref(),
         std::env::var(WRITER_LOCK_TIMEOUT_ENV).ok().as_deref(),
-    )
+    )?;
+    GIT_FIXTURE_IDENTITY.store(
+        seams.sequential_minter || seams.clock.is_some(),
+        Ordering::SeqCst,
+    );
+    Ok(seams)
 }
 
 /// Validate the values; an empty string is "unset", as the reference reads
@@ -211,7 +224,25 @@ pub fn open_store(db: &Path, minters: &MinterSource) -> Result<Store, String> {
 /// where `spec/store` §3.4 says "the migration's clock" — the CLI and the
 /// server pass the pinned clock, as the reference's pinned `Date` does.
 pub fn open_store_at(db: &Path, minters: &MinterSource, now: &str) -> Result<Store, String> {
-    let capabilities = Capabilities::standard_from_env().map_err(|e| e.to_string())?;
+    let composition = Composition::from_env().map_err(|e| e.to_string())?;
+    let mut capabilities = Capabilities::for_composition(composition, Capabilities::standard);
+    // The git history provider (modular-core Phase 6a; `spec/store` §5.12):
+    // the composition layer attaches it here, before any store opens — this
+    // binary is the host. Its bare repository lives under the workspace root,
+    // the parent of the `.omgbase` directory the database is in.
+    if composition.has_git_provider()
+        && let Some(root) = db.parent().and_then(Path::parent)
+    {
+        let identity = if GIT_FIXTURE_IDENTITY.load(Ordering::SeqCst) {
+            fixture_identity()
+        } else {
+            default_identity()
+        };
+        capabilities = capabilities.with_provider(Box::new(GitHistoryProvider::new(
+            root.to_path_buf(),
+            identity,
+        )));
+    }
     if let Some(dir) = db.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;

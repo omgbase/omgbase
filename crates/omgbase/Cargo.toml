@@ -25,6 +25,9 @@ omgbase-surface = { version = "6.3.0", path = "../omgbase-surface" }
 omgbase-sync = { version = "4.4.0", path = "../omgbase-sync", features = ["http"] }
 # The store the surface owns (opened from the workspace's database path).
 omgbase-store = { version = "17.4.0", path = "../omgbase-store" }
+# The git history provider (`spec/store` §5.12, Phase 6a): this binary is the
+# composition layer that attaches it before a store opens (`cli/seams.rs`).
+omgbase-git-adapter = { version = "0.1.0", path = "../omgbase-git-adapter" }
 # The external embedding provider behind `semantic()` / `resolve`.
 omgbase-search = { version = "3.0.2", path = "../omgbase-search" }
 # The YAML core schema: `meta --set k=v` resolves its value as a YAML scalar.
