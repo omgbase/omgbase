@@ -10,8 +10,12 @@ use omgbase_reconcile::Config;
 use omgbase_store::legacy_bytes::{
     UnreproducibleDoc, legacy_bytes_active, refresh_legacy_bytes_alert, unreproducible_docs,
 };
-use omgbase_store::manifest::{NATIVE_PROVIDER, history_provider_of, read_capability};
-use omgbase_store::{CheckpointResult, ManifestState, Store};
+use omgbase_store::manifest::{
+    NATIVE_PROVIDER, history_provider_of, provider_config_of, read_capability,
+};
+use omgbase_store::{
+    CheckpointResult, HistoryVaultSink, ManifestState, RemoteSyncResult, Store, VaultChange,
+};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
@@ -272,6 +276,13 @@ pub fn freshness_sweep(
     // run leaves its alert and the rows wait for the next run; the sweep
     // itself never fails for it.
     run_provider_checkpoint(store, repo_id, ts)?;
+    // Steps 7–8 (4.6, Phase 6b; `spec/store` §5.12 "Push"/"Fetch"): the
+    // remote half of an attached provider — push when the binding says
+    // `periodic`, fetch (and merge the inbound tree through the vault sink
+    // below) when it says `periodic`; both pause while a divergence alert
+    // stands. Best effort like step 6: a remote that cannot be reached leaves
+    // its alert and the sweep itself never fails for it.
+    run_provider_remote_sync(store, repo_id, fs, root, ts, config)?;
     let changed = !batch.ingested.is_empty()
         || !batch.deleted.is_empty()
         || !batch.conflicted.is_empty()
@@ -308,6 +319,148 @@ pub fn run_provider_checkpoint(
         Ok(r) => Ok(Some(r)),
         Err(omgbase_store::Error::HistoryProviderUnavailable { .. }) => Ok(None),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// `spec/sync` §4.3 steps 7–8 (4.6, Phase 6b): the attached provider's
+/// remote sync for a repository whose row is `enabled` and binds a remote —
+/// `None` when none is attached, bound or usable (the provider's own alert
+/// stands; writes continue). The inbound content enters through
+/// [`FsVaultSink`] over `root`.
+pub fn run_provider_remote_sync(
+    store: &mut Store,
+    repo_id: &str,
+    fs: &dyn FileSystem,
+    root: &Path,
+    now: &str,
+    config: &Config,
+) -> Result<Option<RemoteSyncResult>> {
+    let row = read_capability(store.conn(), repo_id, "history")?;
+    let Some(row) = row.filter(|r| r.state == ManifestState::Enabled) else {
+        return Ok(None);
+    };
+    let name = history_provider_of(Some(&row)).to_owned();
+    if name == NATIVE_PROVIDER {
+        return Ok(None);
+    }
+    let provider = match store.require_provider_handle(repo_id, &name, now) {
+        Ok(p) => p,
+        Err(omgbase_store::Error::HistoryProviderUnavailable { .. }) => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let mut sink = FsVaultSink::new(store, repo_id, fs, root, config);
+    Ok(provider.remote_sync(repo_id, &provider_config_of(&row), now, &mut sink)?)
+}
+
+/// The vault sink of a filesystem-backed repository (`spec/store` §5.12
+/// "Fetch"; [`HistoryVaultSink`]): inbound content a provider's remote half
+/// brings in is written as FILES under the repository's root — exactly what
+/// a human edit is — then ingested as one observed batch
+/// ([`process_checkpoint`]: the echo gate, the reconcile, the feed row), with
+/// the stat cache refreshed so the next sweep does not re-hash them. The
+/// provider never writes a row. `fs` is the sweep's seam for the reads; the
+/// writes are `std::fs` (a fixture over an in-memory filesystem binds
+/// `observe_batch` instead). Port of the reference's `fsVaultSink`.
+pub struct FsVaultSink<'a> {
+    store: &'a mut Store,
+    repo_id: &'a str,
+    fs: &'a dyn FileSystem,
+    root: &'a Path,
+    config: &'a Config,
+}
+
+impl<'a> FsVaultSink<'a> {
+    /// The sink over `store`'s repository `repo_id` rooted at `root`.
+    pub fn new(
+        store: &'a mut Store,
+        repo_id: &'a str,
+        fs: &'a dyn FileSystem,
+        root: &'a Path,
+        config: &'a Config,
+    ) -> Self {
+        Self {
+            store,
+            repo_id,
+            fs,
+            root,
+            config,
+        }
+    }
+}
+
+impl HistoryVaultSink for FsVaultSink<'_> {
+    fn conn(&self) -> &rusqlite::Connection {
+        self.store.conn()
+    }
+
+    fn apply(&mut self, changes: &[VaultChange], ts: &str) -> omgbase_store::Result<()> {
+        if changes.is_empty() {
+            return Ok(());
+        }
+        let io =
+            |e: std::io::Error, what: &str| omgbase_store::Error::Other(format!("{what}: {e}"));
+        for c in changes {
+            let abs = self.root.join(&c.path);
+            match &c.content {
+                None => {
+                    if abs.exists() {
+                        std::fs::remove_file(&abs)
+                            .map_err(|e| io(e, &format!("rm {}", abs.display())))?;
+                    }
+                }
+                Some(bytes) => {
+                    if let Some(parent) = abs.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| io(e, &format!("mkdir {}", parent.display())))?;
+                    }
+                    std::fs::write(&abs, bytes)
+                        .map_err(|e| io(e, &format!("write {}", abs.display())))?;
+                }
+            }
+        }
+        let paths: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
+        let result = process_checkpoint(
+            self.store,
+            self.repo_id,
+            self.fs,
+            self.root,
+            &paths,
+            ts,
+            self.config,
+        )
+        .map_err(|e| omgbase_store::Error::Other(e.to_string()))?;
+        for c in changes {
+            if result.failed.contains(&c.path) {
+                continue;
+            }
+            match &c.content {
+                None => {
+                    self.store.conn().execute(
+                        "DELETE FROM file_stats WHERE repo_id = ?1 AND path = ?2",
+                        params![self.repo_id, c.path],
+                    )?;
+                }
+                Some(bytes) => {
+                    if self
+                        .fs
+                        .stat(self.root, &c.path)
+                        .map_err(|e| omgbase_store::Error::Other(e.to_string()))?
+                        .is_some()
+                    {
+                        record_file_stat(
+                            self.store,
+                            self.repo_id,
+                            self.fs,
+                            self.root,
+                            &c.path,
+                            &sha256(bytes),
+                        )
+                        .map_err(|e| omgbase_store::Error::Other(e.to_string()))?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

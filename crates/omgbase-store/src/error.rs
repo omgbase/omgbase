@@ -138,6 +138,23 @@ pub enum Error {
     /// is `history disable` then `enable --provider`. The CLI renders it as
     /// a usage error; the message pinned.
     HistoryProviderConflict { current: String, requested: String },
+    /// `spec/store` 17.6 §5.12 (Phase 6b — the git history provider's remote
+    /// half): a push the remote rejected (non-fast-forward) or a fetch that
+    /// found the remote rewritten — the surface's `git_remote_diverged { remote,
+    /// branch, local_tip, remote_tip, old_remote_tip?, fork? }`, retriable (an
+    /// operator action resolves it); the remote verbs refuse with it while the
+    /// alert stands. `message` is the alert's, byte for byte in both engines.
+    GitRemoteDiverged {
+        message: String,
+        data: serde_json::Map<String, serde_json::Value>,
+    },
+    /// `spec/store` 17.6 §5.12: a tree-level merge left conflicts — the
+    /// surface's `git_merge_conflict { remote, branch, remote_tip, paths, … }`,
+    /// retriable; `history remote resolve` settles them.
+    GitMergeConflict {
+        message: String,
+        data: serde_json::Map<String, serde_json::Value>,
+    },
     /// `spec/store` §5.10 (17.2, Phase 4b): the repository's semantic row was
     /// switched off by `omg embed disable` while a provider stays configured —
     /// `semantic()`, `blocks_resolve`'s vector leg and the drain refuse. The
@@ -255,6 +272,9 @@ impl fmt::Display for Error {
             Error::HistoryProviderConflict { current, requested } => f.write_str(
                 &crate::core::manifest::history_provider_conflict_message(current, requested),
             ),
+            Error::GitRemoteDiverged { message, .. } | Error::GitMergeConflict { message, .. } => {
+                f.write_str(message)
+            }
             Error::SemanticSwitchedOff => {
                 f.write_str(crate::core::manifest::SEMANTIC_SWITCHED_OFF_MESSAGE)
             }

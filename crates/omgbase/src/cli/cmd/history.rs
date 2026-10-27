@@ -1,8 +1,9 @@
-//! `history <enable|disable|purge|checkpoint|plan|export|attach|detach|list>`
+//! `history <enable|disable|purge|checkpoint|push|fetch|remote|plan|export|attach|detach|list>`
 //! (`spec/cli` §6 `history`, cli 4.6; `enable|disable` cli 5.1 — store 17.1
 //! Phase 4a; `purge` cli 5.2 — store 17.2 Phase 4b; `enable --provider git`,
 //! `checkpoint` and `purge` on a git repository cli 5.5 — store 17.5 Phase
-//! 6a, `spec/store` §5.12): the operator surface of history
+//! 6a, `spec/store` §5.12; the remote half `remote set|unset|status|resolve|
+//! reconcile`, `push`, `fetch` cli 5.6 — store 17.6 Phase 6b): the operator surface of history
 //! CAPTURE (`spec/store` §5.9: `enable` turns the repository's capture on with
 //! a baseline commit and opens a coverage interval, `disable` closes it — the
 //! rows stay, reads of what was captured keep working; §7.6: `purge` removes
@@ -16,14 +17,19 @@
 
 use std::path::{Path, PathBuf};
 
-use omgbase_git_adapter::{GIT_PROVIDER, parse_cadence};
-use omgbase_store::{
-    ARCHIVE_DIR, ArchiveListing, CheckpointResult, CoverageInterval, Error as StoreError,
-    ExportOptions, ExportResult, HistoryLifecycleResult, HistoryPurgeResult, ManifestState,
-    NATIVE_PROVIDER, RetentionOptions, RetentionPlan, RetentionPolicy, SegmentInfo,
-    history_provider_of, human_bytes, open_coverage_from, read_capability,
+use omgbase_git_adapter::{
+    FETCH_POLICIES, FetchResult, FetchState, GIT_PROVIDER, GitHistoryProvider, PUSH_POLICIES,
+    ReconcileMode, ReconcileResult, RemoteOptions, RemoteStatus, ResolveChoice, ResolveResult,
+    parse_cadence, read_remote_config, rewritten_message,
 };
-use omgbase_sync::with_writer_lock;
+use omgbase_store::{
+    ARCHIVE_DIR, ArchiveListing, CheckpointResult, Config, CoverageInterval, Error as StoreError,
+    ExportOptions, ExportResult, HistoryLifecycleResult, HistoryPurgeResult, ManifestRow,
+    ManifestState, NATIVE_PROVIDER, PushOutcome, RetentionOptions, RetentionPlan, RetentionPolicy,
+    SegmentInfo, history_provider_of, human_bytes, open_coverage_from, provider_config_of,
+    read_capability,
+};
+use omgbase_sync::{FsVaultSink, RealFileSystem, RepoRow, with_writer_lock};
 use serde_json::{Value as Json, json};
 
 use crate::cli::argv::{Opt, parse_args};
@@ -31,21 +37,28 @@ use crate::cli::context::{Cli, WsInfo, resolve_path};
 use crate::cli::help::render_help_for;
 use crate::cli::output::{CliError, EXIT_OK, Result, js_json};
 use crate::cli::render::{Align, columns};
-use crate::cli::seams::canonical_instant;
+use crate::cli::seams::{canonical_instant, git_identity};
 
 use super::machine_out;
 
-const SUBCOMMANDS: [&str; 9] = [
+const SUBCOMMANDS: [&str; 12] = [
     "enable",
     "disable",
     "purge",
     "checkpoint",
+    "push",
+    "fetch",
+    "remote",
     "plan",
     "export",
     "attach",
     "detach",
     "list",
 ];
+/// `history remote <sub>` (`spec/cli` §6, 5.6).
+const REMOTE_SUBCOMMANDS: [&str; 5] = ["set", "unset", "status", "resolve", "reconcile"];
+/// `history remote reconcile`'s modes, as flags.
+const RECONCILE_MODES: [&str; 4] = ["rebase", "merge", "adopt", "fork"];
 /// `--provider`'s values (`spec/cli` §6, 5.5).
 const PROVIDERS: [&str; 2] = [NATIVE_PROVIDER, GIT_PROVIDER];
 
@@ -72,6 +85,9 @@ pub fn history(cli: &mut Cli, args: &[String]) -> Result<i32> {
         "disable" => disable(cli, rest),
         "purge" => purge(cli, rest),
         "checkpoint" => checkpoint(cli, rest),
+        "push" => push(cli, rest),
+        "fetch" => fetch(cli, rest),
+        "remote" => remote(cli, rest),
         "plan" => plan(cli, rest),
         "export" => export(cli, rest),
         "attach" => attach(cli, rest),
@@ -419,7 +435,600 @@ fn checkpoint(cli: &mut Cli, args: &[String]) -> Result<i32> {
         )
     };
     cli.io.err(&style.dim(&line));
+    // `push: "on-checkpoint"` (cli 5.6): the push that followed, or why it did not.
+    if let Some(p) = &result.push {
+        let line = match p {
+            PushOutcome::Failed(e) => format!("  push failed: {e}"),
+            PushOutcome::Pushed(r) if r.pushed => format!(
+                "  pushed {}{}",
+                r.tip.as_deref().unwrap_or("none"),
+                through(r.pushed_through)
+            ),
+            PushOutcome::Pushed(_) => "  nothing to push".to_owned(),
+        };
+        cli.io.err(&style.dim(&line));
+    }
     Ok(EXIT_OK)
+}
+
+// ---- the remote half (`spec/cli` §6 `history`, 5.6; `spec/store` §5.12 "The remote binding" …, 17.6 — Phase 6b) ----
+
+/// ` (through seq <n>)` when a push covers a seq.
+fn through(seq: Option<i64>) -> String {
+    seq.map_or_else(String::new, |n| format!(" (through seq {n})"))
+}
+
+/// The selected repository as a git-provider repository: its row and a
+/// handle on the provider over the workspace root, or the usage errors every
+/// remote verb shares.
+struct GitContext {
+    ws: WsInfo,
+    repo: RepoRow,
+    row: ManifestRow,
+    provider: GitHistoryProvider,
+}
+
+fn git_context(cli: &mut Cli, verb: &str) -> Result<GitContext> {
+    let ws = cli.workspace()?;
+    let repo = cli.repo()?;
+    let now = cli.now();
+    let prog = cli.prog.clone();
+    let store = cli.store()?;
+    let row = read_capability(store.conn(), &repo.repo_id, "history")?;
+    let provider = history_provider_of(row.as_ref()).to_owned();
+    if provider == NATIVE_PROVIDER {
+        return Err(CliError::usage_hint(
+            format!(
+                "history {verb} is the git provider's: this repository's history is native (captured in every commit)"
+            ),
+            format!(
+                "run '{prog} history enable --provider git' after '{prog} history disable' to switch"
+            ),
+        ));
+    }
+    let Some(row) = row.filter(|r| r.state == ManifestState::Enabled) else {
+        return Err(CliError::usage(format!(
+            "history is disabled for this repository — enable it with '{prog} history enable --provider {provider}'"
+        )));
+    };
+    // The attached provider must be usable here (`git` on PATH): the store's
+    // gate raises the alert and refuses as the reads do.
+    store.require_provider_handle(&repo.repo_id, &provider, &now)?;
+    if provider != GIT_PROVIDER {
+        return Err(CliError::usage(format!(
+            "history {verb} is the git provider's (this repository's provider is {provider})"
+        )));
+    }
+    Ok(GitContext {
+        provider: GitHistoryProvider::new(ws.root.clone(), git_identity()),
+        ws,
+        repo,
+        row,
+    })
+}
+
+/// The usage error of a verb needing a binding.
+fn no_remote(cli: &Cli) -> CliError {
+    CliError::usage_hint(
+        "no remote is bound to this repository's git history",
+        format!(
+            "bind one with '{} history remote set --url <url>'",
+            cli.prog
+        ),
+    )
+}
+
+fn has_remote(row: &ManifestRow) -> bool {
+    read_remote_config(row.config.get("remote")).is_some()
+}
+
+/// The vault the remote half writes inbound content into: the repository's
+/// filesystem root through the observe path. A sourceless repository has none.
+fn root_of(cli: &Cli, ctx: &GitContext, verb: &str) -> Result<PathBuf> {
+    match ctx.repo.root_path.as_deref() {
+        Some(root) => Ok(PathBuf::from(root)),
+        None => Err(CliError::usage_hint(
+            format!(
+                "history {verb} needs a repository with a filesystem source: inbound content is written into its root as external edits"
+            ),
+            format!(
+                "attach one with '{} source add <dir> --repo <slug>'",
+                cli.prog
+            ),
+        )),
+    }
+}
+
+/// The remote half's own refusals (a plain error of the adapter) that the
+/// CLI renders as usage errors when their text matches `patterns`; the engine
+/// errors (`git_remote_diverged`, `git_merge_conflict`) render as the engine
+/// errors they are (exit 1); anything else propagates.
+fn remote_error(e: omgbase_sync::Error, patterns: &[&str]) -> CliError {
+    match e {
+        omgbase_sync::Error::Store(StoreError::Other(msg))
+            if patterns.iter().any(|p| msg.contains(p)) =>
+        {
+            CliError::usage(msg)
+        }
+        other => other.into(),
+    }
+}
+
+fn remote(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let sub = args.first().map(String::as_str);
+    let rest: &[String] = if args.is_empty() { &[] } else { &args[1..] };
+    let Some(sub) = sub.filter(|s| REMOTE_SUBCOMMANDS.contains(s)) else {
+        return Err(CliError::usage_hint(
+            format!(
+                "history remote takes one of {}{}",
+                REMOTE_SUBCOMMANDS.join("|"),
+                sub.map_or_else(String::new, |s| format!(
+                    " (got {})",
+                    js_json(&Json::String(s.to_owned()))
+                ))
+            ),
+            format!("run '{} history --help'", cli.prog),
+        ));
+    };
+    match sub {
+        "set" => remote_set(cli, rest),
+        "unset" => remote_unset(cli, rest),
+        "status" => remote_status(cli, rest),
+        "resolve" => remote_resolve(cli, rest),
+        _ => remote_reconcile(cli, rest),
+    }
+}
+
+fn remote_set(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(
+        args,
+        &[
+            Opt::value("url"),
+            Opt::value("name"),
+            Opt::value("branch"),
+            Opt::value("push"),
+            Opt::value("fetch"),
+        ],
+    )?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let Some(url) = a.value("url") else {
+        return Err(CliError::usage("history remote set requires --url <url>"));
+    };
+    if let Some(p) = a.value("push")
+        && !PUSH_POLICIES.contains(&p)
+    {
+        return Err(CliError::usage(format!(
+            "--push must be one of {} (got {})",
+            PUSH_POLICIES.join("|"),
+            js_json(&Json::String(p.to_owned()))
+        )));
+    }
+    if let Some(f) = a.value("fetch")
+        && !FETCH_POLICIES.contains(&f)
+    {
+        return Err(CliError::usage(format!(
+            "--fetch must be one of {} (got {})",
+            FETCH_POLICIES.join("|"),
+            js_json(&Json::String(f.to_owned()))
+        )));
+    }
+    let options = RemoteOptions {
+        url: url.to_owned(),
+        name: a.value("name").map(str::to_owned),
+        branch: a.value("branch").map(str::to_owned),
+        push: a.value("push").map(str::to_owned),
+        fetch: a.value("fetch").map(str::to_owned),
+    };
+    let ctx = git_context(cli, "remote set")?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    let config = with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        ctx.provider
+            .remote_set(
+                store.conn(),
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &options,
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })
+    // The binding's own refusals (credentials in the URL, a bad name, branch or policy) are usage errors.
+    .map_err(|e| {
+        remote_error(
+            e,
+            &[
+                "credentials",
+                "not a remote name",
+                "not a branch name",
+                "--push",
+                "--fetch",
+                "--url",
+            ],
+        )
+    })?;
+    let r = config.remote.expect("set writes a binding");
+    let doc = json!({ "remote": r.to_json() });
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    cli.io.err(&cli.style.dim(&format!(
+        "  remote {} → {} (branch {}, push {}, fetch {})",
+        r.name,
+        r.url,
+        r.branch,
+        r.push.as_str(),
+        r.fetch.as_str()
+    )));
+    Ok(EXIT_OK)
+}
+
+fn remote_unset(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ctx = git_context(cli, "remote unset")?;
+    let had = read_remote_config(ctx.row.config.get("remote")).map(|r| r.name);
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        ctx.provider
+            .remote_unset(
+                store.conn(),
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    let doc = json!({ "remote": null });
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    cli.io.err(&cli.style.dim(&match had {
+        None => "  no remote was bound".to_owned(),
+        Some(name) => format!("  remote {name} unbound"),
+    }));
+    Ok(EXIT_OK)
+}
+
+fn render_remote_status(cli: &mut Cli, s: &RemoteStatus) -> Result<i32> {
+    let doc = s.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let style = cli.style;
+    let rows: Vec<Vec<String>> = vec![
+        vec![style.dim("remote"), format!("{}/{}", s.remote, s.branch)],
+        vec![style.dim("state"), s.state.as_str().to_owned()],
+        vec![
+            style.dim("local tip"),
+            s.local_tip.clone().unwrap_or_else(|| "—".to_owned()),
+        ],
+        vec![
+            style.dim("remote tip"),
+            s.remote_tip.clone().unwrap_or_else(|| "—".to_owned()),
+        ],
+        vec![
+            style.dim("pushed through"),
+            s.pushed_through
+                .map_or_else(|| "—".to_owned(), |n| format!("seq {n}")),
+        ],
+    ];
+    for line in columns(&rows, &[Align::Left, Align::Left]) {
+        cli.io.out(&format!("  {line}"));
+    }
+    Ok(EXIT_OK)
+}
+
+fn remote_status(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ctx = git_context(cli, "remote status")?;
+    if !has_remote(&ctx.row) {
+        return Err(no_remote(cli));
+    }
+    let s = ctx.provider.remote_status(
+        cli.store()?.conn(),
+        &ctx.repo.repo_id,
+        &provider_config_of(&ctx.row),
+    )?;
+    render_remote_status(cli, &s)
+}
+
+fn push(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ctx = git_context(cli, "push")?;
+    let Some(remote) = read_remote_config(ctx.row.config.get("remote")) else {
+        return Err(no_remote(cli));
+    };
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store()?;
+    let r = with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        ctx.provider
+            .push(
+                store.conn(),
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    let doc = r.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let ids = if r.ids.as_deref() == Some("rejected") {
+        " (the ids ref was rejected: the remote's identity record is another engine's)"
+    } else {
+        ""
+    };
+    let line = if r.pushed {
+        format!(
+            "  pushed {} to {}/{}{}{ids}",
+            r.tip.as_deref().unwrap_or("none"),
+            remote.name,
+            remote.branch,
+            through(r.pushed_through)
+        )
+    } else {
+        format!(
+            "  nothing to push ({}/{} at {}){ids}",
+            remote.name,
+            remote.branch,
+            r.tip.as_deref().unwrap_or("none")
+        )
+    };
+    cli.io.err(&cli.style.dim(&line));
+    Ok(EXIT_OK)
+}
+
+fn render_fetch(
+    cli: &mut Cli,
+    remote_name: &str,
+    remote_branch: &str,
+    f: &FetchResult,
+) -> Result<i32> {
+    if f.state == FetchState::Diverged {
+        // Detect, stop, alert (`spec/store` §5.12 "Divergence"): the verb itself
+        // fails so the operator sees it; the alert line follows.
+        let old = f.old_remote_tip.clone().flatten();
+        return Err(CliError::engine_data(
+            "git_remote_diverged",
+            rewritten_message(
+                remote_name,
+                remote_branch,
+                f.remote_tip.as_deref(),
+                old.as_deref(),
+            ),
+            json!({
+                "remote": remote_name,
+                "branch": remote_branch,
+                "local_tip": f.tip,
+                "remote_tip": f.remote_tip,
+                "old_remote_tip": old,
+            }),
+        ));
+    }
+    let doc = f.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let prog = cli.prog.clone();
+    let line = match f.state {
+        FetchState::Nothing => format!(
+            "  nothing to fetch from {remote_name}/{remote_branch}{}",
+            f.remote_tip
+                .as_deref()
+                .map_or_else(String::new, |t| format!(" (at {t})"))
+        ),
+        FetchState::FastForward => format!(
+            "  fast-forwarded to {}: {} written into the vault",
+            f.tip.as_deref().unwrap_or("none"),
+            plural_s(f.applied.len(), "file")
+        ),
+        FetchState::Merged => format!(
+            "  merged {remote_name}/{remote_branch} at {}: {} written into the vault, merge commit {}",
+            f.remote_tip.as_deref().unwrap_or("none"),
+            plural_s(f.applied.len(), "file"),
+            f.tip.as_deref().unwrap_or("none")
+        ),
+        FetchState::Conflict | FetchState::Diverged => format!(
+            "  {}: {} — the remote's versions are beside yours; settle each with {prog} history remote resolve <path> --ours|--theirs",
+            plural_s(f.conflicts.len(), "conflict"),
+            f.conflicts.join(", ")
+        ),
+    };
+    cli.io.err(&cli.style.dim(&line));
+    Ok(EXIT_OK)
+}
+
+fn fetch(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[])?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let ctx = git_context(cli, "fetch")?;
+    let Some(remote) = read_remote_config(ctx.row.config.get("remote")) else {
+        return Err(no_remote(cli));
+    };
+    let root = root_of(cli, &ctx, "fetch")?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store_mut()?;
+    let f = with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        let config = Config::default();
+        let mut vault = FsVaultSink::new(store, &ctx.repo.repo_id, &RealFileSystem, &root, &config);
+        ctx.provider
+            .fetch(
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &mut vault,
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })?;
+    render_fetch(cli, &remote.name, &remote.branch, &f)
+}
+
+fn remote_resolve(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(args, &[Opt::flag("ours"), Opt::flag("theirs")])?;
+    let Some(path) = a.pos(0) else {
+        return Err(CliError::usage("history remote resolve requires a <path>"));
+    };
+    if a.flag("ours") == a.flag("theirs") {
+        return Err(CliError::usage(
+            "history remote resolve takes exactly one of --ours or --theirs",
+        ));
+    }
+    let choice = if a.flag("ours") {
+        ResolveChoice::Ours
+    } else {
+        ResolveChoice::Theirs
+    };
+    let storage = path.trim_start_matches('/').to_owned();
+    let ctx = git_context(cli, "remote resolve")?;
+    let root = root_of(cli, &ctx, "remote resolve")?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store_mut()?;
+    let r: ResolveResult = with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        let config = Config::default();
+        let mut vault = FsVaultSink::new(store, &ctx.repo.repo_id, &RealFileSystem, &root, &config);
+        ctx.provider
+            .resolve(
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &mut vault,
+                &storage,
+                choice,
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })
+    .map_err(|e| {
+        remote_error(
+            e,
+            &["no merge conflict is pending", "is not a pending conflict"],
+        )
+    })?;
+    let doc = r.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    cli.io.err(&cli.style.dim(&format!(
+        "  resolved {} (--{}); {} remaining{}",
+        r.path,
+        r.choice.as_str(),
+        plural_s(r.remaining.len(), "conflict"),
+        r.merged
+            .as_deref()
+            .map_or_else(String::new, |m| format!("; merge commit {m}"))
+    )));
+    Ok(EXIT_OK)
+}
+
+fn render_reconcile(cli: &mut Cli, r: &ReconcileResult) -> Result<i32> {
+    let doc = r.to_json();
+    if let Some(code) = machine_out(cli, &doc, None, None) {
+        return code;
+    }
+    let prog = cli.prog.clone();
+    let conflicts = if r.conflicts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; {}: {} (settle each with {prog} history remote resolve <path> --ours|--theirs)",
+            plural_s(r.conflicts.len(), "conflict"),
+            r.conflicts.join(", ")
+        )
+    };
+    let applied = format!(
+        "{} written into the vault",
+        plural_s(r.applied.len(), "file")
+    );
+    let tip = r.tip.as_deref().unwrap_or("none");
+    let line = match r.mode {
+        ReconcileMode::Rebase => format!(
+            "  rebased {} onto the remote's head, tip {tip}; the previous tip is kept on refs/omgbase/backup; {applied}{conflicts}",
+            plural_s(r.rewritten, "commit")
+        ),
+        ReconcileMode::Merge if r.rewritten == 1 => format!(
+            "  merged the remote's head: merge commit {tip}; the previous tip is kept on refs/omgbase/backup; {applied}"
+        ),
+        ReconcileMode::Merge => format!("  merge pending: {applied}{conflicts}"),
+        ReconcileMode::Adopt => format!(
+            "  adopted the remote's head {tip}; the previous tip is kept on refs/omgbase/backup; {applied}{conflicts}"
+        ),
+        ReconcileMode::Fork => format!(
+            "  pushed the engine's branch as {}; merge it with git, then run {prog} history remote reconcile --adopt",
+            r.fork.as_deref().unwrap_or("")
+        ),
+    };
+    cli.io.err(&cli.style.dim(&line));
+    Ok(EXIT_OK)
+}
+
+fn remote_reconcile(cli: &mut Cli, args: &[String]) -> Result<i32> {
+    let a = parse_args(
+        args,
+        &[
+            Opt::flag("rebase"),
+            Opt::flag("merge"),
+            Opt::flag("adopt"),
+            Opt::flag("fork"),
+        ],
+    )?;
+    if let Some(p) = a.pos(0) {
+        return Err(CliError::usage(format!("unexpected argument '{p}'")));
+    }
+    let modes: Vec<&str> = RECONCILE_MODES
+        .iter()
+        .copied()
+        .filter(|m| a.flag(m))
+        .collect();
+    let [mode] = modes.as_slice() else {
+        return Err(CliError::usage(format!(
+            "history remote reconcile takes exactly one of {}",
+            RECONCILE_MODES
+                .iter()
+                .map(|m| format!("--{m}"))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )));
+    };
+    let mode = ReconcileMode::parse(mode).expect("one of the four");
+    let ctx = git_context(cli, "remote reconcile")?;
+    let root = root_of(cli, &ctx, "remote reconcile")?;
+    let now = cli.now();
+    let lock = cli.seams.lock_options();
+    let store = cli.store_mut()?;
+    let r: ReconcileResult = with_writer_lock(&ctx.ws.omgbase_dir, lock, || {
+        let config = Config::default();
+        let mut vault = FsVaultSink::new(store, &ctx.repo.repo_id, &RealFileSystem, &root, &config);
+        ctx.provider
+            .reconcile(
+                &ctx.repo.repo_id,
+                &provider_config_of(&ctx.row),
+                &mut vault,
+                mode,
+                &now,
+            )
+            .map_err(omgbase_sync::Error::from)
+    })
+    .map_err(|e| remote_error(e, &["is not diverged", "no remote is bound"]))?;
+    render_reconcile(cli, &r)
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {

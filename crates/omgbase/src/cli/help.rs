@@ -479,6 +479,14 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 s("history disable"),
                 s("history purge [--before <ts>]"),
                 s("history checkpoint"),
+                s(
+                    "history remote set --url <url> [--name <remote>] [--branch <b>] [--push off|on-checkpoint|periodic] [--fetch off|periodic|webhook]",
+                ),
+                s("history remote unset | status"),
+                s("history push"),
+                s("history fetch"),
+                s("history remote resolve <path> --ours|--theirs"),
+                s("history remote reconcile --rebase|--merge|--adopt|--fork"),
                 s("history plan [--before <ts>] [--policy <json|@file>]"),
                 s(
                     "history export [--prune] [--dest <dir>] [--before <ts>] [--policy <json|@file>] [--dry-run]",
@@ -515,6 +523,34 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
                 (
                     "checkpoint",
                     "(git provider) run the checkpoint worker once: the feed rows since the branch tip become commits; prints { committed, from_seq, to_seq, tip, rescanned }",
+                ),
+                (
+                    "remote set",
+                    "(git provider) bind a remote: its URL (never with credentials — git resolves access through the host), the remote branch (default: the local one), when to push (off — the default; on-checkpoint — after every checkpoint that committed; periodic — on every freshness sweep) and when to fetch (off; periodic — on every sweep; webhook — reserved: an external caller runs history fetch)",
+                ),
+                (
+                    "remote unset",
+                    "(git provider) forget the remote, its tracking refs and its alerts",
+                ),
+                (
+                    "remote status",
+                    "(git provider) local refs only, no network: { remote, branch, local_tip, remote_tip, pushed_through, state: in-sync|ahead|behind|diverged|unknown }",
+                ),
+                (
+                    "push",
+                    "(git provider) push the branch and the ids ref — never --force; a rejected push raises git_remote_diverged and exits 1 (run fetch to merge, then push again)",
+                ),
+                (
+                    "fetch",
+                    "(git provider) fetch the remote branch: fast-forward (the remote's changes enter the vault as external edits), a tree-level three-way merge when both sides moved (one merge commit), conflicts kept as <stem>.remote-<sha>.md beside yours with git_merge_conflict raised, or git_remote_diverged when the remote was rewritten (push and fetch pause)",
+                ),
+                (
+                    "remote resolve",
+                    "(git provider) settle one conflict: --ours keeps your bytes, --theirs takes the remote's; the sidecar leaves; the merge commit is written when none remains",
+                ),
+                (
+                    "remote reconcile",
+                    "(git provider; only while git_remote_diverged or git_remote_forked is active) --rebase replays your unpushed checkpoints onto the new remote head (trailers preserved, the ids ref rebased alongside); --merge one merge commit keeping both histories; --adopt the remote's head becomes truth (its tree into the vault, your edits kept beside as <stem>.local-<sha>.md, your old tip on refs/omgbase/backup/<ts>); --fork pushes your branch as <branch>-omgbase-<ts> for a human to merge with git",
                 ),
                 (
                     "purge",

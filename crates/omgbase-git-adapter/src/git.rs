@@ -10,6 +10,7 @@
 //! `omgbase-ts` trailer). The reference (`packages/git-adapter/src/git.ts`)
 //! spawns the same argv under the same environment.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,6 +53,8 @@ pub fn git_bin() -> String {
 
 /// The null sha (`update-ref`'s "the ref must not exist").
 pub const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
+/// The empty tree's sha (git's well-known constant for the SHA-1 object format).
+pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// Is `s` a 40-hex git object name?
 #[must_use]
@@ -145,6 +148,16 @@ pub struct GitRunResult {
     pub status: i32,
     pub stdout: Vec<u8>,
     pub stderr: String,
+}
+
+/// What `git push` came back with (17.6).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PushStatus {
+    Ok,
+    /// The remote refused a non-fast-forward; git's stderr.
+    Rejected(String),
+    /// Anything else (no network, no such remote); git's stderr.
+    Failed(String),
 }
 
 /// One commit of the branch log.
@@ -375,6 +388,21 @@ impl GitRepo {
         committer: &GitIdentity,
         ts: &str,
     ) -> Result<String> {
+        let parents: Vec<&str> = parent.into_iter().collect();
+        self.commit_tree_parents(tree, &parents, message, author, committer, ts)
+    }
+
+    /// [`GitRepo::commit_tree`] over several parents (a merge commit, 17.6):
+    /// one `-p` per parent, in order.
+    pub fn commit_tree_parents(
+        &self,
+        tree: &str,
+        parents: &[&str],
+        message: &str,
+        author: &GitIdentity,
+        committer: &GitIdentity,
+        ts: &str,
+    ) -> Result<String> {
         let date = git_date(ts)?;
         let env = [
             ("GIT_AUTHOR_NAME", OsString::from(&author.name)),
@@ -385,7 +413,7 @@ impl GitRepo {
             ("GIT_COMMITTER_DATE", OsString::from(&date)),
         ];
         let mut args = vec!["commit-tree", tree];
-        if let Some(p) = parent {
+        for p in parents {
             args.push("-p");
             args.push(p);
         }
@@ -398,16 +426,248 @@ impl GitRepo {
     /// `git update-ref` with the old value as the compare-and-swap
     /// (`ZERO_SHA` = the ref must not exist).
     pub fn update_ref(&self, branch: &str, new_sha: &str, old_sha: Option<&str>) -> Result<()> {
+        self.update_ref_raw(&format!("refs/heads/{branch}"), new_sha, old_sha)
+    }
+
+    // ---- refs, ancestry and trees (17.6, the remote half) ----
+
+    /// `git update-ref <ref> <new> <old>` on any full ref name (the ids ref,
+    /// the remote-tracking and bookkeeping refs).
+    pub fn update_ref_raw(&self, r: &str, new_sha: &str, old_sha: Option<&str>) -> Result<()> {
         self.run(
-            &[
-                "update-ref",
-                &format!("refs/heads/{branch}"),
-                new_sha,
-                old_sha.unwrap_or(ZERO_SHA),
-            ],
+            &["update-ref", r, new_sha, old_sha.unwrap_or(ZERO_SHA)],
             None,
         )?;
         Ok(())
+    }
+
+    /// `git update-ref <ref> <new>` without a compare-and-swap (a tracking or
+    /// bookkeeping ref that mirrors something else).
+    pub fn set_ref(&self, r: &str, sha: &str) -> Result<()> {
+        self.run(&["update-ref", r, sha], None)?;
+        Ok(())
+    }
+
+    /// `git update-ref -d <ref>`; a missing ref is fine.
+    pub fn delete_ref(&self, r: &str) -> Result<()> {
+        self.run_with(&["update-ref", "-d", r], None, &[], true, false)?;
+        Ok(())
+    }
+
+    /// The sha a full ref name points at, or `None` when it does not exist.
+    pub fn ref_sha(&self, r: &str) -> Result<Option<String>> {
+        let out = self.run_with(
+            &["rev-parse", "--verify", "--quiet", r],
+            None,
+            &[],
+            true,
+            false,
+        )?;
+        if out.status != 0 {
+            return Ok(None);
+        }
+        let sha = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        Ok(is_sha(&sha).then_some(sha))
+    }
+
+    /// The author of a commit: `%an` and `%ae`.
+    pub fn author_of(&self, commit: &str) -> Result<GitIdentity> {
+        let text = self.text(&["log", "-1", "--format=%an%x1f%ae", commit])?;
+        let mut parts = text.trim().splitn(2, '\u{1f}');
+        Ok(GitIdentity {
+            name: parts.next().unwrap_or("").to_owned(),
+            email: parts.next().unwrap_or("").to_owned(),
+        })
+    }
+
+    /// Is `ancestor` an ancestor of (or equal to) `descendant`?
+    /// (`git merge-base --is-ancestor`.)
+    pub fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool> {
+        Ok(self
+            .run_with(
+                &["merge-base", "--is-ancestor", ancestor, descendant],
+                None,
+                &[],
+                true,
+                false,
+            )?
+            .status
+            == 0)
+    }
+
+    /// `git merge-base a b`, or `None` when the histories are unrelated.
+    pub fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>> {
+        let r = self.run_with(&["merge-base", a, b], None, &[], true, false)?;
+        if r.status != 0 {
+            return Ok(None);
+        }
+        let sha = String::from_utf8_lossy(&r.stdout).trim().to_owned();
+        Ok(is_sha(&sha).then_some(sha))
+    }
+
+    /// The commits reachable from `to` and not from `from`, oldest first
+    /// (`git rev-list --reverse from..to`; `from` `None` = all of `to`).
+    pub fn rev_list(&self, from: Option<&str>, to: &str) -> Result<Vec<String>> {
+        let range = match from {
+            Some(f) => format!("{f}..{to}"),
+            None => to.to_owned(),
+        };
+        Ok(self
+            .text(&["rev-list", "--reverse", &range])?
+            .lines()
+            .map(str::trim)
+            .filter(|l| is_sha(l))
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// The parents of a commit.
+    pub fn parents_of(&self, commit: &str) -> Result<Vec<String>> {
+        Ok(self
+            .text(&["rev-list", "--parents", "-n", "1", commit])?
+            .split_whitespace()
+            .skip(1)
+            .filter(|p| is_sha(p))
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// A tree-ish's blobs: `path → blob sha` (`git ls-tree -r -z`; only blobs —
+    /// the content branch holds nothing else), bytewise by path.
+    pub fn tree_entries(&self, treeish: &str) -> Result<BTreeMap<String, String>> {
+        let mut out = BTreeMap::new();
+        if treeish == EMPTY_TREE {
+            return Ok(out);
+        }
+        let bytes = self.run(&["ls-tree", "-r", "-z", treeish], None)?.stdout;
+        for record in bytes.split(|&b| b == 0) {
+            if record.is_empty() {
+                continue;
+            }
+            let line = String::from_utf8_lossy(record);
+            // `<mode> <type> <sha>\t<path>`
+            let Some((meta, path)) = line.split_once('\t') else {
+                continue;
+            };
+            let fields: Vec<&str> = meta.split(' ').collect();
+            if let [_mode, "blob", sha] = fields.as_slice()
+                && is_sha(sha)
+            {
+                out.insert(path.to_owned(), (*sha).to_owned());
+            }
+        }
+        Ok(out)
+    }
+
+    /// The paths whose blob differs between two tree-ishes: `(path, the blob
+    /// in b)` (`None` = gone in b), in `git diff-tree -r` output order.
+    pub fn diff_trees(&self, a: &str, b: &str) -> Result<Vec<(String, Option<String>)>> {
+        let mut out = Vec::new();
+        let bytes = self
+            .run(&["diff-tree", "-r", "-z", "--no-renames", a, b], None)?
+            .stdout;
+        // The -z form interleaves `:<mode a> <mode b> <sha a> <sha b> <status>`
+        // and `<path>` records; parse pairwise.
+        let records: Vec<&[u8]> = bytes.split(|&b| b == 0).collect();
+        let mut i = 0;
+        while i + 1 < records.len() {
+            let meta = String::from_utf8_lossy(records[i]);
+            let path = String::from_utf8_lossy(records[i + 1]).into_owned();
+            i += 2;
+            let Some(meta) = meta.strip_prefix(':') else {
+                continue;
+            };
+            let fields: Vec<&str> = meta.split(' ').collect();
+            let [_ma, _mb, _sa, sb, status] = fields.as_slice() else {
+                continue;
+            };
+            if !is_sha(sb) || !matches!(status.chars().next(), Some('A' | 'D' | 'M' | 'T')) {
+                continue;
+            }
+            out.push((path, (!status.starts_with('D')).then(|| (*sb).to_owned())));
+        }
+        Ok(out)
+    }
+
+    /// A blob's bytes.
+    pub fn blob(&self, sha: &str) -> Result<Vec<u8>> {
+        Ok(self.run(&["cat-file", "blob", sha], None)?.stdout)
+    }
+
+    /// The configured remotes (`git remote`).
+    pub fn remotes(&self) -> Result<Vec<String>> {
+        Ok(self
+            .text(&["remote"])?
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// `git remote add` or `set-url` so that `name` points at `url`;
+    /// `remote.<name>.fetch` left as git sets it (the tracking refs under
+    /// `refs/remotes/<name>/`).
+    pub fn set_remote(&self, name: &str, url: &str) -> Result<()> {
+        if self.remotes()?.iter().any(|r| r == name) {
+            self.run(&["remote", "set-url", name, url], None)?;
+        } else {
+            self.run(&["remote", "add", name, url], None)?;
+        }
+        Ok(())
+    }
+
+    /// `git remote remove`; a missing remote is fine.
+    pub fn remove_remote(&self, name: &str) -> Result<()> {
+        self.run_with(&["remote", "remove", name], None, &[], true, false)?;
+        Ok(())
+    }
+
+    /// `git push <remote> <refspec>…` — NEVER `--force`. [`PushStatus::Ok`], or
+    /// [`PushStatus::Rejected`] when the remote refused a non-fast-forward
+    /// (git's `[rejected]` / `non-fast-forward` / `fetch first` / `stale info`
+    /// lines), or [`PushStatus::Failed`] with git's stderr for anything else
+    /// (no network, no such remote).
+    pub fn push(&self, remote: &str, refspecs: &[&str]) -> Result<PushStatus> {
+        let mut args = vec!["push", "--porcelain", "--quiet", remote];
+        args.extend_from_slice(refspecs);
+        let r = self.run_with(&args, None, &[], true, false)?;
+        if r.status == 0 {
+            return Ok(PushStatus::Ok);
+        }
+        let text = format!("{}\n{}", String::from_utf8_lossy(&r.stdout), r.stderr);
+        let rejected = text.contains("[rejected]")
+            || text.contains("non-fast-forward")
+            || text.contains("fetch first")
+            || text.contains("stale info")
+            || text.contains("\n!\t");
+        Ok(if rejected {
+            PushStatus::Rejected(r.stderr.trim().to_owned())
+        } else {
+            PushStatus::Failed(r.stderr.trim().to_owned())
+        })
+    }
+
+    /// `git fetch <remote> <refspec>…` (the refspecs may carry `+`: a tracking
+    /// ref follows the remote wherever it went). `None` on success, git's
+    /// stderr on failure.
+    pub fn fetch(&self, remote: &str, refspecs: &[&str]) -> Result<Option<String>> {
+        let mut args = vec!["fetch", "--quiet", "--no-tags", remote];
+        args.extend_from_slice(refspecs);
+        let r = self.run_with(&args, None, &[], true, false)?;
+        Ok((r.status != 0).then(|| r.stderr.trim().to_owned()))
+    }
+
+    /// `git ls-remote <remote> <ref>`: the sha the remote holds for `ref`,
+    /// `None` when it has none; fails when the remote cannot be reached.
+    pub fn ls_remote(&self, remote: &str, r: &str) -> Result<Option<String>> {
+        let out = self.text(&["ls-remote", remote, r])?;
+        let first = out.split('\n').next().unwrap_or("");
+        Ok(first
+            .split_once('\t')
+            .map(|(sha, _)| sha)
+            .filter(|sha| is_sha(sha))
+            .map(str::to_owned))
     }
 
     /// The type of an object (`commit`, `blob`, `tree`, `tag`), or `None`

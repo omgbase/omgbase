@@ -30,6 +30,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use omgbase_git_adapter::{GitIdentity, GitRepo};
 use omgbase_store::{Composition, Config, SequentialMinter};
 use omgbase_sync::{
     RealFileSystem, Workspace, ensure_repo_at, freshness_sweep, rebuild_file_stats,
@@ -75,8 +76,25 @@ struct Step {
     /// before the step (after `files`), one transaction — the device that
     /// puts rows a verb never writes into the workspace (a stale pending row).
     sql: Vec<String>,
+    /// §8 (cli 5.6, store 17.6 Phase 6b): the case's REMOTE — a second bare
+    /// repository at `<tmp>/remote.git` — created before the step (after
+    /// `sql`); with `files` a commit on it as someone else would make it.
+    remote: Option<RemoteDevice>,
     expect: Expect,
 }
+
+/// §8 (cli 5.6): the remote device. `{}` creates the bare repository alone.
+#[derive(Clone, Debug, Default)]
+struct RemoteDevice {
+    ts: Option<String>,
+    message: Option<String>,
+    files: Vec<(String, Option<String>)>,
+    /// `tip` (default) or `tip^` — a rewrite.
+    parent_tip_parent: bool,
+}
+
+/// §8 (cli 5.6): the remote's directory under `<tmp>` — `<workspace>/remote.git` in the fixtures' text.
+const REMOTE_DIR: &str = "remote.git";
 
 #[derive(Clone, Debug)]
 struct Case {
@@ -160,6 +178,12 @@ fn step_of(v: &Json, at: &str, with_sql: bool) -> Result<Step, String> {
         } else {
             Vec::new()
         },
+        remote: v.get("remote").map(|r| RemoteDevice {
+            ts: r.get("ts").and_then(Json::as_str).map(str::to_owned),
+            message: r.get("message").and_then(Json::as_str).map(str::to_owned),
+            files: files_of(r.get("files")),
+            parent_tip_parent: r.get("parent").and_then(Json::as_str) == Some("tip^"),
+        }),
         expect: expect_of(v, at)?,
     })
 }
@@ -349,6 +373,69 @@ fn run_sql(tmp: &Path, sql: &[String]) -> Result<(), String> {
         tx.commit().map_err(|e| format!("sql: {e}"))?;
     }
     ws.close().map_err(|e| format!("close workspace: {e}"))
+}
+
+/// §8 (cli 5.6): the remote device — the second bare repository at
+/// `<tmp>/remote.git` (`git init --bare --initial-branch omgbase`, idempotent)
+/// and, with `files`, one commit on its `omgbase` branch under the determinism
+/// environment the provider itself uses: identity `remote <remote@fixture>`,
+/// both dates `ts`, the message as given (`remote edit`), the tree the current
+/// tip's (or its parent's, `parent: "tip^"` — a rewrite) plus the files
+/// (`null` removes). The sha is a function of the inputs, so a case may pin it.
+fn apply_remote(tmp: &Path, device: Option<&RemoteDevice>) -> Result<(), String> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    let repo = GitRepo::new(tmp.join(REMOTE_DIR));
+    repo.init("omgbase").map_err(|e| e.to_string())?;
+    if device.files.is_empty() {
+        return Ok(());
+    }
+    let ts = device
+        .ts
+        .as_deref()
+        .ok_or("remote.files needs remote.ts (the commit's dates)")?;
+    let tip = repo.tip("omgbase").map_err(|e| e.to_string())?;
+    let parent = if device.parent_tip_parent {
+        match &tip {
+            Some(t) => repo
+                .parents_of(t)
+                .map_err(|e| e.to_string())?
+                .first()
+                .cloned(),
+            None => None,
+        }
+    } else {
+        tip
+    };
+    let tmp_str = tmp.to_string_lossy();
+    let mut adds: Vec<(String, String)> = Vec::new();
+    let mut removes: Vec<String> = Vec::new();
+    for (path, content) in &device.files {
+        match content {
+            Some(c) => adds.push((
+                path.clone(),
+                repo.write_blob(c.replace(WORKSPACE_TOKEN, &tmp_str).as_bytes())
+                    .map_err(|e| e.to_string())?,
+            )),
+            None => removes.push(path.clone()),
+        }
+    }
+    let base = match &parent {
+        Some(p) => Some(repo.tree_of(p).map_err(|e| e.to_string())?),
+        None => None,
+    };
+    let tree = repo
+        .build_tree(base.as_deref(), &adds, &removes)
+        .map_err(|e| e.to_string())?;
+    let id = GitIdentity::new("remote", "remote@fixture");
+    let message = format!("{}\n", device.message.as_deref().unwrap_or("remote edit"));
+    let sha = repo
+        .commit_tree(&tree, parent.as_deref(), &message, &id, &id, ts)
+        .map_err(|e| e.to_string())?;
+    repo.set_ref("refs/heads/omgbase", &sha)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// §8: re-record `file_stats` after a copy (a copy loses nanosecond mtimes; the call mints nothing).
@@ -1059,6 +1146,7 @@ fn run_case(ws: &mut Workspaces, bin: &Path, c: &Case) -> Result<Option<String>,
     for (i, s) in c.steps.iter().enumerate() {
         write_files(&tmp, &s.files)?;
         run_sql(&tmp, &s.sql)?;
+        apply_remote(&tmp, s.remote.as_ref())?;
         let mut env = c.env.clone();
         env.extend(s.env.iter().map(|(k, v)| (k.clone(), v.clone())));
         let got = spawn_omg(bin, &tmp, &s.argv, s.stdin.as_deref(), &env)?;
@@ -1193,12 +1281,13 @@ fn case_text(c: &Case) -> (Vec<&str>, String) {
     (argv, text)
 }
 
-/// A GIT case (spec/cli §8, 5.5): a step names `--provider git` or `history checkpoint`.
+/// A GIT case (spec/cli §8, 5.5; 5.6): a step names `--provider git`, `history
+/// checkpoint`, or (Phase 6b) `history remote|push|fetch`.
 fn is_git_case(argv: &[&str]) -> bool {
-    argv.contains(&"checkpoint")
-        || argv
-            .windows(2)
-            .any(|w| w[0] == "--provider" && w[1] == "git")
+    argv.windows(2).any(|w| {
+        (w[0] == "--provider" && w[1] == "git")
+            || (w[0] == "history" && ["checkpoint", "remote", "push", "fetch"].contains(&w[1]))
+    })
 }
 
 /// Why the case is skipped under this composition, or `None` when it must pass as recorded.

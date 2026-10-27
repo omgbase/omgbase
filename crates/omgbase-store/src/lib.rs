@@ -115,6 +115,7 @@ pub use self::history::{archive, delta, diff, edit_script, gc, retention, tree};
 pub use self::semantic::search;
 
 use std::path::Path;
+use std::rc::Rc;
 
 use rusqlite::{Connection, Transaction, params};
 
@@ -136,9 +137,10 @@ pub use capabilities::{
     BlockChange, CAPABILITIES_ENV, COMPOSITIONS, Capabilities, CapabilityState, CheckpointResult,
     Composition, DiffEntry, DispositionRow, DocEmbedStats, DocVersion, EmbedStats, ForeignVectors,
     GcResult, HistoryProvider, HistoryPurgeOutcome, HistoryReader, HistoryRecorder,
-    HistorySizeFigures, IdentityClaims, ProviderAvailability, ProviderEnabled, ProviderPurge,
-    PurgedCounts, RecordedRevision, RevisionQueryRow, RevisionRead, RevisionTransition,
-    SemanticProvider,
+    HistorySizeFigures, HistoryVaultSink, IdentityClaims, ProviderAvailability, ProviderEnabled,
+    ProviderPurge, PurgedCounts, PushOutcome, PushResult, RecordedRevision, RemoteState,
+    RemoteSummary, RemoteSyncResult, RevisionQueryRow, RevisionRead, RevisionTransition,
+    SemanticProvider, VaultChange,
 };
 pub use claims::{ClaimScope, IdClaims};
 pub use codec::{canonical_attrs, canonical_json, from_hex, hash_hex};
@@ -196,7 +198,8 @@ pub use manifest::{
     history_unsupported_message, in_coverage, open_coverage_from, provider_config_of,
     purge_history, raise_capture_failed, raise_provider_unavailable, read_capabilities,
     read_capability, refresh_semantic_manifest, refresh_semantic_manifests, require_history_reader,
-    require_provider, require_writer, semantic_provider_of, semantic_switched_off, writer_for,
+    require_provider, require_writer, semantic_provider_of, semantic_switched_off,
+    update_history_provider_config, writer_for,
 };
 pub use materialize::{PendingKind, PendingRow, supersede};
 pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
@@ -237,7 +240,7 @@ pub use writers::{CommitRecord, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "17.5";
+pub const SPEC_VERSION: &str = "17.6";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -259,7 +262,7 @@ pub struct Store {
     semantic_fault: Option<String>,
     /// The alternative history providers the composition layer attached
     /// (Phase 6a), by name.
-    providers: Vec<Box<dyn HistoryProvider>>,
+    providers: Vec<Rc<dyn HistoryProvider>>,
     /// Test seam: runs inside [`Store::commit_effects`](effects) right after
     /// its `BEGIN IMMEDIATE`, before the validation — a test interleaves a
     /// second connection against the held write lock here.
@@ -451,7 +454,7 @@ impl Store {
 
     /// The alternative history providers this store opened with (Phase 6a).
     #[must_use]
-    pub fn providers(&self) -> &[Box<dyn HistoryProvider>] {
+    pub fn providers(&self) -> &[Rc<dyn HistoryProvider>] {
         &self.providers
     }
 
@@ -459,6 +462,45 @@ impl Store {
     #[must_use]
     pub fn provider(&self, name: &str) -> Option<&dyn HistoryProvider> {
         manifest::attached_provider(&self.providers, name)
+    }
+
+    /// The attached provider named `name` as an OWNED handle (17.6, Phase
+    /// 6b): what a caller clones out before lending the store to a
+    /// [`HistoryVaultSink`] (the remote half's inbound path needs the store
+    /// mutably while the provider runs).
+    #[must_use]
+    pub fn provider_handle(&self, name: &str) -> Option<Rc<dyn HistoryProvider>> {
+        self.providers.iter().find(|p| p.name() == name).cloned()
+    }
+
+    /// [`Store::provider_handle`] through [`manifest::require_provider`]'s
+    /// gate: the owned handle of the provider `repo_id`'s row names, or the
+    /// refusal ([`Error::HistoryProviderUnavailable`], the alert raised at
+    /// `now` when it is attached but cannot run here).
+    pub fn require_provider_handle(
+        &self,
+        repo_id: &str,
+        name: &str,
+        now: &str,
+    ) -> Result<Rc<dyn HistoryProvider>> {
+        manifest::require_provider(&self.conn, &self.providers, repo_id, name, now)?;
+        self.provider_handle(name)
+            .ok_or_else(|| Error::HistoryProviderUnavailable {
+                provider: name.to_owned(),
+                reason: manifest::history_provider_not_attached_message(name),
+            })
+    }
+
+    /// (17.6, Phase 6b; `spec/store` §5.12 "The remote binding")
+    /// [`manifest::update_history_provider_config`]: a provider row's
+    /// `config` rewritten in place at `now`.
+    pub fn update_history_provider_config(
+        &self,
+        repo_id: &str,
+        config: &serde_json::Map<String, serde_json::Value>,
+        now: &str,
+    ) -> Result<ManifestRow> {
+        manifest::update_history_provider_config(&self.conn, repo_id, config, now)
     }
 
     /// The reader a repository's history is read through

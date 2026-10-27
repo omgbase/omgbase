@@ -33,6 +33,7 @@
 //! capabilities and every method is the pass-through it replaced.
 
 use std::path::Path;
+use std::rc::Rc;
 
 use rusqlite::Connection;
 use serde_json::{Map, Value as Json};
@@ -676,7 +677,9 @@ pub struct ProviderPurge {
 
 /// `history checkpoint`'s receipt (`spec/store` §5.12, `spec/cli` §6): the
 /// commits written, the feed span they cover, the branch tip, whether the
-/// run was a rescan.
+/// run was a rescan; `push` (17.6, Phase 6b) only when the remote binding's
+/// `push` is `on-checkpoint` — the push that followed, or the error that
+/// stopped it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckpointResult {
     pub committed: usize,
@@ -684,18 +687,184 @@ pub struct CheckpointResult {
     pub to_seq: i64,
     pub tip: Option<String>,
     pub rescanned: bool,
+    pub push: Option<PushOutcome>,
 }
 
 impl CheckpointResult {
-    /// `{ committed, from_seq, to_seq, tip, rescanned }`, in that key order.
+    /// `{ committed, from_seq, to_seq, tip, rescanned, push? }`, in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        let mut m = Map::new();
+        m.insert("committed".to_owned(), Json::from(self.committed));
+        m.insert("from_seq".to_owned(), Json::from(self.from_seq));
+        m.insert("to_seq".to_owned(), Json::from(self.to_seq));
+        m.insert(
+            "tip".to_owned(),
+            self.tip.clone().map_or(Json::Null, Json::String),
+        );
+        m.insert("rescanned".to_owned(), Json::Bool(self.rescanned));
+        if let Some(p) = &self.push {
+            m.insert("push".to_owned(), p.to_json());
+        }
+        Json::Object(m)
+    }
+}
+
+// ---- the remote half (`spec/store` §5.12 "The remote binding" … "Divergence", 17.6 — Phase 6b) ----
+
+/// `history push`'s receipt (`spec/store` §5.12 "Push", 17.6): whether
+/// anything was pushed, the tip the remote now holds, the feed seq it covers
+/// (`pushed_through`) and — the git provider's — what became of the ids ref
+/// (`pushed` | `rejected` | `none`; absent on the wire when the provider has
+/// no such ref).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PushResult {
+    pub pushed: bool,
+    pub tip: Option<String>,
+    pub pushed_through: Option<i64>,
+    pub ids: Option<String>,
+}
+
+impl PushResult {
+    /// `{ pushed, tip, pushed_through, ids? }`, in that key order.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        let mut m = Map::new();
+        m.insert("pushed".to_owned(), Json::Bool(self.pushed));
+        m.insert(
+            "tip".to_owned(),
+            self.tip.clone().map_or(Json::Null, Json::String),
+        );
+        m.insert(
+            "pushed_through".to_owned(),
+            self.pushed_through.map_or(Json::Null, Json::from),
+        );
+        if let Some(ids) = &self.ids {
+            m.insert("ids".to_owned(), Json::String(ids.clone()));
+        }
+        Json::Object(m)
+    }
+}
+
+/// A push's outcome as a receipt carries it: the result, or `{ error }` (the
+/// push that followed a checkpoint never fails the checkpoint; the sweep's
+/// step 7 never fails the sweep).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PushOutcome {
+    Pushed(PushResult),
+    Failed(String),
+}
+
+impl PushOutcome {
+    /// The receipt's member: the result's JSON, or `{ "error": <message> }`.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        match self {
+            PushOutcome::Pushed(r) => r.to_json(),
+            PushOutcome::Failed(e) => serde_json::json!({ "error": e }),
+        }
+    }
+}
+
+/// The relation of the engine's branch to the last known remote tip
+/// (`spec/store` §5.12 "Remote status", 17.6): `in-sync` (the same commit),
+/// `ahead` (the remote tip is an ancestor of ours — a push is due), `behind`
+/// (ours is an ancestor of the remote's — a fetch fast-forwards), `diverged`
+/// (neither — the remote was rewritten, or both sides moved), `unknown` (no
+/// remote tip is known yet — nothing pushed or fetched).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteState {
+    InSync,
+    Ahead,
+    Behind,
+    Diverged,
+    Unknown,
+}
+
+impl RemoteState {
+    /// The wire spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            RemoteState::InSync => "in-sync",
+            RemoteState::Ahead => "ahead",
+            RemoteState::Behind => "behind",
+            RemoteState::Diverged => "diverged",
+            RemoteState::Unknown => "unknown",
+        }
+    }
+}
+
+/// `version.capabilities.history.remote` (`spec/surface` §4, 6.5): the
+/// binding and where the two sides stand; `null` when no remote is bound.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteSummary {
+    pub name: String,
+    pub branch: String,
+    pub state: RemoteState,
+    pub pushed_through: Option<i64>,
+}
+
+impl RemoteSummary {
+    /// `{ name, branch, state, pushed_through }`, in that key order.
     #[must_use]
     pub fn to_json(&self) -> Json {
         serde_json::json!({
-            "committed": self.committed,
-            "from_seq": self.from_seq,
-            "to_seq": self.to_seq,
-            "tip": self.tip,
-            "rescanned": self.rescanned,
+            "name": self.name,
+            "branch": self.branch,
+            "state": self.state.as_str(),
+            "pushed_through": self.pushed_through,
+        })
+    }
+}
+
+/// One inbound change a provider's remote half writes into the vault: the
+/// bytes now at `path`, or `None` when the path is removed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VaultChange {
+    pub path: String,
+    pub content: Option<Vec<u8>>,
+}
+
+/// The vault, as the remote half of a history provider writes INBOUND
+/// content into it (`spec/store` §5.12 "Fetch", 17.6 — the design's "through
+/// the existing source/reconciliation boundary"): a batch of changes applied
+/// as EXTERNAL EDITS — the composition layer binds it to the repository's
+/// filesystem root and the observe path (`omgbase-sync`'s `FsVaultSink`), a
+/// fixture runner to `observe_batch` directly — so identities are matched by
+/// the ordinary reconcile, the feed records the change and no row is written
+/// by the provider. The Rust seam also LENDS THE CONNECTION: a sink owns the
+/// store for the call's duration (the observe path needs it mutably), so the
+/// provider reads its rows through [`HistoryVaultSink::conn`] between
+/// applies, never holding one across them.
+pub trait HistoryVaultSink {
+    /// The store's connection, for the provider's reads and its own rows
+    /// (the cursor, the alerts, the manifest).
+    fn conn(&self) -> &Connection;
+
+    /// Write `changes` into the vault at `ts` as one observed batch.
+    fn apply(&mut self, changes: &[VaultChange], ts: &str) -> Result<()>;
+}
+
+/// What the freshness sweep's remote steps did (`spec/sync` §4.3 steps 7–8,
+/// 4.6): the push (`periodic`), the fetch (`periodic`) — each the receipt or
+/// `{ error }` — or `paused` while a divergence alert stands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemoteSyncResult {
+    pub pushed: Option<PushOutcome>,
+    /// The fetch receipt as JSON, or `{ "error": <message> }`.
+    pub fetched: Option<Json>,
+    pub paused: bool,
+}
+
+impl RemoteSyncResult {
+    /// `{ pushed, fetched, paused }`.
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        serde_json::json!({
+            "pushed": self.pushed.as_ref().map(PushOutcome::to_json),
+            "fetched": self.fetched,
+            "paused": self.paused,
         })
     }
 }
@@ -759,6 +928,33 @@ pub trait HistoryProvider {
         config: &Map<String, Json>,
         now: &str,
     ) -> Result<CheckpointResult>;
+
+    /// (17.6, Phase 6b) The remote binding's summary for `version` — `None`
+    /// when the row binds no remote. Reads local refs only, never the network.
+    fn remote_summary(
+        &self,
+        conn: &Connection,
+        repo_id: &str,
+        config: &Map<String, Json>,
+    ) -> Result<Option<RemoteSummary>> {
+        let _ = (conn, repo_id, config);
+        Ok(None)
+    }
+
+    /// (17.6, Phase 6b) The freshness sweep's steps 7–8 (`spec/sync` §4.3):
+    /// push when the binding says `periodic`, fetch when it says `periodic`;
+    /// both paused while a divergence stands; `None` when no remote is bound.
+    /// The inbound content enters through `vault`, which lends the connection.
+    fn remote_sync(
+        &self,
+        repo_id: &str,
+        config: &Map<String, Json>,
+        now: &str,
+        vault: &mut dyn HistoryVaultSink,
+    ) -> Result<Option<RemoteSyncResult>> {
+        let _ = (repo_id, config, now, vault);
+        Ok(None)
+    }
 }
 
 // ---- the semantic provider ------------------------------------------------------------
@@ -995,7 +1191,7 @@ pub struct Capabilities {
     /// (Phase 6a — the git provider in production), by [`HistoryProvider::name`];
     /// empty when none. The `full` and `git` compositions attach them, the
     /// three reduced 5a compositions attach none.
-    pub providers: Vec<Box<dyn HistoryProvider>>,
+    pub providers: Vec<Rc<dyn HistoryProvider>>,
 }
 
 impl std::fmt::Debug for Capabilities {
@@ -1151,7 +1347,10 @@ impl Capabilities {
     #[must_use]
     pub fn with_provider(mut self, provider: Box<dyn HistoryProvider>) -> Self {
         self.providers.retain(|p| p.name() != provider.name());
-        self.providers.push(provider);
+        // Shared handles (17.6, Phase 6b): the remote half's vault sink owns
+        // the store for a call's duration, so the caller clones the
+        // provider's handle out of the store first ([`crate::Store::provider_handle`]).
+        self.providers.push(Rc::from(provider));
         self
     }
 

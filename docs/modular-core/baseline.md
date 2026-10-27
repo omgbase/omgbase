@@ -1231,6 +1231,14 @@ beside the local ones. This repository's `docs/` again (44 Markdown files, 0.97 
 | history on, embedder off | 44 | 4221 | 0.97 | 9.94 | 10.2× | 5.35 (53.8 %) | 0.38 | 0.01 | 3.47 (34.9 %) | 0.59 (5.9 %) | 0.15 | — | — |
 | history off, embedder off | 44 | 4221 | 0.97 | 6.42 | 6.6× | 5.32 (83.0 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.60 (9.4 %) | 0.14 | — | — |
 | git history, embedder off | 44 | 4221 | 0.97 | 6.43 | 6.6× | 5.32 (82.8 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.61 (9.5 %) | 0.15 | 0.58 (1 commit, 96 objects) | 0.58 (96 objects) |
+| git history, embedder off — **Rust** (the 6b twin, `--engine rust`, `target/release/omgbase` at store 17.6; `docs/` as of the twin: 44 files, 0.98 MB, 4,231 blocks; run `mc-real-corpus-W3LJxZ`) | 44 | 4231 | 0.98 | 6.52 | 6.7× | 5.36 (82.2 %) | 0.34 | 0.01 | 0.00 (0.0 %) | 0.58 (8.9 %) | 0.15 | 0.58 (1 commit, 96 objects) | 0.58 (96 objects) |
+
+The Rust twin's row agrees to the rounding: the same 96 objects locally (44 content blobs, 44 id-map blobs, the trees and
+the two commits) and the same 96 on the remote after `history remote set --url <tmp>/<run>-remote.git; history push`
+through the Rust binary (the enable + checkpoint 2.6 s, the bind + push 0.6 s); the content and ids commits of the two
+engines are byte-identical on identical inputs (the sha-equality drive of the 6b twin: set-remote → checkpoint → push →
+remote-side commit → fetch → conflict → resolve → a rewritten remote → `reconcile --rebase`, 38 commits across the local
+branch, the ids ref and the remote's two refs, `git log --format=%H%n%s%n%(trailers)` identical).
 
 Two things moved against the 6a row. **The local repository grew from 0.35 MB / 48 objects to 0.58 MB / 96 objects**: the
 same 44 content blobs, tree and commit, plus the identity record 6b writes beside them — one id-map blob per document

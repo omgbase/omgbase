@@ -285,6 +285,24 @@ impl From<omgbase_store::Error> for SurfaceError {
                 e.retriable = true;
                 e
             }
+            // `spec/store` 17.6 §5.12 (Phase 6b — the git provider's remote
+            // half; `spec/surface` 6.5): a rejected push or a rewritten remote
+            // — `git_remote_diverged { remote, branch, local_tip, remote_tip,
+            // old_remote_tip?, fork? }` — and a tree-level merge that left
+            // conflicts — `git_merge_conflict { remote, branch, remote_tip,
+            // paths, … }`; both retriable (an operator action resolves them),
+            // the messages the alerts', byte for byte. Raised by the `omg
+            // history` verbs, never by a tool of this catalog.
+            omgbase_store::Error::GitRemoteDiverged { message, data } => {
+                let mut e = Self::with_data("git_remote_diverged", message, Value::Object(data));
+                e.retriable = true;
+                e
+            }
+            omgbase_store::Error::GitMergeConflict { message, data } => {
+                let mut e = Self::with_data("git_merge_conflict", message, Value::Object(data));
+                e.retriable = true;
+                e
+            }
             e @ omgbase_store::Error::RevisionArchived { .. } => {
                 let message = e.to_string();
                 let omgbase_store::Error::RevisionArchived { rev, archive, path } = e else {

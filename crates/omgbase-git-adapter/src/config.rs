@@ -1,8 +1,10 @@
 //! The git provider's manifest config (`spec/store` §3.1 `capabilities.config`,
 //! §5.12): what `history enable --provider git` writes and every later call
-//! reads. Pinned keys and defaults; `remote` is null in 6a (6b wires it) and
-//! the per-document id-map ref `ids_ref` is RESERVED — named here and in the
-//! spec, nothing is written to it yet.
+//! reads. Pinned keys and defaults. `remote` (17.6, Phase 6b) is the remote
+//! binding `history remote set` writes — `{ name, url, branch, push, fetch }`,
+//! null until one is bound; nothing is automatic until it is (`push`/`fetch`
+//! default `off`). The per-document id-map ref `ids_ref` is written by the
+//! worker since 6b (one commit chain beside the content branch).
 
 use omgbase_store::{Error, Result};
 use serde_json::{Map, Value as Json, json};
@@ -13,9 +15,114 @@ pub const GIT_PROVIDER: &str = "git";
 pub const DEFAULT_GIT_DIR: &str = ".omgbase/git";
 /// The branch the commits go on unless `--branch` says otherwise.
 pub const DEFAULT_BRANCH: &str = "omgbase";
-/// The RESERVED per-document id-map ref (option 3: the trailers are the
-/// identity record in 6a).
+/// The per-document id-map ref (option 3's second half, 17.6): one blob per
+/// live document at `.omgbase/ids/<doc_id>`, a commit chain beside the branch.
 pub const IDS_REF: &str = "refs/omgbase/ids";
+/// The git remote's name in the bare repository unless `--name` says otherwise.
+pub const DEFAULT_REMOTE_NAME: &str = "origin";
+/// `--push`'s values (`spec/store` §5.12 "The remote binding").
+pub const PUSH_POLICIES: [&str; 3] = ["off", "on-checkpoint", "periodic"];
+/// `--fetch`'s values.
+pub const FETCH_POLICIES: [&str; 3] = ["off", "periodic", "webhook"];
+
+/// When the engine pushes: never by itself, after every checkpoint that
+/// committed, or on every freshness sweep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PushPolicy {
+    Off,
+    OnCheckpoint,
+    Periodic,
+}
+
+impl PushPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            PushPolicy::Off => "off",
+            PushPolicy::OnCheckpoint => "on-checkpoint",
+            PushPolicy::Periodic => "periodic",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "off" => Some(PushPolicy::Off),
+            "on-checkpoint" => Some(PushPolicy::OnCheckpoint),
+            "periodic" => Some(PushPolicy::Periodic),
+            _ => None,
+        }
+    }
+}
+
+/// When the engine fetches: never, on every sweep, or (RESERVED) when an
+/// external caller runs `history fetch`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FetchPolicy {
+    Off,
+    Periodic,
+    Webhook,
+}
+
+impl FetchPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            FetchPolicy::Off => "off",
+            FetchPolicy::Periodic => "periodic",
+            FetchPolicy::Webhook => "webhook",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "off" => Some(FetchPolicy::Off),
+            "periodic" => Some(FetchPolicy::Periodic),
+            "webhook" => Some(FetchPolicy::Webhook),
+            _ => None,
+        }
+    }
+}
+
+/// The remote binding (`spec/store` §5.12 "The remote binding", 17.6): `name`
+/// the git remote's name in the bare repository (`origin`), `url` what `git`
+/// is given — never with credentials ([`refuse_credentials`]) — `branch` the
+/// remote branch (the local branch's name by default), `push` when the engine
+/// pushes, `fetch` when it fetches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitRemoteConfig {
+    pub name: String,
+    pub url: String,
+    pub branch: String,
+    pub push: PushPolicy,
+    pub fetch: FetchPolicy,
+}
+
+impl GitRemoteConfig {
+    /// `{ name, url, branch, push, fetch }`, in that key order (the verb's
+    /// receipt; the manifest canonicalizes it).
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        json!({
+            "name": self.name,
+            "url": self.url,
+            "branch": self.branch,
+            "push": self.push.as_str(),
+            "fetch": self.fetch.as_str(),
+        })
+    }
+}
+
+/// `history remote set`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RemoteOptions {
+    pub url: String,
+    pub name: Option<String>,
+    pub branch: Option<String>,
+    pub push: Option<String>,
+    pub fetch: Option<String>,
+}
 
 /// The worker's cadence: one commit per feed row, or the rows pending when
 /// the worker runs folded into one commit.
@@ -43,8 +150,8 @@ pub struct GitHistoryConfig {
     pub branch: String,
     pub cadence: Cadence,
     pub ids_ref: String,
-    /// `null` in 6a.
-    pub remote: Json,
+    /// The remote binding, `None` until `history remote set` binds one (17.6).
+    pub remote: Option<GitRemoteConfig>,
 }
 
 impl GitHistoryConfig {
@@ -58,7 +165,12 @@ impl GitHistoryConfig {
         m.insert("branch".to_owned(), json!(self.branch));
         m.insert("cadence".to_owned(), self.cadence.to_json());
         m.insert("ids_ref".to_owned(), json!(self.ids_ref));
-        m.insert("remote".to_owned(), self.remote.clone());
+        m.insert(
+            "remote".to_owned(),
+            self.remote
+                .as_ref()
+                .map_or(Json::Null, GitRemoteConfig::to_json),
+        );
         m
     }
 }
@@ -143,7 +255,99 @@ pub fn git_config_for(options: &Map<String, Json>) -> Result<GitHistoryConfig> {
         branch,
         cadence,
         ids_ref: IDS_REF.to_owned(),
-        remote: Json::Null,
+        remote: None,
+    })
+}
+
+/// A git remote name (`git check-ref-format`'s rules, roughly): no spaces,
+/// no `..`, no leading `-`, no `.lock` suffix.
+#[must_use]
+pub fn valid_remote_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && !name.starts_with('-')
+        && !name.contains("..")
+        && !name.ends_with(".lock")
+}
+
+/// The remote binding `history remote set` writes, from the verb's options
+/// (defaults: `origin`, the local branch, `off`, `off`); the URL refused when
+/// it carries credentials; the messages the reference's, byte for byte.
+pub fn remote_config_for(opts: &RemoteOptions, local_branch: &str) -> Result<GitRemoteConfig> {
+    if opts.url.trim().is_empty() {
+        return Err(Error::Other(
+            "--url is required (a git URL or a local path; credentials never enter omgbase)"
+                .to_owned(),
+        ));
+    }
+    refuse_credentials(&opts.url, "the remote URL")?;
+    let name = opts
+        .name
+        .clone()
+        .unwrap_or_else(|| DEFAULT_REMOTE_NAME.to_owned());
+    if !valid_remote_name(&name) {
+        return Err(Error::Other(format!(
+            "not a remote name: {}",
+            Json::String(name)
+        )));
+    }
+    let branch = opts
+        .branch
+        .clone()
+        .unwrap_or_else(|| local_branch.to_owned());
+    if !valid_branch(&branch) {
+        return Err(Error::Other(format!(
+            "not a branch name: {}",
+            Json::String(branch)
+        )));
+    }
+    let push_raw = opts.push.as_deref().unwrap_or("off");
+    let Some(push) = PushPolicy::parse(push_raw) else {
+        return Err(Error::Other(format!(
+            "--push must be one of {} (got {})",
+            PUSH_POLICIES.join("|"),
+            Json::String(push_raw.to_owned())
+        )));
+    };
+    let fetch_raw = opts.fetch.as_deref().unwrap_or("off");
+    let Some(fetch) = FetchPolicy::parse(fetch_raw) else {
+        return Err(Error::Other(format!(
+            "--fetch must be one of {} (got {})",
+            FETCH_POLICIES.join("|"),
+            Json::String(fetch_raw.to_owned())
+        )));
+    };
+    Ok(GitRemoteConfig {
+        name,
+        url: opts.url.clone(),
+        branch,
+        push,
+        fetch,
+    })
+}
+
+/// A row's `remote` member read back: the binding when it is well-formed,
+/// else `None` (a row without one, or one an older engine wrote).
+#[must_use]
+pub fn read_remote_config(v: Option<&Json>) -> Option<GitRemoteConfig> {
+    let o = v?.as_object()?;
+    let text = |k: &str| o.get(k).and_then(Json::as_str).map(str::to_owned);
+    Some(GitRemoteConfig {
+        name: text("name")?,
+        url: text("url")?,
+        branch: text("branch")?,
+        push: o
+            .get("push")
+            .and_then(Json::as_str)
+            .and_then(PushPolicy::parse)
+            .unwrap_or(PushPolicy::Off),
+        fetch: o
+            .get("fetch")
+            .and_then(Json::as_str)
+            .and_then(FetchPolicy::parse)
+            .unwrap_or(FetchPolicy::Off),
     })
 }
 
@@ -191,7 +395,7 @@ pub fn read_git_config(config: &Map<String, Json>) -> GitHistoryConfig {
             Some(Json::String(s)) => s.clone(),
             _ => IDS_REF.to_owned(),
         },
-        remote: config.get("remote").cloned().unwrap_or(Json::Null),
+        remote: read_remote_config(config.get("remote")),
     }
 }
 
@@ -234,6 +438,78 @@ mod tests {
         assert_eq!(
             read_git_config(&opts(json!({ "provider": "git" }))),
             git_config_for(&Map::new()).unwrap()
+        );
+    }
+
+    #[test]
+    fn the_remote_binding_defaults_validates_and_reads_back() {
+        let r = remote_config_for(
+            &RemoteOptions {
+                url: "/tmp/remote.git".into(),
+                ..RemoteOptions::default()
+            },
+            "omgbase",
+        )
+        .unwrap();
+        assert_eq!(
+            r.to_json(),
+            json!({ "name": "origin", "url": "/tmp/remote.git", "branch": "omgbase", "push": "off", "fetch": "off" })
+        );
+        assert_eq!(read_remote_config(Some(&r.to_json())), Some(r.clone()));
+        assert_eq!(read_remote_config(Some(&Json::Null)), None);
+        let mut c = git_config_for(&Map::new()).unwrap();
+        c.remote = Some(r);
+        assert_eq!(read_git_config(&c.to_map()), c);
+        let e = remote_config_for(
+            &RemoteOptions {
+                url: "https://user:secret@example.com/notes.git".into(),
+                ..RemoteOptions::default()
+            },
+            "omgbase",
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "the remote URL carries credentials (a user or password in the URL) — omgbase never stores credentials; let git resolve access through the host (ssh keys, a credential helper)"
+        );
+        let e = remote_config_for(
+            &RemoteOptions {
+                url: "/tmp/r.git".into(),
+                push: Some("always".into()),
+                ..RemoteOptions::default()
+            },
+            "omgbase",
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "--push must be one of off|on-checkpoint|periodic (got \"always\")"
+        );
+        let e = remote_config_for(
+            &RemoteOptions {
+                url: "/tmp/r.git".into(),
+                fetch: Some("hourly".into()),
+                ..RemoteOptions::default()
+            },
+            "omgbase",
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "--fetch must be one of off|periodic|webhook (got \"hourly\")"
+        );
+        assert!(
+            remote_config_for(
+                &RemoteOptions {
+                    url: "/tmp/r.git".into(),
+                    name: Some("-x".into()),
+                    ..RemoteOptions::default()
+                },
+                "omgbase",
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("remote name")
         );
     }
 

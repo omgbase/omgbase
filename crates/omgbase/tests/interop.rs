@@ -925,7 +925,7 @@ fn composition_expect(expect: &Json, case: &Case, rec: &Recorded, flags: Flags) 
                 }
                 if tool == "sync_status" && o.get("capabilities").is_some() {
                     *mapped += 1;
-                    o["capabilities"]["history"] = json!({ "state": "unavailable", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every" });
+                    o["capabilities"]["history"] = json!({ "state": "unavailable", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every", "remote": null });
                     continue;
                 }
                 if tool == "version"

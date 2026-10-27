@@ -44,6 +44,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use crate::core::alerts::{
     AlertInput, AlertSeverity, CAPTURE_FAILED_ALERT, HISTORY_PROVIDER_UNAVAILABLE_ALERT,
@@ -428,7 +429,7 @@ pub fn history_reader<'a>(
 pub fn require_history_reader<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     repo_id: Option<&str>,
     now: &str,
 ) -> Result<HistoryReaderRef<'a>> {
@@ -485,7 +486,7 @@ pub fn provider_config_of(row: &ManifestRow) -> Map<String, Json> {
 /// attached none of that name.
 #[must_use]
 pub fn attached_provider<'a>(
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     name: &str,
 ) -> Option<&'a dyn HistoryProvider> {
     providers
@@ -582,7 +583,7 @@ pub fn clear_provider_unavailable(conn: &Connection, repo_id: &str, now: &str) -
 /// it). Reads fail with it; writes continue (§5.12).
 pub fn require_provider<'a>(
     conn: &Connection,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     repo_id: &str,
     name: &str,
     now: &str,
@@ -636,7 +637,7 @@ impl<'a> std::ops::Deref for HistoryReaderRef<'a> {
 pub fn history_reader_for<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<Option<HistoryReaderRef<'a>>> {
@@ -656,7 +657,7 @@ pub fn history_reader_for<'a>(
 pub fn history_reader_for_doc<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     doc_id: &str,
     now: &str,
 ) -> Result<Option<HistoryReaderRef<'a>>> {
@@ -678,7 +679,7 @@ pub fn history_reader_for_doc<'a>(
 pub fn history_reader_if_available<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<Option<HistoryReaderRef<'a>>> {
@@ -695,7 +696,7 @@ pub fn history_reader_if_available<'a>(
 pub fn docs_history_reader<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &'a [Box<dyn HistoryProvider>],
+    providers: &'a [Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<HistoryReaderRef<'a>> {
@@ -721,6 +722,54 @@ pub fn history_completeness(row: Option<&ManifestRow>) -> &'static str {
     }
 }
 
+/// (17.6, Phase 6b; `spec/store` §5.12 "The remote binding") Rewrite a
+/// provider row's `config` in place — `history remote set|unset` moving the
+/// `remote` member — keeping its state, coverage, versions and
+/// `writer_requires`: the binding is configuration, not a change of the
+/// data's identity, so nothing is rebuilt. Refused on a native row (its
+/// config is `{}`) and when the provider named differs from the row's; the
+/// messages the reference's, byte for byte. Returns the row as written.
+pub fn update_history_provider_config(
+    conn: &Connection,
+    repo_id: &str,
+    config: &Map<String, Json>,
+    now: &str,
+) -> Result<ManifestRow> {
+    let existing = read_capability(conn, repo_id, "history")?;
+    let Some(existing) = existing.filter(|e| history_provider_of(Some(e)) != NATIVE_PROVIDER)
+    else {
+        return Err(Error::Other(
+            "the repository's history is not a provider's: there is no provider config to update"
+                .to_owned(),
+        ));
+    };
+    let current = history_provider_of(Some(&existing));
+    let requested = config
+        .get("provider")
+        .and_then(Json::as_str)
+        .unwrap_or_default();
+    if current != requested {
+        return Err(Error::Other(format!(
+            "the repository's history is the {current} provider's, not {requested}'s"
+        )));
+    }
+    write_row(
+        conn,
+        repo_id,
+        &WriteInput {
+            capability: "history",
+            state: existing.state,
+            interface_v: existing.interface_v,
+            data_v: existing.data_v,
+            config,
+            coverage: &existing.coverage,
+            writer_requires: existing.writer_requires,
+            now,
+        },
+    )?;
+    read_written(conn, repo_id, "history")
+}
+
 /// `history checkpoint` (`spec/store` §5.12, Phase 6a): the attached
 /// provider's worker, once, at `now`. The repository's row must name a
 /// provider and be `enabled`: a native repository is "the repository's history
@@ -729,7 +778,7 @@ pub fn history_completeness(row: Option<&ManifestRow>) -> &'static str {
 /// and renders usage errors).
 pub fn history_checkpoint(
     conn: &Connection,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<CheckpointResult> {
@@ -828,7 +877,7 @@ pub fn claim_minted_at(conn: &Connection, id: &str) -> Result<Option<String>> {
 pub fn history_read_refusal(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     rev: &str,
     doc_id: Option<&str>,
@@ -903,7 +952,7 @@ pub fn history_read_refusal(
 pub fn writer_for<'a>(
     conn: &Connection,
     history: Option<&'a dyn HistoryRecorder>,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<Option<&'a dyn HistoryRecorder>> {
@@ -1029,7 +1078,7 @@ pub fn enable_history(
     conn: &Connection,
     mint: &mut Mint<'_>,
     history: Option<&dyn HistoryRecorder>,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
     writer_requires: bool,
@@ -1201,7 +1250,7 @@ fn baseline_record<'a>(commit: &'a FeedRow, repo_id: &'a str, now: &'a str) -> C
 fn enable_provider_history(
     conn: &Connection,
     mint: &mut Mint<'_>,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     name: &str,
     existing: Option<&ManifestRow>,
@@ -1395,7 +1444,7 @@ impl HistoryPurgeResult {
 pub fn purge_history(
     conn: &Connection,
     history: Option<&dyn HistoryRecorder>,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     before: Option<&str>,
     now: &str,
@@ -1945,7 +1994,7 @@ pub const HISTORY_WRITER_REQUIRED_MESSAGE: &str = "history capture is required o
 pub fn require_writer(
     conn: &Connection,
     history_present: bool,
-    providers: &[Box<dyn HistoryProvider>],
+    providers: &[Rc<dyn HistoryProvider>],
     repo_id: &str,
     now: &str,
 ) -> Result<()> {

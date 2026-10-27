@@ -38,11 +38,15 @@ use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map as JsonMap, Value as Json, json};
 
-use omgbase_git_adapter::{GitHistoryProvider, fixture_identity};
+use omgbase_git_adapter::{
+    GitHistoryProvider, GitIdentity, GitRepo, ReconcileMode, RemoteOptions, ResolveChoice,
+    fixture_identity,
+};
 use omgbase_store::manifest::{
     NATIVE_PROVIDER, history_bundle_present, history_provider_of, provider_config_of,
     read_capability,
 };
+use omgbase_store::{BatchItem as VaultItem, HistoryVaultSink, VaultChange, list_active_alerts};
 
 const SPEC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/store");
 const CASES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/store/cases");
@@ -115,13 +119,41 @@ const LIFECYCLE_STEP_KINDS: [&str; 8] = [
 /// README §9.4 (Phase 6a): the git provider's step kinds.
 const GIT_STEP_KINDS: [&str; 4] = ["git_checkpoint", "git_log", "git_tree", "git_fault"];
 
-/// README §9.6 (Phase 6a): does the case drive the git history provider (a
-/// `history_enable` naming it, a `git_*` step) — run only on a composition that
-/// attaches it (`full`, `git`), compared as recorded?
+/// README §9.4 (17.6, Phase 6b; §5.12 "The remote binding" …): the steps of
+/// the remote half, against the case's SECOND bare repository.
+const REMOTE_STEP_KINDS: [&str; 13] = [
+    "git_remote",
+    "git_remote_unset",
+    "git_remote_status",
+    "git_push",
+    "git_fetch",
+    "git_resolve",
+    "git_reconcile",
+    "git_remote_commit",
+    "git_remote_log",
+    "git_remote_tree",
+    "git_ids_log",
+    "git_ids_show",
+    "alerts",
+];
+/// README §9.4 (17.6): the token the case's second bare repository goes by in
+/// `git_remote.url` and in every outcome.
+const REMOTE_TOKEN: &str = "<remote>";
+
+/// README §9.4 (17.6): the identity the fixture's REMOTE commits carry.
+fn remote_fixture_identity() -> GitIdentity {
+    GitIdentity::new("remote", "remote@fixture")
+}
+
+/// README §9.6 (Phase 6a; 6b): does the case drive the git history provider (a
+/// `history_enable` naming it, a `git_*` step — the remote steps included — or
+/// an `alerts` step) — run only on a composition that attaches it (`full`,
+/// `git`), compared as recorded?
 fn needs_git_provider(c: &Json) -> bool {
     c["steps"].as_array().is_some_and(|steps| {
         steps.iter().any(|s| {
             GIT_STEP_KINDS.iter().any(|k| s.get(*k).is_some())
+                || REMOTE_STEP_KINDS.iter().any(|k| s.get(*k).is_some())
                 || s.get("history_enable")
                     .and_then(|e| e.get("provider"))
                     .and_then(Json::as_str)
@@ -338,7 +370,8 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         if keys.len() != 1
             || !(["observe", "sweep", "gc", "exec", "remint_epoch"].contains(&keys[0].as_str())
                 || HISTORY_STEP_KINDS.contains(&keys[0].as_str())
-                || LIFECYCLE_STEP_KINDS.contains(&keys[0].as_str()))
+                || LIFECYCLE_STEP_KINDS.contains(&keys[0].as_str())
+                || REMOTE_STEP_KINDS.contains(&keys[0].as_str()))
         {
             problems.push(format!(
                 "{here}: a step is exactly one of `observe` / `sweep` / `gc` / `exec` / `remint_epoch` / the retention steps / the lifecycle steps (got {})",
@@ -360,6 +393,10 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
         }
         if LIFECYCLE_STEP_KINDS.contains(&keys[0].as_str()) {
             validate_lifecycle_body(&here, keys[0], body, problems);
+            continue;
+        }
+        if REMOTE_STEP_KINDS.contains(&keys[0].as_str()) {
+            validate_remote_body(&here, keys[0], body, problems);
             continue;
         }
         let ts_ok = body
@@ -1652,6 +1689,483 @@ fn run_lifecycle_step(
     }
 }
 
+// ---- the remote steps (README §9.4, 17.6 — Phase 6b; §5.12 "The remote binding" …) --------------
+//
+// The case's SECOND bare repository — the remote — lives beside the workspace's
+// `.omgbase` as `<tmp>/remote.git` (`<remote>` in the fixture's text), created
+// on first use with `git init --bare --initial-branch omgbase`; a
+// `git_remote_commit` writes a commit on it as "someone else" would — the
+// identity `remote <remote@fixture>`, both dates the step's `ts`, the message
+// as given — so its sha is pinned too. Inbound content enters through a vault
+// sink bound to `observe_batch` (the source boundary), the same way the surface
+// runner's cases and the CLI's filesystem sink do.
+
+/// The sink: `observe_batch` over the store, the C1 ledger following the
+/// inbound content as it would any observed edit; the connection lent back.
+struct FixtureVault<'a> {
+    store: &'a mut Store,
+    repo_id: &'a str,
+    last_source: &'a mut HashMap<String, String>,
+    config: &'a Config,
+}
+
+impl HistoryVaultSink for FixtureVault<'_> {
+    fn conn(&self) -> &Connection {
+        self.store.conn()
+    }
+
+    fn apply(&mut self, changes: &[VaultChange], ts: &str) -> omgbase_store::Result<()> {
+        let items: Vec<VaultItem> = changes
+            .iter()
+            .map(|c| VaultItem {
+                path: c.path.clone(),
+                source: c
+                    .content
+                    .as_ref()
+                    .map(|b| String::from_utf8_lossy(b).into_owned()),
+            })
+            .collect();
+        self.store
+            .observe_batch(self.repo_id, &items, ts, self.config)?;
+        for it in items {
+            match it.source {
+                None => {
+                    self.last_source.remove(&it.path);
+                }
+                Some(s) => {
+                    self.last_source.insert(it.path, s);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Every occurrence of the remote's real path in a projected value becomes `<remote>`.
+fn tokenize_remote(v: Json, dir: &str) -> Json {
+    match v {
+        Json::String(s) => Json::String(s.replace(dir, REMOTE_TOKEN)),
+        Json::Array(a) => Json::Array(a.into_iter().map(|x| tokenize_remote(x, dir)).collect()),
+        Json::Object(m) => Json::Object(
+            m.into_iter()
+                .map(|(k, x)| (k, tokenize_remote(x, dir)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// README §9.4 (17.6): the shapes of the remote steps.
+fn validate_remote_body(here: &str, kind: &str, body: &Json, problems: &mut Vec<String>) {
+    let Some(b) = body.as_object() else {
+        problems.push(format!("{here}: {kind} takes an object"));
+        return;
+    };
+    let ts = |b: &JsonMap<String, Json>, problems: &mut Vec<String>| {
+        if !b.get("ts").and_then(Json::as_str).is_some_and(is_spec_ts) {
+            problems.push(format!(
+                "{here}: `ts` must be RFC 3339 UTC with three fractional digits and Z (§2.4)"
+            ));
+        }
+    };
+    let only = |allowed: &[&str], problems: &mut Vec<String>| -> bool {
+        let extra: Vec<&String> = b
+            .keys()
+            .filter(|k| !allowed.contains(&k.as_str()))
+            .collect();
+        if extra.is_empty() {
+            return true;
+        }
+        problems.push(format!(
+            "{here}: {kind} takes {} (got {})",
+            if allowed.is_empty() {
+                "{}".to_owned()
+            } else {
+                allowed
+                    .iter()
+                    .map(|k| format!("`{k}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            extra
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        false
+    };
+    match kind {
+        "git_remote" => {
+            if only(&["ts", "url", "name", "branch", "push", "fetch"], problems) {
+                ts(b, problems);
+                if !b
+                    .get("url")
+                    .and_then(Json::as_str)
+                    .is_some_and(|u| !u.is_empty())
+                {
+                    problems.push(format!(
+                        "{here}: `url` must be a non-empty string (`{REMOTE_TOKEN}` is the case's remote)"
+                    ));
+                }
+            }
+        }
+        "git_remote_unset" | "git_push" | "git_fetch" => {
+            if only(&["ts"], problems) {
+                ts(b, problems);
+            }
+        }
+        "git_remote_status" | "git_remote_log" | "git_remote_tree" | "git_ids_log" | "alerts" => {
+            only(&[], problems);
+        }
+        "git_resolve" => {
+            if only(&["ts", "path", "choose"], problems) {
+                ts(b, problems);
+                if !b
+                    .get("path")
+                    .and_then(Json::as_str)
+                    .is_some_and(|p| !p.is_empty())
+                {
+                    problems.push(format!("{here}: `path` must be a non-empty string"));
+                }
+                if !matches!(
+                    b.get("choose").and_then(Json::as_str),
+                    Some("ours" | "theirs")
+                ) {
+                    problems.push(format!("{here}: `choose` is \"ours\" or \"theirs\""));
+                }
+            }
+        }
+        "git_reconcile" => {
+            if only(&["ts", "mode"], problems) {
+                ts(b, problems);
+                if !matches!(
+                    b.get("mode").and_then(Json::as_str),
+                    Some("rebase" | "merge" | "adopt" | "fork")
+                ) {
+                    problems.push(format!(
+                        "{here}: `mode` is one of rebase, merge, adopt, fork"
+                    ));
+                }
+            }
+        }
+        "git_remote_commit" => {
+            if only(&["ts", "message", "items", "parent"], problems) {
+                ts(b, problems);
+                if b.get("message").is_some_and(|m| !m.is_string()) {
+                    problems.push(format!("{here}: `message` must be a string"));
+                }
+                if b.get("parent")
+                    .is_some_and(|p| !matches!(p.as_str(), Some("tip" | "tip^")))
+                {
+                    problems.push(format!("{here}: `parent` is \"tip\" or \"tip^\""));
+                }
+                let items_ok = b.get("items").and_then(Json::as_array).is_some_and(|a| {
+                    !a.is_empty()
+                        && a.iter().all(|it| {
+                            it.get("path").is_some_and(Json::is_string)
+                                && it
+                                    .get("source")
+                                    .is_some_and(|s| s.is_null() || s.is_string())
+                        })
+                });
+                if !items_ok {
+                    problems.push(format!(
+                        "{here}: `items` must be a non-empty array of {{ path, source: string | null }}"
+                    ));
+                }
+            }
+        }
+        "git_ids_show" if only(&["doc", "from"], problems) => {
+            if !b
+                .get("doc")
+                .and_then(Json::as_str)
+                .is_some_and(|d| !d.is_empty())
+            {
+                problems.push(format!("{here}: `doc` must be a document id"));
+            }
+            if b.get("from")
+                .is_some_and(|f| !matches!(f.as_str(), Some("local" | "remote")))
+            {
+                problems.push(format!("{here}: `from` is \"local\" or \"remote\""));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The remote's directory for the running git case.
+fn fixture_remote_dir(store: &Store) -> Result<PathBuf, String> {
+    fixture_git_root(store)
+        .map(|root| root.join("remote.git"))
+        .ok_or_else(|| {
+            "a remote step needs a workspace directory (the case drives the git provider)"
+                .to_owned()
+        })
+}
+
+/// The `git_log`/`git_tree` text of a branch of `repo`, `""` without a tip.
+fn branch_text(repo: &GitRepo, reference: &str, log: bool) -> Result<String, String> {
+    if !repo.exists()
+        || repo
+            .ref_sha(reference)
+            .map_err(|e| e.to_string())?
+            .is_none()
+    {
+        return Ok(String::new());
+    }
+    let args: Vec<&str> = if log {
+        vec![
+            "log",
+            "--reverse",
+            "--format=%H%n%s%n%(trailers)",
+            reference,
+        ]
+    } else {
+        vec!["ls-tree", "-r", reference]
+    };
+    repo.text(&args).map_err(|e| e.to_string())
+}
+
+/// README §9.4 (17.6): one remote step → its outcome.
+fn run_remote_step(
+    store: &mut Store,
+    repo_id: &str,
+    kind: &str,
+    body: &Json,
+    last_source: &mut HashMap<String, String>,
+    config: &Config,
+) -> Result<Json, String> {
+    let remote_dir = fixture_remote_dir(store)?;
+    let remote_str = remote_dir.to_string_lossy().into_owned();
+    let provider = fixture_git_provider(store)
+        .ok_or("the git history provider is not attached (OMGBASE_CAPABILITIES without it)")?;
+    let remote = GitRepo::new(remote_dir.clone());
+    let row = read_capability(store.conn(), repo_id, "history").map_err(|e| e.to_string())?;
+    let config_of = || -> Result<JsonMap<String, Json>, String> {
+        match &row {
+            Some(r) if history_provider_of(Some(r)) != NATIVE_PROVIDER => Ok(provider_config_of(r)),
+            _ => Err("the repository's history is not the git provider's".to_owned()),
+        }
+    };
+    let tok = |v: Json| tokenize_remote(v, &remote_str);
+    match kind {
+        "alerts" => {
+            let alerts = list_active_alerts(store.conn(), repo_id).map_err(|e| e.to_string())?;
+            return Ok(
+                json!({ "alerts": tok(Json::Array(alerts.iter().map(|a| a.to_json()).collect())) }),
+            );
+        }
+        "git_remote_commit" => {
+            let ts = body["ts"].as_str().ok_or("git_remote_commit.ts")?;
+            remote.init("omgbase").map_err(|e| e.to_string())?;
+            let tip = remote.tip("omgbase").map_err(|e| e.to_string())?;
+            let parent = if body.get("parent").and_then(Json::as_str) == Some("tip^") {
+                match &tip {
+                    Some(t) => remote
+                        .parents_of(t)
+                        .map_err(|e| e.to_string())?
+                        .first()
+                        .cloned(),
+                    None => None,
+                }
+            } else {
+                tip
+            };
+            let mut adds: Vec<(String, String)> = Vec::new();
+            let mut removes: Vec<String> = Vec::new();
+            for it in body["items"].as_array().ok_or("git_remote_commit.items")? {
+                let path = it["path"].as_str().unwrap_or_default().to_owned();
+                match it["source"].as_str() {
+                    Some(src) => adds.push((
+                        path,
+                        remote
+                            .write_blob(src.as_bytes())
+                            .map_err(|e| e.to_string())?,
+                    )),
+                    None => removes.push(path),
+                }
+            }
+            let base = match &parent {
+                Some(p) => Some(remote.tree_of(p).map_err(|e| e.to_string())?),
+                None => None,
+            };
+            let tree = remote
+                .build_tree(base.as_deref(), &adds, &removes)
+                .map_err(|e| e.to_string())?;
+            let id = remote_fixture_identity();
+            let message = format!(
+                "{}\n",
+                body.get("message")
+                    .and_then(Json::as_str)
+                    .unwrap_or("remote edit")
+            );
+            let sha = remote
+                .commit_tree(&tree, parent.as_deref(), &message, &id, &id, ts)
+                .map_err(|e| e.to_string())?;
+            remote
+                .set_ref("refs/heads/omgbase", &sha)
+                .map_err(|e| e.to_string())?;
+            return Ok(json!({ "remote_commit": sha }));
+        }
+        "git_remote_log" => {
+            return Ok(
+                json!({ "git_remote_log": branch_text(&remote, "refs/heads/omgbase", true)? }),
+            );
+        }
+        "git_remote_tree" => {
+            return Ok(
+                json!({ "git_remote_tree": branch_text(&remote, "refs/heads/omgbase", false)? }),
+            );
+        }
+        "git_ids_log" => {
+            let git = provider.git_repo(&config_of()?);
+            return Ok(json!({ "git_ids_log": branch_text(&git, "refs/omgbase/ids", true)? }));
+        }
+        "git_ids_show" => {
+            let doc = body["doc"].as_str().ok_or("git_ids_show.doc")?;
+            let repo = if body.get("from").and_then(Json::as_str) == Some("remote") {
+                remote
+            } else {
+                provider.git_repo(&config_of()?)
+            };
+            let spec = format!("refs/omgbase/ids:.omgbase/ids/{doc}");
+            let shown = if repo.exists() {
+                repo.text(&["show", &spec]).ok()
+            } else {
+                None
+            };
+            return Ok(json!({ "git_ids_show": shown }));
+        }
+        _ => {}
+    }
+    let key = match kind {
+        "git_remote" | "git_remote_unset" => "remote",
+        "git_remote_status" => "remote_status",
+        "git_push" => "push",
+        "git_fetch" => "fetch",
+        "git_resolve" => "resolve",
+        _ => "reconcile",
+    };
+    let pconfig = config_of();
+    let outcome = match pconfig {
+        Err(e) => Err(omgbase_store::Error::Other(e)),
+        Ok(pconfig) => run_remote_verb(
+            store,
+            repo_id,
+            kind,
+            body,
+            last_source,
+            config,
+            &provider,
+            &remote,
+            &remote_str,
+            &pconfig,
+        ),
+    };
+    Ok(match outcome {
+        Ok(v) => json!({ key: tok(v) }),
+        Err(e) => json!({ key: tok(json!({ "error": e.to_string() })) }),
+    })
+}
+
+/// README §9.4 (17.6): the remote verbs — the receipt as the verb prints it,
+/// or the error the runner records as `{ error }`.
+#[allow(clippy::too_many_arguments)]
+fn run_remote_verb(
+    store: &mut Store,
+    repo_id: &str,
+    kind: &str,
+    body: &Json,
+    last_source: &mut HashMap<String, String>,
+    config: &Config,
+    provider: &GitHistoryProvider,
+    remote: &GitRepo,
+    remote_str: &str,
+    pconfig: &JsonMap<String, Json>,
+) -> omgbase_store::Result<Json> {
+    let ts = || -> omgbase_store::Result<&str> {
+        body["ts"]
+            .as_str()
+            .ok_or_else(|| omgbase_store::Error::Other(format!("{kind}.ts")))
+    };
+    match kind {
+        "git_remote" => {
+            let ts = ts()?;
+            // The remote is created on first use: a binding to a repository that
+            // does not exist yet is the operator's own affair in production.
+            remote.init("omgbase")?;
+            let text = |k: &str| body.get(k).and_then(Json::as_str).map(str::to_owned);
+            let opts = RemoteOptions {
+                url: text("url")
+                    .unwrap_or_default()
+                    .replace(REMOTE_TOKEN, remote_str),
+                name: text("name"),
+                branch: text("branch"),
+                push: text("push"),
+                fetch: text("fetch"),
+            };
+            let c = provider.remote_set(store.conn(), repo_id, pconfig, &opts, ts)?;
+            Ok(c.remote.map_or(Json::Null, |r| r.to_json()))
+        }
+        "git_remote_unset" => {
+            let c = provider.remote_unset(store.conn(), repo_id, pconfig, ts()?)?;
+            Ok(c.remote.map_or(Json::Null, |r| r.to_json()))
+        }
+        "git_remote_status" => Ok(provider
+            .remote_status(store.conn(), repo_id, pconfig)?
+            .to_json()),
+        "git_push" => Ok(provider
+            .push(store.conn(), repo_id, pconfig, ts()?)?
+            .to_json()),
+        "git_fetch" => {
+            let ts = ts()?;
+            let mut vault = FixtureVault {
+                store,
+                repo_id,
+                last_source,
+                config,
+            };
+            Ok(provider.fetch(repo_id, pconfig, &mut vault, ts)?.to_json())
+        }
+        "git_resolve" => {
+            let ts = ts()?;
+            let path = body["path"]
+                .as_str()
+                .ok_or_else(|| omgbase_store::Error::Other("git_resolve.path".into()))?;
+            let choice = match body["choose"].as_str() {
+                Some("ours") => ResolveChoice::Ours,
+                _ => ResolveChoice::Theirs,
+            };
+            let mut vault = FixtureVault {
+                store,
+                repo_id,
+                last_source,
+                config,
+            };
+            Ok(provider
+                .resolve(repo_id, pconfig, &mut vault, path, choice, ts)?
+                .to_json())
+        }
+        _ => {
+            let ts = ts()?;
+            let mode = body["mode"]
+                .as_str()
+                .and_then(ReconcileMode::parse)
+                .ok_or_else(|| omgbase_store::Error::Other("git_reconcile.mode".into()))?;
+            let mut vault = FixtureVault {
+                store,
+                repo_id,
+                last_source,
+                config,
+            };
+            Ok(provider
+                .reconcile(repo_id, pconfig, &mut vault, mode, ts)?
+                .to_json())
+        }
+    }
+}
+
 /// The git provider attached to `store` (the `git_log`/`git_tree` steps read
 /// its bare repository), or `None`.
 fn fixture_git_provider(store: &Store) -> Option<GitHistoryProvider> {
@@ -1815,7 +2329,19 @@ fn run_steps(
     // by the first `recorder_fault` step.
     let mut fault: Option<Rc<Cell<bool>>> = None;
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {
-        if let Some(kind) = LIFECYCLE_STEP_KINDS
+        if let Some(kind) = REMOTE_STEP_KINDS.iter().find(|k| step.get(**k).is_some()) {
+            // README §9.4 (17.6, Phase 6b): the remote half against the case's
+            // second bare repository; the inbound content enters through
+            // `observe_batch`, so the C1 ledger follows it; the invariants
+            // hold after every step.
+            steps.push(
+                run_remote_step(store, repo_id, kind, &step[*kind], &mut last_source, config)
+                    .map_err(|e| format!("step {i}: {e}"))?,
+            );
+            for p in check_invariants(store, repo_id, &last_source) {
+                problems.push(format!("after step {i}: {p}"));
+            }
+        } else if let Some(kind) = LIFECYCLE_STEP_KINDS
             .iter()
             .find(|k| step.get(**k).is_some())
         {
@@ -1906,7 +2432,7 @@ fn run_steps(
             steps.push(run_exec_step(store.conn(), exec).map_err(|e| format!("step {i}: {e}"))?);
         } else {
             return Err(format!(
-                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at, history_enable, history_disable, history_purge, recorder_fault, git_checkpoint, git_log, git_tree, git_fault"
+                "step {i}: none of observe, sweep, gc, exec, remint_epoch, history_*, read_at, history_enable, history_disable, history_purge, recorder_fault, git_checkpoint, git_log, git_tree, git_fault, the remote steps"
             ));
         }
     }

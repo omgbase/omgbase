@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(
             none["capabilities"],
             json!({
-                "history": { "state": "disabled", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every" },
+                "history": { "state": "disabled", "provider": "native", "coverage_from": null, "writer_requires": false, "completeness": "every", "remote": null },
                 "semantic": { "state": "disabled", "model": null },
             })
         );
@@ -269,10 +269,10 @@ mod tests {
             }
             serde_json::to_string(&json!({ "capabilities": caps })).unwrap()
         };
-        const DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#;
-        const ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every"},"semantic":{"state":"enabled","model":null}}}"#;
-        const WS_DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#;
-        const WS_ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"enabled","model":null}}}"#;
+        const DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}}"#;
+        const ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":"<birth>","writer_requires":true,"completeness":"every","remote":null},"semantic":{"state":"enabled","model":null}}}"#;
+        const WS_DISABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}}"#;
+        const WS_ENABLED: &str = r#"{"capabilities":{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"enabled","model":null}}}"#;
         // The module installed, nothing configured: disabled.
         let mut store = Store::open_in_memory().unwrap();
         let repo = store.create_repo("r").unwrap();
@@ -331,7 +331,7 @@ mod tests {
         let bare = core.create_repo("bare").unwrap();
         assert_eq!(
             literal(&core, Some(&bare)),
-            r#"{"capabilities":{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}}"#
+            r#"{"capabilities":{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}}"#
         );
     }
 }

@@ -154,6 +154,11 @@ history::history-git-debounce-cadence
 history::history-git-doctor-size
 history::history-git-enable-checkpoint-purge
 history::history-git-refused-when-native-enabled
+history::history-git-remote-bad-arguments
+history::history-git-remote-conflict-resolve
+history::history-git-remote-diverged-reconcile-rebase
+history::history-git-remote-push-on-checkpoint
+history::history-git-remote-set-push-fetch
 history::history-list-empty
 history::history-no-repo
 history::history-no-workspace
@@ -168,6 +173,7 @@ history::history-plan-nothing-json
 history::history-plan-policy-file
 history::history-purge-before-enabled
 history::history-purge-disabled
+history::history-push-on-native
 history::history-server-rejected
 history::history-unknown-sub
 history::links

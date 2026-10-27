@@ -68,6 +68,10 @@ pub struct WatchOptions {
     pub ready_patience: Duration,
     /// Scheduled after every checkpoint that ingested or deleted something.
     pub drain: Option<DrainHandle>,
+    /// Notified after every such checkpoint too (17.6, Phase 6b): the git
+    /// provider's checkpoint scheduler — called OUTSIDE the writer lock, so
+    /// the scheduler's run takes it.
+    pub git: Option<Arc<dyn Fn() + Send + Sync>>,
     /// Called with every batch checkpoint (and the priming sweep's) instead
     /// of the `[watch] …` stderr lines — a host with its own rendering
     /// (`omgbase sync --watch`). `None` keeps the default lines.
@@ -336,7 +340,7 @@ fn run(
         match result {
             Ok(r) => match &opts.on_checkpoint {
                 Some(hook) => hook(&r),
-                None => on_checkpoint(&r, opts.drain.as_ref()),
+                None => on_checkpoint(&r, opts.drain.as_ref(), opts.git.as_deref()),
             },
             Err(e) => eprintln!("[watch] error: {e}"),
         }
@@ -360,15 +364,22 @@ fn run(
     let _ = source.close();
 }
 
-/// The reference's `onCheckpoint`: log and schedule a drain when the batch
-/// ingested or deleted something.
-fn on_checkpoint(r: &BatchResult, drain: Option<&DrainHandle>) {
+/// The reference's `onCheckpoint`: log and schedule a drain (and a git
+/// checkpoint) when the batch ingested or deleted something.
+fn on_checkpoint(
+    r: &BatchResult,
+    drain: Option<&DrainHandle>,
+    git: Option<&(dyn Fn() + Send + Sync)>,
+) {
     if r.ingested.is_empty() && r.deleted.is_empty() {
         return;
     }
     eprintln!("[watch] batch: +{} -{}", r.ingested.len(), r.deleted.len());
     if let Some(d) = drain {
         d.schedule();
+    }
+    if let Some(g) = git {
+        g();
     }
 }
 
@@ -396,6 +407,7 @@ mod tests {
             adapter_override: argv.map(|a| a.iter().map(|s| (*s).to_owned()).collect()),
             ready_patience: Duration::from_millis(300),
             drain: None,
+            git: None,
             on_checkpoint: None,
         }
     }

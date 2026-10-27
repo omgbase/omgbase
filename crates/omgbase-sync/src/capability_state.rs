@@ -2,8 +2,9 @@
 //! (`spec/surface` §4, 5.1/6.0/6.1; modular-core Phase 2 → 3e-ii → 4a;
 //! `docs/modular-core/phase-1-contracts.md` §1.5, §2.3 and §7 resolution 1):
 //! `{ history: { state, provider, coverage_from, writer_requires,
-//! completeness }, semantic: { state, model } }`, in that key order (6.4 added
-//! `provider` and `completeness` — Phase 6a). Port of
+//! completeness, remote }, semantic: { state, model } }`, in that key order
+//! (6.4 added `provider` and `completeness` — Phase 6a; 6.5 `remote` — Phase
+//! 6b). Port of
 //! `packages/core/src/sync/capability-state.ts`. Since store 17.0 (3e-ii) the
 //! states are READ FROM THE MANIFEST — the `capabilities` table
 //! (`omgbase_store::manifest`): `history` is its row's state (`unavailable`
@@ -20,9 +21,9 @@
 
 use omgbase_store::manifest::{
     ManifestRow, ManifestState, NATIVE_PROVIDER, coverage_from, history_provider_of,
-    read_capabilities, read_capability, semantic_provider_configured,
+    provider_config_of, read_capabilities, read_capability, semantic_provider_configured,
 };
-use omgbase_store::{CapabilityState, ProviderAvailability, Store};
+use omgbase_store::{CapabilityState, ProviderAvailability, RemoteSummary, Store};
 use serde_json::{Value as Json, json};
 
 use crate::settings::resolve_settings;
@@ -86,6 +87,34 @@ pub fn history_completeness(row: Option<&ManifestRow>) -> &'static str {
     omgbase_store::manifest::history_completeness(row)
 }
 
+/// The `remote` member of `version.capabilities.history` (6.5, Phase 6b;
+/// `spec/store` §5.12 "Remote status"): the attached provider's summary of
+/// the row's binding — the three levels a client needs are then on one wire:
+/// current state (the rows), locally checkpointed (`completeness`, the tip)
+/// and remotely synchronised (`remote.state`, `pushed_through`). `None` for
+/// the native recorder, a row without a binding, or a provider that is not
+/// attached or cannot run (its state says `unavailable`). Local refs only: no
+/// network is touched by a `version` call.
+#[must_use]
+pub fn history_remote(
+    store: &Store,
+    repo_id: Option<&str>,
+    row: Option<&ManifestRow>,
+) -> Option<RemoteSummary> {
+    let (repo_id, row) = (repo_id?, row?);
+    let provider = history_provider_of(Some(row));
+    if provider == NATIVE_PROVIDER {
+        return None;
+    }
+    let p = store.provider(provider)?;
+    if !matches!(p.available(), ProviderAvailability::Available { .. }) {
+        return None;
+    }
+    p.remote_summary(store.conn(), repo_id, &provider_config_of(row))
+        .ok()
+        .flatten()
+}
+
 /// The semantic capability's state for `repo_id`: `disabled` when the store
 /// runs without the module or the manifest row is absent or `disabled`;
 /// `unavailable` when the row is `enabled` but the host reports the
@@ -138,6 +167,10 @@ pub fn capability_states(store: Option<&Store>, repo_id: Option<&str>) -> Json {
             "coverage_from": coverage_from(history_row.as_ref()),
             "writer_requires": history_row.as_ref().is_some_and(|r| r.writer_requires),
             "completeness": history_completeness(history_row.as_ref()),
+            "remote": match store {
+                Some(s) => history_remote(s, repo_id, history_row.as_ref()).map(|r| r.to_json()),
+                None => None,
+            },
         },
         "semantic": {
             "state": semantic.as_str(),
@@ -179,14 +212,14 @@ mod tests {
             .clone();
         // The wire shape (`spec/surface` §4 `version`, 6.1): the key order both engines pin.
         let disabled = format!(
-            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every"}},"semantic":{{"state":"disabled","model":null}}}}"#
+            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every","remote":null}},"semantic":{{"state":"disabled","model":null}}}}"#
         );
         let enabled = format!(
-            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every"}},"semantic":{{"state":"enabled","model":null}}}}"#
+            r#"{{"history":{{"state":"enabled","provider":"native","coverage_from":"{birth}","writer_requires":true,"completeness":"every","remote":null}},"semantic":{{"state":"enabled","model":null}}}}"#
         );
         // Without a repository: the workspace layer's states, `null`/`false`.
-        const WORKSPACE_DISABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#;
-        const WORKSPACE_ENABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"enabled","model":null}}"#;
+        const WORKSPACE_DISABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}"#;
+        const WORKSPACE_ENABLED: &str = r#"{"history":{"state":"enabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"enabled","model":null}}"#;
         assert_eq!(states(&store, Some(&repo)), disabled);
         assert_eq!(states(&store, None), WORKSPACE_DISABLED);
         write_workspace_settings(&store, &provider("omgbase-embedder")).unwrap();
@@ -230,7 +263,7 @@ mod tests {
         assert_eq!(states(&store, None), WORKSPACE_DISABLED);
         assert_eq!(
             capability_states(None, None).to_string(),
-            r#"{"history":{"state":"disabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#
+            r#"{"history":{"state":"disabled","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}"#
         );
         // A model configured: `semantic.model` reads it from the row.
         let mut with_model = provider("omgbase-embedder");
@@ -253,7 +286,7 @@ mod tests {
         let bare = core.create_repo("bare").unwrap();
         assert_eq!(
             states(&core, Some(&bare)),
-            r#"{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every"},"semantic":{"state":"disabled","model":null}}"#
+            r#"{"history":{"state":"unavailable","provider":"native","coverage_from":null,"writer_requires":false,"completeness":"every","remote":null},"semantic":{"state":"disabled","model":null}}"#
         );
     }
 }

@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use omgbase_git_adapter::{GitHistoryProvider, default_identity, fixture_identity};
+use omgbase_git_adapter::{GitHistoryProvider, GitIdentity, default_identity, fixture_identity};
 use omgbase_search::EmbeddingSettings;
 use omgbase_store::{Capabilities, Composition, IdMinter, RandomMinter, SequentialMinter, Store};
 use omgbase_sync::WriterLockOptions;
@@ -76,6 +76,19 @@ impl Seams {
 /// shas the fixtures pin follow from the inputs alone; set once at the entry
 /// point ([`read_env_seams`]) and read by every store this process opens.
 static GIT_FIXTURE_IDENTITY: AtomicBool = AtomicBool::new(false);
+
+/// The identity the git provider commits as in this process: the fixture
+/// identity under either conformance seam, the production one otherwise
+/// (what [`open_store_at`] attaches; the `history` verbs build their own
+/// handle on the provider with it).
+#[must_use]
+pub fn git_identity() -> GitIdentity {
+    if GIT_FIXTURE_IDENTITY.load(Ordering::SeqCst) {
+        fixture_identity()
+    } else {
+        default_identity()
+    }
+}
 
 /// Read the seams from the process environment (§2.6).
 pub fn read_env_seams() -> Result<Seams, CliError> {
@@ -233,14 +246,9 @@ pub fn open_store_at(db: &Path, minters: &MinterSource, now: &str) -> Result<Sto
     if composition.has_git_provider()
         && let Some(root) = db.parent().and_then(Path::parent)
     {
-        let identity = if GIT_FIXTURE_IDENTITY.load(Ordering::SeqCst) {
-            fixture_identity()
-        } else {
-            default_identity()
-        };
         capabilities = capabilities.with_provider(Box::new(GitHistoryProvider::new(
             root.to_path_buf(),
-            identity,
+            git_identity(),
         )));
     }
     if let Some(dir) = db.parent().filter(|d| !d.as_os_str().is_empty()) {

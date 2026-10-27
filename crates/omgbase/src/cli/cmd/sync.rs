@@ -321,6 +321,7 @@ fn run_local_watch(cli: &mut Cli, ws: &WsInfo, repo: &RepoRow) -> Result<i32> {
         adapter_override: watch::adapter_override_from_env(),
         ready_patience: watch::READY_PATIENCE,
         drain: drain_handle.clone(),
+        git: None,
         on_checkpoint: Some(on_checkpoint),
     })
     .map_err(|e| CliError::engine("error", e))?;

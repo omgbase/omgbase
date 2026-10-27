@@ -14,8 +14,23 @@
 //!
 //! Cadence (`config.cadence`): `every` writes one commit per feed row;
 //! `{ debounce_ms }` folds the rows pending when the worker runs into one
-//! commit whose `omgbase-seq` is the range (6a has no timer: the worker is run
-//! by `omg history checkpoint` and by the freshness sweep).
+//! commit whose `omgbase-seq` is the range (the timer that runs the worker
+//! `debounce_ms` after the last mutation is the MCP host's — [`crate::scheduler`]).
+//!
+//! Two rules of 17.6 (Phase 6b). (1) THE NO-OP RULE: a checkpoint whose staged
+//! tree equals its parent's writes NO commit — the rows' bytes are already in
+//! the tree (the remote's commits brought them in through the vault, a
+//! document edited and edited back within the pending span) — and the cursor
+//! row alone advances past the rows. (2) THE RESUME RULE: the tip's
+//! `omgbase-seq` trailer is the position, unless the cursor row names the same
+//! tip and stands further on (rule 1 moved it; a fetch fast-forwarded the
+//! branch to a tip that is not the worker's own — a foreign epoch or no
+//! trailer — and set the row at the head); a tip neither rule can place is a
+//! rescan.
+//!
+//! Beside every content commit the worker writes the IDS REF ([`crate::ids`]):
+//! the touched documents' id-map blobs on `refs/omgbase/ids`, one commit
+//! carrying the same `omgbase-seq` and `omgbase-content: <content sha>`.
 //!
 //! What the rows cannot give: the bytes of a document as of a row OLDER than
 //! its current head — the core keeps current state only. A document a pending
@@ -35,8 +50,9 @@ use omgbase_store::{
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::config::{Cadence, GitHistoryConfig};
-use crate::cursor::{GitCursor, write_git_cursor};
+use crate::cursor::{GitCursor, read_git_cursor, write_git_cursor};
 use crate::git::{GitIdentity, GitRepo};
+use crate::ids::{IdsSyncInput, sync_ids};
 use crate::trailers::{CommitTrailers, DocTrailer, parse_message, render_message};
 
 /// What one worker run needs.
@@ -97,7 +113,28 @@ pub fn tip_position(git: &GitRepo, branch: &str) -> Result<Option<GitCursor>> {
         tip,
         epoch: t.epoch,
         seq: t.to,
+        pushed: None,
     }))
+}
+
+/// The resume rule (17.6): the position the worker resumes from — the tip's
+/// trailer when it is of this epoch, refined by the `$git` row when the row
+/// names the tip and stands further on; the row alone when the tip has no
+/// usable trailer but the row names it; `None` otherwise (a rescan).
+pub fn resume_position(ctx: &WorkerContext<'_>, epoch: &str) -> Result<Option<(String, i64)>> {
+    let Some(tip) = ctx.git.tip(&ctx.config.branch)? else {
+        return Ok(None);
+    };
+    let from_trailer = parse_message(&ctx.git.message(&tip)?)
+        .filter(|t| t.epoch == epoch)
+        .map(|t| t.to);
+    let from_row = read_git_cursor(ctx.conn, ctx.repo_id)?
+        .filter(|row| row.tip == tip && row.epoch == epoch)
+        .map(|row| row.seq);
+    Ok(match (from_trailer, from_row) {
+        (None, None) => None,
+        (a, b) => Some((tip, a.unwrap_or(-1).max(b.unwrap_or(-1)))),
+    })
 }
 
 fn author_for(identity: &GitIdentity, actor: Option<&str>) -> GitIdentity {
@@ -181,7 +218,9 @@ fn stage_digest(ctx: &WorkerContext<'_>, pending: &mut Pending, d: &CommitDigest
     Ok(())
 }
 
-/// One git commit over the staged changes; the new tip.
+/// One git commit over the staged changes — or none, when the staged tree is
+/// the parent's (the no-op rule; never for a snapshot) — then the ids commit;
+/// the new tip and whether a content commit was written.
 fn commit_pending(
     ctx: &WorkerContext<'_>,
     pending: &Pending,
@@ -190,7 +229,7 @@ fn commit_pending(
     trailers: &CommitTrailers,
     actor: Option<&str>,
     snapshot: bool,
-) -> Result<String> {
+) -> Result<(String, bool)> {
     let base_tree = match parent {
         Some(p) if !snapshot => Some(ctx.git.tree_of(p)?),
         _ => None,
@@ -200,6 +239,34 @@ fn commit_pending(
     let mut removes = pending.removes.clone();
     removes.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
     let tree = ctx.git.build_tree(base_tree.as_deref(), &adds, &removes)?;
+    let touched: Vec<String> = pending.docs.iter().map(|d| d.doc_id.clone()).collect();
+    let ids = |content: &str, docs: Option<&[String]>| -> Result<()> {
+        sync_ids(&IdsSyncInput {
+            conn: ctx.conn,
+            repo_id: ctx.repo_id,
+            git: ctx.git,
+            config: ctx.config,
+            identity: ctx.identity,
+            docs,
+            epoch: &trailers.epoch,
+            from: trailers.from,
+            to: trailers.to,
+            ts: &trailers.ts,
+            content,
+            actor,
+        })?;
+        Ok(())
+    };
+    if let (Some(parent), Some(base)) = (parent, base_tree.as_deref())
+        && !snapshot
+        && tree == base
+    {
+        // The no-op rule (17.6): the bytes are already in the tree; the cursor
+        // row advances, the identities are still recorded.
+        write_git_cursor(ctx.conn, ctx.repo_id, parent, &trailers.epoch, trailers.to)?;
+        ids(parent, Some(&touched))?;
+        return Ok((parent.to_owned(), false));
+    }
     let message = render_message(subject, trailers);
     let sha = ctx.git.commit_tree(
         &tree,
@@ -212,16 +279,9 @@ fn commit_pending(
     // OMGBASE_FAULT=git.commit (`spec/store` §9.7): the objects are written, the ref has not moved.
     fault_point(FaultSite::GitCommit)?;
     ctx.git.update_ref(&ctx.config.branch, &sha, parent)?;
-    write_git_cursor(
-        ctx.conn,
-        ctx.repo_id,
-        &GitCursor {
-            tip: sha.clone(),
-            epoch: trailers.epoch.clone(),
-            seq: trailers.to,
-        },
-    )?;
-    Ok(sha)
+    write_git_cursor(ctx.conn, ctx.repo_id, &sha, &trailers.epoch, trailers.to)?;
+    ids(&sha, if snapshot { None } else { Some(&touched) })?;
+    Ok((sha, true))
 }
 
 /// The whole live tree of the repository staged (a rescan / the baseline).
@@ -283,6 +343,8 @@ pub fn commit_snapshot(
         plan: None,
         docs: docs.clone(),
         rescan: Some((status.epoch.clone(), status.head)),
+        merge: None,
+        content: None,
     };
     let subject = match record {
         Some(r) => r.reason.map_or_else(
@@ -292,7 +354,7 @@ pub fn commit_snapshot(
         None => format!("rescan: {} document(s)", docs.len()),
     };
     let parent = ctx.git.tip(&ctx.config.branch)?;
-    let tip = commit_pending(
+    let (tip, _) = commit_pending(
         ctx,
         &pending,
         parent.as_deref(),
@@ -322,20 +384,20 @@ fn reason_of(conn: &Connection, commit_id: &str) -> Result<Option<String>> {
         .flatten())
 }
 
-/// The worker, once (`spec/store` §5.12): resume from the tip's trailer (a
-/// RESCAN when there is no tip or it is of another epoch: one snapshot commit
-/// at the head), page `changes_since` from there, one commit per row under
-/// `every` or one commit over every pending row under `{ debounce_ms }`, and
-/// report `{ committed, from_seq, to_seq, tip, rescanned }`.
+/// The worker, once (`spec/store` §5.12): resume by the resume rule (none → a
+/// RESCAN: one snapshot commit at the head), page `changes_since` from there,
+/// one commit per row under `every` or one commit over every pending row
+/// under `{ debounce_ms }` — a group whose tree is its parent's writes none —
+/// and report `{ committed, from_seq, to_seq, tip, rescanned }`.
 pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointResult> {
     let epoch = repo_epoch(ctx.conn, ctx.repo_id)?;
-    // The tip's trailer is the truth; the `$git` cursor row is its cache (it
-    // may lag the tip after a crash between the two writes).
-    let position = tip_position(ctx.git, &ctx.config.branch)?;
-    let start = position
-        .as_ref()
-        .filter(|p| p.epoch == epoch)
-        .map(|p| p.seq);
+    // The resume rule (17.6): the tip's trailer, refined by the `$git` row
+    // when it names the same tip and stands further on.
+    let position = if ctx.git.exists() {
+        resume_position(ctx, &epoch)?
+    } else {
+        None
+    };
     let rescan = |ctx: &WorkerContext<'_>| -> Result<CheckpointResult> {
         let snap = commit_snapshot(ctx, now, None)?;
         clear_provider_unavailable(ctx.conn, ctx.repo_id, now)?;
@@ -345,16 +407,17 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
             to_seq: snap.head,
             tip: Some(snap.tip),
             rescanned: true,
+            push: None,
         })
     };
     // No usable position — no tip (the repository was purged or never
-    // baselined), or a tip of another epoch — is a rescan.
-    let Some(start) = start else {
+    // baselined), a tip of another epoch nobody placed — is a rescan.
+    let Some((tip, start)) = position else {
         return rescan(ctx);
     };
     let mut cursor = start;
     let mut committed = 0usize;
-    let mut tip: Option<String> = position.map(|p| p.tip);
+    let mut tip: Option<String> = Some(tip);
     let mut digests: Vec<CommitDigest> = Vec::new();
     // Collect every pending row first (paging), so a debounce cadence folds them all.
     loop {
@@ -387,6 +450,7 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
             to_seq: start,
             tip,
             rescanned: false,
+            push: None,
         });
     }
     let groups: Vec<Vec<CommitDigest>> = match ctx.config.cadence {
@@ -412,6 +476,8 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
             plan: last.plan_id.clone(),
             docs,
             rescan: None,
+            merge: None,
+            content: None,
         };
         let subject = if group.len() == 1 {
             reason_of(ctx.conn, &first.commit)?
@@ -423,7 +489,7 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
                 trailers.docs.len()
             )
         };
-        tip = Some(commit_pending(
+        let (sha, wrote) = commit_pending(
             ctx,
             &pending,
             tip.as_deref(),
@@ -431,8 +497,11 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
             &trailers,
             last.actor.as_deref(),
             false,
-        )?);
-        committed += 1;
+        )?;
+        tip = Some(sha);
+        if wrote {
+            committed += 1;
+        }
     }
     clear_provider_unavailable(ctx.conn, ctx.repo_id, now)?;
     Ok(CheckpointResult {
@@ -441,5 +510,6 @@ pub fn run_checkpoint(ctx: &WorkerContext<'_>, now: &str) -> Result<CheckpointRe
         to_seq: cursor,
         tip,
         rescanned: false,
+        push: None,
     })
 }

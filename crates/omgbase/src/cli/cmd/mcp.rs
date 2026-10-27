@@ -37,9 +37,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use omgbase_git_adapter::{Cadence, CheckpointScheduler, read_git_config};
 use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provider};
+use omgbase_store::manifest::{
+    ManifestState, NATIVE_PROVIDER, history_provider_of, provider_config_of, read_capability,
+};
 use omgbase_surface::{Profile, Surface};
 use omgbase_sync::workspace::{WORKSPACE_ENV, find_root};
+use omgbase_sync::{run_provider_checkpoint, with_writer_lock};
 
 use crate::cli::argv::{Opt, parse_args};
 use crate::cli::context::Cli;
@@ -156,11 +161,14 @@ fn install_signal_handlers() {
 struct Helpers {
     watcher: Option<watch::Watcher>,
     drainer: Option<Drainer>,
+    /// The git provider's checkpoint scheduler (17.6, Phase 6b).
+    scheduler: Option<CheckpointScheduler>,
 }
 
 impl Helpers {
     /// Stop the watcher (unwatch, close the adapter, join, release the
-    /// lease), then flush and close the drainer.
+    /// lease), then flush and close the drainer, then run a debounced git
+    /// checkpoint still pending (its error is reported, never thrown).
     fn shutdown(self) {
         if let Some(w) = self.watcher {
             w.stop();
@@ -169,7 +177,60 @@ impl Helpers {
             d.flush();
             d.close();
         }
+        if let Some(s) = self.scheduler {
+            s.flush();
+            s.close();
+        }
     }
+}
+
+/// The git history provider's cadence (`spec/store` §5.12 "Cadence", 17.6 —
+/// Phase 6b): the mutation hook also runs the checkpoint worker — under
+/// `every` synchronously after each successful write (the git history is
+/// complete without `omg sync`), under `{ debounce_ms }` once, `debounce_ms`
+/// after the last mutation (a burst folds into one commit). The worker runs
+/// over a connection of its own under the workspace writer lock — taken by
+/// the run unless the caller already holds it (the hook fires inside a locked
+/// tool call; the reference's lock is re-entrant, this engine's is not). The
+/// watcher's checkpoints notify it too. `None` for a native repository.
+fn git_scheduler(
+    store: &omgbase_store::Store,
+    db: &Path,
+    omgbase_dir: &Path,
+    repo_id: &str,
+    minters: &MinterSource,
+    clock: Option<String>,
+    lock: omgbase_sync::WriterLockOptions,
+) -> Option<(CheckpointScheduler, Cadence)> {
+    let row = read_capability(store.conn(), repo_id, "history")
+        .ok()
+        .flatten()
+        .filter(|r| r.state == ManifestState::Enabled)?;
+    if history_provider_of(Some(&row)) == NATIVE_PROVIDER {
+        return None;
+    }
+    let cadence = read_git_config(&provider_config_of(&row)).cadence;
+    let (db, omgbase_dir, repo_id, minters) = (
+        db.to_path_buf(),
+        omgbase_dir.to_path_buf(),
+        repo_id.to_owned(),
+        minters.clone(),
+    );
+    let run = move |under_lock: bool| -> std::result::Result<(), String> {
+        let now = crate::stamp(clock.as_ref());
+        let store = open_store_at(&db, &minters, &now)?;
+        let once = || run_provider_checkpoint(&store, &repo_id, &now).map(|_| ());
+        if under_lock {
+            once().map_err(|e| e.to_string())
+        } else {
+            with_writer_lock(&omgbase_dir, lock, once).map_err(|e| e.to_string())
+        }
+    };
+    let on_error = |e: &str| eprintln!("[mcp] git checkpoint failed: {e}");
+    Some((
+        CheckpointScheduler::new(cadence.clone(), Arc::new(run), Some(Arc::new(on_error))),
+        cadence,
+    ))
 }
 
 /// Whoever gets here first — the main thread at stdin EOF or the signal
@@ -332,6 +393,37 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .map(|p| start_drainer(&db, &repo.repo_id, &minters, p.clone()));
     let drain_handle = drainer.as_ref().map(Drainer::handle);
 
+    // The git provider's checkpoint scheduler (Phase 6b), read off the
+    // repository's manifest row before the context closes.
+    let scheduler = {
+        let probe = open_store_at(&db, &minters, &crate::stamp(clock.as_ref()))
+            .map_err(|e| CliError::engine("error", e))?;
+        git_scheduler(
+            &probe,
+            &db,
+            &omgbase_dir,
+            &repo.repo_id,
+            &minters,
+            clock.clone(),
+            cli.seams.lock_options(),
+        )
+    };
+    if let Some((_, cadence)) = &scheduler {
+        eprintln!(
+            "[mcp] git checkpoint on mutation: {}",
+            match cadence {
+                Cadence::Every => "every write".to_owned(),
+                Cadence::Debounce { debounce_ms } =>
+                    format!("{debounce_ms} ms after the last write"),
+            }
+        );
+    }
+    let scheduler = scheduler.map(|(s, _)| s);
+    let watch_git: Option<Arc<dyn Fn() + Send + Sync>> = scheduler.as_ref().map(|s| {
+        let s = s.clone();
+        Arc::new(move || s.notify(false)) as Arc<dyn Fn() + Send + Sync>
+    });
+
     // The watcher: off with --no-watch or when another live watcher holds
     // the lease; otherwise spawn the adapter, watch, wait for ready, prime,
     // stream (spec/sync §5) — "watcher live" is reported only after that.
@@ -348,6 +440,7 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
             adapter_override: watch::adapter_override_from_env(),
             ready_patience: watch::READY_PATIENCE,
             drain: drain_handle.clone(),
+            git: watch_git,
             on_checkpoint: None,
         })
         .map_err(|e| CliError::engine("error", e))?
@@ -376,7 +469,11 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
         eprintln!("[mcp] tools profile: {profile}");
     }
 
-    let shared: Shared = Arc::new(Mutex::new(Some(Helpers { watcher, drainer })));
+    let shared: Shared = Arc::new(Mutex::new(Some(Helpers {
+        watcher,
+        drainer,
+        scheduler: scheduler.clone(),
+    })));
     spawn_signal_thread(Arc::clone(&shared));
 
     // The surface owns its store — a connection of its own over the database
@@ -404,10 +501,19 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if let Some(ts) = clock {
         surface = surface.with_clock(move || ts.clone());
     }
-    if let Some(h) = drain_handle {
+    if drain_handle.is_some() || scheduler.is_some() {
         // Fires after every successful non-dry-run write (the catalog's
-        // hook); the drain itself runs off this thread.
-        surface = surface.with_mutation_hook(move || h.schedule());
+        // hook), inside the tool call's writer lock; the drain itself runs
+        // off this thread, the git checkpoint under `every` right here.
+        let hook_scheduler = scheduler.clone();
+        surface = surface.with_mutation_hook(move || {
+            if let Some(h) = &drain_handle {
+                h.schedule();
+            }
+            if let Some(s) = &hook_scheduler {
+                s.notify(true);
+            }
+        });
     }
     let serve_opts = transport::ServeOptions {
         omgbase_dir: Some(omgbase_dir),

@@ -155,7 +155,7 @@ fn baselines_commits_one_row_per_feed_row_and_reads_back_through_the_seam() {
     let states = omgbase_sync::capability_states(Some(&fx.store), Some(&fx.repo));
     assert_eq!(
         states["history"],
-        json!({ "state": "enabled", "provider": "git", "coverage_from": "2026-10-20T10:01:00.000Z", "writer_requires": true, "completeness": "every" })
+        json!({ "state": "enabled", "provider": "git", "coverage_from": "2026-10-20T10:01:00.000Z", "writer_requires": true, "completeness": "every", "remote": null })
     );
     // No native row: `capture_for` is None for the provider row.
     assert!(fx.store.capture_for(Some(&fx.repo)).unwrap().is_none());

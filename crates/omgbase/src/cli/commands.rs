@@ -89,7 +89,7 @@ pub static COMMANDS: &[Command] = &[
     cmd(
         "history",
         &[],
-        "Capture: enable/disable/purge per repository (native or git provider), checkpoint; retention: plan/export archive segments, attach/detach/list",
+        "Capture: enable/disable/purge per repository (native or git provider), checkpoint, remote set/status, push/fetch, resolve/reconcile; retention: plan/export archive segments, attach/detach/list",
         cmd::history::history,
     ),
     cmd(

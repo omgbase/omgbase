@@ -6,7 +6,10 @@
 //! (`omgbase-ts`), the feed row(s) folded (`omgbase-commit`), the provenance
 //! (`omgbase-origin`, `omgbase-actor`, `omgbase-plan`), one `omgbase-doc` per
 //! touched document (`<doc_id> <path> <head>`, a deleted document's head `-`)
-//! and, on a rescan, `omgbase-rescan: <epoch>:<head>`.
+//! and, on a rescan, `omgbase-rescan: <epoch>:<head>`. Since 17.6 (Phase 6b)
+//! a merge commit carries `omgbase-merge: <remote tip>` and a commit of the
+//! ids ref `omgbase-content: <content commit sha>` (the content commit it
+//! records the identities of).
 
 /// One touched document.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +36,11 @@ pub struct CommitTrailers {
     pub docs: Vec<DocTrailer>,
     /// `omgbase-rescan: <epoch>:<head>` — the commit is a full snapshot.
     pub rescan: Option<(String, i64)>,
+    /// `omgbase-merge: <remote tip>` (17.6) — the commit merged the remote's tip.
+    pub merge: Option<String>,
+    /// `omgbase-content: <sha>` (17.6) — on the ids ref: the content commit
+    /// this ids commit belongs to.
+    pub content: Option<String>,
 }
 
 /// Every trailer token begins with it.
@@ -126,6 +134,12 @@ pub fn render_message(subject: &str, t: &CommitTrailers) -> String {
     if let Some((epoch, head)) = &t.rescan {
         lines.push(format!("omgbase-rescan: {epoch}:{head}"));
     }
+    if let Some(m) = &t.merge {
+        lines.push(format!("omgbase-merge: {m}"));
+    }
+    if let Some(c) = &t.content {
+        lines.push(format!("omgbase-content: {c}"));
+    }
     for d in &t.docs {
         lines.push(format!(
             "omgbase-doc: {} {} {}",
@@ -156,6 +170,8 @@ pub fn parse_message(message: &str) -> Option<CommitTrailers> {
     let mut plan = None;
     let mut docs = Vec::new();
     let mut rescan = None;
+    let mut merge = None;
+    let mut content = None;
     for line in message.split('\n').skip(1) {
         // `^omgbase-([a-z]+): (.*)$`
         let Some(rest) = line.strip_prefix(TRAILER_PREFIX) else {
@@ -179,6 +195,8 @@ pub fn parse_message(message: &str) -> Option<CommitTrailers> {
                     rescan = Some((epoch, to));
                 }
             }
+            "merge" => merge = Some(value.trim().to_owned()),
+            "content" => content = Some(value.trim().to_owned()),
             "doc" => {
                 // `<doc_id> <path> <head>`: the id is the first token, the head
                 // the last; the path is everything between (it may hold spaces).
@@ -213,6 +231,8 @@ pub fn parse_message(message: &str) -> Option<CommitTrailers> {
         plan,
         docs,
         rescan,
+        merge,
+        content,
     })
 }
 
@@ -244,6 +264,8 @@ mod tests {
                 },
             ],
             rescan: None,
+            merge: None,
+            content: None,
         };
         let msg = render_message("subject\nwith newline", &t);
         assert_eq!(
@@ -263,5 +285,30 @@ mod tests {
                 .rescan,
             Some(("ep_0".into(), 7))
         );
+        // 17.6: the merge and content trailers, rendered after rescan and before the docs.
+        let m = CommitTrailers {
+            epoch: "ep_0".into(),
+            from: 4,
+            to: 4,
+            ts: "2026-10-20T10:06:00.000Z".into(),
+            commits: vec![],
+            origin: None,
+            actor: None,
+            plan: None,
+            docs: vec![],
+            rescan: None,
+            merge: Some("a".repeat(40)),
+            content: Some("b".repeat(40)),
+        };
+        let text = render_message("merge origin/omgbase", &m);
+        assert_eq!(
+            text,
+            format!(
+                "merge origin/omgbase\n\nomgbase-seq: ep_0:4\nomgbase-ts: 2026-10-20T10:06:00.000Z\nomgbase-merge: {}\nomgbase-content: {}\n",
+                "a".repeat(40),
+                "b".repeat(40)
+            )
+        );
+        assert_eq!(parse_message(&text), Some(m));
     }
 }
