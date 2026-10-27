@@ -466,7 +466,7 @@ bundle, and delete `search/cel/compile.ts`. Gate: the core boots and passes
 every read/mutation fixture with the provider absent; `spec/search` passes
 with it present; `interop.rs` green.
 
-## 6a. Status (2026-10-26) — Phases 0–5 complete in both engines; Phase 6 open
+## 6a. Status (2026-10-27) — Phases 0–6 complete in both engines
 
 **Phases 1–3 are complete in both engines** (store 17.0, released as
 `a91354b`): the seams (Phase 1), the semantic bundle behind
@@ -783,6 +783,19 @@ result with byte-identical reads, the previous binary refusing it, history off r
 servers were then upgraded through the engine alone (`docs/modular-core/migration-runbook.md`) and report store 17.4
 with history enabled from their first commit. Phase 6 — one alternative strategy through the documented contract — opened with 6a (§6b above): the git-backed
 history provider in the TypeScript reference, its Rust twin and 6b remaining.
+
+**Phase 6 closed on 2026-10-27.** The alternative strategy is Git-backed history (`@omgbase/git-adapter`,
+`omgbase-git-adapter`; the design in Brendan's notes, `/projects/omgbase/git-history-provider-design.md`): an
+engine-owned bare repository at `.omgbase/git` whose commits are built from the database rows by a feed consumer and
+carry replay trailers; a `HistoryReader` seam the recorder and the Git provider both implement; a fifth `git`
+composition in the conformance matrix (40 cells, both engines); the remote half — push that never forces, fetch through
+the source boundary, a tree-level three-way merge with sidecar conflicts, the divergence remediation menu as explicit
+verbs, the `refs/omgbase/ids` identity chain, a debounced checkpoint scheduler on the MCP mutation hook. Both engines
+produce byte-identical Git histories on identical inputs (38 commits across the full remote sequence). On this
+repository's `docs/` the Git provider stores the same history in 0.58 MB of packed objects (0.35 without the ids ref)
+where native history holds 3.44 MB of rows — the extensibility gate met with no change to core correctness logic. Left
+for later product work, outside the plan: identity-preserving restoration from the ids ref, two engines' ids refs on one
+remote, the `fetch: webhook` mode, and the hosted credential helper.
 
 ## 7. Index
 
