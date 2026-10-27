@@ -2,7 +2,7 @@
 //! opener and the migrations of §3.4.
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::core::capabilities::HistoryRecorder;
 use crate::core::derived;
@@ -183,6 +183,23 @@ pub(crate) fn quote_ident(name: &str) -> String {
 /// it once (`frontmatter_at_revision`), never through the delta module
 /// directly, and the manifest step writes a repository's history row
 /// `enabled` only when the composition carries it.
+/// A migration's write transaction, begun `IMMEDIATE`.
+///
+/// `unchecked_transaction` begins `DEFERRED`, which takes a read lock and
+/// upgrades on the first write — and SQLite does not invoke the busy handler
+/// for an upgrade, because blocking there could deadlock, so `busy_timeout`
+/// buys nothing and a concurrent writer fails the whole open in about a
+/// millisecond. Every transaction in this module only ever writes, so it takes
+/// the write lock up front and waits its turn like any other writer. This is
+/// what lets several connections open the same database at once — the server
+/// opens four, and the `migrate_v17_*` steps run on every open.
+fn write_tx(conn: &Connection) -> Result<Transaction<'_>> {
+    Ok(Transaction::new_unchecked(
+        conn,
+        TransactionBehavior::Immediate,
+    )?)
+}
+
 pub(crate) fn migrate(
     conn: &Connection,
     ids: &mut IdSource,
@@ -191,7 +208,7 @@ pub(crate) fn migrate(
 ) -> Result<()> {
     let current = user_version(conn)?;
     if current == 0 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = write_tx(conn)?;
         tx.execute_batch(SCHEMA_SQL)?;
         set_user_version(&tx, SCHEMA_VERSION)?;
         tx.commit()?;
@@ -256,7 +273,7 @@ pub(crate) fn migrate(
             migrate_v17_legacy_bytes(conn, true, now)?;
             continue;
         }
-        let tx = conn.unchecked_transaction()?;
+        let tx = write_tx(conn)?;
         // The oracle is bound after the migration (the reference registers
         // it after `migrate()`): a step's mint is checked against the issued
         // set alone, and a pre-17 database has no `id_claims` to probe.
@@ -347,7 +364,7 @@ fn migrate_v15(conn: &Connection) -> Result<()> {
     if has_column(conn, "revisions", "archive")? == Some(false) {
         conn.pragma_update(None, "foreign_keys", "OFF")?;
         let rebuilt = (|| -> Result<()> {
-            let tx = conn.unchecked_transaction()?;
+            let tx = write_tx(conn)?;
             tx.execute_batch(
                 "CREATE TABLE revisions_v15 (
   rev_id           TEXT PRIMARY KEY,
@@ -418,7 +435,7 @@ fn migrate_v17(
     }
     conn.pragma_update(None, "foreign_keys", "OFF")?;
     let rebuilt = (|| -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
+        let tx = write_tx(conn)?;
         migrate_v17_in(&tx, history, clock)?;
         let violations: i64 = {
             let mut stmt = tx.prepare("PRAGMA foreign_key_check")?;
@@ -839,7 +856,7 @@ fn migrate_v17_pending(conn: &Connection, clock: &str) -> Result<()> {
     }
     let has_revisions = table_exists(conn, "revisions")?;
     let has_commits = table_exists(conn, "commits")?;
-    let tx = conn.unchecked_transaction()?;
+    let tx = write_tx(conn)?;
     tx.execute_batch(
         "CREATE TABLE pending_materializations_v17 (
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
@@ -911,7 +928,7 @@ fn migrate_v17_claims(conn: &Connection, clock: &str) -> Result<()> {
     if has_claims && pool_done {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction()?;
+    let tx = write_tx(conn)?;
     if !pool_done {
         rebuild_pool_v17(&tx, clock)?;
     }
@@ -1091,7 +1108,7 @@ fn migrate_v17_feed(conn: &Connection, ids: &mut IdSource, clock: &str) -> Resul
     let has_claims = table_exists(conn, "id_claims")?;
     conn.pragma_update(None, "foreign_keys", "OFF")?;
     let rebuilt = (|| -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
+        let tx = write_tx(conn)?;
         // (6) repos: the epoch — one `ep` per repository in rowid order, the
         // claim minted at the repo's first commit's ts (the epoch is as old as
         // the feed it scopes), else the clock. A rebuild: SQLite cannot add a
@@ -1387,7 +1404,7 @@ fn migrate_v17_tombstones(conn: &Connection) -> Result<()> {
     if !has_column {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction()?;
+    let tx = write_tx(conn)?;
     if table_exists(&tx, "blocks_fts_docsize")? {
         let indexed: Vec<(i64, String)> = {
             let mut stmt = tx.prepare(
@@ -1447,7 +1464,7 @@ fn migrate_v17_legacy_bytes(conn: &Connection, full: bool, clock: &str) -> Resul
         let it = stmt.query_map([], |r| r.get(0))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
-    let tx = conn.unchecked_transaction()?;
+    let tx = write_tx(conn)?;
     for repo_id in &repos {
         if !full && !legacy_bytes_suspected(&tx, repo_id)? {
             continue;
@@ -1487,7 +1504,7 @@ fn migrate_v17_edges(conn: &Connection) -> Result<()> {
     let has_claims = table_exists(conn, "id_claims")?;
     conn.pragma_update(None, "foreign_keys", "OFF")?;
     let rebuilt = (|| -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
+        let tx = write_tx(conn)?;
         if needs_edges {
             if has_history {
                 tx.execute_batch(&ddl_for(&["edge_transitions"]))?;
@@ -1590,7 +1607,7 @@ fn migrate_v17_manifest(conn: &Connection, history_present: bool, clock: &str) -
         return Ok(());
     }
     let had_manifest = table_exists(conn, "capabilities")?;
-    let tx = conn.unchecked_transaction()?;
+    let tx = write_tx(conn)?;
     tx.execute_batch(&ddl_for(&["capabilities"]))?;
     tx.execute_batch(&ddl_for(&["alerts"]))?;
     let repos: Vec<String> = {

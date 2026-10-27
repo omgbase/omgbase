@@ -256,12 +256,18 @@ pub fn open_store_at(db: &Path, minters: &MinterSource, now: &str) -> Result<Sto
             .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     }
     let conn = rusqlite::Connection::open(db).map_err(|e| e.to_string())?;
+    // Before the open, not after it: the open itself writes, because the
+    // migration runs inside `from_connection_at` and its `migrate_v17_*` steps
+    // write on every open, not just on a version change. The server opens four
+    // of these at once (the host, the watcher's registry connection, the
+    // watcher thread's, the drain thread's), so without a timeout in place by
+    // then an open loses the race and reports `database is locked` — which the
+    // watcher treats as fatal, leaving a server that serves reads but
+    // reconciles nothing.
+    conn.busy_timeout(BUSY_TIMEOUT)
+        .map_err(|e| format!("busy_timeout: {e}"))?;
     let store = Store::from_connection_at(conn, minters.minter(), capabilities, now)
         .map_err(|e| e.to_string())?;
-    store
-        .conn()
-        .busy_timeout(BUSY_TIMEOUT)
-        .map_err(|e| format!("busy_timeout: {e}"))?;
     Ok(store)
 }
 
